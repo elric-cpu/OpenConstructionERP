@@ -92,14 +92,21 @@ export async function uploadBIMData(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`/api/v1/bim_hub/upload?${params.toString()}`, {
-    method: 'POST',
-    headers,
-    body: formData,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`/api/v1/bim_hub/upload?${params.toString()}`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+  } catch (networkErr) {
+    throw new Error(
+      'Cannot connect to server. Please check that the backend is running and try again.',
+    );
+  }
 
   if (!response.ok) {
-    let detail = 'Upload failed';
+    let detail = `Upload failed (HTTP ${response.status})`;
     try {
       const body = await response.json();
       detail = body.detail || detail;
@@ -137,14 +144,21 @@ export async function uploadCADFile(
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`/api/v1/bim_hub/upload-cad?${params.toString()}`, {
-    method: 'POST',
-    headers,
-    body: formData,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`/api/v1/bim_hub/upload-cad?${params.toString()}`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+  } catch (networkErr) {
+    throw new Error(
+      'Cannot connect to server. Please check that the backend is running and try again.',
+    );
+  }
 
   if (!response.ok) {
-    let detail = 'Upload failed';
+    let detail = `Upload failed (HTTP ${response.status})`;
     try {
       const body = await response.json();
       detail = body.detail || detail;

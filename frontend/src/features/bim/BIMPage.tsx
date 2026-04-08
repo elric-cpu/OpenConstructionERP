@@ -320,6 +320,10 @@ function UploadCard({
 
   const handleUploadData = useCallback(async () => {
     if (!dataFile) return;
+    if (!projectId) {
+      setUploadError(t('bim.select_project_first', { defaultValue: 'Please select a project first' }));
+      return;
+    }
 
     setUploading(true);
     setUploadError(null);
@@ -364,6 +368,10 @@ function UploadCard({
 
   const handleUploadCad = useCallback(async () => {
     if (!cadFile) return;
+    if (!projectId) {
+      setUploadError(t('bim.select_project_first', { defaultValue: 'Please select a project first' }));
+      return;
+    }
 
     setUploading(true);
     setUploadError(null);
@@ -585,7 +593,8 @@ function UploadCard({
             variant="primary"
             size="sm"
             onClick={uploadMode === 'cad' ? handleUploadCad : handleUploadData}
-            disabled={uploadMode === 'cad' ? !cadFile || uploading : !dataFile || uploading}
+            disabled={!projectId || (uploadMode === 'cad' ? !cadFile || uploading : !dataFile || uploading)}
+            title={!projectId ? t('bim.select_project_first', { defaultValue: 'Please select a project first' }) : undefined}
           >
             {uploading ? (
               <>
