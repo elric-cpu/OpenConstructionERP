@@ -5,6 +5,14 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.10] — 2026-04-27
+
+### Security
+- **Demo password no longer hardcoded.** `_resolve_demo_password()` regression reintroduced the literal `DemoPass1234!` as the no-env-var fallback (BUG-D01). Restored to `secrets.token_urlsafe(16)` so every fresh install gets a unique random password persisted to `~/.openestimator/.demo_credentials.json`. Operators using `OE_DEMO_PASSWORD` env var are unaffected.
+
+### Fixed — Tests
+- `tests/conftest.py` now eagerly imports every module's ORM `models` so `Base.metadata` holds a coherent table set regardless of test-collection order. Eliminates 9 spurious `NoReferencedTableError` failures in `tests/unit/eac/test_validator_aliases.py` when run as part of the full sweep. Full unit-test pass: 2309 / 2309.
+
 ## [2.6.9] — 2026-04-27
 
 ### Fixed — Takeoff

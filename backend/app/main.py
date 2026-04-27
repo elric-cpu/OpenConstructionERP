@@ -33,6 +33,7 @@ _os.environ.setdefault("MKL_NUM_THREADS", "1")
 import hashlib as _hashlib
 import logging
 import os
+import secrets
 import time
 import uuid
 import uuid as _instance_uuid
@@ -353,19 +354,16 @@ def _resolve_demo_password(env_var: str) -> tuple[str, bool]:
     """Resolve the password for one demo account.
 
     Returns ``(password, was_generated)``. If the operator set the matching
-    environment variable explicitly we honour it as-is. Otherwise we use
-    the documented default ``DemoPass1234!`` so the CLI banner, README,
-    and onboarding docs all line up — every surface previously advertised
-    that string anyway, but the underlying default was a random token,
-    so demo logins silently failed on a fresh install (BUG-D01). For any
-    internet-exposed deployment the operator MUST set the per-account env
-    vars; the startup banner and ``openestimate doctor`` will warn when
-    the default is in use against a non-localhost origin.
+    env var to a non-empty string we honour it as-is. Otherwise we generate
+    a fresh ``secrets.token_urlsafe(16)`` (22 url-safe chars). Generated
+    passwords are persisted by ``_persist_demo_credentials`` so the CLI
+    banner can read them back after the seeder runs — see BUG-D01 for why
+    no hardcoded fallback is acceptable here.
     """
     env_value = os.environ.get(env_var)
     if env_value:
         return env_value, False
-    return "DemoPass1234!", True
+    return secrets.token_urlsafe(16), True
 
 
 def _persist_demo_credentials(creds: dict[str, str]) -> Path | None:

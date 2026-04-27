@@ -41,6 +41,22 @@ os.environ.setdefault("AI_RATE_LIMIT", "10000")
 
 import pytest  # noqa: E402
 
+# ── Eagerly register all module ORM tables ─────────────────────────────────
+# Without this, test-order pollution can leave Base.metadata holding a
+# fragmentary view: e.g. a test that imports `schedule.models` but not
+# `projects.models` registers `oe_schedule_schedule` with a dangling FK
+# to the unloaded `oe_projects_project`. The next test that calls
+# `Base.metadata.create_all()` then fails with NoReferencedTableError.
+# Importing every module's models here once before any test runs
+# guarantees a coherent metadata snapshot regardless of suite order.
+import app.modules.projects.models  # noqa: E402,F401
+import app.modules.schedule.models  # noqa: E402,F401
+import app.modules.eac.models  # noqa: E402,F401
+import app.modules.bim_hub.models  # noqa: E402,F401
+import app.modules.boq.models  # noqa: E402,F401
+import app.modules.takeoff.models  # noqa: E402,F401
+import app.modules.users.models  # noqa: E402,F401
+
 
 @pytest.fixture
 def sample_boq_data():
