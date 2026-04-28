@@ -1629,23 +1629,25 @@ export function BOQEditorPage() {
     [boq?.positions, updateMutation],
   );
 
-  /** Update a single resource field (quantity, unit_rate, or name) and recalculate position rate. */
-  const handleUpdateResource = useCallback(
-    (positionId: string, resourceIndex: number, field: string, value: number | string) => {
+  /** Apply one or more field updates to a resource in a single mutation.
+   *
+   *  Two sequential `handleUpdateResource(field, value)` calls would race on
+   *  the React Query cache — both would read the same pre-change snapshot and
+   *  the second would overwrite the first (observed bug: editing a catalogued
+   *  resource's name reverted to the original because the immediate `code: ''`
+   *  follow-up wrote the stale `name` back). This function takes a field map
+   *  and merges everything into one PATCH. */
+  const handleUpdateResourceFields = useCallback(
+    (positionId: string, resourceIndex: number, fields: Record<string, number | string>) => {
       const pos = boq?.positions.find((p) => p.id === positionId);
       if (!pos) return;
       const resources = [...((pos.metadata?.resources ?? []) as Array<Record<string, unknown>>)];
       if (resourceIndex < 0 || resourceIndex >= resources.length) return;
-      resources[resourceIndex] = { ...resources[resourceIndex], [field]: value };
-      // Recalculate resource total
+      resources[resourceIndex] = { ...resources[resourceIndex], ...fields };
       const rQty = (resources[resourceIndex].quantity as number) ?? 0;
       const rRate = (resources[resourceIndex].unit_rate as number) ?? 0;
       resources[resourceIndex].total = Math.round(rQty * rRate * 100) / 100;
       const newMeta = { ...pos.metadata, resources };
-      // Resources are per-unit norms (qty per 1 unit of position) — same
-      // convention as CostX, Candy, iTWO, ProEst. So:
-      //   unit_rate = Σ(r.quantity × r.unit_rate)   [NOT divided by pos qty]
-      //   total     = pos.quantity × unit_rate     (computed by backend)
       let resourceTotal = 0;
       for (const r of resources) {
         resourceTotal += (r.total as number) ?? (((r.quantity as number) ?? 0) * ((r.unit_rate as number) ?? 0));
@@ -1657,6 +1659,14 @@ export function BOQEditorPage() {
       });
     },
     [boq?.positions, updateMutation],
+  );
+
+  /** Single-field shim — delegates to the batched implementation. */
+  const handleUpdateResource = useCallback(
+    (positionId: string, resourceIndex: number, field: string, value: number | string) => {
+      handleUpdateResourceFields(positionId, resourceIndex, { [field]: value });
+    },
+    [handleUpdateResourceFields],
   );
 
   /** Save a resource from a position to the user's catalog. */
@@ -2683,6 +2693,7 @@ export function BOQEditorPage() {
           onSelectionChanged={handleSelectionChanged}
           onRemoveResource={handleRemoveResource}
           onUpdateResource={handleUpdateResource}
+          onUpdateResourceFields={handleUpdateResourceFields}
           onSaveResourceToCatalog={handleSaveResourceToCatalog}
           onOpenCostDbForPosition={handleOpenCostDbForPosition}
           onOpenCatalogForPosition={handleOpenCatalogForPosition}

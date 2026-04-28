@@ -252,6 +252,11 @@ export interface ResourceGridContext {
   onToggleResources: (positionId: string) => void;
   onRemoveResource: (positionId: string, resourceIndex: number) => void;
   onUpdateResource: (positionId: string, resourceIndex: number, field: string, value: number | string) => void;
+  /** Update multiple fields of a resource in ONE mutation. Use when two fields must
+   *  change atomically (e.g. renaming a catalogued resource also clears its code).
+   *  Without this, two sequential `onUpdateResource` calls race on the React Query
+   *  cache and the second silently overwrites the first. */
+  onUpdateResourceFields?: (positionId: string, resourceIndex: number, fields: Record<string, number | string>) => void;
   onSaveResourceToCatalog: (positionId: string, resourceIndex: number) => void;
   onOpenCostDbForPosition: (positionId: string) => void;
   onOpenCatalogForPosition: (positionId: string) => void;
@@ -2385,9 +2390,24 @@ function EditableResourceRow({ data, ctx, colWidths }: { data: Record<string, un
     (v: string) => {
       const next = v.trim();
       if (next === originalName.trim()) return;
-      ctx.onUpdateResource?.(posId, resIdx, 'name', v);
-      if (resourceCode) {
-        ctx.onUpdateResource?.(posId, resIdx, 'code', '');
+      // Renaming a catalogued resource clears its code (the row is now a
+      // user customisation). Both fields must land in ONE mutation —
+      // sending two `onUpdateResource` calls would race on the React Query
+      // cache: the second read sees the pre-name-change resources array
+      // and overwrites the name we just sent. Symptom reported by user:
+      // "the name resets to the old value, only the second click sticks."
+      if (ctx.onUpdateResourceFields) {
+        ctx.onUpdateResourceFields(
+          posId,
+          resIdx,
+          resourceCode ? { name: v, code: '' } : { name: v },
+        );
+      } else {
+        // Backward-compat path for grid contexts that haven't wired the
+        // batched update yet — preserves the old (racy) behaviour rather
+        // than crashing.
+        ctx.onUpdateResource?.(posId, resIdx, 'name', v);
+        if (resourceCode) ctx.onUpdateResource?.(posId, resIdx, 'code', '');
       }
     },
     [ctx, posId, resIdx, originalName, resourceCode],
@@ -2514,16 +2534,14 @@ function EditableResourceRow({ data, ctx, colWidths }: { data: Record<string, un
       </span>
 
       {/* Name — flex-1, mirrors the position description column.
-          Per UX request, resource names get an additional 16px left indent
-          (`pl-4`) on top of InlineTextInput's own `px-1` (4px). Total
-          offset 20px from the description column's left edge — enough to
-          be visually distinct from position descriptions while staying
-          inside the description column so the right-side columns
-          (qty / rate / total) keep their existing alignment.
+          InlineTextInput's display-mode span adds `px-1` (4px) internally,
+          which is the same as the position description cellClass `!pl-1`
+          (4px). Result: resource name text starts at the EXACT same X as
+          position description text — they live on the same vertical line.
           Committing a different name strips the catalogue code
           (handleNameChange) so the row becomes a customised resource,
           savable via the BookmarkPlus action. */}
-      <span className="truncate min-w-0 flex-1 self-center text-left text-content-secondary font-medium pl-4">
+      <span className="truncate min-w-0 flex-1 self-center text-left text-content-secondary font-medium">
         <InlineTextInput value={originalName} onCommit={handleNameChange} className="w-full text-xs text-left" />
       </span>
 

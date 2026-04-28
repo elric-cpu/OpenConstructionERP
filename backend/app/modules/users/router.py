@@ -66,6 +66,17 @@ class ModulePreferencesPayload(BaseModel):
     modules: dict[str, bool]
 
 
+class CustomUnitsPayload(BaseModel):
+    """Request/response body for the user's per-tenant custom-unit catalogue.
+
+    The unit dropdown in BOQ position / resource rows merges these with the
+    locale-baseline units. Persisted in user metadata so the catalogue is
+    available across browsers and sessions, not just the device localStorage.
+    """
+
+    units: list[str]
+
+
 router = APIRouter()
 
 
@@ -313,6 +324,53 @@ async def save_module_preferences(
     metadata["module_preferences"] = data.modules
     await service.update_profile(uuid.UUID(user_id), metadata_=metadata)
     return ModulePreferencesPayload(modules=data.modules)
+
+
+# ── Custom Units ──────────────────────────────────────────────────────────
+
+
+@router.get("/me/custom-units/", response_model=CustomUnitsPayload)
+async def get_custom_units(
+    user_id: CurrentUserId,
+    service: UserService = Depends(_get_service),
+) -> CustomUnitsPayload:
+    """Get the user's saved custom unit catalogue."""
+    user = await service.get_user(uuid.UUID(user_id))
+    metadata: dict[str, Any] = user.metadata_ or {}
+    raw = metadata.get("custom_units", [])
+    units = [str(u) for u in raw if isinstance(u, str) and u.strip()]
+    return CustomUnitsPayload(units=units)
+
+
+@router.patch("/me/custom-units/", response_model=CustomUnitsPayload)
+async def save_custom_units(
+    data: CustomUnitsPayload,
+    user_id: CurrentUserId,
+    service: UserService = Depends(_get_service),
+) -> CustomUnitsPayload:
+    """Replace the user's saved custom-unit catalogue.
+
+    Sanitises the payload: trims whitespace, drops empties / duplicates,
+    caps each unit at 32 chars and the list at 200 entries so a runaway
+    client can't bloat the JSON column.
+    """
+    seen: set[str] = set()
+    cleaned: list[str] = []
+    for raw in data.units:
+        if not isinstance(raw, str):
+            continue
+        u = raw.strip()[:32]
+        if u and u not in seen:
+            seen.add(u)
+            cleaned.append(u)
+        if len(cleaned) >= 200:
+            break
+
+    user = await service.get_user(uuid.UUID(user_id))
+    metadata: dict[str, Any] = dict(user.metadata_ or {})
+    metadata["custom_units"] = cleaned
+    await service.update_profile(uuid.UUID(user_id), metadata_=metadata)
+    return CustomUnitsPayload(units=cleaned)
 
 
 # ── Onboarding ────────────────────────────────────────────────────────────────

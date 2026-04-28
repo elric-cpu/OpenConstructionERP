@@ -5,6 +5,15 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.21] — 2026-04-28
+
+### Added
+- **Custom unit catalogue persists per-user across browsers and sessions.** Units typed into the BOQ Unit cell now sync to `User.metadata_["custom_units"]` via two new endpoints (`GET`/`PATCH /api/v1/users/me/custom-units/`). Previously the catalogue lived only in `localStorage`, so a unit added on one device was invisible everywhere else. App boot calls `syncCustomUnitsFromServer()` once after auth resolves; commits push to the server fire-and-forget. Anonymous / offline sessions fall back to localStorage cleanly.
+
+### Fixed
+- **Resource name reverts to old value on first edit.** Renaming a catalogued resource fired two sequential `onUpdateResource` calls (`name`, then `code: ''`). Both read the same React Query cache snapshot, and the second mutation overwrote the first — so the new name was visibly written and immediately reset to the original. Symptom: "name only saves on the second click." Fixed by collapsing the two writes into a single `onUpdateResourceFields(posId, idx, {name, code: ''})` mutation.
+- **Resource name X-coordinate matches position description.** Removed the `pl-4` indent added in v2.6.20 — `InlineTextInput`'s built-in `px-1` already matches the position description column's `!pl-1`, so resource names and position names sit on the exact same vertical line.
+
 ## [2.6.20] — 2026-04-28
 
 ### Fixed

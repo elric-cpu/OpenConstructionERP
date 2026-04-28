@@ -5,6 +5,7 @@ import { DashboardPage } from '@/features/dashboard';
 import { LoginPage, RegisterPage, ForgotPasswordPage } from '@/features/auth';
 import { ProjectsPage, CreateProjectPage, ProjectDetailPage, ProjectSettingsPage } from '@/features/projects';
 import { BOQListPage, CreateBOQPage, TemplatesPage } from '@/features/boq';
+import { syncCustomUnitsFromServer } from '@/features/boq/boqHelpers';
 import { CostsPage, ImportDatabasePage } from '@/features/costs';
 import { OnboardingWizard } from '@/features/onboarding';
 import { AssembliesPage, AssemblyEditorPage, CreateAssemblyPage } from '@/features/assemblies';
@@ -342,6 +343,15 @@ export default function App() {
   if (typeof window !== 'undefined') {
     (window as any).__ddc_oe = ddcVerifyIntegrity();
   }
+
+  // Pull the user's saved custom-unit catalogue once after auth resolves.
+  // Fire-and-forget — the BOQ Unit dropdown still works from localStorage
+  // before this completes; the server merge just keeps it consistent across
+  // browsers and sessions.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    void syncCustomUnitsFromServer();
+  }, [isAuthenticated]);
 
   // Dynamic routes from the module registry (lazy-loaded)
   const moduleRoutes = useModuleRouteElements({ Wrapper: P });

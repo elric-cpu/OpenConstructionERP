@@ -8,6 +8,7 @@
 
 import type { Position, Markup } from './api';
 import { getIntlLocale } from '@/shared/lib/formatters';
+import { apiGet, apiPatch } from '@/shared/lib/api';
 
 /* ── Constants ───────────────────────────────────────────────────────── */
 
@@ -35,7 +36,16 @@ const LOCALE_UNITS: Record<string, readonly string[]> = {
   cs: ['ks', 'kpl', 'bm', 'hod', 'den'],
 };
 
-/** Custom units stored in localStorage by the user. */
+/**
+ * Custom unit catalogue — hybrid local + server persistence.
+ *
+ * The dropdown reads from localStorage for instant render. On app boot we
+ * call `syncCustomUnitsFromServer()` to merge the server-side list (per-user,
+ * stored on `User.metadata_["custom_units"]`) into the local cache. New unit
+ * commits go through `saveCustomUnit()` which writes locally first then
+ * fire-and-forgets a PATCH to the server. Anonymous / offline sessions keep
+ * working as before — the server sync is best-effort and silently degrades.
+ */
 const CUSTOM_UNITS_KEY = 'oe_custom_units';
 
 function loadCustomUnits(): string[] {
@@ -47,14 +57,42 @@ function loadCustomUnits(): string[] {
   }
 }
 
+function writeCustomUnits(units: string[]): void {
+  try {
+    localStorage.setItem(CUSTOM_UNITS_KEY, JSON.stringify(units));
+  } catch { /* localStorage full / disabled — accept the loss */ }
+}
+
+interface CustomUnitsResponse { units: string[] }
+
+/** Pull the server-side catalogue into local cache. Called once on app boot
+ *  after auth resolves. Returns the merged list for callers that want it. */
+export async function syncCustomUnitsFromServer(): Promise<string[]> {
+  try {
+    const resp = await apiGet<CustomUnitsResponse>('/v1/users/me/custom-units/');
+    const server = Array.isArray(resp?.units) ? resp.units : [];
+    const merged = [...new Set([...loadCustomUnits(), ...server])];
+    writeCustomUnits(merged);
+    // If the merge produced new entries that weren't on the server, push them.
+    if (merged.length !== server.length) {
+      apiPatch('/v1/users/me/custom-units/', { units: merged }).catch(() => undefined);
+    }
+    return merged;
+  } catch {
+    // 401 (anonymous) or network failure — local-only path stays valid.
+    return loadCustomUnits();
+  }
+}
+
 export function saveCustomUnit(unit: string): void {
   const custom = loadCustomUnits();
-  if (!custom.includes(unit)) {
-    custom.push(unit);
-    try {
-      localStorage.setItem(CUSTOM_UNITS_KEY, JSON.stringify(custom));
-    } catch { /* ignore */ }
-  }
+  if (custom.includes(unit)) return;
+  custom.push(unit);
+  writeCustomUnits(custom);
+  // Best-effort server sync. Don't block the UI on the network round-trip;
+  // don't surface the error if it fails — the next syncCustomUnitsFromServer()
+  // call will reconcile the merged list.
+  apiPatch('/v1/users/me/custom-units/', { units: custom }).catch(() => undefined);
 }
 
 /**

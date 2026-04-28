@@ -245,6 +245,7 @@ export interface BOQGridProps {
   onSelectionChanged?: (selectedIds: string[]) => void;
   onRemoveResource?: (positionId: string, resourceIndex: number) => void;
   onUpdateResource?: (positionId: string, resourceIndex: number, field: string, value: number | string) => void;
+  onUpdateResourceFields?: (positionId: string, resourceIndex: number, fields: Record<string, number | string>) => void;
   onSaveResourceToCatalog?: (positionId: string, resourceIndex: number) => void;
   onOpenCostDbForPosition?: (positionId: string) => void;
   onOpenCatalogForPosition?: (positionId: string) => void;
@@ -298,6 +299,7 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
   onSelectionChanged,
   onRemoveResource,
   onUpdateResource,
+  onUpdateResourceFields,
   onSaveResourceToCatalog,
   onOpenCostDbForPosition,
   onOpenCatalogForPosition,
@@ -451,6 +453,7 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
       onToggleResources: toggleResources,
       onRemoveResource: onRemoveResource ?? (() => {}),
       onUpdateResource: onUpdateResource ?? (() => {}),
+      onUpdateResourceFields,
       onSaveResourceToCatalog: onSaveResourceToCatalog ?? (() => {}),
       onOpenCostDbForPosition: onOpenCostDbForPosition ?? (() => {}),
       onOpenCatalogForPosition: onOpenCatalogForPosition ?? (() => {}),
@@ -478,7 +481,7 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
       onFormulaApplied,
     }) as FullGridContext,
     [currencySymbol, currencyCode, fxRates, locale, fmt, t, collapsedSections, onToggleSection, onAddPosition,
-     expandedPositions, toggleResources, onRemoveResource, onUpdateResource,
+     expandedPositions, toggleResources, onRemoveResource, onUpdateResource, onUpdateResourceFields,
      onSaveResourceToCatalog, onOpenCostDbForPosition, onOpenCatalogForPosition,
      onDeletePosition, onSaveToDatabase, onAddComment,
      onDuplicatePosition, showContextMenu, anomalyMap, onApplyAnomalySuggestion, bimModelId,
