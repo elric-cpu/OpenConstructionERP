@@ -47,6 +47,7 @@ import csv
 import io
 import logging
 import random
+import re
 import tempfile
 import uuid
 import zipfile
@@ -57,7 +58,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.csv_safety import neutralise_formula
 from app.core.file_signature import detect as detect_signature
@@ -5511,6 +5512,134 @@ async def delete_custom_column(
     flag_modified(boq, "metadata_")
     await service.session.flush()
     await service.session.commit()
+
+
+# ── Per-BOQ named variables ($GFA, $LABOR_RATE, …) ───────────────────────────
+#
+# Variables are scoped to a single BOQ document and live on
+# ``boq.metadata_["variables"]`` as a JSON array. Two BOQs in the same
+# project can have independent ``$GFA`` values. Used by the formula
+# engine — ``=$GFA * 0.15`` resolves to a literal number at evaluation
+# time. See plan ``inherited-knitting-dahl.md`` Phase B for design notes.
+
+# Match the spec from the plan: uppercase, alnum + underscore, max 32 chars.
+_VARIABLE_NAME_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,31}$")
+_MAX_VARIABLES_PER_BOQ = 50
+_VARIABLE_TYPES = ("number", "text", "date")
+
+
+class BOQVariable(BaseModel):
+    """One named variable scoped to a BOQ document."""
+
+    name: str = Field(
+        ...,
+        description="Uppercase identifier without the leading '$', e.g. 'GFA'.",
+    )
+    type: Literal["number", "text", "date"]
+    value: str | float | int | None = None
+    description: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, raw: str) -> str:
+        # Strip a stray leading "$" — easier than rejecting it.
+        cleaned = raw[1:] if raw.startswith("$") else raw
+        cleaned = cleaned.strip()
+        if not _VARIABLE_NAME_RE.match(cleaned):
+            raise ValueError(
+                "Variable name must be UPPER_SNAKE_CASE, 1–32 chars, "
+                "starting with a letter. Got: " + raw,
+            )
+        return cleaned
+
+
+def _coerce_variable_value(var: BOQVariable) -> str | float | int | None:
+    """Sanitise a value to match the declared type. Stored values are
+    used directly by the formula engine, so it's important that
+    ``type=number`` actually means a number — not the string ``"42"``."""
+    if var.value is None or var.value == "":
+        return None
+    if var.type == "number":
+        try:
+            return float(var.value)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                400,
+                f"Variable '${var.name}' is type=number but value is not numeric",
+            ) from exc
+    if var.type == "date":
+        # Don't parse — accept any non-empty string. The formula engine
+        # treats date variables opaquely (mostly for display in tooltips).
+        return str(var.value)
+    return str(var.value)
+
+
+@router.get(
+    "/boqs/{boq_id}/variables/",
+    summary="List per-BOQ named variables",
+    dependencies=[Depends(RequirePermission("boq.read"))],
+)
+async def list_boq_variables(
+    boq_id: uuid.UUID,
+    service: BOQService = Depends(_get_service),
+) -> list[dict]:
+    """Return the variables registered on this BOQ."""
+    boq = await service.get_boq(boq_id)
+    meta = boq.metadata_ if isinstance(boq.metadata_, dict) else {}
+    raw = meta.get("variables", [])
+    if not isinstance(raw, list):
+        return []
+    return raw
+
+
+@router.put(
+    "/boqs/{boq_id}/variables/",
+    summary="Replace per-BOQ named variables",
+    dependencies=[Depends(RequirePermission("boq.update"))],
+)
+async def replace_boq_variables(
+    boq_id: uuid.UUID,
+    variables: list[BOQVariable] = Body(...),
+    service: BOQService = Depends(_get_service),
+) -> list[dict]:
+    """Replace the entire variable list for a BOQ.
+
+    The plan calls for whole-list replacement (vs per-row CRUD) — the
+    list is small (≤50) and the editor UI sends the whole table back
+    on save, so a single round-trip keeps state simple.
+    """
+    if len(variables) > _MAX_VARIABLES_PER_BOQ:
+        raise HTTPException(
+            400,
+            f"Too many variables ({len(variables)} > {_MAX_VARIABLES_PER_BOQ})",
+        )
+
+    seen: set[str] = set()
+    sanitised: list[dict] = []
+    for var in variables:
+        if var.name in seen:
+            raise HTTPException(400, f"Duplicate variable name: ${var.name}")
+        seen.add(var.name)
+        sanitised.append(
+            {
+                "name": var.name,
+                "type": var.type,
+                "value": _coerce_variable_value(var),
+                "description": (var.description or None),
+            },
+        )
+
+    from sqlalchemy.orm.attributes import flag_modified
+
+    boq = await service.get_boq(boq_id)
+    existing_meta = dict(boq.metadata_) if isinstance(boq.metadata_, dict) else {}
+    existing_meta["variables"] = sanitised
+    boq.metadata_ = existing_meta
+    flag_modified(boq, "metadata_")
+    await service.session.flush()
+    await service.session.commit()
+
+    return sanitised
 
 
 # ── Renumber positions (gap-of-10 ordinal scheme) ───────────────────────────

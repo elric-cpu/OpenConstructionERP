@@ -74,6 +74,7 @@ import { ActivityPanel } from './ActivityPanel';
 import { CostDatabaseSearchModal, AssemblyPickerModal } from './BOQModals';
 import { CatalogPickerModal, type CatalogResource } from './CatalogPickerModal';
 import { CustomColumnsDialog } from './CustomColumnsDialog';
+import { BOQVariablesDialog } from './BOQVariablesDialog';
 import { RenumberDialog } from './RenumberDialog';
 
 /* ── Re-exports for tests ────────────────────────────────────────────── */
@@ -650,6 +651,7 @@ export function BOQEditorPage() {
   const [assemblyModalOpen, setAssemblyModalOpen] = useState(false);
   const [excelPasteOpen, setExcelPasteOpen] = useState(false);
   const [customColumnsOpen, setCustomColumnsOpen] = useState(false);
+  const [variablesOpen, setVariablesOpen] = useState(false);
   const [isExcelPasteImporting, setIsExcelPasteImporting] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   /** When set, the cost DB modal adds a resource to this position instead of creating a new position. */
@@ -2644,6 +2646,7 @@ export function BOQEditorPage() {
           onAcceptAllAnomalies={anomalyMap.size > 0 ? handleAcceptAllAnomalies : undefined}
           onManageColumns={() => setCustomColumnsOpen(true)}
           customColumnCount={boqCustomColumns.length}
+          onManageVariables={() => setVariablesOpen(true)}
           onRenumber={handleRenumber}
           isRenumbering={renumberMutation.isPending}
           hasPositions={hasPositions}
@@ -3041,6 +3044,15 @@ export function BOQEditorPage() {
           onClose={() => setCustomColumnsOpen(false)}
           boqId={boqId}
           positions={boq?.positions}
+        />
+      )}
+
+      {/* ── BOQ Variables Manager ($GFA, $LABOR_RATE, …) ────────────── */}
+      {boqId && (
+        <BOQVariablesDialog
+          open={variablesOpen}
+          onClose={() => setVariablesOpen(false)}
+          boqId={boqId}
         />
       )}
 

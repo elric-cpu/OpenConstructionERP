@@ -77,13 +77,19 @@ const FLAGS: Record<string, string> = {
   ae: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6"><rect y="0" width="12" height="2" fill="#00732F"/><rect y="2" width="12" height="2" fill="#fff"/><rect y="4" width="12" height="2" fill="#000"/><rect width="3" height="6" fill="#FF0000"/></svg>`,
 };
 
-/** Fallback emoji map for unknown codes */
+/** Fallback emoji map for unknown codes. Covers everything that lands in
+ *  REGION_MAP (`useCostDatabaseStore.ts`), including the 19 cost-database
+ *  countries added in v2.6.23 — without these the new entries rendered
+ *  as a blank slot in the onboarding wizard and Import database page. */
 const EMOJI_FALLBACK: Record<string, string> = {
   gb: '🇬🇧', de: '🇩🇪', fr: '🇫🇷', es: '🇪🇸', br: '🇧🇷',
   ru: '🇷🇺', cn: '🇨🇳', sa: '🇸🇦', in: '🇮🇳', tr: '🇹🇷',
   it: '🇮🇹', nl: '🇳🇱', pl: '🇵🇱', cz: '🇨🇿', jp: '🇯🇵',
   kr: '🇰🇷', se: '🇸🇪', no: '🇳🇴', dk: '🇩🇰', fi: '🇫🇮',
   us: '🇺🇸', ca: '🇨🇦', ae: '🇦🇪', bg: '🇧🇬',
+  // v2.6.23 — flags for the 19 newly-shipped CWICR cost-database regions
+  au: '🇦🇺', hr: '🇭🇷', id: '🇮🇩', mx: '🇲🇽', ng: '🇳🇬',
+  nz: '🇳🇿', ro: '🇷🇴', th: '🇹🇭', vn: '🇻🇳', za: '🇿🇦',
 };
 
 interface CountryFlagProps {

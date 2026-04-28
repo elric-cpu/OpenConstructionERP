@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/lib/api';
+import { apiGet, apiPost, apiPut, apiPatch, apiDelete } from '@/shared/lib/api';
 
 /* ── Core BOQ types ──────────────────────────────────────────────────── */
 
@@ -767,6 +767,13 @@ export const boqApi = {
   deleteCustomColumn: (boqId: string, columnName: string) =>
     apiDelete<void>(`/v1/boq/boqs/${boqId}/columns/${columnName}`),
 
+  /* Per-BOQ named variables ($GFA, $LABOR_RATE, …). Used by the formula
+     engine; replace-the-whole-list semantics keep the editor simple. */
+  listBoqVariables: (boqId: string) =>
+    apiGet<BOQVariable[]>(`/v1/boq/boqs/${boqId}/variables/`),
+  replaceBoqVariables: (boqId: string, variables: BOQVariable[]) =>
+    apiPut<BOQVariable[], BOQVariable[]>(`/v1/boq/boqs/${boqId}/variables/`, variables),
+
   /* Renumber positions using one of several professional schemes.
      - gap10:      01, 01.10, 01.20  (German tender default — leaves room to insert later)
      - gap100:     01, 01.100, 01.200 (very large BOQs)
@@ -795,6 +802,19 @@ export interface CustomColumnDef {
   column_type: 'text' | 'number' | 'date' | 'select';
   options?: string[];
   sort_order?: number;
+}
+
+/**
+ * Per-BOQ named variable. Stored on `boq.metadata.variables`. Names are
+ * UPPER_SNAKE_CASE without the leading `$` — the UI prepends the dollar
+ * sign for display only. Values are typed: `number` round-trips as a
+ * float, `text` and `date` as strings, `null` means unset.
+ */
+export interface BOQVariable {
+  name: string;
+  type: 'number' | 'text' | 'date';
+  value: number | string | null;
+  description?: string | null;
 }
 
 /* ── LLM AI feature types ───────────────────────────────────────────── */

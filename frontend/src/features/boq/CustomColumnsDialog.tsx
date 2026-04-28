@@ -31,14 +31,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   X, Plus, Trash2, Columns3,
   Type, Hash, Calendar, List,
-  AlertCircle, Package, FileText as NotesIcon,
-  ShieldCheck, Leaf, Check, Building2, FileCheck, Boxes,
+  AlertCircle, Check, ChevronDown, Globe,
 } from 'lucide-react';
 import { Button, Badge, ConfirmDialog } from '@/shared/ui';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { useToastStore } from '@/stores/useToastStore';
 import { boqApi, type CustomColumnDef, type Position } from './api';
 import { getErrorMessage } from '@/shared/lib/api';
+import {
+  type ColumnPreset,
+  getUniversalPresets,
+  getRegionalPresets,
+} from './presets';
 
 interface CustomColumnsDialogProps {
   open: boolean;
@@ -55,136 +59,6 @@ const COLUMN_TYPE_ICONS: Record<CustomColumnDef['column_type'], typeof Type> = {
   date: Calendar,
   select: List,
 };
-
-/* ── Presets ───────────────────────────────────────────────────────────
- *
- * Each preset is a curated set of columns that solves a single workflow
- * (procurement, quality, sustainability, notes). Adding a preset creates
- * all its columns sequentially; existing columns with the same name are
- * skipped silently so the user can re-apply a preset safely.
- */
-interface ColumnPreset {
-  id: string;
-  name: string;
-  description: string;
-  icon: typeof Package;
-  iconClass: string;
-  columns: CustomColumnDef[];
-}
-
-const PRESETS: ColumnPreset[] = [
-  {
-    id: 'procurement',
-    name: 'Procurement',
-    description: 'Supplier, lead time, PO number, status — for purchasing tracking',
-    icon: Package,
-    iconClass: 'text-violet-600 bg-violet-500/10',
-    columns: [
-      { name: 'supplier', display_name: 'Supplier', column_type: 'text' },
-      { name: 'lead_time_days', display_name: 'Lead Time (days)', column_type: 'number' },
-      { name: 'po_number', display_name: 'PO Number', column_type: 'text' },
-      {
-        name: 'po_status',
-        display_name: 'PO Status',
-        column_type: 'select',
-        options: ['Quoted', 'Ordered', 'In Transit', 'Delivered', 'Cancelled'],
-      },
-    ],
-  },
-  {
-    id: 'notes',
-    name: 'Notes',
-    description: 'Internal note + reference — quick context per position',
-    icon: NotesIcon,
-    iconClass: 'text-blue-600 bg-blue-500/10',
-    columns: [
-      { name: 'internal_note', display_name: 'Internal Note', column_type: 'text' },
-      { name: 'reference', display_name: 'Reference', column_type: 'text' },
-    ],
-  },
-  {
-    id: 'quality',
-    name: 'Quality Control',
-    description: 'Inspection status, inspector and date — for QA workflow',
-    icon: ShieldCheck,
-    iconClass: 'text-emerald-600 bg-emerald-500/10',
-    columns: [
-      {
-        name: 'qc_status',
-        display_name: 'QC Status',
-        column_type: 'select',
-        options: ['Pending', 'Passed', 'Failed', 'Rework', 'Waived'],
-      },
-      { name: 'inspector', display_name: 'Inspector', column_type: 'text' },
-      { name: 'inspection_date', display_name: 'Inspection Date', column_type: 'date' },
-    ],
-  },
-  {
-    id: 'sustainability',
-    name: 'Sustainability',
-    description: 'CO₂ footprint, EPD reference and material source',
-    icon: Leaf,
-    iconClass: 'text-green-600 bg-green-500/10',
-    columns: [
-      { name: 'co2_kg_per_unit', display_name: 'CO₂ kg/unit', column_type: 'number' },
-      { name: 'epd_reference', display_name: 'EPD Reference', column_type: 'text' },
-      { name: 'material_source', display_name: 'Material Source', column_type: 'text' },
-    ],
-  },
-
-  /* ── Professional presets matching established German/Austrian tools ─ */
-
-  {
-    id: 'gaeb_ava',
-    name: 'GAEB / AVA Style',
-    description:
-      'Splits unit rate into Lohn / Material / Geräte / Sonstiges + risk markup — matches GAEB X83/X84 standard',
-    icon: FileCheck,
-    iconClass: 'text-rose-600 bg-rose-500/10',
-    columns: [
-      { name: 'kg_bezug', display_name: 'KG-Bezug (DIN 276)', column_type: 'text' },
-      { name: 'lohn_ep', display_name: 'Lohn-EP', column_type: 'number' },
-      { name: 'material_ep', display_name: 'Material-EP', column_type: 'number' },
-      { name: 'geraete_ep', display_name: 'Geräte-EP', column_type: 'number' },
-      { name: 'sonstiges_ep', display_name: 'Sonstiges-EP', column_type: 'number' },
-      { name: 'wagnis_pct', display_name: 'Wagnis %', column_type: 'number' },
-    ],
-  },
-  {
-    id: 'oenorm_brz',
-    name: 'ÖNORM / BRZ Style',
-    description:
-      'LV position code, keyword, labor share and supplier — matches Austrian ÖNORM B 2061 / A 2063 used in BRZ',
-    icon: Building2,
-    iconClass: 'text-orange-600 bg-orange-500/10',
-    columns: [
-      { name: 'lv_position', display_name: 'LV-Position', column_type: 'text' },
-      { name: 'stichwort', display_name: 'Stichwort', column_type: 'text' },
-      { name: 'lohn_anteil_pct', display_name: 'Lohn-Anteil %', column_type: 'number' },
-      { name: 'aufschlag_pct', display_name: 'Aufschlag %', column_type: 'number' },
-      { name: 'lieferant', display_name: 'Lieferant', column_type: 'text' },
-    ],
-  },
-  {
-    id: 'bim',
-    name: 'BIM Integration',
-    description:
-      'IFC GUID, element ID, storey and lifecycle phase — for linking BoQ rows to BIM models',
-    icon: Boxes,
-    iconClass: 'text-cyan-600 bg-cyan-500/10',
-    columns: [
-      { name: 'ifc_guid', display_name: 'IFC GUID', column_type: 'text' },
-      { name: 'element_id', display_name: 'Element ID', column_type: 'text' },
-      { name: 'storey', display_name: 'Storey/Level', column_type: 'text' },
-      {
-        name: 'phase',
-        display_name: 'Phase',
-        column_type: 'select',
-        options: ['Existing', 'Demolition', 'New Construction', 'Temporary'],
-      },
-    ],
-  },
-];
 
 /* ── Helpers ───────────────────────────────────────────────────────────── */
 
@@ -338,6 +212,61 @@ export function CustomColumnsDialog({
       }
     },
     [boqId, existingNames, invalidateAll, addToast, t],
+  );
+
+  /* Render one preset card. Used by both Universal and Regional sections so
+   * the card markup stays consistent and the diff between the two sections
+   * is just the wrapper. */
+  const renderPresetCard = useCallback(
+    (preset: ColumnPreset) => {
+      const Icon = preset.icon;
+      const allApplied = preset.columns.every((c) => existingNames.has(c.name));
+      const someApplied = preset.columns.some((c) => existingNames.has(c.name));
+      return (
+        <button
+          key={preset.id}
+          onClick={() => applyPreset(preset)}
+          disabled={allApplied || addMut.isPending}
+          className="flex items-start gap-3 rounded-lg border border-border-light bg-surface-primary p-3 text-left transition-all hover:border-oe-blue/40 hover:bg-oe-blue-subtle/30 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <div
+            className={`flex h-9 w-9 items-center justify-center rounded-lg shrink-0 ${preset.iconClass}`}
+          >
+            <Icon size={16} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-semibold text-content-primary">{preset.name}</p>
+              {allApplied && (
+                <span className="inline-flex items-center gap-0.5 text-2xs font-medium text-emerald-600">
+                  <Check size={11} />
+                  {t('boq.applied', { defaultValue: 'Applied' })}
+                </span>
+              )}
+              {someApplied && !allApplied && (
+                <span className="text-2xs font-medium text-amber-600">
+                  {t('boq.partial', { defaultValue: 'Partial' })}
+                </span>
+              )}
+            </div>
+            <p className="text-2xs text-content-tertiary mt-0.5 line-clamp-2">
+              {preset.description}
+            </p>
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {preset.columns.map((c) => (
+                <span
+                  key={c.name}
+                  className={`inline-block rounded px-1.5 py-0.5 text-2xs ${existingNames.has(c.name) ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'bg-surface-secondary text-content-secondary'}`}
+                >
+                  {c.display_name}
+                </span>
+              ))}
+            </div>
+          </div>
+        </button>
+      );
+    },
+    [existingNames, applyPreset, addMut.isPending, t],
   );
 
   /* Manual add form submit */
@@ -539,58 +468,30 @@ export function CustomColumnsDialog({
           {/* ── Presets ─────────────────────────────────────────────── */}
           <section>
             <h3 className="text-xs font-semibold uppercase tracking-wider text-content-tertiary mb-2">
-              {t('boq.column_presets', { defaultValue: 'Quick start with a preset' })}
+              {t('boq.preset_universal', { defaultValue: 'Quick start with a preset' })}
             </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {PRESETS.map((preset) => {
-                const Icon = preset.icon;
-                const allApplied = preset.columns.every((c) => existingNames.has(c.name));
-                const someApplied = preset.columns.some((c) => existingNames.has(c.name));
-                return (
-                  <button
-                    key={preset.id}
-                    onClick={() => applyPreset(preset)}
-                    disabled={allApplied || addMut.isPending}
-                    className="flex items-start gap-3 rounded-lg border border-border-light bg-surface-primary p-3 text-left transition-all hover:border-oe-blue/40 hover:bg-oe-blue-subtle/30 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <div
-                      className={`flex h-9 w-9 items-center justify-center rounded-lg shrink-0 ${preset.iconClass}`}
-                    >
-                      <Icon size={16} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-semibold text-content-primary">{preset.name}</p>
-                        {allApplied && (
-                          <span className="inline-flex items-center gap-0.5 text-2xs font-medium text-emerald-600">
-                            <Check size={11} />
-                            {t('boq.applied', { defaultValue: 'Applied' })}
-                          </span>
-                        )}
-                        {someApplied && !allApplied && (
-                          <span className="text-2xs font-medium text-amber-600">
-                            {t('boq.partial', { defaultValue: 'Partial' })}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-2xs text-content-tertiary mt-0.5 line-clamp-2">
-                        {preset.description}
-                      </p>
-                      <div className="mt-1.5 flex flex-wrap gap-1">
-                        {preset.columns.map((c) => (
-                          <span
-                            key={c.name}
-                            className={`inline-block rounded px-1.5 py-0.5 text-2xs ${existingNames.has(c.name) ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'bg-surface-secondary text-content-secondary'}`}
-                          >
-                            {c.display_name}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {getUniversalPresets().map((preset) => renderPresetCard(preset))}
             </div>
+
+            <details className="group mt-4 rounded-xl border border-border-light bg-surface-secondary/30">
+              <summary className="flex cursor-pointer items-center justify-between gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-content-secondary hover:text-content-primary">
+                <span className="flex items-center gap-2">
+                  <Globe size={14} className="text-content-tertiary" />
+                  {t('boq.preset_regional', { defaultValue: 'Regional standards' })}
+                  <span className="rounded-full bg-surface-primary px-1.5 py-0.5 text-2xs font-medium text-content-tertiary">
+                    {getRegionalPresets().length}
+                  </span>
+                </span>
+                <ChevronDown
+                  size={14}
+                  className="text-content-tertiary transition-transform group-open:rotate-180"
+                />
+              </summary>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 p-3 pt-0">
+                {getRegionalPresets().map((preset) => renderPresetCard(preset))}
+              </div>
+            </details>
           </section>
 
           {/* ── Manual add ──────────────────────────────────────────── */}

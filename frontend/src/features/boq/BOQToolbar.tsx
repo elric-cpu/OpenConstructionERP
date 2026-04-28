@@ -20,6 +20,7 @@ import {
   Clock,
   Columns3,
   ListOrdered,
+  Variable as VariableIcon,
   FileSpreadsheet,
   FileText,
   FileDown,
@@ -78,6 +79,8 @@ export interface BOQToolbarProps {
   // Custom columns
   onManageColumns?: () => void;
   customColumnCount?: number;
+  // Per-BOQ named variables ($GFA, $LABOR_RATE, …)
+  onManageVariables?: () => void;
   // Renumber positions (gap-of-10 scheme)
   onRenumber?: () => void;
   isRenumbering?: boolean;
@@ -123,6 +126,7 @@ export function BOQToolbar({
   onPasteFromExcel,
   onManageColumns,
   customColumnCount,
+  onManageVariables,
   onRenumber,
   isRenumbering,
   hasPositions,
@@ -245,7 +249,7 @@ export function BOQToolbar({
           )}
         </div>
         {/* ── Grid Settings dropdown (Columns + Renumber) ─────────────── */}
-        {(onManageColumns || onRenumber) && (
+        {(onManageColumns || onRenumber || onManageVariables) && (
           <div ref={gridSettingsRef} className="relative">
             <Button
               variant="ghost"
@@ -283,12 +287,22 @@ export function BOQToolbar({
                     )}
                   </button>
                 )}
+                {onManageVariables && (
+                  <button
+                    role="menuitem"
+                    onClick={() => { setGridSettingsOpen(false); onManageVariables(); }}
+                    className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-sm text-content-primary hover:bg-surface-secondary transition-colors ${!onManageColumns ? 'rounded-t-lg' : ''}`}
+                  >
+                    <VariableIcon size={15} className="text-content-tertiary" />
+                    {t('boq.manage_variables', { defaultValue: 'Manage Variables' })}
+                  </button>
+                )}
                 {onRenumber && (
                   <button
                     role="menuitem"
                     onClick={() => { setGridSettingsOpen(false); onRenumber(); }}
                     disabled={isRenumbering}
-                    className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-sm text-content-primary hover:bg-surface-secondary transition-colors ${!onManageColumns ? 'rounded-t-lg' : ''} rounded-b-lg ${isRenumbering ? 'opacity-40 pointer-events-none' : ''}`}
+                    className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-sm text-content-primary hover:bg-surface-secondary transition-colors ${!onManageColumns && !onManageVariables ? 'rounded-t-lg' : ''} rounded-b-lg ${isRenumbering ? 'opacity-40 pointer-events-none' : ''}`}
                   >
                     <ListOrdered size={15} className={`text-content-tertiary ${isRenumbering ? 'animate-pulse' : ''}`} />
                     {isRenumbering

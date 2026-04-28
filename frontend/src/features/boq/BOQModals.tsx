@@ -281,6 +281,7 @@ export function CostDatabaseSearchModal({
   onSelectForResources?: (item: CostSearchItem) => void;
 }) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [region, setRegion] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -615,11 +616,49 @@ export function CostDatabaseSearchModal({
               <p className="text-xs text-content-tertiary">{t('common.loading')}</p>
             </div>
           ) : items.length === 0 ? (
-            <div className="px-6 py-8 text-center">
-              <p className="text-sm text-content-tertiary">
-                {t('boq.no_items_found', { defaultValue: 'No matching items found' })}
-              </p>
-            </div>
+            // Two distinct empty states:
+            //   1. No databases imported on this server → guide the user to
+            //      `/costs/import` instead of leaving them stuck on a generic
+            //      "no results" message. Detected by regions list being empty
+            //      AND the user not having narrowed by query.
+            //   2. Databases exist but the current query/region filter has no
+            //      matches → show the original neutral message.
+            regions.length === 0 && query.length < 2 && !region ? (
+              <div className="px-6 py-10 text-center">
+                <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-oe-blue-subtle/40">
+                  <Database size={22} className="text-oe-blue" />
+                </div>
+                <h3 className="mb-1 text-sm font-semibold text-content-primary">
+                  {t('boq.no_databases_title', {
+                    defaultValue: 'No cost database installed yet',
+                  })}
+                </h3>
+                <p className="mx-auto mb-4 max-w-sm text-xs text-content-tertiary">
+                  {t('boq.no_databases_help', {
+                    defaultValue:
+                      "There's no cost-rate database on this server, so search has nothing to show. Import a free CWICR pack — 30 regional databases are one click away.",
+                  })}
+                </p>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    onClose();
+                    navigate('/costs/import');
+                  }}
+                  icon={<Plus size={14} />}
+                >
+                  {t('boq.import_database_cta', {
+                    defaultValue: 'Import a database',
+                  })}
+                </Button>
+              </div>
+            ) : (
+              <div className="px-6 py-8 text-center">
+                <p className="text-sm text-content-tertiary">
+                  {t('boq.no_items_found', { defaultValue: 'No matching items found' })}
+                </p>
+              </div>
+            )
           ) : (
             <table className="w-full text-sm">
               <thead className="bg-surface-tertiary sticky top-0">

@@ -5,6 +5,18 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.24] — 2026-04-28
+
+### Fixed
+- **RBAC: viewers / demo users can now add BOQ positions.** `boq.update` lowered to VIEWER; `boq.create` was already at VIEWER, so the original gate was inconsistent (start a BOQ, can't fill it).
+- 10 new CWICR cost-database regions (au, hr, id, mx, ng, nz, ro, th, vn, za) now show their flag in onboarding and `/costs/import`.
+- Cost-database search modal: when no database is imported, surface a "Import a database" CTA pointing at `/costs/import` instead of a generic "no results" line.
+
+### Added
+- **BOQ preset library 8→14** with regional grouping. Universal: Procurement / Notes / Quality / Sustainability / Status & Scope / Tendering / Schedule. Regional (collapsible): GAEB-AVA, ÖNORM-BRZ, USA CSI MasterFormat, Australia AIQS, Brazil SINAPI, UK NRM2, BIM Integration. Plan: `inherited-knitting-dahl.md` Phase A.
+- **Per-BOQ named variables** ($GFA, $LABOR_RATE …). Backend: `BOQVariable` schema + `GET/PUT /v1/boq/boqs/{id}/variables/`, capped at 50 vars, UPPER_SNAKE_CASE regex, type coercion. Frontend: `BOQVariablesDialog` mounted from Grid Settings dropdown with table editor (name/type/value/description). Plan Phase B; will feed into formula engine in Phase C.
+- 16 new vitest cases for the preset registry (form + backwards-compat for legacy ids); 10 new pytest integration cases for the variables endpoint (round-trip, validation, cap, replace-semantics, type coercion).
+
 ## [2.6.23] — 2026-04-28
 
 ### Added
