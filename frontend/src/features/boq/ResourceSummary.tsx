@@ -59,6 +59,13 @@ export function ResourceSummary({ boqId, locale = 'de-DE' }: { boqId: string; lo
   const [expanded, setExpanded] = useState(false);
   const [typeFilter, setTypeFilter] = useState<ResourceTypeFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  // Issue #106 — Pareto / ABC analysis sort modes.
+  // 'cost' = the canonical order the backend returns (descending total_cost).
+  // 'name' = ascending alphabetical.
+  // 'abc'  = same shape as 'cost' but the user's intent is "show me the
+  //          80/15/5 split" so we keep it descending and the UI lights up
+  //          the A/B/C class boundaries with separator rules.
+  const [sortBy, setSortBy] = useState<'cost' | 'name' | 'abc'>('cost');
   const [savedResources, setSavedResources] = useState<Set<string>>(new Set());
   const [savingResource, setSavingResource] = useState<string | null>(null);
   const addToast = useToastStore((s) => s.addToast);
@@ -194,8 +201,18 @@ export function ResourceSummary({ boqId, locale = 'de-DE' }: { boqId: string; lo
       );
     }
 
+    // Issue #106 — apply user's sort selection. The backend always returns
+    // by descending total_cost (so abc_class assignments stay consistent),
+    // so we only need to override when the user picks 'name'.  We slice
+    // before sorting so we don't mutate the cached query data in place.
+    if (sortBy === 'name') {
+      items = items.slice().sort((a, b) =>
+        a.name.localeCompare(b.name, locale, { sensitivity: 'base' }),
+      );
+    }
+
     return items;
-  }, [summary.resources, typeFilter, searchQuery]);
+  }, [summary.resources, typeFilter, searchQuery, sortBy, locale]);
 
   if (summary.total_resources === 0 && !isLoading && !isError) {
     return null;
@@ -361,8 +378,19 @@ export function ResourceSummary({ boqId, locale = 'de-DE' }: { boqId: string; lo
                     <table className="w-full text-xs border-collapse">
                       <thead>
                         <tr className="border-t border-border-light/50 text-content-quaternary bg-surface-secondary/20">
+                          {/* Sortable name header — clicking toggles between
+                              'name' and 'cost'. Issue #106 spec: "ordenarse
+                              por nombre / por precio / por porcentaje ABC". */}
                           <th className="px-4 py-2 text-left font-medium">
-                            {t('boq.rs_col_name', { defaultValue: 'Name' })}
+                            <button
+                              type="button"
+                              onClick={() => setSortBy(sortBy === 'name' ? 'cost' : 'name')}
+                              className="inline-flex items-center gap-1 hover:text-content-secondary transition-colors"
+                              aria-pressed={sortBy === 'name'}
+                            >
+                              {t('boq.rs_col_name', { defaultValue: 'Name' })}
+                              {sortBy === 'name' && <span aria-hidden="true">↑</span>}
+                            </button>
                           </th>
                           <th className="px-3 py-2 text-left font-medium w-24">
                             {t('boq.rs_col_type', { defaultValue: 'Type' })}
@@ -376,8 +404,38 @@ export function ResourceSummary({ boqId, locale = 'de-DE' }: { boqId: string; lo
                           <th className="px-3 py-2 text-right font-medium w-24">
                             {t('boq.rs_col_avg_rate', { defaultValue: 'Avg Rate' })}
                           </th>
+                          {/* Sortable cost header — toggles back to 'cost'
+                              from any other mode. Default sort. */}
                           <th className="px-3 py-2 text-right font-medium w-28">
-                            {t('boq.rs_col_total_cost', { defaultValue: 'Total Cost' })}
+                            <button
+                              type="button"
+                              onClick={() => setSortBy('cost')}
+                              className="inline-flex items-center gap-1 hover:text-content-secondary transition-colors"
+                              aria-pressed={sortBy === 'cost'}
+                            >
+                              {t('boq.rs_col_total_cost', { defaultValue: 'Total Cost' })}
+                              {sortBy === 'cost' && <span aria-hidden="true">↓</span>}
+                            </button>
+                          </th>
+                          {/* Issue #106 — ABC% column. Click toggles 'abc' /
+                              'cost' (both descending), with the abc mode
+                              also drawing visible separator rules between
+                              the A/B/C buckets so the Pareto split is
+                              instantly readable. */}
+                          <th className="px-3 py-2 text-right font-medium w-20">
+                            <button
+                              type="button"
+                              onClick={() => setSortBy(sortBy === 'abc' ? 'cost' : 'abc')}
+                              className="inline-flex items-center gap-1 hover:text-content-secondary transition-colors"
+                              aria-pressed={sortBy === 'abc'}
+                              title={t('boq.rs_col_abc_tooltip', {
+                                defaultValue:
+                                  'Pareto / ABC analysis — A items make up ~80% of cost, B ~15%, C ~5%. Click to highlight bucket boundaries.',
+                              })}
+                            >
+                              {t('boq.rs_col_abc', { defaultValue: 'ABC %' })}
+                              {sortBy === 'abc' && <span aria-hidden="true">↓</span>}
+                            </button>
                           </th>
                           <th className="px-3 py-2 text-center font-medium w-16">
                             {t('boq.rs_col_positions', { defaultValue: 'Pos.' })}
@@ -388,16 +446,31 @@ export function ResourceSummary({ boqId, locale = 'de-DE' }: { boqId: string; lo
                         </tr>
                       </thead>
                       <tbody>
-                        {visibleResources.map((res, idx) => (
-                          <ResourceRow
-                            key={`${res.name}-${res.type}-${idx}`}
-                            resource={res}
-                            fmt={fmt}
-                            onSaveToCatalog={handleSaveToCatalog}
-                            isSaved={savedResources.has(`${res.type}:${res.name}`)}
-                            onRepickVariant={handleRepickVariant}
-                          />
-                        ))}
+                        {visibleResources.map((res, idx) => {
+                          // Issue #106 — when sorted by ABC and the user is
+                          // viewing the full list (not the preview), draw a
+                          // separator above the first row of each bucket to
+                          // visualise the 80/15/5 split. We compare the
+                          // previous row's class to detect the boundary.
+                          const prevClass = idx > 0 ? visibleResources[idx - 1]?.abc_class ?? null : null;
+                          const showAbcDivider =
+                            sortBy === 'abc' &&
+                            expanded &&
+                            !!res.abc_class &&
+                            prevClass != null &&
+                            res.abc_class !== prevClass;
+                          return (
+                            <ResourceRow
+                              key={`${res.name}-${res.type}-${idx}`}
+                              resource={res}
+                              fmt={fmt}
+                              onSaveToCatalog={handleSaveToCatalog}
+                              isSaved={savedResources.has(`${res.type}:${res.name}`)}
+                              onRepickVariant={handleRepickVariant}
+                              abcDividerAbove={showAbcDivider}
+                            />
+                          );
+                        })}
                       </tbody>
                       {expanded && (
                         <tfoot>
@@ -417,6 +490,17 @@ export function ResourceSummary({ boqId, locale = 'de-DE' }: { boqId: string; lo
                               {fmt.format(
                                 filteredResources.reduce((sum, r) => sum + r.total_cost, 0),
                               )}
+                            </td>
+                            <td className="px-3 py-2 text-right text-xs font-bold text-content-primary tabular-nums">
+                              {/* Σ ABC% should be 100 when nothing is filtered;
+                                  when typeFilter or search excludes rows the
+                                  remaining sum is shown so the user can see how
+                                  much budget the current filter selection
+                                  covers. */}
+                              {filteredResources
+                                .reduce((sum, r) => sum + (r.abc_percentage ?? 0), 0)
+                                .toFixed(1)}
+                              %
                             </td>
                             <td />
                             <td />
@@ -471,12 +555,16 @@ function ResourceRow({
   onSaveToCatalog,
   isSaved,
   onRepickVariant,
+  abcDividerAbove,
 }: {
   resource: ResourceSummaryItem;
   fmt: Intl.NumberFormat;
   onSaveToCatalog: (resource: ResourceSummaryItem) => void;
   isSaved: boolean;
   onRepickVariant: (resource: ResourceSummaryItem, chosen: CostVariant) => void;
+  /** Issue #106 — when true, draw a thicker top border to visualise the
+   *  A→B or B→C boundary in ABC sort mode. */
+  abcDividerAbove?: boolean;
 }) {
   const { t } = useTranslation();
   const badgeStyle = TYPE_BADGE_STYLES[resource.type] || TYPE_BADGE_STYLES.other;
@@ -542,8 +630,28 @@ function ResourceRow({
     });
   })();
 
+  // Issue #106 — colour the ABC bucket pill consistently with other
+  // dashboards: A = red (drives most cost, watch closely),
+  // B = amber (moderate impact), C = green (long tail, lower priority).
+  const abcClass = resource.abc_class ?? null;
+  const abcPct = resource.abc_percentage ?? 0;
+  const abcBadgeClass =
+    abcClass === 'A'
+      ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300 ring-1 ring-rose-500/30'
+      : abcClass === 'B'
+      ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500/30'
+      : abcClass === 'C'
+      ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500/30'
+      : 'bg-surface-tertiary text-content-tertiary ring-1 ring-border-light';
+
   return (
-    <tr className="border-t border-border-light/30 hover:bg-surface-secondary/40 transition-colors group">
+    <tr
+      className={`hover:bg-surface-secondary/40 transition-colors group ${
+        abcDividerAbove
+          ? 'border-t-2 border-content-tertiary/40'
+          : 'border-t border-border-light/30'
+      }`}
+    >
       <td className="px-4 py-2 text-content-primary font-medium">{resource.name}</td>
       <td className="px-3 py-2">
         {hasVariants ? (
@@ -626,6 +734,24 @@ function ResourceRow({
       </td>
       <td className="px-3 py-2 text-right text-content-primary font-semibold tabular-nums">
         {fmt.format(resource.total_cost)}
+      </td>
+      <td className="px-3 py-2 text-right tabular-nums">
+        <span
+          className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold ${abcBadgeClass}`}
+          title={
+            abcClass
+              ? t('boq.rs_abc_pill_tooltip', {
+                  defaultValue:
+                    'Class {{cls}} · {{pct}}% of project resource cost',
+                  cls: abcClass,
+                  pct: abcPct.toFixed(2),
+                })
+              : ''
+          }
+        >
+          {abcClass && <span className="font-bold">{abcClass}</span>}
+          <span>{abcPct.toFixed(1)}%</span>
+        </span>
       </td>
       <td className="px-3 py-2 text-center text-content-tertiary tabular-nums">
         {resource.positions_used}

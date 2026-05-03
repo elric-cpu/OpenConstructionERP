@@ -293,6 +293,12 @@ export interface BOQGridProps {
    * picker. Each entry maps a foreign currency to a rate-to-base.
    */
   fxRates?: { currency: string; rate: number; label?: string }[];
+  /**
+   * Issue #105 — open-handler for the Project Settings → FX Rates page.
+   * Wired by BOQEditorPage to `navigate('/projects/:id/settings#fx-rates')`.
+   * When omitted, the warning badge stays a non-clickable info chip.
+   */
+  onOpenFxRateSettings?: () => void;
   locale: string;
   footerRows: FooterRow[];
   onSelectionChanged?: (selectedIds: string[]) => void;
@@ -366,6 +372,7 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
   currencySymbol,
   currencyCode,
   fxRates,
+  onOpenFxRateSettings,
   locale,
   footerRows,
   onSelectionChanged,
@@ -734,6 +741,7 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
       currencySymbol,
       currencyCode,
       fxRates: fxRates ?? [],
+      onOpenFxRateSettings,
       locale,
       fmt,
       t,
@@ -778,7 +786,7 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
       // because the Quantity column doesn't supply cellEditorParams.
       onFormulaApplied,
     }) as FullGridContext,
-    [currencySymbol, currencyCode, fxRates, locale, fmt, t, collapsedSections, onToggleSection, onAddPosition,
+    [currencySymbol, currencyCode, fxRates, onOpenFxRateSettings, locale, fmt, t, collapsedSections, onToggleSection, onAddPosition,
      expandedPositions, toggleResources, onRemoveResource, onUpdateResource, onUpdateResourceFields,
      onSaveResourceToCatalog, onSaveVariantHeaderToCatalog, onOpenCostDbForPosition, onOpenCatalogForPosition, onRepickResourceVariant,
      openVariantPickerSignal, openVariantPickerFor, clearOpenVariantPicker, openPositionVariantPicker, onUpdateVariantHeader,

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
   Coins,
@@ -310,6 +310,28 @@ export function ProjectSettingsPage() {
     setCustomUnits(project.custom_units ?? []);
   }, [project]);
 
+  // Issue #105 — when navigated here with a hash (e.g. /settings#fx-rates),
+  // scroll the matching Card into view and pulse it briefly so the user
+  // immediately sees where the FX-rate setup lives. Uses requestAnimationFrame
+  // to wait for the page layout to settle (the project query may still be
+  // resolving, in which case the target Card hasn't rendered yet).
+  const location = useLocation();
+  useEffect(() => {
+    if (!location.hash) return;
+    if (!project) return;
+    const id = location.hash.replace(/^#/, '');
+    if (!id) return;
+    requestAnimationFrame(() => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      el.classList.add('ring-2', 'ring-oe-blue', 'ring-offset-2', 'transition-all');
+      window.setTimeout(() => {
+        el.classList.remove('ring-2', 'ring-oe-blue', 'ring-offset-2');
+      }, 2200);
+    });
+  }, [location.hash, project]);
+
   const updateMutation = useMutation({
     mutationFn: (payload: Partial<Project>) => projectsApi.update(projectId!, payload),
     onSuccess: (updated) => {
@@ -489,8 +511,11 @@ export function ProjectSettingsPage() {
         </div>
       </Card>
 
-      {/* ── Additional currencies (#88) ─────────────────────────────────── */}
-      <Card padding="lg">
+      {/* ── Additional currencies (#88, #105) ────────────────────────────── */}
+      {/* The id="fx-rates" anchor is the deep-link target for the BOQ
+          editor's "set FX" warning badge (Issue #105). Removing it would
+          break that quick-access flow. */}
+      <Card padding="lg" id="fx-rates">
         <CardHeader
           title={t('project.settings.fx.title', { defaultValue: 'Additional currencies' })}
           subtitle={t('project.settings.fx.subtitle', {

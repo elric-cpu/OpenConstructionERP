@@ -1281,6 +1281,31 @@ export function BOQEditorPage() {
   const vatAmount = netTotal * vatRate;
   const grossTotal = netTotal + vatAmount;
 
+  /* ── Display currency (Issue #88, follow-up) ──────────────────────────
+   *  The user can flip the grand-total visualisation between the project's
+   *  base currency and any FX-rate'd currency without persisting anything
+   *  server-side. Empty string ⇒ show in base. Non-empty ⇒ show converted.
+   *  Per-section / per-position conversion is intentionally NOT covered
+   *  here — it requires plumbing through the cell renderers and footer
+   *  rows, which is a separate follow-up. The mini-summary grand total
+   *  alone covers the "1 click to see total in USD" use case skolodi
+   *  raised, and the converted value is clearly labelled so it can't be
+   *  confused with the persisted base currency. */
+  const [displayCurrency, setDisplayCurrency] = useState<string>('');
+  const displayCurrencyMeta = useMemo(() => {
+    if (!displayCurrency) return null;
+    const fx = fxRates.find((f) => f.currency === displayCurrency);
+    if (!fx || !Number.isFinite(fx.rate) || fx.rate <= 0) return null;
+    return fx;
+  }, [displayCurrency, fxRates]);
+  // FX rates store rate-to-base, so converting from base → display is
+  // ``base_amount / rate``. Example: base ARS, rate.USD = 1200 ⇒ 12 000 ARS
+  // shown as 10 USD.
+  const grossTotalDisplay = displayCurrencyMeta
+    ? grossTotal / displayCurrencyMeta.rate
+    : grossTotal;
+  const displaySymbol = displayCurrencyMeta ? displayCurrencyMeta.currency : currencySymbol;
+
   /* ── Quality score ───────────────────────────────────────────────── */
 
   const qualityBreakdown = useMemo(
@@ -3115,8 +3140,50 @@ export function BOQEditorPage() {
               <span className="text-border-light">|</span>
             </>
           )}
-          <span className="ml-auto font-medium text-content-primary tabular-nums">
-            {t('boq.grand_total', { defaultValue: 'Grand Total' })}: {currencySymbol} {grossTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          <span className="ml-auto flex items-center gap-2 font-medium text-content-primary tabular-nums">
+            {/* Issue #88 — display currency selector. Renders only when the
+                project has at least one FX rate configured; otherwise stays
+                hidden and the grand total reads as before. The 'Base'
+                option is always present so the user can flip back. */}
+            {fxRates.length > 0 && (
+              <span className="inline-flex items-center gap-1.5 text-2xs text-content-tertiary normal-case">
+                <span>{t('boq.display_in', { defaultValue: 'Display in' })}:</span>
+                <select
+                  value={displayCurrency}
+                  onChange={(e) => setDisplayCurrency(e.target.value)}
+                  aria-label={t('boq.display_currency_aria', {
+                    defaultValue: 'Choose currency for grand total display',
+                  })}
+                  className="bg-surface-elevated border border-border-light rounded px-1 py-0.5 text-content-primary
+                             text-2xs focus:outline-none focus:ring-1 focus:ring-oe-blue/40 cursor-pointer"
+                >
+                  <option value="">
+                    {currencyCode || t('boq.display_base', { defaultValue: 'Base' })}
+                  </option>
+                  {fxRates.map((fx) => (
+                    <option key={fx.currency} value={fx.currency}>
+                      {fx.currency}
+                    </option>
+                  ))}
+                </select>
+              </span>
+            )}
+            <span title={
+              displayCurrencyMeta
+                ? t('boq.grand_total_conversion_tooltip', {
+                    defaultValue:
+                      'Converted from {{base}} via project FX rate {{rate}}. Per-section and per-position conversion follows in a later release.',
+                    base: currencyCode || currencySymbol,
+                    rate: displayCurrencyMeta.rate.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 6,
+                    }),
+                  })
+                : ''
+            }>
+              {t('boq.grand_total', { defaultValue: 'Grand Total' })}: {displaySymbol}{' '}
+              {grossTotalDisplay.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
           </span>
         </div>
         <BOQGrid
@@ -3138,6 +3205,11 @@ export function BOQEditorPage() {
           currencySymbol={currencySymbol}
           currencyCode={currencyCode}
           fxRates={fxRates}
+          onOpenFxRateSettings={
+            boq?.project_id
+              ? () => navigate(`/projects/${boq.project_id}/settings#fx-rates`)
+              : undefined
+          }
           locale={locale}
           footerRows={boqFooterRows}
           onSelectionChanged={handleSelectionChanged}

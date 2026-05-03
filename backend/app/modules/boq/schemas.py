@@ -711,6 +711,17 @@ class ResourceSummaryItem(BaseModel):
     resource_code: str | None = None
     position_refs: list[ResourcePositionRef] = Field(default_factory=list)
 
+    # Issue #106 — Pareto / ABC analysis. ``abc_percentage`` is the share
+    # this resource takes of the total summed cost across the response
+    # (``sum(item.total_cost for item in resources)``), expressed as 0–100.
+    # ``abc_class`` is the conventional A/B/C bucket using the standard
+    # 80/15/5 cumulative thresholds — A = top items that together make up
+    # ~80 % of cost, B = next ~15 %, C = bottom ~5 %. Both fields are
+    # populated server-side after rows are sorted by descending cost so
+    # the frontend just renders without re-summing.
+    abc_percentage: float = 0.0
+    abc_class: str | None = None  # "A" | "B" | "C"
+
 
 class ResourceTypeSummary(BaseModel):
     """Summary statistics for a single resource type."""
@@ -725,6 +736,11 @@ class ResourceSummaryResponse(BaseModel):
     total_resources: int
     by_type: dict[str, ResourceTypeSummary] = Field(default_factory=dict)
     resources: list[ResourceSummaryItem] = Field(default_factory=list)
+    # Issue #106 — sum of every ``resource.total_cost`` in this response.
+    # The frontend uses it to render the ABC dashboard's "Total" column
+    # without recomputing, and to validate that the per-row percentages
+    # sum to 100 (rounding tolerance ≤ 0.01).
+    grand_total: float = 0.0
 
 
 class CO2MaterialBreakdown(BaseModel):

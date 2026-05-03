@@ -5,6 +5,26 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.1] — 2026-05-03
+
+### Added — Pareto / ABC analysis on the resource summary (Issue #106)
+- **`ResourceSummaryItem.abc_percentage` + `abc_class` (A / B / C).** The `/v1/boq/boqs/{boq_id}/resource-summary/` endpoint now returns each aggregated resource's share of the total summed cost (0–100) and its ABC bucket using the conventional 80 / 15 / 5 cumulative thresholds. The response also carries `grand_total` so the frontend doesn't recompute it.
+- **Sortable columns + ABC bucket pills in `ResourceSummary.tsx`.** New "ABC %" column with red / amber / green pills (A = top items driving ~80 % of cost, B = ~15 %, C = ~5 % long tail). The Name / Total Cost / ABC % column headers are now click-to-sort. ABC sort mode draws thicker dividers between A → B and B → C boundaries so the Pareto split is instantly readable when the panel is expanded.
+
+### Added — Display-currency selector for BOQ grand total (Issue #88, MVP)
+- **"Display in: [USD ▾]" picker next to the BOQ mini-summary grand total.** When the project has at least one FX rate configured (Project Settings → FX Rates), users can flip the displayed grand total between the project's base currency and any FX-rate'd currency without persisting anything server-side. The persisted base-currency total is unchanged; this is a render-only conversion. Per-section / per-position display-currency conversion is intentionally a follow-up — the cell-renderer rewrite is bigger than this release. Hover tooltip surfaces the FX rate used so the conversion is auditable.
+
+### Changed — Clickable "set FX" warning on BOQ resources (Issue #105)
+- **The amber `⚠ no FX` badge on a resource row is now a button.** Clicking it routes the user straight to Project Settings → FX Rates with the FX-rate Card scrolled into view and pulsed for 2 s so it's instantly findable. The deep-link target is `Project.fx_rates` (Card `id="fx-rates"`). When `onOpenFxRateSettings` is not wired (e.g. embedded grids), the badge falls back to the previous static `⚠ no FX` chip — graceful degrade, no breakage.
+
+### Verified — Composite-item editor sub-asks (Issue #93)
+- **Centralised FX template** (`Project.fx_rates`) was already wired into the resource-currency picker (`cellRenderers.tsx:3127, 3301-3326`); confirmed every project FX-rate'd currency is offered.
+- **Editable resource type per component** (Material / Labor / Equipment / Operator / Subcontractor / Electricity / Composite / Other) was already supported via `ResourceTypePicker` (`cellRenderers.tsx:3424-3429`, type registry `boqResourceTypes.ts:27-36`).
+- **Custom unit free-text** was already supported by `InlineUnitInput` (`cellRenderers.tsx:2196-2430`); user-typed units land in `User.metadata_["custom_units"]` via `saveCustomUnit()` and merge into the dropdown for future picks.
+
+### Verified — `source: "cwicr"` BOQ position writes (Issue #79)
+- **The schema regex on `PositionCreate.source`** (`backend/app/modules/boq/schemas.py:184`) and `PositionUpdate.source` (line 268) accepts `cwicr` alongside `manual`, `cad_import`, `ai_takeoff`, `gaeb_import`, `excel_import`, `takeoff`, `smart_import`, `smart_import_ai`, `cad_import_ai`, `cost_database`, `assembly`, `enriched`. iModel-driven BOQ pushes can use `source: "cwicr"` and `cost_item_id` directly via the public API.
+
 ## [2.7.0] — 2026-05-03
 
 **Stable release rolling up 14 patch iterations (2.6.41 → 2.7.0).** Single shipping artefact for all platforms (PyPI · git tag · VPS · GitHub release). All entries below — 2.6.42 through 2.6.54 — are part of this release; the per-version sections are kept for changelog continuity but ship as one tag.

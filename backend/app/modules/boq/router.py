@@ -4881,10 +4881,35 @@ async def get_resource_summary(
         by_type[item.type].count += 1
         by_type[item.type].total_cost = round(by_type[item.type].total_cost + item.total_cost, 2)
 
+    # Issue #106 — Pareto / ABC analysis. Items are already sorted by total_cost
+    # descending above, so we walk the cumulative percentage and assign the
+    # standard 80/15/5 buckets. The thresholds are conventional, not
+    # ISO-prescribed; they match the user's "what hurts the budget most" intent
+    # (A = ~top 20 % of items that drive ~80 % of cost). When grand_total is 0
+    # (e.g. fresh BOQ with no rates yet) we skip ABC entirely so we don't
+    # divide by zero.
+    grand_total = round(sum(it.total_cost for it in resource_items), 2)
+    if grand_total > 0:
+        cumulative = 0.0
+        for item in resource_items:
+            pct = (item.total_cost / grand_total) * 100.0
+            item.abc_percentage = round(pct, 2)
+            cumulative += pct
+            # Use the cumulative threshold *before* this item rather than
+            # after — otherwise the single biggest item would always be
+            # classified A even on a flat distribution. Standard practice.
+            if cumulative <= 80.0:
+                item.abc_class = "A"
+            elif cumulative <= 95.0:
+                item.abc_class = "B"
+            else:
+                item.abc_class = "C"
+
     return ResourceSummaryResponse(
         total_resources=len(resource_items),
         by_type=by_type,
         resources=resource_items,
+        grand_total=grand_total,
     )
 
 

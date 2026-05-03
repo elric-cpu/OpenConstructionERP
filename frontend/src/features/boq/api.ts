@@ -482,6 +482,13 @@ export interface ResourceSummaryItem {
    *  that resolve to the same abstract-resource catalog. */
   resource_code?: string | null;
   position_refs?: ResourcePositionRef[];
+  /** Issue #106 — Pareto / ABC analysis. Share of this resource over the
+   *  total summed cost (0–100). Backend computes after sorting items by
+   *  descending cost so cumulative ABC class assignment is well-defined. */
+  abc_percentage?: number;
+  /** "A" | "B" | "C" — ABC bucket using the conventional 80/15/5 cumulative
+   *  thresholds. ``null`` when grand_total is 0 (empty BOQ). */
+  abc_class?: 'A' | 'B' | 'C' | null;
 }
 
 export interface ResourceTypeSummary {
@@ -493,6 +500,8 @@ export interface ResourceSummaryResponse {
   total_resources: number;
   by_type: Record<string, ResourceTypeSummary>;
   resources: ResourceSummaryItem[];
+  /** Issue #106 — sum of every resource.total_cost in this response. */
+  grand_total?: number;
 }
 
 /* ── Sensitivity Analysis types ───────────────────────────────────────── */

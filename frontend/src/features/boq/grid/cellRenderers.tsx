@@ -349,6 +349,10 @@ export interface ResourceGridContext {
    *  ``metadata.variant`` flip directly. ``anchorEl`` is the V button
    *  itself so the popover positions correctly. */
   onOpenPositionVariantPicker?: (positionId: string, anchorEl: HTMLElement | null) => void;
+  /** Issue #105 — when a resource is in a foreign currency that has no FX
+   *  rate configured for the project, the warning badge becomes clickable
+   *  and routes the user straight to Project Settings → FX Rates. */
+  onOpenFxRateSettings?: () => void;
   currencySymbol: string;
   currencyCode: string;
   locale: string;
@@ -3578,17 +3582,44 @@ export function EditableResourceRow({ data, ctx, colWidths }: { data: Record<str
         title={totalTitle}
       >
         {isForeign && !hasFxRate && (
-          <span
-            className="inline-flex items-center justify-center h-3 px-1 rounded
-                       text-[8px] font-bold uppercase
-                       bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
-            title={ctx.t('boq.resource_no_fx_rate', {
-              defaultValue: 'No FX rate configured for {{code}} — total shown in {{code}}',
-              code: resourceCurrency,
-            })}
-          >
-            ⚠ no FX
-          </span>
+          ctx.onOpenFxRateSettings ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                ctx.onOpenFxRateSettings?.();
+              }}
+              className="inline-flex items-center justify-center h-3 px-1 rounded
+                         text-[8px] font-bold uppercase cursor-pointer
+                         bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300
+                         hover:bg-amber-200 hover:text-amber-900
+                         dark:hover:bg-amber-800/60 dark:hover:text-amber-100
+                         focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-500
+                         transition-colors"
+              title={ctx.t('boq.resource_no_fx_rate_click', {
+                defaultValue: 'No FX rate configured for {{code}} — click to set one in Project Settings',
+                code: resourceCurrency,
+              })}
+              aria-label={ctx.t('boq.resource_no_fx_rate_click', {
+                defaultValue: 'No FX rate configured for {{code}} — click to set one in Project Settings',
+                code: resourceCurrency,
+              })}
+            >
+              ⚠ {ctx.t('boq.resource_no_fx_short', { defaultValue: 'set FX' })}
+            </button>
+          ) : (
+            <span
+              className="inline-flex items-center justify-center h-3 px-1 rounded
+                         text-[8px] font-bold uppercase
+                         bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+              title={ctx.t('boq.resource_no_fx_rate', {
+                defaultValue: 'No FX rate configured for {{code}} — total shown in {{code}}',
+                code: resourceCurrency,
+              })}
+            >
+              ⚠ no FX
+            </span>
+          )
         )}
         <span>{formattedTotal}</span>
       </span>
