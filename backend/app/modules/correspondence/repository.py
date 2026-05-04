@@ -1,4 +1,4 @@
-"""Correspondence data access layer."""
+"""‌⁠‍Correspondence data access layer."""
 
 import uuid
 
@@ -9,7 +9,7 @@ from app.modules.correspondence.models import Correspondence
 
 
 class CorrespondenceRepository:
-    """Data access for Correspondence models."""
+    """‌⁠‍Data access for Correspondence models."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -40,7 +40,7 @@ class CorrespondenceRepository:
         return list(result.scalars().all()), total
 
     async def next_reference_number(self, project_id: uuid.UUID) -> str:
-        """Generate the next reference number using MAX to avoid collisions after deletions."""
+        """‌⁠‍Generate the next reference number using MAX to avoid collisions after deletions."""
         stmt = (
             select(func.max(Correspondence.reference_number))
             .where(Correspondence.project_id == project_id)

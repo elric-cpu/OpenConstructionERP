@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Region boost — rewards candidates from the project's region.
+"""‌⁠‍Region boost — rewards candidates from the project's region.
 
 CWICR ships one regional file per market (``DE_BERLIN``, ``GB_LONDON``,
 ``USA_NEWYORK``, ...). When the project says "DACH" the matcher should
@@ -59,7 +59,7 @@ _REGION_PREFIXES: dict[str, tuple[str, ...]] = {
 
 
 def _project_region_prefixes(settings: Any) -> tuple[str, ...]:
-    """Resolve the region-prefix tuple from project / match settings.
+    """‌⁠‍Resolve the region-prefix tuple from project / match settings.
 
     The project's ``region`` field (``"DACH"`` / ``"UK"`` / ``"DE_BERLIN"``)
     is the primary signal; we fold it lowercase and look up the prefix
@@ -96,7 +96,7 @@ def boost(
     candidate: MatchCandidate,
     settings: Any,
 ) -> dict[str, float]:
-    """Add region-match boost when the candidate's region matches."""
+    """‌⁠‍Add region-match boost when the candidate's region matches."""
     cand_region = (candidate.region_code or "").strip().upper()
     if not cand_region:
         return {}

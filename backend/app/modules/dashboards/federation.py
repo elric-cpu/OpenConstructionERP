@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Multi-Source Project Federation (T10 / task #193).
+"""‌⁠‍Multi-Source Project Federation (T10 / task #193).
 
 Federation lets a single dashboard query span N snapshots — one or more
 per project — and aggregate rows across all of them while preserving the
@@ -83,11 +83,11 @@ logger = logging.getLogger(__name__)
 
 
 SchemaAlignMode = Literal["intersect", "union", "strict"]
-"""How to reconcile heterogeneous snapshot schemas across a federation."""
+"""‌⁠‍How to reconcile heterogeneous snapshot schemas across a federation."""
 
 
 PROVENANCE_PROJECT_COL = "__project_id"
-"""Reserved provenance column carrying the source snapshot's project id.
+"""‌⁠‍Reserved provenance column carrying the source snapshot's project id.
 
 Underscored prefix mirrors DuckDB's convention for system/internal
 columns and keeps the federation columns from colliding with user

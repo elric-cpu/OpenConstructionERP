@@ -1,4 +1,4 @@
-"""Build a multi-sheet Excel that joins demo-form signups (marketing
+"""‌⁠‍Build a multi-sheet Excel that joins demo-form signups (marketing
    funnel) with actual ERP user accounts and their activity counts.
 
    Sheets:

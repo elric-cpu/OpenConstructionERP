@@ -82,7 +82,7 @@ export function PresetPicker({ projectId, snapshot, onSelect }: PresetPickerProp
         data-testid="preset-picker-trigger"
       >
         <Bookmark className="mr-1 h-3 w-3" />
-        {t('dashboards.presets_button', { defaultValue: 'Presets' })}
+        {t('dashboards.presets_button', { defaultValue: 'Presets‌⁠‍' })}
       </Button>
 
       {open && (
@@ -93,7 +93,7 @@ export function PresetPicker({ projectId, snapshot, onSelect }: PresetPickerProp
         >
           {presetsQuery.isLoading && (
             <div className="p-3 text-xs text-content-tertiary">
-              {t('common.loading', { defaultValue: 'Loading…' })}
+              {t('common.loading', { defaultValue: 'Loading…‌⁠‍' })}
             </div>
           )}
 
@@ -101,18 +101,18 @@ export function PresetPicker({ projectId, snapshot, onSelect }: PresetPickerProp
             <>
               <PresetGroup
                 title={t('dashboards.my_presets', {
-                  defaultValue: 'My presets',
+                  defaultValue: 'My presets‌⁠‍',
                 })}
                 presets={myPresets}
                 onSelect={handleSelect}
                 emptyHint={t('dashboards.no_presets', {
-                  defaultValue: 'No saved presets yet.',
+                  defaultValue: 'No saved presets yet.‌⁠‍',
                 })}
                 testIdPrefix="my-preset"
               />
               <PresetGroup
                 title={t('dashboards.shared_collections', {
-                  defaultValue: 'Shared collections',
+                  defaultValue: 'Shared collections‌⁠‍',
                 })}
                 presets={collections}
                 onSelect={handleSelect}

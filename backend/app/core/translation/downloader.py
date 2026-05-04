@@ -1,4 +1,4 @@
-"""On-demand downloaders for MUSE bilingual dictionaries and IATE dumps.
+"""‌⁠‍On-demand downloaders for MUSE bilingual dictionaries and IATE dumps.
 
 The user triggers these from the UI — we never download anything at boot
 or at first use. Both targets land as TSVs in
@@ -66,7 +66,7 @@ _IATE_ALLOWED_PREFIXES: tuple[str, ...] = (
 
 
 def _iate_allowlist() -> tuple[str, ...]:
-    """Resolve the IATE allowlist at call time so env-var overrides are honored."""
+    """‌⁠‍Resolve the IATE allowlist at call time so env-var overrides are honored."""
     import os  # noqa: PLC0415 — lazy so tests can monkeypatch via env
 
     extra_raw = os.environ.get("OE_IATE_EXTRA_HOSTS", "")
@@ -94,7 +94,7 @@ async def download_muse_pair(
     root: str | None = None,
     on_progress: ProgressCallback | None = None,
 ) -> Path:
-    """Download a MUSE bilingual dictionary and convert it to TSV.
+    """‌⁠‍Download a MUSE bilingual dictionary and convert it to TSV.
 
     Args:
         src: ISO-639 source code (lowercase).

@@ -107,13 +107,13 @@ function getValidationTooltip(
 ): string {
   switch (status) {
     case 'passed':
-      return t('boq.validation_passed', { defaultValue: 'Validation passed — position is complete' });
+      return t('boq.validation_passed', { defaultValue: 'Validation passed — position is complete‌⁠‍' });
     case 'warnings':
-      return t('boq.validation_warnings', { defaultValue: 'Validation warnings — review recommended' });
+      return t('boq.validation_warnings', { defaultValue: 'Validation warnings — review recommended‌⁠‍' });
     case 'errors':
-      return t('boq.validation_errors', { defaultValue: 'Validation errors — action required' });
+      return t('boq.validation_errors', { defaultValue: 'Validation errors — action required‌⁠‍' });
     case 'pending':
-      return t('boq.validation_pending', { defaultValue: 'Validation pending — not yet checked' });
+      return t('boq.validation_pending', { defaultValue: 'Validation pending — not yet checked‌⁠‍' });
     default:
       return status;
   }
@@ -192,7 +192,7 @@ export function SectionFullWidthRenderer(params: ICellRendererParams) {
                    text-content-secondary hover:text-content-primary
                    hover:bg-surface-tertiary/80 transition-colors"
         title={isCollapsed
-          ? t('boq.expand_section', { defaultValue: 'Expand section' })
+          ? t('boq.expand_section', { defaultValue: 'Expand section‌⁠‍' })
           : t('boq.collapse_section', { defaultValue: 'Collapse section' })
         }
       >

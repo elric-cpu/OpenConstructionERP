@@ -1,4 +1,4 @@
-"""Procurement ORM models.
+"""‌⁠‍Procurement ORM models.
 
 Tables:
     oe_procurement_po           — purchase orders
@@ -16,7 +16,7 @@ from app.database import GUID, Base
 
 
 class PurchaseOrder(Base):
-    """A purchase order linked to a project and vendor."""
+    """‌⁠‍A purchase order linked to a project and vendor."""
 
     __tablename__ = "oe_procurement_po"
 
@@ -63,7 +63,7 @@ class PurchaseOrder(Base):
 
 
 class PurchaseOrderItem(Base):
-    """A single line item within a purchase order."""
+    """‌⁠‍A single line item within a purchase order."""
 
     __tablename__ = "oe_procurement_po_item"
 

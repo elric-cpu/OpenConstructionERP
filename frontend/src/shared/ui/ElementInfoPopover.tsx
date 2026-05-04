@@ -158,11 +158,11 @@ function sourceLabel(
 ): string {
   switch (source) {
     case 'bim':
-      return t('element_info.source_bim', { defaultValue: 'BIM Element' });
+      return t('element_info.source_bim', { defaultValue: 'BIM Element‌⁠‍' });
     case 'dwg':
-      return t('element_info.source_dwg', { defaultValue: 'DWG Entity' });
+      return t('element_info.source_dwg', { defaultValue: 'DWG Entity‌⁠‍' });
     case 'pdf':
-      return t('element_info.source_pdf', { defaultValue: 'PDF Measurement' });
+      return t('element_info.source_pdf', { defaultValue: 'PDF Measurement‌⁠‍' });
   }
 }
 
@@ -269,7 +269,7 @@ export function ElementInfoPopover({
       <div className="max-h-64 overflow-y-auto">
         {rows.length === 0 ? (
           <div className="px-4 py-3 text-[11px] text-content-tertiary italic">
-            {t('element_info.no_properties', { defaultValue: 'No numeric properties available.' })}
+            {t('element_info.no_properties', { defaultValue: 'No numeric properties available.‌⁠‍' })}
           </div>
         ) : (
           <table className="w-full text-[11px]">
@@ -306,7 +306,7 @@ export function ElementInfoPopover({
             className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-oe-blue px-3 py-1.5 text-[11px] font-semibold text-white shadow-sm hover:bg-oe-blue-dark transition-colors"
           >
             <Link2 size={12} />
-            {t('element_info.link_to_boq', { defaultValue: 'Link to BOQ' })}
+            {t('element_info.link_to_boq', { defaultValue: 'Link to BOQ‌⁠‍' })}
           </button>
         </div>
       )}

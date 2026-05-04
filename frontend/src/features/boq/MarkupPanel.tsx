@@ -78,10 +78,10 @@ export function MarkupPanel({ boqId, markups, directCost, currencySymbol, curren
     mutationFn: (data: CreateMarkupData) => boqApi.addMarkup(boqId, data),
     onSuccess: () => {
       invalidate();
-      addToast({ type: 'success', title: t('boq.markup_added', { defaultValue: 'Markup added' }) });
+      addToast({ type: 'success', title: t('boq.markup_added', { defaultValue: 'Markup added‌⁠‍' }) });
     },
     onError: (err: Error) => {
-      addToast({ type: 'error', title: t('boq.markup_add_failed', { defaultValue: 'Failed to add markup' }), message: err.message });
+      addToast({ type: 'error', title: t('boq.markup_add_failed', { defaultValue: 'Failed to add markup‌⁠‍' }), message: err.message });
     },
   });
 
@@ -90,7 +90,7 @@ export function MarkupPanel({ boqId, markups, directCost, currencySymbol, curren
       boqApi.updateMarkup(boqId, markupId, data),
     onSuccess: () => invalidate(),
     onError: (err: Error) => {
-      addToast({ type: 'error', title: t('boq.markup_update_failed', { defaultValue: 'Failed to update markup' }), message: err.message });
+      addToast({ type: 'error', title: t('boq.markup_update_failed', { defaultValue: 'Failed to update markup‌⁠‍' }), message: err.message });
     },
   });
 
@@ -98,10 +98,10 @@ export function MarkupPanel({ boqId, markups, directCost, currencySymbol, curren
     mutationFn: (markupId: string) => boqApi.deleteMarkup(boqId, markupId),
     onSuccess: () => {
       invalidate();
-      addToast({ type: 'success', title: t('boq.markup_deleted', { defaultValue: 'Markup deleted' }) });
+      addToast({ type: 'success', title: t('boq.markup_deleted', { defaultValue: 'Markup deleted‌⁠‍' }) });
     },
     onError: (err: Error) => {
-      addToast({ type: 'error', title: t('boq.markup_delete_failed', { defaultValue: 'Failed to delete markup' }), message: err.message });
+      addToast({ type: 'error', title: t('boq.markup_delete_failed', { defaultValue: 'Failed to delete markup‌⁠‍' }), message: err.message });
     },
   });
 

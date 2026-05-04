@@ -180,17 +180,17 @@ function CreateInspectionModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-2xl bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true" aria-label={t('inspections.new_inspection', { defaultValue: 'New Inspection' })}>
+      <div className="w-full max-w-2xl bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true" aria-label={t('inspections.new_inspection', { defaultValue: 'New Inspection‌⁠‍' })}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border-light">
           <div>
             <h2 className="text-lg font-semibold text-content-primary">
-              {t('inspections.new_inspection', { defaultValue: 'New Inspection' })}
+              {t('inspections.new_inspection', { defaultValue: 'New Inspection‌⁠‍' })}
             </h2>
             {projectName && (
               <p className="text-xs text-content-tertiary mt-0.5">
                 {t('common.creating_in_project', {
-                  defaultValue: 'In {{project}}',
+                  defaultValue: 'In {{project}}‌⁠‍',
                   project: projectName,
                 })}
               </p>
@@ -210,7 +210,7 @@ function CreateInspectionModal({
           {/* ── Inspection Type ── */}
           <div>
             <label className="block text-sm font-medium text-content-primary mb-2">
-              {t('inspections.field_type', { defaultValue: 'Inspection Type' })}
+              {t('inspections.field_type', { defaultValue: 'Inspection Type‌⁠‍' })}
             </label>
             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
               {INSPECTION_TYPES.map((it) => {
@@ -245,7 +245,7 @@ function CreateInspectionModal({
           <div className="flex items-center gap-2 pt-2 pb-1">
             <ClipboardCheck size={14} className="text-content-tertiary" />
             <span className="text-xs font-semibold uppercase tracking-wider text-content-tertiary">
-              {t('inspections.section_details', { defaultValue: 'Inspection Details' })}
+              {t('inspections.section_details', { defaultValue: 'Inspection Details‌⁠‍' })}
             </span>
             <div className="flex-1 h-px bg-border-light" />
           </div>

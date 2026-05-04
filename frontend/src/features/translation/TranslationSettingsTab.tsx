@@ -99,13 +99,13 @@ function formatBytes(bytes: number): string {
 function formatRelative(epochSeconds: number, t: (k: string, o?: Record<string, unknown>) => string): string {
   if (!Number.isFinite(epochSeconds) || epochSeconds <= 0) return '—';
   const diffMs = Date.now() - epochSeconds * 1000;
-  if (diffMs < 0) return t('common.just_now', { defaultValue: 'just now' });
+  if (diffMs < 0) return t('common.just_now', { defaultValue: 'just now‌⁠‍' });
   const seconds = Math.round(diffMs / 1000);
-  if (seconds < 60) return t('common.just_now', { defaultValue: 'just now' });
+  if (seconds < 60) return t('common.just_now', { defaultValue: 'just now‌⁠‍' });
   const minutes = Math.round(seconds / 60);
   if (minutes < 60) {
     return t('common.minutes_ago', {
-      defaultValue: '{{count}} minute ago',
+      defaultValue: '{{count}} minute ago‌⁠‍',
       defaultValue_plural: '{{count}} minutes ago',
       count: minutes,
     });
@@ -113,7 +113,7 @@ function formatRelative(epochSeconds: number, t: (k: string, o?: Record<string, 
   const hours = Math.round(minutes / 60);
   if (hours < 24) {
     return t('common.hours_ago', {
-      defaultValue: '{{count}} hour ago',
+      defaultValue: '{{count}} hour ago‌⁠‍',
       defaultValue_plural: '{{count}} hours ago',
       count: hours,
     });
@@ -121,7 +121,7 @@ function formatRelative(epochSeconds: number, t: (k: string, o?: Record<string, 
   const days = Math.round(hours / 24);
   if (days < 30) {
     return t('common.days_ago', {
-      defaultValue: '{{count}} day ago',
+      defaultValue: '{{count}} day ago‌⁠‍',
       defaultValue_plural: '{{count}} days ago',
       count: days,
     });

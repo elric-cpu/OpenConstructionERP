@@ -1,4 +1,4 @@
-"""Base classes for BIM requirement parsers.
+"""‌⁠‍Base classes for BIM requirement parsers.
 
 Defines UniversalRequirement, ParseResult, and the BaseRequirementParser ABC
 that every format-specific parser must extend.
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class UniversalRequirement:
-    """Normalized BIM requirement -- the 5-column universal model.
+    """‌⁠‍Normalized BIM requirement -- the 5-column universal model.
 
     Attributes:
         element_filter: Which element (IFC class, classification, ...).
@@ -41,7 +41,7 @@ class UniversalRequirement:
         self.raw_source = raw_source or {}
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize to a plain dictionary."""
+        """‌⁠‍Serialize to a plain dictionary."""
         return {
             "element_filter": self.element_filter,
             "property_group": self.property_group,

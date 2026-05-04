@@ -79,14 +79,14 @@ export function SnapshotsPage() {
       });
       toast({
         type: 'success',
-        title: t('dashboards.snapshot_deleted', { defaultValue: 'Snapshot deleted' }),
+        title: t('dashboards.snapshot_deleted', { defaultValue: 'Snapshot deleted‌⁠‍' }),
       });
     },
     onError: (err: Error) => {
       toast({
         type: 'error',
         title: t('dashboards.snapshot_delete_failed', {
-          defaultValue: 'Failed to delete snapshot',
+          defaultValue: 'Failed to delete snapshot‌⁠‍',
         }),
         message: err.message,
       });
@@ -98,9 +98,9 @@ export function SnapshotsPage() {
       setCreateOpen(false);
       toast({
         type: 'success',
-        title: t('dashboards.snapshot_created', { defaultValue: 'Snapshot created' }),
+        title: t('dashboards.snapshot_created', { defaultValue: 'Snapshot created‌⁠‍' }),
         message: t('dashboards.snapshot_created_detail', {
-          defaultValue: '{{entities}} entities · {{categories}} categories',
+          defaultValue: '{{entities}} entities · {{categories}} categories‌⁠‍',
           entities: formatNumber(snap.total_entities),
           categories: formatNumber(snap.total_categories),
         }),
@@ -114,7 +114,7 @@ export function SnapshotsPage() {
       <div className="space-y-4 p-4">
         <EmptyState
           icon={<FolderOpen className="h-10 w-10 text-neutral-500" />}
-          title={t('dashboards.no_project_title', { defaultValue: 'Select a project first' })}
+          title={t('dashboards.no_project_title', { defaultValue: 'Select a project first‌⁠‍' })}
           description={t('dashboards.no_project_desc', {
             defaultValue:
               'Snapshots are scoped to a project. Pick one from the Projects page to continue.',

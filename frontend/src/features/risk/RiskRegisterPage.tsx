@@ -45,11 +45,11 @@ const STATUSES = ['identified', 'assessed', 'mitigating', 'closed', 'occurred'];
 const PROB_LEVELS = ['0.9', '0.7', '0.5', '0.3', '0.1'];
 function getProbLabels(t: (key: string, opts?: Record<string, unknown>) => string): Record<string, string> {
   return {
-    '0.9': t('risk.probability_very_high', { defaultValue: 'Very High' }),
+    '0.9': t('risk.probability_very_high', { defaultValue: 'Very High‌⁠‍' }),
     '0.7': t('risk.probability_high', { defaultValue: 'High' }),
-    '0.5': t('risk.probability_medium', { defaultValue: 'Medium' }),
+    '0.5': t('risk.probability_medium', { defaultValue: 'Medium‌⁠‍' }),
     '0.3': t('risk.probability_low', { defaultValue: 'Low' }),
-    '0.1': t('risk.probability_very_low', { defaultValue: 'Very Low' }),
+    '0.1': t('risk.probability_very_low', { defaultValue: 'Very Low‌⁠‍' }),
   };
 }
 const IMPACT_LEVELS = ['low', 'medium', 'high', 'critical'];
@@ -90,12 +90,12 @@ function RiskMatrix({ cells }: { cells: MatrixCell[] }) {
 
   return (
     <Card className="p-4">
-      <h3 className="text-sm font-semibold text-content-primary mb-3">{t('risk.matrix', { defaultValue: 'Risk Matrix' })}</h3>
+      <h3 className="text-sm font-semibold text-content-primary mb-3">{t('risk.matrix', { defaultValue: 'Risk Matrix‌⁠‍' })}</h3>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
             <tr>
-              <th className="p-1 text-left text-content-tertiary w-20">{t('risk.probability', { defaultValue: 'Probability' })}</th>
+              <th className="p-1 text-left text-content-tertiary w-20">{t('risk.probability', { defaultValue: 'Probability‌⁠‍' })}</th>
               {IMPACT_LEVELS.map((i) => <th key={i} className="p-1 text-center text-content-tertiary capitalize">{t(`risk.impact_${i}`, { defaultValue: i })}</th>)}
             </tr>
           </thead>

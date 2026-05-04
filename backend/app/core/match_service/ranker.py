@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Core ranker — translation → vector search → boost stack → ranked output.
+"""‌⁠‍Core ranker — translation → vector search → boost stack → ranked output.
 
 Pipeline (no LLM):
 
@@ -94,7 +94,7 @@ async def _resolve_catalog_status(
     db,
     catalog_id: str | None,
 ) -> tuple[MatchStatus, int, int]:
-    """Resolve the ``catalog_id`` to a structured (status, count, vec) tuple.
+    """‌⁠‍Resolve the ``catalog_id`` to a structured (status, count, vec) tuple.
 
     Returns:
         ``("ok", sql_count, vector_count)``           — catalogue ready to search.
@@ -171,7 +171,7 @@ async def _resolve_catalog_status(
 
 
 def _format_props(props: dict[str, Any], limit: int = 6) -> str:
-    """Stringify the most useful properties into a short ``key:value`` blob.
+    """‌⁠‍Stringify the most useful properties into a short ``key:value`` blob.
 
     Embedding noise grows fast with token count, so we cap at ``limit``
     properties chosen by a stable order — material first (it's the

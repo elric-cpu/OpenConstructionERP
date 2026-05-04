@@ -179,7 +179,7 @@ const RangeIndicator = memo(function RangeIndicator({
           className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-5 w-5 rounded-full border-2 border-white shadow-sm ${colors.indicator}`}
           style={{ left: `${indicatorPct}%` }}
           title={t('costmodel.benchmark_current_cost', {
-            defaultValue: 'Current: {{value}}/m\u00B2',
+            defaultValue: 'Current: {{value}}/m\u00B2‌⁠‍',
             value: formatCurrencyValue(costPerM2, 'EUR'),
           })}
         />
@@ -220,18 +220,18 @@ export const CostBenchmark = memo(function CostBenchmark({ totalBudget, currency
     if (!benchmark) return '';
     switch (benchmark.status) {
       case 'within':
-        return t('costmodel.benchmark_status_within', { defaultValue: 'Within range' });
+        return t('costmodel.benchmark_status_within', { defaultValue: 'Within range‌⁠‍' });
       case 'near_edge':
-        return t('costmodel.benchmark_status_near_edge', { defaultValue: 'Near boundary' });
+        return t('costmodel.benchmark_status_near_edge', { defaultValue: 'Near boundary‌⁠‍' });
       case 'outside':
-        return t('costmodel.benchmark_status_outside', { defaultValue: 'Outside range' });
+        return t('costmodel.benchmark_status_outside', { defaultValue: 'Outside range‌⁠‍' });
     }
   }, [benchmark, t]);
 
   return (
     <Card>
       <CardHeader
-        title={t('costmodel.benchmark_title', { defaultValue: 'Cost per m\u00B2 Benchmark' })}
+        title={t('costmodel.benchmark_title', { defaultValue: 'Cost per m\u00B2 Benchmark‌⁠‍' })}
       />
       <CardContent>
         <div className="space-y-5">

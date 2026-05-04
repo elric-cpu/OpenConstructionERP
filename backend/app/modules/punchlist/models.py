@@ -1,4 +1,4 @@
-"""Punch List ORM models.
+"""‌⁠‍Punch List ORM models.
 
 Tables:
     oe_punchlist_item — punch list items tracking construction deficiencies
@@ -13,7 +13,7 @@ from app.database import GUID, Base
 
 
 class PunchItem(Base):
-    """Punch list entry tracking a construction deficiency or quality issue."""
+    """‌⁠‍Punch list entry tracking a construction deficiency or quality issue."""
 
     __tablename__ = "oe_punchlist_item"
 

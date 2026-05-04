@@ -139,9 +139,9 @@ export default function LinkRequirementToDwgModal({
     onSuccess: (count) => {
       addToast({
         type: 'success',
-        title: t('dwg_takeoff.req_linked_title', { defaultValue: 'Requirement linked' }),
+        title: t('dwg_takeoff.req_linked_title', { defaultValue: 'Requirement linked‌⁠‍' }),
         message: t('dwg_takeoff.req_linked_msg', {
-          defaultValue: 'Pinned to {{count}} DWG entity/entities',
+          defaultValue: 'Pinned to {{count}} DWG entity/entities‌⁠‍',
           count,
         }),
       });
@@ -178,13 +178,13 @@ export default function LinkRequirementToDwgModal({
           <div className="flex items-center gap-2">
             <ClipboardCheck size={16} className="text-violet-600" />
             <h2 className="text-sm font-semibold text-content-primary">
-              {t('dwg_takeoff.link_req_title', { defaultValue: 'Link a requirement' })}
+              {t('dwg_takeoff.link_req_title', { defaultValue: 'Link a requirement‌⁠‍' })}
             </h2>
             <span className="text-[11px] text-content-tertiary">
               {entityIds.length === 1
-                ? '→ ' + (entityLabel || t('dwg_takeoff.entity', { defaultValue: 'Entity' }))
+                ? '→ ' + (entityLabel || t('dwg_takeoff.entity', { defaultValue: 'Entity‌⁠‍' }))
                 : t('dwg_takeoff.link_req_bulk', {
-                    defaultValue: '→ {{count}} entities',
+                    defaultValue: '→ {{count}} entities‌⁠‍',
                     count: entityIds.length,
                   })}
             </span>

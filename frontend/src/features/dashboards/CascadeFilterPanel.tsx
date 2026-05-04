@@ -161,12 +161,12 @@ export function CascadeFilterPanel({
           <span data-testid="cascade-row-count">
             {rowCountQuery.data
               ? t('dashboards.cascade.rows_match', {
-                  defaultValue: '{{matched}} of {{total}} rows match',
+                  defaultValue: '{{matched}} of {{total}} rows match‌⁠‍',
                   matched: rowCountQuery.data.matched.toLocaleString(),
                   total: rowCountQuery.data.total.toLocaleString(),
                 })
               : t('dashboards.cascade.rows_loading', {
-                  defaultValue: 'Counting rows…',
+                  defaultValue: 'Counting rows…‌⁠‍',
                 })}
           </span>
         </div>
@@ -179,7 +179,7 @@ export function CascadeFilterPanel({
         >
           <RotateCcw className="h-3 w-3" />
           {t('dashboards.cascade.reset_all', {
-            defaultValue: 'Reset all filters',
+            defaultValue: 'Reset all filters‌⁠‍',
           })}
         </button>
       </div>
@@ -312,7 +312,7 @@ function CascadeFilterCard({
                 type="button"
                 onClick={() => onRemoveChip(chip)}
                 disabled={disabled}
-                aria-label={t('common.remove', { defaultValue: 'Remove' })}
+                aria-label={t('common.remove', { defaultValue: 'Remove‌⁠‍' })}
                 className="rounded p-0.5 hover:bg-oe-blue/25 disabled:opacity-40"
                 data-testid={`cascade-chip-x-${column}-${chip}`}
               >
@@ -331,7 +331,7 @@ function CascadeFilterCard({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t('dashboards.cascade.search_ph', {
-            defaultValue: 'Search values…',
+            defaultValue: 'Search values…‌⁠‍',
           })}
           disabled={disabled}
           className="w-full rounded border border-border-light bg-surface-primary px-7 py-1.5 text-sm text-content-primary placeholder:text-content-tertiary focus:border-oe-blue focus:outline-none focus:ring-1 focus:ring-oe-blue disabled:opacity-50"

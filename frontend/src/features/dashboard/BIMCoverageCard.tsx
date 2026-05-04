@@ -135,13 +135,13 @@ export default function BIMCoverageCard() {
           <div>
             <h3 className="text-sm font-semibold text-content-primary">
               {t('dashboard.bim_coverage_title', {
-                defaultValue: 'BIM Integration Coverage',
+                defaultValue: 'BIM Integration Coverage‌⁠‍',
               })}
             </h3>
             <p className="text-xs text-content-tertiary">
               {t('dashboard.bim_coverage_subtitle', {
                 defaultValue:
-                  '{{count}} elements across all BIM models in this project',
+                  '{{count}} elements across all BIM models in this project‌⁠‍',
                 count: totalElements,
               })}
             </p>
@@ -152,7 +152,7 @@ export default function BIMCoverageCard() {
             {headlinePercent}%
           </div>
           <div className="text-[10px] uppercase tracking-wider text-content-quaternary">
-            {t('dashboard.bim_coverage_headline', { defaultValue: 'avg coverage' })}
+            {t('dashboard.bim_coverage_headline', { defaultValue: 'avg coverage‌⁠‍' })}
           </div>
         </div>
       </div>
@@ -161,7 +161,7 @@ export default function BIMCoverageCard() {
         <MetricRow
           icon={<Link2 size={12} className="text-blue-600" />}
           label={t('dashboard.bim_linked_boq', {
-            defaultValue: 'Linked to BOQ',
+            defaultValue: 'Linked to BOQ‌⁠‍',
           })}
           count={data.elements_linked_to_boq}
           total={totalElements}
@@ -170,7 +170,7 @@ export default function BIMCoverageCard() {
         />
         <MetricRow
           icon={<ShieldCheck size={12} className="text-emerald-600" />}
-          label={t('dashboard.bim_costed', { defaultValue: 'Costed' })}
+          label={t('dashboard.bim_costed', { defaultValue: 'Costed‌⁠‍' })}
           count={data.elements_costed}
           total={totalElements}
           percent={data.percent_costed}

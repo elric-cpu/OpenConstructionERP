@@ -1,4 +1,4 @@
-"""RFQ Bidding API routes.
+"""‌⁠‍RFQ Bidding API routes.
 
 Endpoints:
     GET    /                       — List RFQs (requires rfq.read + project access)
@@ -44,7 +44,7 @@ async def _verify_project_access(
     user_id: str,
     payload: dict | None = None,
 ) -> None:
-    """Verify the current user owns (or is admin on) the given project.
+    """‌⁠‍Verify the current user owns (or is admin on) the given project.
 
     Adapted from ``erp_chat.tools._require_project_access``. Central
     choke-point: every project-scoped RFQ endpoint must call this.
@@ -74,7 +74,7 @@ async def _verify_rfq_access(
     user_id: str,
     payload: dict | None = None,
 ) -> "object":
-    """Load an RFQ and verify the user has access to its project.
+    """‌⁠‍Load an RFQ and verify the user has access to its project.
 
     Returns the loaded RFQ for reuse by callers.
     """

@@ -1,4 +1,4 @@
-"""BOQ Pydantic schemas — request/response models.
+"""‌⁠‍BOQ Pydantic schemas — request/response models.
 
 Defines create, update, and response schemas for BOQs, positions, markups,
 structured (sectioned) BOQ responses, templates, and activity log entries.
@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 def _sanitise_free_text(value: str | None) -> str | None:
-    """Strip XSS-dangerous HTML from free-text BOQ fields (BUG-326/389).
+    """‌⁠‍Strip XSS-dangerous HTML from free-text BOQ fields (BUG-326/389).
 
     BOQ names and descriptions are rendered in multiple places in the
     frontend (BOQ editor, reports, exports), some of which historically
@@ -33,7 +33,7 @@ def _sanitise_free_text(value: str | None) -> str | None:
 
 
 class BOQCreate(BaseModel):
-    """Create a new Bill of Quantities."""
+    """‌⁠‍Create a new Bill of Quantities."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 

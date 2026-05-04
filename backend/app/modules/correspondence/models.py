@@ -1,4 +1,4 @@
-"""Correspondence ORM models.
+"""‌⁠‍Correspondence ORM models.
 
 Tables:
     oe_correspondence_correspondence — project correspondence with direction and contact tracking
@@ -13,7 +13,7 @@ from app.database import GUID, Base
 
 
 class Correspondence(Base):
-    """A project correspondence record (letter, email, notice)."""
+    """‌⁠‍A project correspondence record (letter, email, notice)."""
 
     __tablename__ = "oe_correspondence_correspondence"
 

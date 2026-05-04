@@ -1,4 +1,4 @@
-"""Convert demo-registrations.jsonl into a polished Excel workbook
+"""‌⁠‍Convert demo-registrations.jsonl into a polished Excel workbook
    with sortable headers, frozen top row, autofit columns, and a
    summary sheet (counts by language / role / company size)."""
 import json

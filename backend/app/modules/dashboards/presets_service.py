@@ -1,4 +1,4 @@
-"""Service layer for dashboard presets / collections (T05).
+"""‌⁠‍Service layer for dashboard presets / collections (T05).
 
 Owns:
 
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 class PresetError(Exception):
-    """Base class for preset service errors."""
+    """‌⁠‍Base class for preset service errors."""
 
     http_status: int = 500
     message_key: str = "common.unknown_error"
@@ -124,7 +124,7 @@ class DashboardPresetService:
         owner_id: uuid.UUID,
         tenant_id: str | None,
     ) -> DashboardPreset:
-        """Read by id with project-collection visibility rules.
+        """‌⁠‍Read by id with project-collection visibility rules.
 
         The owner can always see their own rows. Non-owners can see the
         row if it's a shared collection; otherwise they get a 404

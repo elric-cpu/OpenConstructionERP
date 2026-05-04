@@ -1,4 +1,4 @@
-"""LLM prompt templates for BOQ AI features.
+"""‌⁠‍LLM prompt templates for BOQ AI features.
 
 Each prompt is designed for construction cost estimation domain.
 All prompts enforce JSON-only output for reliable parsing.
@@ -7,7 +7,7 @@ Works with Anthropic Claude, OpenAI GPT-4, and Google Gemini.
 
 
 def with_locale(system_prompt: str, locale: str = "en") -> str:
-    """Append a locale instruction to the system prompt.
+    """‌⁠‍Append a locale instruction to the system prompt.
 
     Ensures LLM responses use the user's language for all text fields
     (descriptions, reasons, summaries) while keeping JSON keys in English.
@@ -25,7 +25,7 @@ def with_locale(system_prompt: str, locale: str = "en") -> str:
 
 # ── Enhance Description ──────────────────────────────────────────────────────
 
-ENHANCE_DESCRIPTION_SYSTEM = """\
+ENHANCE_DESCRIPTION_SYSTEM = """‌⁠‍\
 You are a senior construction cost estimator with 20+ years of experience.
 You enhance short BOQ position descriptions into precise, technically complete specifications.
 Always respond with ONLY valid JSON, no markdown, no explanation."""

@@ -134,7 +134,7 @@ export function AssetEditModal({ asset, onClose, onSaved }: AssetEditModalProps)
     onError: (err: unknown) => {
       toast({
         type: 'error',
-        title: t('assets.save_failed', { defaultValue: 'Could not save asset info' }),
+        title: t('assets.save_failed', { defaultValue: 'Could not save asset info‌⁠‍' }),
         message: err instanceof Error ? err.message : undefined,
       });
     },
@@ -178,7 +178,7 @@ export function AssetEditModal({ asset, onClose, onSaved }: AssetEditModalProps)
         <div className="flex items-center justify-between border-b border-border-light px-4 py-3">
           <div>
             <div className="text-xs uppercase tracking-wide text-content-tertiary">
-              {t('assets.edit.element', { defaultValue: 'Element' })}
+              {t('assets.edit.element', { defaultValue: 'Element‌⁠‍' })}
             </div>
             <div id="asset-edit-modal-title" className="font-medium text-content-primary">{asset.name || asset.element_type}</div>
             <div className="font-mono text-xs text-content-tertiary">{asset.stable_id}</div>
@@ -195,7 +195,7 @@ export function AssetEditModal({ asset, onClose, onSaved }: AssetEditModalProps)
 
         <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
           <ModalField
-            label={t('assets.field.manufacturer', { defaultValue: 'Manufacturer' })}
+            label={t('assets.field.manufacturer', { defaultValue: 'Manufacturer‌⁠‍' })}
             value={form.manufacturer ?? ''}
             onChange={(v) => patch('manufacturer', v)}
             testId="asset-field-manufacturer"
@@ -207,13 +207,13 @@ export function AssetEditModal({ asset, onClose, onSaved }: AssetEditModalProps)
             testId="asset-field-model"
           />
           <ModalField
-            label={t('assets.field.serial', { defaultValue: 'Serial number' })}
+            label={t('assets.field.serial', { defaultValue: 'Serial number‌⁠‍' })}
             value={form.serial_number ?? ''}
             onChange={(v) => patch('serial_number', v)}
             testId="asset-field-serial"
           />
           <ModalField
-            label={t('assets.field.installation_date', { defaultValue: 'Installation date' })}
+            label={t('assets.field.installation_date', { defaultValue: 'Installation date‌⁠‍' })}
             value={form.installation_date ?? ''}
             onChange={(v) => patch('installation_date', v)}
             type="date"

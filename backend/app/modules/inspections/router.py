@@ -1,4 +1,4 @@
-"""Inspections API routes.
+"""‌⁠‍Inspections API routes.
 
 Endpoints:
     GET    /                         - List inspections for a project
@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 
 class CompleteInspectionRequest(BaseModel):
-    """Request body for completing an inspection."""
+    """‌⁠‍Request body for completing an inspection."""
 
     result: str = Field(default="pass", pattern=r"^(pass|fail|partial)$")
 
@@ -41,7 +41,7 @@ def _get_service(session: SessionDep) -> InspectionService:
 
 
 def _to_response(item: object) -> InspectionResponse:
-    """Build an InspectionResponse from a QualityInspection ORM object."""
+    """‌⁠‍Build an InspectionResponse from a QualityInspection ORM object."""
     return InspectionResponse(
         id=item.id,  # type: ignore[attr-defined]
         project_id=item.project_id,  # type: ignore[attr-defined]

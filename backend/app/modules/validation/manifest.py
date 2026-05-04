@@ -1,4 +1,4 @@
-"""Validation Engine module manifest."""
+"""‌⁠‍Validation Engine module manifest."""
 
 from app.core.module_loader import ModuleManifest
 

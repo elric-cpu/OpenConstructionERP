@@ -1,4 +1,4 @@
-"""BIM Hub Pydantic schemas — request/response models.
+"""‌⁠‍BIM Hub Pydantic schemas — request/response models.
 
 Defines create, update, and response schemas for BIM models, elements,
 BOQ links, quantity maps, element groups, and model diffs.
@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class BIMModelCreate(BaseModel):
-    """Create a new BIM model record."""
+    """‌⁠‍Create a new BIM model record."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -35,7 +35,7 @@ class BIMModelCreate(BaseModel):
 
 
 class BIMModelUpdate(BaseModel):
-    """Partial update for a BIM model."""
+    """‌⁠‍Partial update for a BIM model."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 

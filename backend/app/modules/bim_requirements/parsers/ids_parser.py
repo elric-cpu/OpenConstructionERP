@@ -1,4 +1,4 @@
-"""IDS XML parser -- buildingSMART Information Delivery Specification.
+"""‌⁠‍IDS XML parser -- buildingSMART Information Delivery Specification.
 
 Parses IDS v1.0 XML files into UniversalRequirement rows.
 Stdlib ``xml.etree.ElementTree`` is kept for types + tree traversal; all
@@ -35,12 +35,12 @@ _NS = {
 
 
 def _find(element: ET.Element, path: str) -> ET.Element | None:
-    """Namespace-aware find helper."""
+    """‌⁠‍Namespace-aware find helper."""
     return element.find(path, _NS)
 
 
 def _findall(element: ET.Element, path: str) -> list[ET.Element]:
-    """Namespace-aware findall helper."""
+    """‌⁠‍Namespace-aware findall helper."""
     return element.findall(path, _NS)
 
 

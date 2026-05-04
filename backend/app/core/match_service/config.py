@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Match-service tunables — every magic number lives here.
+"""‌⁠‍Match-service tunables — every magic number lives here.
 
 Boost weights, score clamps, fuzzy-match cutoffs, reranker model name,
 and cost caps. The defaults here were calibrated on the v2.8.0 golden
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 def _env_float(name: str, default: float) -> float:
-    """Read ``name`` from env as a float, or return ``default`` on miss."""
+    """‌⁠‍Read ``name`` from env as a float, or return ``default`` on miss."""
     raw = os.environ.get(name)
     if raw is None or not raw.strip():
         return default
@@ -38,7 +38,7 @@ def _env_float(name: str, default: float) -> float:
 
 
 def _env_int(name: str, default: int) -> int:
-    """Read ``name`` from env as an int, or return ``default`` on miss."""
+    """‌⁠‍Read ``name`` from env as an int, or return ``default`` on miss."""
     raw = os.environ.get(name)
     if raw is None or not raw.strip():
         return default

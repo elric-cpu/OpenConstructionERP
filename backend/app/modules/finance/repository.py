@@ -1,4 +1,4 @@
-"""Finance data access layer.
+"""‌⁠‍Finance data access layer.
 
 All database queries for finance entities live here.
 No business logic — pure data access.
@@ -20,13 +20,13 @@ from app.modules.finance.models import (
 
 
 class InvoiceRepository:
-    """Data access for Invoice model."""
+    """‌⁠‍Data access for Invoice model."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
     async def get(self, invoice_id: uuid.UUID) -> Invoice | None:
-        """Get invoice by ID (with line items and payments via selectin)."""
+        """‌⁠‍Get invoice by ID (with line items and payments via selectin)."""
         stmt = (
             select(Invoice)
             .where(Invoice.id == invoice_id)

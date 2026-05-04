@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Pydantic v2 schemas for EAC v2 parameter aliases (RFC 35 §6).
+"""‌⁠‍Pydantic v2 schemas for EAC v2 parameter aliases (RFC 35 §6).
 
 Kept in a sibling module to the resolver/service so the request/response
 layer can evolve independently of the storage layer.
@@ -36,7 +36,7 @@ class _ApiBase(BaseModel):
 
 
 class EacAliasSynonymCreate(BaseModel):
-    """Synonym payload nested inside an alias create/update body."""
+    """‌⁠‍Synonym payload nested inside an alias create/update body."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -53,7 +53,7 @@ class EacAliasSynonymCreate(BaseModel):
 
 
 class EacAliasSynonymRead(_ApiBase):
-    """Response shape for a synonym row."""
+    """‌⁠‍Response shape for a synonym row."""
 
     id: UUID
     alias_id: UUID

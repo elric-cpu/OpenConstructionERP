@@ -1,4 +1,4 @@
-"""Drop fake/probe projects, keep the 6 curated demos.
+"""‌⁠‍Drop fake/probe projects, keep the 6 curated demos.
 
 Walks every table that references project_id and bulk-deletes rows whose
 project_id is in the to-delete set. SQLite FKs are off in this DB, so we

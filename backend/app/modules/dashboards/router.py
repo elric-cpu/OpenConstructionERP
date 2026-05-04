@@ -1,4 +1,4 @@
-"""Dashboards module API router.
+"""‌⁠‍Dashboards module API router.
 
 Endpoints land incrementally as each task in ``CLAUDE-DASHBOARDS.md``
 ships. T01 adds the snapshot registry; T02–T11 will hang off the same
@@ -104,7 +104,7 @@ router = APIRouter(tags=["Dashboards"])
 
 @router.get("/_health", include_in_schema=False)
 async def module_health() -> dict[str, str]:
-    """Module-scoped health probe — mirrors the `/api/health` shape."""
+    """‌⁠‍Module-scoped health probe — mirrors the `/api/health` shape."""
     return {
         "module": manifest.name,
         "version": manifest.version,
@@ -135,7 +135,7 @@ async def create_snapshot(
     disciplines: Annotated[list[str] | None, Form()] = None,
     parent_snapshot_id: Annotated[uuid.UUID | None, Form()] = None,
 ) -> SnapshotOut:
-    """Create a new snapshot.
+    """‌⁠‍Create a new snapshot.
 
     Accepts a multipart upload of one or more CAD/BIM files plus a
     free-form label. The label must be unique within the project (409

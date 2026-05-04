@@ -147,7 +147,7 @@ const KPICard = memo(function KPICard({
               {variance > 0 ? '+' : ''}
               {formatCompact(variance, currency)}
             </span>
-            <span className="text-2xs text-content-tertiary">{t('costmodel.vs_budget', { defaultValue: 'vs budget' })}</span>
+            <span className="text-2xs text-content-tertiary">{t('costmodel.vs_budget', { defaultValue: 'vs budget‌⁠‍' })}</span>
           </div>
         )}
       </div>
@@ -185,7 +185,7 @@ const PerformanceIndicator = memo(function PerformanceIndicator({
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-content-primary">{label}</span>
           <Badge variant={isHealthy ? 'success' : 'error'} size="sm">
-            {isHealthy ? t('costmodel.on_track', { defaultValue: 'On Track' }) : t('costmodel.at_risk', { defaultValue: 'At Risk' })}
+            {isHealthy ? t('costmodel.on_track', { defaultValue: 'On Track‌⁠‍' }) : t('costmodel.at_risk', { defaultValue: 'At Risk‌⁠‍' })}
           </Badge>
         </div>
         <p className="mt-0.5 text-xs text-content-secondary">{description}</p>
@@ -477,7 +477,7 @@ const BudgetTable = memo(function BudgetTable({
         <thead>
           <tr className="border-b-2 border-border">
             <th className="py-3 pr-4 text-left text-xs font-semibold uppercase tracking-wider text-content-secondary">
-              {t('costmodel.name_category', { defaultValue: 'Category' })}
+              {t('costmodel.name_category', { defaultValue: 'Category‌⁠‍' })}
             </th>
             <th className="py-3 px-4 text-right text-xs font-semibold uppercase tracking-wider text-content-secondary">
               {t('costmodel.planned', 'Planned')}
@@ -492,7 +492,7 @@ const BudgetTable = memo(function BudgetTable({
               {t('costmodel.forecast', 'Forecast')}
             </th>
             <th className="py-3 px-2 text-center text-xs font-semibold uppercase tracking-wider text-content-secondary" style={{ minWidth: 80 }}>
-              {t('costmodel.spent_pct', { defaultValue: 'Spent %' })}
+              {t('costmodel.spent_pct', { defaultValue: 'Spent %‌⁠‍' })}
             </th>
             <th className="py-3 pl-4 text-right text-xs font-semibold uppercase tracking-wider text-content-secondary">
               {t('costmodel.variance', 'Variance')}

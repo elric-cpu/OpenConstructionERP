@@ -147,22 +147,22 @@ function StatsCards({ summary }: { summary: PunchSummary | undefined }) {
       cls: 'text-semantic-error',
     },
     {
-      label: t('punch.stat_in_progress', { defaultValue: 'In Progress' }),
+      label: t('punch.stat_in_progress', { defaultValue: 'In Progress‌⁠‍' }),
       value: byStatus['in_progress'] ?? 0,
       cls: 'text-amber-700 dark:text-amber-400',
     },
     {
-      label: t('punch.stat_resolved', { defaultValue: 'Resolved' }),
+      label: t('punch.stat_resolved', { defaultValue: 'Resolved‌⁠‍' }),
       value: byStatus['resolved'] ?? 0,
       cls: 'text-oe-blue',
     },
     {
-      label: t('punch.stat_overdue', { defaultValue: 'Overdue' }),
+      label: t('punch.stat_overdue', { defaultValue: 'Overdue‌⁠‍' }),
       value: overdue,
       cls: overdue > 0 ? 'text-semantic-error' : 'text-content-primary',
     },
     {
-      label: t('punch.stat_avg_close', { defaultValue: 'Avg Days to Close' }),
+      label: t('punch.stat_avg_close', { defaultValue: 'Avg Days to Close‌⁠‍' }),
       value: avgDays != null ? `${avgDays}d` : '-',
       cls: 'text-content-primary',
     },
@@ -251,7 +251,7 @@ function AddPunchModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 animate-fade-in">
-      <div className="w-full max-w-2xl bg-surface-primary rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true" aria-label={t('punch.add_item', { defaultValue: 'Add Punch Item' })}>
+      <div className="w-full max-w-2xl bg-surface-primary rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true" aria-label={t('punch.add_item', { defaultValue: 'Add Punch Item‌⁠‍' })}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border-light">
           <h2 className="text-lg font-semibold text-content-primary">

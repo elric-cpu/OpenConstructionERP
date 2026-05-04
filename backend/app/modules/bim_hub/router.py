@@ -1,4 +1,4 @@
-"""BIM Hub API routes.
+"""‌⁠‍BIM Hub API routes.
 
 Endpoints:
     Models:
@@ -124,7 +124,7 @@ async def _verify_project_access(
     project_id: uuid.UUID,
     user_id: str,
 ) -> None:
-    """Raise 404 if the user is not the owner or an admin of the project.
+    """‌⁠‍Raise 404 if the user is not the owner or an admin of the project.
 
     Mirrors the central helper in ``erp_chat.tools._require_project_access``
     but returns an HTTPException suitable for router use. Emits 404 (not 403)
@@ -164,7 +164,7 @@ async def _verify_model_access(
     model_id: uuid.UUID,
     user_id: str,
 ) -> Any:
-    """Load a BIM model and verify the caller owns its project.
+    """‌⁠‍Load a BIM model and verify the caller owns its project.
 
     Returns the model object so callers can reuse it without a second query.
     Raises 404 if the model is missing or the user has no access.

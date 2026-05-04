@@ -111,7 +111,7 @@ export function ForgotPasswordPage() {
                 {t('auth.check_email', 'Check your email')}
               </h2>
               <p className="text-sm text-content-secondary mb-6">
-                {t('auth.reset_sent', { defaultValue: "If an account exists for {{email}}, you'll receive a password reset link shortly.", email })}
+                {t('auth.reset_sent', { defaultValue: "If an account exists for {{email}}, you'll receive a password reset link shortly.‌⁠‍", email })}
               </p>
               <Link
                 to="/login"

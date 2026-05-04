@@ -146,9 +146,9 @@ export default function LinkRequirementToBIMModal({
     onSuccess: (count) => {
       addToast({
         type: 'success',
-        title: t('bim.req_linked_title', { defaultValue: 'Requirement linked' }),
+        title: t('bim.req_linked_title', { defaultValue: 'Requirement linked‌⁠‍' }),
         message: t('bim.req_linked_msg', {
-          defaultValue: 'Pinned to {{count}} BIM element(s)',
+          defaultValue: 'Pinned to {{count}} BIM element(s)‌⁠‍',
           count,
         }),
       });
@@ -185,13 +185,13 @@ export default function LinkRequirementToBIMModal({
           <div className="flex items-center gap-2">
             <ClipboardCheck size={16} className="text-violet-600" />
             <h2 className="text-sm font-semibold text-content-primary">
-              {t('bim.link_req_title', { defaultValue: 'Link a requirement' })}
+              {t('bim.link_req_title', { defaultValue: 'Link a requirement‌⁠‍' })}
             </h2>
             <span className="text-[11px] text-content-tertiary">
               {elements.length === 1
                 ? '→ ' + (elements[0]!.name || elements[0]!.element_type)
                 : t('bim.link_req_bulk', {
-                    defaultValue: '→ {{count}} elements',
+                    defaultValue: '→ {{count}} elements‌⁠‍',
                     count: elements.length,
                   })}
             </span>
@@ -217,7 +217,7 @@ export default function LinkRequirementToBIMModal({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={t('bim.search_requirements', {
-                defaultValue: 'Search by entity, attribute, constraint, notes…',
+                defaultValue: 'Search by entity, attribute, constraint, notes…‌⁠‍',
               })}
               autoFocus
               className="w-full ps-8 pe-3 py-1.5 text-sm rounded border border-border-light bg-surface-primary focus:outline-none focus:ring-1 focus:ring-oe-blue"

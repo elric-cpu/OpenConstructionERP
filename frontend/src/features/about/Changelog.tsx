@@ -1004,7 +1004,7 @@ export function Changelog() {
   return (
     <div id="changelog">
       <h2 className="text-lg font-semibold text-content-primary mb-4">
-        {t('about.changelog_title', { defaultValue: 'Changelog' })}
+        {t('about.changelog_title', { defaultValue: 'Changelog‌⁠‍' })}
       </h2>
 
       <div className="relative">
@@ -1030,7 +1030,7 @@ export function Changelog() {
                   <Badge variant={isCurrent ? 'success' : 'blue'} size="sm">v{entry.version}</Badge>
                   {isCurrent && (
                     <span className="text-2xs font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
-                      {t('about.current_version', { defaultValue: 'Current' })}
+                      {t('about.current_version', { defaultValue: 'Current‌⁠‍' })}
                     </span>
                   )}
                   <span className="text-xs text-content-tertiary ml-auto">{entry.date}</span>

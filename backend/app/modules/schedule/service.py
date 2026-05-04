@@ -1,4 +1,4 @@
-"""Schedule service — business logic for 4D construction scheduling.
+"""‌⁠‍Schedule service — business logic for 4D construction scheduling.
 
 Stateless service layer. Handles:
 - Schedule CRUD with project scoping
@@ -34,7 +34,7 @@ async def _safe_publish(name: str, data: dict, source_module: str = "") -> None:
 
 
 def _normalize_deps(deps: list | None) -> list[dict]:
-    """Normalize dependencies to list[dict].
+    """‌⁠‍Normalize dependencies to list[dict].
 
     Seeded/legacy data may store dependencies as plain UUID strings.
     This ensures a consistent dict format for Pydantic schemas.
@@ -81,7 +81,7 @@ logger = logging.getLogger(__name__)
 
 
 def _str_to_float(value: str | None) -> float:
-    """Convert a string-stored numeric value to float, defaulting to 0.0."""
+    """‌⁠‍Convert a string-stored numeric value to float, defaulting to 0.0."""
     if value is None:
         return 0.0
     try:

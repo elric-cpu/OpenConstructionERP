@@ -80,7 +80,7 @@ describe('boqResourceTypes — getResourceTypeLabel', () => {
       return `[${key}]`;
     };
     expect(getResourceTypeLabel('equipment', fakeT)).toBe('[boq.resource_type_equipment]');
-    expect(calls).toEqual([['boq.resource_type_equipment', { defaultValue: 'Equipment' }]]);
+    expect(calls).toEqual([['boq.resource_type_equipment', { defaultValue: 'Equipment‌⁠‍' }]]);
   });
 });
 

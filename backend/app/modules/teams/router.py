@@ -1,4 +1,4 @@
-"""Teams API routes.
+"""‌⁠‍Teams API routes.
 
 Endpoints:
     GET    /project/{project_id}        — List teams for project
@@ -42,7 +42,7 @@ async def list_teams_by_query(
     _user_id: CurrentUserId = None,  # type: ignore[assignment]
     service: TeamService = Depends(_get_service),
 ) -> list[TeamResponse]:
-    """List teams for a project (query-param style)."""
+    """‌⁠‍List teams for a project (query-param style)."""
     teams = await service.list_teams(project_id)
     return [TeamResponse.model_validate(t) for t in teams]
 
@@ -52,7 +52,7 @@ async def list_teams(
     project_id: uuid.UUID,
     service: TeamService = Depends(_get_service),
 ) -> list[TeamResponse]:
-    """List teams for a project."""
+    """‌⁠‍List teams for a project."""
     teams = await service.list_teams(project_id)
     return [TeamResponse.model_validate(t) for t in teams]
 

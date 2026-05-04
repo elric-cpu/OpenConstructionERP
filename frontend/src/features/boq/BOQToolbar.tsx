@@ -166,9 +166,9 @@ export function BOQToolbar({
       {/* ── Row-group: Quality + Undo/Redo ─────────────────────────────── */}
       <div className="flex items-center gap-1.5">
         {hasPositions && qualityScoreRing}
-        <Button variant="ghost" size="sm" icon={<Undo2 size={15} />} onClick={onUndo} disabled={!canUndo} title={t('boq.undo', { defaultValue: 'Undo (Ctrl+Z)' })} />
-        <Button variant="ghost" size="sm" icon={<Redo2 size={15} />} onClick={onRedo} disabled={!canRedo} title={t('boq.redo', { defaultValue: 'Redo (Ctrl+Y)' })} />
-        <Button variant="ghost" size="sm" icon={<Clock size={15} />} onClick={onShowVersionHistory} title={t('boq.version_history', { defaultValue: 'Version History' })} />
+        <Button variant="ghost" size="sm" icon={<Undo2 size={15} />} onClick={onUndo} disabled={!canUndo} title={t('boq.undo', { defaultValue: 'Undo (Ctrl+Z)‌⁠‍' })} />
+        <Button variant="ghost" size="sm" icon={<Redo2 size={15} />} onClick={onRedo} disabled={!canRedo} title={t('boq.redo', { defaultValue: 'Redo (Ctrl+Y)‌⁠‍' })} />
+        <Button variant="ghost" size="sm" icon={<Clock size={15} />} onClick={onShowVersionHistory} title={t('boq.version_history', { defaultValue: 'Version History‌⁠‍' })} />
       </div>
 
       <div className="w-px h-6 bg-border-light hidden sm:block" />
@@ -195,9 +195,9 @@ export function BOQToolbar({
           size="sm"
           icon={<Layers size={15} />}
           onClick={onOpenAssembly}
-          title={t('boq.from_assembly', { defaultValue: 'From Assembly' })}
+          title={t('boq.from_assembly', { defaultValue: 'From Assembly‌⁠‍' })}
         >
-          {t('boq.from_assembly', { defaultValue: 'From Assembly' })}
+          {t('boq.from_assembly', { defaultValue: 'From Assembly‌⁠‍' })}
         </Button>
       </div>
 

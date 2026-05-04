@@ -1,4 +1,4 @@
-"""Excel exporter -- produces a formatted Excel workbook.
+"""‌⁠‍Excel exporter -- produces a formatted Excel workbook.
 
 Generates a professional Excel file with:
 - Sheet 1: Requirements table with formatted headers
@@ -47,7 +47,7 @@ def export_excel(
     title: str = "BIM Requirements",
     language: str = "en",
 ) -> bytes:
-    """Export requirements to a formatted Excel workbook.
+    """‌⁠‍Export requirements to a formatted Excel workbook.
 
     Args:
         requirements: List of universal requirements to export.
@@ -226,7 +226,7 @@ def export_excel(
 
 
 def _format_classification(classif: Any) -> str:
-    """Format a classification dict as a display string."""
+    """‌⁠‍Format a classification dict as a display string."""
     if not classif:
         return ""
     if isinstance(classif, dict):

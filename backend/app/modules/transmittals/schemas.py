@@ -1,4 +1,4 @@
-"""Transmittals Pydantic schemas — request/response models."""
+"""‌⁠‍Transmittals Pydantic schemas — request/response models."""
 
 from datetime import datetime
 from typing import Any
@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class RecipientCreate(BaseModel):
-    """Add a recipient to a transmittal."""
+    """‌⁠‍Add a recipient to a transmittal."""
 
     recipient_org_id: UUID | None = None
     recipient_user_id: UUID | None = None
@@ -18,7 +18,7 @@ class RecipientCreate(BaseModel):
 
 
 class RecipientResponse(BaseModel):
-    """Recipient in API responses."""
+    """‌⁠‍Recipient in API responses."""
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 

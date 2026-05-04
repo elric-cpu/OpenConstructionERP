@@ -307,13 +307,13 @@ export function RegionalSettings({ animationDelay = '0ms' }: { animationDelay?: 
       queryClient.invalidateQueries({ queryKey: ['user-preferences'] });
       addToast({
         type: 'success',
-        title: t('settings.preferences_saved', { defaultValue: 'Preferences saved' }),
+        title: t('settings.preferences_saved', { defaultValue: 'Preferences saved‌⁠‍' }),
       });
     },
     onError: (err: Error) => {
       addToast({
         type: 'error',
-        title: t('settings.preferences_error', { defaultValue: 'Failed to save preferences' }),
+        title: t('settings.preferences_error', { defaultValue: 'Failed to save preferences‌⁠‍' }),
         message: err.message,
       });
     },
@@ -357,9 +357,9 @@ export function RegionalSettings({ animationDelay = '0ms' }: { animationDelay?: 
   return (
     <Card className="animate-card-in" style={{ animationDelay }}>
       <CardHeader
-        title={t('settings.regional_title', { defaultValue: 'Regional Settings' })}
+        title={t('settings.regional_title', { defaultValue: 'Regional Settings‌⁠‍' })}
         subtitle={t('settings.regional_subtitle', {
-          defaultValue: 'Configure timezone, units, formats, and currency',
+          defaultValue: 'Configure timezone, units, formats, and currency‌⁠‍',
         })}
       />
       <CardContent>
@@ -368,7 +368,7 @@ export function RegionalSettings({ animationDelay = '0ms' }: { animationDelay?: 
           <div>
             <label className="flex items-center gap-2 text-sm font-medium text-content-primary mb-1.5">
               <Globe size={14} className="text-content-tertiary" />
-              {t('settings.timezone', { defaultValue: 'Timezone' })}
+              {t('settings.timezone', { defaultValue: 'Timezone‌⁠‍' })}
             </label>
             <SearchableSelect
               value={timezone}

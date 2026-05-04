@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Classifier boost — rewards candidates whose classification matches the hint."""
+"""‌⁠‍Classifier boost — rewards candidates whose classification matches the hint."""
 
 from __future__ import annotations
 
@@ -19,12 +19,12 @@ _CLASSIFIER_FIELDS: dict[str, str] = {
 
 
 def _normalise_code(code: str) -> str:
-    """Lowercase + strip a code so ``" 330.10 "`` matches ``"330.10"``."""
+    """‌⁠‍Lowercase + strip a code so ``" 330.10 "`` matches ``"330.10"``."""
     return (code or "").strip().lower()
 
 
 def _group_prefix(code: str) -> str:
-    """Return the leading group segment of a hierarchical code.
+    """‌⁠‍Return the leading group segment of a hierarchical code.
 
     DIN 276 uses ``KG.LL.PPP`` form (``"330.10.020"``); MasterFormat uses
     ``"04 20 00"``. We extract the first dotted segment for DIN-style

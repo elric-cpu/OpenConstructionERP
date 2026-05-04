@@ -1,4 +1,4 @@
-"""Cost database API routes.
+"""‌⁠‍Cost database API routes.
 
 Endpoints:
     GET  /autocomplete    -- Fast text autocomplete for cost items (public)
@@ -104,7 +104,7 @@ _REGION_CURRENCY: dict[str, str] = {
 
 
 def _resolve_currency(currency: str | None, region: str | None) -> str:
-    """Return the catalogue currency, deriving it from region when empty.
+    """‌⁠‍Return the catalogue currency, deriving it from region when empty.
 
     The CWICR import historically stored ``currency = ''`` because the source
     parquet doesn't carry the field — every rate is in the region's local
@@ -138,7 +138,7 @@ _BREAKDOWN_KEYS: tuple[str, ...] = ("labor_cost", "material_cost", "equipment_co
 
 
 def _extract_cost_breakdown(metadata: dict[str, Any] | None) -> dict[str, float] | None:
-    """Pull labor / material / equipment numbers out of CWICR metadata.
+    """‌⁠‍Pull labor / material / equipment numbers out of CWICR metadata.
 
     The CWICR ingest stamps these as ``round(value, 2)`` only when the
     source row carries a non-zero figure — so an absent key really means

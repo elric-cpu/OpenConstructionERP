@@ -1,4 +1,4 @@
-"""Build DDC CWICR ENG Resource Catalog - single clean file."""
+"""‌⁠‍Build DDC CWICR ENG Resource Catalog - single clean file."""
 
 import math
 import os

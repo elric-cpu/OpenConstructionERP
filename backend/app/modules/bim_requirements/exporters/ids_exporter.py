@@ -1,4 +1,4 @@
-"""IDS XML exporter -- produces valid buildingSMART IDS v1.0 XML.
+"""‌⁠‍IDS XML exporter -- produces valid buildingSMART IDS v1.0 XML.
 
 Groups requirements by element_filter + context into specifications,
 then writes each requirement as a <property> or <attribute> facet.
@@ -18,7 +18,7 @@ _XS_NS = "http://www.w3.org/2001/XMLSchema"
 
 
 def _make_simple_value(parent: ET.Element, tag: str, value: str) -> ET.Element:
-    """Create a child element with a <simpleValue> text child."""
+    """‌⁠‍Create a child element with a <simpleValue> text child."""
     el = ET.SubElement(parent, tag)
     sv = ET.SubElement(el, "simpleValue")
     sv.text = value
@@ -26,7 +26,7 @@ def _make_simple_value(parent: ET.Element, tag: str, value: str) -> ET.Element:
 
 
 def _add_restriction(value_el: ET.Element, constraint: dict[str, Any]) -> None:
-    """Add xs:restriction children to a <value> element."""
+    """‌⁠‍Add xs:restriction children to a <value> element."""
     restriction = ET.SubElement(value_el, f"{{{_XS_NS}}}restriction")
 
     if "enum" in constraint:

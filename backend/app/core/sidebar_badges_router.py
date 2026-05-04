@@ -1,4 +1,4 @@
-"""Sidebar badge counts — single lightweight endpoint.
+"""‌⁠‍Sidebar badge counts — single lightweight endpoint.
 
 Returns open/active item counts for Tasks, RFIs, and Safety
 in a single response so the sidebar can display notification badges
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 class SidebarBadgesResponse(BaseModel):
-    """Aggregated open-item counts for sidebar navigation badges."""
+    """‌⁠‍Aggregated open-item counts for sidebar navigation badges."""
 
     tasks_open: int = Field(default=0, description="Tasks not completed (open + in_progress + draft)")
     rfi_open: int = Field(default=0, description="RFIs in draft or open status")
@@ -38,7 +38,7 @@ async def sidebar_badges(
     project_id: uuid.UUID = Query(...),
     user_id: CurrentUserId = None,  # type: ignore[assignment]
 ) -> SidebarBadgesResponse:
-    """Return open-item counts for sidebar badges in a single query batch.
+    """‌⁠‍Return open-item counts for sidebar badges in a single query batch.
 
     Uses COUNT queries (no full row fetches) for minimal DB load.
     Gracefully returns 0 for any module whose table doesn't exist yet.

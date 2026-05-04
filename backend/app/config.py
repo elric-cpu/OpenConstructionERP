@@ -1,4 +1,4 @@
-"""Application configuration​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠.
+"""‌⁠‍Application configuration​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠.
 
 Loads from environment variables with .env file fallback.
 All settings are typed and validated via Pydantic.
@@ -16,7 +16,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def _read_pyproject_version() -> str | None:
-    """Best-effort parse of ``version = "..."`` from backend/pyproject.toml.
+    """‌⁠‍Best-effort parse of ``version = "..."`` from backend/pyproject.toml.
 
     Used when the package isn't installed (``pip install -e .`` not run).
     Walks up from this file so it works whether CWD is repo root, backend/,
@@ -38,7 +38,7 @@ def _read_pyproject_version() -> str | None:
 
 
 def _detect_version() -> str:
-    """Pick the version /api/health should report.
+    """‌⁠‍Pick the version /api/health should report.
 
     When running from the source tree (the common dev workflow:
     ``cd backend && python -m uvicorn app.main:create_app --factory``),

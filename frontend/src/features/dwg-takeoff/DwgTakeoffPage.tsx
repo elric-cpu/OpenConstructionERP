@@ -391,7 +391,7 @@ function OfflineReadyBadge({
         data-testid={testId}
       >
         <Loader2 size={11} className="animate-spin" />
-        {t('dwg_takeoff.offline_checking', { defaultValue: 'Checking...' })}
+        {t('dwg_takeoff.offline_checking', { defaultValue: 'Checking...‌⁠‍' })}
       </div>
     );
   }
@@ -414,17 +414,17 @@ function OfflineReadyBadge({
           ready
             ? t('dwg_takeoff.offline_ready_tooltip', {
                 defaultValue:
-                  'This tool works fully offline — conversions run on your machine.',
+                  'This tool works fully offline — conversions run on your machine.‌⁠‍',
               })
             : t('dwg_takeoff.offline_install_tooltip', {
                 defaultValue:
-                  'Install the local DWG converter to enable offline .dwg conversion. DXF files already work.',
+                  'Install the local DWG converter to enable offline .dwg conversion. DXF files already work.‌⁠‍',
               })
         }
         aria-label={
           ready
-            ? t('dwg_takeoff.offline_ready', { defaultValue: 'Offline Ready' })
-            : t('dwg_takeoff.offline_install', { defaultValue: 'Install converter' })
+            ? t('dwg_takeoff.offline_ready', { defaultValue: 'Offline Ready‌⁠‍' })
+            : t('dwg_takeoff.offline_install', { defaultValue: 'Install converter‌⁠‍' })
         }
       >
         {ready ? <Wifi size={11} /> : <WifiOff size={11} />}

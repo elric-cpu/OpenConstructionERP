@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Bulk alias resolver (RFC 35 §6 EAC-2.1).
+"""‌⁠‍Bulk alias resolver (RFC 35 §6 EAC-2.1).
 
 Given many aliases and a single element, walk the element's property
 bag once and resolve every alias against it. The flattening step is
@@ -30,7 +30,7 @@ def resolve_bulk(
     aliases: list[Any],
     element: ElementDict,
 ) -> dict[UUID, ResolveResult]:
-    """Resolve every alias in ``aliases`` against ``element``.
+    """‌⁠‍Resolve every alias in ``aliases`` against ``element``.
 
     Each alias must expose ``.id`` and ``.synonyms``. The synonyms
     contract matches :func:`resolve_alias`.

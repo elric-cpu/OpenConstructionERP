@@ -1,4 +1,4 @@
-"""CSV / spreadsheet formula-injection neutralisation.
+"""‌⁠‍CSV / spreadsheet formula-injection neutralisation.
 
 Spreadsheet applications (Excel, Google Sheets, LibreOffice Calc) interpret
 any cell whose textual value begins with ``=``, ``+``, ``-``, ``@``, a tab
@@ -51,7 +51,7 @@ _DANGEROUS: Final[tuple[str, ...]] = ("=", "+", "-", "@", "\t", "\r")
 
 
 def neutralise_formula(value: Any) -> Any:
-    """Return *value* with a leading apostrophe added if it would be parsed
+    """‌⁠‍Return *value* with a leading apostrophe added if it would be parsed
     as a spreadsheet formula.
 
     Only ``str`` values are modified, and only when the first character is

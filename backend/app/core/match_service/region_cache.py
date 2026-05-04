@@ -1,4 +1,4 @@
-"""TTL cache for the project ``region`` string used by match boosts.
+"""‌⁠‍TTL cache for the project ``region`` string used by match boosts.
 
 The ranker calls ``ProjectRepository(db).get_by_id(project_uuid)`` on every
 match request just to read ``project.region`` — a single string used by the
@@ -47,7 +47,7 @@ async def region_for(
     *,
     ttl_seconds: float = DEFAULT_TTL_SECONDS,
 ) -> str | None:
-    """Return ``project.region`` for ``project_uuid`` with a TTL cache.
+    """‌⁠‍Return ``project.region`` for ``project_uuid`` with a TTL cache.
 
     Returns ``None`` if the project doesn't exist, the row has no region,
     or the DB lookup fails — callers should treat ``None`` as "skip the
@@ -92,7 +92,7 @@ async def _load(
     ttl_seconds: float,
     fut: asyncio.Future[str | None],
 ) -> None:
-    """Run the DB fetch, populate the cache, fulfil the future."""
+    """‌⁠‍Run the DB fetch, populate the cache, fulfil the future."""
     region: str | None = None
     try:
         from app.modules.projects.repository import ProjectRepository

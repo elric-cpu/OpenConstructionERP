@@ -1,4 +1,4 @@
-"""Compliance-AI module — DSL engine + NL rule builder.
+"""‌⁠‍Compliance-AI module — DSL engine + NL rule builder.
 
 Tasks in scope (see ``CLAUDE-DASHBOARDS.md``):
     T08 Compliance DSL Engine (extends core ValidationRule)

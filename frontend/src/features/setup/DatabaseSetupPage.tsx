@@ -203,15 +203,15 @@ function RegionCard({
               </span>
             ) : status === 'loading' ? (
               <span className="text-2xs text-oe-blue font-medium">
-                {t('setup.loading', { defaultValue: 'Loading...' })}
+                {t('setup.loading', { defaultValue: 'Loading...‌⁠‍' })}
               </span>
             ) : status === 'failed' ? (
               <span className="text-2xs text-semantic-error font-medium">
-                {t('setup.failed', { defaultValue: 'Failed' })}
+                {t('setup.failed', { defaultValue: 'Failed‌⁠‍' })}
               </span>
             ) : (
               <span className="text-2xs text-content-quaternary">
-                {t('setup.ready_to_load', { defaultValue: 'Ready to load' })}
+                {t('setup.ready_to_load', { defaultValue: 'Ready to load‌⁠‍' })}
               </span>
             )}
           </div>
@@ -228,7 +228,7 @@ function RegionCard({
             data-testid={`region-view-costs-${db.id}`}
           >
             {t('setup.view_in_costs', {
-              defaultValue: 'View cost items →',
+              defaultValue: 'View cost items →‌⁠‍',
             })}
           </Link>
           <span className="text-2xs text-content-quaternary">·</span>
@@ -238,7 +238,7 @@ function RegionCard({
             data-testid={`region-view-catalog-${db.id}`}
           >
             {t('setup.view_in_catalog', {
-              defaultValue: 'View resources →',
+              defaultValue: 'View resources →‌⁠‍',
             })}
           </Link>
         </div>

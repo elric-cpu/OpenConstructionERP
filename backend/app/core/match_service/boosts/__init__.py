@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Boost registry — the ranker iterates ``BOOSTS`` in order.
+"""‌⁠‍Boost registry — the ranker iterates ``BOOSTS`` in order.
 
 Each boost is a sync function ``(envelope, candidate, settings) ->
 dict[str, float]``. The ranker sums every reported delta into the
@@ -42,7 +42,7 @@ def apply_boosts(
     candidate: MatchCandidate,
     settings: Any,
 ) -> dict[str, float]:
-    """Run every registered boost and merge their reported deltas.
+    """‌⁠‍Run every registered boost and merge their reported deltas.
 
     Returns a flat dict ``{boost_name: delta}`` covering all non-zero
     contributions. Empty dict means no boost fired.

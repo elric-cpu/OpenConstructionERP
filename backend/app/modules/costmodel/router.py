@@ -1,4 +1,4 @@
-"""5D Cost Model API routes.
+"""‌⁠‍5D Cost Model API routes.
 
 Endpoints:
     GET    /projects/{project_id}/5d/dashboard          — aggregated KPIs
@@ -53,7 +53,7 @@ def _get_service(session: SessionDep) -> CostModelService:
 
 
 def _snapshot_to_response(snap: object) -> SnapshotResponse:
-    """Convert a CostSnapshot ORM model to a SnapshotResponse."""
+    """‌⁠‍Convert a CostSnapshot ORM model to a SnapshotResponse."""
     return SnapshotResponse(
         id=snap.id,  # type: ignore[attr-defined]
         project_id=snap.project_id,  # type: ignore[attr-defined]
@@ -72,7 +72,7 @@ def _snapshot_to_response(snap: object) -> SnapshotResponse:
 
 
 def _budget_line_to_response(line: object) -> BudgetLineResponse:
-    """Convert a BudgetLine ORM model to a BudgetLineResponse."""
+    """‌⁠‍Convert a BudgetLine ORM model to a BudgetLineResponse."""
     return BudgetLineResponse(
         id=line.id,  # type: ignore[attr-defined]
         project_id=line.project_id,  # type: ignore[attr-defined]

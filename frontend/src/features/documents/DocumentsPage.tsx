@@ -256,7 +256,7 @@ function PreviewModal({
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-label={t('documents.preview_title', { defaultValue: 'Document preview' })}
+      aria-label={t('documents.preview_title', { defaultValue: 'Document preview‌⁠‍' })}
     >
       <div
         className="relative w-full max-w-4xl max-h-[90vh] mx-4 rounded-xl bg-surface-elevated shadow-xl border border-border-light overflow-hidden flex flex-col"
@@ -273,7 +273,7 @@ function PreviewModal({
             <a
               href={`/api/v1/documents/${doc.id}/download`}
               className="flex h-8 w-8 items-center justify-center rounded-lg text-content-secondary hover:bg-surface-secondary hover:text-oe-blue transition-colors"
-              aria-label={t('documents.download', { defaultValue: 'Download' })}
+              aria-label={t('documents.download', { defaultValue: 'Download‌⁠‍' })}
             >
               <Download size={16} />
             </a>
@@ -319,7 +319,7 @@ function PreviewModal({
           <div className="border-t border-border-light px-5 py-3 bg-surface-primary shrink-0">
             <h4 className="text-[10px] font-semibold uppercase tracking-wider text-content-tertiary mb-2">
               {t('documents.linked_bim_elements', {
-                defaultValue: 'Linked BIM elements',
+                defaultValue: 'Linked BIM elements‌⁠‍',
               })}
               <span className="ms-2 text-content-quaternary normal-case font-normal">
                 ({linkedElements.items.length})
@@ -387,11 +387,11 @@ function SortDropdown({
       <button
         onClick={() => setOpen((p) => !p)}
         className="flex items-center gap-1.5 h-10 px-3 text-xs font-medium rounded-lg border border-border-light text-content-secondary hover:bg-surface-secondary transition-colors"
-        aria-label={t('documents.sort_by', { defaultValue: 'Sort by' })}
+        aria-label={t('documents.sort_by', { defaultValue: 'Sort by‌⁠‍' })}
         aria-expanded={open}
         aria-haspopup="listbox"
       >
-        {t('documents.sort_by', { defaultValue: 'Sort by' })}: {labels[value]}
+        {t('documents.sort_by', { defaultValue: 'Sort by‌⁠‍' })}: {labels[value]}
         <ChevronDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (

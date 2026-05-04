@@ -49,12 +49,12 @@ export function CreateBOQModal({ open, onClose, defaultProjectId }: CreateBOQMod
     onSuccess: (boq) => {
       queryClient.invalidateQueries({ queryKey: ['boqs', selectedProjectId] });
       queryClient.invalidateQueries({ queryKey: ['all-boqs'] });
-      addToast({ type: 'success', title: t('toasts.boq_created', { defaultValue: 'Bill of Quantities created successfully' }) });
+      addToast({ type: 'success', title: t('toasts.boq_created', { defaultValue: 'Bill of Quantities created successfully‌⁠‍' }) });
       onClose();
       navigate(`/boq/${boq.id}`);
     },
     onError: (error: Error) => {
-      addToast({ type: 'error', title: t('toasts.boq_create_failed', { defaultValue: 'Failed to create Bill of Quantities' }), message: error.message });
+      addToast({ type: 'error', title: t('toasts.boq_create_failed', { defaultValue: 'Failed to create Bill of Quantities‌⁠‍' }), message: error.message });
     },
   });
 
@@ -84,10 +84,10 @@ export function CreateBOQModal({ open, onClose, defaultProjectId }: CreateBOQMod
             </div>
             <div>
               <h2 className="text-lg font-semibold text-content-primary">
-                {t('projects.new_boq', { defaultValue: 'New BOQ' })}
+                {t('projects.new_boq', { defaultValue: 'New BOQ‌⁠‍' })}
               </h2>
               <p className="text-xs text-content-tertiary">
-                {t('boq.create_subtitle', { defaultValue: 'Create a new bill of quantities' })}
+                {t('boq.create_subtitle', { defaultValue: 'Create a new bill of quantities‌⁠‍' })}
               </p>
             </div>
           </div>
@@ -104,7 +104,7 @@ export function CreateBOQModal({ open, onClose, defaultProjectId }: CreateBOQMod
           {/* Project selector */}
           <div>
             <label className="text-sm font-medium text-content-primary block mb-1.5">
-              {t('common.project', { defaultValue: 'Project' })}
+              {t('common.project', { defaultValue: 'Project‌⁠‍' })}
             </label>
             <div className="relative">
               <select

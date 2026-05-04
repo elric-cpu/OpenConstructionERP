@@ -1,4 +1,4 @@
-"""OpenCDE / BCF 3.0 Pydantic schemas.
+"""‌⁠‍OpenCDE / BCF 3.0 Pydantic schemas.
 
 These schemas match the BuildingSMART BCF API 3.0 specification.
 They are intentionally separate from our internal schemas — the service
@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class FoundationAPIVersion(BaseModel):
-    """A single supported API version."""
+    """‌⁠‍A single supported API version."""
 
     api_id: str
     version_id: str
@@ -26,7 +26,7 @@ class FoundationAPIVersion(BaseModel):
 
 
 class FoundationVersions(BaseModel):
-    """Response for GET /foundation/versions."""
+    """‌⁠‍Response for GET /foundation/versions."""
 
     versions: list[FoundationAPIVersion]
 

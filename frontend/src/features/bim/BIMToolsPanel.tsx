@@ -152,7 +152,7 @@ export default function BIMToolsPanel({
       {/* Measure */}
       <section className="flex flex-col gap-2">
         <h3 className="text-xs font-semibold text-content-primary uppercase tracking-wide">
-          {t('bim.tools_measure_title', { defaultValue: 'Measure' })}
+          {t('bim.tools_measure_title', { defaultValue: 'Measure‌⁠‍' })}
         </h3>
         <button
           type="button"
@@ -167,12 +167,12 @@ export default function BIMToolsPanel({
         >
           <Ruler size={12} />
           {measureActive
-            ? t('bim.tools_measure_stop', { defaultValue: 'Stop measuring' })
-            : t('bim.tools_measure_start', { defaultValue: 'Measure distance (M)' })}
+            ? t('bim.tools_measure_stop', { defaultValue: 'Stop measuring‌⁠‍' })
+            : t('bim.tools_measure_start', { defaultValue: 'Measure distance (M)‌⁠‍' })}
         </button>
         <p className="text-[10px] text-content-tertiary">
           {t('bim.tools_measure_hint', {
-            defaultValue: 'Click two points in the viewport to record a distance.',
+            defaultValue: 'Click two points in the viewport to record a distance.‌⁠‍',
           })}
         </p>
 
@@ -182,7 +182,7 @@ export default function BIMToolsPanel({
           <div className="mt-1 flex items-center justify-between">
             <span className="text-[10px] text-content-tertiary">
               {t('bim.tools_measure_count', {
-                defaultValue: '{{count}} saved',
+                defaultValue: '{{count}} saved‌⁠‍',
                 count: measurements.length,
               })}
             </span>

@@ -1,4 +1,4 @@
-"""Enterprise Workflows ORM models.
+"""‌⁠‍Enterprise Workflows ORM models.
 
 Tables:
     oe_workflows_approval  — configurable approval workflow definitions
@@ -14,7 +14,7 @@ from app.database import GUID, Base
 
 
 class ApprovalWorkflow(Base):
-    """A configurable approval workflow definition."""
+    """‌⁠‍A configurable approval workflow definition."""
 
     __tablename__ = "oe_workflows_approval"
 
@@ -53,7 +53,7 @@ class ApprovalWorkflow(Base):
 
 
 class ApprovalRequest(Base):
-    """An individual approval request submitted against a workflow."""
+    """‌⁠‍An individual approval request submitted against a workflow."""
 
     __tablename__ = "oe_workflows_request"
 

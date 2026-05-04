@@ -1,4 +1,4 @@
-"""Regional configuration for DACH (Germany, Austria, Switzerland)."""
+"""‌⁠‍Regional configuration for DACH (Germany, Austria, Switzerland)."""
 
 from typing import Any
 

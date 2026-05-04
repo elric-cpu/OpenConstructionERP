@@ -1,4 +1,4 @@
-"""Workflow engine — ball-in-court tracking, approval steps, due dates.
+"""‌⁠‍Workflow engine — ball-in-court tracking, approval steps, due dates.
 
 Provides reusable workflow primitives for construction document management.
 Used by: RFI, Submittals, NCR, Transmittals, Enterprise Workflows.
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class WorkflowStep:
-    """Single step in a linear workflow.
+    """‌⁠‍Single step in a linear workflow.
 
     Attributes:
         name: Unique step identifier (e.g. "draft", "open", "closed").
@@ -47,7 +47,7 @@ class WorkflowStep:
 
 
 class WorkflowEngine:
-    """Linear workflow engine with ball-in-court tracking.
+    """‌⁠‍Linear workflow engine with ball-in-court tracking.
 
     Steps are ordered — ``advance`` moves forward, ``retreat`` moves backward.
     The engine is **stateless**: it does not store the current step of any

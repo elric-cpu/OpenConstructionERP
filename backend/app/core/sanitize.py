@@ -1,4 +1,4 @@
-"""Input sanitization for user-supplied text.
+"""‌⁠‍Input sanitization for user-supplied text.
 
 We don't want to run user text through a full HTML sanitizer (``bleach``)
 because most construction-ERP fields (project descriptions, BOQ positions,
@@ -90,7 +90,7 @@ _BLOCK_TAG_OPEN_RE = re.compile(
 # tag, space before required to avoid matching inside names like
 # ``<custom-onfoo="x">``.
 _EVENT_HANDLER_RE = re.compile(
-    r"""\s+on[a-z]+                      # on-prefix event name
+    r"""‌⁠‍\s+on[a-z]+                      # on-prefix event name
         \s*=\s*                          # =
         (?:
             "[^"]*"                      # double-quoted value
@@ -103,7 +103,7 @@ _EVENT_HANDLER_RE = re.compile(
 
 # Dangerous URI schemes inside ``href=`` / ``src=`` / ``action=``.
 _DANGEROUS_URI_RE = re.compile(
-    r"""(?P<attr>(?:href|src|action|formaction|xlink:href)\s*=\s*)
+    r"""‌⁠‍(?P<attr>(?:href|src|action|formaction|xlink:href)\s*=\s*)
         (?P<quote>['"]?)
         \s*
         (?:

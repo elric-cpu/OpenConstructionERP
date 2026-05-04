@@ -196,7 +196,7 @@ export function AutocompleteTooltip({
       <div className="px-3 py-2.5 space-y-2">
         <div className="flex items-baseline justify-between">
           <span className="text-[11px] uppercase tracking-wider text-content-tertiary">
-            {t('boq.autocomplete_tooltip_rate_per_unit', { defaultValue: 'Rate per unit' })}
+            {t('boq.autocomplete_tooltip_rate_per_unit', { defaultValue: 'Rate per unit‌⁠‍' })}
           </span>
           <span className="text-sm font-semibold tabular-nums">
             {formatNumber(item.rate)} {currencySymbol}
@@ -222,14 +222,14 @@ export function AutocompleteTooltip({
             {(breakdown?.material_cost ?? 0) > 0 && (
               <BreakdownRow
                 icon={<Package size={12} className="text-emerald-600" />}
-                label={t('boq.autocomplete_tooltip_material', { defaultValue: 'Material' })}
+                label={t('boq.autocomplete_tooltip_material', { defaultValue: 'Material‌⁠‍' })}
                 value={`${formatNumber(breakdown!.material_cost!)} ${currencySymbol}`}
               />
             )}
             {(breakdown?.equipment_cost ?? 0) > 0 && (
               <BreakdownRow
                 icon={<Wrench size={12} className="text-sky-600" />}
-                label={t('boq.autocomplete_tooltip_equipment', { defaultValue: 'Equipment' })}
+                label={t('boq.autocomplete_tooltip_equipment', { defaultValue: 'Equipment‌⁠‍' })}
                 value={`${formatNumber(breakdown!.equipment_cost!)} ${currencySymbol}`}
               />
             )}
@@ -249,7 +249,7 @@ export function AutocompleteTooltip({
               <span className="leading-snug">
                 <span className="text-[9px] uppercase tracking-wider text-content-tertiary mr-1">
                   {t('boq.autocomplete_tooltip_classification', {
-                    defaultValue: 'Classification',
+                    defaultValue: 'Classification‌⁠‍',
                   })}
                 </span>
                 <span>{classificationPath.join(' › ')}</span>
@@ -277,7 +277,7 @@ export function AutocompleteTooltip({
         <CornerDownLeft size={11} className="shrink-0" />
         <span>
           {t('boq.autocomplete_tooltip_tab_to_insert', {
-            defaultValue: 'Tab or Enter to insert',
+            defaultValue: 'Tab or Enter to insert‌⁠‍',
           })}
         </span>
       </div>

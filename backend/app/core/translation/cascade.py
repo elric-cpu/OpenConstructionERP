@@ -1,4 +1,4 @@
-"""Cascade orchestrator — runs the four translation tiers in order.
+"""‌⁠‍Cascade orchestrator — runs the four translation tiers in order.
 
 Each tier returns either a ``TranslationResult`` (with a confidence score)
 or ``None`` (meaning "I can't help, try the next tier"). The cascade
@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 
 class TierUsed(str, Enum):
-    """Identifies which tier produced the translation."""
+    """‌⁠‍Identifies which tier produced the translation."""
 
     LOOKUP_MUSE = "lookup_muse"
     LOOKUP_IATE = "lookup_iate"
@@ -47,7 +47,7 @@ class TierUsed(str, Enum):
 
 @dataclass(frozen=True)
 class TranslationResult:
-    """Outcome of a single ``translate()`` call.
+    """‌⁠‍Outcome of a single ``translate()`` call.
 
     Attributes:
         translated:   Translated text, or original text on fallback.

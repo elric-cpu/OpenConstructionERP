@@ -111,11 +111,11 @@ export function useEntityLock(
           addToast({
             type: 'warning',
             title: i18n.t('collab_locks.heartbeat_lost_title', {
-              defaultValue: 'Lock lost',
+              defaultValue: 'Lock lost‌⁠‍',
             }),
             message: i18n.t('collab_locks.heartbeat_lost_toast', {
               defaultValue:
-                'Your editing lock was lost due to a connection issue. Save your work and re-acquire the lock.',
+                'Your editing lock was lost due to a connection issue. Save your work and re-acquire the lock.‌⁠‍',
             }),
           });
         }
@@ -145,11 +145,11 @@ export function useEntityLock(
         addToast({
           type: 'warning',
           title: i18n.t('collab_locks.lock_conflict_title', {
-            defaultValue: 'Someone is editing this',
+            defaultValue: 'Someone is editing this‌⁠‍',
           }),
           message: i18n.t('collab_locks.lock_conflict_toast', {
             defaultValue:
-              'Locked by {{name}}. Try again in {{seconds}} seconds.',
+              'Locked by {{name}}. Try again in {{seconds}} seconds.‌⁠‍',
             name: result.conflict.current_holder_name,
             seconds: result.conflict.remaining_seconds,
           }),
@@ -160,7 +160,7 @@ export function useEntityLock(
       addToast({
         type: 'error',
         title: i18n.t('collab_locks.lock_error_title', {
-          defaultValue: 'Collaboration service unavailable',
+          defaultValue: 'Collaboration service unavailable‌⁠‍',
         }),
         message: i18n.t('collab_locks.lock_error_toast', {
           defaultValue:

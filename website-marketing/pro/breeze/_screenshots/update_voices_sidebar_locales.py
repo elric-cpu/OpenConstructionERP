@@ -1,4 +1,4 @@
-"""Update voices sidebar locale keys for the 7-card grouped catalog.
+"""‌⁠‍Update voices sidebar locale keys for the 7-card grouped catalog.
 
 Adds: group_flagship, group_github, ref_cadbim_*, ref_agents_*, ref_excel_*,
 ref_cad2data_*, ref_skills_*. Rewrites: aside_label, ref_book_*, ref_cwicr_*

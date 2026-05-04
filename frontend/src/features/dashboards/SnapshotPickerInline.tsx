@@ -74,9 +74,9 @@ export function SnapshotPickerInline({
         <span className="max-w-[200px] truncate" data-testid="snapshot-picker-inline-current">
           {active?.label ??
             (timelineQuery.isLoading
-              ? t('common.loading', { defaultValue: 'Loading…' })
+              ? t('common.loading', { defaultValue: 'Loading…‌⁠‍' })
               : t('dashboards.picker_no_active', {
-                  defaultValue: 'No snapshot selected',
+                  defaultValue: 'No snapshot selected‌⁠‍',
                 }))}
         </span>
         <ChevronDown className="h-3 w-3 text-content-tertiary" />
@@ -86,7 +86,7 @@ export function SnapshotPickerInline({
         <div
           role="listbox"
           aria-label={t('dashboards.picker_listbox_aria', {
-            defaultValue: 'Choose snapshot',
+            defaultValue: 'Choose snapshot‌⁠‍',
           })}
           data-testid="snapshot-picker-inline-listbox"
           className="absolute z-30 mt-1 max-h-72 w-72 overflow-y-auto rounded border border-border-light bg-surface-primary py-1 shadow-lg"
@@ -97,7 +97,7 @@ export function SnapshotPickerInline({
               data-testid="snapshot-picker-inline-loading"
             >
               <Loader2 className="h-3 w-3 animate-spin" />
-              {t('common.loading', { defaultValue: 'Loading…' })}
+              {t('common.loading', { defaultValue: 'Loading…‌⁠‍' })}
             </div>
           )}
 
@@ -107,7 +107,7 @@ export function SnapshotPickerInline({
               data-testid="snapshot-picker-inline-empty"
             >
               {t('dashboards.picker_empty', {
-                defaultValue: 'No snapshots in this project yet.',
+                defaultValue: 'No snapshots in this project yet.‌⁠‍',
               })}
             </div>
           )}

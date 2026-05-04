@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Universal request/response types for the element-to-CWICR matcher.
+"""‌⁠‍Universal request/response types for the element-to-CWICR matcher.
 
 Every source pipeline (BIM, PDF, DWG, photo) feeds the same
 :class:`ElementEnvelope` into the matcher. The envelope is intentionally
@@ -30,7 +30,7 @@ ConfidenceBand = Literal["high", "medium", "low"]
 
 
 class ElementEnvelope(BaseModel):
-    """Source-agnostic representation of one estimable element.
+    """‌⁠‍Source-agnostic representation of one estimable element.
 
     The envelope captures everything the matcher needs to rank CWICR
     candidates: a free-form description, source language, optional
@@ -70,7 +70,7 @@ class ElementEnvelope(BaseModel):
 
 
 class MatchCandidate(BaseModel):
-    """One ranked CWICR position returned to the caller.
+    """‌⁠‍One ranked CWICR position returned to the caller.
 
     The candidate exposes both the raw vector score and the post-boost
     final score. Field names match the eval-harness contract — every

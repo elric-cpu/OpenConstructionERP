@@ -1,4 +1,4 @@
-"""Teams Pydantic schemas — request/response models."""
+"""‌⁠‍Teams Pydantic schemas — request/response models."""
 
 import re
 from datetime import datetime
@@ -14,7 +14,7 @@ _CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
 def _reject_unsafe_string(value: str, field: str) -> str:
-    """Strip/validate free-text strings; raise on control-character junk."""
+    """‌⁠‍Strip/validate free-text strings; raise on control-character junk."""
     if _CONTROL_CHAR_RE.search(value):
         raise ValueError(f"{field} contains control characters")
     cleaned = value.strip()
@@ -26,7 +26,7 @@ def _reject_unsafe_string(value: str, field: str) -> str:
 
 
 class TeamCreate(BaseModel):
-    """Create a new team within a project."""
+    """‌⁠‍Create a new team within a project."""
 
     model_config = ConfigDict(str_strip_whitespace=True, extra="ignore")
 

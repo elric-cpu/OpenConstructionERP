@@ -1,4 +1,4 @@
-"""Update locale strings for release-ticker toggle (clamp-mode) and trim
+"""‌⁠‍Update locale strings for release-ticker toggle (clamp-mode) and trim
 the 'Reply within 1 business day' prefix from custom.form_meta now that
 the user wants only the email shown."""
 import json

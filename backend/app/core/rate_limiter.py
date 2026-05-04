@@ -1,4 +1,4 @@
-"""Simple in-memory rate limiter (no Redis required).
+"""‌⁠‍Simple in-memory rate limiter (no Redis required).
 
 Limits requests per user per time window. Thread-safe via dict with timestamps.
 For production, replace with Redis-based implementation.
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 
 def client_identifier(request: Request) -> str:
-    """Resolve the best available client identifier for rate-limiting buckets.
+    """‌⁠‍Resolve the best available client identifier for rate-limiting buckets.
 
     Prefers the ``X-Forwarded-For`` header when present (first entry — the
     original client) so that Uvicorn sitting behind a reverse proxy
@@ -45,7 +45,7 @@ def client_identifier(request: Request) -> str:
 
 
 class RateLimiter:
-    """Token bucket rate limiter using sliding window."""
+    """‌⁠‍Token bucket rate limiter using sliding window."""
 
     def __init__(self, max_requests: int = 10, window_seconds: int = 60) -> None:
         self.max_requests = max_requests

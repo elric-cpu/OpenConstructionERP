@@ -1,4 +1,4 @@
-"""AI module data access layer.
+"""‌⁠‍AI module data access layer.
 
 All database queries for AI settings and estimate jobs live here.
 No business logic — pure data access.
@@ -13,13 +13,13 @@ from app.modules.ai.models import AIEstimateJob, AISettings
 
 
 class AISettingsRepository:
-    """Data access for AISettings model."""
+    """‌⁠‍Data access for AISettings model."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
     async def get_by_user_id(self, user_id: uuid.UUID) -> AISettings | None:
-        """Get AI settings for a specific user."""
+        """‌⁠‍Get AI settings for a specific user."""
         stmt = select(AISettings).where(AISettings.user_id == user_id)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()

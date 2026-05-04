@@ -1,4 +1,4 @@
-"""RFI Pydantic schemas — request/response models."""
+"""‌⁠‍RFI Pydantic schemas — request/response models."""
 
 from datetime import datetime
 from typing import Any
@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 def _sanitise_rfi_text(value: str | None) -> str | None:
-    """Strip XSS payloads from RFI free-text fields (BUG-389).
+    """‌⁠‍Strip XSS payloads from RFI free-text fields (BUG-389).
 
     RFIs are often rendered in email digests (raw HTML) and PDF reports,
     so a ``<script>`` / event-handler payload smuggled into a subject
@@ -23,7 +23,7 @@ def _sanitise_rfi_text(value: str | None) -> str | None:
 
 
 class RFICreate(BaseModel):
-    """Create a new RFI."""
+    """‌⁠‍Create a new RFI."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 

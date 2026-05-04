@@ -1,4 +1,4 @@
-"""Enterprise Workflows data access layer.
+"""‌⁠‍Enterprise Workflows data access layer.
 
 All database queries for workflow entities live here.
 No business logic — pure data access.
@@ -13,13 +13,13 @@ from app.modules.enterprise_workflows.models import ApprovalRequest, ApprovalWor
 
 
 class WorkflowRepository:
-    """Data access for ApprovalWorkflow model."""
+    """‌⁠‍Data access for ApprovalWorkflow model."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
     async def get(self, workflow_id: uuid.UUID) -> ApprovalWorkflow | None:
-        """Get workflow by ID."""
+        """‌⁠‍Get workflow by ID."""
         return await self.session.get(ApprovalWorkflow, workflow_id)
 
     async def list(

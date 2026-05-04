@@ -192,14 +192,14 @@ function LoadingState({ isCad, fileName, fileSizeMB }: { isCad?: boolean; fileNa
   const remaining = estimatedTotal > 0 ? Math.max(0, Math.round(estimatedTotal - elapsed)) : 0;
 
   const title = isCad
-    ? t('ai.converting_cad', { defaultValue: 'Converting CAD file...' })
-    : t('ai.analyzing', { defaultValue: 'AI is analyzing your input...' });
+    ? t('ai.converting_cad', { defaultValue: 'Converting CAD file...‌⁠‍' })
+    : t('ai.analyzing', { defaultValue: 'AI is analyzing your input...‌⁠‍' });
   const subtitle = isCad && estimatedTotal > 0
     ? remaining > 0
-      ? t('ai.cad_progress_hint', { defaultValue: '~{{remaining}}s remaining — extracting elements and detecting columns', remaining })
-      : t('ai.cad_finalizing', { defaultValue: 'Finalizing extraction...' })
+      ? t('ai.cad_progress_hint', { defaultValue: '~{{remaining}}s remaining — extracting elements and detecting columns‌⁠‍', remaining })
+      : t('ai.cad_finalizing', { defaultValue: 'Finalizing extraction...‌⁠‍' })
     : isCad
-      ? t('ai.cad_processing_hint', { defaultValue: 'Extracting elements, detecting columns. This may take 30-60 seconds for large files.' })
+      ? t('ai.cad_processing_hint', { defaultValue: 'Extracting elements, detecting columns. This may take 30-60 seconds for large files.‌⁠‍' })
       : t('ai.generating', { defaultValue: 'Generating cost breakdown and quantities' });
 
   return (

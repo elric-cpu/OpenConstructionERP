@@ -1,4 +1,4 @@
-"""Repoint the second cad2data link ("available on GitHub" / equivalents) to
+"""‌⁠‍Repoint the second cad2data link ("available on GitHub" / equivalents) to
 the DDC GitHub org so the two adjacent links don't duplicate the same target."""
 import json, re
 from pathlib import Path

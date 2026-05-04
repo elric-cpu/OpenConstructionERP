@@ -1,1 +1,1 @@
-"""BIM Requirements parsers -- one module per supported format."""
+"""‌⁠‍BIM Requirements parsers -- one module per supported format."""

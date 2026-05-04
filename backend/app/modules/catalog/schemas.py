@@ -1,4 +1,4 @@
-"""Catalog resource Pydantic schemas for request/response validation."""
+"""‌⁠‍Catalog resource Pydantic schemas for request/response validation."""
 
 from datetime import datetime
 from typing import Any
@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class CatalogResourceCreate(BaseModel):
-    """Create a new catalog resource."""
+    """‌⁠‍Create a new catalog resource."""
 
     resource_code: str = Field(..., min_length=1, max_length=100)
     name: str = Field(..., min_length=1, max_length=500)
@@ -31,7 +31,7 @@ class CatalogResourceCreate(BaseModel):
 
 
 class CatalogResourceResponse(BaseModel):
-    """Catalog resource in API responses."""
+    """‌⁠‍Catalog resource in API responses."""
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -202,7 +202,7 @@ function ImportDemoModal({
       navigate(`/projects/${result.project_id}`);
     },
     onError: (err: Error) => {
-      addToast({ type: 'error', title: t('demo.install_failed', { defaultValue: 'Failed to install demo' }), message: err.message });
+      addToast({ type: 'error', title: t('demo.install_failed', { defaultValue: 'Failed to install demo‌⁠‍' }), message: err.message });
     },
     onSettled: () => {
       setInstallingId(null);
@@ -298,8 +298,8 @@ function ImportDemoModal({
                     </p>
                     <div className="mt-1 flex items-center gap-3 text-2xs text-content-quaternary">
                       <span>{demo.type}</span>
-                      <span>{demo.sections} {t('demo.sections', { defaultValue: 'sections' })}</span>
-                      <span>{demo.positions} {t('demo.positions', { defaultValue: 'positions' })}</span>
+                      <span>{demo.sections} {t('demo.sections', { defaultValue: 'sections‌⁠‍' })}</span>
+                      <span>{demo.positions} {t('demo.positions', { defaultValue: 'positions‌⁠‍' })}</span>
                       <span>{demo.currency}</span>
                     </div>
                   </div>
@@ -481,7 +481,7 @@ function OnboardingSteps({
             <Zap size={14} className="text-oe-blue" strokeWidth={2} />
           </div>
           <h2 className="text-lg font-semibold text-content-primary">
-            {t('dashboard.getting_started', { defaultValue: 'Getting Started' })}
+            {t('dashboard.getting_started', { defaultValue: 'Getting Started‌⁠‍' })}
           </h2>
           <Badge variant="blue" size="sm">
             {completedCount}/{TOTAL_STEPS}
@@ -598,7 +598,7 @@ function OnboardingSteps({
                       iconPosition="right"
                     >
                       {step.done
-                        ? t('dashboard.completed', { defaultValue: 'Completed' })
+                        ? t('dashboard.completed', { defaultValue: 'Completed‌⁠‍' })
                         : t(step.buttonKey, { defaultValue: step.buttonDefault })}
                     </Button>
                   )}

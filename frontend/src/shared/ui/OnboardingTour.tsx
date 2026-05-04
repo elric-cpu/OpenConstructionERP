@@ -343,7 +343,7 @@ export function OnboardingTour({
         data-testid="onboarding-tooltip"
         role="dialog"
         aria-modal="false"
-        aria-label={t('onboarding.tour_step', { defaultValue: 'Tour step' })}
+        aria-label={t('onboarding.tour_step', { defaultValue: 'Tour step‌⁠‍' })}
         style={{
           position: 'fixed',
           top: tooltipCoords.top,
@@ -382,7 +382,7 @@ export function OnboardingTour({
               'text-content-tertiary hover:text-content-primary hover:bg-surface-secondary',
               'transition-colors',
             )}
-            aria-label={t('onboarding.skip', { defaultValue: 'Skip tour' })}
+            aria-label={t('onboarding.skip', { defaultValue: 'Skip tour‌⁠‍' })}
           >
             <X size={14} />
           </button>
@@ -435,7 +435,7 @@ export function OnboardingTour({
                   'hover:bg-surface-secondary hover:text-content-primary',
                   'transition-colors',
                 )}
-                aria-label={t('onboarding.previous', { defaultValue: 'Previous step' })}
+                aria-label={t('onboarding.previous', { defaultValue: 'Previous step‌⁠‍' })}
               >
                 <ArrowLeft size={13} />
               </button>
@@ -451,8 +451,8 @@ export function OnboardingTour({
               )}
               aria-label={
                 isLast
-                  ? t('onboarding.finish', { defaultValue: 'Finish tour' })
-                  : t('onboarding.next', { defaultValue: 'Next step' })
+                  ? t('onboarding.finish', { defaultValue: 'Finish tour‌⁠‍' })
+                  : t('onboarding.next', { defaultValue: 'Next step‌⁠‍' })
               }
             >
               {isLast

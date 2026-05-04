@@ -1,4 +1,4 @@
-"""Replace the time-promise community.hero_desc copy with a no-promise
+"""‌⁠‍Replace the time-promise community.hero_desc copy with a no-promise
 contribution-friendly line, in en/de/ru."""
 import json
 from pathlib import Path

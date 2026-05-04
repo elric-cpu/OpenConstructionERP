@@ -74,10 +74,10 @@ export default function VectorStatusCard() {
       addToast({
         type: 'success',
         title: t('vector_status.reindex_done', {
-          defaultValue: 'Reindex complete',
+          defaultValue: 'Reindex complete‌⁠‍',
         }),
         message: t('vector_status.reindex_summary', {
-          defaultValue: '{{collection}}: {{indexed}} indexed, {{skipped}} skipped',
+          defaultValue: '{{collection}}: {{indexed}} indexed, {{skipped}} skipped‌⁠‍',
           collection,
           indexed: result.indexed,
           skipped: result.skipped,
@@ -89,7 +89,7 @@ export default function VectorStatusCard() {
       addToast({
         type: 'error',
         title: t('vector_status.reindex_failed', {
-          defaultValue: 'Reindex failed',
+          defaultValue: 'Reindex failed‌⁠‍',
         }),
         message: `${collection}: ${err.message || String(err)}`,
       });
@@ -106,10 +106,10 @@ export default function VectorStatusCard() {
   return (
     <Card className="animate-card-in" style={{ animationDelay: '480ms' }}>
       <CardHeader
-        title={t('vector_status.title', { defaultValue: 'Semantic Search Status' })}
+        title={t('vector_status.title', { defaultValue: 'Semantic Search Status‌⁠‍' })}
         subtitle={t('vector_status.subtitle', {
           defaultValue:
-            'Per-collection indexing health for the cross-module vector store',
+            'Per-collection indexing health for the cross-module vector store‌⁠‍',
         })}
       />
       <CardContent>

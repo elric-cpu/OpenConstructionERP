@@ -1,4 +1,4 @@
-"""Accept-Language header parsing middleware.
+"""‌⁠‍Accept-Language header parsing middleware.
 
 Inspects the incoming ``Accept-Language`` HTTP header (RFC 7231) and an
 optional ``?locale=`` query parameter to determine the best matching
@@ -38,7 +38,7 @@ _TAG_RE = re.compile(
 
 
 def parse_accept_language(header: str) -> list[tuple[str, float]]:
-    """Parse an RFC 7231 ``Accept-Language`` header value.
+    """‌⁠‍Parse an RFC 7231 ``Accept-Language`` header value.
 
     Args:
         header: Raw header string, e.g.
@@ -76,7 +76,7 @@ def match_locale(
     tags: list[tuple[str, float]],
     supported: list[str] | None = None,
 ) -> str:
-    """Match parsed language tags against the supported locale list.
+    """‌⁠‍Match parsed language tags against the supported locale list.
 
     The algorithm tries, for each tag in priority order:
       1. Exact (case-insensitive) match: ``de`` == ``de``

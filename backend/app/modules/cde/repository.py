@@ -1,4 +1,4 @@
-"""CDE data access layer.
+"""‌⁠‍CDE data access layer.
 
 All database queries for document containers and revisions live here.
 No business logic — pure data access.
@@ -13,13 +13,13 @@ from app.modules.cde.models import DocumentContainer, DocumentRevision
 
 
 class ContainerRepository:
-    """Data access for DocumentContainer models."""
+    """‌⁠‍Data access for DocumentContainer models."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
     async def get_by_id(self, container_id: uuid.UUID) -> DocumentContainer | None:
-        """Get container by ID."""
+        """‌⁠‍Get container by ID."""
         return await self.session.get(DocumentContainer, container_id)
 
     async def get_by_code_and_project(

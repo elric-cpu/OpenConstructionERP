@@ -120,7 +120,7 @@ export function DomainDetails({
         {!selectedDomain ? (
           <p className="text-xs text-content-tertiary text-center py-3">
             {t('project_intelligence.select_domain', {
-              defaultValue: 'Select a domain tab above to see detailed metrics.',
+              defaultValue: 'Select a domain tab above to see detailed metrics.‌⁠‍',
             })}
           </p>
         ) : (

@@ -136,12 +136,12 @@ export function BIMConverterStatusBanner({
         addToast({
           type: 'success',
           title: t('bim.converter_install_success_title', {
-            defaultValue: 'Converter installed',
+            defaultValue: 'Converter installed‌⁠‍',
           }),
           message:
             result.message ||
             t('bim.converter_install_success_msg', {
-              defaultValue: 'Installed {{name}} ({{size}} MB)',
+              defaultValue: 'Installed {{name}} ({{size}} MB)‌⁠‍',
               name,
               size: sizeMb,
             }),
@@ -154,7 +154,7 @@ export function BIMConverterStatusBanner({
           {
             type: 'info',
             title: t('bim.converter_install_linux_title', {
-              defaultValue: 'Linux auto-install unavailable',
+              defaultValue: 'Linux auto-install unavailable‌⁠‍',
             }),
             message:
               (result.message || `Run apt commands to install ${name}`) + apt,
@@ -165,7 +165,7 @@ export function BIMConverterStatusBanner({
         addToast({
           type: 'warning',
           title: t('bim.converter_install_unsupported_title', {
-            defaultValue: 'Auto-install not available',
+            defaultValue: 'Auto-install not available‌⁠‍',
           }),
           message:
             result.message || `${name} can't be auto-installed on this OS.`,
@@ -174,7 +174,7 @@ export function BIMConverterStatusBanner({
         addToast({
           type: 'warning',
           title: t('bim.converter_install_problem_title', {
-            defaultValue: 'Converter install incomplete',
+            defaultValue: 'Converter install incomplete‌⁠‍',
           }),
           message:
             result.message || `${name} install did not complete cleanly.`,

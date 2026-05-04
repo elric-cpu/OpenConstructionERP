@@ -1,4 +1,4 @@
-"""Teams service — business logic for team management.
+"""‌⁠‍Teams service — business logic for team management.
 
 Stateless service layer. Handles:
 - Team CRUD within projects
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 class TeamService:
-    """Business logic for team operations."""
+    """‌⁠‍Business logic for team operations."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -31,7 +31,7 @@ class TeamService:
     # ── Teams ────────────────────────────────────────────────────────────
 
     async def create_team(self, data: TeamCreate) -> Team:
-        """Create a new team within a project.
+        """‌⁠‍Create a new team within a project.
 
         After insert we *re-fetch via ``get()``* instead of returning the
         ``session.add``-ed instance directly. ``get()`` uses

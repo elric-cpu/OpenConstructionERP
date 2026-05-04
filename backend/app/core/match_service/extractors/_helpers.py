@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Shared envelope-construction helpers used by every extractor."""
+"""‌⁠‍Shared envelope-construction helpers used by every extractor."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ _QUANTITY_KEYS: tuple[str, ...] = (
 
 
 def _coerce_float(value: Any) -> float | None:
-    """Convert numeric-ish values to float; non-numeric → ``None``."""
+    """‌⁠‍Convert numeric-ish values to float; non-numeric → ``None``."""
     if value is None:
         return None
     if isinstance(value, bool):
@@ -41,7 +41,7 @@ def _coerce_float(value: Any) -> float | None:
 
 
 def extract_quantities(raw: dict[str, Any]) -> dict[str, float]:
-    """Pull recognised quantity keys out of an arbitrary raw element dict.
+    """‌⁠‍Pull recognised quantity keys out of an arbitrary raw element dict.
 
     Looks at both the top level (``raw["area_m2"]``) and a nested
     ``geometry`` block (``raw["geometry"]["area_m2"]``) — the canonical

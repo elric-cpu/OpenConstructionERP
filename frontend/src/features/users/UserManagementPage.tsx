@@ -174,7 +174,7 @@ function InviteModal({
           <div className="flex items-center gap-2">
             <UserPlus size={18} className="text-oe-blue" />
             <h3 className="text-base font-semibold">
-              {t('users.invite_user', { defaultValue: 'Invite User' })}
+              {t('users.invite_user', { defaultValue: 'Invite User‌⁠‍' })}
             </h3>
           </div>
           <button onClick={onClose} className="p-1 rounded hover:bg-surface-secondary">
@@ -184,7 +184,7 @@ function InviteModal({
         <div className="p-5 space-y-4">
           <div>
             <label className="block text-xs font-medium text-content-secondary mb-1">
-              {t('users.full_name', { defaultValue: 'Full Name' })}
+              {t('users.full_name', { defaultValue: 'Full Name‌⁠‍' })}
             </label>
             <input
               className={inputCls}
@@ -208,7 +208,7 @@ function InviteModal({
           </div>
           <div>
             <label className="block text-xs font-medium text-content-secondary mb-1">
-              {t('users.password', { defaultValue: 'Password' })}
+              {t('users.password', { defaultValue: 'Password‌⁠‍' })}
             </label>
             <input
               className={inputCls}
@@ -247,7 +247,7 @@ function InviteModal({
         </div>
         <div className="flex justify-end gap-2 px-5 py-3 border-t border-border">
           <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg hover:bg-surface-secondary">
-            {t('common.cancel', { defaultValue: 'Cancel' })}
+            {t('common.cancel', { defaultValue: 'Cancel‌⁠‍' })}
           </button>
           <button
             onClick={() => onSubmit(form)}
@@ -255,7 +255,7 @@ function InviteModal({
             className="px-4 py-2 text-sm font-medium rounded-lg bg-oe-blue text-white hover:bg-oe-blue-dark disabled:opacity-50"
           >
             {isPending
-              ? t('common.creating', { defaultValue: 'Creating...' })
+              ? t('common.creating', { defaultValue: 'Creating...‌⁠‍' })
               : t('users.invite', { defaultValue: 'Invite' })}
           </button>
         </div>

@@ -1,4 +1,4 @@
-"""Procurement API routes.
+"""‌⁠‍Procurement API routes.
 
 Endpoints:
     GET    /                           — List purchase orders
@@ -44,7 +44,7 @@ def _get_service(session: SessionDep) -> ProcurementService:
 
 
 def _contact_display_name(c: Contact) -> str:
-    """Return the human-readable contact label (company > "first last" > email)."""
+    """‌⁠‍Return the human-readable contact label (company > "first last" > email)."""
     if c.company_name:
         return c.company_name
     full = f"{c.first_name or ''} {c.last_name or ''}".strip()
@@ -54,7 +54,7 @@ def _contact_display_name(c: Contact) -> str:
 async def _fetch_vendor_names(
     session: AsyncSession, vendor_ids: Iterable[str | None]
 ) -> dict[str, str]:
-    """Resolve ``vendor_contact_id`` → display name in one round trip.
+    """‌⁠‍Resolve ``vendor_contact_id`` → display name in one round trip.
 
     Returns a dict keyed by the string form of the contact UUID. Unknown IDs
     (contact deleted, typo in the string, etc.) just don't appear in the map,

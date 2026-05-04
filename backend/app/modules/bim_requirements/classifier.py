@@ -1,4 +1,4 @@
-"""Format classifier for BIM requirement files.
+"""‌⁠‍Format classifier for BIM requirement files.
 
 Auto-detects the file format from extension and content sniffing.
 """
@@ -10,10 +10,10 @@ logger = logging.getLogger(__name__)
 
 
 class FormatClassifier:
-    """Automatically detect the format of a BIM requirements file."""
+    """‌⁠‍Automatically detect the format of a BIM requirements file."""
 
     def classify(self, file_path: Path) -> str:
-        """Classify the file format.
+        """‌⁠‍Classify the file format.
 
         Args:
             file_path: Path to the file to classify.

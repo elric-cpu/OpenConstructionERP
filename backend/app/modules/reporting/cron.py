@@ -1,4 +1,4 @@
-"""Minimal cron-expression parser for scheduled reports.
+"""‌⁠‍Minimal cron-expression parser for scheduled reports.
 
 We avoid pulling in ``croniter`` (and its transitive deps) for the
 narrow slice of cron that reports use in practice: daily, weekly and
@@ -33,7 +33,7 @@ from datetime import UTC, datetime, timedelta
 
 
 class CronParseError(ValueError):
-    """Raised when a cron expression cannot be interpreted.
+    """‌⁠‍Raised when a cron expression cannot be interpreted.
 
     Callers should catch this and surface a user-friendly error; the UI
     is expected to show the offending expression next to the input box.
@@ -41,7 +41,7 @@ class CronParseError(ValueError):
 
 
 def _parse_field(raw: str, *, lo: int, hi: int) -> set[int]:
-    """Parse one of five cron fields into the set of matching integers."""
+    """‌⁠‍Parse one of five cron fields into the set of matching integers."""
     raw = raw.strip()
     if raw == "*":
         return set(range(lo, hi + 1))

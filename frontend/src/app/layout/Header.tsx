@@ -80,7 +80,7 @@ export function Header({ title, onMenuClick }: HeaderProps) {
         {onMenuClick && (
           <button
             onClick={onMenuClick}
-            aria-label={t('common.open_menu', { defaultValue: 'Open menu' })}
+            aria-label={t('common.open_menu', { defaultValue: 'Open menu‌⁠‍' })}
             className="flex h-9 w-9 items-center justify-center rounded-lg text-content-secondary hover:bg-surface-secondary lg:hidden"
           >
             <Menu size={20} />
@@ -136,7 +136,7 @@ export function Header({ title, onMenuClick }: HeaderProps) {
         {/* Mobile search icon */}
         <button
           onClick={openCommandPalette}
-          aria-label={t('common.search', { defaultValue: 'Search' })}
+          aria-label={t('common.search', { defaultValue: 'Search‌⁠‍' })}
           className="flex sm:hidden h-8 w-8 items-center justify-center rounded-lg text-content-secondary hover:bg-surface-secondary"
         >
           <Search size={17} />
@@ -171,11 +171,11 @@ export function Header({ title, onMenuClick }: HeaderProps) {
             'text-content-tertiary transition-colors',
             'hover:bg-surface-secondary hover:text-content-secondary',
           )}
-          title={t('feedback.report_issue', { defaultValue: 'Report Issue' })}
-          aria-label={t('feedback.report_issue', { defaultValue: 'Report Issue' })}
+          title={t('feedback.report_issue', { defaultValue: 'Report Issue‌⁠‍' })}
+          aria-label={t('feedback.report_issue', { defaultValue: 'Report Issue‌⁠‍' })}
         >
           <Bug size={14} />
-          <span className="hidden md:inline">{t('feedback.report_issue', { defaultValue: 'Report Issue' })}</span>
+          <span className="hidden md:inline">{t('feedback.report_issue', { defaultValue: 'Report Issue‌⁠‍' })}</span>
         </button>
 
         {/* More popover — keeps the email fallback discoverable but uncluttered. */}

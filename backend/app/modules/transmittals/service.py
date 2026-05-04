@@ -1,4 +1,4 @@
-"""Transmittals service — business logic for transmittal management.
+"""‌⁠‍Transmittals service — business logic for transmittal management.
 
 Stateless service layer. Handles:
 - Transmittal CRUD with auto-numbering
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 class TransmittalService:
-    """Business logic for transmittal operations."""
+    """‌⁠‍Business logic for transmittal operations."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -41,7 +41,7 @@ class TransmittalService:
         data: TransmittalCreate,
         user_id: str | None = None,
     ) -> Transmittal:
-        """Create a new transmittal with auto-generated number."""
+        """‌⁠‍Create a new transmittal with auto-generated number."""
         number = await self.repo.next_number(data.project_id)
 
         transmittal = Transmittal(

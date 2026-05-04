@@ -40,12 +40,12 @@ export function SnapshotDiffView({
     <Card data-testid="snapshot-diff-view">
       <div className="border-b border-border-light px-4 py-2">
         <h3 className="text-sm font-semibold text-content-primary">
-          {t('dashboards.diff_title', { defaultValue: 'Snapshot diff' })}
+          {t('dashboards.diff_title', { defaultValue: 'Snapshot diff‌⁠‍' })}
         </h3>
         <p className="text-xs text-content-tertiary">
           {t('dashboards.diff_subtitle', {
             defaultValue:
-              'Schema-level changes between the two selected snapshots — older on the left, newer on the right.',
+              'Schema-level changes between the two selected snapshots — older on the left, newer on the right.‌⁠‍',
           })}
         </p>
       </div>
@@ -64,7 +64,7 @@ export function SnapshotDiffView({
             data-testid="snapshot-diff-error"
           >
             {t('dashboards.diff_error', {
-              defaultValue: 'Could not compute the diff for these snapshots.',
+              defaultValue: 'Could not compute the diff for these snapshots.‌⁠‍',
             })}
           </div>
         )}
@@ -87,11 +87,11 @@ function DiffBody({ diff }: { diff: SnapshotDiff }) {
         <SummaryChips diff={diff} />
         <EmptyState
           title={t('dashboards.diff_identical_title', {
-            defaultValue: 'Snapshots are identical',
+            defaultValue: 'Snapshots are identical‌⁠‍',
           })}
           description={t('dashboards.diff_identical_desc', {
             defaultValue:
-              'No columns were added, removed or retyped, and the row count is unchanged.',
+              'No columns were added, removed or retyped, and the row count is unchanged.‌⁠‍',
           })}
         />
       </div>

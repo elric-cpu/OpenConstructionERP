@@ -1,4 +1,4 @@
-"""Add users module translations to all 20 locale files."""
+"""‌⁠‍Add users module translations to all 20 locale files."""
 import json
 import os
 

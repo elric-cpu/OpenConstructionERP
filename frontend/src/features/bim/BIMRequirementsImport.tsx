@@ -68,7 +68,7 @@ export default function BIMRequirementsImport() {
       setImportResult(result);
       addToast({
         type: 'success',
-        title: t('bim.requirements.importSuccessTitle', { defaultValue: 'Import complete' }),
+        title: t('bim.requirements.importSuccessTitle', { defaultValue: 'Import complete‌⁠‍' }),
         message: t('bim.requirements.importSuccess', {
           defaultValue: `Imported {{count}} requirements ({{format}})`,
           count: result.total_requirements,
@@ -86,7 +86,7 @@ export default function BIMRequirementsImport() {
   const deleteMutation = useMutation({
     mutationFn: (setId: string) => deleteBIMRequirementSet(setId),
     onSuccess: () => {
-      addToast({ type: 'success', title: t('bim.requirements.deletedTitle', { defaultValue: 'Deleted' }), message: t('bim.requirements.deleted', { defaultValue: 'Requirement set deleted' }) });
+      addToast({ type: 'success', title: t('bim.requirements.deletedTitle', { defaultValue: 'Deleted‌⁠‍' }), message: t('bim.requirements.deleted', { defaultValue: 'Requirement set deleted‌⁠‍' }) });
       queryClient.invalidateQueries({ queryKey: ['bim-requirement-sets'] });
     },
     onError: (err: Error) => {
@@ -131,7 +131,7 @@ export default function BIMRequirementsImport() {
   if (!projectId) {
     return (
       <div className="text-sm text-zinc-500 dark:text-zinc-400 p-4">
-        {t('bim.requirements.noProject', { defaultValue: 'Select a project first' })}
+        {t('bim.requirements.noProject', { defaultValue: 'Select a project first‌⁠‍' })}
       </div>
     );
   }
@@ -141,7 +141,7 @@ export default function BIMRequirementsImport() {
       {/* ── Upload zone ──────────────────────────────────────────── */}
       <div>
         <h3 className="text-sm font-semibold mb-2 text-zinc-700 dark:text-zinc-200">
-          {t('bim.requirements.importTitle', { defaultValue: 'Import BIM Requirements' })}
+          {t('bim.requirements.importTitle', { defaultValue: 'Import BIM Requirements‌⁠‍' })}
         </h3>
 
         <div

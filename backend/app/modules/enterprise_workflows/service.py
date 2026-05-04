@@ -1,4 +1,4 @@
-"""Enterprise Workflows service — business logic for approval workflows.
+"""‌⁠‍Enterprise Workflows service — business logic for approval workflows.
 
 Stateless service layer.
 """
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 class WorkflowService:
-    """Business logic for enterprise approval workflows."""
+    """‌⁠‍Business logic for enterprise approval workflows."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -35,7 +35,7 @@ class WorkflowService:
     # ── Workflows ───────────────────────────────────────────────────────────
 
     async def create_workflow(self, data: WorkflowCreate) -> ApprovalWorkflow:
-        """Create a new approval workflow definition."""
+        """‌⁠‍Create a new approval workflow definition."""
         workflow = ApprovalWorkflow(
             project_id=data.project_id,
             entity_type=data.entity_type,

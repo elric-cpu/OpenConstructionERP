@@ -1,4 +1,4 @@
-"""Revit Shared Parameters (.txt) parser.
+"""‌⁠‍Revit Shared Parameters (.txt) parser.
 
 Parses the TAB-delimited Revit shared parameter file format into
 UniversalRequirement rows.
@@ -35,13 +35,13 @@ _REVIT_DATATYPE_MAP: dict[str, str] = {
 
 
 class RevitSPParser(BaseRequirementParser):
-    """Parser for Revit Shared Parameters .txt files."""
+    """‌⁠‍Parser for Revit Shared Parameters .txt files."""
 
     FORMAT_NAME = "RevitSP"
     SUPPORTED_EXTENSIONS = [".txt"]
 
     def parse(self, source: Path | str | bytes) -> ParseResult:
-        """Parse a Revit Shared Parameters file."""
+        """‌⁠‍Parse a Revit Shared Parameters file."""
         result = ParseResult()
         result.metadata["format"] = self.FORMAT_NAME
 

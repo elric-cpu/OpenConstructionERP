@@ -79,13 +79,13 @@ export function BatchActionBar({
       <div
         className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 animate-slide-up"
         role="toolbar"
-        aria-label={t('boq.batch_actions', { defaultValue: 'Batch actions' })}
+        aria-label={t('boq.batch_actions', { defaultValue: 'Batch actions‌⁠‍' })}
       >
         <div className="flex items-center gap-3 rounded-2xl border border-border-light bg-surface-elevated shadow-xl px-5 py-3">
           {/* Selection count */}
           <span className="text-sm font-medium text-content-primary tabular-nums whitespace-nowrap">
             {t('boq.n_selected', {
-              defaultValue: '{{count}} positions selected',
+              defaultValue: '{{count}} positions selected‌⁠‍',
               count,
             })}
           </span>
@@ -97,11 +97,11 @@ export function BatchActionBar({
           <button
             type="button"
             onClick={handleDeleteClick}
-            aria-label={t('boq.batch_delete', { defaultValue: 'Delete selected' })}
+            aria-label={t('boq.batch_delete', { defaultValue: 'Delete selected‌⁠‍' })}
             className="inline-flex items-center gap-1.5 rounded-lg bg-semantic-error/10 px-3 py-1.5 text-xs font-medium text-semantic-error hover:bg-semantic-error/20 transition-colors"
           >
             <Trash2 size={14} />
-            {t('boq.batch_delete', { defaultValue: 'Delete selected' })}
+            {t('boq.batch_delete', { defaultValue: 'Delete selected‌⁠‍' })}
           </button>
 
           {/* Change unit */}
@@ -109,7 +109,7 @@ export function BatchActionBar({
             <button
               type="button"
               onClick={() => setUnitDropdownOpen((prev) => !prev)}
-              aria-label={t('boq.batch_change_unit', { defaultValue: 'Change unit' })}
+              aria-label={t('boq.batch_change_unit', { defaultValue: 'Change unit‌⁠‍' })}
               aria-expanded={unitDropdownOpen}
               aria-haspopup="listbox"
               className="inline-flex items-center gap-1.5 rounded-lg bg-oe-blue-subtle px-3 py-1.5 text-xs font-medium text-oe-blue hover:bg-oe-blue-subtle/80 transition-colors"

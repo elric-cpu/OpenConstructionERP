@@ -1,4 +1,4 @@
-"""Discord webhook connector.
+"""‌⁠‍Discord webhook connector.
 
 Setup: User creates a webhook in a Discord channel settings
 (Server Settings > Integrations > Webhooks > New Webhook), copies the URL.
@@ -23,7 +23,7 @@ async def send_discord_notification(
     action_url: str | None = None,
     fields: list[dict[str, str]] | None = None,
 ) -> bool:
-    """Send an embed notification to a Discord channel via webhook.
+    """‌⁠‍Send an embed notification to a Discord channel via webhook.
 
     Args:
         webhook_url: The webhook URL from Discord channel settings.

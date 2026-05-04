@@ -1,4 +1,4 @@
-"""Procurement event handlers — auto-create PO from awarded tender.
+"""‌⁠‍Procurement event handlers — auto-create PO from awarded tender.
 
 Subscribes to ``tendering.package.awarded`` and creates a draft Purchase
 Order pre-populated from the winning bid's line items, supplier
@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 
 def _to_decimal(value: object) -> Decimal:
-    """Coerce a JSON-loaded numeric/string into Decimal, defaulting to 0."""
+    """‌⁠‍Coerce a JSON-loaded numeric/string into Decimal, defaulting to 0."""
     if value is None:
         return Decimal("0")
     try:
@@ -56,7 +56,7 @@ def _to_decimal(value: object) -> Decimal:
 
 
 async def _on_tender_awarded(event: Event) -> None:
-    """Schedule the auto-PO creation as a detached task.
+    """‌⁠‍Schedule the auto-PO creation as a detached task.
 
     The publisher (``tendering.service.apply_winner``) calls
     ``event_bus.publish`` while still holding its request transaction. On

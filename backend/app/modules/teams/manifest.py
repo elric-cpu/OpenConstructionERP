@@ -1,4 +1,4 @@
-"""Team Visibility module manifest."""
+"""‌⁠‍Team Visibility module manifest."""
 
 from app.core.module_loader import ModuleManifest
 

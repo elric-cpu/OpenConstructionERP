@@ -1,4 +1,4 @@
-"""RFQ Bidding service — business logic for RFQ and bid management.
+"""‌⁠‍RFQ Bidding service — business logic for RFQ and bid management.
 
 Stateless service layer.
 """
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 class RFQService:
-    """Business logic for RFQ and bidding operations."""
+    """‌⁠‍Business logic for RFQ and bidding operations."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -37,7 +37,7 @@ class RFQService:
         data: RFQCreate,
         user_id: str | None = None,
     ) -> RFQ:
-        """Create a new RFQ."""
+        """‌⁠‍Create a new RFQ."""
         rfq_number = data.rfq_number
         if not rfq_number:
             rfq_number = await self.rfqs.next_rfq_number(data.project_id)

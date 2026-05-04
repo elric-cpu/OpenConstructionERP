@@ -1,4 +1,4 @@
-"""Contacts Pydantic schemas — request/response models."""
+"""‌⁠‍Contacts Pydantic schemas — request/response models."""
 
 from datetime import datetime
 from typing import Any
@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ContactCreate(BaseModel):
-    """Create a new contact."""
+    """‌⁠‍Create a new contact."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -67,7 +67,7 @@ class ContactCreate(BaseModel):
     @field_validator("primary_email")
     @classmethod
     def validate_email_format(cls, v: str | None) -> str | None:
-        """Validate email has a basic valid format."""
+        """‌⁠‍Validate email has a basic valid format."""
         if v is not None:
             import re
 

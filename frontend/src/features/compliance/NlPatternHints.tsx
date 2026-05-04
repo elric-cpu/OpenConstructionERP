@@ -46,7 +46,7 @@ export function NlPatternHints({ patterns, onPick }: NlPatternHintsProps) {
       >
         <span className="flex items-center gap-2 text-sm font-semibold text-content-primary">
           <Lightbulb size={14} className="text-oe-blue" />
-          {t('compliance.nl.patterns_title', { defaultValue: 'Supported patterns' })}
+          {t('compliance.nl.patterns_title', { defaultValue: 'Supported patterns‌⁠‍' })}
         </span>
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
       </button>

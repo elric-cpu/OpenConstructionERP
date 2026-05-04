@@ -197,8 +197,8 @@ function RegionImportGrid({
     onSuccess: (result) => {
       addToast({
         type: 'success',
-        title: t('catalog.import_success', { defaultValue: 'Import complete' }),
-        message: `${result.imported} ${t('catalog.resources_imported', { defaultValue: 'resources imported' })}`,
+        title: t('catalog.import_success', { defaultValue: 'Import complete‌⁠‍' }),
+        message: `${result.imported} ${t('catalog.resources_imported', { defaultValue: 'resources imported‌⁠‍' })}`,
       });
       setImportingId(null);
       onImported();
@@ -206,7 +206,7 @@ function RegionImportGrid({
     onError: (err: Error) => {
       addToast({
         type: 'error',
-        title: t('catalog.import_failed', { defaultValue: 'Import failed' }),
+        title: t('catalog.import_failed', { defaultValue: 'Import failed‌⁠‍' }),
         message: err.message,
       });
       setImportingId(null);
@@ -230,12 +230,12 @@ function RegionImportGrid({
           </div>
           <div>
             <h2 className="text-base font-semibold text-content-primary">
-              {t('catalog.import_regions_title', { defaultValue: 'Import Resource Catalog' })}
+              {t('catalog.import_regions_title', { defaultValue: 'Import Resource Catalog‌⁠‍' })}
             </h2>
             <p className="text-xs text-content-tertiary">
               {t('catalog.import_regions_desc', {
                 defaultValue:
-                  'Download pre-built resource catalogs from CWICR regional databases',
+                  'Download pre-built resource catalogs from CWICR regional databases‌⁠‍',
               })}
             </p>
           </div>

@@ -302,11 +302,11 @@ export function ReportingPage() {
     <div className="w-full space-y-6 animate-fade-in">
       <Breadcrumb
         items={[
-          { label: t('nav.dashboard', { defaultValue: 'Dashboard' }), to: '/' },
+          { label: t('nav.dashboard', { defaultValue: 'Dashboard‌⁠‍' }), to: '/' },
           ...(activeProjectName
             ? [{ label: activeProjectName, to: `/projects/${activeProjectId}` }]
             : []),
-          { label: t('reporting.title', { defaultValue: 'Reporting Dashboards' }) },
+          { label: t('reporting.title', { defaultValue: 'Reporting Dashboards‌⁠‍' }) },
         ]}
         className="mb-4"
       />
@@ -315,11 +315,11 @@ export function ReportingPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-content-primary">
-            {t('reporting.title', { defaultValue: 'Reporting Dashboards' })}
+            {t('reporting.title', { defaultValue: 'Reporting Dashboards‌⁠‍' })}
           </h1>
           <p className="mt-1 text-sm text-content-secondary">
             {t('reporting.subtitle', {
-              defaultValue: 'Role-based KPI dashboards with real-time project data',
+              defaultValue: 'Role-based KPI dashboards with real-time project data‌⁠‍',
             })}
           </p>
         </div>
@@ -329,7 +329,7 @@ export function ReportingPage() {
           className="inline-flex items-center gap-2 rounded-lg bg-oe-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-oe-blue-hover disabled:opacity-50"
         >
           {recalculating ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-          {t('reporting.recalculate', { defaultValue: 'Recalculate KPIs' })}
+          {t('reporting.recalculate', { defaultValue: 'Recalculate KPIs‌⁠‍' })}
         </button>
       </div>
 

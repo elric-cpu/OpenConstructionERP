@@ -1,4 +1,4 @@
-"""Assembly data access layer.
+"""‌⁠‍Assembly data access layer.
 
 All database queries for assemblies and components live here.
 No business logic — pure data access.
@@ -14,13 +14,13 @@ from app.modules.assemblies.models import Assembly, Component
 
 
 class AssemblyRepository:
-    """Data access for Assembly model."""
+    """‌⁠‍Data access for Assembly model."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
     async def get_by_id(self, assembly_id: uuid.UUID) -> Assembly | None:
-        """Get assembly by ID without loading components (avoids MissingGreenlet)."""
+        """‌⁠‍Get assembly by ID without loading components (avoids MissingGreenlet)."""
         stmt = select(Assembly).where(Assembly.id == assembly_id).options(noload(Assembly.components))
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()

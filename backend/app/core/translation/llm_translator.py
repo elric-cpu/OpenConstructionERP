@@ -1,4 +1,4 @@
-"""LLM tier — translates a single term via the configured AI provider.
+"""‌⁠‍LLM tier — translates a single term via the configured AI provider.
 
 Reuses :func:`app.modules.ai.ai_client.call_ai` so we automatically get
 support for every provider the rest of the platform supports (Anthropic,
@@ -66,7 +66,7 @@ def _estimate_cost_usd(provider: str, tokens: int) -> float:
 
 
 def _clean_response(text: str) -> str:
-    """Strip quotes / leading punctuation that LLMs occasionally add."""
+    """‌⁠‍Strip quotes / leading punctuation that LLMs occasionally add."""
     if not text:
         return text
     out = text.strip()
@@ -95,7 +95,7 @@ async def llm_translate(
     domain: str = "construction",
     user_settings: Any = None,
 ) -> tuple[str, float, float] | None:
-    """Translate via LLM. Returns ``(translation, cost_usd, confidence)``.
+    """‌⁠‍Translate via LLM. Returns ``(translation, cost_usd, confidence)``.
 
     Returns ``None`` if no API key is configured, the network fails, or
     the response is unusable. Callers must treat ``None`` as a tier miss

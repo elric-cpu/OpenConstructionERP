@@ -295,7 +295,7 @@ export default function BIMGroupsPanel({
         <div className="flex items-center gap-1.5">
           <Bookmark size={12} className="text-oe-blue" />
           <span className="text-[10px] font-semibold uppercase tracking-wider text-content-tertiary">
-            {t('bim.saved_groups', { defaultValue: 'Saved groups' })}
+            {t('bim.saved_groups', { defaultValue: 'Saved groups‌⁠‍' })}
           </span>
           <span className="text-[10px] text-content-quaternary tabular-nums">
             ({savedGroups.length})
@@ -364,7 +364,7 @@ export default function BIMGroupsPanel({
                       onClick={() => onIsolateGroup(group)}
                       className="flex-1 min-w-0 text-left text-[11px] font-medium text-content-primary truncate"
                       title={t('bim.groups_click_isolate', {
-                        defaultValue: 'Click to isolate in 3D',
+                        defaultValue: 'Click to isolate in 3D‌⁠‍',
                       })}
                     >
                       {group.name}
@@ -445,7 +445,7 @@ export default function BIMGroupsPanel({
                     ) : (
                       <div className="flex items-center gap-1 px-1 text-[10px] text-content-quaternary">
                         <span>
-                          {t('bim.groups_not_linked', { defaultValue: 'Not linked to BOQ' })}
+                          {t('bim.groups_not_linked', { defaultValue: 'Not linked to BOQ‌⁠‍' })}
                         </span>
                         <button
                           type="button"
@@ -456,7 +456,7 @@ export default function BIMGroupsPanel({
                           className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium text-oe-blue hover:bg-oe-blue/10 transition-colors"
                         >
                           <Plus size={8} />
-                          {t('bim.groups_link_boq', { defaultValue: 'Link BOQ' })}
+                          {t('bim.groups_link_boq', { defaultValue: 'Link BOQ‌⁠‍' })}
                         </button>
                       </div>
                     )}
@@ -495,7 +495,7 @@ export default function BIMGroupsPanel({
             >
               <Plus size={10} />
               {t('bim.groups_new_from_selection', {
-                defaultValue: 'New group from selection',
+                defaultValue: 'New group from selection‌⁠‍',
               })}
             </button>
           )}

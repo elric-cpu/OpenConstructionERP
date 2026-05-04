@@ -1,4 +1,4 @@
-"""Background Jobs status module manifest.
+"""‌⁠‍Background Jobs status module manifest.
 
 Exposes read-only / cancel endpoints for the JobRun rows produced by the
 generic Celery runner in :mod:`app.core.jobs`. The module is intentionally

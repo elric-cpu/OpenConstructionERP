@@ -77,11 +77,11 @@ export default function BIMFilterGroupsPanel(props: BIMFilterGroupsPanelProps) {
   const tabs: { id: TabId; label: string }[] = [
     {
       id: 'filters',
-      label: t('bim.tab_filters', { defaultValue: 'Filters' }),
+      label: t('bim.tab_filters', { defaultValue: 'Filters‌⁠‍' }),
     },
     {
       id: 'groups',
-      label: t('bim.tab_groups', { defaultValue: 'Groups' }),
+      label: t('bim.tab_groups', { defaultValue: 'Groups‌⁠‍' }),
     },
   ];
 
@@ -91,7 +91,7 @@ export default function BIMFilterGroupsPanel(props: BIMFilterGroupsPanelProps) {
       <div
         role="tablist"
         aria-label={t('bim.filter_groups_tabs_aria', {
-          defaultValue: 'Filter and groups tabs',
+          defaultValue: 'Filter and groups tabs‌⁠‍',
         })}
         className="flex items-stretch border-b border-border-light bg-surface-secondary"
       >
@@ -121,7 +121,7 @@ export default function BIMFilterGroupsPanel(props: BIMFilterGroupsPanelProps) {
                       : 'bg-surface-tertiary text-content-secondary'
                   }`}
                   aria-label={t('bim.groups_count_badge', {
-                    defaultValue: '{{count}} saved groups',
+                    defaultValue: '{{count}} saved groups‌⁠‍',
                     count: groupsCount,
                   })}
                 >

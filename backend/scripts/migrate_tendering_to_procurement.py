@@ -1,4 +1,4 @@
-"""Migrate Tendering data (TenderPackage, TenderBid) into Procurement module tables.
+"""‌⁠‍Migrate Tendering data (TenderPackage, TenderBid) into Procurement module tables.
 
 For each ``TenderPackage`` with an awarded bid, creates a corresponding
 ``PurchaseOrder`` in ``oe_procurement_po``.  Bid details are stored as
@@ -27,13 +27,13 @@ logger = logging.getLogger(__name__)
 
 
 def _table_exists(conn: sa.engine.Connection, table_name: str) -> bool:
-    """Return True if *table_name* exists in the current database."""
+    """‌⁠‍Return True if *table_name* exists in the current database."""
     insp = sa.inspect(conn)
     return table_name in insp.get_table_names()
 
 
 def _get_sync_url() -> str:
-    """Resolve the synchronous DB URL from app settings or fallback."""
+    """‌⁠‍Resolve the synchronous DB URL from app settings or fallback."""
     try:
         from app.config import get_settings
 

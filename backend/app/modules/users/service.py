@@ -1,4 +1,4 @@
-"""User service — business logic for authentication and user management.
+"""‌⁠‍User service — business logic for authentication and user management.
 
 Stateless service layer. Handles:
 - User registration & login (JWT)
@@ -58,13 +58,13 @@ logger = logging.getLogger(__name__)
 
 
 def hash_password(password: str) -> str:
-    """Hash a plaintext password using bcrypt."""
+    """‌⁠‍Hash a plaintext password using bcrypt."""
     salt = bcrypt.gensalt(rounds=12)
     return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    """Verify a plaintext password against a bcrypt hash."""
+    """‌⁠‍Verify a plaintext password against a bcrypt hash."""
     return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
 
 

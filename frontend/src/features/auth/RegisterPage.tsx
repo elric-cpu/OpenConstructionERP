@@ -46,11 +46,11 @@ export function RegisterPage() {
     setError('');
 
     if (!passwordsMatch) {
-      setError(t('auth.passwords_no_match', { defaultValue: 'Passwords do not match' }));
+      setError(t('auth.passwords_no_match', { defaultValue: 'Passwords do not match‌⁠‍' }));
       return;
     }
     if (!passwordLongEnough) {
-      setError(t('auth.password_min_length', { defaultValue: 'Password must be at least 8 characters' }));
+      setError(t('auth.password_min_length', { defaultValue: 'Password must be at least 8 characters‌⁠‍' }));
       return;
     }
 

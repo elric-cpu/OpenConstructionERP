@@ -155,7 +155,7 @@ function ChatBubble({
               }`}
             >
               <Database size={10} />
-              {t('ai.advisor_sources', { defaultValue: 'Sources:' })}
+              {t('ai.advisor_sources', { defaultValue: 'Sources:‌⁠‍' })}
             </p>
             {msg.sources.map((s, j) => (
               <p
@@ -300,7 +300,7 @@ export function AdvisorPage() {
       } catch (err) {
         addToast({
           type: 'error',
-          title: t('ai.advisor_error', { defaultValue: 'AI Advisor Error' }),
+          title: t('ai.advisor_error', { defaultValue: 'AI Advisor Error‌⁠‍' }),
           message: err instanceof Error ? err.message : '',
         });
         setMessages((prev) => [
@@ -308,7 +308,7 @@ export function AdvisorPage() {
           {
             role: 'assistant',
             content: t('ai.advisor_unavailable', {
-              defaultValue: 'Unable to get a response. Please check AI settings.',
+              defaultValue: 'Unable to get a response. Please check AI settings.‌⁠‍',
             }),
             timestamp: Date.now(),
           },
@@ -323,8 +323,8 @@ export function AdvisorPage() {
 
   const suggestions = useMemo(
     () => [
-      t('ai.advisor_q1', { defaultValue: 'What is the average cost per m² of plaster?' }),
-      t('ai.advisor_q2', { defaultValue: 'Compare concrete prices by region' }),
+      t('ai.advisor_q1', { defaultValue: 'What is the average cost per m² of plaster?‌⁠‍' }),
+      t('ai.advisor_q2', { defaultValue: 'Compare concrete prices by region‌⁠‍' }),
       t('ai.advisor_q3', { defaultValue: 'Suggest cheaper alternatives for steel' }),
       t('ai.advisor_q4', { defaultValue: 'What are typical labor rates for electricians?' }),
     ],

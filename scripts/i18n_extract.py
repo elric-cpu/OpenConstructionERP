@@ -1,4 +1,4 @@
-"""Extract EN source + per-lang missing/bleed maps from i18n-fallbacks.ts.
+"""‌⁠‍Extract EN source + per-lang missing/bleed maps from i18n-fallbacks.ts.
 
 Output written under ``./tmp/i18n/``:
   - en-source.json                    — { key: en_value } (all EN keys)
@@ -47,7 +47,7 @@ KEY_RE = re.compile(
 
 
 def parse_blocks(source: str) -> dict[str, dict[str, str]]:
-    """Return ``{lang: {key: value}}`` for every language in the file."""
+    """‌⁠‍Return ``{lang: {key: value}}`` for every language in the file."""
     blocks: dict[str, dict[str, str]] = {}
 
     starts = [(m.group(1), m.start()) for m in LANG_BLOCK_RE.finditer(source)]

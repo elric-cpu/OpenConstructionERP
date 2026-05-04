@@ -1,4 +1,4 @@
-"""Stdlib-only file-signature (magic-byte) sniffer.
+"""‌⁠‍Stdlib-only file-signature (magic-byte) sniffer.
 
 Filename extensions are fully controlled by the uploader, so they provide
 zero security guarantee. This module inspects the first few bytes of an
@@ -27,7 +27,7 @@ SIGNATURE_BYTES_REQUIRED: Final[int] = 16
 
 
 def detect(head: bytes) -> str | None:
-    """Return a symbolic type token for *head* (first bytes of a file).
+    """‌⁠‍Return a symbolic type token for *head* (first bytes of a file).
 
     Returns ``None`` if the signature is not recognised. ``head`` shorter
     than :data:`SIGNATURE_BYTES_REQUIRED` is tolerated — the function
@@ -114,7 +114,7 @@ ALLOWED_GAEB_TYPES: Final[frozenset[str]] = frozenset({"xml"})
 
 
 class FileSignatureMismatch(ValueError):
-    """Raised when an upload's magic bytes don't match the allowed set."""
+    """‌⁠‍Raised when an upload's magic bytes don't match the allowed set."""
 
 
 def require(head: bytes, allowed: frozenset[str], *, filename: str | None = None) -> str:

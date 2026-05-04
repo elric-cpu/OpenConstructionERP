@@ -1,4 +1,4 @@
-"""Safety Pydantic schemas — request/response models."""
+"""‌⁠‍Safety Pydantic schemas — request/response models."""
 
 from datetime import datetime
 from typing import Any
@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class CorrectiveActionEntry(BaseModel):
-    """A corrective action within an incident."""
+    """‌⁠‍A corrective action within an incident."""
 
     description: str = Field(..., min_length=1, max_length=1000)
     responsible_id: str | None = None
@@ -19,7 +19,7 @@ class CorrectiveActionEntry(BaseModel):
 
 
 class IncidentCreate(BaseModel):
-    """Create a new safety incident."""
+    """‌⁠‍Create a new safety incident."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 

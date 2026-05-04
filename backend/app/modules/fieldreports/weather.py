@@ -1,4 +1,4 @@
-"""Weather data fetcher using OpenWeatherMap API.
+"""‌⁠‍Weather data fetcher using OpenWeatherMap API.
 
 Optional -- gracefully degrades if no API key configured.
 """
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 async def fetch_weather(lat: float, lon: float, api_key: str | None = None) -> dict | None:
-    """Fetch current weather from OpenWeatherMap.
+    """‌⁠‍Fetch current weather from OpenWeatherMap.
 
     Returns:
         {
@@ -66,7 +66,7 @@ async def fetch_weather(lat: float, lon: float, api_key: str | None = None) -> d
 
 
 def _degrees_to_compass(degrees: float) -> str:
-    """Convert wind direction in degrees to a 16-point compass label."""
+    """‌⁠‍Convert wind direction in degrees to a 16-point compass label."""
     dirs = [
         "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
         "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW",

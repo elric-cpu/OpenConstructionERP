@@ -1,4 +1,4 @@
-"""COBie Excel/CSV parser for BIM requirements.
+"""‌⁠‍COBie Excel/CSV parser for BIM requirements.
 
 Reads the 'Attribute' sheet from a COBie-formatted Excel workbook and
 converts rows into UniversalRequirement objects.
@@ -35,13 +35,13 @@ _COBIE_COLS = {
 
 
 class COBieParser(BaseRequirementParser):
-    """Parser for COBie Excel files (reads the Attribute sheet)."""
+    """‌⁠‍Parser for COBie Excel files (reads the Attribute sheet)."""
 
     FORMAT_NAME = "COBie"
     SUPPORTED_EXTENSIONS = [".xlsx", ".xls"]
 
     def parse(self, source: Path | str | bytes) -> ParseResult:
-        """Parse a COBie Excel file into universal requirements."""
+        """‌⁠‍Parse a COBie Excel file into universal requirements."""
         result = ParseResult()
         result.metadata["format"] = self.FORMAT_NAME
 

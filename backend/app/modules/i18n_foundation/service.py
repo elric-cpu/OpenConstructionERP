@@ -1,4 +1,4 @@
-"""Internationalization foundation service — business logic layer.
+"""‌⁠‍Internationalization foundation service — business logic layer.
 
 Wraps repository classes and adds business logic for:
 - Currency conversion with Decimal precision
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 class I18nFoundationService:
-    """Business logic for internationalization foundation operations."""
+    """‌⁠‍Business logic for internationalization foundation operations."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -50,7 +50,7 @@ class I18nFoundationService:
         amount: str,
         rate_date: str | None = None,
     ) -> ConvertResponse:
-        """Convert an amount between two currencies.
+        """‌⁠‍Convert an amount between two currencies.
 
         Uses Decimal arithmetic for precision. Looks up the exchange rate
         from the database. Supports direct pair lookup and EUR-based

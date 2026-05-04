@@ -1,4 +1,4 @@
-"""Meetings service — business logic for meeting management.
+"""‌⁠‍Meetings service — business logic for meeting management.
 
 Stateless service layer. Handles:
 - Meeting CRUD
@@ -37,7 +37,7 @@ async def _safe_audit(
     user_id: str | None = None,
     details: dict | None = None,
 ) -> None:
-    """Best-effort audit log — never blocks the caller on failure."""
+    """‌⁠‍Best-effort audit log — never blocks the caller on failure."""
     try:
         from app.core.audit import audit_log
 
@@ -64,7 +64,7 @@ _MEETING_STATUS_TRANSITIONS: dict[str, set[str]] = {
 
 
 class MeetingService:
-    """Business logic for meeting operations."""
+    """‌⁠‍Business logic for meeting operations."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session

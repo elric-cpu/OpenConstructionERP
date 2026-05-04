@@ -1,10 +1,10 @@
-"""5D Cost Model module permission definitions."""
+"""‌⁠‍5D Cost Model module permission definitions."""
 
 from app.core.permissions import Role, permission_registry
 
 
 def register_costmodel_permissions() -> None:
-    """Register permissions for the 5D Cost Model module."""
+    """‌⁠‍Register permissions for the 5D Cost Model module."""
     permission_registry.register_module_permissions(
         "costmodel",
         {

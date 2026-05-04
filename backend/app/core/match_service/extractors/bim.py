@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""BIM element → envelope adapter (canonical format).
+"""‌⁠‍BIM element → envelope adapter (canonical format).
 
 Input shape mirrors ``backend/app/modules/cad/`` canonical elements:
 
@@ -38,7 +38,7 @@ def _auto_classifier_hint(
     raw: dict[str, Any],
     properties: dict[str, Any],
 ) -> dict[str, str] | None:
-    """Build a ``{din276/nrm/masterformat}`` hint from category + material.
+    """‌⁠‍Build a ``{din276/nrm/masterformat}`` hint from category + material.
 
     Falls through to ``None`` when the category isn't recognised by any
     of the coarse maps. We always populate all three standards (when a
@@ -64,7 +64,7 @@ def _auto_classifier_hint(
 
 
 def _synthesise_description(raw: dict[str, Any]) -> str:
-    """Compose a description string from canonical-format properties.
+    """‌⁠‍Compose a description string from canonical-format properties.
 
     The matcher embeds this string, so it must be human-readable and
     contain the discriminating signal (material, dimensions, ratings).

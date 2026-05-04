@@ -217,12 +217,12 @@ function CreateTransmittalModal({
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in" role="dialog" aria-modal="true" aria-label={t('transmittals.new_transmittal', { defaultValue: 'New Transmittal' })}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in" role="dialog" aria-modal="true" aria-label={t('transmittals.new_transmittal', { defaultValue: 'New Transmittal‌⁠‍' })}>
       <div className="w-full max-w-2xl bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border-light">
           <h2 className="text-lg font-semibold text-content-primary">
-            {t('transmittals.new_transmittal', { defaultValue: 'New Transmittal' })}
+            {t('transmittals.new_transmittal', { defaultValue: 'New Transmittal‌⁠‍' })}
           </h2>
           <button
             onClick={onClose}
@@ -238,7 +238,7 @@ function CreateTransmittalModal({
           {/* Subject */}
           <div>
             <label htmlFor="tr-subject" className="block text-sm font-medium text-content-primary mb-1.5">
-              {t('transmittals.field_subject', { defaultValue: 'Subject' })}{' '}
+              {t('transmittals.field_subject', { defaultValue: 'Subject‌⁠‍' })}{' '}
               <span className="text-semantic-error">*</span>
             </label>
             <input
@@ -249,7 +249,7 @@ function CreateTransmittalModal({
                 setTouched(true);
               }}
               placeholder={t('transmittals.subject_placeholder', {
-                defaultValue: 'e.g. Structural drawings for approval - Rev C',
+                defaultValue: 'e.g. Structural drawings for approval - Rev C‌⁠‍',
               })}
               className={clsx(
                 inputCls,
@@ -260,7 +260,7 @@ function CreateTransmittalModal({
             />
             {subjectError && (
               <p className="mt-1 text-xs text-semantic-error">
-                {t('transmittals.subject_required', { defaultValue: 'Subject is required' })}
+                {t('transmittals.subject_required', { defaultValue: 'Subject is required‌⁠‍' })}
               </p>
             )}
           </div>

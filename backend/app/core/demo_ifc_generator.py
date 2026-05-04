@@ -1,4 +1,4 @@
-"""Generate minimal IFC files for demo projects.
+"""‌⁠‍Generate minimal IFC files for demo projects.
 
 Creates valid IFC2x3 files with realistic building elements (walls, slabs,
 columns, doors, windows) positioned in a recognisable building layout.
@@ -34,7 +34,7 @@ def _reset():
 
 
 def _guid() -> str:
-    """Generate a 22-char IFC GlobalId from a UUID."""
+    """‌⁠‍Generate a 22-char IFC GlobalId from a UUID."""
     chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$"
     u = uuid.uuid4().int
     result = []
@@ -57,7 +57,7 @@ def _ifc_point(x: float, y: float, z: float) -> str:
 # ---------------------------------------------------------------------------
 
 def _residential_berlin_elements() -> list[dict]:
-    """48-unit residential complex — 4 storeys."""
+    """‌⁠‍48-unit residential complex — 4 storeys."""
     elements = []
     storeys = ["EG (Erdgeschoss)", "1.OG", "2.OG", "3.OG"]
     for si, storey in enumerate(storeys):

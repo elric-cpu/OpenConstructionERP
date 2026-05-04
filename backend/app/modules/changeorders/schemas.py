@@ -1,4 +1,4 @@
-"""Change Order Pydantic schemas — request/response models.
+"""‌⁠‍Change Order Pydantic schemas — request/response models.
 
 Defines create, update, and response schemas for change orders and their items.
 Numeric values (cost_impact, cost_delta, quantities, rates) are exposed as floats
@@ -19,7 +19,7 @@ _INT32_MAX = 2_147_483_647
 
 
 class ChangeOrderCreate(BaseModel):
-    """Create a new change order."""
+    """‌⁠‍Create a new change order."""
 
     model_config = ConfigDict(str_strip_whitespace=True, extra="ignore")
 
@@ -44,7 +44,7 @@ class ChangeOrderCreate(BaseModel):
 
 
 class ChangeOrderUpdate(BaseModel):
-    """Partial update for a change order.
+    """‌⁠‍Partial update for a change order.
 
     Status transitions must go through the dedicated action endpoints
     (``/submit``, ``/approve``, ``/reject``). Sending ``status`` here

@@ -1,4 +1,4 @@
-"""Company-type presets for the onboarding wizard.
+"""‌⁠‍Company-type presets for the onboarding wizard.
 
 Each preset defines which modules are enabled by default for a given
 company profile.  The frontend sends the chosen ``company_type`` key
@@ -77,7 +77,7 @@ _ALL_MODULES: list[str] = [
 
 
 class CompanyPreset:
-    """Immutable descriptor for a company-type onboarding preset."""
+    """‌⁠‍Immutable descriptor for a company-type onboarding preset."""
 
     __slots__ = ("key", "label", "description", "icon", "enabled_modules")
 
@@ -234,7 +234,7 @@ COMPANY_PRESETS: dict[str, CompanyPreset] = {
 
 
 def get_preset(company_type: str) -> CompanyPreset | None:
-    """Return a preset by key, or ``None`` if unknown."""
+    """‌⁠‍Return a preset by key, or ``None`` if unknown."""
     return COMPANY_PRESETS.get(company_type)
 
 

@@ -1,4 +1,4 @@
-"""Change Orders module manifest."""
+"""‌⁠‍Change Orders module manifest."""
 
 from app.core.module_loader import ModuleManifest
 

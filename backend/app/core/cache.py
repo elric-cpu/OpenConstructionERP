@@ -1,4 +1,4 @@
-"""Simple caching layer with in-memory fallback.
+"""‌⁠‍Simple caching layer with in-memory fallback.
 
 Uses Redis if available, falls back to in-memory LRU cache.
 Thread-safe. TTL-based expiration.
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 class _RateLimitedLogger:
-    """Collapse repeated warnings so an outage does not spam the log.
+    """‌⁠‍Collapse repeated warnings so an outage does not spam the log.
 
     Keyed by ``(operation, error_type)`` — if the same pair is emitted
     within ``window_seconds`` we skip the log line and bump an in-memory
@@ -69,7 +69,7 @@ _rate_limited_warn = _RateLimitedLogger()
 
 
 class InMemoryCache:
-    """LRU cache with TTL expiration. No external dependencies."""
+    """‌⁠‍LRU cache with TTL expiration. No external dependencies."""
 
     def __init__(self, max_size: int = 1000) -> None:
         self.max_size = max_size

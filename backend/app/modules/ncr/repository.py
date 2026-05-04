@@ -1,4 +1,4 @@
-"""NCR data access layer."""
+"""‌⁠‍NCR data access layer."""
 
 import uuid
 
@@ -9,7 +9,7 @@ from app.modules.ncr.models import NCR
 
 
 class NCRRepository:
-    """Data access for NCR models."""
+    """‌⁠‍Data access for NCR models."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -43,7 +43,7 @@ class NCRRepository:
         return list(result.scalars().all()), total
 
     async def next_ncr_number(self, project_id: uuid.UUID) -> str:
-        """Generate the next NCR number using MAX to avoid duplicates."""
+        """‌⁠‍Generate the next NCR number using MAX to avoid duplicates."""
         from sqlalchemy import Integer as SAInteger
         from sqlalchemy import cast
         from sqlalchemy.sql import func as sqlfunc

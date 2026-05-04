@@ -1,4 +1,4 @@
-"""Catalog API routes.
+"""‌⁠‍Catalog API routes.
 
 Endpoints:
     GET  /           -- Search/list catalog resources (public, query params)
@@ -65,7 +65,7 @@ async def import_catalog_from_github(
     _user_id: CurrentUserId,
     _perm: None = Depends(RequirePermission("catalog.create")),
 ) -> dict[str, Any]:
-    """Download resource catalog CSV from GitHub and import into DB.
+    """‌⁠‍Download resource catalog CSV from GitHub and import into DB.
 
     Regions: AR_DUBAI, DE_BERLIN, ENG_TORONTO, SP_BARCELONA, FR_PARIS,
              HI_MUMBAI, PT_SAOPAULO, RU_STPETERSBURG, UK_GBP, USA_USD, ZH_SHANGHAI
@@ -210,7 +210,7 @@ async def import_catalog_from_github(
 async def list_catalog_regions(
     session: SessionDep,
 ) -> list[dict[str, Any]]:
-    """List loaded catalog regions with resource counts."""
+    """‌⁠‍List loaded catalog regions with resource counts."""
     from app.modules.catalog.repository import CatalogResourceRepository
 
     repo = CatalogResourceRepository(session)

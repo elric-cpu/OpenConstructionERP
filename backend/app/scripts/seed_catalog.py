@@ -1,4 +1,4 @@
-"""Seed catalog: extract top 100 resources from CWICR cost item components.
+"""‌⁠‍Seed catalog: extract top 100 resources from CWICR cost item components.
 
 Reads all cost items, aggregates their components by code/type, computes
 avg/min/max rates, categorizes, and inserts the top 100 into oe_catalog_resource.
@@ -41,7 +41,7 @@ EQUIPMENT_CATEGORIES: list[tuple[list[str], str]] = [
 
 
 def categorize_material(name: str) -> str:
-    """Categorize a material resource by name keywords."""
+    """‌⁠‍Categorize a material resource by name keywords."""
     name_lower = name.lower()
     for keywords, category in MATERIAL_CATEGORIES:
         if any(kw in name_lower for kw in keywords):
@@ -50,7 +50,7 @@ def categorize_material(name: str) -> str:
 
 
 def categorize_equipment(name: str) -> str:
-    """Categorize an equipment resource by name keywords."""
+    """‌⁠‍Categorize an equipment resource by name keywords."""
     name_lower = name.lower()
     for keywords, category in EQUIPMENT_CATEGORIES:
         if any(kw in name_lower for kw in keywords):

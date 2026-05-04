@@ -1,4 +1,4 @@
-"""LRU-cached, read-only DuckDB connections keyed by snapshot_id.
+"""‌⁠‍LRU-cached, read-only DuckDB connections keyed by snapshot_id.
 
 Why a pool at all?
 ------------------
@@ -52,7 +52,7 @@ logger = logging.getLogger(__name__)
 # ── Module-level config ─────────────────────────────────────────────────────
 
 DEFAULT_MAX_POOL_SIZE = 16
-"""How many warm snapshot connections to keep. Each connection holds an
+"""‌⁠‍How many warm snapshot connections to keep. Each connection holds an
 in-memory DuckDB catalog — ~10-50 MB for a registered-views-only session.
 Beyond 16 snapshots we evict the least-recently-used one; the next
 request pays the one-off view-registration cost to warm it back up."""
@@ -64,7 +64,7 @@ _CONNECT_ERROR_LOGGER = _RateLimitedLogger(window_seconds=60.0)
 
 
 class DuckDBPoolError(RuntimeError):
-    """Base class for pool-level failures. The service layer converts
+    """‌⁠‍Base class for pool-level failures. The service layer converts
     these into HTTP status codes; the pool itself never raises HTTP
     directly (so it stays reusable from offline scripts)."""
 

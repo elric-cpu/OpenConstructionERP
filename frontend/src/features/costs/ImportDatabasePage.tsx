@@ -303,8 +303,8 @@ function CWICRDatabaseGrid(_props: { onLoadDatabase: (file: File) => void }) {
       setActiveDb(dbId);
       addToast({
         type: 'success',
-        title: t('costs.active_db_changed', { defaultValue: 'Active database changed' }),
-        message: `${CWICR_DATABASES.find((d) => d.id === dbId)?.name ?? dbId} ${t('costs.is_now_active', { defaultValue: 'is now the active database' })}`,
+        title: t('costs.active_db_changed', { defaultValue: 'Active database changed‌⁠‍' }),
+        message: `${CWICR_DATABASES.find((d) => d.id === dbId)?.name ?? dbId} ${t('costs.is_now_active', { defaultValue: 'is now the active database‌⁠‍' })}`,
       });
     },
     [addToast, t],
@@ -351,7 +351,7 @@ function CWICRDatabaseGrid(_props: { onLoadDatabase: (file: File) => void }) {
         } else {
           addToast({
             type: 'success',
-            title: t('costs.db_installed', { defaultValue: 'Database installed successfully' }),
+            title: t('costs.db_installed', { defaultValue: 'Database installed successfully‌⁠‍' }),
             message: `${imported.toLocaleString()} cost items imported`,
           });
         }
@@ -387,13 +387,13 @@ function CWICRDatabaseGrid(_props: { onLoadDatabase: (file: File) => void }) {
           value={regionQuery}
           onChange={(e) => setRegionQuery(e.target.value)}
           placeholder={t('costs.region_filter_placeholder', {
-            defaultValue: 'Filter by country, city, currency or language…',
+            defaultValue: 'Filter by country, city, currency or language…‌⁠‍',
           })}
           className="flex-1 rounded-lg bg-surface-secondary/70 px-3 py-2 text-sm text-content-primary placeholder:text-content-quaternary border border-transparent focus:border-oe-blue/40 focus:outline-none focus:bg-surface-secondary"
         />
         <span className="shrink-0 text-xs text-content-tertiary tabular-nums">
           {t('costs.region_filter_count', {
-            defaultValue: '{{shown}} of {{total}}',
+            defaultValue: '{{shown}} of {{total}}‌⁠‍',
             shown: filteredDatabases.length,
             total: CWICR_DATABASES.length,
           })}

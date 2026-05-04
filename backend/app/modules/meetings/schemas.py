@@ -1,4 +1,4 @@
-"""Meetings Pydantic schemas — request/response models.
+"""‌⁠‍Meetings Pydantic schemas — request/response models.
 
 Defines create, update, and response schemas for meetings.
 """
@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class AttendeeEntry(BaseModel):
-    """A single attendee entry."""
+    """‌⁠‍A single attendee entry."""
 
     user_id: str | None = None
     name: str = Field(..., min_length=1, max_length=200)
@@ -22,7 +22,7 @@ class AttendeeEntry(BaseModel):
 
 
 class AgendaItemEntry(BaseModel):
-    """A single agenda item."""
+    """‌⁠‍A single agenda item."""
 
     number: str | None = Field(default=None, max_length=10)
     topic: str = Field(..., min_length=1, max_length=500)

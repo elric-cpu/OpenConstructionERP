@@ -1,4 +1,4 @@
-"""Regional configuration for Russia and CIS countries."""
+"""‌⁠‍Regional configuration for Russia and CIS countries."""
 
 from typing import Any
 

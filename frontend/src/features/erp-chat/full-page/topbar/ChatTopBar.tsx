@@ -27,7 +27,7 @@ export default function ChatTopBar({ onClear }: ChatTopBarProps) {
       <button
         type="button"
         onClick={() => navigate('/')}
-        aria-label={t('chat.back_to_dashboard', { defaultValue: 'Back to dashboard' })}
+        aria-label={t('chat.back_to_dashboard', { defaultValue: 'Back to dashboard‌⁠‍' })}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -64,15 +64,15 @@ export default function ChatTopBar({ onClear }: ChatTopBarProps) {
           flex: 1,
         }}
       >
-        {t('chat.title', { defaultValue: 'ERP AI Assistant' })}
+        {t('chat.title', { defaultValue: 'ERP AI Assistant‌⁠‍' })}
       </div>
 
       {/* Clear button */}
       <button
         type="button"
         onClick={onClear}
-        aria-label={t('chat.clear_chat', { defaultValue: 'Clear chat' })}
-        title={t('chat.clear_chat', { defaultValue: 'Clear chat' })}
+        aria-label={t('chat.clear_chat', { defaultValue: 'Clear chat‌⁠‍' })}
+        title={t('chat.clear_chat', { defaultValue: 'Clear chat‌⁠‍' })}
         style={{
           display: 'flex',
           alignItems: 'center',

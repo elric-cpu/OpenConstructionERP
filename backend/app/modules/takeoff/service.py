@@ -1,4 +1,4 @@
-"""Takeoff business logic."""
+"""‌⁠‍Takeoff business logic."""
 
 import io
 import logging
@@ -20,7 +20,7 @@ _TAKEOFF_DOCUMENTS_DIR = Path.home() / ".openestimator" / "takeoff_documents"
 
 
 def _describe_pdf_input(content: bytes, *, filename: str | None = None) -> str:
-    """Build a short server-side diagnostic string for a PDF blob.
+    """‌⁠‍Build a short server-side diagnostic string for a PDF blob.
 
     Includes size, the ``%PDF-`` magic header presence, and a filename
     extension guess.  Kept free of any filesystem paths so the return
@@ -34,7 +34,7 @@ def _describe_pdf_input(content: bytes, *, filename: str | None = None) -> str:
 
 
 def _extract_pdf_pages(content: bytes, *, filename: str | None = None) -> list[dict]:
-    """Extract text and tables from each page of a PDF.
+    """‌⁠‍Extract text and tables from each page of a PDF.
 
     Returns a list of dicts: [{ page: 1, text: "...", tables: [...] }, ...]
 

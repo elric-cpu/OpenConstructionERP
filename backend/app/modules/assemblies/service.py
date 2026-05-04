@@ -1,4 +1,4 @@
-"""Assembly service — business logic for Assemblies & Calculations management.
+"""‌⁠‍Assembly service — business logic for Assemblies & Calculations management.
 
 Stateless service layer. Handles:
 - Assembly CRUD with search and filtering
@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 
 def _compute_component_total(factor: float, quantity: float, unit_cost: float) -> str:
-    """Compute component total as string: factor * quantity * unit_cost.
+    """‌⁠‍Compute component total as string: factor * quantity * unit_cost.
 
     Uses Decimal for precision, returns string for SQLite-safe storage.
     """
@@ -58,7 +58,7 @@ def _compute_component_total(factor: float, quantity: float, unit_cost: float) -
 
 
 def _str_to_float(value: str | None) -> float:
-    """Convert a string-stored numeric value to float, defaulting to 0.0."""
+    """‌⁠‍Convert a string-stored numeric value to float, defaulting to 0.0."""
     if value is None:
         return 0.0
     try:

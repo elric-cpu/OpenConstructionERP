@@ -78,9 +78,9 @@ export default function SaveGroupModal({
     onSuccess: (group) => {
       addToast({
         type: 'success',
-        title: t('bim.group_saved_title', { defaultValue: 'Group saved' }),
+        title: t('bim.group_saved_title', { defaultValue: 'Group saved‌⁠‍' }),
         message: t('bim.group_saved_msg', {
-          defaultValue: '"{{name}}" — {{count}} elements',
+          defaultValue: '"{{name}}" — {{count}} elements‌⁠‍',
           name: group.name,
           count: group.element_count,
         }),
@@ -121,7 +121,7 @@ export default function SaveGroupModal({
           <div className="flex items-center gap-2">
             <Bookmark size={16} className="text-oe-blue" />
             <h2 className="text-sm font-semibold text-content-primary">
-              {t('bim.save_group_title', { defaultValue: 'Save current filter as group' })}
+              {t('bim.save_group_title', { defaultValue: 'Save current filter as group‌⁠‍' })}
             </h2>
           </div>
           <button
@@ -137,7 +137,7 @@ export default function SaveGroupModal({
         <div className="p-5 space-y-3">
           <div>
             <label className="block text-[10px] font-semibold uppercase tracking-wider text-content-tertiary mb-1">
-              {t('bim.group_name', { defaultValue: 'Group name' })}
+              {t('bim.group_name', { defaultValue: 'Group name‌⁠‍' })}
               <span className="text-rose-500 ml-0.5">*</span>
             </label>
             <input
@@ -146,7 +146,7 @@ export default function SaveGroupModal({
               onChange={(e) => setName(e.target.value)}
               autoFocus
               placeholder={t('bim.group_name_placeholder', {
-                defaultValue: 'e.g. Walls on Level 1',
+                defaultValue: 'e.g. Walls on Level 1‌⁠‍',
               })}
               className="w-full px-2 py-1.5 text-sm rounded border border-border-light bg-surface-primary focus:outline-none focus:ring-1 focus:ring-oe-blue"
             />

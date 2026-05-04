@@ -67,14 +67,14 @@ function formatTimeAgo(
 ): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const seconds = Math.floor(diff / 1000);
-  if (seconds < 60) return t('notifications.just_now', { defaultValue: 'Just now' });
+  if (seconds < 60) return t('notifications.just_now', { defaultValue: 'Just now‌⁠‍' });
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60)
-    return t('time.minutes_ago', { defaultValue: '{{count}}m ago', count: minutes });
+    return t('time.minutes_ago', { defaultValue: '{{count}}m ago‌⁠‍', count: minutes });
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return t('time.hours_ago', { defaultValue: '{{count}}h ago', count: hours });
+  if (hours < 24) return t('time.hours_ago', { defaultValue: '{{count}}h ago‌⁠‍', count: hours });
   const days = Math.floor(hours / 24);
-  return t('time.days_ago', { defaultValue: '{{count}}d ago', count: days });
+  return t('time.days_ago', { defaultValue: '{{count}}d ago‌⁠‍', count: days });
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -190,7 +190,7 @@ export function NotificationBell() {
           'hover:bg-surface-secondary hover:text-content-primary',
           open && 'bg-surface-secondary text-content-primary',
         )}
-        title={t('notifications.title', { defaultValue: 'Notifications' })}
+        title={t('notifications.title', { defaultValue: 'Notifications‌⁠‍' })}
         aria-label={t('notifications.title', { defaultValue: 'Notifications' })}
       >
         <Bell size={16} strokeWidth={1.75} />

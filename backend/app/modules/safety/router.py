@@ -1,4 +1,4 @@
-"""Safety API routes.
+"""‌⁠‍Safety API routes.
 
 Endpoints:
     GET    /incidents                   - List incidents for a project
@@ -101,7 +101,7 @@ async def safety_stats(
     user_id: CurrentUserId = None,  # type: ignore[assignment]
     service: SafetyService = Depends(_get_service),
 ) -> SafetyStatsResponse:
-    """Return dashboard KPIs: incident counts, days without incident,
+    """‌⁠‍Return dashboard KPIs: incident counts, days without incident,
     observations by risk tier, open corrective actions, etc.
     """
     await verify_project_access(project_id, user_id, session)
@@ -116,7 +116,7 @@ async def safety_trends(
     user_id: CurrentUserId = None,  # type: ignore[assignment]
     service: SafetyService = Depends(_get_service),
 ) -> SafetyTrendsResponse:
-    """Return time-series incident and observation data grouped by period."""
+    """‌⁠‍Return time-series incident and observation data grouped by period."""
     await verify_project_access(project_id, user_id, session)
     return await service.get_trends(project_id, period=period)
 

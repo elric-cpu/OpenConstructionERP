@@ -111,14 +111,14 @@ export function ResourceSummary({ boqId, locale = 'de-DE' }: { boqId: string; lo
         setSavedResources((prev) => new Set(prev).add(key));
         addToast({
           type: 'success',
-          title: t('boq.rs_saved_to_catalog', { defaultValue: 'Saved to catalog' }),
+          title: t('boq.rs_saved_to_catalog', { defaultValue: 'Saved to catalog‌⁠‍' }),
           message: resource.name,
         });
       } catch (err: unknown) {
-        const detail = err instanceof Error ? err.message : t('boq.rs_save_failed', { defaultValue: 'Failed to save' });
+        const detail = err instanceof Error ? err.message : t('boq.rs_save_failed', { defaultValue: 'Failed to save‌⁠‍' });
         addToast({
           type: 'error',
-          title: t('boq.rs_save_failed', { defaultValue: 'Save failed' }),
+          title: t('boq.rs_save_failed', { defaultValue: 'Save failed‌⁠‍' }),
           message: detail,
         });
       } finally {
@@ -151,11 +151,11 @@ export function ResourceSummary({ boqId, locale = 'de-DE' }: { boqId: string; lo
         addToast({
           type: 'success',
           title: t('boq.variant_resource_repicked', {
-            defaultValue: 'Variant updated: {{label}}',
+            defaultValue: 'Variant updated: {{label}}‌⁠‍',
             label: chosen.label,
           }),
           message: t('boq.rs_variant_applied_to_n', {
-            defaultValue: 'Applied to {{count}} position(s)',
+            defaultValue: 'Applied to {{count}} position(s)‌⁠‍',
             count: refs.length,
           }),
         });

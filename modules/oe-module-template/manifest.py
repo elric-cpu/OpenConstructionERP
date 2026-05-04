@@ -1,4 +1,4 @@
-"""Module template manifest.
+"""‌⁠‍Module template manifest.
 
 Copy this directory and customize for your module.
 Rename the directory to your module name (e.g., oe_my_module → my_module).

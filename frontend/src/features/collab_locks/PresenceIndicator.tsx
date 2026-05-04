@@ -86,13 +86,13 @@ export function PresenceIndicator({
       <span
         className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-200"
         title={t('collab_locks.viewers_tooltip', {
-          defaultValue: '{{count}} people viewing',
+          defaultValue: '{{count}} people viewing‌⁠‍',
           count: users.length,
         })}
       >
         <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
         {t('collab_locks.viewers_label', {
-          defaultValue: '{{count}} viewing',
+          defaultValue: '{{count}} viewing‌⁠‍',
           count: users.length,
         })}
       </span>
@@ -104,7 +104,7 @@ export function PresenceIndicator({
       <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200">
         <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
         {t('collab_locks.lock_held_by_you', {
-          defaultValue: 'You are editing',
+          defaultValue: 'You are editing‌⁠‍',
         })}
       </span>
     );
@@ -114,14 +114,14 @@ export function PresenceIndicator({
     <span
       className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
       title={t('collab_locks.lock_held_by_other_tooltip', {
-        defaultValue: 'Locked by {{name}} — {{seconds}}s remaining',
+        defaultValue: 'Locked by {{name}} — {{seconds}}s remaining‌⁠‍',
         name: holder.user_name,
         seconds: holder.remaining_seconds,
       })}
     >
       <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
       {t('collab_locks.lock_held_by_other', {
-        defaultValue: 'Locked by {{name}}',
+        defaultValue: 'Locked by {{name}}‌⁠‍',
         name: holder.user_name,
       })}
     </span>

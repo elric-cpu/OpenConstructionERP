@@ -1,4 +1,4 @@
-"""5D Cost Model ORM models.
+"""‌⁠‍5D Cost Model ORM models.
 
 Tables:
     oe_costmodel_snapshot — monthly EVM snapshots (planned, earned, actual)
@@ -15,7 +15,7 @@ from app.database import GUID, Base
 
 
 class CostSnapshot(Base):
-    """Monthly cost snapshot for earned value analysis (EVM).
+    """‌⁠‍Monthly cost snapshot for earned value analysis (EVM).
 
     Stores BCWS (planned), BCWP (earned), and ACWP (actual) per period,
     along with derived performance indices (SPI, CPI) and forecast EAC.
@@ -56,7 +56,7 @@ class CostSnapshot(Base):
 
 
 class BudgetLine(Base):
-    """Budget tracking per BOQ position or cost category.
+    """‌⁠‍Budget tracking per BOQ position or cost category.
 
     Links planned budgets to committed contracts, actual invoices,
     and forecast amounts. Optionally tied to a BOQ position or 4D activity.

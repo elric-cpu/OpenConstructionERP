@@ -115,7 +115,7 @@ export function AIAdvisorPanel({ projectId, role }: AIAdvisorPanelProps) {
         {
           role: 'assistant',
           text: t('project_intelligence.chat_error', {
-            defaultValue: 'Sorry, I could not process your question. Please try again.',
+            defaultValue: 'Sorry, I could not process your question. Please try again.‌⁠‍',
           }),
         },
       ]);
@@ -132,7 +132,7 @@ export function AIAdvisorPanel({ projectId, role }: AIAdvisorPanelProps) {
           <Sparkles size={15} className="text-amber-400" />
           <h3 className="text-sm font-semibold text-content-primary">
             {t('project_intelligence.ai.cost_advisor_title', {
-              defaultValue: 'Cost Intelligence Advisor',
+              defaultValue: 'Cost Intelligence Advisor‌⁠‍',
             })}
           </h3>
           <span className="text-2xs text-content-quaternary capitalize">{role}</span>
@@ -146,7 +146,7 @@ export function AIAdvisorPanel({ projectId, role }: AIAdvisorPanelProps) {
               }}
               className="text-2xs text-content-tertiary hover:text-content-secondary transition-colors"
             >
-              {t('project_intelligence.back_to_rec', { defaultValue: 'Back to recommendations' })}
+              {t('project_intelligence.back_to_rec', { defaultValue: 'Back to recommendations‌⁠‍' })}
             </button>
           )}
           <button
@@ -157,7 +157,7 @@ export function AIAdvisorPanel({ projectId, role }: AIAdvisorPanelProps) {
                 ? 'text-oe-blue bg-oe-blue/10'
                 : 'text-content-tertiary hover:text-content-secondary'
             )}
-            title={t('project_intelligence.chat_toggle', { defaultValue: 'Toggle chat' })}
+            title={t('project_intelligence.chat_toggle', { defaultValue: 'Toggle chat‌⁠‍' })}
           >
             <MessageSquare size={14} />
           </button>
@@ -173,7 +173,7 @@ export function AIAdvisorPanel({ projectId, role }: AIAdvisorPanelProps) {
           <div className="flex-1 text-xs leading-relaxed text-blue-800 dark:text-blue-300">
             <p className="font-medium">
               {t('project_intelligence.ai_not_configured_title', {
-                defaultValue: 'AI provider not connected',
+                defaultValue: 'AI provider not connected‌⁠‍',
               })}
             </p>
             <p className="mt-1">

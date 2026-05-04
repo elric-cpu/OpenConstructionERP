@@ -1,4 +1,4 @@
-"""Field Reports ORM models.
+"""‌⁠‍Field Reports ORM models.
 
 Tables:
     oe_fieldreports_report     — daily/inspection/safety/concrete pour field reports
@@ -15,7 +15,7 @@ from app.database import GUID, Base
 
 
 class FieldReport(Base):
-    """A field report documenting on-site conditions, workforce, and activities."""
+    """‌⁠‍A field report documenting on-site conditions, workforce, and activities."""
 
     __tablename__ = "oe_fieldreports_report"
     __table_args__ = (
@@ -127,7 +127,7 @@ class FieldReport(Base):
 
 
 class SiteWorkforceLog(Base):
-    """Structured workforce log entry linked to a field report.
+    """‌⁠‍Structured workforce log entry linked to a field report.
 
     Tracks headcount, hours worked, and overtime per trade/company
     for a single day's report.

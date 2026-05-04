@@ -1,4 +1,4 @@
-"""Change Order ORM models.
+"""‌⁠‍Change Order ORM models.
 
 Tables:
     oe_changeorders_order — change order header with status, cost/schedule impact
@@ -16,7 +16,7 @@ from app.database import GUID, Base
 
 
 class ChangeOrder(Base):
-    """Change order tracking scope changes during project execution."""
+    """‌⁠‍Change order tracking scope changes during project execution."""
 
     __tablename__ = "oe_changeorders_order"
     # BUG-354: ``(project_id, code)`` must be unique so that concurrent
@@ -85,7 +85,7 @@ class ChangeOrder(Base):
 
 
 class ChangeOrderItem(Base):
-    """Individual line item within a change order."""
+    """‌⁠‍Individual line item within a change order."""
 
     __tablename__ = "oe_changeorders_item"
 

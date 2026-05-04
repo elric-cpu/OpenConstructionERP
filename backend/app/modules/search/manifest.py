@@ -1,4 +1,4 @@
-"""Unified semantic search module manifest."""
+"""‌⁠‍Unified semantic search module manifest."""
 
 from app.core.module_loader import ModuleManifest
 

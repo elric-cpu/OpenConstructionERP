@@ -237,9 +237,9 @@ export function LoginPage() {
         {/* Stats row */}
         <div className="mt-5 flex items-center gap-5 animate-stagger-in" style={{ animationDelay: '180ms' }}>
           {[
-            { value: '55K+', label: t('login.stat_costs', { defaultValue: 'cost items' }) },
-            { value: '20', label: t('login.stat_langs', { defaultValue: 'languages' }) },
-            { value: '11', label: t('login.stat_regions', { defaultValue: 'regions' }) },
+            { value: '55K+', label: t('login.stat_costs', { defaultValue: 'cost items‌⁠‍' }) },
+            { value: '20', label: t('login.stat_langs', { defaultValue: 'languages‌⁠‍' }) },
+            { value: '11', label: t('login.stat_regions', { defaultValue: 'regions‌⁠‍' }) },
           ].map((s) => (
             <div key={s.label} className="text-center">
               <div className="text-[22px] font-semibold text-content-primary tracking-tight">{s.value}</div>
@@ -254,7 +254,7 @@ export function LoginPage() {
         {/* Value props */}
         <div className="space-y-5 animate-stagger-in" style={{ animationDelay: '260ms' }}>
           {[
-            { icon: ShieldCheck, title: t('login.feat_local_title', { defaultValue: 'Your data, your machine' }), desc: t('login.feat_local', { defaultValue: 'Nothing leaves your computer. Full ownership, zero cloud dependency.' }) },
+            { icon: ShieldCheck, title: t('login.feat_local_title', { defaultValue: 'Your data, your machine‌⁠‍' }), desc: t('login.feat_local', { defaultValue: 'Nothing leaves your computer. Full ownership, zero cloud dependency.‌⁠‍' }) },
             { icon: Brain, title: t('login.feat_ai_title', { defaultValue: 'AI-assisted, human-confirmed' }), desc: t('login.feat_ai', { defaultValue: 'Smart suggestions with confidence scores. You always have the final say.' }) },
           ].map((feat, i) => (
             <div key={i} className="flex gap-3.5">
@@ -288,8 +288,6 @@ export function LoginPage() {
           </div>
           <p className="text-[10px] text-content-quaternary/40">
             Created by Artem Boiko &middot; 2026 &middot; OpenConstructionERP
-            &middot; <a href="/privacy-policy.html" className="hover:text-content-tertiary">Privacy</a>
-            &middot; <a href="/terms.html" className="hover:text-content-tertiary">Terms</a>
             &middot; <a href="mailto:info@datadrivenconstruction.io" className="hover:text-content-tertiary">info@datadrivenconstruction.io</a>
           </p>
         </div>

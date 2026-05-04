@@ -1,4 +1,4 @@
-"""Correspondence Pydantic schemas — request/response models."""
+"""‌⁠‍Correspondence Pydantic schemas — request/response models."""
 
 from datetime import datetime
 from typing import Any
@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class CorrespondenceCreate(BaseModel):
-    """Create a new correspondence record."""
+    """‌⁠‍Create a new correspondence record."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -31,7 +31,7 @@ class CorrespondenceCreate(BaseModel):
 
 
 class CorrespondenceUpdate(BaseModel):
-    """Partial update for a correspondence record."""
+    """‌⁠‍Partial update for a correspondence record."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 

@@ -1,4 +1,4 @@
-"""CDE service — business logic for ISO 19650 Common Data Environment.
+"""‌⁠‍CDE service — business logic for ISO 19650 Common Data Environment.
 
 Stateless service layer. Handles:
 - Document container CRUD
@@ -38,7 +38,7 @@ _state_machine = CDEStateMachine()
 
 
 class CDEService:
-    """Business logic for CDE operations."""
+    """‌⁠‍Business logic for CDE operations."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -52,7 +52,7 @@ class CDEService:
         data: ContainerCreate,
         user_id: str | None = None,
     ) -> DocumentContainer:
-        """Create a new document container.
+        """‌⁠‍Create a new document container.
 
         If ``container_code`` equals the sentinel value ``"AUTO"``, a code is
         auto-generated from the ISO 19650 naming convention parts

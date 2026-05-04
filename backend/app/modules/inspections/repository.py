@@ -1,4 +1,4 @@
-"""Inspections data access layer."""
+"""‌⁠‍Inspections data access layer."""
 
 import uuid
 
@@ -9,13 +9,13 @@ from app.modules.inspections.models import QualityInspection
 
 
 class InspectionRepository:
-    """Data access for QualityInspection models."""
+    """‌⁠‍Data access for QualityInspection models."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
     async def get_by_id(self, inspection_id: uuid.UUID) -> QualityInspection | None:
-        """Get inspection by ID."""
+        """‌⁠‍Get inspection by ID."""
         return await self.session.get(QualityInspection, inspection_id)
 
     async def list_for_project(

@@ -1,4 +1,4 @@
-"""5D Cost Model Pydantic schemas — request/response models.
+"""‌⁠‍5D Cost Model Pydantic schemas — request/response models.
 
 Defines create, update, and response schemas for cost snapshots,
 budget lines, and cash flow entries.  Monetary values are exposed as
@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class SnapshotCreate(BaseModel):
-    """Create a new EVM cost snapshot."""
+    """‌⁠‍Create a new EVM cost snapshot."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -32,7 +32,7 @@ class SnapshotCreate(BaseModel):
 
 
 class SnapshotUpdate(BaseModel):
-    """Partial update for an EVM snapshot."""
+    """‌⁠‍Partial update for an EVM snapshot."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 

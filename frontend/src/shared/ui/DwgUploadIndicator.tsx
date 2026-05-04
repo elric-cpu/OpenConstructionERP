@@ -163,14 +163,14 @@ export function DwgUploadIndicator() {
         <div className="flex items-center gap-2">
           <Upload size={14} className="text-oe-blue" />
           <span className="text-xs font-semibold text-content-primary">
-            {t('dwg_upload.title', { defaultValue: 'DWG Uploads' })}
+            {t('dwg_upload.title', { defaultValue: 'DWG Uploads‌⁠‍' })}
           </span>
         </div>
         <button
           type="button"
           onClick={() => setExpanded(false)}
           className="p-1 rounded hover:bg-surface-secondary text-content-tertiary"
-          aria-label={t('common.collapse', { defaultValue: 'Collapse' })}
+          aria-label={t('common.collapse', { defaultValue: 'Collapse‌⁠‍' })}
         >
           <ChevronDown size={14} />
         </button>
@@ -233,14 +233,14 @@ function DwgJobRow({
               </span>
             </div>
             <p className="text-[10px] text-content-quaternary mt-0.5">
-              {t(job.stage, { defaultValue: 'Processing...' })} — {elapsed(job.startedAt)}
+              {t(job.stage, { defaultValue: 'Processing...‌⁠‍' })} — {elapsed(job.startedAt)}
             </p>
           </div>
         )}
 
         {isError && (
           <p className="text-[10px] text-red-500 mt-0.5 line-clamp-2">
-            {job.errorMessage || t('dwg_upload.failed', { defaultValue: 'Upload failed' })}
+            {job.errorMessage || t('dwg_upload.failed', { defaultValue: 'Upload failed‌⁠‍' })}
           </p>
         )}
 
@@ -251,7 +251,7 @@ function DwgJobRow({
               onClick={onCancel}
               className="text-[10px] text-content-tertiary hover:text-red-500 font-medium"
             >
-              {t('common.cancel', { defaultValue: 'Cancel' })}
+              {t('common.cancel', { defaultValue: 'Cancel‌⁠‍' })}
             </button>
           )}
           {isDone && job.drawingId && (

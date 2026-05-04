@@ -1,4 +1,4 @@
-"""DWG Takeoff API routes.
+"""‌⁠‍DWG Takeoff API routes.
 
 Endpoints:
     Drawings:
@@ -57,7 +57,7 @@ def _drawing_to_response(
     item: object,
     latest_version: object | None = None,
 ) -> DwgDrawingResponse:
-    """Build a DwgDrawingResponse from a DwgDrawing ORM object."""
+    """‌⁠‍Build a DwgDrawingResponse from a DwgDrawing ORM object."""
     version_resp = None
     if latest_version is not None:
         version_resp = _version_to_response(latest_version)
@@ -84,7 +84,7 @@ def _drawing_to_response(
 
 
 def _version_to_response(item: object) -> DwgDrawingVersionResponse:
-    """Build a DwgDrawingVersionResponse from a DwgDrawingVersion ORM object."""
+    """‌⁠‍Build a DwgDrawingVersionResponse from a DwgDrawingVersion ORM object."""
     return DwgDrawingVersionResponse(
         id=item.id,  # type: ignore[attr-defined]
         drawing_id=item.drawing_id,  # type: ignore[attr-defined]

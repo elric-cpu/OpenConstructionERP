@@ -31,9 +31,9 @@ export function ConfirmDialog({
   const confirmRef = useRef<HTMLButtonElement>(null);
 
   const resolvedConfirmLabel =
-    confirmLabel ?? t('confirm_dialog.delete', { defaultValue: 'Delete' });
+    confirmLabel ?? t('confirm_dialog.delete', { defaultValue: 'Delete‌⁠‍' });
   const resolvedCancelLabel =
-    cancelLabel ?? t('confirm_dialog.cancel', { defaultValue: 'Cancel' });
+    cancelLabel ?? t('confirm_dialog.cancel', { defaultValue: 'Cancel‌⁠‍' });
 
   // Close on Escape key
   useEffect(() => {

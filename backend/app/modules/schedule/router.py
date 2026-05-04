@@ -1,4 +1,4 @@
-"""Schedule API routes.
+"""‌⁠‍Schedule API routes.
 
 Endpoints:
     POST   /schedules/                          — Create a new schedule
@@ -79,7 +79,7 @@ async def _verify_schedule_project_owner(
     user_id: str,
     payload: dict | None = None,
 ) -> None:
-    """Verify the current user owns the project. Admins bypass."""
+    """‌⁠‍Verify the current user owns the project. Admins bypass."""
     if payload and payload.get("role") == "admin":
         return
     from app.modules.projects.repository import ProjectRepository
@@ -99,7 +99,7 @@ async def _verify_schedule_owner(
     user_id: str,
     payload: dict | None = None,
 ) -> object:
-    """Load a schedule and verify the user owns its project. Admins bypass."""
+    """‌⁠‍Load a schedule and verify the user owns its project. Admins bypass."""
     if payload and payload.get("role") == "admin":
         return await service.get_schedule(schedule_id)
     schedule = await service.get_schedule(schedule_id)

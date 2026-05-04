@@ -87,7 +87,7 @@ function ContingencyCard({
       <div className="flex items-center justify-between">
         <div>
           <div className="text-2xs font-medium text-content-tertiary uppercase tracking-wide">
-            {t('boq.cost_risk_contingency', { defaultValue: 'Contingency (P80 - P50)' })}
+            {t('boq.cost_risk_contingency', { defaultValue: 'Contingency (P80 - P50)‌⁠‍' })}
           </div>
           <div className="text-lg font-bold text-blue-700 dark:text-blue-400 tabular-nums mt-0.5">
             {fmtCurrency(contingency, fmt)}{' '}
@@ -98,7 +98,7 @@ function ContingencyCard({
         </div>
         <div className="text-right">
           <div className="text-2xs font-medium text-content-tertiary uppercase tracking-wide">
-            {t('boq.cost_risk_recommended_budget', { defaultValue: 'Recommended Budget' })}
+            {t('boq.cost_risk_recommended_budget', { defaultValue: 'Recommended Budget‌⁠‍' })}
           </div>
           <div className="text-lg font-bold text-content-primary tabular-nums mt-0.5">
             {fmtCurrency(recommendedBudget, fmt)}
@@ -138,7 +138,7 @@ function Histogram({
   return (
     <div className="space-y-2">
       <h4 className="text-xs font-semibold text-content-tertiary uppercase tracking-wide">
-        {t('boq.cost_risk_distribution', { defaultValue: 'Cost Distribution' })}
+        {t('boq.cost_risk_distribution', { defaultValue: 'Cost Distribution‌⁠‍' })}
       </h4>
       <div className="relative">
         {/* Bar chart */}
@@ -239,7 +239,7 @@ function RiskDriversTable({
   return (
     <div className="space-y-2">
       <h4 className="text-xs font-semibold text-content-tertiary uppercase tracking-wide">
-        {t('boq.cost_risk_drivers', { defaultValue: 'Top Risk Drivers' })}
+        {t('boq.cost_risk_drivers', { defaultValue: 'Top Risk Drivers‌⁠‍' })}
       </h4>
       <div className="border border-border-light rounded-lg overflow-hidden">
         <table className="w-full text-xs">
@@ -252,7 +252,7 @@ function RiskDriversTable({
                 {t('boq.description')}
               </th>
               <th className="px-3 py-2 text-right font-medium text-content-secondary">
-                {t('boq.cost_risk_variance_share', { defaultValue: 'Variance Share' })}
+                {t('boq.cost_risk_variance_share', { defaultValue: 'Variance Share‌⁠‍' })}
               </th>
             </tr>
           </thead>

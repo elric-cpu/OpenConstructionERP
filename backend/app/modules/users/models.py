@@ -1,4 +1,4 @@
-"""User ORM models.
+"""‌⁠‍User ORM models.
 
 Tables:
     oe_users_user — registered users
@@ -15,7 +15,7 @@ from app.database import GUID, Base
 
 
 class User(Base):
-    """Application user."""
+    """‌⁠‍Application user."""
 
     __tablename__ = "oe_users_user"
 
@@ -70,7 +70,7 @@ class User(Base):
 
 
 class APIKey(Base):
-    """API key for programmatic access."""
+    """‌⁠‍API key for programmatic access."""
 
     __tablename__ = "oe_users_api_key"
 

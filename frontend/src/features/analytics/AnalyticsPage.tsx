@@ -182,17 +182,17 @@ export function AnalyticsPage() {
       <div className="space-y-6">
         <Breadcrumb
           items={[
-            { label: t('nav.dashboard', { defaultValue: 'Dashboard' }), to: '/' },
-            { label: t('analytics.title', { defaultValue: 'Analytics' }) },
+            { label: t('nav.dashboard', { defaultValue: 'Dashboard‌⁠‍' }), to: '/' },
+            { label: t('analytics.title', { defaultValue: 'Analytics‌⁠‍' }) },
           ]}
           className="mb-4"
         />
         <EmptyState
           icon={<BarChart3 size={28} />}
-          title={t('analytics.empty_title', { defaultValue: 'No analytics data yet' })}
+          title={t('analytics.empty_title', { defaultValue: 'No analytics data yet‌⁠‍' })}
           description={t('analytics.empty_description', {
             defaultValue:
-              'Analytics are generated from your projects and cost data. Create a project or import a cost database to get started.',
+              'Analytics are generated from your projects and cost data. Create a project or import a cost database to get started.‌⁠‍',
           })}
           action={
             <div className="flex items-center gap-3">
@@ -201,7 +201,7 @@ export function AnalyticsPage() {
                 icon={<FolderOpen size={14} />}
                 onClick={() => navigate('/projects')}
               >
-                {t('analytics.action_create_project', { defaultValue: 'Create a Project' })}
+                {t('analytics.action_create_project', { defaultValue: 'Create a Project‌⁠‍' })}
               </Button>
               <Button
                 variant="secondary"

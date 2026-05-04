@@ -1,4 +1,4 @@
-"""NCR ORM models.
+"""‌⁠‍NCR ORM models.
 
 Tables:
     oe_ncr_ncr — non-conformance reports with root cause analysis and corrective actions
@@ -13,7 +13,7 @@ from app.database import GUID, Base
 
 
 class NCR(Base):
-    """A Non-Conformance Report with root cause analysis and corrective/preventive actions."""
+    """‌⁠‍A Non-Conformance Report with root cause analysis and corrective/preventive actions."""
 
     __tablename__ = "oe_ncr_ncr"
 

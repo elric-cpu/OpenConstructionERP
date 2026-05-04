@@ -1,10 +1,10 @@
-"""BOQ module permission definitions."""
+"""‌⁠‍BOQ module permission definitions."""
 
 from app.core.permissions import Role, permission_registry
 
 
 def register_boq_permissions() -> None:
-    """Register permissions for the BOQ module."""
+    """‌⁠‍Register permissions for the BOQ module."""
     # `boq.create` and `boq.update` are deliberately granted to VIEWER:
     # every signed-in user (including freshly self-registered viewers and
     # demo accounts) must be able to start AND fill an estimate. Otherwise

@@ -1,4 +1,4 @@
-"""Project Intelligence module.
+"""‌⁠‍Project Intelligence module.
 
 AI-powered project completion analysis, scoring, gap detection,
 and guided recommendations for OpenConstructionERP.
@@ -18,7 +18,7 @@ MODULE_METADATA = {
 
 
 async def on_startup() -> None:
-    """Module startup hook — register permissions."""
+    """‌⁠‍Module startup hook — register permissions."""
     from app.modules.project_intelligence.permissions import (
         register_project_intelligence_permissions,
     )

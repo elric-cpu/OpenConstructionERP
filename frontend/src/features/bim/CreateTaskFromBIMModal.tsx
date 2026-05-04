@@ -50,22 +50,22 @@ export default function CreateTaskFromBIMModal({
     { value: 'task', label: t('tasks.type_task', { defaultValue: 'Task' }) },
     { value: 'topic', label: t('tasks.type_topic', { defaultValue: 'Topic' }) },
     { value: 'information', label: t('tasks.type_information', { defaultValue: 'Info' }) },
-    { value: 'decision', label: t('tasks.type_decision', { defaultValue: 'Decision' }) },
+    { value: 'decision', label: t('tasks.type_decision', { defaultValue: 'Decision‌⁠‍' }) },
   ];
 
   const PRIORITIES: { value: TaskPriority; label: string; color: string }[] = [
     { value: 'low', label: t('tasks.priority_low', { defaultValue: 'Low' }), color: PRIORITY_COLORS.low },
-    { value: 'normal', label: t('tasks.priority_normal', { defaultValue: 'Normal' }), color: PRIORITY_COLORS.normal },
+    { value: 'normal', label: t('tasks.priority_normal', { defaultValue: 'Normal‌⁠‍' }), color: PRIORITY_COLORS.normal },
     { value: 'high', label: t('tasks.priority_high', { defaultValue: 'High' }), color: PRIORITY_COLORS.high },
-    { value: 'urgent', label: t('tasks.priority_urgent', { defaultValue: 'Urgent' }), color: PRIORITY_COLORS.urgent },
+    { value: 'urgent', label: t('tasks.priority_urgent', { defaultValue: 'Urgent‌⁠‍' }), color: PRIORITY_COLORS.urgent },
   ];
 
   /** Build a default task title from the element set. */
   function buildDefaultTitle(els: BIMElementData[]): string {
     if (els.length === 1) {
       const el = els[0]!;
-      const name = el.name && el.name !== 'None' ? el.name : el.element_type || t('bim.element_fallback', { defaultValue: 'Element' });
-      return t('bim.issue_on_element', { defaultValue: 'Issue on {{name}}', name });
+      const name = el.name && el.name !== 'None' ? el.name : el.element_type || t('bim.element_fallback', { defaultValue: 'Element‌⁠‍' });
+      return t('bim.issue_on_element', { defaultValue: 'Issue on {{name}}‌⁠‍', name });
     }
     return t('bim.issue_on_elements', { defaultValue: 'Issue on {{count}} elements', count: els.length });
   }

@@ -1,4 +1,4 @@
-"""Tasks event handlers — vector indexing subscribers.
+"""‌⁠‍Tasks event handlers — vector indexing subscribers.
 
 Subscribes to ``tasks.task.*`` lifecycle events and keeps the
 ``oe_tasks`` vector collection in sync with the underlying Task rows so
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 async def _index_task(event: Event) -> None:
-    """Re-embed a single Task row after create / update."""
+    """‌⁠‍Re-embed a single Task row after create / update."""
     tid_raw = (event.data or {}).get("task_id")
     if not tid_raw:
         return
@@ -63,7 +63,7 @@ async def _index_task(event: Event) -> None:
 
 
 async def _delete_task_vector(event: Event) -> None:
-    """Remove a deleted Task row from the vector store."""
+    """‌⁠‍Remove a deleted Task row from the vector store."""
     tid_raw = (event.data or {}).get("task_id")
     if not tid_raw:
         return

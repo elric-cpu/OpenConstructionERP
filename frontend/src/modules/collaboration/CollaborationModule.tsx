@@ -26,10 +26,10 @@ export default function CollaborationModule() {
         </div>
         <div>
           <h1 className="text-xl font-bold text-content-primary">
-            {t('collab.title', { defaultValue: 'Real-time Collaboration' })}
+            {t('collab.title', { defaultValue: 'Real-time Collaboration‌⁠‍' })}
           </h1>
           <p className="text-sm text-content-tertiary">
-            {t('collab.subtitle', { defaultValue: 'Work together on estimates in real-time with your team' })}
+            {t('collab.subtitle', { defaultValue: 'Work together on estimates in real-time with your team‌⁠‍' })}
           </p>
         </div>
       </div>
@@ -38,14 +38,14 @@ export default function CollaborationModule() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <FeatureCard
           icon={<Wifi className="h-5 w-5 text-blue-500" />}
-          title={t('collab.feature_sync', { defaultValue: 'Peer-to-Peer Sync' })}
+          title={t('collab.feature_sync', { defaultValue: 'Peer-to-Peer Sync‌⁠‍' })}
           description={t('collab.feature_sync_desc', {
-            defaultValue: 'Changes sync directly between browsers via WebRTC. No server required — works with just a signaling server for connection setup.',
+            defaultValue: 'Changes sync directly between browsers via WebRTC. No server required — works with just a signaling server for connection setup.‌⁠‍',
           })}
         />
         <FeatureCard
           icon={<Zap className="h-5 w-5 text-amber-500" />}
-          title={t('collab.feature_crdt', { defaultValue: 'CRDT Conflict Resolution' })}
+          title={t('collab.feature_crdt', { defaultValue: 'CRDT Conflict Resolution‌⁠‍' })}
           description={t('collab.feature_crdt_desc', {
             defaultValue: 'Built on Yjs — a battle-tested CRDT library. Concurrent edits merge automatically without conflicts. No data loss.',
           })}

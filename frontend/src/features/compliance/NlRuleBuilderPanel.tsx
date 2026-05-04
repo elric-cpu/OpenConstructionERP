@@ -64,7 +64,7 @@ export function NlRuleBuilderPanel() {
         addToast({
           type: 'info',
           title: t('compliance.nl.no_match', {
-            defaultValue: 'No pattern matched the input.',
+            defaultValue: 'No pattern matched the input.‌⁠‍',
           }),
         });
       }
@@ -73,7 +73,7 @@ export function NlRuleBuilderPanel() {
       addToast({
         type: 'error',
         title: t('compliance.nl.save_failed', {
-          defaultValue: 'Generation failed',
+          defaultValue: 'Generation failed‌⁠‍',
         }),
         message: err.message,
       });
@@ -91,7 +91,7 @@ export function NlRuleBuilderPanel() {
       addToast({
         type: 'success',
         title: t('compliance.nl.saved', {
-          defaultValue: 'Rule saved successfully.',
+          defaultValue: 'Rule saved successfully.‌⁠‍',
         }),
         message: row.rule_id,
       });
@@ -100,7 +100,7 @@ export function NlRuleBuilderPanel() {
       addToast({
         type: 'error',
         title: t('compliance.nl.save_failed', {
-          defaultValue: 'Could not save rule',
+          defaultValue: 'Could not save rule‌⁠‍',
         }),
         message: err.message,
       });
@@ -136,7 +136,7 @@ export function NlRuleBuilderPanel() {
       await navigator.clipboard.writeText(result.dsl_yaml);
       addToast({
         type: 'success',
-        title: t('common.copied', { defaultValue: 'Copied' }),
+        title: t('common.copied', { defaultValue: 'Copied‌⁠‍' }),
       });
     } catch {
       // Clipboard may be blocked in some browsers — silent ignore.

@@ -1,4 +1,4 @@
-"""Tendering API routes.
+"""‌⁠‍Tendering API routes.
 
 Endpoints:
     POST   /packages/                       — Create a tender package
@@ -48,7 +48,7 @@ async def _verify_tender_project_owner(
     user_id: str,
     payload: dict | None = None,
 ) -> None:
-    """Verify the current user owns the project. Admins bypass."""
+    """‌⁠‍Verify the current user owns the project. Admins bypass."""
     if payload and payload.get("role") == "admin":
         return
     from app.modules.projects.repository import ProjectRepository
@@ -68,7 +68,7 @@ async def _verify_package_owner(
     user_id: str,
     payload: dict | None = None,
 ) -> object:
-    """Load a package, then verify the user owns its project. Admins bypass."""
+    """‌⁠‍Load a package, then verify the user owns its project. Admins bypass."""
     package = await service.get_package(package_id)
     if payload and payload.get("role") == "admin":
         return package

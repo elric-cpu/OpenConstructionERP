@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Service layer for EAC v2 parameter aliases (RFC 35 §6 EAC-2.1).
+"""‌⁠‍Service layer for EAC v2 parameter aliases (RFC 35 §6 EAC-2.1).
 
 Pure functions on top of :mod:`app.modules.eac.aliases.resolver` plus
 the SQLAlchemy ORM models. The router is the only thing that touches
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 class AliasInUseError(Exception):
-    """Raised when trying to hard-delete an alias still referenced by rules.
+    """‌⁠‍Raised when trying to hard-delete an alias still referenced by rules.
 
     The exception carries the list of rules so the API layer can surface
     them and let the user resolve the conflict (rename, replace, etc.).
@@ -57,7 +57,7 @@ def _build_synonym(
     *,
     alias_id: uuid.UUID | None = None,
 ) -> EacAliasSynonym:
-    """Translate a Pydantic synonym body into an ORM row."""
+    """‌⁠‍Translate a Pydantic synonym body into an ORM row."""
     return EacAliasSynonym(
         alias_id=alias_id,
         pattern=payload.pattern,

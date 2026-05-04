@@ -84,7 +84,7 @@ export function QualityScoreRing({
   } else {
     color = '#ef4444';
     bgColor = 'bg-semantic-error-bg';
-    label = t('boq.quality_needs_work', { defaultValue: 'Needs work' });
+    label = t('boq.quality_needs_work', { defaultValue: 'Needs work‌⁠‍' });
   }
 
   return (
@@ -125,7 +125,7 @@ export function QualityScoreRing({
         </div>
         <div className="flex flex-col">
           <span className="text-2xs font-medium text-content-tertiary uppercase tracking-wider">
-            {t('boq.quality', { defaultValue: 'Quality' })}
+            {t('boq.quality', { defaultValue: 'Quality‌⁠‍' })}
           </span>
           <span className="text-xs font-semibold text-content-primary">{label}</span>
         </div>
@@ -135,17 +135,17 @@ export function QualityScoreRing({
       {showTooltip && (
         <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 w-64 rounded-xl border border-border-light bg-surface-elevated shadow-lg p-4 animate-fade-in">
           <p className="text-xs font-semibold text-content-primary mb-3">
-            {t('boq.quality_breakdown', { defaultValue: 'Quality Breakdown' })}
+            {t('boq.quality_breakdown', { defaultValue: 'Quality Breakdown‌⁠‍' })}
           </p>
           <div className="space-y-2.5">
             <QualityRow
               icon={<FileText size={13} />}
-              label={t('boq.quality_descriptions', { defaultValue: 'Descriptions filled' })}
+              label={t('boq.quality_descriptions', { defaultValue: 'Descriptions filled‌⁠‍' })}
               value={breakdown.withDescription}
             />
             <QualityRow
               icon={<Hash size={13} />}
-              label={t('boq.quality_quantities', { defaultValue: 'Quantities set' })}
+              label={t('boq.quality_quantities', { defaultValue: 'Quantities set‌⁠‍' })}
               value={breakdown.withQuantity}
             />
             <QualityRow

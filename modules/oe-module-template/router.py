@@ -1,4 +1,4 @@
-"""Module API routes.
+"""‌⁠‍Module API routes.
 
 Routes are auto-mounted at /api/v1/{module_name}/.
 """
@@ -10,5 +10,5 @@ router = APIRouter()
 
 @router.get("/")
 async def module_info():
-    """Return module status."""
+    """‌⁠‍Return module status."""
     return {"module": "oe_template", "status": "active"}

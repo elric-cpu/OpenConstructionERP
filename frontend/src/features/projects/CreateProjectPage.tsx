@@ -306,12 +306,12 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
     mutationFn: projectsApi.create,
     onSuccess: (project) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
-      addToast({ type: 'success', title: t('toasts.project_created', { defaultValue: 'Project created successfully' }) });
+      addToast({ type: 'success', title: t('toasts.project_created', { defaultValue: 'Project created successfully‌⁠‍' }) });
       onClose();
       navigate(`/projects/${project.id}`);
     },
     onError: (error: Error) => {
-      addToast({ type: 'error', title: t('toasts.project_create_failed', { defaultValue: 'Failed to create project' }), message: error.message });
+      addToast({ type: 'error', title: t('toasts.project_create_failed', { defaultValue: 'Failed to create project‌⁠‍' }), message: error.message });
     },
   });
 
@@ -373,10 +373,10 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
             </div>
             <div>
               <h2 className="text-lg font-semibold text-content-primary">
-                {t('projects.new_project', { defaultValue: 'New Project' })}
+                {t('projects.new_project', { defaultValue: 'New Project‌⁠‍' })}
               </h2>
               <p className="text-xs text-content-tertiary">
-                {t('projects.create_subtitle', { defaultValue: 'Set up a new construction project' })}
+                {t('projects.create_subtitle', { defaultValue: 'Set up a new construction project‌⁠‍' })}
               </p>
             </div>
           </div>
@@ -390,7 +390,7 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
 
         {/* Body — scrollable */}
         <div className="overflow-y-auto px-6 pb-6 flex-1">
-          <InfoHint className="mb-5" text={t('projects.create_hint', { defaultValue: 'Region determines available cost databases and VAT rates. Classification standard defines the cost-structure schema for your BOQ. Currency sets all pricing in the BOQ.' })} />
+          <InfoHint className="mb-5" text={t('projects.create_hint', { defaultValue: 'Region determines available cost databases and VAT rates. Classification standard defines the cost-structure schema for your BOQ. Currency sets all pricing in the BOQ.‌⁠‍' })} />
 
           <form id="create-project-form" onSubmit={handleSubmit} className="space-y-4">
             <Input

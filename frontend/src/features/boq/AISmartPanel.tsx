@@ -257,7 +257,7 @@ export function AISmartPanel({
         <div className="flex items-center gap-2">
           <Brain size={16} className="text-primary" />
           <span className="font-semibold text-sm">
-            {t('boq.ai_smart_panel', { defaultValue: 'AI Smart Actions' })}
+            {t('boq.ai_smart_panel', { defaultValue: 'AI Smart Actions‌⁠‍' })}
           </span>
         </div>
         <button
@@ -274,7 +274,7 @@ export function AISmartPanel({
         {selectedPosition ? (
           <div>
             <p className="text-xs text-text-muted">
-              {t('boq.ai_selected_position', { defaultValue: 'Selected Position' })}
+              {t('boq.ai_selected_position', { defaultValue: 'Selected Position‌⁠‍' })}
             </p>
             <p className="text-sm font-medium truncate">{selectedPosition.description || '—'}</p>
             <p className="text-xs text-text-muted">
@@ -283,7 +283,7 @@ export function AISmartPanel({
           </div>
         ) : (
           <p className="text-xs text-text-muted italic">
-            {t('boq.ai_no_selection', { defaultValue: 'Select a position in the grid for per-position AI actions' })}
+            {t('boq.ai_no_selection', { defaultValue: 'Select a position in the grid for per-position AI actions‌⁠‍' })}
           </p>
         )}
       </div>
@@ -295,10 +295,10 @@ export function AISmartPanel({
             <AlertTriangle size={14} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
             <div>
               <p className="text-xs font-medium text-amber-800 dark:text-amber-300">
-                {t('boq.ai_not_configured', { defaultValue: 'AI not configured' })}
+                {t('boq.ai_not_configured', { defaultValue: 'AI not configured‌⁠‍' })}
               </p>
               <p className="text-[11px] text-amber-700 dark:text-amber-400/80 mt-0.5">
-                {t('boq.ai_not_configured_desc', { defaultValue: 'Add your API key in Settings to use AI Smart Actions.' })}
+                {t('boq.ai_not_configured_desc', { defaultValue: 'Add your API key in Settings to use AI Smart Actions.‌⁠‍' })}
               </p>
               <Link
                 to="/settings"

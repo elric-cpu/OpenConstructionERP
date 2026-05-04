@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Public engine API for EAC v2 (RFC 35 §1.7 / RFC 36 W1.1, task #221).
+"""‌⁠‍Public engine API for EAC v2 (RFC 35 §1.7 / RFC 36 W1.1, task #221).
 
 A thin facade over the engine internals (planner, validator, executor,
 runner) that gives any caller — router, scripts, Celery worker, tests,
@@ -60,7 +60,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class CompiledPlan:
-    """Output of :func:`compile_plan`.
+    """‌⁠‍Output of :func:`compile_plan`.
 
     Carries the plan plus the validator's verdict so the caller can
     surface schema / semantic issues before scheduling the run.
@@ -73,7 +73,7 @@ class CompiledPlan:
 
 @dataclass(frozen=True)
 class RunStatus:
-    """Snapshot of a run's state for :func:`status`.
+    """‌⁠‍Snapshot of a run's state for :func:`status`.
 
     ``progress`` is a float in ``[0.0, 1.0]`` derived from
     ``elements_evaluated / max(1, elements_evaluated)`` for finished runs

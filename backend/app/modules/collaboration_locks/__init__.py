@@ -1,4 +1,4 @@
-"""Collaboration-locks module — layer 1 of the real-time collab plan.
+"""‌⁠‍Collaboration-locks module — layer 1 of the real-time collab plan.
 
 Provides pessimistic soft locks + presence broadcast for any entity
 registered in :data:`schemas.ALLOWED_LOCK_ENTITY_TYPES`.  See
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 async def on_startup() -> None:
-    """Module startup hook invoked by :mod:`app.core.module_loader`.
+    """‌⁠‍Module startup hook invoked by :mod:`app.core.module_loader`.
 
     * Subscribes the broadcast bridge so lock events fan out over
       the presence WebSocket.

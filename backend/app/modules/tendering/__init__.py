@@ -1,1 +1,1 @@
-"""Tendering module — bid package management and comparison."""
+"""‌⁠‍Tendering module — bid package management and comparison."""

@@ -1,4 +1,4 @@
-"""DWG Takeoff data access layer.
+"""‌⁠‍DWG Takeoff data access layer.
 
 All database queries for drawings, drawing versions, and annotations live here.
 No business logic — pure data access.
@@ -18,13 +18,13 @@ from app.modules.dwg_takeoff.models import (
 
 
 class DwgDrawingRepository:
-    """Data access for DwgDrawing models."""
+    """‌⁠‍Data access for DwgDrawing models."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
     async def get_by_id(self, drawing_id: uuid.UUID) -> DwgDrawing | None:
-        """Get drawing by ID."""
+        """‌⁠‍Get drawing by ID."""
         return await self.session.get(DwgDrawing, drawing_id)
 
     async def list_for_project(

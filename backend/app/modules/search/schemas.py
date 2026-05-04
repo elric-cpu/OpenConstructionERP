@@ -1,4 +1,4 @@
-"""Pydantic schemas for the unified search API."""
+"""‌⁠‍Pydantic schemas for the unified search API."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 
 class UnifiedSearchHit(BaseModel):
-    """One semantic-search hit returned by the unified search endpoint."""
+    """‌⁠‍One semantic-search hit returned by the unified search endpoint."""
 
     id: str
     score: float = Field(..., ge=0.0, description="Fused RRF score (relative)")
@@ -23,7 +23,7 @@ class UnifiedSearchHit(BaseModel):
 
     @property
     def source_type(self) -> str:
-        """Alias for ``module`` — the canonical key the frontend uses to
+        """‌⁠‍Alias for ``module`` — the canonical key the frontend uses to
         decide which native page to navigate to on click."""
         return self.module
 

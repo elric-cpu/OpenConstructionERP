@@ -1,4 +1,4 @@
-"""Notification Pydantic schemas — request/response models."""
+"""‌⁠‍Notification Pydantic schemas — request/response models."""
 
 from datetime import datetime
 from typing import Any
@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class NotificationResponse(BaseModel):
-    """Single notification returned from the API."""
+    """‌⁠‍Single notification returned from the API."""
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
@@ -29,7 +29,7 @@ class NotificationResponse(BaseModel):
 
 
 class NotificationListResponse(BaseModel):
-    """Paginated notification list."""
+    """‌⁠‍Paginated notification list."""
 
     items: list[NotificationResponse]
     total: int

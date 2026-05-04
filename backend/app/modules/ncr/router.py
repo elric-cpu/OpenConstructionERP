@@ -1,4 +1,4 @@
-"""NCR API routes.
+"""‌⁠‍NCR API routes.
 
 Endpoints:
     GET    /                           - List NCRs for a project
@@ -69,7 +69,7 @@ async def list_ncrs(
     severity: str | None = Query(default=None),
     service: NCRService = Depends(_get_service),
 ) -> list[NCRResponse]:
-    """List non-conformance reports for a project."""
+    """‌⁠‍List non-conformance reports for a project."""
     await verify_project_access(project_id, user_id, session)
     ncrs, _ = await service.list_ncrs(
         project_id,
@@ -90,7 +90,7 @@ async def create_ncr(
     _perm: None = Depends(RequirePermission("ncr.create")),
     service: NCRService = Depends(_get_service),
 ) -> NCRResponse:
-    """Create a new non-conformance report."""
+    """‌⁠‍Create a new non-conformance report."""
     await verify_project_access(data.project_id, user_id, session)
     ncr = await service.create_ncr(data, user_id=user_id)
     return _to_response(ncr)

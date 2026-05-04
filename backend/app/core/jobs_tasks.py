@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Celery task definitions — RFC 34 §4 W0.1.
+"""‌⁠‍Celery task definitions — RFC 34 §4 W0.1.
 
 There is exactly one task: ``oe.dispatch_job``. Module-specific work
 attaches via :func:`app.core.job_runner.register_handler`, NOT via
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 def _get_session_factory() -> async_sessionmaker[AsyncSession]:
-    """Return the platform's default async session factory.
+    """‌⁠‍Return the platform's default async session factory.
 
     Wrapped in a function so unit tests can patch this symbol to swap
     in an in-memory SQLite factory without monkey-patching the global
@@ -42,7 +42,7 @@ def _get_session_factory() -> async_sessionmaker[AsyncSession]:
 
 @celery_app.task(name="oe.dispatch_job", bind=True)
 def dispatch_job(self, job_run_id: str) -> dict[str, str]:  # noqa: ANN001 — Celery's bind=True
-    """Generic dispatch task — runs the handler registered for JobRun.kind.
+    """‌⁠‍Generic dispatch task — runs the handler registered for JobRun.kind.
 
     Returns a small dict with the outcome so Celery's own result
     backend has something useful to log. The authoritative outcome is

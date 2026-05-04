@@ -1,4 +1,4 @@
-"""AI Estimation module manifest."""
+"""‌⁠‍AI Estimation module manifest."""
 
 from app.core.module_loader import ModuleManifest
 

@@ -1,4 +1,4 @@
-"""Core email abstractions.
+"""‌⁠‍Core email abstractions.
 
 Defines the ``EmailMessage`` value object and the ``EmailBackend`` protocol
 that every concrete backend (console, smtp, noop, memory) must satisfy.
@@ -24,7 +24,7 @@ from typing import Literal
 
 @dataclass(slots=True)
 class EmailMessage:
-    """A single outbound email.
+    """‌⁠‍A single outbound email.
 
     Kept as a dumb data container so backends can serialize it freely
     (e.g. the memory backend stores a list of these for test assertions).
@@ -57,7 +57,7 @@ class EmailMessage:
 
 @dataclass(slots=True)
 class DeliveryResult:
-    """Outcome of a single ``backend.send()`` call.
+    """‌⁠‍Outcome of a single ``backend.send()`` call.
 
     We intentionally do *not* raise on failure.  Email is a side-effect —
     a password-reset flow should not 500 just because SMTP is down.  The

@@ -1,4 +1,4 @@
-"""Data-access layer for collaboration locks.
+"""‌⁠‍Data-access layer for collaboration locks.
 
 All queries are scoped to a single SQLAlchemy session passed in by the
 service; no global state.  The only primitive this layer exposes that is
@@ -21,7 +21,7 @@ from app.modules.collaboration_locks.models import CollabLock
 
 
 def _as_aware(value: datetime) -> datetime:
-    """Normalise a datetime to UTC-aware.
+    """‌⁠‍Normalise a datetime to UTC-aware.
 
     SQLite returns naive datetimes even on ``DateTime(timezone=True)``
     columns, which blows up direct comparisons against ``datetime.now(UTC)``.
@@ -33,7 +33,7 @@ def _as_aware(value: datetime) -> datetime:
 
 
 class CollabLockRepository:
-    """CRUD + atomic acquire for :class:`CollabLock` rows."""
+    """‌⁠‍CRUD + atomic acquire for :class:`CollabLock` rows."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session

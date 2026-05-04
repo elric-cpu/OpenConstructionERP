@@ -1,4 +1,4 @@
-"""Pydantic v2 schemas for collaboration locks."""
+"""‌⁠‍Pydantic v2 schemas for collaboration locks."""
 
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ MAX_EXTEND_SECONDS = 600
 
 
 class CollabLockAcquire(BaseModel):
-    """Payload for ``POST /collab_locks/``."""
+    """‌⁠‍Payload for ``POST /collab_locks/``."""
 
     entity_type: str = Field(..., min_length=1, max_length=64)
     entity_id: uuid.UUID
@@ -66,7 +66,7 @@ class CollabLockAcquire(BaseModel):
 
 
 class CollabLockHeartbeat(BaseModel):
-    """Payload for ``POST /collab_locks/{lock_id}/heartbeat/``."""
+    """‌⁠‍Payload for ``POST /collab_locks/{lock_id}/heartbeat/``."""
 
     extend_seconds: int = Field(
         default=DEFAULT_EXTEND_SECONDS,

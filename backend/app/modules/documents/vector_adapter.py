@@ -1,4 +1,4 @@
-"""Document vector adapter — feeds the ``oe_documents`` collection.
+"""‌⁠‍Document vector adapter — feeds the ``oe_documents`` collection.
 
 Each :class:`~app.modules.documents.models.Document` row is embedded as
 its name, description, category, tags and any drawing metadata so that
@@ -20,7 +20,7 @@ from app.modules.documents.models import Document
 
 
 def _file_name(row: Document) -> str:
-    """Best-effort file name extraction — Document stores ``file_path`` only."""
+    """‌⁠‍Best-effort file name extraction — Document stores ``file_path`` only."""
     file_name = getattr(row, "file_name", None)
     if file_name:
         return str(file_name)
@@ -34,7 +34,7 @@ def _file_name(row: Document) -> str:
 
 
 class DocumentVectorAdapter:
-    """Embed project documents into the unified vector store."""
+    """‌⁠‍Embed project documents into the unified vector store."""
 
     collection_name: str = COLLECTION_DOCUMENTS
     module_name: str = "documents"

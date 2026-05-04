@@ -106,16 +106,16 @@ export function AssetsPage() {
   if (!activeProjectId) {
     return (
       <div className="p-6">
-        <Breadcrumb items={[{ label: t('nav.assets', { defaultValue: 'Assets' }) }]} />
+        <Breadcrumb items={[{ label: t('nav.assets', { defaultValue: 'Assets‌⁠‍' }) }]} />
         <EmptyState
           icon={<Package size={48} />}
-          title={t('assets.no_project.title', { defaultValue: 'No active project' })}
+          title={t('assets.no_project.title', { defaultValue: 'No active project‌⁠‍' })}
           description={t('assets.no_project.desc', {
-            defaultValue: 'Pick a project first from the Projects page to see its tracked assets.',
+            defaultValue: 'Pick a project first from the Projects page to see its tracked assets.‌⁠‍',
           })}
           action={
             <Button onClick={() => navigate('/projects')}>
-              {t('assets.cta.go_projects', { defaultValue: 'Go to Projects' })}
+              {t('assets.cta.go_projects', { defaultValue: 'Go to Projects‌⁠‍' })}
             </Button>
           }
         />
@@ -127,7 +127,7 @@ export function AssetsPage() {
     <div className="flex h-full flex-col p-6">
       <Breadcrumb
         items={[
-          { label: t('nav.projects', { defaultValue: 'Projects' }), to: '/projects' },
+          { label: t('nav.projects', { defaultValue: 'Projects‌⁠‍' }), to: '/projects' },
           { label: activeProjectName || t('nav.project', { defaultValue: 'Project' }) },
           { label: t('nav.assets', { defaultValue: 'Assets' }) },
         ]}

@@ -1,4 +1,4 @@
-"""Embedded EPD (Environmental Product Declaration) material database.
+"""‌⁠‍Embedded EPD (Environmental Product Declaration) material database.
 
 Data sourced from:
 - OKOBAUDAT (Germany) — https://www.oekobaudat.de
@@ -866,7 +866,7 @@ KEYWORD_TO_EPD: list[tuple[list[str], str]] = [
 
 
 def detect_epd_material(description: str) -> dict[str, Any] | None:
-    """Detect the best-matching EPD material from a position description.
+    """‌⁠‍Detect the best-matching EPD material from a position description.
 
     Iterates through KEYWORD_TO_EPD (most specific keywords first) and returns
     the full EPD material dict on first match. Returns None if no match found.
@@ -883,7 +883,7 @@ def search_epd_materials(
     category: str | None = None,
     query: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Search EPD materials by category and/or text query."""
+    """‌⁠‍Search EPD materials by category and/or text query."""
     results = EPD_MATERIALS
     if category:
         results = [m for m in results if m["category"] == category]

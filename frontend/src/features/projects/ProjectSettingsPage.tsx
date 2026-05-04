@@ -147,8 +147,8 @@ function FxRateModal({
         <div className="flex items-center justify-between px-6 pt-6 pb-2">
           <h3 className="text-lg font-semibold text-content-primary">
             {isEdit
-              ? t('project.settings.fx.edit_title', { defaultValue: 'Edit currency' })
-              : t('project.settings.fx.add_title', { defaultValue: 'Add currency' })}
+              ? t('project.settings.fx.edit_title', { defaultValue: 'Edit currency‌⁠‍' })
+              : t('project.settings.fx.add_title', { defaultValue: 'Add currency‌⁠‍' })}
           </h3>
           <button
             onClick={onCancel}
@@ -163,7 +163,7 @@ function FxRateModal({
           {/* Currency picker */}
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-medium text-content-primary">
-              {t('project.settings.fx.currency', { defaultValue: 'Currency' })}
+              {t('project.settings.fx.currency', { defaultValue: 'Currency‌⁠‍' })}
             </label>
             <select
               value={code}
@@ -173,7 +173,7 @@ function FxRateModal({
             >
               <option value="" disabled>
                 {t('project.settings.fx.select_currency', {
-                  defaultValue: '-- Select currency --',
+                  defaultValue: '-- Select currency --‌⁠‍',
                 })}
               </option>
               {CURRENCY_GROUPS.map((g) => (
@@ -182,7 +182,7 @@ function FxRateModal({
                     o.value === '__custom__' ? (
                       <option key={o.value} value={o.value}>
                         {t('project.settings.fx.custom_code', {
-                          defaultValue: 'Custom code...',
+                          defaultValue: 'Custom code...‌⁠‍',
                         })}
                       </option>
                     ) : (

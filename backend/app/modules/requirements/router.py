@@ -1,4 +1,4 @@
-"""Requirements & Quality Gates API routes.
+"""‌⁠‍Requirements & Quality Gates API routes.
 
 Endpoints:
     POST   /                                          — Create requirement set
@@ -54,7 +54,7 @@ def _get_service(session: SessionDep) -> RequirementsService:
 
 
 def _set_to_response(item: object) -> RequirementSetResponse:
-    """Build a RequirementSetResponse from a RequirementSet ORM object."""
+    """‌⁠‍Build a RequirementSetResponse from a RequirementSet ORM object."""
     return RequirementSetResponse(
         id=item.id,  # type: ignore[attr-defined]
         project_id=item.project_id,  # type: ignore[attr-defined]
@@ -71,7 +71,7 @@ def _set_to_response(item: object) -> RequirementSetResponse:
 
 
 def _req_to_response(item: object) -> RequirementResponse:
-    """Build a RequirementResponse from a Requirement ORM object."""
+    """‌⁠‍Build a RequirementResponse from a Requirement ORM object."""
     confidence_raw = getattr(item, "confidence", None)
     confidence_val: float | None = None
     if confidence_raw is not None:

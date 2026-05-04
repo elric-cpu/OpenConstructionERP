@@ -46,7 +46,7 @@ export function AboutPage() {
         </div>
         <h1 className="text-3xl font-bold text-content-primary tracking-tight">OpenConstructionERP</h1>
         <p className="mt-2 text-base text-content-secondary">
-          {t('about.tagline', { defaultValue: 'The #1 open-source platform for construction cost estimation' })}
+          {t('about.tagline', { defaultValue: 'The #1 open-source platform for construction cost estimation‌⁠‍' })}
         </p>
         <div className="mt-3 flex items-center justify-center gap-3 text-sm text-content-tertiary">
           <span className="font-mono">v{APP_VERSION}</span>
@@ -63,14 +63,14 @@ export function AboutPage() {
           <div className="flex items-center gap-2 mb-4">
             <Award size={18} className="text-amber-500" />
             <h2 className="text-lg font-semibold text-content-primary">
-              {t('about.platform_title', { defaultValue: 'Platform Capabilities' })}
+              {t('about.platform_title', { defaultValue: 'Platform Capabilities‌⁠‍' })}
             </h2>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             {[
-              { value: '55K+', label: t('about.stat_costs', { defaultValue: 'Cost Items (CWICR)' }) },
-              { value: '20+', label: t('about.stat_langs', { defaultValue: 'Languages' }) },
-              { value: '11', label: t('about.stat_regions', { defaultValue: 'Regional Databases' }) },
+              { value: '55K+', label: t('about.stat_costs', { defaultValue: 'Cost Items (CWICR)‌⁠‍' }) },
+              { value: '20+', label: t('about.stat_langs', { defaultValue: 'Languages‌⁠‍' }) },
+              { value: '11', label: t('about.stat_regions', { defaultValue: 'Regional Databases‌⁠‍' }) },
               { value: '4', label: t('about.stat_cad_formats', { defaultValue: 'CAD/BIM formats supported' }) },
             ].map((s, i) => (
               <div key={i} className="text-center rounded-xl bg-surface-secondary/50 p-4">

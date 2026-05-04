@@ -231,7 +231,7 @@ function AttachmentDropzone({
           const msg = err instanceof Error ? err.message : String(err);
           addToast({
             type: 'error',
-            title: t('meetings.upload_failed', { defaultValue: 'Attachment upload failed' }),
+            title: t('meetings.upload_failed', { defaultValue: 'Attachment upload failed‌⁠‍' }),
             message: msg,
           });
         }
@@ -244,7 +244,7 @@ function AttachmentDropzone({
   return (
     <div>
       <label className="block text-sm font-medium text-content-primary mb-1.5">
-        {t('meetings.field_attachments', { defaultValue: 'Attachments' })}
+        {t('meetings.field_attachments', { defaultValue: 'Attachments‌⁠‍' })}
       </label>
 
       <div
@@ -285,14 +285,14 @@ function AttachmentDropzone({
           {uploading ? (
             <>
               <Loader2 size={16} className="animate-spin text-oe-blue" />
-              <span>{t('meetings.uploading', { defaultValue: 'Uploading...' })}</span>
+              <span>{t('meetings.uploading', { defaultValue: 'Uploading...‌⁠‍' })}</span>
             </>
           ) : (
             <>
               <Paperclip size={16} className="text-content-tertiary" />
               <span>
                 {t('meetings.dropzone_hint', {
-                  defaultValue: 'Drop files here or click to browse',
+                  defaultValue: 'Drop files here or click to browse‌⁠‍',
                 })}
               </span>
             </>
@@ -320,7 +320,7 @@ function AttachmentDropzone({
                 rel="noopener noreferrer"
                 onClick={(e) => e.stopPropagation()}
                 className="flex h-6 w-6 items-center justify-center rounded text-content-tertiary hover:text-oe-blue hover:bg-surface-primary transition-colors shrink-0"
-                aria-label={t('common.download', { defaultValue: 'Download' })}
+                aria-label={t('common.download', { defaultValue: 'Download‌⁠‍' })}
                 data-testid="meeting-attachment-download"
               >
                 <Download size={12} />

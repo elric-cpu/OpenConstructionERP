@@ -1,4 +1,4 @@
-"""Replace 'open-source tools' with 'free tools' (DE: 'kostenlose Werkzeuge',
+"""‌⁠‍Replace 'open-source tools' with 'free tools' (DE: 'kostenlose Werkzeuge',
 RU: 'бесплатные инструменты') in voices.para3 across en/de/ru."""
 import json
 from pathlib import Path

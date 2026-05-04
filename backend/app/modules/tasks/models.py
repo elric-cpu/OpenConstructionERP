@@ -1,4 +1,4 @@
-"""Tasks ORM models.
+"""‌⁠‍Tasks ORM models.
 
 Tables:
     oe_tasks_task — project tasks with checklists, assignments, and status tracking
@@ -13,7 +13,7 @@ from app.database import GUID, Base
 
 
 class Task(Base):
-    """A project task with checklist, assignment, and due date tracking."""
+    """‌⁠‍A project task with checklist, assignment, and due date tracking."""
 
     __tablename__ = "oe_tasks_task"
     __table_args__ = (

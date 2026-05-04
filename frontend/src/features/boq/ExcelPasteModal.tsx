@@ -140,8 +140,8 @@ export function ExcelPasteModal({ open, onClose, onImport, loading }: ExcelPaste
               <ClipboardPaste size={18} className="text-oe-blue" />
             </div>
             <div>
-              <h2 className="text-base font-semibold">{t('boq.paste_from_excel', { defaultValue: 'Paste from Excel' })}</h2>
-              <p className="text-xs text-content-secondary">{t('boq.paste_excel_hint', { defaultValue: 'Copy rows from Excel or Google Sheets and paste below' })}</p>
+              <h2 className="text-base font-semibold">{t('boq.paste_from_excel', { defaultValue: 'Paste from Excel‌⁠‍' })}</h2>
+              <p className="text-xs text-content-secondary">{t('boq.paste_excel_hint', { defaultValue: 'Copy rows from Excel or Google Sheets and paste below‌⁠‍' })}</p>
             </div>
           </div>
           <button onClick={handleClose} className="p-1.5 rounded-lg hover:bg-surface-secondary transition-colors">
@@ -155,7 +155,7 @@ export function ExcelPasteModal({ open, onClose, onImport, loading }: ExcelPaste
           <textarea
             value={raw}
             onChange={(e) => setRaw(e.target.value)}
-            placeholder={t('boq.paste_placeholder', { defaultValue: 'Paste tab-separated data here...\n\nExample:\nDescription\tUnit\tQty\tRate\nConcrete foundation\tm3\t120\t185.00\nRebar B500S\tkg\t2400\t1.45' })}
+            placeholder={t('boq.paste_placeholder', { defaultValue: 'Paste tab-separated data here...\n\nExample:\nDescription\tUnit\tQty\tRate\nConcrete foundation\tm3\t120\t185.00\nRebar B500S\tkg\t2400\t1.45‌⁠‍' })}
             className="w-full h-40 rounded-xl border border-border-light bg-surface-secondary px-4 py-3 text-sm font-mono resize-none focus:outline-none focus:ring-2 focus:ring-oe-blue/30 focus:border-oe-blue"
             autoFocus
           />
@@ -165,11 +165,11 @@ export function ExcelPasteModal({ open, onClose, onImport, loading }: ExcelPaste
             <div className="flex flex-wrap items-center gap-2">
               <CheckCircle2 size={14} className="text-emerald-500" />
               <span className="text-xs text-content-secondary">
-                {t('boq.paste_detected', { defaultValue: '{{count}} rows detected', count: rows.length })}
+                {t('boq.paste_detected', { defaultValue: '{{count}} rows detected‌⁠‍', count: rows.length })}
               </span>
               {detectedHeaders.length > 0 && (
                 <span className="text-xs text-content-tertiary">
-                  ({t('boq.paste_columns', { defaultValue: 'Columns' })}: {detectedHeaders.join(', ')})
+                  ({t('boq.paste_columns', { defaultValue: 'Columns‌⁠‍' })}: {detectedHeaders.join(', ')})
                 </span>
               )}
             </div>

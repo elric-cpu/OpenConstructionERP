@@ -216,7 +216,7 @@ function AddTaskModal({
 
   const validate = (): boolean => {
     const e: Record<string, string> = {};
-    if (!form.title.trim()) e.title = t('validation.required', { defaultValue: 'This field is required' });
+    if (!form.title.trim()) e.title = t('validation.required', { defaultValue: 'This field is required‌⁠‍' });
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -236,17 +236,17 @@ function AddTaskModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-2xl bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[90vh] overflow-y-auto" role="dialog" aria-label={t('tasks.new_task', { defaultValue: 'New Task' })}>
+      <div className="w-full max-w-2xl bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[90vh] overflow-y-auto" role="dialog" aria-label={t('tasks.new_task', { defaultValue: 'New Task‌⁠‍' })}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border-light">
           <div>
             <h2 className="text-lg font-semibold text-content-primary">
-              {t('tasks.new_task', { defaultValue: 'New Task' })}
+              {t('tasks.new_task', { defaultValue: 'New Task‌⁠‍' })}
             </h2>
             {projectName && (
               <p className="text-xs text-content-tertiary mt-0.5">
                 {t('common.creating_in_project', {
-                  defaultValue: 'In {{project}}',
+                  defaultValue: 'In {{project}}‌⁠‍',
                   project: projectName,
                 })}
               </p>
@@ -322,7 +322,7 @@ function AddTaskModal({
           <div className="flex items-center gap-2 pt-2 pb-1">
             <ClipboardList size={14} className="text-content-tertiary" />
             <span className="text-xs font-semibold uppercase tracking-wider text-content-tertiary">
-              {t('tasks.section_details', { defaultValue: 'Task Details' })}
+              {t('tasks.section_details', { defaultValue: 'Task Details‌⁠‍' })}
             </span>
             <div className="flex-1 h-px bg-border-light" />
           </div>

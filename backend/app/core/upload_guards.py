@@ -1,4 +1,4 @@
-"""Shared upload safety guards.
+"""‌⁠‍Shared upload safety guards.
 
 Centralises the size/format checks that live on every multipart upload
 endpoint so the policy (and the error surface) stays identical across
@@ -29,7 +29,7 @@ def reject_if_xlsx_bomb(
     *,
     max_uncompressed: int = DEFAULT_MAX_UNCOMPRESSED_XLSX,
 ) -> None:
-    """Raise 413 when the sum of uncompressed entries exceeds the cap.
+    """‌⁠‍Raise 413 when the sum of uncompressed entries exceeds the cap.
 
     Silent no-op for non-zip payloads (plain CSV, corrupt bytes) — the
     downstream parser produces the appropriate error in those cases.

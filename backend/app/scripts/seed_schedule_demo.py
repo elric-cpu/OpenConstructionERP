@@ -1,4 +1,4 @@
-"""Seed 2 demo BOQs with realistic positions that have labor_hours in metadata.
+"""‌⁠‍Seed 2 demo BOQs with realistic positions that have labor_hours in metadata.
 
 Creates:
   1. "Residential House - 3 Bedroom" — 180 m² house (9 positions, 3 sections)
@@ -36,7 +36,7 @@ from app.modules.users.models import User  # noqa: F401
 
 
 def _money(value: float) -> str:
-    """Format a float to 2-decimal string (SQLite-compatible storage)."""
+    """‌⁠‍Format a float to 2-decimal string (SQLite-compatible storage)."""
     return str(Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
@@ -858,7 +858,7 @@ def _build_boq_positions(
     boq_id: uuid.UUID,
     sections_data: list[tuple[str, str, list[dict]]],
 ) -> list[Position]:
-    """Build section headers + child positions for a BOQ from structured data."""
+    """‌⁠‍Build section headers + child positions for a BOQ from structured data."""
     positions: list[Position] = []
     sort = 0
 

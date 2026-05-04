@@ -1,4 +1,4 @@
-"""Crawl each brand homepage and extract a likely logo asset URL.
+"""‌⁠‍Crawl each brand homepage and extract a likely logo asset URL.
 
 For a small set of construction/engineering firms whose Google faviconV2
 returns a generic globe, this script visits the live homepage and pulls
@@ -37,7 +37,7 @@ DOMAINS = [
 
 
 class FindLogo(HTMLParser):
-    """Walk the DOM, score each <img>, and keep the highest-scoring one."""
+    """‌⁠‍Walk the DOM, score each <img>, and keep the highest-scoring one."""
 
     def __init__(self, base: str):
         super().__init__()

@@ -36,7 +36,7 @@ export default function BIMLayersPanel({ elements }: BIMLayersPanelProps) {
     <div className="flex flex-col gap-2 p-3">
       <div className="flex items-center justify-between">
         <h3 className="text-xs font-semibold text-content-primary uppercase tracking-wide">
-          {t('bim.layers_title', { defaultValue: 'Layers' })}
+          {t('bim.layers_title', { defaultValue: 'Layers‌⁠‍' })}
         </h3>
         <button
           type="button"
@@ -63,11 +63,11 @@ export default function BIMLayersPanel({ elements }: BIMLayersPanelProps) {
                   aria-label={
                     hidden
                       ? t('bim.layers_show_category', {
-                          defaultValue: 'Show {{category}}',
+                          defaultValue: 'Show {{category}}‌⁠‍',
                           category,
                         })
                       : t('bim.layers_hide_category', {
-                          defaultValue: 'Hide {{category}}',
+                          defaultValue: 'Hide {{category}}‌⁠‍',
                           category,
                         })
                   }
@@ -96,7 +96,7 @@ export default function BIMLayersPanel({ elements }: BIMLayersPanelProps) {
                     setCategoryOpacity(category, Number(e.target.value) / 100)
                   }
                   aria-label={t('bim.layers_opacity', {
-                    defaultValue: '{{category}} opacity',
+                    defaultValue: '{{category}} opacity‌⁠‍',
                     category,
                   })}
                   className="flex-1 accent-oe-blue"

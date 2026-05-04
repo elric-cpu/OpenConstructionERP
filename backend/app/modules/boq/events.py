@@ -1,4 +1,4 @@
-"""BOQ event handlers — activity log integration + vector indexing.
+"""‌⁠‍BOQ event handlers — activity log integration + vector indexing.
 
 Subscribes to all ``boq.*`` events and creates activity log entries
 for audit trail purposes.  Also keeps the ``oe_boq_positions`` vector
@@ -32,7 +32,7 @@ _vector_warn = _RateLimitedLogger(window_seconds=60.0)
 
 
 def _is_sqlite_dialect() -> bool:
-    """Return True when the app database URL points at SQLite.
+    """‌⁠‍Return True when the app database URL points at SQLite.
 
     SQLite on SQLAlchemy async triggers ``MissingGreenlet`` when a
     wildcard ``*`` event subscription writes to a separate session
@@ -77,7 +77,7 @@ _EVENT_DESCRIPTIONS: dict[str, str] = {
 
 
 def _resolve_target(event_name: str) -> str:
-    """Derive the target_type from the event name.
+    """‌⁠‍Derive the target_type from the event name.
 
     Convention: ``boq.<entity>.<action>`` → target_type = entity.
     Falls back to "boq" for non-standard names.

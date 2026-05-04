@@ -1,4 +1,4 @@
-"""Meetings module manifest."""
+"""‌⁠‍Meetings module manifest."""
 
 from app.core.module_loader import ModuleManifest
 

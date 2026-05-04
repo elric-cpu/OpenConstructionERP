@@ -1,4 +1,4 @@
-"""Cross-database custom column types.
+"""‌⁠‍Cross-database custom column types.
 
 Goals:
 
@@ -41,7 +41,7 @@ from sqlalchemy import Date, Numeric, String, TypeDecorator
 
 
 class MoneyType(TypeDecorator):
-    """Money / signed-decimal column.
+    """‌⁠‍Money / signed-decimal column.
 
     * PostgreSQL → ``NUMERIC(precision, scale)`` (default 18, 2).
     * SQLite     → ``VARCHAR(50)`` holding the canonical string form.
@@ -99,7 +99,7 @@ class MoneyType(TypeDecorator):
 
 
 class SafeDate(TypeDecorator):
-    """Calendar-date column (no time component, no timezone).
+    """‌⁠‍Calendar-date column (no time component, no timezone).
 
     * PostgreSQL → ``DATE``.
     * SQLite     → ``VARCHAR(20)`` holding an ISO-8601 date string.

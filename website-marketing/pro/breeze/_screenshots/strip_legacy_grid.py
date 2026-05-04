@@ -1,4 +1,4 @@
-"""Remove the hidden legacy ecosystem grid block we marked earlier."""
+"""‌⁠‍Remove the hidden legacy ecosystem grid block we marked earlier."""
 from pathlib import Path
 import re
 

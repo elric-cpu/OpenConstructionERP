@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""BOQ ORM models.
+"""‌⁠‍BOQ ORM models.
 
 Tables:
     oe_boq_boq — bill of quantities (one per project scope)
@@ -18,7 +18,7 @@ from app.database import GUID, Base
 
 
 class BOQ(Base):
-    """Bill of Quantities — groups positions for a project."""
+    """‌⁠‍Bill of Quantities — groups positions for a project."""
 
     __tablename__ = "oe_boq_boq"
 
@@ -74,7 +74,7 @@ class BOQ(Base):
 
 
 class Position(Base):
-    """Single line item in a BOQ — the core estimation entity."""
+    """‌⁠‍Single line item in a BOQ — the core estimation entity."""
 
     __tablename__ = "oe_boq_position"
 

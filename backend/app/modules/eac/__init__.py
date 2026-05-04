@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""EAC v2 platform module.
+"""‌⁠‍EAC v2 platform module.
 
 The EAC (Estimation, Audit & Compliance) v2 engine implements the
 "one engine, four output modes" architecture from RFC 35:

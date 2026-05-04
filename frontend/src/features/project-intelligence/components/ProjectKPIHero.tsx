@@ -137,7 +137,7 @@ export function ProjectKPIHero({ projectId }: ProjectKPIHeroProps) {
         <div className="flex items-center justify-between">
           <h4 className="text-xs font-medium text-content-secondary">
             {t('project_intelligence.kpi.budget_variance', {
-              defaultValue: 'Budget variance',
+              defaultValue: 'Budget variance‌⁠‍',
             })}
           </h4>
           <span className={`w-2 h-2 rounded-full ${varianceStyle.dot}`} />
@@ -154,7 +154,7 @@ export function ProjectKPIHero({ projectId }: ProjectKPIHeroProps) {
         </div>
         <p className="text-2xs text-content-tertiary mt-1">
           {t('project_intelligence.kpi.variance_sub', {
-            defaultValue: 'Budget {{budget}} · Current {{current}}',
+            defaultValue: 'Budget {{budget}} · Current {{current}}‌⁠‍',
             budget: formatMoney(variance?.budget ?? 0, variance?.currency ?? 'EUR'),
             current: formatMoney(variance?.current ?? 0, variance?.currency ?? 'EUR'),
           })}
@@ -169,7 +169,7 @@ export function ProjectKPIHero({ projectId }: ProjectKPIHeroProps) {
         <div className="flex items-center justify-between">
           <h4 className="text-xs font-medium text-content-secondary">
             {t('project_intelligence.kpi.schedule_health', {
-              defaultValue: 'Schedule health',
+              defaultValue: 'Schedule health‌⁠‍',
             })}
           </h4>
           <span className={`w-2 h-2 rounded-full ${scheduleStyle.dot}`} />
@@ -182,7 +182,7 @@ export function ProjectKPIHero({ projectId }: ProjectKPIHeroProps) {
         </div>
         <p className="text-2xs text-content-tertiary mt-1">
           {t('project_intelligence.kpi.schedule_sub', {
-            defaultValue: 'Activities on baseline',
+            defaultValue: 'Activities on baseline‌⁠‍',
           })}
         </p>
       </div>
@@ -195,7 +195,7 @@ export function ProjectKPIHero({ projectId }: ProjectKPIHeroProps) {
         <div className="flex items-center justify-between">
           <h4 className="text-xs font-medium text-content-secondary">
             {t('project_intelligence.kpi.risk_adjusted_cost', {
-              defaultValue: 'Risk-adjusted cost',
+              defaultValue: 'Risk-adjusted cost‌⁠‍',
             })}
           </h4>
           <span className={`w-2 h-2 rounded-full ${riskStyle.dot}`} />

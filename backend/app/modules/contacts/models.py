@@ -1,4 +1,4 @@
-"""Contacts ORM models.
+"""‌⁠‍Contacts ORM models.
 
 Tables:
     oe_contacts_contact — unified contacts directory
@@ -13,7 +13,7 @@ from app.database import GUID, Base
 
 
 class Contact(Base):
-    """A contact entry: client, subcontractor, supplier, consultant, or internal."""
+    """‌⁠‍A contact entry: client, subcontractor, supplier, consultant, or internal."""
 
     __tablename__ = "oe_contacts_contact"
 

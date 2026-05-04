@@ -1,4 +1,4 @@
-"""Notification ORM models.
+"""‌⁠‍Notification ORM models.
 
 Tables:
     oe_notifications_notification — per-user in-app notifications
@@ -14,7 +14,7 @@ from app.database import GUID, Base
 
 
 class Notification(Base):
-    """In-app notification for a single user.
+    """‌⁠‍In-app notification for a single user.
 
     Notifications use i18n keys (``title_key``, ``body_key``) so the frontend
     can render them in the user's locale.  ``body_context`` carries interpolation

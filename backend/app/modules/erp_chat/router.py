@@ -1,4 +1,4 @@
-"""ERP Chat API routes.
+"""‌⁠‍ERP Chat API routes.
 
 Endpoints:
     POST   /erp_chat/stream/                       — SSE streaming chat with tool-calling
@@ -38,7 +38,7 @@ async def stream_chat(
     user_id: CurrentUserId,
     _remaining: int = Depends(check_ai_rate_limit),
 ) -> StreamingResponse:
-    """Stream an AI chat response with tool-calling via SSE.
+    """‌⁠‍Stream an AI chat response with tool-calling via SSE.
 
     The response is a Server-Sent Events stream with events:
     - session_id: emitted first with the chat session UUID
@@ -83,7 +83,7 @@ async def list_sessions(
     user_id: CurrentUserId,
     session: SessionDep,
 ) -> SessionListResponse:
-    """List chat sessions for the current user, newest first."""
+    """‌⁠‍List chat sessions for the current user, newest first."""
     service = ERPChatService(session)
     sessions, total = await service.list_sessions(user_id, limit=20)
     return SessionListResponse(

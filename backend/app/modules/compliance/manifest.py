@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Compliance DSL module manifest."""
+"""‌⁠‍Compliance DSL module manifest."""
 
 from app.core.module_loader import ModuleManifest
 

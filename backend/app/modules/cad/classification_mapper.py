@@ -2,7 +2,7 @@
 # CAD2DATA Pipeline · CWICR Cost Database Engine
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 # AGPL-3.0 License · DDC-CWICR-OE-2026
-"""Auto-map Revit/IFC categories to construction classification standards.
+"""‌⁠‍Auto-map Revit/IFC categories to construction classification standards.
 
 Provides deterministic mapping tables from common Revit family categories
 and IFC entity types to DIN 276, NRM 1, and CSI MasterFormat codes.
@@ -159,7 +159,7 @@ _CATEGORY_ALIASES: dict[str, str] = {
 
 
 def _canonical_category(category: str) -> str:
-    """Return the Revit-style category key the coarse maps are keyed on.
+    """‌⁠‍Return the Revit-style category key the coarse maps are keyed on.
 
     Pass-through if the input already matches a key in the coarse map;
     otherwise fold through the alias table by lowercase lookup. Returns
@@ -248,7 +248,7 @@ _MATERIAL_SYNONYMS: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 
 def _normalise_material(material: str | None) -> str | None:
-    """Fold a free-form material string into a canonical synonym key.
+    """‌⁠‍Fold a free-form material string into a canonical synonym key.
 
     Returns one of ``"concrete"``, ``"masonry"``, ``"timber"``, ``"steel"``,
     ``"drywall"``, ``"aluminium"``, ``"glass"`` — or ``None`` when no

@@ -1,4 +1,4 @@
-"""Validation data access layer.
+"""‌⁠‍Validation data access layer.
 
 All database queries for validation reports live here.
 No business logic — pure data access.
@@ -13,7 +13,7 @@ from app.modules.validation.models import ValidationReport
 
 
 class ValidationReportRepository:
-    """Data access for ValidationReport model."""
+    """‌⁠‍Data access for ValidationReport model."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -25,7 +25,7 @@ class ValidationReportRepository:
         target_type: str | None = None,
         limit: int = 50,
     ) -> list[ValidationReport]:
-        """List validation reports for a project, optionally filtered by target_type.
+        """‌⁠‍List validation reports for a project, optionally filtered by target_type.
 
         Results are ordered by created_at descending (newest first).
         """

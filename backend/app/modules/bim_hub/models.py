@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""BIM Hub ORM models.
+"""‌⁠‍BIM Hub ORM models.
 
 Tables:
     oe_bim_model        — imported BIM/CAD model metadata
@@ -30,7 +30,7 @@ from app.database import GUID, Base
 
 
 class BIMModel(Base):
-    """Imported BIM/CAD model — one record per uploaded file version."""
+    """‌⁠‍Imported BIM/CAD model — one record per uploaded file version."""
 
     __tablename__ = "oe_bim_model"
 
@@ -78,7 +78,7 @@ class BIMModel(Base):
 
 
 class BIMElement(Base):
-    """Single element extracted from a BIM model.
+    """‌⁠‍Single element extracted from a BIM model.
 
     Since v2.3.0 BIMElement is also the **asset register** for the project
     (ISO 19650 Asset Information Model). ``asset_info`` holds the

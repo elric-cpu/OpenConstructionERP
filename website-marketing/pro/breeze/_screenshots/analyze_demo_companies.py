@@ -1,4 +1,4 @@
-"""Pull a curated, ranked list of companies that signed up for the demo —
+"""‌⁠‍Pull a curated, ranked list of companies that signed up for the demo —
    filtering out junk, test entries, and disposable emails — so we can
    pick the most recognizable brands for the trust-strip logo wall."""
 import json

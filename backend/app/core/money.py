@@ -1,4 +1,4 @@
-"""MoneyValue utility for multi-currency monetary values.
+"""‌⁠‍MoneyValue utility for multi-currency monetary values.
 
 Core utility used by all financial modules. Stores amounts as strings
 to avoid floating-point precision issues and ensure SQLite compatibility.
@@ -102,7 +102,7 @@ _CURRENCY_CODE_RE = re.compile(r"^[A-Z]{3}$")
 
 
 class MoneyValue(BaseModel):
-    """Immutable representation of a monetary value with multi-currency support.
+    """‌⁠‍Immutable representation of a monetary value with multi-currency support.
 
     All amounts are stored as strings to avoid floating-point precision loss
     and to maintain SQLite compatibility. Arithmetic is performed via
@@ -129,7 +129,7 @@ class MoneyValue(BaseModel):
     @field_validator("currency_code", "base_currency_code")
     @classmethod
     def _validate_currency_code(cls, v: str) -> str:
-        """Ensure currency code is exactly 3 uppercase ASCII letters."""
+        """‌⁠‍Ensure currency code is exactly 3 uppercase ASCII letters."""
         if not _CURRENCY_CODE_RE.match(v):
             raise ValueError(
                 f"Currency code must be 3 uppercase letters, got {v!r}"

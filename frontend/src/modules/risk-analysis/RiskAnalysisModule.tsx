@@ -101,7 +101,7 @@ function Histogram({
   return (
     <div className="space-y-2">
       <h4 className="text-xs font-semibold text-content-tertiary uppercase tracking-wide">
-        {t('risk.distribution', { defaultValue: 'Cost Distribution (Histogram)' })}
+        {t('risk.distribution', { defaultValue: 'Cost Distribution (Histogram)‌⁠‍' })}
       </h4>
       <div className="relative">
         <div className="flex items-end gap-px h-36">
@@ -192,20 +192,20 @@ function RiskDriversTable({
   return (
     <div className="space-y-2">
       <h4 className="text-xs font-semibold text-content-tertiary uppercase tracking-wide">
-        {t('risk.top_drivers', { defaultValue: 'Top 10 Risk Drivers' })}
+        {t('risk.top_drivers', { defaultValue: 'Top 10 Risk Drivers‌⁠‍' })}
       </h4>
       <div className="border border-border-light rounded-lg overflow-hidden">
         <table className="w-full text-xs">
           <thead>
             <tr className="bg-surface-tertiary/50">
               <th className="px-3 py-2 text-left font-medium text-content-secondary">
-                {t('boq.ordinal', { defaultValue: 'Ordinal' })}
+                {t('boq.ordinal', { defaultValue: 'Ordinal‌⁠‍' })}
               </th>
               <th className="px-3 py-2 text-left font-medium text-content-secondary">
-                {t('boq.description', { defaultValue: 'Description' })}
+                {t('boq.description', { defaultValue: 'Description‌⁠‍' })}
               </th>
               <th className="px-3 py-2 text-right font-medium text-content-secondary">
-                {t('risk.base_cost', { defaultValue: 'Base Cost' })}
+                {t('risk.base_cost', { defaultValue: 'Base Cost‌⁠‍' })}
               </th>
               <th className="px-3 py-2 text-right font-medium text-content-secondary">
                 {t('risk.variance_share', { defaultValue: 'Variance Share' })}

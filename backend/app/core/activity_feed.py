@@ -1,4 +1,4 @@
-"""Activity feed — aggregates recent actions from the audit log.
+"""‌⁠‍Activity feed — aggregates recent actions from the audit log.
 
 Usage:
     GET /api/v1/activity?project_id=X&limit=20
@@ -49,7 +49,7 @@ async def get_activity_feed(
     limit: int = 20,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
-    """Aggregate recent activity from the audit log.
+    """‌⁠‍Aggregate recent activity from the audit log.
 
     Returns a list of activity entries, each with:
         type, entity_type, entity_id, title, action, user_id,
@@ -110,7 +110,7 @@ async def get_activity_feed(
 
 
 def _build_title(entry: AuditEntry) -> str:
-    """Build a human-readable description from the audit entry."""
+    """‌⁠‍Build a human-readable description from the audit entry."""
     action = entry.action.replace("_", " ").title()
     entity = entry.entity_type.replace("_", " ").title()
 

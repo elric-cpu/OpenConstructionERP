@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Run-orchestration service for EAC v2 (RFC 35 §1.6 / §1.7).
+"""‌⁠‍Run-orchestration service for EAC v2 (RFC 35 §1.6 / §1.7).
 
 The :func:`run_ruleset` coroutine is the top-level entry that the
 ``/rulesets/{id}:run`` endpoint and the Celery worker share. It:
@@ -66,7 +66,7 @@ HOT_RESULT_ITEM_CAP = 100_000
 
 @dataclass(frozen=True)
 class RuleOutcome:
-    """Per-rule slice of a run summary, surfaced in EacRun.summary_json."""
+    """‌⁠‍Per-rule slice of a run summary, surfaced in EacRun.summary_json."""
 
     rule_id: str
     rule_name: str
@@ -87,7 +87,7 @@ async def dry_run_rule(
     session: AsyncSession | None = None,
     tenant_id: uuid.UUID | None = None,
 ) -> ExecutionResult:
-    """Validate + execute ``rule_definition`` against ad-hoc ``elements``.
+    """‌⁠‍Validate + execute ``rule_definition`` against ad-hoc ``elements``.
 
     No persistence — used by the rule editor's "Test" panel and by
     ``POST /rules:dry-run``. Returns the executor's

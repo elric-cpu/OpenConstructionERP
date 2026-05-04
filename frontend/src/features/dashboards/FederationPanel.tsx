@@ -158,7 +158,7 @@ export function FederationPanel({
         <Layers className="h-4 w-4 text-emerald-400" />
         <h3 className="text-sm font-semibold text-content-primary">
           {t('dashboards.federation.title', {
-            defaultValue: 'Multi-Source Federation',
+            defaultValue: 'Multi-Source Federation‌⁠‍',
           })}
         </h3>
       </header>
@@ -167,14 +167,14 @@ export function FederationPanel({
       <div className="space-y-2">
         <label className="text-xs font-medium text-content-secondary">
           {t('dashboards.federation.pick_snapshots', {
-            defaultValue: 'Pick snapshots to federate',
+            defaultValue: 'Pick snapshots to federate‌⁠‍',
           })}
         </label>
         <div className="flex flex-wrap gap-1.5" data-testid="federation-selected-chips">
           {selected.length === 0 && (
             <span className="text-xs italic text-content-tertiary">
               {t('dashboards.federation.no_snapshots_selected', {
-                defaultValue: 'No snapshots selected',
+                defaultValue: 'No snapshots selected‌⁠‍',
               })}
             </span>
           )}
@@ -191,7 +191,7 @@ export function FederationPanel({
                 type="button"
                 onClick={() => removeChip(id)}
                 aria-label={t('dashboards.federation.remove_snapshot', {
-                  defaultValue: 'Remove snapshot',
+                  defaultValue: 'Remove snapshot‌⁠‍',
                 })}
                 className="rounded hover:bg-emerald-500/20"
                 data-testid={`federation-chip-remove-${id}`}
@@ -211,7 +211,7 @@ export function FederationPanel({
           {available.length === 0 ? (
             <div className="px-3 py-2 text-xs text-content-tertiary">
               {t('dashboards.federation.no_snapshots_available', {
-                defaultValue: 'No snapshots available.',
+                defaultValue: 'No snapshots available.‌⁠‍',
               })}
             </div>
           ) : (

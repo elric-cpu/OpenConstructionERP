@@ -57,7 +57,7 @@ export function CollaborationBar({
 
       <span className="text-xs text-content-secondary">
         <Users size={12} className="inline mr-1" />
-        {users.length} {t('collab.online', { defaultValue: 'online' })}
+        {users.length} {t('collab.online', { defaultValue: 'online‌⁠‍' })}
       </span>
 
       {/* Share button */}

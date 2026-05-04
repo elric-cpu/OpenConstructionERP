@@ -106,7 +106,7 @@ export default function ElementAssetCard({
         toast({
           type: 'error',
           title: t('assets.resolve_failed', {
-            defaultValue: 'Could not prepare asset row',
+            defaultValue: 'Could not prepare asset row‌⁠‍',
           }),
           message: err instanceof Error ? err.message : undefined,
         });
@@ -138,7 +138,7 @@ export default function ElementAssetCard({
           <div className="flex items-center gap-1.5">
             <Package size={12} className="text-oe-blue shrink-0" />
             <span className="text-[10px] font-semibold uppercase tracking-wide text-content-tertiary">
-              {t('assets.card_title', { defaultValue: 'Asset info' })}
+              {t('assets.card_title', { defaultValue: 'Asset info‌⁠‍' })}
             </span>
           </div>
           <div className="flex items-center gap-1.5">
@@ -151,17 +151,17 @@ export default function ElementAssetCard({
             >
               <Edit3 size={10} />
               {resolving
-                ? t('common.loading', { defaultValue: 'Loading…' })
+                ? t('common.loading', { defaultValue: 'Loading…‌⁠‍' })
                 : tracked
                 ? t('common.edit', { defaultValue: 'Edit' })
-                : t('assets.register', { defaultValue: 'Register' })}
+                : t('assets.register', { defaultValue: 'Register‌⁠‍' })}
             </button>
             {onDismiss && (
               <button
                 type="button"
                 onClick={onDismiss}
                 className="rounded p-0.5 text-content-tertiary hover:bg-surface-secondary hover:text-content-primary"
-                aria-label={t('assets.hide_card', { defaultValue: 'Hide asset card' })}
+                aria-label={t('assets.hide_card', { defaultValue: 'Hide asset card‌⁠‍' })}
                 title={t('assets.hide_card', { defaultValue: 'Hide asset card' })}
                 data-testid="bim-asset-dismiss"
               >

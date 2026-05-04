@@ -1,10 +1,10 @@
-"""AI module permission definitions."""
+"""‌⁠‍AI module permission definitions."""
 
 from app.core.permissions import Role, permission_registry
 
 
 def register_ai_permissions() -> None:
-    """Register permissions for the AI module."""
+    """‌⁠‍Register permissions for the AI module."""
     permission_registry.register_module_permissions(
         "ai",
         {

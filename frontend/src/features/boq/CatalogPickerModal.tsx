@@ -169,7 +169,7 @@ export function CatalogPickerModal({ open, onClose, onSelect }: CatalogPickerMod
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={t('boq.pick_from_catalog', { defaultValue: 'Pick from Catalog' })}
+        aria-label={t('boq.pick_from_catalog', { defaultValue: 'Pick from Catalog‌⁠‍' })}
         className="bg-surface-elevated rounded-2xl border border-border shadow-2xl w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
@@ -181,11 +181,11 @@ export function CatalogPickerModal({ open, onClose, onSelect }: CatalogPickerMod
             </div>
             <div>
               <h2 className="text-base font-semibold text-content-primary">
-                {t('boq.pick_from_catalog', { defaultValue: 'Pick from Catalog' })}
+                {t('boq.pick_from_catalog', { defaultValue: 'Pick from Catalog‌⁠‍' })}
               </h2>
               <p className="text-xs text-content-tertiary">
                 {t('boq.pick_from_catalog_desc', {
-                  defaultValue: 'Search and add a resource from the catalog to this position',
+                  defaultValue: 'Search and add a resource from the catalog to this position‌⁠‍',
                 })}
               </p>
             </div>
@@ -233,10 +233,10 @@ export function CatalogPickerModal({ open, onClose, onSelect }: CatalogPickerMod
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={t('boq.search_catalog_resources', {
-                defaultValue: 'Search resources by name, code, or category...',
+                defaultValue: 'Search resources by name, code, or category...‌⁠‍',
               })}
               aria-label={t('boq.search_catalog_resources', {
-                defaultValue: 'Search resources by name, code, or category...',
+                defaultValue: 'Search resources by name, code, or category...‌⁠‍',
               })}
               className="h-10 w-full rounded-lg border border-border bg-surface-primary pl-10 pr-3 text-sm text-content-primary placeholder:text-content-tertiary focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400"
             />

@@ -1,4 +1,4 @@
-"""Inject test variants metadata into a few UK_GBP cost items so we can
+"""‌⁠‍Inject test variants metadata into a few UK_GBP cost items so we can
 verify the Cost DB / BOQ variant UI without re-running the full importer."""
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ TEST_VARIANTS = [
 
 
 def find_or_pick(code_hint: str) -> tuple[str, str, str, str] | None:
-    """Pick a real existing cost item with region UK_GBP and overwrite its
+    """‌⁠‍Pick a real existing cost item with region UK_GBP and overwrite its
     metadata. We don't want to add new rows; we want to reuse real ones so
     the rate / description shows real product data."""
     cur.execute(

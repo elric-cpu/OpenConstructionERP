@@ -105,9 +105,9 @@ export default function LinkDocumentToBIMModal({
     onSuccess: (count) => {
       addToast({
         type: 'success',
-        title: t('bim.doc_linked_title', { defaultValue: 'Document linked' }),
+        title: t('bim.doc_linked_title', { defaultValue: 'Document linked‌⁠‍' }),
         message: t('bim.doc_linked_msg', {
-          defaultValue: 'Linked to {{count}} BIM element(s)',
+          defaultValue: 'Linked to {{count}} BIM element(s)‌⁠‍',
           count,
         }),
       });
@@ -140,13 +140,13 @@ export default function LinkDocumentToBIMModal({
           <div className="flex items-center gap-2">
             <FileText size={16} className="text-violet-600" />
             <h2 className="text-sm font-semibold text-content-primary">
-              {t('bim.link_doc_title', { defaultValue: 'Link a document' })}
+              {t('bim.link_doc_title', { defaultValue: 'Link a document‌⁠‍' })}
             </h2>
             <span className="text-[11px] text-content-tertiary">
               {elements.length === 1
                 ? '→ ' + (elements[0]!.name || elements[0]!.element_type)
                 : t('bim.link_doc_bulk', {
-                    defaultValue: '→ {{count}} elements',
+                    defaultValue: '→ {{count}} elements‌⁠‍',
                     count: elements.length,
                   })}
             </span>
@@ -172,7 +172,7 @@ export default function LinkDocumentToBIMModal({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={t('bim.search_documents', {
-                defaultValue: 'Search by name, category, drawing number, discipline…',
+                defaultValue: 'Search by name, category, drawing number, discipline…‌⁠‍',
               })}
               autoFocus
               className="w-full ps-8 pe-3 py-1.5 text-sm rounded border border-border-light bg-surface-primary focus:outline-none focus:ring-1 focus:ring-oe-blue"

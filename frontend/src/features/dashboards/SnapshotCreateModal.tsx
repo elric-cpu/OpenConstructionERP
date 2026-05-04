@@ -65,7 +65,7 @@ export function SnapshotCreateModal({
       toast({
         type: 'error',
         title: t('dashboards.snapshot_create_failed', {
-          defaultValue: 'Snapshot upload failed',
+          defaultValue: 'Snapshot upload failed‌⁠‍',
         }),
         message: err.snapshotError?.message ?? err.message,
       });
@@ -104,7 +104,7 @@ export function SnapshotCreateModal({
       <div className="w-full max-w-lg rounded-lg border border-border-light bg-surface-primary shadow-xl">
         <div className="flex items-center justify-between border-b border-border-light px-5 py-3">
           <h2 className="text-sm font-semibold text-content-primary">
-            {t('dashboards.create_snapshot', { defaultValue: 'Create snapshot' })}
+            {t('dashboards.create_snapshot', { defaultValue: 'Create snapshot‌⁠‍' })}
           </h2>
           <button
             type="button"
@@ -126,7 +126,7 @@ export function SnapshotCreateModal({
               value={label}
               onChange={(e) => setLabel(e.target.value)}
               placeholder={t('dashboards.snapshot_label_ph', {
-                defaultValue: 'e.g. Issued-for-tender 2026-04',
+                defaultValue: 'e.g. Issued-for-tender 2026-04‌⁠‍',
               })}
               maxLength={200}
             />
@@ -135,7 +135,7 @@ export function SnapshotCreateModal({
           <div>
             <div className="mb-1 flex items-center justify-between">
               <span className="text-xs font-medium text-content-tertiary">
-                {t('dashboards.snapshot_files', { defaultValue: 'CAD / BIM files' })}
+                {t('dashboards.snapshot_files', { defaultValue: 'CAD / BIM files‌⁠‍' })}
               </span>
               <span className="text-xs text-content-tertiary">
                 {files.length} / {MAX_FILES}
@@ -149,7 +149,7 @@ export function SnapshotCreateModal({
             >
               <UploadCloud className="h-4 w-4" />
               {t('dashboards.snapshot_drop_hint', {
-                defaultValue: 'Select IFC / RVT / DWG / DGN files',
+                defaultValue: 'Select IFC / RVT / DWG / DGN files‌⁠‍',
               })}
             </button>
             <input

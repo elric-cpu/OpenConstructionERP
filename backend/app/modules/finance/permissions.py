@@ -1,10 +1,10 @@
-"""Finance module permission definitions."""
+"""‌⁠‍Finance module permission definitions."""
 
 from app.core.permissions import Role, permission_registry
 
 
 def register_finance_permissions() -> None:
-    """Register permissions for the finance module."""
+    """‌⁠‍Register permissions for the finance module."""
     permission_registry.register_module_permissions(
         "finance",
         {

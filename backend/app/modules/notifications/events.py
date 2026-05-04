@@ -1,4 +1,4 @@
-"""Notifications event subscribers — turn cross-module mutation events
+"""‌⁠‍Notifications event subscribers — turn cross-module mutation events
 into in-app notifications.
 
 Until v1.4.6 the notifications module was a "ghost component" — the
@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 
 async def _can_open_isolated_session() -> bool:
-    """Return True if it is safe to open a write session right now.
+    """‌⁠‍Return True if it is safe to open a write session right now.
 
     Notification subscribers are invoked synchronously inside the
     upstream service's transaction.  PostgreSQL handles concurrent
@@ -79,7 +79,7 @@ async def _can_open_isolated_session() -> bool:
 
 
 async def _on_boq_created(event: Event) -> None:
-    """``boq.boq.created`` → notify the creator."""
+    """‌⁠‍``boq.boq.created`` → notify the creator."""
     if not await _can_open_isolated_session():
         return
     data = event.data or {}

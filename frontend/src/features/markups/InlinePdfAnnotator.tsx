@@ -591,7 +591,7 @@ export function InlinePdfAnnotator({
   const handleSaveAll = useCallback(async () => {
     const unsaved = annotations.filter((a) => TOOL_TO_MARKUP_TYPE[a.tool]);
     if (unsaved.length === 0) {
-      addToast({ type: 'info', title: t('markups.nothing_to_save', { defaultValue: 'No annotations to save' }) });
+      addToast({ type: 'info', title: t('markups.nothing_to_save', { defaultValue: 'No annotations to save‌⁠‍' }) });
       return;
     }
 
@@ -636,7 +636,7 @@ export function InlinePdfAnnotator({
       addToast({
         type: 'success',
         title: t('markups.annotations_saved', {
-          defaultValue: '{{count}} annotation(s) saved',
+          defaultValue: '{{count}} annotation(s) saved‌⁠‍',
           count: ok,
         }),
       });
@@ -647,7 +647,7 @@ export function InlinePdfAnnotator({
       addToast({
         type: 'error',
         title: t('markups.save_failed', {
-          defaultValue: '{{count}} annotation(s) failed to save',
+          defaultValue: '{{count}} annotation(s) failed to save‌⁠‍',
           count: fail,
         }),
       });
@@ -678,7 +678,7 @@ export function InlinePdfAnnotator({
       <div className="flex items-center justify-center py-20">
         <Loader2 size={32} className="text-oe-blue animate-spin" />
         <span className="ml-3 text-sm text-content-secondary">
-          {t('markups.loading_pdf', { defaultValue: 'Loading document...' })}
+          {t('markups.loading_pdf', { defaultValue: 'Loading document...‌⁠‍' })}
         </span>
       </div>
     );
@@ -827,7 +827,7 @@ export function InlinePdfAnnotator({
           <>
             <span className="text-2xs text-content-tertiary">
               {t('markups.annotations_count', {
-                defaultValue: '{{count}} annotation(s)',
+                defaultValue: '{{count}} annotation(s)‌⁠‍',
                 count: annotations.length,
               })}
             </span>

@@ -245,7 +245,7 @@ function ConverterCard({
         <div className="absolute -top-2.5 left-4 z-10">
           <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 px-2.5 py-0.5 text-2xs font-bold text-white shadow-sm">
             <Star size={10} />
-            {t('quantities.recommended', { defaultValue: 'Recommended' })}
+            {t('quantities.recommended', { defaultValue: 'Recommended‌⁠‍' })}
           </span>
         </div>
       )}
@@ -255,17 +255,17 @@ function ConverterCard({
         {installing ? (
           <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-2xs font-semibold text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
             <Loader2 size={10} className="animate-spin" />
-            {t('quantities.converter_installing', { defaultValue: 'Installing...' })}
+            {t('quantities.converter_installing', { defaultValue: 'Installing...‌⁠‍' })}
           </span>
         ) : installed ? (
           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-2xs font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
             <CheckCircle2 size={10} />
-            {t('quantities.converter_installed', { defaultValue: 'Installed' })}
+            {t('quantities.converter_installed', { defaultValue: 'Installed‌⁠‍' })}
           </span>
         ) : (
           <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-2xs font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
             <Download size={10} />
-            {t('quantities.converter_available', { defaultValue: 'Available' })}
+            {t('quantities.converter_available', { defaultValue: 'Available‌⁠‍' })}
           </span>
         )}
       </div>
@@ -321,7 +321,7 @@ function ConverterCard({
               className="inline-flex items-center gap-1 rounded bg-red-50 dark:bg-red-900/20 px-2 py-1 text-2xs font-medium text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
             >
               <Trash2 size={10} />
-              {t('quantities.uninstall', { defaultValue: 'Uninstall' })}
+              {t('quantities.uninstall', { defaultValue: 'Uninstall‌⁠‍' })}
             </button>
           ) : (
             <button

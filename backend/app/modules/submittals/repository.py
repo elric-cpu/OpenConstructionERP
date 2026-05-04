@@ -1,4 +1,4 @@
-"""Submittals data access layer."""
+"""‌⁠‍Submittals data access layer."""
 
 import uuid
 
@@ -9,7 +9,7 @@ from app.modules.submittals.models import Submittal
 
 
 class SubmittalRepository:
-    """Data access for Submittal models."""
+    """‌⁠‍Data access for Submittal models."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -40,7 +40,7 @@ class SubmittalRepository:
         return list(result.scalars().all()), total
 
     async def next_submittal_number(self, project_id: uuid.UUID) -> str:
-        """Generate the next submittal number using MAX to avoid duplicates."""
+        """‌⁠‍Generate the next submittal number using MAX to avoid duplicates."""
         from sqlalchemy import Integer as SAInteger
         from sqlalchemy import cast
         from sqlalchemy.sql import func as sqlfunc

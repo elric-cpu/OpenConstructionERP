@@ -1,4 +1,4 @@
-"""CDE Pydantic schemas — request/response models.
+"""‌⁠‍CDE Pydantic schemas — request/response models.
 
 Defines create, update, and response schemas for document containers
 and revisions following ISO 19650.
@@ -16,7 +16,7 @@ from app.modules.cde.suitability import validate_suitability_for_state
 
 
 class ContainerCreate(BaseModel):
-    """Create a new document container."""
+    """‌⁠‍Create a new document container."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -55,7 +55,7 @@ class ContainerCreate(BaseModel):
 
 
 class ContainerUpdate(BaseModel):
-    """Partial update for a document container."""
+    """‌⁠‍Partial update for a document container."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 

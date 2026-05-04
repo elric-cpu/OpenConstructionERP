@@ -1,4 +1,4 @@
-"""Requirements & Quality Gates data access layer.
+"""‌⁠‍Requirements & Quality Gates data access layer.
 
 All database queries for requirement sets, requirements, and gate results
 live here. No business logic — pure data access.
@@ -13,13 +13,13 @@ from app.modules.requirements.models import GateResult, Requirement, Requirement
 
 
 class RequirementSetRepository:
-    """Data access for RequirementSet models."""
+    """‌⁠‍Data access for RequirementSet models."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
     async def get_by_id(self, set_id: uuid.UUID) -> RequirementSet | None:
-        """Get requirement set by ID (with eagerly loaded relationships)."""
+        """‌⁠‍Get requirement set by ID (with eagerly loaded relationships)."""
         return await self.session.get(RequirementSet, set_id)
 
     async def list_for_project(

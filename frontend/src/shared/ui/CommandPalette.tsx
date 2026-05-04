@@ -300,7 +300,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       const recent = loadRecent();
       if (recent.length > 0) {
         groups.push({
-          title: t('command_palette.recent', { defaultValue: 'Recent' }),
+          title: t('command_palette.recent', { defaultValue: 'Recent‌⁠‍' }),
           items: recent.map((r) => ({
             id: `recent-${r.id}`,
             type: 'recent' as const,
@@ -320,7 +320,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       // Show recent projects (top 5 from API)
       if (projects.length > 0) {
         groups.push({
-          title: t('command_palette.projects', { defaultValue: 'Projects' }),
+          title: t('command_palette.projects', { defaultValue: 'Projects‌⁠‍' }),
           items: projects.slice(0, 5).map(
             (p): SearchResult => ({
               id: `project-${p.id}`,
@@ -337,7 +337,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       // Show recent BOQs (top 5 from API)
       if (boqs.length > 0) {
         groups.push({
-          title: t('command_palette.boqs', { defaultValue: 'Bills of Quantities' }),
+          title: t('command_palette.boqs', { defaultValue: 'Bills of Quantities‌⁠‍' }),
           items: boqs.slice(0, 5).map(
             (b): SearchResult => ({
               id: `boq-${b.id}`,
@@ -388,7 +388,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
     if (matchingProjects.length > 0) {
       groups.push({
-        title: t('command_palette.projects', { defaultValue: 'Projects' }),
+        title: t('command_palette.projects', { defaultValue: 'Projects‌⁠‍' }),
         items: matchingProjects,
       });
     }
@@ -415,7 +415,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
     if (matchingBoqs.length > 0) {
       groups.push({
-        title: t('command_palette.boqs', { defaultValue: 'Bills of Quantities' }),
+        title: t('command_palette.boqs', { defaultValue: 'Bills of Quantities‌⁠‍' }),
         items: matchingBoqs,
       });
     }

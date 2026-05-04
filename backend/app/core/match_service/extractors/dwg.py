@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""DWG element → envelope adapter (interim).
+"""‌⁠‍DWG element → envelope adapter (interim).
 
 Input shape: a layer-name + textual description from the DWG takeoff
 parser. Quantities are best-effort because the DWG visual viewer is
@@ -30,7 +30,7 @@ from app.modules.cad.classification_mapper import (
 
 
 def _auto_classifier_hint_from_category(category: str) -> dict[str, str] | None:
-    """Coarse classifier hint from category alone (no material).
+    """‌⁠‍Coarse classifier hint from category alone (no material).
 
     DWG layer parsing produces a category but no material; we still
     return a useful coarse hint so the matcher's classifier boost can
@@ -47,7 +47,7 @@ def _auto_classifier_hint_from_category(category: str) -> dict[str, str] | None:
 
 
 def _category_from_layer(layer: str) -> str:
-    """Best-effort category guess from AIA/CAD layer naming convention.
+    """‌⁠‍Best-effort category guess from AIA/CAD layer naming convention.
 
     AIA layer codes are ``DISCIPLINE-MAJOR-MINOR`` — e.g. ``A-WALL-PRTN``
     is "Architecture / Wall / Partition". We return the major group as

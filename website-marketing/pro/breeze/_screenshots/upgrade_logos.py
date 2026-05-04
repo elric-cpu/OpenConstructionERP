@@ -1,4 +1,4 @@
-"""Upgrade all 48 brand chips to use a multi-source fallback chain.
+"""‌⁠‍Upgrade all 48 brand chips to use a multi-source fallback chain.
 
 Strategy per chip:
   1. Try a curated logo URL first (Wikipedia for famous brands, otherwise

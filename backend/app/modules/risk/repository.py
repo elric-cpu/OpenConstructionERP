@@ -1,4 +1,4 @@
-"""Risk Register data access layer.
+"""‌⁠‍Risk Register data access layer.
 
 All database queries for risk items live here.
 No business logic — pure data access.
@@ -13,13 +13,13 @@ from app.modules.risk.models import RiskItem
 
 
 class RiskRepository:
-    """Data access for RiskItem models."""
+    """‌⁠‍Data access for RiskItem models."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
     async def get_by_id(self, risk_id: uuid.UUID) -> RiskItem | None:
-        """Get risk item by ID."""
+        """‌⁠‍Get risk item by ID."""
         return await self.session.get(RiskItem, risk_id)
 
     async def list_for_project(

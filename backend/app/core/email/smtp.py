@@ -1,4 +1,4 @@
-"""SMTP email backend.
+"""‌⁠‍SMTP email backend.
 
 Wraps ``smtplib.SMTP`` with async-friendly semantics: the blocking
 handshake + send runs in ``asyncio.to_thread`` so the event loop stays
@@ -41,14 +41,14 @@ _WHITESPACE_RE = re.compile(r"\s+")
 
 
 def _html_to_text(html: str) -> str:
-    """Strip HTML tags for the plain-text MIME alternative."""
+    """‌⁠‍Strip HTML tags for the plain-text MIME alternative."""
     text = _TAG_RE.sub(" ", html)
     text = text.replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
     return _WHITESPACE_RE.sub(" ", text).strip()
 
 
 class SmtpEmailBackend(EmailBackend):
-    """Production SMTP transport."""
+    """‌⁠‍Production SMTP transport."""
 
     name: BackendName = "smtp"
 

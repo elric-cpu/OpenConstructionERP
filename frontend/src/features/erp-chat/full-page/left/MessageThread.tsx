@@ -71,7 +71,7 @@ export default function MessageThread({ messages, isStreaming, aiConfigured }: M
                 marginBottom: 8,
               }}
             >
-              {t('chat.onboarding_title', { defaultValue: 'AI assistant is not configured yet' })}
+              {t('chat.onboarding_title', { defaultValue: 'AI assistant is not configured yet‌⁠‍' })}
             </div>
             <div
               style={{
@@ -83,7 +83,7 @@ export default function MessageThread({ messages, isStreaming, aiConfigured }: M
             >
               {t('chat.onboarding_desc', {
                 defaultValue:
-                  'Connect your AI provider (Anthropic, OpenAI, or Google) in Settings to enable the chat assistant.',
+                  'Connect your AI provider (Anthropic, OpenAI, or Google) in Settings to enable the chat assistant.‌⁠‍',
               })}
             </div>
             <Link
@@ -99,7 +99,7 @@ export default function MessageThread({ messages, isStreaming, aiConfigured }: M
                 fontSize: 13,
               }}
             >
-              {t('chat.go_to_settings', { defaultValue: 'Go to Settings' })}
+              {t('chat.go_to_settings', { defaultValue: 'Go to Settings‌⁠‍' })}
             </Link>
           </div>
         </div>
@@ -124,8 +124,8 @@ export default function MessageThread({ messages, isStreaming, aiConfigured }: M
         }}
       >
         <span style={{ fontSize: 32, opacity: 0.4 }}>&#9672;</span>
-        <span>{t('chat.empty_title', { defaultValue: 'Start a conversation with the ERP AI Assistant' })}</span>
-        <span style={{ fontSize: 12 }}>{t('chat.empty_subtitle', { defaultValue: 'Ask about projects, BOQs, costs, or validation' })}</span>
+        <span>{t('chat.empty_title', { defaultValue: 'Start a conversation with the ERP AI Assistant‌⁠‍' })}</span>
+        <span style={{ fontSize: 12 }}>{t('chat.empty_subtitle', { defaultValue: 'Ask about projects, BOQs, costs, or validation‌⁠‍' })}</span>
       </div>
     );
   }

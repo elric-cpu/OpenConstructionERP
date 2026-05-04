@@ -1,4 +1,4 @@
-"""ERP Chat Pydantic schemas — request/response models."""
+"""‌⁠‍ERP Chat Pydantic schemas — request/response models."""
 
 from datetime import datetime
 from uuid import UUID
@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class StreamChatRequest(BaseModel):
-    """Request body for the streaming chat endpoint."""
+    """‌⁠‍Request body for the streaming chat endpoint."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -18,7 +18,7 @@ class StreamChatRequest(BaseModel):
 
 
 class ChatSessionResponse(BaseModel):
-    """Chat session returned from the API."""
+    """‌⁠‍Chat session returned from the API."""
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -1,4 +1,4 @@
-"""Tasks Pydantic schemas — request/response models."""
+"""‌⁠‍Tasks Pydantic schemas — request/response models."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ChecklistItemEntry(BaseModel):
-    """A single checklist item within a task."""
+    """‌⁠‍A single checklist item within a task."""
 
     id: str | None = None
     text: str = Field(..., min_length=1, max_length=500)
@@ -18,7 +18,7 @@ class ChecklistItemEntry(BaseModel):
 
 
 class TaskCreate(BaseModel):
-    """Create a new task."""
+    """‌⁠‍Create a new task."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 

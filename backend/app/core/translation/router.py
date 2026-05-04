@@ -1,4 +1,4 @@
-"""Translation API — test harness + dictionary download/status.
+"""‌⁠‍Translation API — test harness + dictionary download/status.
 
 Mounted at ``/api/v1/translation``. Three endpoints:
 
@@ -64,7 +64,7 @@ class TranslateResponse(BaseModel):
 
 
 class DownloadRequest(BaseModel):
-    """Body for ``POST /lookup-tables/download``.
+    """‌⁠‍Body for ``POST /lookup-tables/download``.
 
     * ``kind="muse"`` requires ``source_lang`` and ``target_lang``.
     * ``kind="iate"`` requires either ``url`` (mirror download) or
@@ -160,7 +160,7 @@ async def translate_one(
     user_id: CurrentUserId,
     session: SessionDep,
 ) -> TranslateResponse:
-    """Translate a single term — test harness for the cascade.
+    """‌⁠‍Translate a single term — test harness for the cascade.
 
     Looks up the caller's AISettings so the LLM tier has a key to use;
     if no settings row exists the LLM tier just degrades to a miss.

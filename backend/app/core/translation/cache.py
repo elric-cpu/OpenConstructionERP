@@ -1,4 +1,4 @@
-"""Async SQLite cache of past translations.
+"""‌⁠‍Async SQLite cache of past translations.
 
 Lives in a dedicated SQLite file (default
 ``~/.openestimate/translations/cache.db``) so it doesn't pollute the
@@ -62,7 +62,7 @@ _lru_lock = threading.Lock()
 
 
 def _lru_get(key: _LRUKey) -> tuple[bool, dict[str, Any] | None]:
-    """Return ``(hit, value)`` — caller distinguishes "miss" from "known None"."""
+    """‌⁠‍Return ``(hit, value)`` — caller distinguishes "miss" from "known None"."""
     with _lru_lock:
         if key not in _lru:
             return False, None
@@ -87,7 +87,7 @@ def _lru_put(key: _LRUKey, value: dict[str, Any] | None) -> None:
 
 
 def _lru_invalidate(key: _LRUKey | None = None) -> None:
-    """Drop one or all entries from the in-process LRU.
+    """‌⁠‍Drop one or all entries from the in-process LRU.
 
     Called on every ``upsert()`` so a write is visible on the next
     ``get()`` from any other coroutine — without this, a freshly cached

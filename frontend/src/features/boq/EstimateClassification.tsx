@@ -241,7 +241,7 @@ export function EstimateClassification({ boqId }: { boqId: string }) {
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-semibold text-content-primary">
-                {t('boq.aace_class', { defaultValue: 'AACE Class' })}{' '}
+                {t('boq.aace_class', { defaultValue: 'AACE Class‌⁠‍' })}{' '}
                 {classification.estimate_class}
               </h3>
               <span className={`text-xs font-medium ${style.text}`}>
@@ -249,12 +249,12 @@ export function EstimateClassification({ boqId }: { boqId: string }) {
               </span>
             </div>
             <p className="text-xs text-content-tertiary mt-0.5">
-              {t('boq.aace_accuracy', { defaultValue: 'Accuracy' })}:{' '}
+              {t('boq.aace_accuracy', { defaultValue: 'Accuracy‌⁠‍' })}:{' '}
               <span className="font-mono font-medium text-content-secondary">
                 {classification.accuracy_low} / {classification.accuracy_high}
               </span>
               {' · '}
-              {t('boq.aace_definition', { defaultValue: 'Definition' })}:{' '}
+              {t('boq.aace_definition', { defaultValue: 'Definition‌⁠‍' })}:{' '}
               <span className="font-mono font-medium text-content-secondary">
                 {classification.definition_level_low}%{' '}
                 {t('boq.aace_to', { defaultValue: 'to' })}{' '}
@@ -279,7 +279,7 @@ export function EstimateClassification({ boqId }: { boqId: string }) {
           {/* Accuracy range visualization */}
           <div>
             <div className="text-xs font-medium text-content-secondary mb-2">
-              {t('boq.aace_accuracy_range', { defaultValue: 'Accuracy Range' })}
+              {t('boq.aace_accuracy_range', { defaultValue: 'Accuracy Range‌⁠‍' })}
             </div>
             <AccuracyBar
               low={classification.accuracy_low}
@@ -292,7 +292,7 @@ export function EstimateClassification({ boqId }: { boqId: string }) {
           <div>
             <div className="flex items-center justify-between text-xs mb-1.5">
               <span className="font-medium text-content-secondary">
-                {t('boq.aace_definition_level', { defaultValue: 'Definition Level' })}
+                {t('boq.aace_definition_level', { defaultValue: 'Definition Level‌⁠‍' })}
               </span>
               <span className="font-mono text-content-primary">
                 {classification.definition_level_low}% - {classification.definition_level_high}%

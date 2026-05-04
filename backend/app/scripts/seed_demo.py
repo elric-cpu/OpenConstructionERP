@@ -1,4 +1,4 @@
-"""Seed demo data: user, project, BOQ with realistic positions, cost items.
+"""‌⁠‍Seed demo data: user, project, BOQ with realistic positions, cost items.
 
 Usage: python -m app.scripts.seed_demo
 """

@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""DSL parser — YAML/JSON document → typed AST.
+"""‌⁠‍DSL parser — YAML/JSON document → typed AST.
 
 The parser is the *only* entry point that touches user-supplied text
 (see ``compile_rule`` in :mod:`.evaluator`). It is responsible for:
@@ -32,7 +32,7 @@ from app.core.validation.engine import RuleCategory, Severity
 
 
 class DSLError(Exception):
-    """Base class for DSL parse / type / evaluation failures.
+    """‌⁠‍Base class for DSL parse / type / evaluation failures.
 
     Each subclass carries a stable ``message_key`` so the router layer
     can translate the error string consistently.
@@ -53,7 +53,7 @@ class DSLError(Exception):
 
 
 class DSLSyntaxError(DSLError):
-    """Document could not be parsed as YAML/JSON, or required keys are missing."""
+    """‌⁠‍Document could not be parsed as YAML/JSON, or required keys are missing."""
 
     message_key = "compliance.dsl.syntax_error"
 

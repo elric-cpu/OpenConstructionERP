@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Photo element → envelope adapter (stub).
+"""‌⁠‍Photo element → envelope adapter (stub).
 
 Input shape: ``{file_url, ai_extracted_tags?, description?, ...}``. The
 real CV pipeline (PaddleOCR + YOLO) is a separate multi-week build —
@@ -23,14 +23,14 @@ from app.core.match_service.extractors._helpers import build_envelope_base
 
 
 def _description_from_tags(tags: list[Any]) -> str:
-    """Stringify CV-extracted tags into a description blob."""
+    """‌⁠‍Stringify CV-extracted tags into a description blob."""
     if not tags:
         return ""
     return ", ".join(str(t).strip() for t in tags if str(t).strip())
 
 
 def extract(raw: dict[str, Any]) -> ElementEnvelope:
-    """Build an :class:`ElementEnvelope` from a photo-element dict.
+    """‌⁠‍Build an :class:`ElementEnvelope` from a photo-element dict.
 
     Pulls description from either ``description`` (direct) or
     ``ai_extracted_tags`` (rendered as ``"tag1, tag2, tag3"``).

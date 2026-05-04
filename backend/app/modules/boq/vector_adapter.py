@@ -1,4 +1,4 @@
-"""BOQ position vector adapter — feeds the ``oe_boq_positions`` collection.
+"""‌⁠‍BOQ position vector adapter — feeds the ``oe_boq_positions`` collection.
 
 Each :class:`~app.modules.boq.models.Position` row is embedded as the
 description plus its unit and any classification codes.  The result is
@@ -19,13 +19,13 @@ from app.modules.boq.models import Position
 
 
 class BOQPositionAdapter:
-    """Embed BOQ positions into the unified vector store."""
+    """‌⁠‍Embed BOQ positions into the unified vector store."""
 
     collection_name: str = COLLECTION_BOQ
     module_name: str = "boq"
 
     def to_text(self, row: Position) -> str:
-        """Build the canonical text that gets embedded.
+        """‌⁠‍Build the canonical text that gets embedded.
 
         Concatenates the description, unit and any classification code
         values (DIN 276 / NRM / MasterFormat / etc.) so that semantic

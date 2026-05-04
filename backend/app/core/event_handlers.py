@@ -1,4 +1,4 @@
-"""Cross-module event handlers -- wires the critical inter-module dataflows.
+"""‌⁠‍Cross-module event handlers -- wires the critical inter-module dataflows.
 
 Imported at startup to register all handlers with the event bus.
 Each handler is thin: validates the event, calls the target module's service.
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 async def _handle_meeting_action_item_created(event: Event) -> None:
-    """Create a task for each open action item from a meeting.
+    """‌⁠‍Create a task for each open action item from a meeting.
 
     Expected event.data:
         project_id: str (UUID)
@@ -93,7 +93,7 @@ async def _handle_meeting_action_item_created(event: Event) -> None:
 # ---------------------------------------------------------------------------
 
 async def _handle_safety_observation_high_risk(event: Event) -> None:
-    """Notify PM and safety officer when observation risk_score > 15.
+    """‌⁠‍Notify PM and safety officer when observation risk_score > 15.
 
     Expected event.data:
         project_id: str (UUID)

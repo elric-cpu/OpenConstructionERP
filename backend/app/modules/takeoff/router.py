@@ -1,4 +1,4 @@
-"""Takeoff HTTP endpoints.
+"""‌⁠‍Takeoff HTTP endpoints.
 
 Routes:
     GET    /converters                          — list CAD/BIM converter status
@@ -123,7 +123,7 @@ _CONVERTER_META: list[dict[str, Any]] = [
 
 @router.get("/converters/")
 async def list_converters(verify: bool = False) -> dict[str, Any]:
-    """Return the status of all known CAD/BIM converters.
+    """‌⁠‍Return the status of all known CAD/BIM converters.
 
     Scans standard install paths and returns which converters are found.
     No authentication required — this is a public status check.
@@ -211,7 +211,7 @@ async def list_converters(verify: bool = False) -> dict[str, Any]:
 
 @router.post("/converters/{converter_id}/verify/")
 async def verify_converter(converter_id: str) -> dict[str, Any]:
-    """Force-run the smoke test for one converter and return health.
+    """‌⁠‍Force-run the smoke test for one converter and return health.
 
     Bypasses the 5-minute cache. Used by the BIM page's "Re-check" button
     so the user can re-verify after manually fixing a broken install

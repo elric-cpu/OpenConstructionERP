@@ -1,4 +1,4 @@
-"""Integrations API routes.
+"""‌⁠‍Integrations API routes.
 
 Endpoints — Chat Connectors (Teams / Slack / Telegram):
     GET    /configs                         - List user's integration configs
@@ -59,7 +59,7 @@ async def list_integration_configs(
     session: SessionDep,
     integration_type: str | None = Query(default=None),
 ) -> IntegrationConfigListResponse:
-    """List the current user's integration configs."""
+    """‌⁠‍List the current user's integration configs."""
     from sqlalchemy import func, select
 
     query = select(IntegrationConfig).where(IntegrationConfig.user_id == user_id)
@@ -89,7 +89,7 @@ async def create_integration_config(
     user_id: CurrentUserId,
     session: SessionDep,
 ) -> IntegrationConfigResponse:
-    """Create a new integration config (Teams, Slack, Telegram, etc.)."""
+    """‌⁠‍Create a new integration config (Teams, Slack, Telegram, etc.)."""
     config = IntegrationConfig(
         user_id=user_id,
         project_id=body.project_id,

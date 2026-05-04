@@ -138,11 +138,11 @@ function CreateSubmittalModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-2xl bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true" aria-label={t('submittals.new_submittal', { defaultValue: 'New Submittal' })}>
+      <div className="w-full max-w-2xl bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true" aria-label={t('submittals.new_submittal', { defaultValue: 'New Submittal‌⁠‍' })}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border-light">
           <h2 className="text-lg font-semibold text-content-primary">
-            {t('submittals.new_submittal', { defaultValue: 'New Submittal' })}
+            {t('submittals.new_submittal', { defaultValue: 'New Submittal‌⁠‍' })}
           </h2>
           <button
             onClick={onClose}
@@ -169,7 +169,7 @@ function CreateSubmittalModal({
                 setTouched(true);
               }}
               placeholder={t('submittals.title_placeholder', {
-                defaultValue: 'e.g. Structural Steel Shop Drawings - Level 3',
+                defaultValue: 'e.g. Structural Steel Shop Drawings - Level 3‌⁠‍',
               })}
               className={clsx(
                 inputCls,
@@ -180,7 +180,7 @@ function CreateSubmittalModal({
             />
             {titleError && (
               <p className="mt-1 text-xs text-semantic-error">
-                {t('submittals.title_required', { defaultValue: 'Title is required' })}
+                {t('submittals.title_required', { defaultValue: 'Title is required‌⁠‍' })}
               </p>
             )}
           </div>
@@ -189,7 +189,7 @@ function CreateSubmittalModal({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label htmlFor="submittal-spec-section" className="block text-sm font-medium text-content-primary mb-1.5">
-                {t('submittals.field_spec_section', { defaultValue: 'Spec Section' })}{' '}
+                {t('submittals.field_spec_section', { defaultValue: 'Spec Section‌⁠‍' })}{' '}
                 <span className="text-semantic-error">*</span>
               </label>
               <input

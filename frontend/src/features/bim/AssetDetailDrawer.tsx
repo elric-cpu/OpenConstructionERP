@@ -208,7 +208,7 @@ export function AssetDetailDrawer({ asset, onClose }: AssetDetailDrawerProps) {
             data-testid="asset-detail-open-viewer"
           >
             <ArrowUpRight size={14} />
-            {t('assets.detail.open_in_viewer', { defaultValue: 'Open in 3D Viewer' })}
+            {t('assets.detail.open_in_viewer', { defaultValue: 'Open in 3D Viewer‌⁠‍' })}
           </Button>
           <Button
             variant="secondary"
@@ -217,7 +217,7 @@ export function AssetDetailDrawer({ asset, onClose }: AssetDetailDrawerProps) {
             data-testid="asset-detail-edit"
           >
             <Edit3 size={14} />
-            {t('assets.detail.edit', { defaultValue: 'Edit asset info' })}
+            {t('assets.detail.edit', { defaultValue: 'Edit asset info‌⁠‍' })}
           </Button>
           <button
             type="button"
@@ -229,14 +229,14 @@ export function AssetDetailDrawer({ asset, onClose }: AssetDetailDrawerProps) {
                 toast({
                   type: 'error',
                   title: t('assets.cobie_failed', {
-                    defaultValue: 'COBie export failed',
+                    defaultValue: 'COBie export failed‌⁠‍',
                   }),
                   message: err instanceof Error ? err.message : undefined,
                 });
               })
             }
             className="inline-flex items-center gap-1 rounded-md border border-border-medium px-2.5 py-1 text-xs text-content-secondary hover:bg-surface-secondary hover:text-oe-blue"
-            title={t('assets.cobie_export', { defaultValue: 'Download COBie (XLSX)' })}
+            title={t('assets.cobie_export', { defaultValue: 'Download COBie (XLSX)‌⁠‍' })}
           >
             <Download size={12} />
             COBie
@@ -248,7 +248,7 @@ export function AssetDetailDrawer({ asset, onClose }: AssetDetailDrawerProps) {
           {/* Asset info section */}
           <Section
             icon={<Package size={13} className="text-primary-400" />}
-            title={t('assets.detail.section.asset_info', { defaultValue: 'Asset info' })}
+            title={t('assets.detail.section.asset_info', { defaultValue: 'Asset info‌⁠‍' })}
           >
             <KvList>
               <Kv

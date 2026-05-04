@@ -1,4 +1,4 @@
-"""ISO 19650 Common Data Environment state machine.
+"""‌⁠‍ISO 19650 Common Data Environment state machine.
 
 Four states: WIP -> SHARED -> PUBLISHED -> ARCHIVED.
 Each transition has gate conditions (who can promote, what's required).
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 class CDEState(str, Enum):
-    """ISO 19650 CDE document states."""
+    """‌⁠‍ISO 19650 CDE document states."""
 
     WIP = "wip"
     SHARED = "shared"
@@ -69,7 +69,7 @@ _GATES: dict[tuple[CDEState, CDEState], dict[str, Any]] = {
 
 
 def _role_rank(role: str) -> int:
-    """Return numeric rank for a role string (0 = least authority)."""
+    """‌⁠‍Return numeric rank for a role string (0 = least authority)."""
     return _ROLE_RANK.get(role, -1)
 
 

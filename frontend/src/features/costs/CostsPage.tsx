@@ -262,7 +262,7 @@ function RegionTabBar({
         ))}
         <span className="ms-3 text-xs text-content-tertiary inline-flex items-center gap-2">
           <Loader2 size={12} className="animate-spin" />
-          {t('costs.loading_databases', { defaultValue: 'Loading databases…' })}
+          {t('costs.loading_databases', { defaultValue: 'Loading databases…‌⁠‍' })}
         </span>
       </div>
     );
@@ -273,11 +273,11 @@ function RegionTabBar({
       <div className="mb-6 rounded-xl border-2 border-dashed border-border-light bg-surface-secondary/50 p-6 text-center">
         <Database size={28} className="mx-auto mb-2 text-content-tertiary" strokeWidth={1.5} />
         <p className="text-sm font-medium text-content-primary mb-1">
-          {t('costs.no_database_loaded', { defaultValue: 'No database loaded' })}
+          {t('costs.no_database_loaded', { defaultValue: 'No database loaded‌⁠‍' })}
         </p>
         <p className="text-xs text-content-tertiary mb-3">
           {t('costs.import_first_hint', {
-            defaultValue: 'Import a regional cost database to start searching 55,000+ items.',
+            defaultValue: 'Import a regional cost database to start searching 55,000+ items.‌⁠‍',
           })}
         </p>
         <Button
@@ -286,7 +286,7 @@ function RegionTabBar({
           icon={<Upload size={14} />}
           onClick={() => navigate('/costs/import')}
         >
-          {t('costs.import_database', { defaultValue: 'Import Database' })}
+          {t('costs.import_database', { defaultValue: 'Import Database‌⁠‍' })}
         </Button>
       </div>
     );
@@ -384,7 +384,7 @@ function RegionTabBar({
         <button
           onClick={() => navigate('/costs/import')}
           className="flex items-center gap-1.5 shrink-0 rounded-t-lg px-3 py-2.5 border-b-2 border-transparent text-content-tertiary hover:text-oe-blue hover:bg-oe-blue-subtle/10 transition-all duration-fast ease-oe"
-          title={t('costs.import_database', { defaultValue: 'Import database' })}
+          title={t('costs.import_database', { defaultValue: 'Import database‌⁠‍' })}
         >
           <Plus size={14} />
           <span className="text-sm font-medium whitespace-nowrap">

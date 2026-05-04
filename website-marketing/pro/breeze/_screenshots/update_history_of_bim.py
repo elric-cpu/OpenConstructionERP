@@ -1,4 +1,4 @@
-"""Replace the 'History of BIM' search hint in voices.para1 across all 3
+"""‌⁠‍Replace the 'History of BIM' search hint in voices.para1 across all 3
 locales with two specific article titles: 'Lobbyist Wars and BIM
 Development' and 'The History of BIM Map'."""
 import json

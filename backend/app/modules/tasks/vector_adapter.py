@@ -1,4 +1,4 @@
-"""Tasks vector adapter — feeds the ``oe_tasks`` collection.
+"""‌⁠‍Tasks vector adapter — feeds the ``oe_tasks`` collection.
 
 Each :class:`~app.modules.tasks.models.Task` row is embedded as the
 title plus description, task metadata and any checklist item texts.
@@ -19,13 +19,13 @@ from app.modules.tasks.models import Task
 
 
 class TaskVectorAdapter:
-    """Embed task rows into the unified vector store."""
+    """‌⁠‍Embed task rows into the unified vector store."""
 
     collection_name: str = COLLECTION_TASKS
     module_name: str = "tasks"
 
     def to_text(self, row: Task) -> str:
-        """Build the canonical text that gets embedded.
+        """‌⁠‍Build the canonical text that gets embedded.
 
         Concatenates the title, description, task_type, status, priority
         and any checklist item texts so semantic queries like

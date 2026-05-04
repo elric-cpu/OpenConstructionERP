@@ -1,4 +1,4 @@
-"""NCR service — business logic for non-conformance report management."""
+"""‌⁠‍NCR service — business logic for non-conformance report management."""
 
 import logging
 import uuid
@@ -27,7 +27,7 @@ _NCR_STATUS_TRANSITIONS: dict[str, set[str]] = {
 
 
 class NCRService:
-    """Business logic for NCR operations."""
+    """‌⁠‍Business logic for NCR operations."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -38,7 +38,7 @@ class NCRService:
         data: NCRCreate,
         user_id: str | None = None,
     ) -> NCR:
-        """Create a new NCR with auto-generated number."""
+        """‌⁠‍Create a new NCR with auto-generated number."""
         ncr_number = await self.repo.next_ncr_number(data.project_id)
 
         ncr = NCR(

@@ -97,7 +97,7 @@ export function CanvasToolbar({
   return (
     <div
       role="toolbar"
-      aria-label={t('eac.canvas.toolbar', { defaultValue: 'Canvas toolbar' })}
+      aria-label={t('eac.canvas.toolbar', { defaultValue: 'Canvas toolbar‌⁠‍' })}
       data-testid={testId ?? 'eac-canvas-toolbar'}
       className="flex h-11 items-center gap-2 border-b border-border bg-surface-primary px-3"
     >
@@ -121,7 +121,7 @@ export function CanvasToolbar({
       <span className="h-6 w-px bg-border" aria-hidden="true" />
 
       <ToolbarButton
-        label={t('eac.canvas.fitView', { defaultValue: 'Fit view' })}
+        label={t('eac.canvas.fitView', { defaultValue: 'Fit view‌⁠‍' })}
         testId="eac-canvas-fit-view"
         icon={<Maximize2 size={14} aria-hidden="true" />}
         onClick={onFitView}
@@ -130,14 +130,14 @@ export function CanvasToolbar({
       <span className="ml-auto h-6 w-px bg-border" aria-hidden="true" />
 
       <ToolbarButton
-        label={t('eac.canvas.save', { defaultValue: 'Save layout' })}
+        label={t('eac.canvas.save', { defaultValue: 'Save layout‌⁠‍' })}
         testId="eac-canvas-save"
         icon={<Save size={14} aria-hidden="true" />}
         onClick={onSave}
         disabled={busy}
       />
       <ToolbarButton
-        label={t('eac.canvas.validate', { defaultValue: 'Validate' })}
+        label={t('eac.canvas.validate', { defaultValue: 'Validate‌⁠‍' })}
         testId="eac-canvas-validate"
         icon={<Check size={14} aria-hidden="true" />}
         onClick={onValidate}
@@ -145,7 +145,7 @@ export function CanvasToolbar({
         variant="success"
       />
       <ToolbarButton
-        label={t('eac.canvas.compile', { defaultValue: 'Compile' })}
+        label={t('eac.canvas.compile', { defaultValue: 'Compile‌⁠‍' })}
         testId="eac-canvas-compile"
         icon={busy ? <Zap size={14} className="animate-pulse" aria-hidden="true" /> : <Play size={14} aria-hidden="true" />}
         onClick={onCompile}

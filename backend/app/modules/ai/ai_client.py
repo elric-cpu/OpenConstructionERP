@@ -2,7 +2,7 @@
 # CWICR AI Estimation Engine
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 # AGPL-3.0 License · DDC-CWICR-OE-2026
-"""AI API client — async calls to Anthropic, OpenAI, and Google Gemini.
+"""‌⁠‍AI API client — async calls to Anthropic, OpenAI, and Google Gemini.
 
 All calls use httpx for async HTTP. No SDK dependencies required.
 Each function takes an API key, prompt, optional image, and returns raw text.
@@ -45,7 +45,7 @@ async def call_anthropic(
     model: str = ANTHROPIC_MODEL,
     max_tokens: int = 4096,
 ) -> tuple[str, int]:
-    """Call Anthropic Claude API.
+    """‌⁠‍Call Anthropic Claude API.
 
     Args:
         api_key: Anthropic API key.
@@ -116,7 +116,7 @@ async def call_openai(
     model: str = OPENAI_MODEL,
     max_tokens: int = 4096,
 ) -> tuple[str, int]:
-    """Call OpenAI API (ChatCompletions).
+    """‌⁠‍Call OpenAI API (ChatCompletions).
 
     Args:
         api_key: OpenAI API key.

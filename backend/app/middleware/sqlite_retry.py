@@ -1,4 +1,4 @@
-"""SQLite lock-retry middleware.
+"""‌⁠‍SQLite lock-retry middleware.
 
 SQLite serializes writers on a single file lock. Under concurrent load
 (two requests mutating the same DB at once) the second one fails with
@@ -36,13 +36,13 @@ _BASE_BACKOFF_SECONDS = 0.1
 
 
 def _is_sqlite_lock(exc: BaseException) -> bool:
-    """True iff the exception is a SQLite busy/locked signal."""
+    """‌⁠‍True iff the exception is a SQLite busy/locked signal."""
     msg = str(getattr(exc, "orig", exc) or exc).lower()
     return "database is locked" in msg or "database table is locked" in msg
 
 
 class SQLiteLockRetryMiddleware(BaseHTTPMiddleware):
-    """Retry the request pipeline when SQLite reports a lock contention."""
+    """‌⁠‍Retry the request pipeline when SQLite reports a lock contention."""
 
     async def dispatch(
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]

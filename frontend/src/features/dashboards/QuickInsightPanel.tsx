@@ -102,7 +102,7 @@ export function QuickInsightPanel({
         await createDashboardPreset({
           name: chart.title.slice(0, 200),
           description: t('dashboards.pin_default_description', {
-            defaultValue: 'Pinned from Quick Insights',
+            defaultValue: 'Pinned from Quick Insights‌⁠‍',
           }),
           kind: 'preset',
           project_id: projectId ?? null,
@@ -116,17 +116,17 @@ export function QuickInsightPanel({
         toast({
           type: 'success',
           title: t('dashboards.pin_saved_title', {
-            defaultValue: 'Pinned to dashboard',
+            defaultValue: 'Pinned to dashboard‌⁠‍',
           }),
           message: t('dashboards.pin_saved_msg', {
-            defaultValue: 'Open the Presets dropdown to load it back.',
+            defaultValue: 'Open the Presets dropdown to load it back.‌⁠‍',
           }),
         });
       } catch (err) {
         toast({
           type: 'error',
           title: t('dashboards.pin_failed_title', {
-            defaultValue: 'Could not pin chart',
+            defaultValue: 'Could not pin chart‌⁠‍',
           }),
           message: err instanceof Error ? err.message : String(err),
         });
@@ -154,7 +154,7 @@ export function QuickInsightPanel({
         <div>
           <h3 className="text-sm font-semibold text-content-primary">
             {t('dashboards.quick_insights_title', {
-              defaultValue: 'Quick insights',
+              defaultValue: 'Quick insights‌⁠‍',
             })}
           </h3>
           <p className="text-xs text-content-tertiary">

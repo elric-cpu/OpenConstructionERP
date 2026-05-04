@@ -138,16 +138,16 @@ export function BackupRestore() {
       setExportResult({ size: blob.size });
       addToast({
         type: 'success',
-        title: t('backup.export_success', { defaultValue: 'Backup created' }),
+        title: t('backup.export_success', { defaultValue: 'Backup created‌⁠‍' }),
         message: t('backup.export_success_detail', {
-          defaultValue: 'Downloaded {{size}} backup file',
+          defaultValue: 'Downloaded {{size}} backup file‌⁠‍',
           size: formatBytes(blob.size),
         }),
       });
     } catch (err) {
       addToast({
         type: 'error',
-        title: t('backup.export_error', { defaultValue: 'Export failed' }),
+        title: t('backup.export_error', { defaultValue: 'Export failed‌⁠‍' }),
         message: err instanceof Error ? err.message : String(err),
       });
     } finally {
@@ -162,8 +162,8 @@ export function BackupRestore() {
       if (!file.name.endsWith('.zip')) {
         addToast({
           type: 'warning',
-          title: t('backup.invalid_file', { defaultValue: 'Invalid file' }),
-          message: t('backup.zip_only', { defaultValue: 'Please select a .zip backup file' }),
+          title: t('backup.invalid_file', { defaultValue: 'Invalid file‌⁠‍' }),
+          message: t('backup.zip_only', { defaultValue: 'Please select a .zip backup file‌⁠‍' }),
         });
         return;
       }

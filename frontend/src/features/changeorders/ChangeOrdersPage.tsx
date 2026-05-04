@@ -98,11 +98,11 @@ const STATUS_COLORS: Record<string, 'neutral' | 'blue' | 'success' | 'warning' |
 
 function getReasonLabels(t: (key: string, opts?: Record<string, unknown>) => string): Record<string, string> {
   return {
-    client_request: t('changeorders.reason_client_request', { defaultValue: 'Client Request' }),
-    design_change: t('changeorders.reason_design_change', { defaultValue: 'Design Change' }),
-    unforeseen: t('changeorders.reason_unforeseen', { defaultValue: 'Unforeseen Conditions' }),
-    regulatory: t('changeorders.reason_regulatory', { defaultValue: 'Regulatory' }),
-    error: t('changeorders.reason_error', { defaultValue: 'Error/Omission' }),
+    client_request: t('changeorders.reason_client_request', { defaultValue: 'Client Request‌⁠‍' }),
+    design_change: t('changeorders.reason_design_change', { defaultValue: 'Design Change‌⁠‍' }),
+    unforeseen: t('changeorders.reason_unforeseen', { defaultValue: 'Unforeseen Conditions‌⁠‍' }),
+    regulatory: t('changeorders.reason_regulatory', { defaultValue: 'Regulatory‌⁠‍' }),
+    error: t('changeorders.reason_error', { defaultValue: 'Error/Omission‌⁠‍' }),
   };
 }
 

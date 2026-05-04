@@ -1,4 +1,4 @@
-"""Safety ORM models.
+"""‌⁠‍Safety ORM models.
 
 Tables:
     oe_safety_incident    — safety incident reports (injuries, near misses, etc.)
@@ -14,7 +14,7 @@ from app.database import GUID, Base
 
 
 class SafetyIncident(Base):
-    """A safety incident report tracking injuries, near misses, and property damage."""
+    """‌⁠‍A safety incident report tracking injuries, near misses, and property damage."""
 
     __tablename__ = "oe_safety_incident"
 
@@ -68,7 +68,7 @@ class SafetyIncident(Base):
 
 
 class SafetyObservation(Base):
-    """A proactive safety observation with risk scoring."""
+    """‌⁠‍A proactive safety observation with risk scoring."""
 
     __tablename__ = "oe_safety_observation"
 

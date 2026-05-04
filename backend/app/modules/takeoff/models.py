@@ -1,4 +1,4 @@
-"""Takeoff ORM models.
+"""‌⁠‍Takeoff ORM models.
 
 Tables:
     oe_takeoff_document        — uploaded PDF documents for quantity takeoff
@@ -16,7 +16,7 @@ from app.database import GUID, Base
 
 
 class CadExtractionSession(Base):
-    """Persistent storage for CAD file extraction sessions.
+    """‌⁠‍Persistent storage for CAD file extraction sessions.
 
     Replaces the in-memory ``_cad_sessions`` dict to survive server restarts
     and support multi-process deployments.  Sessions expire after 24 hours.
@@ -52,7 +52,7 @@ class CadExtractionSession(Base):
 
 
 class TakeoffDocument(Base):
-    """Uploaded PDF document for quantity takeoff."""
+    """‌⁠‍Uploaded PDF document for quantity takeoff."""
 
     __tablename__ = "oe_takeoff_document"
 

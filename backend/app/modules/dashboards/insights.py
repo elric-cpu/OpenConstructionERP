@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Quick-Insight Panel — auto-chart heuristics (T02).
+"""‌⁠‍Quick-Insight Panel — auto-chart heuristics (T02).
 
 Given a snapshot's tabular data (entities + flattened attributes), produce
 a small bundle of "interesting" charts using rule-based heuristics. No
@@ -50,7 +50,7 @@ import pandas as pd
 
 @dataclass
 class InsightChart:
-    """One auto-generated chart suggestion.
+    """‌⁠‍One auto-generated chart suggestion.
 
     The ``data`` payload is shaped for direct rendering in Recharts:
     a list of small dicts with the field names that match ``x_field`` and
@@ -110,7 +110,7 @@ def generate_quick_insights(
     *,
     limit: int = _DEFAULT_LIMIT,
 ) -> list[InsightChart]:
-    """Return the top-N most interesting auto-charts for ``df``.
+    """‌⁠‍Return the top-N most interesting auto-charts for ``df``.
 
     The DataFrame is treated as the snapshot's wide-form view: each
     column is a candidate field. Caller is responsible for shaping the

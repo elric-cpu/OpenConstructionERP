@@ -103,13 +103,13 @@ export function ThresholdRulesModal({
             <div>
               <h2 className="text-lg font-semibold text-content-primary">
                 {t('explorer.thresholds_title', {
-                  defaultValue: 'Conditional Formatting',
+                  defaultValue: 'Conditional Formatting‌⁠‍',
                 })}
               </h2>
               <p className="text-xs text-content-tertiary">
                 {t('explorer.thresholds_subtitle', {
                   defaultValue:
-                    'Colour pivot cells by value. Add up to {{max}} rules — one per numeric column.',
+                    'Colour pivot cells by value. Add up to {{max}} rules — one per numeric column.‌⁠‍',
                   max: MAX_RULES,
                 })}
               </p>
@@ -131,20 +131,20 @@ export function ThresholdRulesModal({
               <Palette size={28} className="mx-auto text-content-quaternary mb-2" />
               <p className="text-sm text-content-secondary font-medium">
                 {t('explorer.thresholds_empty_title', {
-                  defaultValue: 'No rules yet',
+                  defaultValue: 'No rules yet‌⁠‍',
                 })}
               </p>
               <p className="text-xs text-content-tertiary mt-1 mb-4">
                 {t('explorer.thresholds_empty_hint', {
                   defaultValue:
-                    'Add a rule to colour cells red / amber / green based on their value.',
+                    'Add a rule to colour cells red / amber / green based on their value.‌⁠‍',
                 })}
               </p>
               {availableColumns.length === 0 ? (
                 <p className="text-2xs text-content-quaternary">
                   {t('explorer.thresholds_no_cols', {
                     defaultValue:
-                      'Pick at least one aggregate column in the pivot first.',
+                      'Pick at least one aggregate column in the pivot first.‌⁠‍',
                   })}
                 </p>
               ) : (

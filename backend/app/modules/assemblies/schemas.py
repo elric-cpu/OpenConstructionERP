@@ -1,4 +1,4 @@
-"""Assembly Pydantic schemas — request/response models.
+"""‌⁠‍Assembly Pydantic schemas — request/response models.
 
 Defines create, update, and response schemas for assemblies and components.
 Numeric values (factor, quantity, unit_cost, total, total_rate, bid_factor)
@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ComponentCreate(BaseModel):
-    """Create a new assembly component.
+    """‌⁠‍Create a new assembly component.
 
     Accepts ``name`` as an alias for ``description`` and ``unit_rate`` as an
     alias for ``unit_cost`` so that the AI-generate preview payload can be
@@ -38,7 +38,7 @@ class ComponentCreate(BaseModel):
     resource_type: str | None = Field(default=None, max_length=50, exclude=True)
 
     def get_description(self) -> str:
-        """Return description, falling back to name if description is empty."""
+        """‌⁠‍Return description, falling back to name if description is empty."""
         return self.description or self.name or ""
 
     def get_unit_cost(self) -> float:

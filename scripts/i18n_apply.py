@@ -1,4 +1,4 @@
-"""Apply per-lang patch JSONs back into i18n-fallbacks.ts.
+"""‌⁠‍Apply per-lang patch JSONs back into i18n-fallbacks.ts.
 
 Reads ``./tmp/i18n/patch-{lang}.json`` files (each is ``{key: translation}``)
 and rewrites the file in place — for each lang block, MISSING keys are
@@ -19,7 +19,7 @@ TMP = ROOT / "tmp" / "i18n"
 
 
 def _ts_quote(value: str) -> str:
-    """Quote a value for the i18n-fallbacks.ts single-quoted-string format.
+    """‌⁠‍Quote a value for the i18n-fallbacks.ts single-quoted-string format.
 
     The file uses single-quoted JS literals; we escape backslashes and the
     quote char itself, leave everything else literal (including non-Latin
@@ -32,7 +32,7 @@ def _ts_quote(value: str) -> str:
 
 
 def _block_bounds(source: str, lang: str) -> tuple[int, int]:
-    """Return (translation_start, translation_end_brace_index) for ``lang``.
+    """‌⁠‍Return (translation_start, translation_end_brace_index) for ``lang``.
 
     The translation_end_brace_index is the index of the ``}`` that closes
     the ``translation: { ... }`` map.

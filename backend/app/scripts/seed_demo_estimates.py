@@ -1,4 +1,4 @@
-"""Seed 2 professional demo BOQ estimates with realistic construction data.
+"""‌⁠‍Seed 2 professional demo BOQ estimates with realistic construction data.
 
 Creates:
   1. "Wohnanlage Berlin-Mitte" — 48-unit residential complex (DACH, DIN 276, EUR)
@@ -32,7 +32,7 @@ from app.modules.users.models import User  # noqa: F401
 
 
 def _money(value: float) -> str:
-    """Format a float to 2-decimal string (SQLite-compatible storage)."""
+    """‌⁠‍Format a float to 2-decimal string (SQLite-compatible storage)."""
     return str(Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
@@ -48,7 +48,7 @@ def _make_section(
     sort_order: int,
     classification: dict | None = None,
 ) -> Position:
-    """Create a section header position (no unit/qty/rate)."""
+    """‌⁠‍Create a section header position (no unit/qty/rate)."""
     return Position(
         id=uuid.uuid4(),
         boq_id=boq_id,

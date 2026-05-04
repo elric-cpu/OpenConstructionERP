@@ -1,4 +1,4 @@
-"""Filesystem layout for downloaded dictionaries and translation cache.
+"""‌⁠‍Filesystem layout for downloaded dictionaries and translation cache.
 
 All translation-related state lives under ``~/.openestimate/translations/``
 unless overridden:
@@ -23,7 +23,7 @@ from pathlib import Path
 
 
 def translations_root(root: str | None = None) -> Path:
-    """Return the root directory for translation state, creating if needed."""
+    """‌⁠‍Return the root directory for translation state, creating if needed."""
     if root:
         path = Path(root).expanduser()
     else:
@@ -33,7 +33,7 @@ def translations_root(root: str | None = None) -> Path:
 
 
 def dictionary_dir(root: str | None = None) -> Path:
-    """Root for ``{muse,iate}/`` subdirectories."""
+    """‌⁠‍Root for ``{muse,iate}/`` subdirectories."""
     return translations_root(root)
 
 

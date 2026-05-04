@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Parquet spool for EAC runs that overflow the OLTP cap (Wave 1, RFC 36 W1.1).
+"""‌⁠‍Parquet spool for EAC runs that overflow the OLTP cap (Wave 1, RFC 36 W1.1).
 
 When :func:`run_ruleset` produces more per-element result rows than
 ``HOT_RESULT_ITEM_CAP`` (default 100k), the surplus is written to a
@@ -57,7 +57,7 @@ _SCHEMA = pa.schema(
 
 
 def spool_key_for(run_id: uuid.UUID) -> str:
-    """Return the storage key for a run's Parquet artefact."""
+    """‌⁠‍Return the storage key for a run's Parquet artefact."""
     return f"{SPOOL_PREFIX}/{run_id}.parquet"
 
 
@@ -67,7 +67,7 @@ def _execution_result_to_rows(
     rule_id: uuid.UUID,
     result: ExecutionResult,
 ) -> Iterable[dict[str, Any]]:
-    """Project an ``ExecutionResult`` into flat rows matching ``_SCHEMA``.
+    """‌⁠‍Project an ``ExecutionResult`` into flat rows matching ``_SCHEMA``.
 
     Mirrors ``runner._materialise_result_items`` but emits dicts shaped
     for Parquet rather than ORM rows. Heterogeneous payloads

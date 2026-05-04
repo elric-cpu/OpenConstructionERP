@@ -1,4 +1,4 @@
-"""Regional configuration for Asia-Pacific (AU, NZ, JP, SG)."""
+"""‌⁠‍Regional configuration for Asia-Pacific (AU, NZ, JP, SG)."""
 
 from typing import Any
 

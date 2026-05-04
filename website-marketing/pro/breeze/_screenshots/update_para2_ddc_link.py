@@ -1,4 +1,4 @@
-"""Wrap *Data-Driven Construction* (book title) with a link to the DDC homepage
+"""‌⁠‍Wrap *Data-Driven Construction* (book title) with a link to the DDC homepage
 in voices.para2 across all 3 locales, and add ref_ddc_* sidebar strings."""
 import json, re
 from pathlib import Path

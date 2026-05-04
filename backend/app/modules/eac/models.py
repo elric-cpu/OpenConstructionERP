@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""EAC v2 ORM models.
+"""‌⁠‍EAC v2 ORM models.
 
 Tables (per RFC 35 §5):
 
@@ -94,7 +94,7 @@ ALIAS_SOURCE_FILTERS: tuple[str, ...] = (
 
 
 class EacRuleset(Base):
-    """Logical bundle of rules.
+    """‌⁠‍Logical bundle of rules.
 
     A ruleset groups rules sharing context: a BoQ extraction pack, a
     validation suite, a clash matrix, etc. Rulesets nest via
@@ -168,7 +168,7 @@ class EacRuleset(Base):
 
 
 class EacRule(Base):
-    """Declarative rule. Body lives in ``definition_json``.
+    """‌⁠‍Declarative rule. Body lives in ``definition_json``.
 
     The Python and TypeScript layers never branch on rule shape — they
     parse ``definition_json`` against the ``EacRuleDefinition`` JSON

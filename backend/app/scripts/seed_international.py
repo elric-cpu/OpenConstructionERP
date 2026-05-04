@@ -1,4 +1,4 @@
-"""Seed international demo projects with realistic construction data.
+"""‌⁠‍Seed international demo projects with realistic construction data.
 
 Creates 4 demo projects covering different regions and standards:
 1. Germany (DACH/DIN 276) — Residential complex

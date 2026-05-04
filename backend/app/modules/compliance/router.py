@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""FastAPI router for the compliance DSL module.
+"""‌⁠‍FastAPI router for the compliance DSL module.
 
 Endpoints
 ~~~~~~~~~
@@ -244,7 +244,7 @@ async def _build_ai_caller(
     payload: dict[str, Any],  # noqa: ARG001 — placeholder for future per-tenant routing
     session: Any,  # noqa: ANN401 — typed as AsyncSession by SessionDep, kept loose to avoid an import cycle
 ) -> Any:
-    """Build a bound ``(system, prompt) -> str`` callable, or ``None``.
+    """‌⁠‍Build a bound ``(system, prompt) -> str`` callable, or ``None``.
 
     The returned coroutine wraps :func:`app.modules.ai.ai_client.call_ai`
     so the DSL module never imports HTTP / settings models. If no API

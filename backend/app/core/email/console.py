@@ -1,4 +1,4 @@
-"""Console email backend — logs structured records instead of sending.
+"""‌⁠‍Console email backend — logs structured records instead of sending.
 
 Purpose: zero-config default for local development.  A fresh checkout
 runs without MSA credentials, but developers still need to see *what*
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 class ConsoleEmailBackend(EmailBackend):
-    """Log messages to the application logger at INFO level.
+    """‌⁠‍Log messages to the application logger at INFO level.
 
     Body is truncated to 500 characters in the log line so a multi-KB HTML
     email does not dominate the log file — the full body is still emitted

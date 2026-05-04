@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate architecture_manifest.json by scanning backend modules and frontend features.
+"""‌⁠‍Generate architecture_manifest.json by scanning backend modules and frontend features.
 
 This script uses ONLY the Python standard library (ast, pathlib, re, json, os)
 to introspect the codebase and produce a machine-readable manifest that describes:
@@ -36,7 +36,7 @@ from typing import Any
 # ---------------------------------------------------------------------------
 
 def _safe_parse(filepath: Path) -> ast.Module | None:
-    """Parse a Python file into an AST, returning None on failure."""
+    """‌⁠‍Parse a Python file into an AST, returning None on failure."""
     try:
         source = filepath.read_text(encoding="utf-8", errors="replace")
         return ast.parse(source, filename=str(filepath))
@@ -46,7 +46,7 @@ def _safe_parse(filepath: Path) -> ast.Module | None:
 
 
 def _unparse_annotation(node: ast.expr | None) -> str:
-    """Best-effort conversion of a type annotation AST node to a string."""
+    """‌⁠‍Best-effort conversion of a type annotation AST node to a string."""
     if node is None:
         return "Any"
     try:

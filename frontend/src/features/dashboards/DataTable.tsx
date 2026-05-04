@@ -93,7 +93,7 @@ export function DataTable({
       <div className="flex items-center justify-between border-b border-border-light px-3 py-2 text-xs">
         <div className="text-content-tertiary">
           {t('dashboards.data_table_summary', {
-            defaultValue: '{{shown}} of {{total}} rows',
+            defaultValue: '{{shown}} of {{total}} rows‌⁠‍',
             shown: rows.length,
             total,
           })}
@@ -164,7 +164,7 @@ export function DataTable({
                   data-testid="data-table-empty"
                 >
                   {t('dashboards.data_table_empty', {
-                    defaultValue: 'No rows match the current filters.',
+                    defaultValue: 'No rows match the current filters.‌⁠‍',
                   })}
                 </td>
               </tr>

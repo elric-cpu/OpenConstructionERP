@@ -1,4 +1,4 @@
-"""Validation report vector adapter — feeds the ``oe_validation`` collection.
+"""‌⁠‍Validation report vector adapter — feeds the ``oe_validation`` collection.
 
 Each :class:`~app.modules.validation.models.ValidationReport` row is
 embedded as the rule_set name plus the textual messages from each
@@ -20,13 +20,13 @@ from app.modules.validation.models import ValidationReport
 
 
 class ValidationReportAdapter:
-    """Embed validation reports into the unified vector store."""
+    """‌⁠‍Embed validation reports into the unified vector store."""
 
     collection_name: str = COLLECTION_VALIDATION
     module_name: str = "validation"
 
     def to_text(self, row: ValidationReport) -> str:
-        """Build the canonical text that gets embedded.
+        """‌⁠‍Build the canonical text that gets embedded.
 
         Concatenates the rule set name, target type, status and the
         textual messages from each result entry.  Caps message extraction

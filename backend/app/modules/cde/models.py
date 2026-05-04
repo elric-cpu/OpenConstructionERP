@@ -1,4 +1,4 @@
-"""CDE (Common Data Environment) ORM models.
+"""‌⁠‍CDE (Common Data Environment) ORM models.
 
 Tables:
     oe_cde_container         — ISO 19650 document containers
@@ -16,7 +16,7 @@ from app.database import GUID, Base
 
 
 class DocumentContainer(Base):
-    """An ISO 19650 document container with CDE state management."""
+    """‌⁠‍An ISO 19650 document container with CDE state management."""
 
     __tablename__ = "oe_cde_container"
 
@@ -55,7 +55,7 @@ class DocumentContainer(Base):
 
 
 class DocumentRevision(Base):
-    """A revision of a document within a CDE container."""
+    """‌⁠‍A revision of a document within a CDE container."""
 
     __tablename__ = "oe_cde_revision"
 

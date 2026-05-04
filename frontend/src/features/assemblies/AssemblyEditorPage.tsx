@@ -46,7 +46,7 @@ export function AssemblyEditorPage() {
       assembliesApi.addComponent(assemblyId!, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['assembly', assemblyId] });
-      addToast({ type: 'success', title: t('toasts.component_added', { defaultValue: 'Component added' }) });
+      addToast({ type: 'success', title: t('toasts.component_added', { defaultValue: 'Component added‌⁠‍' }) });
     },
     onError: (error: Error) => {
       addToast({ type: 'error', title: t('toasts.error', { defaultValue: 'Error' }), message: error.message });
@@ -60,7 +60,7 @@ export function AssemblyEditorPage() {
       queryClient.invalidateQueries({ queryKey: ['assembly', assemblyId] });
     },
     onError: (error: Error) => {
-      addToast({ type: 'error', title: t('toasts.update_failed', { defaultValue: 'Update failed' }), message: error.message });
+      addToast({ type: 'error', title: t('toasts.update_failed', { defaultValue: 'Update failed‌⁠‍' }), message: error.message });
     },
   });
 
@@ -69,7 +69,7 @@ export function AssemblyEditorPage() {
       assembliesApi.deleteComponent(assemblyId!, componentId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['assembly', assemblyId] });
-      addToast({ type: 'success', title: t('toasts.component_deleted', { defaultValue: 'Component deleted' }) });
+      addToast({ type: 'success', title: t('toasts.component_deleted', { defaultValue: 'Component deleted‌⁠‍' }) });
     },
     onError: (error: Error) => {
       addToast({ type: 'error', title: t('toasts.error', { defaultValue: 'Error' }), message: error.message });
@@ -83,7 +83,7 @@ export function AssemblyEditorPage() {
       queryClient.invalidateQueries({ queryKey: ['assembly', assemblyId] });
     },
     onError: (error: Error) => {
-      addToast({ type: 'error', title: t('toasts.reorder_failed', { defaultValue: 'Reorder failed' }), message: error.message });
+      addToast({ type: 'error', title: t('toasts.reorder_failed', { defaultValue: 'Reorder failed‌⁠‍' }), message: error.message });
     },
   });
 
@@ -92,7 +92,7 @@ export function AssemblyEditorPage() {
       assembliesApi.updateTags(assemblyId!, tags),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['assembly', assemblyId] });
-      addToast({ type: 'success', title: t('toasts.tags_updated', { defaultValue: 'Tags updated' }) });
+      addToast({ type: 'success', title: t('toasts.tags_updated', { defaultValue: 'Tags updated‌⁠‍' }) });
     },
     onError: (error: Error) => {
       addToast({ type: 'error', title: t('toasts.error', { defaultValue: 'Error' }), message: error.message });

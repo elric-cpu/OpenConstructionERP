@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""CWICR cost-item matcher (T12).
+"""‌⁠‍CWICR cost-item matcher (T12).
 
 Given a free-form BOQ position description, return the top-K most relevant
 :class:`CostItem` rows from the active cost database, with a 0..1 confidence
@@ -49,14 +49,14 @@ logger = logging.getLogger(__name__)
 _DEFAULT_TOP_K = 10
 _MAX_TOP_K = 50
 _CANDIDATE_CAP = 400
-"""Hard cap on rows pulled from DB before fuzzy ranking. Keeps the
+"""‌⁠‍Hard cap on rows pulled from DB before fuzzy ranking. Keeps the
 P95 latency bounded on a 55 000-row CWICR table."""
 
 _LEXICAL_WEIGHT_HYBRID = 0.6
 _SEMANTIC_WEIGHT_HYBRID = 0.4
 
 _UNIT_BONUS = 0.10
-"""Score boost when the candidate's ``unit`` exactly matches the request
+"""‌⁠‍Score boost when the candidate's ``unit`` exactly matches the request
 unit. Capped well below 1.0 so it can only nudge ordering — not flip a
 clearly-irrelevant row to the top."""
 

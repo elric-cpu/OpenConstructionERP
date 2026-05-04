@@ -78,12 +78,12 @@ export default function AIConfigBanner() {
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 600, color: 'var(--chat-text-primary)' }}>
-          {t('chat.config_banner_title', { defaultValue: 'AI provider not configured' })}
+          {t('chat.config_banner_title', { defaultValue: 'AI provider not configured‌⁠‍' })}
         </div>
         <div style={{ color: 'var(--chat-text-secondary)', marginTop: 2 }}>
           {t('chat.config_banner_desc', {
             defaultValue:
-              'Add an API key (Anthropic / OpenAI / Gemini / OpenRouter / Mistral / Groq) to start chatting with your data.',
+              'Add an API key (Anthropic / OpenAI / Gemini / OpenRouter / Mistral / Groq) to start chatting with your data.‌⁠‍',
           })}
         </div>
       </div>
@@ -101,7 +101,7 @@ export default function AIConfigBanner() {
           whiteSpace: 'nowrap',
         }}
       >
-        {t('chat.open_settings', { defaultValue: 'Open Settings' })}
+        {t('chat.open_settings', { defaultValue: 'Open Settings‌⁠‍' })}
       </Link>
     </div>
   );

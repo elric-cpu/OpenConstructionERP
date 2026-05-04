@@ -1,4 +1,4 @@
-"""Replace anchor-jump targets (#voices-ref-*) with the real external URLs
+"""‌⁠‍Replace anchor-jump targets (#voices-ref-*) with the real external URLs
 across voices.para2 and voices.para3 in all 3 locale files."""
 import json, re
 from pathlib import Path

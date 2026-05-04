@@ -77,7 +77,7 @@ export function SyncReportDrawer({
         <header className="flex items-center justify-between border-b border-border-light px-4 py-3">
           <h3 className="text-sm font-semibold text-content-primary">
             {t('dashboards.sync.drawer_title', {
-              defaultValue: 'Preset sync report',
+              defaultValue: 'Preset sync report‌⁠‍',
             })}
           </h3>
           <button
@@ -97,7 +97,7 @@ export function SyncReportDrawer({
               data-testid="sync-report-loading"
               className="text-xs text-content-tertiary"
             >
-              {t('common.loading', { defaultValue: 'Loading…' })}
+              {t('common.loading', { defaultValue: 'Loading…‌⁠‍' })}
             </div>
           )}
 
@@ -107,7 +107,7 @@ export function SyncReportDrawer({
               className="rounded border border-semantic-success bg-semantic-success-bg p-3 text-xs text-semantic-success"
             >
               {t('dashboards.sync.in_sync_msg', {
-                defaultValue: 'This preset is in sync with the current snapshot.',
+                defaultValue: 'This preset is in sync with the current snapshot.‌⁠‍',
               })}
             </div>
           )}
@@ -116,14 +116,14 @@ export function SyncReportDrawer({
             <>
               <IssueGroup
                 title={t('dashboards.sync.group_dropped_columns', {
-                  defaultValue: 'Dropped columns',
+                  defaultValue: 'Dropped columns‌⁠‍',
                 })}
                 issues={report.dropped_columns}
                 testId="dropped-columns"
               />
               <IssueGroup
                 title={t('dashboards.sync.group_renames', {
-                  defaultValue: 'Renamed columns',
+                  defaultValue: 'Renamed columns‌⁠‍',
                 })}
                 issues={report.column_renames}
                 testId="column-renames"

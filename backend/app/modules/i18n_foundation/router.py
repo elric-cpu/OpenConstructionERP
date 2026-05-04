@@ -1,4 +1,4 @@
-"""Internationalization foundation API routes.
+"""‌⁠‍Internationalization foundation API routes.
 
 Endpoints:
     # Exchange Rates
@@ -78,7 +78,7 @@ async def list_exchange_rates(
     limit: int = Query(default=100, ge=1, le=1000, description="Max results"),
     offset: int = Query(default=0, ge=0, description="Offset for pagination"),
 ) -> ExchangeRateListResponse:
-    """List exchange rates with optional filters."""
+    """‌⁠‍List exchange rates with optional filters."""
     items, total = await service.list_exchange_rates(
         from_currency=from_currency,
         to_currency=to_currency,
@@ -103,7 +103,7 @@ async def create_exchange_rate(
     _user_id: CurrentUserId,
     service: I18nFoundationService = Depends(_get_service),
 ) -> ExchangeRateResponse:
-    """Create a new exchange rate entry (auth required)."""
+    """‌⁠‍Create a new exchange rate entry (auth required)."""
     rate = await service.create_exchange_rate(data.model_dump())
     return ExchangeRateResponse.model_validate(rate)
 

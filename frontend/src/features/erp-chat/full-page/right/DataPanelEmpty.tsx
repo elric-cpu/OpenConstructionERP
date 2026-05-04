@@ -18,15 +18,15 @@ export default function DataPanelEmpty({ onSuggestion }: DataPanelEmptyProps) {
   const TOOL_CATEGORIES = [
     {
       icon: '📊',
-      title: t('chat.cat_projects_title', { defaultValue: 'Projects & Portfolio' }),
+      title: t('chat.cat_projects_title', { defaultValue: 'Projects & Portfolio‌⁠‍' }),
       desc: t('chat.cat_projects_desc', {
         defaultValue:
-          'Compare projects, see portfolio overview, find at-risk work, generate executive summaries.',
+          'Compare projects, see portfolio overview, find at-risk work, generate executive summaries.‌⁠‍',
       }),
       examples: [
-        t('chat.ex_show_projects', { defaultValue: 'Show all my projects' }),
-        t('chat.ex_compare_projects', { defaultValue: 'Compare Berlin and Munich projects' }),
-        t('chat.ex_at_risk', { defaultValue: 'Which projects are over budget?' }),
+        t('chat.ex_show_projects', { defaultValue: 'Show all my projects‌⁠‍' }),
+        t('chat.ex_compare_projects', { defaultValue: 'Compare Berlin and Munich projects‌⁠‍' }),
+        t('chat.ex_at_risk', { defaultValue: 'Which projects are over budget?‌⁠‍' }),
       ],
     },
     {

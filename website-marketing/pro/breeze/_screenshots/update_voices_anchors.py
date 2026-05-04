@@ -1,4 +1,4 @@
-"""Switch voices.para2 and para3 inline links from external URLs to in-page
+"""‌⁠‍Switch voices.para2 and para3 inline links from external URLs to in-page
 anchors that point at the new sidebar reference cards. Keep the prose verbatim
 otherwise. Also add the new card-related strings (aside_label + ref_*).
 """

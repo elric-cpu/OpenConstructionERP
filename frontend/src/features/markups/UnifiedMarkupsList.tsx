@@ -215,7 +215,7 @@ export function UnifiedMarkupsList({ projectId }: UnifiedMarkupsListProps) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t('markups.unified_search', {
-              defaultValue: 'Search across all annotations...',
+              defaultValue: 'Search across all annotations...‌⁠‍',
             })}
             className={inputCls + ' w-full pl-8'}
             data-testid="unified-markups-search"
@@ -256,7 +256,7 @@ export function UnifiedMarkupsList({ projectId }: UnifiedMarkupsListProps) {
             data-testid="unified-filter-file"
           >
             <option value="">
-              {t('markups.unified_all_files', { defaultValue: 'All files' })}
+              {t('markups.unified_all_files', { defaultValue: 'All files‌⁠‍' })}
             </option>
             {summary.files.map((f) => (
               <option key={f.id} value={f.id}>
@@ -321,17 +321,17 @@ export function UnifiedMarkupsList({ projectId }: UnifiedMarkupsListProps) {
           title={
             items.length === 0
               ? t('markups.unified_empty_title', {
-                  defaultValue: 'No annotations yet',
+                  defaultValue: 'No annotations yet‌⁠‍',
                 })
               : t('markups.unified_no_match_title', {
-                  defaultValue: 'No matching annotations',
+                  defaultValue: 'No matching annotations‌⁠‍',
                 })
           }
           description={
             items.length === 0
               ? t('markups.unified_empty_desc', {
                   defaultValue:
-                    'Markups from the Markups hub, PDF takeoff and DWG takeoff will appear here automatically.',
+                    'Markups from the Markups hub, PDF takeoff and DWG takeoff will appear here automatically.‌⁠‍',
                 })
               : t('markups.unified_no_match_desc', {
                   defaultValue: 'Try adjusting your search or filter selection.',

@@ -1,4 +1,4 @@
-"""Procurement Pydantic schemas — request/response models."""
+"""‌⁠‍Procurement Pydantic schemas — request/response models."""
 
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 def _validate_non_negative_decimal(v: str) -> str:
-    """Validate that a string is a valid non-negative decimal number."""
+    """‌⁠‍Validate that a string is a valid non-negative decimal number."""
     try:
         d = Decimal(v)
     except (InvalidOperation, ValueError, TypeError) as exc:
@@ -22,7 +22,7 @@ def _validate_non_negative_decimal(v: str) -> str:
 
 
 class POItemCreate(BaseModel):
-    """Create a line item within a purchase order."""
+    """‌⁠‍Create a line item within a purchase order."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 

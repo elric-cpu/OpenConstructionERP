@@ -1,4 +1,4 @@
-"""Serve frontend static files from the installed package or dev build.
+"""‌⁠‍Serve frontend static files from the installed package or dev build.
 
 When running via `openestimate serve` or with SERVE_FRONTEND=true,
 the FastAPI app serves the pre-built React frontend directly — no Nginx needed.
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_frontend_dir() -> Path:
-    """Find the bundled frontend dist directory.
+    """‌⁠‍Find the bundled frontend dist directory.
 
     Returns:
         Path to the directory containing index.html and assets/.
@@ -45,7 +45,7 @@ def get_frontend_dir() -> Path:
 
 
 def mount_frontend(app: FastAPI) -> None:
-    """Mount frontend static files on the FastAPI app.
+    """‌⁠‍Mount frontend static files on the FastAPI app.
 
     Serves:
     - /assets/* — hashed JS/CSS bundles (long cache)

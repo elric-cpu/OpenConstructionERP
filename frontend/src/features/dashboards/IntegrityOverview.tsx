@@ -97,13 +97,13 @@ export function IntegrityOverview({
         <div>
           <h3 className="text-sm font-semibold text-content-primary">
             {t('dashboards.integrity_title', {
-              defaultValue: 'Dataset integrity',
+              defaultValue: 'Dataset integrity‌⁠‍',
             })}
           </h3>
           <p className="text-xs text-content-tertiary">
             {t('dashboards.integrity_subtitle', {
               defaultValue:
-                'Per-column null counts, dtype mismatches and outliers — fix upstream issues before slicing.',
+                'Per-column null counts, dtype mismatches and outliers — fix upstream issues before slicing.‌⁠‍',
             })}
           </p>
         </div>
@@ -121,7 +121,7 @@ export function IntegrityOverview({
             <RefreshCw
               className={`mr-1 h-3 w-3 ${reportQuery.isFetching ? 'animate-spin' : ''}`}
             />
-            {t('common.refresh', { defaultValue: 'Refresh' })}
+            {t('common.refresh', { defaultValue: 'Refresh‌⁠‍' })}
           </Button>
         </div>
       </div>
@@ -141,7 +141,7 @@ export function IntegrityOverview({
             data-testid="integrity-error"
           >
             {t('dashboards.integrity_error', {
-              defaultValue: 'Could not load the integrity report for this snapshot.',
+              defaultValue: 'Could not load the integrity report for this snapshot.‌⁠‍',
             })}
           </div>
         )}
@@ -153,7 +153,7 @@ export function IntegrityOverview({
             <EmptyState
               icon={<ShieldCheck className="h-8 w-8 text-emerald-400" />}
               title={t('dashboards.integrity_empty_title', {
-                defaultValue: 'No integrity issues found',
+                defaultValue: 'No integrity issues found‌⁠‍',
               })}
               description={t('dashboards.integrity_empty_desc', {
                 defaultValue:

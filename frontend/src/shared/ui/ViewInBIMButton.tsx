@@ -49,7 +49,7 @@ export function ViewInBIMButton({
   const displayLabel =
     label ??
     t('common.view_in_bim_count', {
-      defaultValue: '{{count}} element(s)',
+      defaultValue: '{{count}} element(s)‌⁠‍',
       count: validIds.length,
     });
 
@@ -62,7 +62,7 @@ export function ViewInBIMButton({
         'inline-flex items-center gap-1 text-xs text-oe-blue hover:text-oe-blue-dark transition-colors'
       }
       title={t('common.view_in_bim', {
-        defaultValue: 'View in BIM 3D',
+        defaultValue: 'View in BIM 3D‌⁠‍',
       })}
     >
       <Cuboid size={iconSize} className="shrink-0" />

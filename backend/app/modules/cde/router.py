@@ -1,4 +1,4 @@
-"""CDE (Common Data Environment) API routes.
+"""‌⁠‍CDE (Common Data Environment) API routes.
 
 Endpoints:
     GET    /suitability-codes                     - ISO 19650 suitability codes
@@ -45,7 +45,7 @@ def _get_service(session: SessionDep) -> CDEService:
 
 
 def _container_to_response(container: object) -> ContainerResponse:
-    """Build a ContainerResponse from a DocumentContainer ORM object."""
+    """‌⁠‍Build a ContainerResponse from a DocumentContainer ORM object."""
     return ContainerResponse(
         id=container.id,  # type: ignore[attr-defined]
         project_id=container.project_id,  # type: ignore[attr-defined]
@@ -74,7 +74,7 @@ def _container_to_response(container: object) -> ContainerResponse:
 
 
 def _revision_to_response(revision: object) -> RevisionResponse:
-    """Build a RevisionResponse from a DocumentRevision ORM object."""
+    """‌⁠‍Build a RevisionResponse from a DocumentRevision ORM object."""
     return RevisionResponse(
         id=revision.id,  # type: ignore[attr-defined]
         container_id=revision.container_id,  # type: ignore[attr-defined]

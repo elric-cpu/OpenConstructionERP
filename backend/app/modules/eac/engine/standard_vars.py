@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Standard FR-1.7 element variables auto-resolved by the validator.
+"""‌⁠‍Standard FR-1.7 element variables auto-resolved by the validator.
 
 These names are the ``${variable_name}`` references that the executor
 will hand-pull from each canonical-format element row at run time. They
@@ -35,7 +35,7 @@ STANDARD_VARIABLES: frozenset[str] = frozenset(
 
 
 def is_standard_variable(name: str) -> bool:
-    """Return ``True`` iff ``name`` is a built-in element variable."""
+    """‌⁠‍Return ``True`` iff ``name`` is a built-in element variable."""
     return name in STANDARD_VARIABLES
 
 

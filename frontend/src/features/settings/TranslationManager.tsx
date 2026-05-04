@@ -284,10 +284,10 @@ export function TranslationManager() {
     <Card data-testid="translation-manager">
       <CardHeader
         title={t('settings.translation_manager_title', {
-          defaultValue: 'Translation Manager',
+          defaultValue: 'Translation Manager‌⁠‍',
         })}
         subtitle={t('settings.translation_manager_subtitle', {
-          defaultValue: 'View and customise translation keys for the current language.',
+          defaultValue: 'View and customise translation keys for the current language.‌⁠‍',
         })}
       />
 
@@ -299,7 +299,7 @@ export function TranslationManager() {
         >
           <div className="flex items-center gap-1.5 rounded-lg bg-surface-secondary px-3 py-1.5">
             <span className="text-xs text-content-tertiary">
-              {t('settings.tm_total_keys', { defaultValue: 'Total keys' })}
+              {t('settings.tm_total_keys', { defaultValue: 'Total keys‌⁠‍' })}
             </span>
             <span className="text-sm font-semibold text-content-primary" data-testid="tm-stat-total">
               {totalKeys}
@@ -308,7 +308,7 @@ export function TranslationManager() {
           <div className="flex items-center gap-1.5 rounded-lg bg-surface-secondary px-3 py-1.5">
             <CheckCircle2 size={13} className="text-semantic-success" />
             <span className="text-xs text-content-tertiary">
-              {t('settings.tm_translated', { defaultValue: 'Translated' })}
+              {t('settings.tm_translated', { defaultValue: 'Translated‌⁠‍' })}
             </span>
             <span className="text-sm font-semibold text-semantic-success" data-testid="tm-stat-translated">
               {translatedCount}
@@ -317,7 +317,7 @@ export function TranslationManager() {
           <div className="flex items-center gap-1.5 rounded-lg bg-surface-secondary px-3 py-1.5">
             <Pencil size={13} className="text-oe-blue" />
             <span className="text-xs text-content-tertiary">
-              {t('settings.tm_custom', { defaultValue: 'Custom overrides' })}
+              {t('settings.tm_custom', { defaultValue: 'Custom overrides‌⁠‍' })}
             </span>
             <span className="text-sm font-semibold text-oe-blue" data-testid="tm-stat-custom">
               {customCount}

@@ -126,9 +126,9 @@ export default function LinkActivityToDwgModal({
     onSuccess: (count) => {
       addToast({
         type: 'success',
-        title: t('dwg_takeoff.act_linked_title', { defaultValue: 'Activity linked' }),
+        title: t('dwg_takeoff.act_linked_title', { defaultValue: 'Activity linked‌⁠‍' }),
         message: t('dwg_takeoff.act_linked_msg', {
-          defaultValue: 'Linked to {{count}} DWG entity/entities',
+          defaultValue: 'Linked to {{count}} DWG entity/entities‌⁠‍',
           count,
         }),
       });
@@ -165,14 +165,14 @@ export default function LinkActivityToDwgModal({
             <Calendar size={16} className="text-emerald-600" />
             <h2 className="text-sm font-semibold text-content-primary">
               {t('dwg_takeoff.link_act_title', {
-                defaultValue: 'Link a schedule activity',
+                defaultValue: 'Link a schedule activity‌⁠‍',
               })}
             </h2>
             <span className="text-[11px] text-content-tertiary">
               {entityIds.length === 1
-                ? '→ ' + (entityLabel || t('dwg_takeoff.entity', { defaultValue: 'Entity' }))
+                ? '→ ' + (entityLabel || t('dwg_takeoff.entity', { defaultValue: 'Entity‌⁠‍' }))
                 : t('dwg_takeoff.link_act_bulk', {
-                    defaultValue: '→ {{count}} entities',
+                    defaultValue: '→ {{count}} entities‌⁠‍',
                     count: entityIds.length,
                   })}
             </span>

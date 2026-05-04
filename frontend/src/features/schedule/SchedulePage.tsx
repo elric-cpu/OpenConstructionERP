@@ -626,28 +626,28 @@ function GanttChart({
             <BarChart3 size={28} strokeWidth={1.5} />
           </div>
           <h3 className="text-lg font-semibold text-content-primary">
-            {t('schedule.gantt_empty_title', { defaultValue: 'Gantt chart is empty' })}
+            {t('schedule.gantt_empty_title', { defaultValue: 'Gantt chart is empty‌⁠‍' })}
           </h3>
           <p className="mt-1.5 max-w-md text-sm text-content-secondary">
             {t('schedule.gantt_empty_hint', {
-              defaultValue: 'Add activities manually or generate them from a BOQ to see the timeline. Dependencies and critical path will render automatically.',
+              defaultValue: 'Add activities manually or generate them from a BOQ to see the timeline. Dependencies and critical path will render automatically.‌⁠‍',
             })}
           </p>
           {/* Decorative timeline preview */}
           <div className="mt-6 w-full max-w-lg">
             <div className="flex items-center gap-2 mb-2 px-2">
-              <span className="text-2xs font-medium text-content-quaternary">{t('schedule.gantt_preview_label', { defaultValue: 'Timeline preview' })}</span>
+              <span className="text-2xs font-medium text-content-quaternary">{t('schedule.gantt_preview_label', { defaultValue: 'Timeline preview‌⁠‍' })}</span>
               <div className="flex-1 h-px bg-border-light" />
             </div>
             <div className="space-y-2 opacity-40">
               <div className="flex items-center gap-3">
-                <span className="w-24 text-right text-2xs text-content-tertiary truncate">{t('schedule.preview_foundation', { defaultValue: 'Foundation' })}</span>
+                <span className="w-24 text-right text-2xs text-content-tertiary truncate">{t('schedule.preview_foundation', { defaultValue: 'Foundation‌⁠‍' })}</span>
                 <div className="flex-1 h-6 rounded-md bg-oe-blue/15 relative">
                   <div className="h-full w-3/5 rounded-md bg-oe-blue/30" />
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <span className="w-24 text-right text-2xs text-content-tertiary truncate">{t('schedule.preview_structural', { defaultValue: 'Structural' })}</span>
+                <span className="w-24 text-right text-2xs text-content-tertiary truncate">{t('schedule.preview_structural', { defaultValue: 'Structural‌⁠‍' })}</span>
                 <div className="flex-1 h-6 rounded-md bg-semantic-success/15 relative ml-[15%]">
                   <div className="h-full w-2/5 rounded-md bg-semantic-success/30" />
                 </div>

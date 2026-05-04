@@ -1,4 +1,4 @@
-"""BIM Hub file-storage helper.
+"""‌⁠‍BIM Hub file-storage helper.
 
 Thin wrapper around :mod:`app.core.storage` that owns the key layout
 for BIM model blobs.  Lives in its own module so the refactor that
@@ -55,7 +55,7 @@ def _stringify(value: uuid.UUID | str) -> str:
 
 
 def bim_model_prefix(project_id: uuid.UUID | str, model_id: uuid.UUID | str) -> str:
-    """Return the storage prefix holding every blob for a given model."""
+    """‌⁠‍Return the storage prefix holding every blob for a given model."""
     return f"{_BIM_PREFIX}/{_stringify(project_id)}/{_stringify(model_id)}"
 
 
@@ -64,7 +64,7 @@ def geometry_key(
     model_id: uuid.UUID | str,
     ext: str,
 ) -> str:
-    """Return the storage key for a geometry file with extension ``ext``.
+    """‌⁠‍Return the storage key for a geometry file with extension ``ext``.
 
     ``ext`` may be given with or without a leading dot.
     """

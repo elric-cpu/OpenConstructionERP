@@ -1,4 +1,4 @@
-"""Document Management API routes.
+"""‌⁠‍Document Management API routes.
 
 Endpoints:
     POST   /upload                  — Upload a document
@@ -64,7 +64,7 @@ def _get_service(session: SessionDep) -> DocumentService:
 
 
 def _doc_to_response(doc: object) -> DocumentResponse:
-    """Build a DocumentResponse from a Document ORM object."""
+    """‌⁠‍Build a DocumentResponse from a Document ORM object."""
     return DocumentResponse(
         id=doc.id,  # type: ignore[attr-defined]
         project_id=doc.project_id,  # type: ignore[attr-defined]
@@ -101,7 +101,7 @@ async def get_summary(
     user_id: CurrentUserId = None,  # type: ignore[assignment]
     service: DocumentService = Depends(_get_service),
 ) -> DocumentSummary:
-    """Aggregated document stats for a project."""
+    """‌⁠‍Aggregated document stats for a project."""
     await verify_project_access(project_id, user_id, session)
     data = await service.get_summary(project_id)
     return DocumentSummary(**data)

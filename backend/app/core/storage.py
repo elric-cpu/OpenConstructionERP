@@ -1,4 +1,4 @@
-"""Storage backend abstraction for binary blobs.
+"""‌⁠‍Storage backend abstraction for binary blobs.
 
 Used by BIM geometry files, CAD uploads, takeoff PDFs, and generated
 reports — anything that today lives under ``data/`` on the local
@@ -62,7 +62,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class MultipartSession:
-    """Handle to an in-progress multipart upload.
+    """‌⁠‍Handle to an in-progress multipart upload.
 
     For S3 backends ``upload_id`` is the value returned by
     ``CreateMultipartUpload``; for the local backend it's a UUID4 used as
@@ -82,7 +82,7 @@ class MultipartSession:
 
 @dataclass(frozen=True)
 class PartInfo:
-    """Result of uploading a single part of a multipart upload.
+    """‌⁠‍Result of uploading a single part of a multipart upload.
 
     ``part_number`` is 1-based to match the S3 multipart API.  ``etag``
     is whatever the backend returns for the part — for S3 it's the MD5

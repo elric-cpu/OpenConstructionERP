@@ -1,4 +1,4 @@
-"""Seed 4D Schedule, 5D Budget, and Tendering data for demo projects.
+"""‌⁠‍Seed 4D Schedule, 5D Budget, and Tendering data for demo projects.
 
 Creates for Wohnanlage Berlin-Mitte and One Canary Square:
   - Schedule with activities per BOQ section (4D)

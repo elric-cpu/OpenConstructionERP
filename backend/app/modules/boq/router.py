@@ -1,4 +1,4 @@
-"""BOQ API routes.
+"""‌⁠‍BOQ API routes.
 
 Endpoints:
     POST   /boqs/                              — Create a new BOQ
@@ -156,7 +156,7 @@ async def _verify_boq_owner(
     user_id: str,
     payload: dict | None = None,
 ) -> None:
-    """Load a BOQ, then its project, and verify ownership.
+    """‌⁠‍Load a BOQ, then its project, and verify ownership.
 
     Admins bypass the check. Raises 403 if the user is not the project owner.
     """
@@ -186,7 +186,7 @@ async def _verify_project_owner_for_boq(
     user_id: str,
     payload: dict | None = None,
 ) -> None:
-    """Verify the current user owns the given project. Admins bypass.
+    """‌⁠‍Verify the current user owns the given project. Admins bypass.
 
     Treats archived (soft-deleted) projects as 404 — no operations on
     archived projects are permitted via this gateway.

@@ -115,8 +115,8 @@ function CreateRFIModal({
 
   const validate = (): boolean => {
     const e: Record<string, string> = {};
-    if (!form.subject.trim()) e.subject = t('validation.required', { defaultValue: 'This field is required' });
-    if (!form.question.trim()) e.question = t('validation.required', { defaultValue: 'This field is required' });
+    if (!form.subject.trim()) e.subject = t('validation.required', { defaultValue: 'This field is required‌⁠‍' });
+    if (!form.question.trim()) e.question = t('validation.required', { defaultValue: 'This field is required‌⁠‍' });
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -136,17 +136,17 @@ function CreateRFIModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-2xl bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[85vh] flex flex-col" role="dialog" aria-modal="true" aria-label={t('rfi.new_rfi', { defaultValue: 'New RFI' })}>
+      <div className="w-full max-w-2xl bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[85vh] flex flex-col" role="dialog" aria-modal="true" aria-label={t('rfi.new_rfi', { defaultValue: 'New RFI‌⁠‍' })}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border-light sticky top-0 z-10 bg-surface-elevated rounded-t-xl">
           <div>
             <h2 className="text-lg font-semibold text-content-primary">
-              {t('rfi.new_rfi', { defaultValue: 'New RFI' })}
+              {t('rfi.new_rfi', { defaultValue: 'New RFI‌⁠‍' })}
             </h2>
             {projectName && (
               <p className="text-xs text-content-tertiary mt-0.5">
                 {t('common.creating_in_project', {
-                  defaultValue: 'In {{project}}',
+                  defaultValue: 'In {{project}}‌⁠‍',
                   project: projectName,
                 })}
               </p>

@@ -79,10 +79,10 @@ export function InstallConverterPrompt({
         addToast({
           type: 'success',
           title: t('bim.install_prompt_success_title', {
-            defaultValue: 'Converter installed',
+            defaultValue: 'Converter installed‌⁠‍',
           }),
           message: t('bim.install_prompt_success_msg', {
-            defaultValue: 'Retrying upload of {{name}}…',
+            defaultValue: 'Retrying upload of {{name}}…‌⁠‍',
             name: fileName,
           }),
         });
@@ -97,7 +97,7 @@ export function InstallConverterPrompt({
       setLocalError(
         result.message ||
           t('bim.install_prompt_error_generic', {
-            defaultValue: 'Install failed. Please try again.',
+            defaultValue: 'Install failed. Please try again.‌⁠‍',
           }),
       );
       queryClient.invalidateQueries({ queryKey: ['bim-converters'] });
@@ -107,7 +107,7 @@ export function InstallConverterPrompt({
         err instanceof Error
           ? err.message
           : t('bim.install_prompt_error_generic', {
-              defaultValue: 'Install failed. Please try again.',
+              defaultValue: 'Install failed. Please try again.‌⁠‍',
             }),
       );
     },
@@ -119,7 +119,7 @@ export function InstallConverterPrompt({
   const converterName =
     converter?.name ??
     t('bim.install_prompt_default_converter_name', {
-      defaultValue: 'DDC {{format}} Converter',
+      defaultValue: 'DDC {{format}} Converter‌⁠‍',
       format: formatLabel,
     });
   const converterSizeMb = converter?.size_mb ?? 0;

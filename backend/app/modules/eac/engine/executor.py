@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Rule executor for EAC v2 (RFC 35 §1.6 EAC-1.4).
+"""‌⁠‍Rule executor for EAC v2 (RFC 35 §1.6 EAC-1.4).
 
 Runs a parsed :class:`EacRuleDefinition` against a sequence of canonical
 element rows (dicts that mirror the canonical Parquet schema produced
@@ -98,11 +98,11 @@ from app.modules.eac.schemas import (
 
 
 class UnsupportedOutputModeError(Exception):
-    """Raised when a rule's ``output_mode`` is not yet implemented (e.g. clash)."""
+    """‌⁠‍Raised when a rule's ``output_mode`` is not yet implemented (e.g. clash)."""
 
 
 class ExecutionError(Exception):
-    """Raised on a fatal failure inside the executor (formula crash, etc.)."""
+    """‌⁠‍Raised on a fatal failure inside the executor (formula crash, etc.)."""
 
 
 # ── Sentinel for "attribute not present on element" ────────────────────

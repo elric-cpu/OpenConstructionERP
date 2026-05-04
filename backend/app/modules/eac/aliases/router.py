@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""FastAPI router for EAC v2 parameter aliases (RFC 35 §6 EAC-2.3).
+"""‌⁠‍FastAPI router for EAC v2 parameter aliases (RFC 35 §6 EAC-2.3).
 
 Mounted under the parent EAC router at ``/api/v1/eac/aliases``.
 """
@@ -117,7 +117,7 @@ def _check_vth(value: str | None) -> None:
 async def _resolve_tenant_id(
     session: AsyncSession, user_id: str
 ) -> uuid.UUID:
-    """Resolve the current user's tenant.
+    """‌⁠‍Resolve the current user's tenant.
 
     Mirrors the helper used by :mod:`app.modules.eac.router` so this
     file isn't coupled to its private implementation.
@@ -154,7 +154,7 @@ async def list_aliases_route(
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> list[EacParameterAliasRead]:
-    """List aliases visible to the caller, optionally filtered by scope/text."""
+    """‌⁠‍List aliases visible to the caller, optionally filtered by scope/text."""
     _check_scope(scope)
     _ = await _resolve_tenant_id(session, user_id)
     aliases = await list_aliases(

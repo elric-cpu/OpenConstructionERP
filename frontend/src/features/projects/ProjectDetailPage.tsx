@@ -269,11 +269,11 @@ function computeProjectHealth(
   const noErrors = validationRun && errorCount === 0;
 
   const checks: HealthCheck[] = [
-    { key: 'has_boq', label: t('projects.health_has_boq', { defaultValue: 'BOQ created' }), done: hasBoq },
-    { key: 'has_positions', label: t('projects.health_has_positions', { defaultValue: 'Positions added' }), done: hasPositions },
-    { key: 'all_priced', label: t('projects.health_all_priced', { defaultValue: 'All positions priced' }), done: allPriced },
-    { key: 'validation_run', label: t('projects.health_validation_run', { defaultValue: 'Validation run' }), done: validationRun },
-    { key: 'no_errors', label: t('projects.health_no_errors', { defaultValue: 'No validation errors' }), done: noErrors },
+    { key: 'has_boq', label: t('projects.health_has_boq', { defaultValue: 'BOQ created‌⁠‍' }), done: hasBoq },
+    { key: 'has_positions', label: t('projects.health_has_positions', { defaultValue: 'Positions added‌⁠‍' }), done: hasPositions },
+    { key: 'all_priced', label: t('projects.health_all_priced', { defaultValue: 'All positions priced‌⁠‍' }), done: allPriced },
+    { key: 'validation_run', label: t('projects.health_validation_run', { defaultValue: 'Validation run‌⁠‍' }), done: validationRun },
+    { key: 'no_errors', label: t('projects.health_no_errors', { defaultValue: 'No validation errors‌⁠‍' }), done: noErrors },
   ];
 
   const doneCount = checks.filter((c) => c.done).length;

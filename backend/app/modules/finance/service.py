@@ -1,4 +1,4 @@
-"""Finance service — business logic for invoicing, payments, budgets, and EVM.
+"""‌⁠‍Finance service — business logic for invoicing, payments, budgets, and EVM.
 
 Stateless service layer.
 """
@@ -50,7 +50,7 @@ _VALID_INVOICE_STATUSES = set(_INVOICE_STATUS_TRANSITIONS.keys())
 
 
 def _parse_decimal(value: str, field_name: str = "value") -> Decimal:
-    """Parse a string to Decimal, raising a clear error on failure."""
+    """‌⁠‍Parse a string to Decimal, raising a clear error on failure."""
     try:
         return Decimal(value)
     except (InvalidOperation, ValueError, TypeError) as exc:
@@ -61,7 +61,7 @@ def _parse_decimal(value: str, field_name: str = "value") -> Decimal:
 
 
 def _compute_invoice_total(subtotal: str, tax: str) -> str:
-    """Compute amount_total = amount_subtotal + tax_amount."""
+    """‌⁠‍Compute amount_total = amount_subtotal + tax_amount."""
     s = _parse_decimal(subtotal, "amount_subtotal")
     t = _parse_decimal(tax, "tax_amount")
     return str(s + t)

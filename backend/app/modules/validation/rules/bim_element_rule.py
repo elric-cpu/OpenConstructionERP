@@ -1,4 +1,4 @@
-"""BIMElementRule — per-element validation rule for BIM models.
+"""‌⁠‍BIMElementRule — per-element validation rule for BIM models.
 
 A :class:`BIMElementRule` is a plain Python class (not a database row) that
 describes a single validation check to run against every
@@ -37,7 +37,7 @@ Severity = Literal["error", "warning", "info"]
 
 @dataclass
 class BIMElementRuleResult:
-    """Single per-element result emitted by a :class:`BIMElementRule`."""
+    """‌⁠‍Single per-element result emitted by a :class:`BIMElementRule`."""
 
     rule_id: str
     rule_name: str
@@ -55,7 +55,7 @@ class BIMElementRuleResult:
 
 @dataclass
 class BIMElementRule:
-    """Declarative per-element validation rule.
+    """‌⁠‍Declarative per-element validation rule.
 
     Attributes:
         rule_id: Unique rule identifier (e.g. ``"bim.wall.has_thickness"``).

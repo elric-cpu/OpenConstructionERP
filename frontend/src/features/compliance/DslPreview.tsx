@@ -64,11 +64,11 @@ export function DslPreview({ yaml, onCopy }: DslPreviewProps) {
     <div
       className="flex h-full flex-col"
       data-testid="dsl-preview"
-      aria-label={t('compliance.nl.preview_title', { defaultValue: 'DSL Preview' })}
+      aria-label={t('compliance.nl.preview_title', { defaultValue: 'DSL Preview‌⁠‍' })}
     >
       <div className="mb-2 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-content-primary">
-          {t('compliance.nl.preview_title', { defaultValue: 'DSL Preview' })}
+          {t('compliance.nl.preview_title', { defaultValue: 'DSL Preview‌⁠‍' })}
         </h3>
         {yaml && onCopy && (
           <button
@@ -94,7 +94,7 @@ export function DslPreview({ yaml, onCopy }: DslPreviewProps) {
           className="flex-1 rounded-lg border border-dashed border-border-light p-4 text-center text-xs text-content-tertiary"
         >
           {t('compliance.nl.no_dsl_yet', {
-            defaultValue: 'Type a sentence and press Generate to see the DSL.',
+            defaultValue: 'Type a sentence and press Generate to see the DSL.‌⁠‍',
           })}
         </div>
       )}

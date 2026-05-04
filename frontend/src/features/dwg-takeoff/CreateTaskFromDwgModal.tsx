@@ -57,23 +57,23 @@ export default function CreateTaskFromDwgModal({
     { value: 'task', label: t('tasks.type_task', { defaultValue: 'Task' }) },
     { value: 'topic', label: t('tasks.type_topic', { defaultValue: 'Topic' }) },
     { value: 'information', label: t('tasks.type_information', { defaultValue: 'Info' }) },
-    { value: 'decision', label: t('tasks.type_decision', { defaultValue: 'Decision' }) },
+    { value: 'decision', label: t('tasks.type_decision', { defaultValue: 'Decision‌⁠‍' }) },
   ];
 
   const PRIORITIES: { value: TaskPriority; label: string; color: string }[] = [
     { value: 'low', label: t('tasks.priority_low', { defaultValue: 'Low' }), color: PRIORITY_COLORS.low },
-    { value: 'normal', label: t('tasks.priority_normal', { defaultValue: 'Normal' }), color: PRIORITY_COLORS.normal },
+    { value: 'normal', label: t('tasks.priority_normal', { defaultValue: 'Normal‌⁠‍' }), color: PRIORITY_COLORS.normal },
     { value: 'high', label: t('tasks.priority_high', { defaultValue: 'High' }), color: PRIORITY_COLORS.high },
-    { value: 'urgent', label: t('tasks.priority_urgent', { defaultValue: 'Urgent' }), color: PRIORITY_COLORS.urgent },
+    { value: 'urgent', label: t('tasks.priority_urgent', { defaultValue: 'Urgent‌⁠‍' }), color: PRIORITY_COLORS.urgent },
   ];
 
   const defaultTitle = entityLabel
     ? t('dwg_takeoff.issue_on_entity', {
-        defaultValue: 'Issue on {{name}}',
+        defaultValue: 'Issue on {{name}}‌⁠‍',
         name: entityLabel,
       })
     : t('dwg_takeoff.issue_on_entities', {
-        defaultValue: 'Issue on {{count}} DWG entity/entities',
+        defaultValue: 'Issue on {{count}} DWG entity/entities‌⁠‍',
         count: entityIds.length,
       });
 

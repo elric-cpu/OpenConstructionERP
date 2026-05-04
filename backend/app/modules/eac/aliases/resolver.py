@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Pure alias resolver (RFC 35 §6 EAC-2.1).
+"""‌⁠‍Pure alias resolver (RFC 35 §6 EAC-2.1).
 
 The resolver maps a canonical alias (e.g. ``_Length``) onto a value
 inside an element's property bag, trying each synonym pattern in
@@ -27,7 +27,7 @@ ElementDict = dict[str, Any]
 
 @dataclass(frozen=True)
 class ResolveResult:
-    """Outcome of resolving an alias against an element."""
+    """‌⁠‍Outcome of resolving an alias against an element."""
 
     matched: bool
     matched_synonym_id: UUID | None = None
@@ -40,7 +40,7 @@ class ResolveResult:
 
 
 def _iter_properties(element: ElementDict) -> list[tuple[str | None, str, Any]]:
-    """Yield ``(pset_name, prop_name, value)`` for every property in element.
+    """‌⁠‍Yield ``(pset_name, prop_name, value)`` for every property in element.
 
     Handles both shapes used across the codebase per W0.2 ddc_extras:
 

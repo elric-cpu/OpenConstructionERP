@@ -1,4 +1,4 @@
-"""Requirements & Quality Gates Pydantic schemas — request/response models.
+"""‌⁠‍Requirements & Quality Gates Pydantic schemas — request/response models.
 
 Defines create, update, and response schemas for requirement sets,
 individual requirements (EAC triplets), and quality gate results.
@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class RequirementCreate(BaseModel):
-    """Create a new EAC requirement."""
+    """‌⁠‍Create a new EAC requirement."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -38,7 +38,7 @@ class RequirementCreate(BaseModel):
 
 
 class RequirementUpdate(BaseModel):
-    """Partial update for a requirement."""
+    """‌⁠‍Partial update for a requirement."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 

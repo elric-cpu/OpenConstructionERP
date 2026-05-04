@@ -163,7 +163,7 @@ export default function BIMLinkedBOQPanel({
         <div className="flex items-center gap-2">
           <Link2 size={16} className="text-content-tertiary" />
           <h2 className="text-sm font-semibold text-content-primary">
-            {t('bim.linked_boq_title', { defaultValue: 'Linked BOQ' })}
+            {t('bim.linked_boq_title', { defaultValue: 'Linked BOQ‌⁠‍' })}
           </h2>
         </div>
         <button
@@ -183,8 +183,8 @@ export default function BIMLinkedBOQPanel({
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder={t('bim.linked_boq_search', { defaultValue: 'Search positions...' })}
-            aria-label={t('bim.linked_boq_search', { defaultValue: 'Search positions...' })}
+            placeholder={t('bim.linked_boq_search', { defaultValue: 'Search positions...‌⁠‍' })}
+            aria-label={t('bim.linked_boq_search', { defaultValue: 'Search positions...‌⁠‍' })}
             className="w-full ps-8 pe-8 py-1.5 text-xs rounded-md bg-surface-secondary border border-border-light focus:outline-none focus:ring-1 focus:ring-oe-blue focus:border-oe-blue"
           />
           {search && (
@@ -200,7 +200,7 @@ export default function BIMLinkedBOQPanel({
         {/* Summary */}
         <div className="mt-2 px-2.5 py-1.5 rounded-md bg-oe-blue/5 border border-oe-blue/15 text-[11px] font-medium text-oe-blue">
           {t('bim.linked_boq_summary', {
-            defaultValue: '{{positions}} positions linked to {{elements}} elements',
+            defaultValue: '{{positions}} positions linked to {{elements}} elements‌⁠‍',
             positions: positions.length,
             elements: totalLinkedElements,
           })}
@@ -213,7 +213,7 @@ export default function BIMLinkedBOQPanel({
           <div className="flex flex-col items-center justify-center h-32 text-content-quaternary">
             <Loader2 size={20} className="mb-2 animate-spin opacity-60" />
             <p className="text-xs">
-              {t('bim.linked_boq_loading', { defaultValue: 'Loading linked positions…' })}
+              {t('bim.linked_boq_loading', { defaultValue: 'Loading linked positions…‌⁠‍' })}
             </p>
           </div>
         ) : filtered.length === 0 ? (

@@ -1,4 +1,4 @@
-"""Database engine​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠, session, and base model.
+"""‌⁠‍Database engine​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠, session, and base model.
 
 Supports both PostgreSQL (production) and SQLite (local dev without Docker).
 Set DATABASE_URL to 'sqlite+aiosqlite:///./openestimate.db' for SQLite mode.
@@ -36,7 +36,7 @@ convention = {
 
 
 class GUID(TypeDecorator):
-    """Platform-independent UUID type.
+    """‌⁠‍Platform-independent UUID type.
 
     Uses PostgreSQL UUID when available, otherwise stores as String(36).
     This allows the same models to work with both PostgreSQL and SQLite.
@@ -61,7 +61,7 @@ class GUID(TypeDecorator):
 
 
 class Base(DeclarativeBase):
-    """Base class for all ORM models.
+    """‌⁠‍Base class for all ORM models.
 
     Provides: id (UUID PK), created_at, updated_at.
     Table naming: set __tablename__ explicitly as 'oe_{module}_{entity}'.

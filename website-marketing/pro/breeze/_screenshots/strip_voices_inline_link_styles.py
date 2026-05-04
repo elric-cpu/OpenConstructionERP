@@ -1,4 +1,4 @@
-"""Strip inline style="..." from <a> tags inside voices.para1..pull keys
+"""‌⁠‍Strip inline style="..." from <a> tags inside voices.para1..pull keys
 so the unified .voices-copy a CSS rule renders every link in one voice."""
 import json, re
 from pathlib import Path

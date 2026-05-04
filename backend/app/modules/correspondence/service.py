@@ -1,4 +1,4 @@
-"""Correspondence service — business logic for correspondence management."""
+"""‌⁠‍Correspondence service — business logic for correspondence management."""
 
 import logging
 import uuid
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class CorrespondenceService:
-    """Business logic for correspondence operations."""
+    """‌⁠‍Business logic for correspondence operations."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -26,7 +26,7 @@ class CorrespondenceService:
         data: CorrespondenceCreate,
         user_id: str | None = None,
     ) -> Correspondence:
-        """Create a new correspondence record with auto-generated reference number."""
+        """‌⁠‍Create a new correspondence record with auto-generated reference number."""
         reference_number = await self.repo.next_reference_number(data.project_id)
 
         correspondence = Correspondence(

@@ -266,14 +266,14 @@ export function TemplatesPage() {
       queryClient.invalidateQueries({ queryKey: ['all-boqs'] });
       addToast({
         type: 'success',
-        title: t('boq.template_created', { defaultValue: 'BOQ created from template' }),
+        title: t('boq.template_created', { defaultValue: 'BOQ created from template‌⁠‍' }),
       });
       navigate(`/boq/${boq.id}`);
     },
     onError: (e: Error) => {
       addToast({
         type: 'error',
-        title: t('boq.template_error', { defaultValue: 'Failed to create BOQ from template' }),
+        title: t('boq.template_error', { defaultValue: 'Failed to create BOQ from template‌⁠‍' }),
         message: e.message,
       });
     },
@@ -336,12 +336,12 @@ export function TemplatesPage() {
       {/* ── Page header ──────────────────────────────────────────────── */}
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-content-primary">
-          {t('boq.templates', { defaultValue: 'BOQ Templates' })}
+          {t('boq.templates', { defaultValue: 'BOQ Templates‌⁠‍' })}
         </h1>
         <p className="mt-1.5 text-sm text-content-secondary max-w-xl leading-relaxed">
           {t('boq.templates_subtitle', {
             defaultValue:
-              'Start with a professional template for your building type. Select a template, set the area, and generate a complete BOQ instantly.',
+              'Start with a professional template for your building type. Select a template, set the area, and generate a complete BOQ instantly.‌⁠‍',
           })}
         </p>
       </div>
@@ -428,7 +428,7 @@ export function TemplatesPage() {
               {/* Project selector */}
               <div>
                 <label className="block text-sm font-medium text-content-primary mb-1.5">
-                  {t('boq.project', { defaultValue: 'Project' })}
+                  {t('boq.project', { defaultValue: 'Project‌⁠‍' })}
                 </label>
                 <select
                   value={projectId}

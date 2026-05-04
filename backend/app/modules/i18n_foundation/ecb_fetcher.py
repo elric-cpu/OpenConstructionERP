@@ -1,4 +1,4 @@
-"""ECB exchange rate fetcher.
+"""‌⁠‍ECB exchange rate fetcher.
 
 Fetches daily exchange rates from the European Central Bank's public XML feed.
 All rates are EUR-based (from_currency=EUR). Handles network errors gracefully
@@ -24,7 +24,7 @@ _ECB_NS = "http://www.ecb.int/vocabulary/2002-08-01/eurofxref"
 
 
 async def fetch_ecb_daily_rates() -> list[dict]:
-    """Fetch daily EUR exchange rates from the ECB XML feed.
+    """‌⁠‍Fetch daily EUR exchange rates from the ECB XML feed.
 
     Parses the ECB's eurofxref-daily.xml response and extracts currency
     pairs. All rates are EUR-based (EUR -> target currency).
@@ -58,7 +58,7 @@ async def fetch_ecb_daily_rates() -> list[dict]:
 
 
 def _parse_ecb_xml(xml_text: str) -> list[dict]:
-    """Parse ECB eurofxref-daily.xml into a list of rate dicts.
+    """‌⁠‍Parse ECB eurofxref-daily.xml into a list of rate dicts.
 
     The XML structure is:
         <Cube>

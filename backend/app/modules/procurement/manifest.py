@@ -1,4 +1,4 @@
-"""Procurement module manifest."""
+"""‌⁠‍Procurement module manifest."""
 
 from app.core.module_loader import ModuleManifest
 

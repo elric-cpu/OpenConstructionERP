@@ -86,7 +86,7 @@ export function CalibrationDialog({
             className="text-sm font-semibold text-content-primary flex items-center gap-1.5"
           >
             <Ruler size={14} className="text-purple-500" />
-            {t('takeoff_viewer.calibrate_title', { defaultValue: 'Calibrate Scale' })}
+            {t('takeoff_viewer.calibrate_title', { defaultValue: 'Calibrate Scale‌⁠‍' })}
           </h3>
           <button
             type="button"
@@ -100,7 +100,7 @@ export function CalibrationDialog({
         <p className="text-xs text-content-tertiary mb-3">
           {t('takeoff_viewer.calibrate_desc', {
             defaultValue:
-              'You picked a line of {{pixels}} pixels. Enter its real-world length:',
+              'You picked a line of {{pixels}} pixels. Enter its real-world length:‌⁠‍',
             pixels: pixelDistance.toFixed(0),
           })}
         </p>
@@ -118,7 +118,7 @@ export function CalibrationDialog({
             min={0}
             step={0.01}
             aria-label={t('takeoff_viewer.calibrate_length', {
-              defaultValue: 'Real-world length',
+              defaultValue: 'Real-world length‌⁠‍',
             })}
             data-testid="calibration-length-input"
           />
@@ -139,7 +139,7 @@ export function CalibrationDialog({
         <p className="text-[10px] text-content-tertiary mb-3">
           {t('takeoff_viewer.calibrate_hint', {
             defaultValue:
-              'Tip: pick two points along a known dimension (door, wall, grid line).',
+              'Tip: pick two points along a known dimension (door, wall, grid line).‌⁠‍',
           })}
         </p>
         <div className="flex justify-end gap-2">
@@ -148,7 +148,7 @@ export function CalibrationDialog({
             onClick={onCancel}
             className="px-3 py-1.5 rounded-lg text-xs text-content-secondary hover:bg-surface-secondary transition-colors"
           >
-            {t('common.cancel', { defaultValue: 'Cancel' })}
+            {t('common.cancel', { defaultValue: 'Cancel‌⁠‍' })}
           </button>
           <button
             type="button"

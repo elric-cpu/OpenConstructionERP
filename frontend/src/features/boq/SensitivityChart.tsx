@@ -53,13 +53,13 @@ export function SensitivityChart({ boqId, locale = 'de-DE' }: { boqId: string; l
       <button
         onClick={() => setCollapsed((prev) => !prev)}
         aria-expanded={!collapsed}
-        aria-label={t('boq.sensitivity_title', { defaultValue: 'Sensitivity Analysis' })}
+        aria-label={t('boq.sensitivity_title', { defaultValue: 'Sensitivity Analysis‌⁠‍' })}
         className="flex w-full items-center justify-between px-5 py-3.5 hover:bg-surface-secondary/50 transition-colors"
       >
         <div className="flex items-center gap-2.5">
           <BarChart3 size={16} className="text-content-tertiary" strokeWidth={1.75} />
           <span className="text-sm font-semibold text-content-primary">
-            {t('boq.sensitivity_title', { defaultValue: 'Sensitivity Analysis' })}
+            {t('boq.sensitivity_title', { defaultValue: 'Sensitivity Analysis‌⁠‍' })}
           </span>
           {items.length > 0 && (
             <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-surface-secondary px-1.5 text-2xs font-medium text-content-secondary tabular-nums">
@@ -86,7 +86,7 @@ export function SensitivityChart({ boqId, locale = 'de-DE' }: { boqId: string; l
                 <Inbox size={18} className="text-semantic-error" />
               </div>
               <p className="text-xs text-content-secondary">
-                {t('boq.sensitivity_error', { defaultValue: 'Failed to load sensitivity analysis. Please try again.' })}
+                {t('boq.sensitivity_error', { defaultValue: 'Failed to load sensitivity analysis. Please try again.‌⁠‍' })}
               </p>
             </div>
           ) : items.length === 0 ? (
@@ -97,7 +97,7 @@ export function SensitivityChart({ boqId, locale = 'de-DE' }: { boqId: string; l
                 </div>
                 <p className="text-xs text-content-tertiary">
                   {t('boq.sensitivity_empty', {
-                    defaultValue: 'Add positions with costs to see the sensitivity analysis.',
+                    defaultValue: 'Add positions with costs to see the sensitivity analysis.‌⁠‍',
                   })}
                 </p>
               </div>
@@ -107,7 +107,7 @@ export function SensitivityChart({ boqId, locale = 'de-DE' }: { boqId: string; l
               {/* Header info */}
               <div className="px-5 py-3 flex items-center gap-4 text-xs text-content-secondary bg-surface-secondary/30 border-b border-border-light">
                 <span>
-                  {t('boq.sensitivity_base_total', { defaultValue: 'Base Total' })}:{' '}
+                  {t('boq.sensitivity_base_total', { defaultValue: 'Base Total‌⁠‍' })}:{' '}
                   <span className="font-semibold text-content-primary tabular-nums">
                     {fmtCompact(baseTotal, fmt)}
                   </span>

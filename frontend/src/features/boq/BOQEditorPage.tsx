@@ -216,7 +216,7 @@ export function BOQEditorPage() {
       addRecent({
         type: 'boq',
         id: boqId,
-        title: boq.name || t('boq.untitled', { defaultValue: 'Untitled BOQ' }),
+        title: boq.name || t('boq.untitled', { defaultValue: 'Untitled BOQ‌⁠‍' }),
         url: `/boq/${boqId}`,
       });
     }
@@ -318,7 +318,7 @@ export function BOQEditorPage() {
           } catch { /* ignore */ }
         }
       }, 500);
-      addToast({ type: 'success', title: t('boq.position_added', { defaultValue: 'Position added' }), message: t('boq.click_to_edit', { defaultValue: 'Click any cell to edit' }) });
+      addToast({ type: 'success', title: t('boq.position_added', { defaultValue: 'Position added‌⁠‍' }), message: t('boq.click_to_edit', { defaultValue: 'Click any cell to edit‌⁠‍' }) });
       // Record undo entry for the newly added position (skip if triggered by undo/redo)
       if (!isUndoRedoInProgressRef.current) {
         undoStackRef.current.push({
@@ -337,7 +337,7 @@ export function BOQEditorPage() {
       isUndoRedoInProgressRef.current = false;
     },
     onError: (err: Error) => {
-      addToast({ type: 'error', title: t('boq.add_failed', { defaultValue: 'Failed to add position' }), message: err.message });
+      addToast({ type: 'error', title: t('boq.add_failed', { defaultValue: 'Failed to add position‌⁠‍' }), message: err.message });
     },
   });
 
@@ -420,7 +420,7 @@ export function BOQEditorPage() {
       if (ctx?.previous !== undefined) {
         queryClient.setQueryData(['boq', boqId], ctx.previous);
       }
-      addToast({ type: 'error', title: t('boq.update_failed', { defaultValue: 'Failed to update position' }), message: err.message });
+      addToast({ type: 'error', title: t('boq.update_failed', { defaultValue: 'Failed to update position‌⁠‍' }), message: err.message });
     },
   });
 

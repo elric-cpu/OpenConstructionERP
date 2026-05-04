@@ -55,10 +55,10 @@ function ratingColor(rating: string): string {
 
 function complianceStyle(level: string, t: (key: string, opts?: Record<string, unknown>) => string) {
   switch (level) {
-    case 'excellent': return { bg: 'bg-emerald-50 dark:bg-emerald-950/30', text: 'text-emerald-700 dark:text-emerald-400', Icon: CheckCircle2, label: t('sustainability.compliance_excellent', { defaultValue: 'Excellent' }) };
+    case 'excellent': return { bg: 'bg-emerald-50 dark:bg-emerald-950/30', text: 'text-emerald-700 dark:text-emerald-400', Icon: CheckCircle2, label: t('sustainability.compliance_excellent', { defaultValue: 'Excellent‌⁠‍' }) };
     case 'good': return { bg: 'bg-green-50 dark:bg-green-950/30', text: 'text-green-700 dark:text-green-400', Icon: CheckCircle2, label: t('sustainability.compliance_good', { defaultValue: 'Good' }) };
-    case 'acceptable': return { bg: 'bg-amber-50 dark:bg-amber-950/30', text: 'text-amber-700 dark:text-amber-400', Icon: AlertTriangle, label: t('sustainability.compliance_acceptable', { defaultValue: 'Acceptable' }) };
-    case 'non-compliant': return { bg: 'bg-red-50 dark:bg-red-950/30', text: 'text-red-700 dark:text-red-400', Icon: XCircle, label: t('sustainability.compliance_non_compliant', { defaultValue: 'Non-Compliant' }) };
+    case 'acceptable': return { bg: 'bg-amber-50 dark:bg-amber-950/30', text: 'text-amber-700 dark:text-amber-400', Icon: AlertTriangle, label: t('sustainability.compliance_acceptable', { defaultValue: 'Acceptable‌⁠‍' }) };
+    case 'non-compliant': return { bg: 'bg-red-50 dark:bg-red-950/30', text: 'text-red-700 dark:text-red-400', Icon: XCircle, label: t('sustainability.compliance_non_compliant', { defaultValue: 'Non-Compliant‌⁠‍' }) };
     default: return { bg: 'bg-gray-50 dark:bg-gray-950/30', text: 'text-gray-500', Icon: Info, label: t('sustainability.compliance_na', { defaultValue: 'N/A' }) };
   }
 }
@@ -132,10 +132,10 @@ function EPDSelect({
       value={currentId || ''}
       onChange={(e) => { if (e.target.value) onSelect(e.target.value); }}
       disabled={disabled}
-      aria-label={t('sustainability.epd_material_select', { defaultValue: 'Select EPD material' })}
+      aria-label={t('sustainability.epd_material_select', { defaultValue: 'Select EPD material‌⁠‍' })}
       className="w-full max-w-[220px] rounded border border-border-light bg-surface-primary px-1.5 py-1 text-xs text-content-primary outline-none focus:border-oe-blue transition-colors truncate"
     >
-      <option value="">{t('sustainability.epd_none', { defaultValue: '-- none --' })}</option>
+      <option value="">{t('sustainability.epd_none', { defaultValue: '-- none --‌⁠‍' })}</option>
       {materials.map((m) => (
         <option key={m.id} value={m.id}>
           {m.name} ({m.gwp} kg/{m.unit})

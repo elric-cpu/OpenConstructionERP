@@ -1,4 +1,4 @@
-"""Risk event handlers — vector indexing for lessons-learned reuse.
+"""‌⁠‍Risk event handlers — vector indexing for lessons-learned reuse.
 
 Subscribes to ``risk.risk.*`` events and keeps the ``oe_risks`` vector
 collection in sync with the underlying :class:`RiskItem` rows.  Risks
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 
 async def _index_risk(event: Event) -> None:
-    """Re-embed a single RiskItem row after create / update."""
+    """‌⁠‍Re-embed a single RiskItem row after create / update."""
     rid_raw = (event.data or {}).get("risk_id")
     if not rid_raw:
         return
@@ -67,7 +67,7 @@ async def _index_risk(event: Event) -> None:
 
 
 async def _delete_risk_vector(event: Event) -> None:
-    """Remove a deleted RiskItem row from the vector store."""
+    """‌⁠‍Remove a deleted RiskItem row from the vector store."""
     rid_raw = (event.data or {}).get("risk_id")
     if not rid_raw:
         return

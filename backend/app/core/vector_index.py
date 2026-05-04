@@ -1,4 +1,4 @@
-"""Multi-collection embedding layer​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠ — the cross-module semantic memory.
+"""‌⁠‍Multi-collection embedding layer​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠ — the cross-module semantic memory.
 
 This is the foundation that lets every business module (BOQ, documents,
 tasks, risks, BIM elements, validation, chat, …) participate in the same
@@ -125,7 +125,7 @@ COLLECTION_LABELS: dict[str, str] = {
 
 @dataclass(slots=True)
 class VectorHit:
-    """One semantic-search result from any collection.
+    """‌⁠‍One semantic-search result from any collection.
 
     Attributes:
         id:            UUID string of the source row.
@@ -151,7 +151,7 @@ class VectorHit:
 
     @property
     def title(self) -> str:
-        """Best-effort display title — falls back to a text snippet."""
+        """‌⁠‍Best-effort display title — falls back to a text snippet."""
         title = self.payload.get("title")
         if isinstance(title, str) and title:
             return title

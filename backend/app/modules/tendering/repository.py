@@ -1,4 +1,4 @@
-"""Tendering data access layer.
+"""‌⁠‍Tendering data access layer.
 
 All database queries for tender packages and bids live here.
 No business logic — pure data access.
@@ -14,7 +14,7 @@ from app.modules.tendering.models import TenderBid, TenderPackage
 
 
 class TenderingRepository:
-    """Data access for TenderPackage and TenderBid models."""
+    """‌⁠‍Data access for TenderPackage and TenderBid models."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -22,7 +22,7 @@ class TenderingRepository:
     # ── Packages ─────────────────────────────────────────────────────────
 
     async def get_package_by_id(self, package_id: uuid.UUID) -> TenderPackage | None:
-        """Get a package by ID with bids eagerly loaded."""
+        """‌⁠‍Get a package by ID with bids eagerly loaded."""
         stmt = select(TenderPackage).where(TenderPackage.id == package_id).options(selectinload(TenderPackage.bids))
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()

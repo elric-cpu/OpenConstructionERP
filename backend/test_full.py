@@ -1,4 +1,4 @@
-"""Full v0.2.3 test suite — 80 tests across all 18 modules."""
+"""‌⁠‍Full v0.2.3 test suite — 80 tests across all 18 modules."""
 
 import sys
 

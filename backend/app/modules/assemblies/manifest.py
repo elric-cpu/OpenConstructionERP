@@ -1,4 +1,4 @@
-"""Assemblies & Calculations module manifest."""
+"""‌⁠‍Assemblies & Calculations module manifest."""
 
 from app.core.module_loader import ModuleManifest
 

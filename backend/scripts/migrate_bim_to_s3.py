@@ -1,4 +1,4 @@
-"""Migrate existing BIM blobs from the local filesystem to S3.
+"""‌⁠‍Migrate existing BIM blobs from the local filesystem to S3.
 
 Walks ``data/bim/{project_id}/{model_id}/*`` and uploads every file to
 the configured S3 bucket using :mod:`app.core.storage`.  Preserves the
@@ -41,7 +41,7 @@ from app.core.storage import S3StorageBackend, build_storage_backend  # noqa: E4
 
 
 def _bim_root() -> Path:
-    """Local root for BIM blobs: ``<repo>/data/bim``."""
+    """‌⁠‍Local root for BIM blobs: ``<repo>/data/bim``."""
     return _BACKEND_DIR.parent / "data" / "bim"
 
 

@@ -1,4 +1,4 @@
-"""AI Estimation Pydantic schemas — request/response models.
+"""‌⁠‍AI Estimation Pydantic schemas — request/response models.
 
 Defines schemas for AI settings management, quick/photo estimate requests,
 and estimate job responses with generated BOQ items.
@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class AISettingsUpdate(BaseModel):
-    """Update per-user AI configuration (API keys, preferred model)."""
+    """‌⁠‍Update per-user AI configuration (API keys, preferred model)."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -39,7 +39,7 @@ class AISettingsUpdate(BaseModel):
 
 
 class AISettingsResponse(BaseModel):
-    """AI settings returned from the API.
+    """‌⁠‍AI settings returned from the API.
 
     API keys are masked — only the last 4 characters are shown.
     """

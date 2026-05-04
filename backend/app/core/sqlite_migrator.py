@@ -1,4 +1,4 @@
-"""SQLite auto-migrator.
+"""‌⁠‍SQLite auto-migrator.
 
 On startup, compares existing SQLite schema against SQLAlchemy models
 and adds any missing columns via ALTER TABLE ADD COLUMN.
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 async def sqlite_auto_migrate(engine: AsyncEngine, base) -> int:
-    """Compare SQLAlchemy models against SQLite schema and add missing columns.
+    """‌⁠‍Compare SQLAlchemy models against SQLite schema and add missing columns.
 
     Args:
         engine: The async SQLAlchemy engine (must be SQLite)

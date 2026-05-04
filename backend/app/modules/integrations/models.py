@@ -1,4 +1,4 @@
-"""Integrations ORM models.
+"""‌⁠‍Integrations ORM models.
 
 Tables:
     oe_integrations_webhook  — user-defined webhook endpoints
@@ -15,7 +15,7 @@ from app.database import GUID, Base
 
 
 class WebhookEndpoint(Base):
-    """A user-configured outgoing webhook endpoint.
+    """‌⁠‍A user-configured outgoing webhook endpoint.
 
     When events matching the ``events`` list occur, an HTTP POST is sent
     to ``url`` with a JSON payload.  If a ``secret`` is set, the request
@@ -64,7 +64,7 @@ class WebhookEndpoint(Base):
 
 
 class WebhookDelivery(Base):
-    """Log entry for a single webhook delivery attempt."""
+    """‌⁠‍Log entry for a single webhook delivery attempt."""
 
     __tablename__ = "oe_integrations_delivery"
     __table_args__ = (Index("ix_delivery_webhook_created", "webhook_id", "created_at"),)

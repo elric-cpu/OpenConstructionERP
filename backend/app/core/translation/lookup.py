@@ -1,4 +1,4 @@
-"""MUSE + IATE lookup tables — phrase-aware matching against TSV files.
+"""‌⁠‍MUSE + IATE lookup tables — phrase-aware matching against TSV files.
 
 Files live under ``~/.openestimate/translations/{muse,iate}/{src}-{tgt}.tsv``
 in the format ``source_word<TAB>target_word<TAB>weight``. Header lines
@@ -63,7 +63,7 @@ def _is_code(token: str) -> bool:
 
 @lru_cache(maxsize=64)
 def _load_tsv(path_str: str) -> dict[str, tuple[str, float]]:
-    """Load a TSV dictionary into a normalised lookup dict.
+    """‌⁠‍Load a TSV dictionary into a normalised lookup dict.
 
     Cached on a per-path basis. Returns an empty dict when the file is
     missing — the caller then falls through to the next tier.
@@ -113,7 +113,7 @@ async def lookup_phrase(
     dictionary: str = "muse",
     root: str | None = None,
 ) -> tuple[str, float] | None:
-    """Translate a phrase via the named on-disk dictionary.
+    """‌⁠‍Translate a phrase via the named on-disk dictionary.
 
     Returns ``(translated_text, confidence)`` on hit, ``None`` on miss
     (file absent or insufficient coverage).

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify backend and frontend​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠ version literals are in sync.
+"""‌⁠‍Verify backend and frontend​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠ version literals are in sync.
 
 The OpenConstructionERP frontend (``frontend/package.json``) and the
 Python package (``backend/pyproject.toml``) MUST report the same version
@@ -65,7 +65,7 @@ def _read_package_json_version(path: Path) -> str:
 
 
 def _changelog_md_top_version(path: Path) -> str | None:
-    """Return the topmost version listed in CHANGELOG.md, or None.
+    """‌⁠‍Return the topmost version listed in CHANGELOG.md, or None.
 
     The CHANGELOG follows the Keep a Changelog format with entries
     like ``## [1.4.4] — 2026-04-11``.  We grab the first ``## [N.N.N]``
@@ -79,7 +79,7 @@ def _changelog_md_top_version(path: Path) -> str | None:
 
 
 def _changelog_tsx_top_version(path: Path) -> str | None:
-    """Return the topmost ``version: '1.2.3'`` in the in-app Changelog.
+    """‌⁠‍Return the topmost ``version: '1.2.3'`` in the in-app Changelog.
 
     Looks for the first ``version: '...'`` literal in the file — the
     React component lists newest first, so the top one is "current".

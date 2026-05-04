@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Compliance DSL ORM models.
+"""‌⁠‍Compliance DSL ORM models.
 
 Single table — :class:`ComplianceDSLRule` — stores the raw YAML/JSON
 definition of a user-authored validation rule plus the parsed metadata
@@ -25,7 +25,7 @@ from app.database import GUID, Base
 
 
 class ComplianceDSLRule(Base):
-    """A user-authored DSL validation rule.
+    """‌⁠‍A user-authored DSL validation rule.
 
     ``rule_id`` is unique per tenant so two tenants in the same database
     can both author ``custom.boq.no_zero_quantities`` without collision.

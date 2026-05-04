@@ -1,4 +1,4 @@
-"""Reporting module manifest."""
+"""‌⁠‍Reporting module manifest."""
 
 from app.core.module_loader import ModuleManifest
 

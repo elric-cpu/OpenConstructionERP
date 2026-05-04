@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Pydantic mirror of the ``EacRuleDefinition`` JSON Schema.
+"""‌⁠‍Pydantic mirror of the ``EacRuleDefinition`` JSON Schema.
 
 Field names, types, and enums match :file:`schema/EacRuleDefinition.schema.json`
 exactly. Discriminated unions (``Field(discriminator=...)``) reproduce the
@@ -359,7 +359,7 @@ Predicate = Annotated[
 
 
 class LocalVariableDefinition(BaseModel):
-    """Rule-scoped named expression resolved before predicates / formulas."""
+    """‌⁠‍Rule-scoped named expression resolved before predicates / formulas."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -374,7 +374,7 @@ class LocalVariableDefinition(BaseModel):
 
 
 class ClashConfig(BaseModel):
-    """Configuration for clash output mode."""
+    """‌⁠‍Configuration for clash output mode."""
 
     model_config = ConfigDict(extra="forbid")
 

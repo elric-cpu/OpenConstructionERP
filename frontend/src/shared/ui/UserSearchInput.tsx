@@ -109,7 +109,7 @@ export function UserSearchInput({
         value={query}
         onChange={handleInputChange}
         onFocus={() => setIsOpen(true)}
-        placeholder={placeholder || t('common.search_users', { defaultValue: 'Search team members...' })}
+        placeholder={placeholder || t('common.search_users', { defaultValue: 'Search team members...‌⁠‍' })}
         className={inputCls}
       />
       {(query || value) && (

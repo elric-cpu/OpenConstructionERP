@@ -1,4 +1,4 @@
-"""Submittals Pydantic schemas — request/response models."""
+"""‌⁠‍Submittals Pydantic schemas — request/response models."""
 
 from datetime import datetime
 from typing import Any
@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class SubmittalCreate(BaseModel):
-    """Create a new submittal."""
+    """‌⁠‍Create a new submittal."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -42,7 +42,7 @@ class SubmittalCreate(BaseModel):
 
 
 class SubmittalUpdate(BaseModel):
-    """Partial update for a submittal."""
+    """‌⁠‍Partial update for a submittal."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 

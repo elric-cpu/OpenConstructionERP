@@ -1,4 +1,4 @@
-"""Teams ORM models.
+"""‌⁠‍Teams ORM models.
 
 Tables:
     oe_teams_team       — project teams for entity visibility
@@ -15,7 +15,7 @@ from app.database import GUID, Base
 
 
 class Team(Base):
-    """A team within a project for visibility control."""
+    """‌⁠‍A team within a project for visibility control."""
 
     __tablename__ = "oe_teams_team"
 
@@ -57,7 +57,7 @@ class Team(Base):
 
 
 class TeamMembership(Base):
-    """Association between a user and a team."""
+    """‌⁠‍Association between a user and a team."""
 
     __tablename__ = "oe_teams_membership"
     __table_args__ = (

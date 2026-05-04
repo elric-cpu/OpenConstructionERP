@@ -174,10 +174,10 @@ function AddContactModal({
     const e: Record<string, string> = {};
     const hasName = form.first_name.trim() || form.last_name.trim();
     if (!form.company_name.trim() && !hasName) {
-      e.company_name = t('contacts.company_or_name_required', { defaultValue: 'Company name or contact name is required' });
+      e.company_name = t('contacts.company_or_name_required', { defaultValue: 'Company name or contact name is required‌⁠‍' });
     }
     if (form.country.trim() && form.country.trim().length !== 2) {
-      e.country = t('contacts.country_code_invalid', { defaultValue: 'Country code must be exactly 2 letters (ISO 3166-1 alpha-2, e.g. DE, US, GB)' });
+      e.country = t('contacts.country_code_invalid', { defaultValue: 'Country code must be exactly 2 letters (ISO 3166-1 alpha-2, e.g. DE, US, GB)‌⁠‍' });
     }
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -198,12 +198,12 @@ function AddContactModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-2xl bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[85vh] flex flex-col" role="dialog" aria-label={isEdit ? t('contacts.edit_contact', { defaultValue: 'Edit Contact' }) : t('contacts.add_contact', { defaultValue: 'Add Contact' })}>
+      <div className="w-full max-w-2xl bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[85vh] flex flex-col" role="dialog" aria-label={isEdit ? t('contacts.edit_contact', { defaultValue: 'Edit Contact‌⁠‍' }) : t('contacts.add_contact', { defaultValue: 'Add Contact‌⁠‍' })}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border-light sticky top-0 z-10 bg-surface-elevated rounded-t-xl">
           <h2 className="text-lg font-semibold text-content-primary">
             {isEdit
-              ? t('contacts.edit_contact', { defaultValue: 'Edit Contact' })
+              ? t('contacts.edit_contact', { defaultValue: 'Edit Contact‌⁠‍' })
               : t('contacts.add_contact', { defaultValue: 'Add Contact' })}
           </h2>
           <button

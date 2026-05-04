@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Execution planner for EAC v2 rules (RFC 35 §5 EAC-1.3 §5).
+"""‌⁠‍Execution planner for EAC v2 rules (RFC 35 §5 EAC-1.3 §5).
 
 Compiles a parsed :class:`EacRuleDefinition` into an
 :class:`ExecutionPlan` whose ``duckdb_sql`` field is a well-formed
@@ -87,7 +87,7 @@ from app.modules.eac.schemas import (
 
 @dataclass(frozen=True)
 class ExecutionPlan:
-    """Structured execution plan ready for the DuckDB layer.
+    """‌⁠‍Structured execution plan ready for the DuckDB layer.
 
     ``duckdb_sql`` is a parameterised SQL string. ``parameters`` carries
     the bind values referenced by ``?``-placeholders in the SQL —
@@ -106,7 +106,7 @@ class ExecutionPlan:
 
 @dataclass
 class _PlanBuilder:
-    """Accumulator for SQL fragments and bind params during compilation."""
+    """‌⁠‍Accumulator for SQL fragments and bind params during compilation."""
 
     parameters: dict[str, Any] = field(default_factory=dict)
     estimated_cost: int = 0

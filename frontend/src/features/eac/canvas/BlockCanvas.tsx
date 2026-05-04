@@ -265,7 +265,7 @@ function BlockCanvasInner({ onSave, onValidate, onCompile, testId }: BlockCanvas
       data-testid={testId ?? 'eac-block-canvas'}
       className="flex h-full w-full flex-col"
       role="region"
-      aria-label={t('eac.canvas.region', { defaultValue: 'Block editor canvas' })}
+      aria-label={t('eac.canvas.region', { defaultValue: 'Block editor canvas‌⁠‍' })}
       tabIndex={0}
       onKeyDown={handleKeyDown}
       onDragOver={onDragOver}

@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""DSL evaluator — AST → :class:`ValidationRule` instance.
+"""‌⁠‍DSL evaluator — AST → :class:`ValidationRule` instance.
 
 Given a :class:`~app.core.validation.dsl.parser.RuleDefinition` produced
 by :func:`~app.core.validation.dsl.parser.parse_definition`, this module
@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 
 
 class DSLEvaluationError(Exception):
-    """Raised when an AST cannot be evaluated against the given context.
+    """‌⁠‍Raised when an AST cannot be evaluated against the given context.
 
     The dynamic rule wraps these into a single failing
     :class:`RuleResult` so a single bad definition cannot break the
@@ -76,7 +76,7 @@ _MISSING: Any = object()
 def _resolve_path(
     bindings: dict[str, Any], path: tuple[str, ...],
 ) -> Any:
-    """Walk a dotted path through ``bindings`` (dicts only — no attrs)."""
+    """‌⁠‍Walk a dotted path through ``bindings`` (dicts only — no attrs)."""
     if not path:
         return _MISSING
     head, *rest = path

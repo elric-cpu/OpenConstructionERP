@@ -1,4 +1,4 @@
-"""Dependency injection container​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠.
+"""‌⁠‍Dependency injection container​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠.
 
 Provides FastAPI dependencies for database sessions, current user,
 permission checks, and validation engine access.
@@ -42,7 +42,7 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 
 async def get_session() -> AsyncSession:  # type: ignore[misc]
-    """Yield an async database session with auto-commit/rollback."""
+    """‌⁠‍Yield an async database session with auto-commit/rollback."""
     async with async_session_factory() as session:
         try:
             yield session  # type: ignore[misc]
@@ -66,7 +66,7 @@ def decode_access_token(
     *,
     expected_type: str | None = "access",
 ) -> dict[str, Any]:
-    """Decode and validate a JWT access token.
+    """‌⁠‍Decode and validate a JWT access token.
 
     Args:
         token: JWT string.

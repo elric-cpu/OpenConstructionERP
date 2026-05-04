@@ -1,4 +1,4 @@
-"""Architecture Map module manifest."""
+"""‌⁠‍Architecture Map module manifest."""
 
 from app.core.module_loader import ModuleManifest
 

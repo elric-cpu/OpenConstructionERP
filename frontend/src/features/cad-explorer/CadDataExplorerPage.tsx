@@ -173,7 +173,7 @@ function TopNToggle({ value, direction, onChange, testIdPrefix }: TopNToggleProp
           onClick={() => onChange(n, 'top')}
           className={btnCls(active(n, 'top'))}
         >
-          {t('explorer.show_top', { defaultValue: 'Top {{n}}', n })}
+          {t('explorer.show_top', { defaultValue: 'Top {{n}}‌⁠‍', n })}
         </button>
       ))}
       {TOP_N_OPTIONS.map((n) => (
@@ -184,7 +184,7 @@ function TopNToggle({ value, direction, onChange, testIdPrefix }: TopNToggleProp
           onClick={() => onChange(n, 'bottom')}
           className={btnCls(active(n, 'bottom'))}
         >
-          {t('explorer.show_bottom', { defaultValue: 'Bottom {{n}}', n })}
+          {t('explorer.show_bottom', { defaultValue: 'Bottom {{n}}‌⁠‍', n })}
         </button>
       ))}
     </div>
@@ -206,12 +206,12 @@ function SlicerBanner() {
     >
       <Filter size={12} className="text-content-tertiary shrink-0" />
       <span className="text-2xs font-semibold text-content-tertiary uppercase tracking-wide shrink-0">
-        {t('explorer.active_filters', { defaultValue: 'Active filters' })}
+        {t('explorer.active_filters', { defaultValue: 'Active filters‌⁠‍' })}
       </span>
       {slicers.length === 0 ? (
         <span className="text-2xs text-content-quaternary">
           {t('explorer.no_active_filters', {
-            defaultValue: 'Click any chart bar or slice to filter across tabs.',
+            defaultValue: 'Click any chart bar or slice to filter across tabs.‌⁠‍',
           })}
         </span>
       ) : (
@@ -223,7 +223,7 @@ function SlicerBanner() {
               data-testid={`slicer-chip-${s.column}`}
               onClick={() => removeSlicer(s.column)}
               className="group inline-flex items-center gap-1 rounded-full border border-oe-blue/30 bg-oe-blue/10 px-2.5 py-0.5 text-2xs font-medium text-oe-blue hover:bg-oe-blue/20"
-              title={t('explorer.delete_view', { defaultValue: 'Remove' })}
+              title={t('explorer.delete_view', { defaultValue: 'Remove‌⁠‍' })}
             >
               <span className="max-w-[140px] truncate">
                 {s.column} = {s.values.join(', ')}

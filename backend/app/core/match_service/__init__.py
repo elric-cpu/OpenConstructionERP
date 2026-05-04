@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Match service — element-to-CWICR vector matcher.
+"""‌⁠‍Match service — element-to-CWICR vector matcher.
 
 Public API:
 
@@ -55,7 +55,7 @@ async def match_envelope(
     db: AsyncSession | None = None,
     ai_settings: Any = None,
 ) -> MatchResponse:
-    """Run the matcher on a pre-built envelope.
+    """‌⁠‍Run the matcher on a pre-built envelope.
 
     Args:
         envelope: The element envelope to match.
@@ -103,7 +103,7 @@ async def match_element(
     db: AsyncSession | None = None,
     ai_settings: Any = None,
 ) -> list[dict[str, Any]]:
-    """Eval-harness contract: ``async (element_info, top_k) -> list[dict]``.
+    """‌⁠‍Eval-harness contract: ``async (element_info, top_k) -> list[dict]``.
 
     The harness signature passes only positional ``element_info`` and
     ``top_k`` — every other argument is keyword-only with a sensible

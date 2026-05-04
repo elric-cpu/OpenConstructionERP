@@ -1,4 +1,4 @@
-"""Module manifest for oe_i18n_foundation."""
+"""‌⁠‍Module manifest for oe_i18n_foundation."""
 
 from app.core.module_loader import ModuleManifest
 

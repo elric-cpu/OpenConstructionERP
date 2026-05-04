@@ -225,7 +225,7 @@ export default function TakeoffViewerModule({
   const [activeTool, setActiveTool] = useState<MeasureTool>('select');
   const [measurements, setMeasurements] = useState<Measurement[]>([]);
   const [activePoints, setActivePoints] = useState<Point[]>([]);
-  const [countLabel, setCountLabel] = useState(t('takeoff_viewer.default_count_label', { defaultValue: 'Element' }));
+  const [countLabel, setCountLabel] = useState(t('takeoff_viewer.default_count_label', { defaultValue: 'Element‌⁠‍' }));
 
   // Scale
   const [scale, setScale] = useState<ScaleConfig>({ pixelsPerUnit: 100, unitLabel: 'm' });
@@ -380,8 +380,8 @@ export default function TakeoffViewerModule({
       console.error('Failed to load PDF:', err);
       addToast({
         type: 'error',
-        title: t('takeoff_viewer.pdf_load_failed', { defaultValue: 'Failed to load PDF' }),
-        message: err instanceof Error ? err.message : t('takeoff_viewer.pdf_load_error_hint', { defaultValue: 'The file may be corrupted or not a valid PDF.' }),
+        title: t('takeoff_viewer.pdf_load_failed', { defaultValue: 'Failed to load PDF‌⁠‍' }),
+        message: err instanceof Error ? err.message : t('takeoff_viewer.pdf_load_error_hint', { defaultValue: 'The file may be corrupted or not a valid PDF.‌⁠‍' }),
       });
     } finally {
       setIsLoading(false);
@@ -455,8 +455,8 @@ export default function TakeoffViewerModule({
         console.error('Failed to load PDF from URL:', err);
         addToast({
           type: 'error',
-          title: t('takeoff_viewer.pdf_load_failed', { defaultValue: 'Failed to load PDF' }),
-          message: err instanceof Error ? err.message : t('takeoff_viewer.pdf_load_error_hint', { defaultValue: 'The file may be corrupted or not a valid PDF.' }),
+          title: t('takeoff_viewer.pdf_load_failed', { defaultValue: 'Failed to load PDF‌⁠‍' }),
+          message: err instanceof Error ? err.message : t('takeoff_viewer.pdf_load_error_hint', { defaultValue: 'The file may be corrupted or not a valid PDF.‌⁠‍' }),
         });
       } finally {
         if (!cancelled) setIsLoading(false);

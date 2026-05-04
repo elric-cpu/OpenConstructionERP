@@ -1,4 +1,4 @@
-"""BIM Requirements Import/Export API routes.
+"""‌⁠‍BIM Requirements Import/Export API routes.
 
 Endpoints:
     POST   /import/upload/                    -- Upload and import a requirements file
@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 def _sanitize_filename(name: str) -> str:
-    """Sanitize a user-provided name for use in Content-Disposition headers.
+    """‌⁠‍Sanitize a user-provided name for use in Content-Disposition headers.
 
     Removes characters that could enable header injection or path traversal.
     """
@@ -47,7 +47,7 @@ def _get_service(session: SessionDep) -> BIMRequirementService:
 
 
 def _set_to_response(item: object) -> BIMRequirementSetResponse:
-    """Build a BIMRequirementSetResponse from an ORM object."""
+    """‌⁠‍Build a BIMRequirementSetResponse from an ORM object."""
     return BIMRequirementSetResponse(
         id=item.id,  # type: ignore[attr-defined]
         project_id=item.project_id,  # type: ignore[attr-defined]

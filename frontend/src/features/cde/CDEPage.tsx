@@ -177,11 +177,11 @@ function CreateCDEModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-2xl bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[90vh] overflow-y-auto" role="dialog" aria-label={t('cde.new_container', { defaultValue: 'New Container' })}>
+      <div className="w-full max-w-2xl bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[90vh] overflow-y-auto" role="dialog" aria-label={t('cde.new_container', { defaultValue: 'New Container‌⁠‍' })}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border-light">
           <h2 className="text-lg font-semibold text-content-primary">
-            {t('cde.new_container', { defaultValue: 'New Container' })}
+            {t('cde.new_container', { defaultValue: 'New Container‌⁠‍' })}
           </h2>
           <button
             onClick={onClose}
@@ -212,7 +212,7 @@ function CreateCDEModal({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-content-primary mb-1.5">
-                {t('cde.field_code', { defaultValue: 'Container Code' })}{' '}
+                {t('cde.field_code', { defaultValue: 'Container Code‌⁠‍' })}{' '}
                 <span className="text-semantic-error">*</span>
               </label>
               <input
@@ -222,7 +222,7 @@ function CreateCDEModal({
                   setTouched(true);
                 }}
                 placeholder={t('cde.code_placeholder', {
-                  defaultValue: 'e.g. PRJ-ARC-DWG-001',
+                  defaultValue: 'e.g. PRJ-ARC-DWG-001‌⁠‍',
                 })}
                 className={clsx(
                   inputCls,
@@ -233,7 +233,7 @@ function CreateCDEModal({
               />
               {codeError && (
                 <p className="mt-1 text-xs text-semantic-error">
-                  {t('cde.code_required', { defaultValue: 'Container code is required' })}
+                  {t('cde.code_required', { defaultValue: 'Container code is required‌⁠‍' })}
                 </p>
               )}
             </div>

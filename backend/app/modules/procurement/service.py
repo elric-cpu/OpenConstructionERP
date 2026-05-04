@@ -1,4 +1,4 @@
-"""Procurement service — business logic for purchase orders and goods receipts.
+"""‌⁠‍Procurement service — business logic for purchase orders and goods receipts.
 
 Stateless service layer.
 
@@ -42,7 +42,7 @@ _logger_ev = logging.getLogger(__name__ + ".events")
 
 
 async def _safe_publish(name: str, data: dict, source_module: str = "oe_procurement") -> None:
-    """Best-effort event publish — never blocks the caller on failure."""
+    """‌⁠‍Best-effort event publish — never blocks the caller on failure."""
     try:
         event_bus.publish_detached(name, data, source_module=source_module)
     except Exception:
@@ -62,7 +62,7 @@ _VALID_PO_STATUSES = set(_PO_STATUS_TRANSITIONS.keys())
 
 
 def _parse_decimal(value: str, field_name: str = "value") -> Decimal:
-    """Parse a string to Decimal, raising a clear error on failure."""
+    """‌⁠‍Parse a string to Decimal, raising a clear error on failure."""
     try:
         return Decimal(value)
     except (InvalidOperation, ValueError, TypeError) as exc:

@@ -328,7 +328,7 @@ export function UpdateNotification({ forceShow = false, hideDismiss = false }: U
           type="button"
           onClick={() => setShowFullModal(true)}
           aria-label={t('update.open_details', {
-            defaultValue: 'View update details for v{{version}}',
+            defaultValue: 'View update details for v{{version}}‌⁠‍',
             version: release.version,
           })}
           className="w-full text-left"
@@ -349,7 +349,7 @@ export function UpdateNotification({ forceShow = false, hideDismiss = false }: U
                   v{CURRENT_VERSION} → v{release.version}
                 </span>
                 <span className="text-[9px] font-semibold uppercase tracking-wider text-blue-600 dark:text-sky-300">
-                  {t('update.new_available', { defaultValue: 'available' })}
+                  {t('update.new_available', { defaultValue: 'available‌⁠‍' })}
                 </span>
               </div>
               <div className="flex items-center gap-1 text-[9px] text-blue-700/70 dark:text-sky-300/60 tabular-nums">
@@ -359,7 +359,7 @@ export function UpdateNotification({ forceShow = false, hideDismiss = false }: U
                     {relativeDate && <span aria-hidden="true">·</span>}
                     <span>
                       {t('update.changes_count_in', {
-                        defaultValue: '{{count}} changes in v{{version}}',
+                        defaultValue: '{{count}} changes in v{{version}}‌⁠‍',
                         count: grouped.totalCount,
                         version: release.version,
                       })}
@@ -369,7 +369,7 @@ export function UpdateNotification({ forceShow = false, hideDismiss = false }: U
               </div>
             </div>
             <span className="shrink-0 flex items-center gap-0.5 text-[9px] font-semibold uppercase tracking-wider text-blue-600 dark:text-sky-300">
-              {t('update.details', { defaultValue: 'Details' })}
+              {t('update.details', { defaultValue: 'Details‌⁠‍' })}
               <ExternalLink size={9} />
             </span>
           </div>
@@ -377,7 +377,7 @@ export function UpdateNotification({ forceShow = false, hideDismiss = false }: U
         {!hideDismiss && (
           <button
             onClick={handleDismiss}
-            aria-label={t('common.dismiss', { defaultValue: 'Dismiss' })}
+            aria-label={t('common.dismiss', { defaultValue: 'Dismiss‌⁠‍' })}
             className="absolute top-1.5 right-1.5 flex h-5 w-5 items-center justify-center rounded text-sky-500/70 hover:text-blue-700 hover:bg-sky-500/20 dark:hover:bg-sky-400/20 transition-colors"
           >
             <X size={11} />

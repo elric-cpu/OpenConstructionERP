@@ -1,4 +1,4 @@
-"""Phase 2 deep enrichment of the 5 demo projects.
+"""‌⁠‍Phase 2 deep enrichment of the 5 demo projects.
 
 This complements ``seed_demo_v2.py``: that script created the projects,
 contacts, tasks, finance, BIM models. This script adds:
@@ -568,7 +568,7 @@ def get_or_create_boq(conn: sqlite3.Connection, project_id: str, name: str, desc
     boq_id = str(uuid.uuid4())
     now = dt.datetime.utcnow().isoformat()
     cur.execute(
-        """INSERT INTO oe_boq_boq
+        """‌⁠‍INSERT INTO oe_boq_boq
         (id, project_id, name, description, status, is_locked, metadata, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)""",
         (boq_id, project_id, name, description, "draft", json.dumps({"source": SOURCE_TAG}), now, now),
@@ -578,7 +578,7 @@ def get_or_create_boq(conn: sqlite3.Connection, project_id: str, name: str, desc
 
 
 def already_enriched(conn: sqlite3.Connection, project_id: str, boq_id: str) -> bool:
-    """Determine whether enrich_v2 has already populated this project's BOQ.
+    """‌⁠‍Determine whether enrich_v2 has already populated this project's BOQ.
 
     We check for at least one position whose metadata contains ``source =
     enrich_v2``. If yes, skip the entire run for this project.

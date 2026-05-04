@@ -150,14 +150,14 @@ function iconFor(code: number): typeof Sun {
 
 function labelFor(code: number, t: ReturnType<typeof useTranslation>['t']): string {
   if (code === 0) return t('weather.clear', { defaultValue: 'Clear' });
-  if (code >= 1 && code <= 2) return t('weather.partly_cloudy', { defaultValue: 'Partly cloudy' });
-  if (code === 3) return t('weather.overcast', { defaultValue: 'Overcast' });
+  if (code >= 1 && code <= 2) return t('weather.partly_cloudy', { defaultValue: 'Partly cloudy‌⁠‍' });
+  if (code === 3) return t('weather.overcast', { defaultValue: 'Overcast‌⁠‍' });
   if (code >= 45 && code <= 48) return t('weather.fog', { defaultValue: 'Fog' });
   if (code >= 51 && code <= 67) return t('weather.rain', { defaultValue: 'Rain' });
   if (code >= 71 && code <= 77) return t('weather.snow', { defaultValue: 'Snow' });
-  if (code >= 80 && code <= 82) return t('weather.showers', { defaultValue: 'Showers' });
-  if (code >= 85 && code <= 86) return t('weather.snow_showers', { defaultValue: 'Snow showers' });
-  if (code >= 95 && code <= 99) return t('weather.thunderstorm', { defaultValue: 'Thunderstorm' });
+  if (code >= 80 && code <= 82) return t('weather.showers', { defaultValue: 'Showers‌⁠‍' });
+  if (code >= 85 && code <= 86) return t('weather.snow_showers', { defaultValue: 'Snow showers‌⁠‍' });
+  if (code >= 95 && code <= 99) return t('weather.thunderstorm', { defaultValue: 'Thunderstorm‌⁠‍' });
   return t('weather.cloudy', { defaultValue: 'Cloudy' });
 }
 

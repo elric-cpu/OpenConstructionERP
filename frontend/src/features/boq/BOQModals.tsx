@@ -163,8 +163,8 @@ export function AssemblyPickerModal({
     } catch (err) {
       addToast({
         type: 'error',
-        title: t('assemblies.apply_failed', { defaultValue: 'Failed to apply assembly' }),
-        message: err instanceof Error ? err.message : t('common.unknown_error', { defaultValue: 'Unknown error' }),
+        title: t('assemblies.apply_failed', { defaultValue: 'Failed to apply assembly‌⁠‍' }),
+        message: err instanceof Error ? err.message : t('common.unknown_error', { defaultValue: 'Unknown error‌⁠‍' }),
       });
     } finally {
       setApplying(null);
@@ -188,7 +188,7 @@ export function AssemblyPickerModal({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={t('assemblies.apply_assembly_to_boq', { defaultValue: 'Apply Assembly to BOQ' })}
+        aria-label={t('assemblies.apply_assembly_to_boq', { defaultValue: 'Apply Assembly to BOQ‌⁠‍' })}
         className="bg-surface-elevated rounded-2xl border border-border shadow-2xl w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
@@ -199,8 +199,8 @@ export function AssemblyPickerModal({
               <Layers size={18} />
             </div>
             <div>
-              <h2 className="text-base font-semibold text-content-primary">{t('assemblies.apply_assembly_to_boq', { defaultValue: 'Apply Assembly to BOQ' })}</h2>
-              <p className="text-xs text-content-tertiary">{t('assemblies.select_recipe_desc', { defaultValue: 'Select a pre-built recipe to add as a position' })}</p>
+              <h2 className="text-base font-semibold text-content-primary">{t('assemblies.apply_assembly_to_boq', { defaultValue: 'Apply Assembly to BOQ‌⁠‍' })}</h2>
+              <p className="text-xs text-content-tertiary">{t('assemblies.select_recipe_desc', { defaultValue: 'Select a pre-built recipe to add as a position‌⁠‍' })}</p>
             </div>
           </div>
           <button onClick={onClose} aria-label={t('common.close', { defaultValue: 'Close' })} className="flex h-8 w-8 items-center justify-center rounded-lg text-content-tertiary hover:bg-surface-secondary hover:text-content-primary transition-colors">

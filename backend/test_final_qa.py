@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""
+"""‌⁠‍
 OpenEstimate — Final QA Test Suite
 ====================================
 
@@ -83,7 +83,7 @@ sections: list[Section] = []
 
 
 def login() -> bool:
-    """Login and set global token. Returns True on success."""
+    """‌⁠‍Login and set global token. Returns True on success."""
     global TOKEN
     r = client.post("/api/v1/users/auth/login", json={"email": DEMO_EMAIL, "password": DEMO_PASSWORD})
     if r.status_code == 200:
@@ -94,7 +94,7 @@ def login() -> bool:
 
 
 def get_project_with_boq() -> tuple[str, str, str]:
-    """Find a project that has BOQs with positions. Return (project_id, boq_id, position_id)."""
+    """‌⁠‍Find a project that has BOQs with positions. Return (project_id, boq_id, position_id)."""
     r = client.get("/api/v1/projects/")
     if r.status_code != 200:
         return "", "", ""

@@ -218,9 +218,9 @@ export function MatchSuggestionsPanel({
       if (!onAccept) {
         useToastStore.getState().addToast({
           type: 'success',
-          title: t('match.accept_toast_title', { defaultValue: 'Match accepted' }),
+          title: t('match.accept_toast_title', { defaultValue: 'Match accepted‌⁠‍' }),
           message: t('match.accept_toast_recorded', {
-            defaultValue: 'Match recorded — feedback submitted.',
+            defaultValue: 'Match recorded — feedback submitted.‌⁠‍',
           }),
         });
       }
@@ -313,7 +313,7 @@ export function MatchSuggestionsPanel({
   return (
     <section
       className={clsx('flex flex-col h-full', className)}
-      aria-label={t('match.panel_aria', { defaultValue: 'Match suggestions panel' })}
+      aria-label={t('match.panel_aria', { defaultValue: 'Match suggestions panel‌⁠‍' })}
       data-testid="match-suggestions-panel"
     >
       <CatalogBindingBar
@@ -353,7 +353,7 @@ export function MatchSuggestionsPanel({
           <span className="flex-1">
             {t('match.fallback_hint', {
               defaultValue:
-                'Translation cascade fell back to monolingual matching.',
+                'Translation cascade fell back to monolingual matching.‌⁠‍',
             })}{' '}
             <a
               href={`/projects/${projectId}/settings#translation`}
@@ -361,7 +361,7 @@ export function MatchSuggestionsPanel({
               data-testid="match-fallback-hint-link"
             >
               {t('match.fallback_hint_link', {
-                defaultValue: 'Download dictionary →',
+                defaultValue: 'Download dictionary →‌⁠‍',
               })}
             </a>
           </span>

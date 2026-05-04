@@ -247,7 +247,7 @@ export function ProjectAnalyticsGrid({ projectId }: ProjectAnalyticsGridProps) {
   }, [summaryQ.data, anomaliesQ.data]);
 
   const emptyLabel = t('project_intelligence.analytics.no_data', {
-    defaultValue: 'No data yet',
+    defaultValue: 'No data yet‌⁠‍',
   });
 
   return (
@@ -256,10 +256,10 @@ export function ProjectAnalyticsGrid({ projectId }: ProjectAnalyticsGridProps) {
       <WidgetCard
         testId="pi-widget-cost-drivers"
         title={t('project_intelligence.analytics.cost_drivers', {
-          defaultValue: 'Cost drivers',
+          defaultValue: 'Cost drivers‌⁠‍',
         })}
         subtitle={t('project_intelligence.analytics.cost_drivers_sub', {
-          defaultValue: 'Top 5 line items by total cost',
+          defaultValue: 'Top 5 line items by total cost‌⁠‍',
         })}
       >
         {pareto.length === 0 ? (
@@ -288,10 +288,10 @@ export function ProjectAnalyticsGrid({ projectId }: ProjectAnalyticsGridProps) {
       <WidgetCard
         testId="pi-widget-price-volatility"
         title={t('project_intelligence.analytics.price_volatility', {
-          defaultValue: 'Price volatility',
+          defaultValue: 'Price volatility‌⁠‍',
         })}
         subtitle={t('project_intelligence.analytics.price_volatility_sub', {
-          defaultValue: 'Bid total spread across vendors',
+          defaultValue: 'Bid total spread across vendors‌⁠‍',
         })}
       >
         {volatility.length === 0 ? (

@@ -27,10 +27,10 @@ export function ConnectionStatus({ connectionInfo }: ConnectionStatusProps) {
 
   const statusLabel =
     status === 'connected'
-      ? t('collab.connected', { defaultValue: 'Connected' })
+      ? t('collab.connected', { defaultValue: 'Connected‌⁠‍' })
       : status === 'connecting'
-        ? t('collab.connecting', { defaultValue: 'Connecting...' })
-        : t('collab.disconnected', { defaultValue: 'Disconnected' });
+        ? t('collab.connecting', { defaultValue: 'Connecting...‌⁠‍' })
+        : t('collab.disconnected', { defaultValue: 'Disconnected‌⁠‍' });
 
   const peersUnit = t('collab.peers_unit', { defaultValue: 'peers' });
   const peerLabel = `${peerCount} ${peersUnit}`;
@@ -84,10 +84,10 @@ function formatSyncLabel(
 ): string | null {
   if (seconds === null) return null;
 
-  const syncedPrefix = t('collab.synced_prefix', { defaultValue: 'Synced' });
+  const syncedPrefix = t('collab.synced_prefix', { defaultValue: 'Synced‌⁠‍' });
 
   if (seconds < 5) {
-    const justNow = t('collab.just_now', { defaultValue: 'just now' });
+    const justNow = t('collab.just_now', { defaultValue: 'just now‌⁠‍' });
     return `${syncedPrefix} ${justNow}`;
   }
   if (seconds < 60) {

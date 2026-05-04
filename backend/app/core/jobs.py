@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Celery application factory — RFC 34 §4 W0.1.
+"""‌⁠‍Celery application factory — RFC 34 §4 W0.1.
 
 The Celery app is the thin transport layer that hands JobRun ids to
 worker processes. It is intentionally framework-agnostic: business
@@ -37,7 +37,7 @@ _DEFAULT_REDIS_URL: str = "redis://localhost:6379/1"
 
 
 def make_celery_app(broker_url: str, result_backend: str) -> Celery:
-    """Build a fully-configured Celery app for the OpenEstimate job runner.
+    """‌⁠‍Build a fully-configured Celery app for the OpenEstimate job runner.
 
     Args:
         broker_url: Where Celery enqueues tasks. Redis is the supported
@@ -81,7 +81,7 @@ def make_celery_app(broker_url: str, result_backend: str) -> Celery:
 
 
 def _broker_url_from_env() -> str:
-    """Resolve the broker URL from env, falling back to the default."""
+    """‌⁠‍Resolve the broker URL from env, falling back to the default."""
     return os.environ.get("OE_CELERY_BROKER_URL", _DEFAULT_REDIS_URL)
 
 

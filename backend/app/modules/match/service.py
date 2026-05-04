@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""HTTP-facing service layer — keeps the router thin.
+"""‌⁠‍HTTP-facing service layer — keeps the router thin.
 
 Loads the acting user's AISettings (so the translation cascade and
 rerank tier can use their key) and verifies project ownership before
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 async def _load_ai_settings(db: AsyncSession, user_id: str | None) -> Any:
-    """Fetch the user's AISettings row, or ``None`` when unavailable.
+    """‌⁠‍Fetch the user's AISettings row, or ``None`` when unavailable.
 
     AISettings powers the translation LLM and the rerank LLM. If the
     user has no row, both tiers degrade gracefully (translation falls
@@ -55,7 +55,7 @@ async def _verify_project_access(
     user_id: str,
     role: str = "",
 ) -> None:
-    """Raise 403/404 if the acting user can't see this project."""
+    """‌⁠‍Raise 403/404 if the acting user can't see this project."""
     from app.modules.projects.repository import ProjectRepository
 
     repo = ProjectRepository(db)

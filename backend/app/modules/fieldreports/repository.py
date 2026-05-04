@@ -1,4 +1,4 @@
-"""Field Reports data access layer.
+"""‌⁠‍Field Reports data access layer.
 
 All database queries for field reports live here.
 No business logic — pure data access.
@@ -14,13 +14,13 @@ from app.modules.fieldreports.models import FieldReport
 
 
 class FieldReportRepository:
-    """Data access for FieldReport models."""
+    """‌⁠‍Data access for FieldReport models."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
     async def get_by_id(self, report_id: uuid.UUID) -> FieldReport | None:
-        """Get field report by ID."""
+        """‌⁠‍Get field report by ID."""
         return await self.session.get(FieldReport, report_id)
 
     async def list_for_project(

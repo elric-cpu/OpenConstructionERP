@@ -100,7 +100,7 @@ function CompareModal({ boqIdA, boqIdB, currencyA, currencyB, onClose }: Compare
         }
       })
       .catch(() => {
-        if (!cancelled) setError(t('boq.compare_load_error', { defaultValue: 'Failed to load BOQ data for comparison' }));
+        if (!cancelled) setError(t('boq.compare_load_error', { defaultValue: 'Failed to load BOQ data for comparison‌⁠‍' }));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -148,8 +148,8 @@ function CompareModal({ boqIdA, boqIdB, currencyA, currencyB, onClose }: Compare
     if (ungroupedTotalA > 0 || ungroupedTotalB > 0) {
       paired.push({
         key: '__ungrouped__',
-        nameA: t('boq.ungrouped', { defaultValue: 'Ungrouped' }),
-        nameB: t('boq.ungrouped', { defaultValue: 'Ungrouped' }),
+        nameA: t('boq.ungrouped', { defaultValue: 'Ungrouped‌⁠‍' }),
+        nameB: t('boq.ungrouped', { defaultValue: 'Ungrouped‌⁠‍' }),
         totalA: ungroupedTotalA,
         totalB: ungroupedTotalB,
         countA: groupA.ungrouped.length,
@@ -181,7 +181,7 @@ function CompareModal({ boqIdA, boqIdB, currencyA, currencyB, onClose }: Compare
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-oe-blue-subtle text-oe-blue">
               <GitCompareArrows size={18} />
             </div>
-            <h2 className="text-lg font-bold text-content-primary">{t('boq.compare_title', { defaultValue: 'BOQ Comparison' })}</h2>
+            <h2 className="text-lg font-bold text-content-primary">{t('boq.compare_title', { defaultValue: 'BOQ Comparison‌⁠‍' })}</h2>
           </div>
           <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-lg text-content-tertiary hover:text-content-primary hover:bg-surface-secondary transition-colors">
             <X size={18} />
@@ -209,7 +209,7 @@ function CompareModal({ boqIdA, boqIdB, currencyA, currencyB, onClose }: Compare
                     <span className="text-xl font-bold text-content-primary tabular-nums">{currencyFmt.format(boqA.grand_total)}</span>
                     <span className="text-xs text-content-tertiary">{currency}</span>
                   </div>
-                  <div className="mt-1 text-xs text-content-tertiary">{boqA.positions.length} {t('boq.positions_label', { defaultValue: 'positions' })}</div>
+                  <div className="mt-1 text-xs text-content-tertiary">{boqA.positions.length} {t('boq.positions_label', { defaultValue: 'positions‌⁠‍' })}</div>
                 </div>
 
                 {/* BOQ B summary */}

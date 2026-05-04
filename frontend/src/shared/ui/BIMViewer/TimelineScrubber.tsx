@@ -212,7 +212,7 @@ export function TimelineScrubber({
       className="absolute bottom-3 start-1/2 -translate-x-1/2 z-20 w-[min(720px,calc(100%-24px))] rounded-xl bg-surface-primary border border-border-light shadow-lg px-4 py-3 flex flex-col gap-2"
       data-testid="bim-4d-scrubber"
       role="group"
-      aria-label={t('bim.4d_scrubber_label', { defaultValue: '4D timeline scrubber' })}
+      aria-label={t('bim.4d_scrubber_label', { defaultValue: '4D timeline scrubber‌⁠‍' })}
       onClick={(e) => e.stopPropagation()}
     >
       {/* Top row: play button · rail · speed selector */}
@@ -275,7 +275,7 @@ export function TimelineScrubber({
             if (SPEEDS.includes(v)) onSpeedChange(v);
           }}
           className="shrink-0 text-[11px] py-1 px-1.5 rounded border border-border-light bg-surface-secondary text-content-secondary hover:bg-surface-tertiary focus:outline-none focus:ring-1 focus:ring-oe-blue"
-          aria-label={t('bim.4d_speed', { defaultValue: 'Playback speed' })}
+          aria-label={t('bim.4d_speed', { defaultValue: 'Playback speed‌⁠‍' })}
           data-testid="bim-4d-speed"
         >
           {SPEEDS.map((s) => (
@@ -327,7 +327,7 @@ export function TimelineScrubber({
           data-testid="bim-4d-active-activity"
         >
           {activeActivity ??
-            t('bim.4d_no_activity', { defaultValue: 'No activity at this date' })}
+            t('bim.4d_no_activity', { defaultValue: 'No activity at this date‌⁠‍' })}
         </span>
       </div>
     </div>

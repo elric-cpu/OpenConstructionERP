@@ -1,4 +1,4 @@
-"""In-memory email backend for assertion-based tests.
+"""‌⁠‍In-memory email backend for assertion-based tests.
 
 Captures every sent message in a list that tests can introspect:
 
@@ -17,7 +17,7 @@ from .base import BackendName, DeliveryResult, EmailBackend, EmailMessage
 
 
 class MemoryEmailBackend(EmailBackend):
-    """Capture-in-list transport for tests."""
+    """‌⁠‍Capture-in-list transport for tests."""
 
     name: BackendName = "memory"
 

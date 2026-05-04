@@ -1,4 +1,4 @@
-"""Full EVM data access layer.
+"""‌⁠‍Full EVM data access layer.
 
 All database queries for EVM forecast entities live here.
 No business logic — pure data access.
@@ -13,13 +13,13 @@ from app.modules.full_evm.models import EVMForecast
 
 
 class EVMForecastRepository:
-    """Data access for EVMForecast model."""
+    """‌⁠‍Data access for EVMForecast model."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
     async def get(self, forecast_id: uuid.UUID) -> EVMForecast | None:
-        """Get forecast by ID."""
+        """‌⁠‍Get forecast by ID."""
         return await self.session.get(EVMForecast, forecast_id)
 
     async def list(

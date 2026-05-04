@@ -69,14 +69,14 @@ function ImportPreview({
     <div className="border border-border-light rounded-lg overflow-hidden">
       <div className="px-3 py-2 bg-surface-tertiary/50 flex items-center justify-between">
         <span className="text-xs font-medium text-content-secondary">
-          {t('gaeb.preview', { defaultValue: 'Preview' })}: {positions.length} {t('gaeb.positions', { defaultValue: 'positions' })}
+          {t('gaeb.preview', { defaultValue: 'Preview‌⁠‍' })}: {positions.length} {t('gaeb.positions', { defaultValue: 'positions‌⁠‍' })}
         </span>
         {positions.length > 20 && (
           <button
             onClick={() => setShowAll((v) => !v)}
             className="text-2xs text-oe-blue hover:underline"
           >
-            {showAll ? t('gaeb.show_less', { defaultValue: 'Show less' }) : t('gaeb.show_all', { defaultValue: `Show all ${positions.length}` })}
+            {showAll ? t('gaeb.show_less', { defaultValue: 'Show less‌⁠‍' }) : t('gaeb.show_all', { defaultValue: `Show all ${positions.length}` })}
           </button>
         )}
       </div>
@@ -84,8 +84,8 @@ function ImportPreview({
         <table className="w-full text-xs">
           <thead>
             <tr className="bg-surface-secondary/50 sticky top-0">
-              <th className="px-3 py-1.5 text-left font-medium text-content-secondary w-24">{t('boq.ordinal', { defaultValue: 'Ordinal' })}</th>
-              <th className="px-3 py-1.5 text-left font-medium text-content-secondary">{t('boq.description', { defaultValue: 'Description' })}</th>
+              <th className="px-3 py-1.5 text-left font-medium text-content-secondary w-24">{t('boq.ordinal', { defaultValue: 'Ordinal‌⁠‍' })}</th>
+              <th className="px-3 py-1.5 text-left font-medium text-content-secondary">{t('boq.description', { defaultValue: 'Description‌⁠‍' })}</th>
               <th className="px-3 py-1.5 text-center font-medium text-content-secondary w-16">{t('boq.unit', { defaultValue: 'Unit' })}</th>
               <th className="px-3 py-1.5 text-right font-medium text-content-secondary w-20">{t('boq.quantity', { defaultValue: 'Qty' })}</th>
               <th className="px-3 py-1.5 text-right font-medium text-content-secondary w-20">{t('boq.unit_rate', { defaultValue: 'Rate' })}</th>

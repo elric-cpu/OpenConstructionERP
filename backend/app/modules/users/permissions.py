@@ -1,10 +1,10 @@
-"""User module permission definitions."""
+"""‌⁠‍User module permission definitions."""
 
 from app.core.permissions import Role, permission_registry
 
 
 def register_user_permissions() -> None:
-    """Register permissions for the users module."""
+    """‌⁠‍Register permissions for the users module."""
     permission_registry.register_module_permissions(
         "users",
         {

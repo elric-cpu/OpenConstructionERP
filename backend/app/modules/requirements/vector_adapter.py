@@ -1,4 +1,4 @@
-"""Requirement vector adapter​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠ — feeds the ``oe_requirements`` collection.
+"""‌⁠‍Requirement vector adapter​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠ — feeds the ``oe_requirements`` collection.
 
 Each :class:`~app.modules.requirements.models.Requirement` row is
 embedded as the EAC triplet (entity / attribute / constraint) plus the
@@ -31,13 +31,13 @@ from app.modules.requirements.models import Requirement
 
 
 class RequirementVectorAdapter:
-    """Embed requirements into the unified vector store."""
+    """‌⁠‍Embed requirements into the unified vector store."""
 
     collection_name: str = COLLECTION_REQUIREMENTS
     module_name: str = "requirements"
 
     def to_text(self, row: Requirement) -> str:
-        """Build the canonical text that gets embedded.
+        """‌⁠‍Build the canonical text that gets embedded.
 
         Concatenates the EAC triplet, unit, category, priority, status
         and free-form notes — all the textual fields the user might

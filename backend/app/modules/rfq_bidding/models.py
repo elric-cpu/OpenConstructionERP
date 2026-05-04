@@ -1,4 +1,4 @@
-"""RFQ Bidding ORM models.
+"""‌⁠‍RFQ Bidding ORM models.
 
 Tables:
     oe_rfq_rfq  — Request for Quotation definitions
@@ -14,7 +14,7 @@ from app.database import GUID, Base
 
 
 class RFQ(Base):
-    """A Request for Quotation issued to vendors/subcontractors."""
+    """‌⁠‍A Request for Quotation issued to vendors/subcontractors."""
 
     __tablename__ = "oe_rfq_rfq"
 
@@ -57,7 +57,7 @@ class RFQ(Base):
 
 
 class RFQBid(Base):
-    """A bid submitted by a vendor against an RFQ."""
+    """‌⁠‍A bid submitted by a vendor against an RFQ."""
 
     __tablename__ = "oe_rfq_bid"
 

@@ -89,7 +89,7 @@ function TreeNodeRow({
 
   const displayName =
     node.name === UNSPECIFIED_SENTINEL
-      ? t('boq.uncategorized', { defaultValue: '(Uncategorized)' })
+      ? t('boq.uncategorized', { defaultValue: '(Uncategorized)‌⁠‍' })
       : node.name;
 
   function toggleExpand(e: React.MouseEvent | KeyboardEvent) {
@@ -144,8 +144,8 @@ function TreeNodeRow({
           onClick={toggleExpand}
           aria-label={
             isExpanded
-              ? t('common.collapse', { defaultValue: 'Collapse' })
-              : t('common.expand', { defaultValue: 'Expand' })
+              ? t('common.collapse', { defaultValue: 'Collapse‌⁠‍' })
+              : t('common.expand', { defaultValue: 'Expand‌⁠‍' })
           }
           className={`flex h-4 w-4 shrink-0 items-center justify-center rounded ${
             hasChildren
@@ -225,10 +225,10 @@ export function CostCategoryTree({
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder={t('boq.cost_tree_search_placeholder', {
-              defaultValue: 'Filter categories...',
+              defaultValue: 'Filter categories...‌⁠‍',
             })}
             aria-label={t('boq.cost_tree_search_placeholder', {
-              defaultValue: 'Filter categories...',
+              defaultValue: 'Filter categories...‌⁠‍',
             })}
             className="h-7 w-full rounded-md border border-border-light bg-surface-primary pl-7 pr-2 text-xs text-content-primary placeholder:text-content-quaternary focus:outline-none focus:ring-1 focus:ring-oe-blue"
           />

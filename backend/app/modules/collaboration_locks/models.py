@@ -1,4 +1,4 @@
-"""Collaboration-lock ORM models.
+"""‌⁠‍Collaboration-lock ORM models.
 
 Tables:
     oe_collab_lock — pessimistic per-entity soft lock.
@@ -26,7 +26,7 @@ from app.database import GUID, Base
 
 
 class CollabLock(Base):
-    """One active soft lock per ``(entity_type, entity_id)`` pair."""
+    """‌⁠‍One active soft lock per ``(entity_type, entity_id)`` pair."""
 
     __tablename__ = "oe_collab_lock"
     __table_args__ = (

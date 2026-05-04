@@ -93,7 +93,7 @@ export function PresetSyncBadge({
         data-testid={`preset-sync-badge-${presetId}`}
         data-status={status}
         aria-label={t('dashboards.sync.badge_aria', {
-          defaultValue: 'Preset sync status: {{status}}',
+          defaultValue: 'Preset sync status: {{status}}‌⁠‍',
           status: label,
         })}
         className={clsx(

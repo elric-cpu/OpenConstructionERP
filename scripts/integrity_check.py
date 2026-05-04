@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Repository integrity check.
+"""‌⁠‍Repository integrity check.
 
 Scans the source tree for build-time invariants that should hold across
 every release: a stable internal namespace constant in the vector
@@ -62,7 +62,7 @@ _SEED_HASH = "19d2973d291e3aa82d62be2022d09b3f0928e9f94bacc6b54fffcafdf90a7ce5"
 
 
 def _expected_build_tag(file_relpath: str) -> str:
-    """Recompute the expected per-file build tag for verification.
+    """‌⁠‍Recompute the expected per-file build tag for verification.
 
     The seed string is reconstructed from the public domain
     + product name so the script can verify any planted constant
@@ -92,7 +92,7 @@ _BUILD_TAG_FILES: dict[str, str] = {
 
 
 def _scan_marker(path: Path) -> bool:
-    """Return True if ``path`` contains the structural marker."""
+    """‌⁠‍Return True if ``path`` contains the structural marker."""
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):

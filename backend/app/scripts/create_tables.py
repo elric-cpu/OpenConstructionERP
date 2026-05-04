@@ -1,4 +1,4 @@
-"""Create all database tables.
+"""‌⁠‍Create all database tables.
 
 Usage: python -m app.scripts.create_tables
 
@@ -15,7 +15,7 @@ from app.modules.users import models as _users_models  # noqa: F401
 
 
 async def create_all() -> None:
-    """Create all tables that don't exist yet."""
+    """‌⁠‍Create all tables that don't exist yet."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     print("Tables created successfully.")

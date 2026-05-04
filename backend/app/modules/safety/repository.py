@@ -1,4 +1,4 @@
-"""Safety data access layer."""
+"""‌⁠‍Safety data access layer."""
 
 import uuid
 
@@ -9,7 +9,7 @@ from app.modules.safety.models import SafetyIncident, SafetyObservation
 
 
 class IncidentRepository:
-    """Data access for SafetyIncident models."""
+    """‌⁠‍Data access for SafetyIncident models."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -71,7 +71,7 @@ class IncidentRepository:
 
 
 class ObservationRepository:
-    """Data access for SafetyObservation models."""
+    """‌⁠‍Data access for SafetyObservation models."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session

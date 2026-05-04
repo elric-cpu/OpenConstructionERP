@@ -66,7 +66,7 @@ export function FederatedResultsTable({
       >
         {emptyMessage ??
           t('dashboards.federation.results_empty', {
-            defaultValue: 'No federated rows to show yet.',
+            defaultValue: 'No federated rows to show yet.‌⁠‍',
           })}
       </div>
     );
@@ -113,10 +113,10 @@ export function FederatedResultsTable({
 
 function formatHeader(col: string, t: ReturnType<typeof useTranslation>['t']): string {
   if (col === PROJECT_COL) {
-    return t('dashboards.federation.col_project', { defaultValue: 'Project' });
+    return t('dashboards.federation.col_project', { defaultValue: 'Project‌⁠‍' });
   }
   if (col === SNAPSHOT_COL) {
-    return t('dashboards.federation.col_snapshot', { defaultValue: 'Snapshot' });
+    return t('dashboards.federation.col_snapshot', { defaultValue: 'Snapshot‌⁠‍' });
   }
   if (col === 'measure_value') {
     return t('dashboards.federation.col_measure', { defaultValue: 'Value' });

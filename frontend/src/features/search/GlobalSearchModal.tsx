@@ -160,7 +160,7 @@ export default function GlobalSearchModal() {
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t('global_search.placeholder', {
               defaultValue:
-                'Search anything — BOQ positions, drawings, tasks, risks, BIM elements…',
+                'Search anything — BOQ positions, drawings, tasks, risks, BIM elements…‌⁠‍',
             })}
             className="flex-1 bg-transparent outline-none text-sm placeholder:text-content-quaternary"
           />
@@ -221,7 +221,7 @@ export default function GlobalSearchModal() {
               className="h-3 w-3 accent-oe-blue"
             />
             {t('global_search.scope_project', {
-              defaultValue: 'Current project only',
+              defaultValue: 'Current project only‌⁠‍',
             })}
           </label>
         </div>
@@ -234,7 +234,7 @@ export default function GlobalSearchModal() {
               <div className="text-xs">
                 {t('global_search.hint', {
                   defaultValue:
-                    'Start typing to search across every project module by meaning, not exact match.',
+                    'Start typing to search across every project module by meaning, not exact match.‌⁠‍',
                 })}
               </div>
             </div>
@@ -243,7 +243,7 @@ export default function GlobalSearchModal() {
           {debouncedQuery.length >= 2 && searchQuery.isLoading && (
             <div className="flex items-center justify-center py-16 text-content-tertiary text-xs">
               <Loader2 size={14} className="animate-spin me-2" />
-              {t('global_search.searching', { defaultValue: 'Searching…' })}
+              {t('global_search.searching', { defaultValue: 'Searching…‌⁠‍' })}
             </div>
           )}
 
@@ -254,7 +254,7 @@ export default function GlobalSearchModal() {
                 <SearchIcon size={24} className="mb-2 opacity-50" />
                 <div className="text-xs italic">
                   {t('global_search.no_results', {
-                    defaultValue: 'No matches yet — try a different phrasing',
+                    defaultValue: 'No matches yet — try a different phrasing‌⁠‍',
                   })}
                 </div>
               </div>

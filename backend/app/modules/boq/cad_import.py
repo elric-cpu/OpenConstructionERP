@@ -2,7 +2,7 @@
 # CAD2DATA Pipeline · CWICR Cost Database Engine
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 # AGPL-3.0 License · DDC-CWICR-OE-2026
-"""CAD/BIM file import via DDC Community converters.
+"""‌⁠‍CAD/BIM file import via DDC Community converters.
 
 Workflow:
 1. User uploads .rvt/.ifc/.dwg/.dgn file
@@ -41,7 +41,7 @@ CONVERTER_SEARCH_PATHS: list[Path] = [
 
 
 def _find_ddc_toolkit_bin() -> Path | None:
-    """Auto-detect DDC toolkit converters/bin from editable install or known paths."""
+    """‌⁠‍Auto-detect DDC toolkit converters/bin from editable install or known paths."""
     # 1. Check env var
     env_dir = os.environ.get("DDC_TOOLKIT_DIR")
     if env_dir:
@@ -86,7 +86,7 @@ if _ddc_bin:
 
 
 def find_converter(extension: str) -> Path | None:
-    """Find the converter executable for a given file extension.
+    """‌⁠‍Find the converter executable for a given file extension.
 
     Searches through ``CONVERTER_SEARCH_PATHS`` in order and returns the
     first existing executable path, or ``None`` if no converter is found.

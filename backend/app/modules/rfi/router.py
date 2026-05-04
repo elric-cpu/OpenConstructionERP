@@ -1,4 +1,4 @@
-"""RFI API routes.
+"""‌⁠‍RFI API routes.
 
 Endpoints:
     GET    /                    - List RFIs for a project
@@ -39,7 +39,7 @@ def _get_service(session: SessionDep) -> RFIService:
 
 
 def _compute_rfi_fields(item: object) -> tuple[bool, int]:
-    """Compute is_overdue and days_open for an RFI item."""
+    """‌⁠‍Compute is_overdue and days_open for an RFI item."""
     now = datetime.now(UTC)
 
     # days_open: from created_at to now (or responded_at if answered/closed)
@@ -133,7 +133,7 @@ async def list_rfis(
     ),
     service: RFIService = Depends(_get_service),
 ) -> list[RFIResponse]:
-    """List RFIs for a project."""
+    """‌⁠‍List RFIs for a project."""
     await verify_project_access(project_id, user_id, session)
     rfis, _ = await service.list_rfis(
         project_id,

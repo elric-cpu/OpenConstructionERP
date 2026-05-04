@@ -1,4 +1,4 @@
-"""Apply directly-discovered brand logo URLs to the marquee chips.
+"""‌⁠‍Apply directly-discovered brand logo URLs to the marquee chips.
 
 Builds on fix_logos_v2.py — adds new entries discovered by crawling each
 brand's homepage in find_logos.py. Also corrects the Scholze-Thost domain

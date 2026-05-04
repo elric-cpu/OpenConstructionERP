@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Validation ORM models.
+"""‌⁠‍Validation ORM models.
 
 Tables:
     oe_validation_report — persisted validation reports with results
@@ -15,7 +15,7 @@ from app.database import GUID, Base
 
 
 class ValidationReport(Base):
-    """Persisted validation report for a BOQ, document, or CAD import.
+    """‌⁠‍Persisted validation report for a BOQ, document, or CAD import.
 
     Stores the full validation result including per-rule outcomes so that
     historical reports can be reviewed without re-running validation.

@@ -244,7 +244,7 @@ function AddMarkupModal({
     onSuccess: () => {
       addToast({
         type: 'success',
-        title: t('markups.created', { defaultValue: 'Markup created' }),
+        title: t('markups.created', { defaultValue: 'Markup created‌⁠‍' }),
       });
       onCreated();
       onClose();
@@ -286,14 +286,14 @@ function AddMarkupModal({
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-label={t('markups.add_markup', { defaultValue: 'Add Markup' })}
+        aria-label={t('markups.add_markup', { defaultValue: 'Add Markup‌⁠‍' })}
         className="relative z-10 w-full max-w-lg mx-4 rounded-2xl border border-border-light bg-surface-elevated shadow-xl animate-scale-in"
       >
         {/* Modal Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-border-light">
           <h2 className="text-base font-semibold text-content-primary flex items-center gap-2">
             <Plus size={16} className="text-oe-blue" />
-            {t('markups.add_markup', { defaultValue: 'Add Markup' })}
+            {t('markups.add_markup', { defaultValue: 'Add Markup‌⁠‍' })}
           </h2>
           <button
             onClick={onClose}
@@ -338,7 +338,7 @@ function AddMarkupModal({
           <div className="flex gap-3">
             <div className="flex-1">
               <label className="block text-xs font-medium text-content-secondary mb-1.5">
-                {t('markups.document', { defaultValue: 'Document' })}
+                {t('markups.document', { defaultValue: 'Document‌⁠‍' })}
               </label>
               <select
                 value={documentId}
@@ -346,7 +346,7 @@ function AddMarkupModal({
                 className={selectCls + ' w-full'}
               >
                 <option value="">
-                  {t('markups.no_document', { defaultValue: '-- None --' })}
+                  {t('markups.no_document', { defaultValue: '-- None --‌⁠‍' })}
                 </option>
                 {documents.map((d) => (
                   <option key={d.id} value={d.id}>

@@ -1,4 +1,4 @@
-"""Rebuild DDC marquee (2→3 rows) and append GitHub-tools grid."""
+"""‌⁠‍Rebuild DDC marquee (2→3 rows) and append GitHub-tools grid."""
 from pathlib import Path
 import re
 

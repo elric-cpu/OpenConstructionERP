@@ -1,10 +1,10 @@
-"""Full EVM module permission definitions."""
+"""‌⁠‍Full EVM module permission definitions."""
 
 from app.core.permissions import Role, permission_registry
 
 
 def register_full_evm_permissions() -> None:
-    """Register permissions for the Full EVM module.
+    """‌⁠‍Register permissions for the Full EVM module.
 
     EVM forecasts are read-heavy and tied to project finances; anyone
     with VIEWER on the project can read, EDITOR can recompute forecasts.

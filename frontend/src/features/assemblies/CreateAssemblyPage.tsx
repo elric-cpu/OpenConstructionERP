@@ -102,7 +102,7 @@ export function CreateAssemblyModal({ open, onClose }: CreateAssemblyModalProps)
       navigate(`/assemblies/${assembly.id}`);
     },
     onError: (err: Error) => {
-      addToast({ type: 'error', title: t('assemblies.create_failed', { defaultValue: 'Failed to create assembly' }), message: err.message });
+      addToast({ type: 'error', title: t('assemblies.create_failed', { defaultValue: 'Failed to create assembly‌⁠‍' }), message: err.message });
     },
   });
 
@@ -150,10 +150,10 @@ export function CreateAssemblyModal({ open, onClose }: CreateAssemblyModalProps)
             </div>
             <div>
               <h2 className="text-lg font-semibold text-content-primary">
-                {t('assemblies.new_assembly', { defaultValue: 'New Assembly' })}
+                {t('assemblies.new_assembly', { defaultValue: 'New Assembly‌⁠‍' })}
               </h2>
               <p className="text-xs text-content-tertiary">
-                {t('assemblies.create_subtitle', { defaultValue: 'Create a reusable cost assembly' })}
+                {t('assemblies.create_subtitle', { defaultValue: 'Create a reusable cost assembly‌⁠‍' })}
               </p>
             </div>
           </div>
@@ -174,7 +174,7 @@ export function CreateAssemblyModal({ open, onClose }: CreateAssemblyModalProps)
                 label={t('assemblies.code', { defaultValue: 'Code' })}
                 value={form.code}
                 onChange={(e) => set('code', e.target.value)}
-                placeholder={t('assemblies.code_placeholder', { defaultValue: 'e.g. ASM-001' })}
+                placeholder={t('assemblies.code_placeholder', { defaultValue: 'e.g. ASM-001‌⁠‍' })}
                 required
                 autoFocus
               />
@@ -183,7 +183,7 @@ export function CreateAssemblyModal({ open, onClose }: CreateAssemblyModalProps)
                   label={t('assemblies.name', { defaultValue: 'Name' })}
                   value={form.name}
                   onChange={(e) => set('name', e.target.value)}
-                  placeholder={t('assemblies.name_placeholder', { defaultValue: 'e.g. Reinforced Concrete Wall C30/37' })}
+                  placeholder={t('assemblies.name_placeholder', { defaultValue: 'e.g. Reinforced Concrete Wall C30/37‌⁠‍' })}
                   required
                 />
               </div>

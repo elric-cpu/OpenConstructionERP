@@ -1,4 +1,4 @@
-"""Regional configuration for Latin America."""
+"""‌⁠‍Regional configuration for Latin America."""
 
 from typing import Any
 

@@ -46,10 +46,10 @@ function formatRelativeTime(isoString: string, t: (k: string, o?: Record<string,
   const diffH = Math.floor(diffMs / 3_600_000);
   const diffD = Math.floor(diffMs / 86_400_000);
 
-  if (diffMin < 1) return t('comments.just_now', { defaultValue: 'just now' });
-  if (diffMin < 60) return t('comments.minutes_ago', { defaultValue: '{{count}}m ago', count: diffMin });
-  if (diffH < 24) return t('comments.hours_ago', { defaultValue: '{{count}}h ago', count: diffH });
-  if (diffD < 7) return t('comments.days_ago', { defaultValue: '{{count}}d ago', count: diffD });
+  if (diffMin < 1) return t('comments.just_now', { defaultValue: 'just now‌⁠‍' });
+  if (diffMin < 60) return t('comments.minutes_ago', { defaultValue: '{{count}}m ago‌⁠‍', count: diffMin });
+  if (diffH < 24) return t('comments.hours_ago', { defaultValue: '{{count}}h ago‌⁠‍', count: diffH });
+  if (diffD < 7) return t('comments.days_ago', { defaultValue: '{{count}}d ago‌⁠‍', count: diffD });
   return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
@@ -145,7 +145,7 @@ export function CommentDrawer({
     email ? email.charAt(0).toUpperCase() : '?';
 
   const authorDisplay = (email: string) => {
-    if (!email) return t('comments.unknown_author', { defaultValue: 'Unknown' });
+    if (!email) return t('comments.unknown_author', { defaultValue: 'Unknown‌⁠‍' });
     // Show part before @
     const at = email.indexOf('@');
     return at > 0 ? email.slice(0, at) : email;

@@ -1,4 +1,4 @@
-"""No-op email backend.
+"""‌⁠‍No-op email backend.
 
 Drops every message silently after a single DEBUG log line.  Intended
 for automated test suites where you want the send path to execute (so
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 class NoopEmailBackend(EmailBackend):
-    """Accept-and-drop transport."""
+    """‌⁠‍Accept-and-drop transport."""
 
     name: BackendName = "noop"
 

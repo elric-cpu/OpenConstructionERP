@@ -1,4 +1,4 @@
-"""DWG Takeoff Pydantic schemas — request/response models.
+"""‌⁠‍DWG Takeoff Pydantic schemas — request/response models.
 
 Defines create, update, and response schemas for DWG drawings,
 drawing versions, annotations, and measurement results.
@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class DwgDrawingCreate(BaseModel):
-    """Create a new DWG drawing record (file uploaded separately via multipart)."""
+    """‌⁠‍Create a new DWG drawing record (file uploaded separately via multipart)."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -26,7 +26,7 @@ class DwgDrawingCreate(BaseModel):
 
 
 class DwgDrawingResponse(BaseModel):
-    """DWG drawing returned from the API."""
+    """‌⁠‍DWG drawing returned from the API."""
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 

@@ -1,4 +1,4 @@
-"""CWICR cost-database German→localized vocabulary translation.
+"""‌⁠‍CWICR cost-database German→localized vocabulary translation.
 
 The CWICR parquet files carry several columns whose values are frozen-German
 across every regional database (BG_SOFIA, RO_BUCHAREST, SV_STOCKHOLM, ...).
@@ -84,7 +84,7 @@ _LOCALES_DIR = Path(__file__).parent
 
 @lru_cache(maxsize=32)
 def load_translations(locale: str) -> dict[str, str]:
-    """Load and cache the translation dictionary for a single locale.
+    """‌⁠‍Load and cache the translation dictionary for a single locale.
 
     Args:
         locale: Two-letter ISO 639-1 code (lowercased).
@@ -116,7 +116,7 @@ def load_translations(locale: str) -> dict[str, str]:
 
 
 def translate_token(token: str, locale: str) -> str:
-    """Translate a single fixed-vocabulary token, falling back to the input.
+    """‌⁠‍Translate a single fixed-vocabulary token, falling back to the input.
 
     The lookup is exact (case-sensitive) — CWICR tokens are stable
     so a fuzzy match is unnecessary and would introduce false positives

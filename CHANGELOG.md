@@ -5,6 +5,17 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.7] — 2026-05-04
+
+### Changed
+- /bim/rules — empty state now shows 4 starter templates (Walls / Slabs / Doors / Windows) that pre-fill the editor in one click instead of a generic "Create your first rule" CTA.
+- /bim/rules?mode=requirements — empty state now offers 3 ready-made compliance packs (Fire safety, Thermal performance, Structural integrity); installing a pack auto-creates the requirement set and bulk-adds 3 rules using backend-accepted constraint types only.
+- BIM model picker now appears on both tabs; Requirements uses it to populate the "From BIM Model" auto-fill from the selected model's elements.
+- /login — removed the broken Privacy / Terms footer links (the underlying static HTML pages don't exist in production builds).
+
+### Internal
+- Layer-3 authorship fingerprints added across the codebase (see `tools/watermark/`) — no functional impact.
+
 ## [2.8.6] — 2026-05-04
 
 ### Fixed

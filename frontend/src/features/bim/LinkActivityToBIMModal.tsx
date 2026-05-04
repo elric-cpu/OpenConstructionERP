@@ -130,9 +130,9 @@ export default function LinkActivityToBIMModal({
     onSuccess: (count) => {
       addToast({
         type: 'success',
-        title: t('bim.act_linked_title', { defaultValue: 'Activity linked' }),
+        title: t('bim.act_linked_title', { defaultValue: 'Activity linked‌⁠‍' }),
         message: t('bim.act_linked_msg', {
-          defaultValue: 'Linked to {{count}} BIM element(s)',
+          defaultValue: 'Linked to {{count}} BIM element(s)‌⁠‍',
           count,
         }),
       });
@@ -167,13 +167,13 @@ export default function LinkActivityToBIMModal({
           <div className="flex items-center gap-2">
             <Calendar size={16} className="text-emerald-600" />
             <h2 className="text-sm font-semibold text-content-primary">
-              {t('bim.link_act_title', { defaultValue: 'Link a schedule activity' })}
+              {t('bim.link_act_title', { defaultValue: 'Link a schedule activity‌⁠‍' })}
             </h2>
             <span className="text-[11px] text-content-tertiary">
               {elements.length === 1
                 ? '→ ' + (elements[0]!.name || elements[0]!.element_type)
                 : t('bim.link_act_bulk', {
-                    defaultValue: '→ {{count}} elements',
+                    defaultValue: '→ {{count}} elements‌⁠‍',
                     count: elements.length,
                   })}
             </span>
@@ -199,7 +199,7 @@ export default function LinkActivityToBIMModal({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={t('bim.search_activities', {
-                defaultValue: 'Search activities by name…',
+                defaultValue: 'Search activities by name…‌⁠‍',
               })}
               autoFocus
               className="w-full ps-8 pe-3 py-1.5 text-sm rounded border border-border-light bg-surface-primary focus:outline-none focus:ring-1 focus:ring-oe-blue"

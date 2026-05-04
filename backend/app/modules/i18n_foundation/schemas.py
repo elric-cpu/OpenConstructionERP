@@ -1,4 +1,4 @@
-"""Internationalization foundation Pydantic schemas for request/response validation.
+"""‌⁠‍Internationalization foundation Pydantic schemas for request/response validation.
 
 Covers exchange rates, countries, work calendars, tax configurations,
 and utility schemas for currency conversion and working-day calculations.
@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ExchangeRateCreate(BaseModel):
-    """Create a new exchange rate entry."""
+    """‌⁠‍Create a new exchange rate entry."""
 
     from_currency: str = Field(..., min_length=3, max_length=3)
     to_currency: str = Field(..., min_length=3, max_length=3)
@@ -26,7 +26,7 @@ class ExchangeRateCreate(BaseModel):
 
 
 class ExchangeRateUpdate(BaseModel):
-    """Update an exchange rate (all fields optional)."""
+    """‌⁠‍Update an exchange rate (all fields optional)."""
 
     from_currency: str | None = Field(default=None, min_length=3, max_length=3)
     to_currency: str | None = Field(default=None, min_length=3, max_length=3)

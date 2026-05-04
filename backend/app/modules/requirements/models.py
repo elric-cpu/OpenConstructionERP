@@ -1,4 +1,4 @@
-"""Requirements & Quality Gates ORM models.
+"""‌⁠‍Requirements & Quality Gates ORM models.
 
 Tables:
     oe_requirements_set — container linking requirements to a project
@@ -15,7 +15,7 @@ from app.database import GUID, Base
 
 
 class RequirementSet(Base):
-    """Container for a group of requirements linked to a project."""
+    """‌⁠‍Container for a group of requirements linked to a project."""
 
     __tablename__ = "oe_requirements_set"
 
@@ -64,7 +64,7 @@ class RequirementSet(Base):
 
 
 class Requirement(Base):
-    """Individual requirement expressed as an EAC (Entity-Attribute-Constraint) triplet.
+    """‌⁠‍Individual requirement expressed as an EAC (Entity-Attribute-Constraint) triplet.
 
     Example:
         entity="exterior_wall", attribute="fire_rating", constraint_type="equals",

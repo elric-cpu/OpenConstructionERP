@@ -48,11 +48,11 @@ function elapsed(startedAt: number): string {
 
 function timeSince(ts: number, t: (key: string, opts?: Record<string, unknown>) => string): string {
   const sec = Math.round((Date.now() - ts) / 1000);
-  if (sec < 60) return t('common.time_just_now', { defaultValue: 'just now' });
+  if (sec < 60) return t('common.time_just_now', { defaultValue: 'just now‌⁠‍' });
   const min = Math.floor(sec / 60);
-  if (min < 60) return t('common.time_minutes_ago', { defaultValue: '{{count}}m ago', count: min });
+  if (min < 60) return t('common.time_minutes_ago', { defaultValue: '{{count}}m ago‌⁠‍', count: min });
   const hr = Math.floor(min / 60);
-  return t('common.time_hours_ago', { defaultValue: '{{count}}h ago', count: hr });
+  return t('common.time_hours_ago', { defaultValue: '{{count}}h ago‌⁠‍', count: hr });
 }
 
 /* ── Component ─────────────────────────────────────────────────────────── */
@@ -203,7 +203,7 @@ export function GlobalUploadIndicator() {
           {!isActive && primary.status === 'ready' && (
             <p className="text-[10px] text-emerald-600 mt-0.5">
               {t('bim.upload_indicator_ready', {
-                defaultValue: '{{count}} elements',
+                defaultValue: '{{count}} elements‌⁠‍',
                 count: primary.elementCount,
               })}
             </p>
@@ -227,7 +227,7 @@ export function GlobalUploadIndicator() {
         <div className="flex items-center gap-2">
           <Upload size={14} className="text-oe-blue" />
           <span className="text-xs font-semibold text-content-primary">
-            {t('bim.upload_indicator_title', { defaultValue: 'BIM Uploads' })}
+            {t('bim.upload_indicator_title', { defaultValue: 'BIM Uploads‌⁠‍' })}
           </span>
         </div>
         <button

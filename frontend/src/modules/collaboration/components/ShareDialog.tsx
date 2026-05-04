@@ -40,7 +40,7 @@ export function ShareDialog({ roomName, isOpen, onClose }: ShareDialogProps) {
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold text-content-primary flex items-center gap-2">
             <Link2 size={16} className="text-oe-blue" />
-            {t('collab.share_title', { defaultValue: 'Share Collaboration Link' })}
+            {t('collab.share_title', { defaultValue: 'Share Collaboration Link‌⁠‍' })}
           </h3>
           <button
             onClick={onClose}
@@ -52,7 +52,7 @@ export function ShareDialog({ roomName, isOpen, onClose }: ShareDialogProps) {
 
         <p className="text-xs text-content-tertiary mb-3">
           {t('collab.share_desc', {
-            defaultValue: 'Share this link with collaborators. Anyone with the link can join and edit in real-time using peer-to-peer sync.',
+            defaultValue: 'Share this link with collaborators. Anyone with the link can join and edit in real-time using peer-to-peer sync.‌⁠‍',
           })}
         </p>
 
@@ -74,7 +74,7 @@ export function ShareDialog({ roomName, isOpen, onClose }: ShareDialogProps) {
             {copied ? (
               <>
                 <Check size={12} />
-                {t('common.copied', { defaultValue: 'Copied!' })}
+                {t('common.copied', { defaultValue: 'Copied!‌⁠‍' })}
               </>
             ) : (
               <>
@@ -88,11 +88,11 @@ export function ShareDialog({ roomName, isOpen, onClose }: ShareDialogProps) {
         <div className="rounded-lg bg-surface-secondary p-3">
           <p className="text-2xs text-content-tertiary">
             <strong className="text-content-secondary">
-              {t('collab.p2p_note_title', { defaultValue: 'Peer-to-peer sync' })}
+              {t('collab.p2p_note_title', { defaultValue: 'Peer-to-peer sync‌⁠‍' })}
             </strong>
             {' — '}
             {t('collab.p2p_note', {
-              defaultValue: 'Changes sync directly between browsers via WebRTC. No data is stored on a server. All participants must be online simultaneously.',
+              defaultValue: 'Changes sync directly between browsers via WebRTC. No data is stored on a server. All participants must be online simultaneously.‌⁠‍',
             })}
           </p>
         </div>

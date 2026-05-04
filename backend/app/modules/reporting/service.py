@@ -1,4 +1,4 @@
-"""Reporting service — business logic for KPI snapshots, templates, and report generation.
+"""‌⁠‍Reporting service — business logic for KPI snapshots, templates, and report generation.
 
 Event publishing (slice E):
     reporting.kpi_snapshot.created — new KPI snapshot row
@@ -34,7 +34,7 @@ _logger_ev = logging.getLogger(__name__ + ".events")
 
 
 async def _safe_publish(name: str, data: dict, source_module: str = "oe_reporting") -> None:
-    """Best-effort event publish — never blocks the caller on failure."""
+    """‌⁠‍Best-effort event publish — never blocks the caller on failure."""
     try:
         event_bus.publish_detached(name, data, source_module=source_module)
     except Exception:
@@ -126,7 +126,7 @@ SYSTEM_TEMPLATES: list[dict] = [
 
 
 class ReportingService:
-    """Business logic for reporting operations."""
+    """‌⁠‍Business logic for reporting operations."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session

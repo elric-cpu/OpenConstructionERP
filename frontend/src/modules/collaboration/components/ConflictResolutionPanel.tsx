@@ -140,7 +140,7 @@ export function ConflictResolutionPanel({
       onClick={handleBackdropClick}
       role="dialog"
       aria-modal="true"
-      aria-label={t('conflict.panel_aria_label', { defaultValue: 'Conflict resolution panel' })}
+      aria-label={t('conflict.panel_aria_label', { defaultValue: 'Conflict resolution panel‌⁠‍' })}
     >
       <div
         ref={panelRef}
@@ -161,11 +161,11 @@ export function ConflictResolutionPanel({
             </div>
             <div>
               <h2 className="text-sm font-semibold text-content-primary">
-                {t('conflict.panel_title', { defaultValue: 'Merge Conflict Detected' })}
+                {t('conflict.panel_title', { defaultValue: 'Merge Conflict Detected‌⁠‍' })}
               </h2>
               <p className="text-xs text-content-tertiary">
                 {t('conflict.panel_subtitle', {
-                  defaultValue: 'A remote collaborator edited the same field. Choose how to resolve.',
+                  defaultValue: 'A remote collaborator edited the same field. Choose how to resolve.‌⁠‍',
                 })}
               </p>
             </div>
@@ -201,7 +201,7 @@ export function ConflictResolutionPanel({
             </span>
             <span className="flex items-center gap-1.5">
               <User size={12} />
-              {t('conflict.changed_by', { defaultValue: 'Changed by' })}{' '}
+              {t('conflict.changed_by', { defaultValue: 'Changed by‌⁠‍' })}{' '}
               <strong className="text-content-secondary">{activeConflict.remoteUser}</strong>
             </span>
             <span className="flex items-center gap-1.5">
@@ -216,7 +216,7 @@ export function ConflictResolutionPanel({
           <div className="grid grid-cols-2 gap-4 px-6 py-5">
             {/* Local value */}
             <ValueCard
-              label={t('conflict.your_version', { defaultValue: 'Your version' })}
+              label={t('conflict.your_version', { defaultValue: 'Your version‌⁠‍' })}
               value={activeConflict.localValue}
               variant="local"
               action={

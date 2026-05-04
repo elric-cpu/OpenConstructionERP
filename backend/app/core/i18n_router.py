@@ -1,4 +1,4 @@
-"""i18n API endpoints.
+"""‌⁠‍i18n API endpoints.
 
 Serves translations to the frontend.
 Module translations are merged with core translations.
@@ -18,14 +18,14 @@ router = APIRouter(prefix="/i18n", tags=["i18n"])
 
 @router.get("/locales")
 async def list_locales() -> dict:
-    """List all available languages."""
+    """‌⁠‍List all available languages."""
     return {"locales": get_available_locales()}
 
 
 @router.get("/locales/{locale}/messages")
 @router.get("/locales/{locale}/messages/")
 async def get_locale_messages(locale: str) -> dict:
-    """Get translation messages for a locale (BUG-API13).
+    """‌⁠‍Get translation messages for a locale (BUG-API13).
 
     Mirrors the ``GET /i18n/{locale}`` endpoint but at the
     ``/i18n/locales/{code}/messages/`` path expected by

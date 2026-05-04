@@ -1,4 +1,4 @@
-"""In-memory pub/sub for the collaboration-locks WebSocket.
+"""‌⁠‍In-memory pub/sub for the collaboration-locks WebSocket.
 
 Each client subscribes with a ``(entity_type, entity_id)`` key plus its
 own user identity.  When the service layer publishes a lock event, the
@@ -42,7 +42,7 @@ PresenceKey = tuple[str, uuid.UUID]
 
 @dataclass
 class _KeyState:
-    """Per-entity state kept by the hub."""
+    """‌⁠‍Per-entity state kept by the hub."""
 
     sockets: set[WebSocket] = field(default_factory=set)
     # user_id -> display name, deduped across open tabs
@@ -51,7 +51,7 @@ class _KeyState:
 
 
 class PresenceHub:
-    """Subscribe / broadcast / disconnect for presence WebSockets."""
+    """‌⁠‍Subscribe / broadcast / disconnect for presence WebSockets."""
 
     def __init__(self) -> None:
         self._keys: dict[PresenceKey, _KeyState] = {}

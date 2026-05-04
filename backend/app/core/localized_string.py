@@ -1,4 +1,4 @@
-"""LocalizedStr utility for multi-language JSONB string storage and resolution.
+"""‌⁠‍LocalizedStr utility for multi-language JSONB string storage and resolution.
 
 Provides a Pydantic v2 model for storing translations as ``{"en": "...", "de": "..."}``
 and resolving them against the current request locale (via ``get_locale``).
@@ -24,7 +24,7 @@ __all__ = [
 
 
 class LocalizedStr(BaseModel):
-    """A multi-language string stored as a dict of locale → text.
+    """‌⁠‍A multi-language string stored as a dict of locale → text.
 
     Attributes:
         translations: Mapping of ISO 639-1 locale codes to translated text.
@@ -37,7 +37,7 @@ class LocalizedStr(BaseModel):
     # ------------------------------------------------------------------
 
     def resolve(self, locale: str = "en", fallback: str = "en") -> str:
-        """Get translation for *locale*, falling back gracefully.
+        """‌⁠‍Get translation for *locale*, falling back gracefully.
 
         Resolution order:
         1. Exact *locale* match.

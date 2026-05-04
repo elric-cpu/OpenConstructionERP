@@ -1,4 +1,4 @@
-"""Direct upload routes.
+"""‌⁠‍Direct upload routes.
 
 Endpoints:
     PUT  /local/{token}    — Consume an HMAC-signed token minted by
@@ -61,7 +61,7 @@ _INLINE_BODY_LIMIT_BYTES: int = 10 * 1024 * 1024  # 10 MiB
 
 
 async def _read_body(request: Request) -> bytes:
-    """Read the request body, streaming once the inline limit is exceeded.
+    """‌⁠‍Read the request body, streaming once the inline limit is exceeded.
 
     Small bodies (<= 10 MiB) take the fast path: a single ``await
     request.body()`` call. Larger bodies are pulled chunk-by-chunk via
@@ -96,7 +96,7 @@ async def _read_body(request: Request) -> bytes:
     status_code=status.HTTP_200_OK,
 )
 async def put_local_upload(token: str, request: Request) -> LocalUploadResponse:
-    """Consume an HMAC-signed token and write the request body to storage.
+    """‌⁠‍Consume an HMAC-signed token and write the request body to storage.
 
     The signature is verified via
     :func:`app.core.storage._verify_local_upload_token`; tampered or

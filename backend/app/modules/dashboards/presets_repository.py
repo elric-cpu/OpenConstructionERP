@@ -1,4 +1,4 @@
-"""Data access layer for dashboard presets / collections (T05).
+"""‌⁠‍Data access layer for dashboard presets / collections (T05).
 
 Kept in a separate module from :mod:`.repository` so the snapshot path
 isn't bloated with preset-specific filter logic. Tenant scoping mirrors
@@ -18,7 +18,7 @@ from app.modules.dashboards.models import DashboardPreset
 
 
 class DashboardPresetRepository:
-    """Persistence surface for dashboard presets + collections."""
+    """‌⁠‍Persistence surface for dashboard presets + collections."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -31,7 +31,7 @@ class DashboardPresetRepository:
         *,
         tenant_id: str | None,
     ) -> DashboardPreset | None:
-        """Return one preset by id, constrained to the caller's tenant."""
+        """‌⁠‍Return one preset by id, constrained to the caller's tenant."""
         stmt = select(DashboardPreset).where(
             DashboardPreset.id == _as_uuid(preset_id)
         )

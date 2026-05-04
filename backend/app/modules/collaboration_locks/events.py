@@ -1,4 +1,4 @@
-"""Event names for collaboration locks.
+"""‌⁠‍Event names for collaboration locks.
 
 The service layer publishes these onto the global event bus; the
 presence hub subscribes to them to broadcast over the WebSocket.  Other

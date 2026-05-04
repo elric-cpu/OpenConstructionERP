@@ -1,4 +1,4 @@
-"""Documents event handlers — vector indexing.
+"""‌⁠‍Documents event handlers — vector indexing.
 
 Subscribes to the ``documents.document.*`` event family and keeps the
 ``oe_documents`` vector collection in sync with the underlying Document
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 
 async def _index_document(event: Event) -> None:
-    """Re-embed a single Document row after create / update."""
+    """‌⁠‍Re-embed a single Document row after create / update."""
     did_raw = (event.data or {}).get("document_id")
     if not did_raw:
         return
@@ -67,7 +67,7 @@ async def _index_document(event: Event) -> None:
 
 
 async def _delete_document_vector(event: Event) -> None:
-    """Remove a deleted Document row from the vector store."""
+    """‌⁠‍Remove a deleted Document row from the vector store."""
     did_raw = (event.data or {}).get("document_id")
     if not did_raw:
         return

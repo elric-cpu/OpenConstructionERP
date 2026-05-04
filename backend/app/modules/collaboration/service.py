@@ -1,4 +1,4 @@
-"""Collaboration service — business logic for comments and viewpoints.
+"""‌⁠‍Collaboration service — business logic for comments and viewpoints.
 
 Stateless service layer. Handles:
 - Comment CRUD with threading
@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 class CollaborationService:
-    """Business logic for comments and viewpoints."""
+    """‌⁠‍Business logic for comments and viewpoints."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -41,7 +41,7 @@ class CollaborationService:
         data: CommentCreate,
         author_id: uuid.UUID,
     ) -> Comment:
-        """Create a comment with optional mentions and viewpoint."""
+        """‌⁠‍Create a comment with optional mentions and viewpoint."""
         # Validate parent exists if threading
         if data.parent_comment_id is not None:
             parent = await self.comment_repo.get(data.parent_comment_id)

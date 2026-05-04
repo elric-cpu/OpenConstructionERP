@@ -1,4 +1,4 @@
-"""Full EVM service — advanced Earned Value Management with forecasting.
+"""‌⁠‍Full EVM service — advanced Earned Value Management with forecasting.
 
 Stateless service layer.  Extends the basic EVM in the finance module
 with ETC, EAC, VAC, TCPI calculations and S-curve data.
@@ -23,7 +23,7 @@ QUANTIZE = Decimal("0.01")
 
 
 def _dec(value: str) -> Decimal:
-    """Safely convert string to Decimal."""
+    """‌⁠‍Safely convert string to Decimal."""
     try:
         return Decimal(value)
     except (InvalidOperation, ValueError):
@@ -31,7 +31,7 @@ def _dec(value: str) -> Decimal:
 
 
 class EVMService:
-    """Business logic for advanced EVM forecasting."""
+    """‌⁠‍Business logic for advanced EVM forecasting."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session

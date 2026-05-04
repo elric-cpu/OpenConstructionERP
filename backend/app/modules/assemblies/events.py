@@ -1,4 +1,4 @@
-"""Assemblies event subscribers​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠ — keep total_rate fresh.
+"""‌⁠‍Assemblies event subscribers​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠ — keep total_rate fresh.
 
 Without this subscriber, ``Assembly.total_rate`` was a denormalised
 string snapshot computed once at component create/update/delete time.
@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 
 def _safe_decimal(value: object, default: str = "0") -> Decimal:
-    """Coerce a string / number to Decimal without raising."""
+    """‌⁠‍Coerce a string / number to Decimal without raising."""
     try:
         return Decimal(str(value)) if value is not None else Decimal(default)
     except (InvalidOperation, TypeError, ValueError):
@@ -46,7 +46,7 @@ def _safe_decimal(value: object, default: str = "0") -> Decimal:
 
 
 async def _on_cost_item_updated(event: Event) -> None:
-    """``costs.item.updated`` → refresh every Component that points at
+    """‌⁠‍``costs.item.updated`` → refresh every Component that points at
     the updated CostItem and re-run the parent Assembly total.
 
     Pulls the new ``rate`` straight out of the event payload (the

@@ -386,8 +386,8 @@ export function VariantPicker({
 
   const defaultChipLabel =
     defaultStrategy === 'mean'
-      ? t('costs.variant_default_mean_chip', { defaultValue: 'Average' })
-      : t('costs.variant_default_median_chip', { defaultValue: 'Median' });
+      ? t('costs.variant_default_mean_chip', { defaultValue: 'Average‌⁠‍' })
+      : t('costs.variant_default_median_chip', { defaultValue: 'Median‌⁠‍' });
 
   /* ── Single variant row renderer ──────────────────────────────────
    *  Reused by both the flat-list and the accordion-grouped code paths.
@@ -470,14 +470,14 @@ export function VariantPicker({
                   : 'inline-flex items-center rounded-full bg-surface-tertiary px-1.5 py-0.5 text-2xs font-medium text-content-secondary tabular-nums'
               }
               title={t('costs.variant_delta_tooltip', {
-                defaultValue: 'Difference vs the average rate',
+                defaultValue: 'Difference vs the average rate‌⁠‍',
               })}
             >
               {delta.text}
             </span>
             {v.price_per_unit != null && (
               <span className="text-2xs text-content-tertiary tabular-nums">
-                {t('costs.variant_per_unit', { defaultValue: 'Per unit' })}
+                {t('costs.variant_per_unit', { defaultValue: 'Per unit‌⁠‍' })}
                 {': '}
                 {v.price_per_unit.toLocaleString(undefined, {
                   maximumFractionDigits: 4,
@@ -504,7 +504,7 @@ export function VariantPicker({
       ref={popoverRef}
       role="dialog"
       aria-modal="true"
-      aria-label={t('costs.choose_variant', { defaultValue: 'Choose price variant' })}
+      aria-label={t('costs.choose_variant', { defaultValue: 'Choose price variant‌⁠‍' })}
       className="bg-surface-elevated border border-border-light dark:border-border-dark
                  rounded-xl shadow-2xl flex flex-col overflow-hidden"
       style={{

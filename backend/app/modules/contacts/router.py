@@ -1,4 +1,4 @@
-"""Contacts API routes.
+"""‌⁠‍Contacts API routes.
 
 Endpoints:
     GET    /                — List contacts with filters
@@ -52,7 +52,7 @@ def _get_service(session: SessionDep) -> ContactService:
 
 
 async def _is_admin(session: AsyncSession, user_id: str | None) -> bool:
-    """Return True if the given user has the ``admin`` role."""
+    """‌⁠‍Return True if the given user has the ``admin`` role."""
     if user_id is None:
         return False
     try:
@@ -74,7 +74,7 @@ async def _require_contact_access(
     contact_id: uuid.UUID,
     user_id: str | None,
 ) -> Contact:
-    """Load a contact and verify the caller owns it or is an admin.
+    """‌⁠‍Load a contact and verify the caller owns it or is an admin.
 
     Access is granted when the contact's ``tenant_id`` matches the caller,
     with a fallback to ``created_by`` for rows inserted before the v2.3.1

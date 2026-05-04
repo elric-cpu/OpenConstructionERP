@@ -69,14 +69,14 @@ export default function BIMSnapshotsPopover({
       });
       toast({
         type: 'success',
-        title: t('dashboards.snapshot_deleted', { defaultValue: 'Snapshot deleted' }),
+        title: t('dashboards.snapshot_deleted', { defaultValue: 'Snapshot deleted‌⁠‍' }),
       });
     },
     onError: (err: Error) => {
       toast({
         type: 'error',
         title: t('dashboards.snapshot_delete_failed', {
-          defaultValue: 'Failed to delete snapshot',
+          defaultValue: 'Failed to delete snapshot‌⁠‍',
         }),
         message: err.message,
       });
@@ -87,7 +87,7 @@ export default function BIMSnapshotsPopover({
     setCreateOpen(false);
     toast({
       type: 'success',
-      title: t('dashboards.snapshot_created', { defaultValue: 'Snapshot created' }),
+      title: t('dashboards.snapshot_created', { defaultValue: 'Snapshot created‌⁠‍' }),
       message: `${formatNumber(snap.total_entities)} entities · ${formatNumber(
         snap.total_categories,
       )} categories`,
@@ -111,7 +111,7 @@ export default function BIMSnapshotsPopover({
           <div className="flex items-center gap-2">
             <Layers size={14} className="text-oe-blue" />
             <h3 className="text-sm font-semibold text-content-primary">
-              {t('dashboards.snapshots_title', { defaultValue: 'Data snapshots' })}
+              {t('dashboards.snapshots_title', { defaultValue: 'Data snapshots‌⁠‍' })}
             </h3>
             {items.length > 0 && (
               <span className="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] tabular-nums text-content-tertiary">
@@ -135,7 +135,7 @@ export default function BIMSnapshotsPopover({
             data-testid="bim-snapshot-create-btn"
           >
             <Plus size={14} className="mr-1" />
-            {t('dashboards.new_snapshot', { defaultValue: 'New snapshot' })}
+            {t('dashboards.new_snapshot', { defaultValue: 'New snapshot‌⁠‍' })}
           </Button>
         </div>
 

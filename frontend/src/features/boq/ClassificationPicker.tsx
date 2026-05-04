@@ -392,7 +392,7 @@ export function ClassificationPicker({
           {selectedLabel && <span className="ml-1 text-content-tertiary">– {(selectedLabel.split('/')[0] ?? '').trim()}</span>}
         </span>
       ) : (
-        <span>{t('boq.select_classification', { defaultValue: 'Classification...' })}</span>
+        <span>{t('boq.select_classification', { defaultValue: 'Classification...‌⁠‍' })}</span>
       )}
     </button>
   );
@@ -412,7 +412,7 @@ export function ClassificationPicker({
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder={t('common.search', { defaultValue: 'Search...' })}
+            placeholder={t('common.search', { defaultValue: 'Search...‌⁠‍' })}
             className="flex-1 bg-transparent border-none outline-none text-xs text-content-primary placeholder:text-content-tertiary"
             autoFocus={mode === 'dropdown'}
           />
@@ -447,7 +447,7 @@ export function ClassificationPicker({
             ))
           ) : (
             <div className="py-6 text-center text-xs text-content-tertiary">
-              {t('common.no_results', { defaultValue: 'No results found' })}
+              {t('common.no_results', { defaultValue: 'No results found‌⁠‍' })}
             </div>
           )
         ) : (

@@ -173,7 +173,7 @@ export function AICostFinderPanel({
         <div className="flex items-center gap-2">
           <Search size={16} className="text-primary" />
           <span className="font-semibold text-sm">
-            {t('boq.cost_finder_title', { defaultValue: 'AI Cost Finder' })}
+            {t('boq.cost_finder_title', { defaultValue: 'AI Cost Finder‌⁠‍' })}
           </span>
         </div>
         <button
@@ -201,7 +201,7 @@ export function AICostFinderPanel({
               lastAutoFilledRef.current = null;
             }}
             placeholder={t('boq.cost_finder_search_placeholder', {
-              defaultValue: 'Search cost items by description...',
+              defaultValue: 'Search cost items by description...‌⁠‍',
             })}
             className="w-full pl-8 pr-3 py-2 text-sm border border-border-light rounded-md bg-surface focus:outline-none focus:ring-1 focus:ring-primary"
           />
@@ -215,7 +215,7 @@ export function AICostFinderPanel({
             className="flex-1 text-xs border border-border-light rounded px-2 py-1.5 bg-surface"
           >
             <option value="">
-              {t('boq.cost_finder_all_units', { defaultValue: 'All units' })}
+              {t('boq.cost_finder_all_units', { defaultValue: 'All units‌⁠‍' })}
             </option>
             {UNITS.filter(Boolean).map((u) => (
               <option key={u} value={u}>
@@ -229,7 +229,7 @@ export function AICostFinderPanel({
             className="flex-1 text-xs border border-border-light rounded px-2 py-1.5 bg-surface"
           >
             <option value="">
-              {t('boq.cost_finder_all_regions', { defaultValue: 'All regions' })}
+              {t('boq.cost_finder_all_regions', { defaultValue: 'All regions‌⁠‍' })}
             </option>
             {projectRegion && (
               <option value={projectRegion}>{projectRegion}</option>
@@ -244,7 +244,7 @@ export function AICostFinderPanel({
         {isLoading && debouncedQuery.length >= 2 && (
           <div className="flex items-center justify-center py-8 text-text-muted text-sm">
             <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full mr-2" />
-            {t('common.loading', { defaultValue: 'Searching...' })}
+            {t('common.loading', { defaultValue: 'Searching...‌⁠‍' })}
           </div>
         )}
 

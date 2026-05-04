@@ -1,4 +1,4 @@
-"""Document Management data access layer.
+"""‌⁠‍Document Management data access layer.
 
 All database queries for documents live here.
 No business logic — pure data access.
@@ -14,13 +14,13 @@ from app.modules.documents.models import Document, ProjectPhoto, Sheet
 
 
 class DocumentRepository:
-    """Data access for Document models."""
+    """‌⁠‍Data access for Document models."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
     async def get_by_id(self, document_id: uuid.UUID) -> Document | None:
-        """Get document by ID."""
+        """‌⁠‍Get document by ID."""
         return await self.session.get(Document, document_id)
 
     async def list_for_project(

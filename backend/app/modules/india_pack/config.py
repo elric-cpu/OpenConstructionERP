@@ -1,4 +1,4 @@
-"""Regional configuration for India."""
+"""‌⁠‍Regional configuration for India."""
 
 from typing import Any
 

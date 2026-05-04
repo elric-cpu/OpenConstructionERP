@@ -29,7 +29,7 @@ export function CDEHistoryDrawer({
       className="fixed inset-0 z-50 flex justify-end bg-black/40 animate-fade-in"
       onClick={onClose}
       role="dialog"
-      aria-label={t('cde.history_title', { defaultValue: 'State transition history' })}
+      aria-label={t('cde.history_title', { defaultValue: 'State transition history‌⁠‍' })}
     >
       <div
         className="w-full max-w-md bg-surface-primary border-l border-border shadow-xl flex flex-col animate-slide-in-right"
@@ -41,7 +41,7 @@ export function CDEHistoryDrawer({
             <History size={18} className="text-oe-blue" />
             <div>
               <h3 className="text-base font-semibold">
-                {t('cde.history_title', { defaultValue: 'State transition history' })}
+                {t('cde.history_title', { defaultValue: 'State transition history‌⁠‍' })}
               </h3>
               <p className="text-xs text-content-tertiary mt-0.5 font-mono">
                 {containerCode}
@@ -73,7 +73,7 @@ export function CDEHistoryDrawer({
               <History size={24} className="mx-auto mb-2 opacity-30" />
               <p>
                 {t('cde.history_empty', {
-                  defaultValue: 'No state transitions yet — promote the container to start the audit trail.',
+                  defaultValue: 'No state transitions yet — promote the container to start the audit trail.‌⁠‍',
                 })}
               </p>
             </div>
@@ -104,7 +104,7 @@ function HistoryRow({ row }: { row: StateTransitionEntry }) {
         </Badge>
         {row.gate_code && (
           <Badge variant="neutral" size="sm" className="ml-auto font-mono">
-            {t('cde.gate_label', { defaultValue: 'Gate {{code}}', code: row.gate_code })}
+            {t('cde.gate_label', { defaultValue: 'Gate {{code}}‌⁠‍', code: row.gate_code })}
           </Badge>
         )}
       </div>
@@ -115,7 +115,7 @@ function HistoryRow({ row }: { row: StateTransitionEntry }) {
       {row.user_role && (
         <p className="text-xs text-content-tertiary mt-1">
           {t('cde.history_by_role', {
-            defaultValue: 'By: {{role}}',
+            defaultValue: 'By: {{role}}‌⁠‍',
             role: row.user_role,
           })}
         </p>

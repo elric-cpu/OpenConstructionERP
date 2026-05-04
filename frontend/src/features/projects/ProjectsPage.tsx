@@ -268,9 +268,9 @@ export function ProjectsPage() {
   /* ── Sort labels ──────────────────────────────────────────────────── */
 
   const sortOptions: { value: SortOption; label: string }[] = [
-    { value: 'name_asc', label: t('projects.sort_name', { defaultValue: 'Name A-Z' }) },
-    { value: 'newest', label: t('projects.sort_newest', { defaultValue: 'Newest' }) },
-    { value: 'oldest', label: t('projects.sort_oldest', { defaultValue: 'Oldest' }) },
+    { value: 'name_asc', label: t('projects.sort_name', { defaultValue: 'Name A-Z‌⁠‍' }) },
+    { value: 'newest', label: t('projects.sort_newest', { defaultValue: 'Newest‌⁠‍' }) },
+    { value: 'oldest', label: t('projects.sort_oldest', { defaultValue: 'Oldest‌⁠‍' }) },
     { value: 'value', label: t('projects.sort_value', { defaultValue: 'Value' }) },
   ];
 
@@ -284,10 +284,10 @@ export function ProjectsPage() {
           <p className="mt-1 text-sm text-content-secondary">
             {projects
               ? t('projects.subtitle_count', {
-                  defaultValue: 'Manage your construction estimation projects ({{count}} total)',
+                  defaultValue: 'Manage your construction estimation projects ({{count}} total)‌⁠‍',
                   count: projects.length,
                 })
-              : t('common.loading', { defaultValue: 'Loading...' })}
+              : t('common.loading', { defaultValue: 'Loading...‌⁠‍' })}
           </p>
         </div>
         <Button

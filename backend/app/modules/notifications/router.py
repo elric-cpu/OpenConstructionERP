@@ -1,4 +1,4 @@
-"""Notification API routes.
+"""‌⁠‍Notification API routes.
 
 Endpoints:
     GET    /                        — list current user's notifications
@@ -26,7 +26,7 @@ def _get_service(session: SessionDep) -> NotificationService:
 
 
 def _to_response(n: object) -> NotificationResponse:
-    """Build a NotificationResponse from a Notification ORM object."""
+    """‌⁠‍Build a NotificationResponse from a Notification ORM object."""
     return NotificationResponse(
         id=n.id,  # type: ignore[attr-defined]
         user_id=n.user_id,  # type: ignore[attr-defined]
@@ -56,7 +56,7 @@ async def list_notifications(
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> NotificationListResponse:
-    """List current user's notifications (paginated)."""
+    """‌⁠‍List current user's notifications (paginated)."""
     items, total = await service.list_for_user(
         user_id, is_read=is_read, limit=limit, offset=offset
     )

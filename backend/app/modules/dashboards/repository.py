@@ -1,4 +1,4 @@
-"""Dashboards data-access layer.
+"""‌⁠‍Dashboards data-access layer.
 
 Queries for :class:`~.models.Snapshot` and
 :class:`~.models.SnapshotSourceFile`. No business logic lives here.
@@ -28,7 +28,7 @@ from app.modules.dashboards.models import Snapshot, SnapshotSourceFile
 
 
 class SnapshotRepository:
-    """Persistence surface for snapshots + their source-file rows."""
+    """‌⁠‍Persistence surface for snapshots + their source-file rows."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -41,7 +41,7 @@ class SnapshotRepository:
         *,
         tenant_id: str | None,
     ) -> Snapshot | None:
-        """Return one snapshot by id, constrained to the caller's tenant.
+        """‌⁠‍Return one snapshot by id, constrained to the caller's tenant.
 
         ``tenant_id=None`` bypasses the scope filter — service layer
         must only do that for admin-privileged callers.

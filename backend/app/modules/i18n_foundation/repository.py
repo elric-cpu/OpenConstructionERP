@@ -1,4 +1,4 @@
-"""Internationalization foundation data access layer.
+"""‌⁠‍Internationalization foundation data access layer.
 
 Four repository classes — one per entity. Pure data access, no business logic.
 All queries use SQLAlchemy async select() + where() patterns.
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 class ExchangeRateRepository:
-    """Data access for ExchangeRate model."""
+    """‌⁠‍Data access for ExchangeRate model."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -42,7 +42,7 @@ class ExchangeRateRepository:
         limit: int = 100,
         offset: int = 0,
     ) -> list[ExchangeRate]:
-        """List exchange rates with optional filters.
+        """‌⁠‍List exchange rates with optional filters.
 
         Args:
             from_currency: Filter by source currency (e.g. "EUR").

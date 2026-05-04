@@ -1,4 +1,4 @@
-"""Built-in validation rules.
+"""‌⁠‍Built-in validation rules.
 
 Registers all standard rule sets that ship with OpenEstimate.
 Modules can register additional rules via the rule_registry.
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 
 def _get_positions(context: ValidationContext) -> list[dict[str, Any]]:
-    """Extract positions list from context data (handles different data shapes)."""
+    """‌⁠‍Extract positions list from context data (handles different data shapes)."""
     data = context.data
     if isinstance(data, dict):
         return data.get("positions", [])
@@ -47,7 +47,7 @@ def _get_positions(context: ValidationContext) -> list[dict[str, Any]]:
 
 
 def _get_locale(context: ValidationContext) -> str:
-    """Pull the active locale from the validation context.
+    """‌⁠‍Pull the active locale from the validation context.
 
     The engine passes caller-supplied ``metadata`` straight into
     :class:`ValidationContext`; rules look up ``metadata["locale"]`` so

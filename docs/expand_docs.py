@@ -1,4 +1,4 @@
-"""Expand docs.html with detailed module documentation."""
+"""‌⁠‍Expand docs.html with detailed module documentation."""
 import re
 
 html = open('docs/docs.html', encoding='utf-8').read()

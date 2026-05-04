@@ -1,4 +1,4 @@
-"""Change Order service — business logic for change order management.
+"""‌⁠‍Change Order service — business logic for change order management.
 
 Stateless service layer. Handles:
 - Change order CRUD with auto-generated codes
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 async def _safe_publish(name: str, data: dict, source_module: str = "") -> None:
-    """Fire-and-forget event publish. Swallows errors so a transient event
+    """‌⁠‍Fire-and-forget event publish. Swallows errors so a transient event
     bus outage never breaks the main transaction."""
     try:
         event_bus.publish_detached(name, data, source_module=source_module)
@@ -47,7 +47,7 @@ VALID_TRANSITIONS: dict[str, list[str]] = {
 
 
 class ChangeOrderService:
-    """Business logic for change order operations."""
+    """‌⁠‍Business logic for change order operations."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session

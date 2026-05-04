@@ -1,8 +1,8 @@
-"""oe_notifications — in-app notification system with i18n keys and per-user preferences."""
+"""‌⁠‍oe_notifications — in-app notification system with i18n keys and per-user preferences."""
 
 
 async def on_startup() -> None:
-    """Module startup hook — wire cross-module event subscribers.
+    """‌⁠‍Module startup hook — wire cross-module event subscribers.
 
     Without this the notifications module is a passive store: routes
     work, but no upstream module ever calls ``create_notification()``

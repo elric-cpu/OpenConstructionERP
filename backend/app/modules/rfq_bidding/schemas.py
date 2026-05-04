@@ -1,4 +1,4 @@
-"""RFQ Bidding Pydantic schemas — request/response models."""
+"""‌⁠‍RFQ Bidding Pydantic schemas — request/response models."""
 
 import re
 from datetime import datetime
@@ -26,7 +26,7 @@ def _reject_unsafe_string(value: str | None, field: str) -> str | None:
 
 
 class RFQCreate(BaseModel):
-    """Create a new RFQ."""
+    """‌⁠‍Create a new RFQ."""
 
     model_config = ConfigDict(str_strip_whitespace=True, extra="ignore")
 
@@ -48,7 +48,7 @@ class RFQCreate(BaseModel):
 
 
 class RFQUpdate(BaseModel):
-    """Partial update for an RFQ."""
+    """‌⁠‍Partial update for an RFQ."""
 
     model_config = ConfigDict(str_strip_whitespace=True, extra="ignore")
 

@@ -179,7 +179,7 @@ export function AssembliesPage() {
               icon={<Download size={14} />}
               onClick={() => setShowExportMenu((p) => !p)}
             >
-              {t('common.export', { defaultValue: 'Export' })}
+              {t('common.export', { defaultValue: 'Export‌⁠‍' })}
             </Button>
             {showExportMenu && (
               <div className="absolute right-0 top-full mt-1 z-50 w-44 rounded-lg border border-border-light bg-surface-elevated shadow-md animate-fade-in">
@@ -195,9 +195,9 @@ export function AssembliesPage() {
                         rows.push([csvEscape(a.name), a.category, a.unit || '', String(a.total_rate ?? ''), '', '', '', ''].join(','));
                       }
                       downloadFile(rows.join('\n'), `assemblies_${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv');
-                      addToast({ type: 'success', title: t('assemblies.exported_csv', { defaultValue: 'CSV exported' }) });
+                      addToast({ type: 'success', title: t('assemblies.exported_csv', { defaultValue: 'CSV exported‌⁠‍' }) });
                     } catch {
-                      addToast({ type: 'error', title: t('common.export_failed', { defaultValue: 'Export failed' }) });
+                      addToast({ type: 'error', title: t('common.export_failed', { defaultValue: 'Export failed‌⁠‍' }) });
                     }
                   }}
                   className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm text-content-primary hover:bg-surface-secondary transition-colors rounded-t-lg"
@@ -211,9 +211,9 @@ export function AssembliesPage() {
                     try {
                       const resp = await apiGet<AssemblySearchResponse>('/v1/assemblies/?limit=500');
                       downloadFile(JSON.stringify(resp.items, null, 2), `assemblies_${new Date().toISOString().slice(0, 10)}.json`, 'application/json');
-                      addToast({ type: 'success', title: t('assemblies.exported_json', { defaultValue: 'JSON exported' }) });
+                      addToast({ type: 'success', title: t('assemblies.exported_json', { defaultValue: 'JSON exported‌⁠‍' }) });
                     } catch {
-                      addToast({ type: 'error', title: t('common.export_failed', { defaultValue: 'Export failed' }) });
+                      addToast({ type: 'error', title: t('common.export_failed', { defaultValue: 'Export failed‌⁠‍' }) });
                     }
                   }}
                   className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm text-content-primary hover:bg-surface-secondary transition-colors rounded-b-lg"

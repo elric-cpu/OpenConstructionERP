@@ -180,10 +180,10 @@ export default function SustainabilityModule() {
         </div>
         <div>
           <h1 className="text-xl font-bold text-content-primary">
-            {t('sustainability.epd_title', { defaultValue: 'EPD / Embodied Carbon' })}
+            {t('sustainability.epd_title', { defaultValue: 'EPD / Embodied Carbon‌⁠‍' })}
           </h1>
           <p className="text-sm text-content-tertiary">
-            {t('sustainability.epd_subtitle', { defaultValue: 'EU CPR 2024/3110 compliance — GWP calculation per position' })}
+            {t('sustainability.epd_subtitle', { defaultValue: 'EU CPR 2024/3110 compliance — GWP calculation per position‌⁠‍' })}
           </p>
         </div>
       </div>
@@ -192,7 +192,7 @@ export default function SustainabilityModule() {
         {/* ── Left: EPD Material Database Browser ─────────────────────── */}
         <div className="xl:col-span-1 rounded-xl border border-border bg-surface-primary p-4">
           <h2 className="text-sm font-semibold text-content-primary mb-3">
-            {t('sustainability.material_database', { defaultValue: 'EPD Material Database' })}
+            {t('sustainability.material_database', { defaultValue: 'EPD Material Database‌⁠‍' })}
           </h2>
 
           {/* Search */}
@@ -202,14 +202,14 @@ export default function SustainabilityModule() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder={t('common.search', { defaultValue: 'Search materials...' })}
+              placeholder={t('common.search', { defaultValue: 'Search materials...‌⁠‍' })}
               className="w-full rounded-lg border border-border bg-surface-secondary py-2 pl-9 pr-8 text-sm text-content-primary placeholder:text-content-quaternary focus:border-oe-blue focus:outline-none"
             />
             {search && (
               <button
                 onClick={() => setSearch('')}
                 className="absolute right-2 top-1/2 -translate-y-1/2"
-                aria-label={t('common.clear_search', { defaultValue: 'Clear search' })}
+                aria-label={t('common.clear_search', { defaultValue: 'Clear search‌⁠‍' })}
               >
                 <X className="h-4 w-4 text-content-quaternary hover:text-content-secondary" />
               </button>

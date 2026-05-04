@@ -1,4 +1,4 @@
-"""Drop the closing sentence of para3 and replace para4 with a tighter,
+"""‌⁠‍Drop the closing sentence of para3 and replace para4 with a tighter,
 3-sentence version. Updates en/de/ru locale files."""
 import json
 from pathlib import Path

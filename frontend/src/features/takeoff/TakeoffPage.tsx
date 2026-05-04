@@ -286,7 +286,7 @@ function DropZone({
       </div>
       <p className="text-[11px] text-content-tertiary mt-3">
         {t('takeoff.formats_detailed', {
-          defaultValue: 'PDF construction drawings \u00B7 JPG / PNG photos \u00B7 TIFF scans. AI will extract walls, slabs, doors, and other elements with quantities.',
+          defaultValue: 'PDF construction drawings \u00B7 JPG / PNG photos \u00B7 TIFF scans. AI will extract walls, slabs, doors, and other elements with quantities.‌⁠‍',
         })}
       </p>
     </div>
@@ -732,7 +732,7 @@ function TakeoffDocFilmstrip({
       >
         <Layers size={14} className="text-content-tertiary mr-2 shrink-0" />
         <span className="text-xs font-semibold text-content-primary">
-          {t('takeoff.documents_panel', { defaultValue: 'Documents' })}
+          {t('takeoff.documents_panel', { defaultValue: 'Documents‌⁠‍' })}
         </span>
         <span className="text-[11px] text-content-quaternary ml-1.5">
           ({documents.length})
@@ -840,7 +840,7 @@ function TakeoffDocFilmstrip({
           ) : (
             <span className="text-[11px] text-content-quaternary">
               {t('takeoff.no_documents_filmstrip', {
-                defaultValue: 'No documents uploaded yet',
+                defaultValue: 'No documents uploaded yet‌⁠‍',
               })}
             </span>
           )}
@@ -1396,7 +1396,7 @@ export function TakeoffPage() {
         setUploadErrorToast(
           t(
             'takeoff.doc_not_ready',
-            { defaultValue: 'Document is not ready to open yet.' },
+            { defaultValue: 'Document is not ready to open yet.‌⁠‍' },
           ),
         );
         setTimeout(() => setUploadErrorToast(null), 4000);

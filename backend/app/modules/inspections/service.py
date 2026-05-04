@@ -1,4 +1,4 @@
-"""Inspections service — business logic for quality inspection management."""
+"""‌⁠‍Inspections service — business logic for quality inspection management."""
 
 import logging
 import uuid
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 def _validate_checklist_structure(checklist: list[dict[str, Any]]) -> None:
-    """Validate checklist_data JSON structure.
+    """‌⁠‍Validate checklist_data JSON structure.
 
     Each item must have at minimum a ``question`` field (non-empty string).
     ``response_type`` must be one of the known types if provided.
@@ -60,7 +60,7 @@ _INSPECTION_STATUS_TRANSITIONS: dict[str, set[str]] = {
 
 
 class InspectionService:
-    """Business logic for inspection operations."""
+    """‌⁠‍Business logic for inspection operations."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session

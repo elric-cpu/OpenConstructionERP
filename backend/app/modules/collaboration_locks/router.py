@@ -1,4 +1,4 @@
-"""HTTP + WebSocket routes for collaboration locks.
+"""‌⁠‍HTTP + WebSocket routes for collaboration locks.
 
 HTTP surface
 ------------
@@ -132,7 +132,7 @@ async def acquire_lock(
     user_id: CurrentUserId,
     service: CollabLockService = Depends(_get_service),
 ) -> CollabLockResponse | JSONResponse:
-    """Acquire a pessimistic lock on an entity.
+    """‌⁠‍Acquire a pessimistic lock on an entity.
 
     On success the caller holds the lock until ``expires_at``.  On a
     409 the response body is a :class:`CollabLockConflict` carrying
@@ -221,7 +221,7 @@ async def list_my_locks(
 
 
 async def _authenticate_ws(token: str | None) -> dict[str, Any] | None:
-    """Decode a JWT passed as ``?token=`` on a WebSocket upgrade.
+    """‌⁠‍Decode a JWT passed as ``?token=`` on a WebSocket upgrade.
 
     Returns the payload on success; returns ``None`` on any failure —
     the caller is responsible for closing the socket with 1008.

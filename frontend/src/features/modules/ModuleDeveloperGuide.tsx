@@ -99,12 +99,12 @@ export function ModuleDeveloperGuide() {
           </div>
           <div>
             <h1 className="text-2xl font-bold text-content-primary">
-              {t('modules.dev_guide_title', { defaultValue: 'Build your own module' })}
+              {t('modules.dev_guide_title', { defaultValue: 'Build your own module‌⁠‍' })}
             </h1>
             <p className="text-sm text-content-secondary">
               {t('modules.dev_guide_subtitle', {
                 defaultValue:
-                  'A practical, 10-minute walkthrough for adding business features to OpenConstructionERP.',
+                  'A practical, 10-minute walkthrough for adding business features to OpenConstructionERP.‌⁠‍',
               })}
             </p>
           </div>
@@ -114,7 +114,7 @@ export function ModuleDeveloperGuide() {
           className="inline-flex items-center gap-1 text-xs text-content-tertiary hover:text-oe-blue transition-colors"
         >
           <ArrowLeft size={12} />
-          {t('modules.back_to_modules', { defaultValue: 'Back to Modules & Marketplace' })}
+          {t('modules.back_to_modules', { defaultValue: 'Back to Modules & Marketplace‌⁠‍' })}
         </Link>
       </div>
 
@@ -124,13 +124,13 @@ export function ModuleDeveloperGuide() {
           <div className="flex items-center gap-2 mb-3">
             <Wrench size={18} className="text-amber-500" />
             <h2 className="text-lg font-semibold text-content-primary">
-              {t('modules.dev_prereq_title', { defaultValue: 'Prerequisites' })}
+              {t('modules.dev_prereq_title', { defaultValue: 'Prerequisites‌⁠‍' })}
             </h2>
           </div>
           <p className="text-sm text-content-secondary mb-4">
             {t('modules.dev_prereq_intro', {
               defaultValue:
-                'Have these ready before starting. If you can run the app locally, you already have everything you need.',
+                'Have these ready before starting. If you can run the app locally, you already have everything you need.‌⁠‍',
             })}
           </p>
           <div className="grid sm:grid-cols-2 gap-3">

@@ -1,4 +1,4 @@
-"""Replace the 'research journey / reverse-engineering closed formats' opening
+"""‌⁠‍Replace the 'research journey / reverse-engineering closed formats' opening
    of voices.para3 with a softer, plain-spoken version, in en/de/ru."""
 import json
 from pathlib import Path

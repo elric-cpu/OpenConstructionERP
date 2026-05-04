@@ -440,12 +440,12 @@ function ToggleSwitch({
 function ProgressBar({ current, total }: { current: number; total: number }) {
   const { t } = useTranslation();
   const stepLabels = [
-    t('onboarding.step_welcome', { defaultValue: 'Welcome' }),
+    t('onboarding.step_welcome', { defaultValue: 'Welcome‌⁠‍' }),
     t('onboarding.step_start', { defaultValue: 'Start' }),
-    t('onboarding.step_profile', { defaultValue: 'Profile' }),
-    t('onboarding.step_modules', { defaultValue: 'Modules' }),
+    t('onboarding.step_profile', { defaultValue: 'Profile‌⁠‍' }),
+    t('onboarding.step_modules', { defaultValue: 'Modules‌⁠‍' }),
     t('onboarding.step_data', { defaultValue: 'Data' }),
-    t('onboarding.step_finish', { defaultValue: 'Finish' }),
+    t('onboarding.step_finish', { defaultValue: 'Finish‌⁠‍' }),
   ];
 
   // Percent of the track filled. Anchors the animated progress line
@@ -567,7 +567,7 @@ function StepWelcome({
 
       <Badge variant="blue" size="sm" className="mb-2">
         <Sparkles size={11} className="me-1" />
-        {t('onboarding.welcome_eyebrow', { defaultValue: 'Construction estimation, reimagined' })}
+        {t('onboarding.welcome_eyebrow', { defaultValue: 'Construction estimation, reimagined‌⁠‍' })}
       </Badge>
 
       <h1 className="text-2xl sm:text-3xl font-bold text-content-primary tracking-tight">

@@ -748,7 +748,7 @@ function DetailPanel({ manifest, selectedNodeId, onClose }: DetailPanelProps) {
           {mod.manifest?.depends && mod.manifest.depends.length > 0 && (
             <div>
               <h4 className="text-xs font-semibold mb-1" style={{ color: NODE_TEXT }}>
-                {t('architecture.dependencies', { defaultValue: 'Dependencies' })}
+                {t('architecture.dependencies', { defaultValue: 'Dependencies‌⁠‍' })}
               </h4>
               <div className="flex flex-wrap gap-1">
                 {mod.manifest.depends.map((dep) => (
@@ -767,7 +767,7 @@ function DetailPanel({ manifest, selectedNodeId, onClose }: DetailPanelProps) {
           {mod.models.length > 0 && (
             <div>
               <h4 className="text-xs font-semibold mb-1" style={{ color: NODE_TEXT }}>
-                {t('architecture.models', { defaultValue: 'Models' })} ({mod.models.length})
+                {t('architecture.models', { defaultValue: 'Models‌⁠‍' })} ({mod.models.length})
               </h4>
               <div className="space-y-1">
                 {mod.models.map((model) => (
@@ -789,7 +789,7 @@ function DetailPanel({ manifest, selectedNodeId, onClose }: DetailPanelProps) {
           {mod.routes.length > 0 && (
             <div>
               <h4 className="text-xs font-semibold mb-1" style={{ color: NODE_TEXT }}>
-                {t('architecture.routes', { defaultValue: 'Routes' })} ({mod.routes.length})
+                {t('architecture.routes', { defaultValue: 'Routes‌⁠‍' })} ({mod.routes.length})
               </h4>
               <div className="space-y-1 max-h-[300px] overflow-y-auto">
                 {mod.routes.map((route, idx) => (
@@ -847,7 +847,7 @@ function DetailPanel({ manifest, selectedNodeId, onClose }: DetailPanelProps) {
 
           <div>
             <h4 className="text-xs font-semibold mb-1" style={{ color: NODE_TEXT }}>
-              {t('architecture.columns', { defaultValue: 'Columns' })} ({model.columns.length})
+              {t('architecture.columns', { defaultValue: 'Columns‌⁠‍' })} ({model.columns.length})
             </h4>
             <div className="space-y-0.5 max-h-[400px] overflow-y-auto">
               {model.columns.map((col) => {
@@ -888,7 +888,7 @@ function DetailPanel({ manifest, selectedNodeId, onClose }: DetailPanelProps) {
           {model.relationships.length > 0 && (
             <div>
               <h4 className="text-xs font-semibold mb-1" style={{ color: NODE_TEXT }}>
-                {t('architecture.relationships', { defaultValue: 'Relationships' })}
+                {t('architecture.relationships', { defaultValue: 'Relationships‌⁠‍' })}
               </h4>
               {model.relationships.map((rel) => (
                 <div

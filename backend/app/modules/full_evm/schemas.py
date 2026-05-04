@@ -1,4 +1,4 @@
-"""Full EVM Pydantic schemas — request/response models."""
+"""‌⁠‍Full EVM Pydantic schemas — request/response models."""
 
 from datetime import datetime
 from typing import Any
@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class EVMForecastCreate(BaseModel):
-    """Manually create an EVM forecast record."""
+    """‌⁠‍Manually create an EVM forecast record."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -28,7 +28,7 @@ class EVMForecastCreate(BaseModel):
 
 
 class EVMForecastResponse(BaseModel):
-    """EVM forecast returned from the API."""
+    """‌⁠‍EVM forecast returned from the API."""
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 

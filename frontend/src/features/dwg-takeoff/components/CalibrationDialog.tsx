@@ -101,7 +101,7 @@ export function CalibrationDialog({
     if (!Number.isFinite(v) || v <= 0) {
       setError(
         t('dwg_takeoff.cal_error_length', {
-          defaultValue: 'Enter a positive real-world length.',
+          defaultValue: 'Enter a positive real-world length.‌⁠‍',
         }) as string,
       );
       return;
@@ -109,7 +109,7 @@ export function CalibrationDialog({
     if (!pointA || !pointB) {
       setError(
         t('dwg_takeoff.cal_error_missing_points', {
-          defaultValue: 'Two points are required for calibration.',
+          defaultValue: 'Two points are required for calibration.‌⁠‍',
         }) as string,
       );
       return;
@@ -117,7 +117,7 @@ export function CalibrationDialog({
     if (pixelDistance(pointA, pointB) <= 0) {
       setError(
         t('dwg_takeoff.cal_error_coincident', {
-          defaultValue: 'Points are identical — click two different points.',
+          defaultValue: 'Points are identical — click two different points.‌⁠‍',
         }) as string,
       );
       return;
@@ -130,10 +130,10 @@ export function CalibrationDialog({
     const label =
       step === 1
         ? t('dwg_takeoff.cal_step1', {
-            defaultValue: 'Click point A on the drawing',
+            defaultValue: 'Click point A on the drawing‌⁠‍',
           })
         : t('dwg_takeoff.cal_step2', {
-            defaultValue: 'Now click point B',
+            defaultValue: 'Now click point B‌⁠‍',
           });
     return (
       <div

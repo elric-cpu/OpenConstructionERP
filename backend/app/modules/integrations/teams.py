@@ -1,4 +1,4 @@
-"""Microsoft Teams incoming webhook connector.
+"""‌⁠‍Microsoft Teams incoming webhook connector.
 
 Setup: User creates an Incoming Webhook in their Teams channel,
 copies the webhook URL, pastes it in OpenConstructionERP settings.
@@ -23,7 +23,7 @@ async def send_teams_notification(
     action_url: str | None = None,
     facts: list[dict[str, str]] | None = None,
 ) -> bool:
-    """Send an Adaptive Card notification to a Microsoft Teams channel.
+    """‌⁠‍Send an Adaptive Card notification to a Microsoft Teams channel.
 
     Args:
         webhook_url: The incoming webhook URL from the Teams channel.

@@ -1,4 +1,4 @@
-"""Latin America regional pack API routes.
+"""‌⁠‍Latin America regional pack API routes.
 
 Endpoints:
     GET /config  — Return the full Latin America regional configuration
@@ -17,5 +17,5 @@ logger = logging.getLogger(__name__)
 
 @router.get("/config/")
 async def get_config() -> dict:
-    """Return the Latin America regional pack configuration."""
+    """‌⁠‍Return the Latin America regional pack configuration."""
     return PACK_CONFIG

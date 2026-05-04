@@ -1,4 +1,4 @@
-"""BIM Hub event handlers​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠ — vector indexing for BIM elements.
+"""‌⁠‍BIM Hub event handlers​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠ — vector indexing for BIM elements.
 
 Subscribes to ``bim_hub.element.*`` events and keeps the
 ``oe_bim_elements`` vector collection in sync with the underlying
@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 
 async def _index_element(event: Event) -> None:
-    """Re-embed a single BIMElement row after create / update."""
+    """‌⁠‍Re-embed a single BIMElement row after create / update."""
     eid_raw = (event.data or {}).get("element_id")
     if not eid_raw:
         return
@@ -75,7 +75,7 @@ async def _index_element(event: Event) -> None:
 
 
 async def _delete_element_vector(event: Event) -> None:
-    """Remove a deleted BIMElement row from the vector store."""
+    """‌⁠‍Remove a deleted BIMElement row from the vector store."""
     eid_raw = (event.data or {}).get("element_id")
     if not eid_raw:
         return

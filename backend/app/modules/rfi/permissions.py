@@ -1,10 +1,10 @@
-"""RFI module permission definitions."""
+"""‌⁠‍RFI module permission definitions."""
 
 from app.core.permissions import Role, permission_registry
 
 
 def register_rfi_permissions() -> None:
-    """Register permissions for the RFI module."""
+    """‌⁠‍Register permissions for the RFI module."""
     permission_registry.register_module_permissions(
         "rfi",
         {

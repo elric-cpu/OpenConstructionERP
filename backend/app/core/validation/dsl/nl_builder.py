@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Natural-language → Compliance DSL builder (T13).
+"""‌⁠‍Natural-language → Compliance DSL builder (T13).
 
 Bridges plain-English (and DE/RU) authoring with the strict YAML DSL
 shipped in T08. The flow is:
@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class NlBuildResult:
-    """Outcome of an NL → DSL conversion.
+    """‌⁠‍Outcome of an NL → DSL conversion.
 
     Attributes:
         dsl_definition: A dict that *should* parse cleanly through
@@ -69,7 +69,7 @@ class NlBuildResult:
 
 @dataclass(frozen=True)
 class _Pattern:
-    """One NL → DSL conversion pattern.
+    """‌⁠‍One NL → DSL conversion pattern.
 
     Each pattern owns a compiled regex and a builder callable that turns
     the regex match into a DSL dict. Patterns are evaluated in priority

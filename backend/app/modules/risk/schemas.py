@@ -1,4 +1,4 @@
-"""Risk Register Pydantic schemas — request/response models.
+"""‌⁠‍Risk Register Pydantic schemas — request/response models.
 
 Defines create, update, and response schemas for risk register items.
 Numeric values (probability, impact_cost, risk_score, response_cost) are exposed
@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class RiskCreate(BaseModel):
-    """Create a new risk item."""
+    """‌⁠‍Create a new risk item."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -42,7 +42,7 @@ class RiskCreate(BaseModel):
 
 
 class RiskUpdate(BaseModel):
-    """Partial update for a risk item."""
+    """‌⁠‍Partial update for a risk item."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 

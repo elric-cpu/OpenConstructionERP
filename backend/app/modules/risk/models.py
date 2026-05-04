@@ -1,4 +1,4 @@
-"""Risk Register ORM models.
+"""‌⁠‍Risk Register ORM models.
 
 Tables:
     oe_risk_register — risk items with probability, impact, mitigation, and status
@@ -13,7 +13,7 @@ from app.database import GUID, Base
 
 
 class RiskItem(Base):
-    """Risk register entry tracking project risks and mitigation."""
+    """‌⁠‍Risk register entry tracking project risks and mitigation."""
 
     __tablename__ = "oe_risk_register"
 

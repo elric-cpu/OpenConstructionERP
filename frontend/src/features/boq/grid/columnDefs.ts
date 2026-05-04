@@ -128,7 +128,7 @@ export function getColumnDefs(context: BOQColumnContext): ColDef[] {
       cellClass: 'p-0',
     },
     {
-      headerName: t('boq.description', { defaultValue: 'Description' }),
+      headerName: t('boq.description', { defaultValue: 'Description‌⁠‍' }),
       field: 'description',
       minWidth: 260,
       flex: 1,
@@ -256,7 +256,7 @@ export function getColumnDefs(context: BOQColumnContext): ColDef[] {
       type: 'numericColumn',
     },
     {
-      headerName: t('boq.unit_rate', { defaultValue: 'Unit Rate' }),
+      headerName: t('boq.unit_rate', { defaultValue: 'Unit Rate‌⁠‍' }),
       field: 'unit_rate',
       width: 130,
       editable: (params) => {
@@ -293,7 +293,7 @@ export function getColumnDefs(context: BOQColumnContext): ColDef[] {
       tooltipValueGetter: (params) => {
         const res = params.data?.metadata?.resources;
         if (Array.isArray(res) && res.length > 0) {
-          return t('boq.rate_from_resources', { defaultValue: 'Rate is calculated from resources. Edit individual resources to change.' });
+          return t('boq.rate_from_resources', { defaultValue: 'Rate is calculated from resources. Edit individual resources to change.‌⁠‍' });
         }
         return undefined;
       },

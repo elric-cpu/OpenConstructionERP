@@ -1,4 +1,4 @@
-"""BIM Requirements Pydantic schemas -- request/response models."""
+"""‌⁠‍BIM Requirements Pydantic schemas -- request/response models."""
 
 from datetime import datetime
 from typing import Any
@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class UniversalRequirementSchema(BaseModel):
-    """A single normalized BIM requirement (5-column model)."""
+    """‌⁠‍A single normalized BIM requirement (5-column model)."""
 
     element_filter: dict[str, Any] = Field(default_factory=dict)
     property_group: str | None = None
@@ -23,7 +23,7 @@ class UniversalRequirementSchema(BaseModel):
 
 
 class ParseError(BaseModel):
-    """Describes a single parse error or warning."""
+    """‌⁠‍Describes a single parse error or warning."""
 
     row: int | None = None
     field: str = ""

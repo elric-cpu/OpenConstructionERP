@@ -1,4 +1,4 @@
-"""Risk Register module manifest."""
+"""‌⁠‍Risk Register module manifest."""
 
 from app.core.module_loader import ModuleManifest
 

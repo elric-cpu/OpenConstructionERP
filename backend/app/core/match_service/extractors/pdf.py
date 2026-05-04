@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""PDF takeoff element → envelope adapter.
+"""‌⁠‍PDF takeoff element → envelope adapter.
 
 Input shape mirrors ``backend/app/modules/takeoff/schemas.py``
 ``ExtractedElement`` plus the takeoff-measurement view: free-form
@@ -27,7 +27,7 @@ from app.modules.cad.classification_mapper import (
 
 
 def _auto_classifier_hint_from_category(category: str) -> dict[str, str] | None:
-    """Coarse classifier hint from category alone (no material).
+    """‌⁠‍Coarse classifier hint from category alone (no material).
 
     Useful for PDF takeoff and DWG layer-derived elements where the
     material is rarely surfaced in the raw row. Falls back to ``None``
@@ -44,7 +44,7 @@ def _auto_classifier_hint_from_category(category: str) -> dict[str, str] | None:
 
 
 def _quantities_from_takeoff(raw: dict[str, Any]) -> dict[str, float]:
-    """Derive ``quantities`` from PDF/takeoff measurement output.
+    """‌⁠‍Derive ``quantities`` from PDF/takeoff measurement output.
 
     Takeoff measurements expose the dimension as ``measurement_value``
     paired with ``measurement_unit``. We translate that pair into the

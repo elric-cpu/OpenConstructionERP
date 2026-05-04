@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Semantic validator for EAC v2 rule definitions (RFC 35 §5 EAC-1.3, FR-1.10).
+"""‌⁠‍Semantic validator for EAC v2 rule definitions (RFC 35 §5 EAC-1.3, FR-1.10).
 
 Adds the semantic checks the JSON Schema cannot express:
 
@@ -68,7 +68,7 @@ Severity = Literal["error", "warning"]
 
 @dataclass(frozen=True)
 class ValidatorIssue:
-    """Single diagnostic produced by :func:`validate_rule`.
+    """‌⁠‍Single diagnostic produced by :func:`validate_rule`.
 
     ``code`` is a short machine-readable identifier (e.g.
     ``alias_not_found``, ``redos_regex``, ``cyclic_local_var``).
@@ -88,7 +88,7 @@ class ValidatorIssue:
 
 @dataclass(frozen=True)
 class ValidatorResult:
-    """Outcome of a validation pass."""
+    """‌⁠‍Outcome of a validation pass."""
 
     valid: bool
     issues: list[ValidatorIssue]

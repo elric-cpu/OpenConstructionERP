@@ -1,4 +1,4 @@
-"""Punch List Pydantic schemas — request/response models.
+"""‌⁠‍Punch List Pydantic schemas — request/response models.
 
 Defines create, update, response, status transition, and summary schemas
 for punch list items.
@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class PunchItemCreate(BaseModel):
-    """Create a new punch list item."""
+    """‌⁠‍Create a new punch list item."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -40,7 +40,7 @@ class PunchItemCreate(BaseModel):
 
 
 class PunchItemUpdate(BaseModel):
-    """Partial update for a punch list item."""
+    """‌⁠‍Partial update for a punch list item."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 

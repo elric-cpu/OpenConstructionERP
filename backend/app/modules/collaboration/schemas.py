@@ -1,4 +1,4 @@
-"""Collaboration Pydantic schemas — request/response models."""
+"""‌⁠‍Collaboration Pydantic schemas — request/response models."""
 
 from datetime import datetime
 from typing import Any
@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class MentionCreate(BaseModel):
-    """A single @mention to include when creating a comment."""
+    """‌⁠‍A single @mention to include when creating a comment."""
 
     mentioned_user_id: UUID
     mention_type: str = Field(
@@ -20,7 +20,7 @@ class MentionCreate(BaseModel):
 
 
 class MentionResponse(BaseModel):
-    """Mention in API responses."""
+    """‌⁠‍Mention in API responses."""
 
     model_config = ConfigDict(from_attributes=True)
 

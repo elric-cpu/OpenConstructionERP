@@ -154,7 +154,7 @@ function ModelFilmstrip({ models, isLoading, activeModelId, onSelectModel, onDel
         type="button"
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
-        aria-label={t('bim.toggle_models_filmstrip', { defaultValue: 'Toggle models filmstrip' })}
+        aria-label={t('bim.toggle_models_filmstrip', { defaultValue: 'Toggle models filmstrip‌⁠‍' })}
         className="flex items-center w-full px-4 py-2 cursor-pointer group hover:bg-surface-secondary/30 transition-colors"
       >
         {/* Drag handle icon */}
@@ -169,7 +169,7 @@ function ModelFilmstrip({ models, isLoading, activeModelId, onSelectModel, onDel
 
         {/* Title */}
         <span className="text-xs font-semibold text-content-primary">
-          {t('bim.models_label', { defaultValue: 'Models' })}
+          {t('bim.models_label', { defaultValue: 'Models‌⁠‍' })}
         </span>
         <span className="text-[11px] text-content-tertiary ml-1.5">({models.length})</span>
 
@@ -198,15 +198,15 @@ function ModelFilmstrip({ models, isLoading, activeModelId, onSelectModel, onDel
             ))
           ) : (
             <span className="text-[11px] text-content-quaternary">
-              {t('bim.no_models_yet', { defaultValue: 'No models uploaded yet' })}
+              {t('bim.no_models_yet', { defaultValue: 'No models uploaded yet‌⁠‍' })}
             </span>
           )}
           {/* Add model button */}
           <button
             onClick={onUpload}
             className="flex items-center justify-center shrink-0 w-16 h-16 rounded-xl border-2 border-dashed border-border-medium hover:border-oe-blue/50 hover:bg-oe-blue/5 transition-all group"
-            title={t('bim.upload_model', { defaultValue: 'Upload model' })}
-            aria-label={t('bim.upload_model', { defaultValue: 'Upload model' })}
+            title={t('bim.upload_model', { defaultValue: 'Upload model‌⁠‍' })}
+            aria-label={t('bim.upload_model', { defaultValue: 'Upload model‌⁠‍' })}
           >
             <Plus size={20} className="text-content-quaternary group-hover:text-oe-blue transition-colors" />
           </button>

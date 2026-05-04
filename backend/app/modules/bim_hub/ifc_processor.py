@@ -1,4 +1,4 @@
-"""IFC/RVT file processor — uses DDC cad2data when available, text parser as fallback.
+"""‌⁠‍IFC/RVT file processor — uses DDC cad2data when available, text parser as fallback.
 
 Processing pipeline:
 1. Try DDC cad2data (external tool) → full DataFrame + COLLADA geometry
@@ -68,7 +68,7 @@ _STRING_RE = re.compile(r"'([^']*)'")
 
 
 def _try_cad2data(ifc_path: Path, output_dir: Path, *, conversion_depth: str = "standard") -> dict[str, Any] | None:
-    """Try to convert CAD files using DDC converters.
+    """‌⁠‍Try to convert CAD files using DDC converters.
 
     Pipeline (tried in order):
     1. DDC Community Converter (RvtExporter.exe / IfcExporter.exe) → Excel → elements
@@ -99,7 +99,7 @@ def _try_cad2data(ifc_path: Path, output_dir: Path, *, conversion_depth: str = "
             input_abs = ifc_path.resolve()
 
             def _run_ddc(out_path: Path, *extra_args: str) -> tuple[int, bytes, bytes]:
-                """Invoke RvtExporter / IfcExporter with the given output target."""
+                """‌⁠‍Invoke RvtExporter / IfcExporter with the given output target."""
                 args_list = [str(converter), str(input_abs), str(out_path)]
                 if ext in ("rvt", "ifc"):
                     # User-selected depth: 'standard' (fast), 'medium' (balanced), 'complete' (full)

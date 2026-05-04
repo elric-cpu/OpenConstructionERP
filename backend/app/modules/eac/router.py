@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""EAC v2 CRUD API router.
+"""‌⁠‍EAC v2 CRUD API router.
 
 Endpoints for EAC-1.1 + EAC-1.2:
 
@@ -85,7 +85,7 @@ router.include_router(_aliases_router)
 async def _resolve_tenant_id(
     session: AsyncSession, user_id: str
 ) -> uuid.UUID:
-    """Resolve the tenant for the current user.
+    """‌⁠‍Resolve the tenant for the current user.
 
     W0.4 (RLS) hasn't shipped yet; until then, each user is treated as
     its own single-row tenant. This shim keeps tests deterministic and
@@ -150,7 +150,7 @@ async def create_rule(
     user_id: CurrentUserId,
     session: SessionDep,
 ) -> EacRuleRead:
-    """Create a new EAC rule.
+    """‌⁠‍Create a new EAC rule.
 
     Saves a row in ``oe_eac_rule`` and a corresponding ``oe_eac_rule_version``
     history entry with ``version_number=1``.

@@ -121,7 +121,7 @@ export function CostBreakdownPanel({ boqId, locale = 'de-DE' }: { boqId: string;
       <div className="rounded-xl border border-border-light bg-surface-elevated shadow-xs p-4">
         <div className="flex items-center gap-2 text-xs text-content-tertiary animate-pulse">
           <TrendingUp size={14} />
-          {t('boq.cost_breakdown_loading', { defaultValue: 'Loading cost breakdown...' })}
+          {t('boq.cost_breakdown_loading', { defaultValue: 'Loading cost breakdown...‌⁠‍' })}
         </div>
       </div>
     );
@@ -147,7 +147,7 @@ export function CostBreakdownPanel({ boqId, locale = 'de-DE' }: { boqId: string;
           )}
           <TrendingUp size={16} className="text-content-secondary" />
           <span className="text-sm font-semibold text-content-primary">
-            {t('boq.cost_breakdown', { defaultValue: 'Cost Breakdown' })}
+            {t('boq.cost_breakdown', { defaultValue: 'Cost Breakdown‌⁠‍' })}
           </span>
         </div>
         <span className="text-sm font-bold text-content-primary tabular-nums">
@@ -214,7 +214,7 @@ export function CostBreakdownPanel({ boqId, locale = 'de-DE' }: { boqId: string;
           {/* ── Horizontal Bar Breakdown ──────────────────────────────── */}
           <div className="space-y-2">
             <h4 className="text-xs font-semibold text-content-tertiary uppercase tracking-wide">
-              {t('boq.cost_breakdown_by_category', { defaultValue: 'By Category' })}
+              {t('boq.cost_breakdown_by_category', { defaultValue: 'By Category‌⁠‍' })}
             </h4>
             {data.categories.map((cat) => (
               <CategoryBar key={cat.type} category={cat} directCost={data.direct_cost} fmt={fmt} />
@@ -225,7 +225,7 @@ export function CostBreakdownPanel({ boqId, locale = 'de-DE' }: { boqId: string;
           {data.top_resources.length > 0 && (
             <div className="space-y-2">
               <h4 className="text-xs font-semibold text-content-tertiary uppercase tracking-wide">
-                {t('boq.cost_breakdown_top_resources', { defaultValue: 'Top Resources' })}
+                {t('boq.cost_breakdown_top_resources', { defaultValue: 'Top Resources‌⁠‍' })}
               </h4>
               <div className="space-y-1">
                 {data.top_resources.map((res, idx) => (
@@ -238,7 +238,7 @@ export function CostBreakdownPanel({ boqId, locale = 'de-DE' }: { boqId: string;
           {/* ── Summary ───────────────────────────────────────────────── */}
           <div className="border-t border-border pt-3 space-y-1.5">
             <SummaryRow
-              label={t('boq.direct_cost', { defaultValue: 'Direct Cost' })}
+              label={t('boq.direct_cost', { defaultValue: 'Direct Cost‌⁠‍' })}
               value={data.direct_cost}
               fmt={fmt}
             />

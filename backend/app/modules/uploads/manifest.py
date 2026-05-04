@@ -1,4 +1,4 @@
-"""Direct Uploads module manifest.
+"""‌⁠‍Direct Uploads module manifest.
 
 Wires the HMAC-signed PUT endpoint that consumes presigned URLs minted
 by :meth:`app.core.storage.LocalStorageBackend.presigned_put_url`.

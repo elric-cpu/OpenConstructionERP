@@ -1,4 +1,4 @@
-"""Submittals API routes.
+"""‌⁠‍Submittals API routes.
 
 Endpoints:
     GET    /                          - List submittals for a project
@@ -149,7 +149,7 @@ async def submit_submittal(
     _perm: None = Depends(RequirePermission("submittals.update")),
     service: SubmittalService = Depends(_get_service),
 ) -> SubmittalResponse:
-    """Move a submittal from draft to submitted."""
+    """‌⁠‍Move a submittal from draft to submitted."""
     submittal = await service.submit_submittal(submittal_id)
     return _to_response(submittal)
 
@@ -162,7 +162,7 @@ async def review_submittal(
     _perm: None = Depends(RequirePermission("submittals.update")),
     service: SubmittalService = Depends(_get_service),
 ) -> SubmittalResponse:
-    """Review a submittal (approve, reject, revise and resubmit, etc.)."""
+    """‌⁠‍Review a submittal (approve, reject, revise and resubmit, etc.)."""
     submittal = await service.review_submittal(submittal_id, body.status, reviewer_id=user_id)
     return _to_response(submittal)
 

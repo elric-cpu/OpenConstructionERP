@@ -1,4 +1,4 @@
-"""DWG Takeoff module manifest."""
+"""‌⁠‍DWG Takeoff module manifest."""
 
 from app.core.module_loader import ModuleManifest
 

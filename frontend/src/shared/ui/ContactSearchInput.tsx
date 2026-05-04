@@ -219,7 +219,7 @@ export function ContactSearchInput({
               if (results.length > 0 && !value) setIsOpen(true);
               setBrowseOpen(false);
             }}
-            placeholder={placeholder || t('contacts.search_placeholder', { defaultValue: 'Search contacts...' })}
+            placeholder={placeholder || t('contacts.search_placeholder', { defaultValue: 'Search contacts...‌⁠‍' })}
             className={inputCls}
           />
           {(query || value) && (
@@ -237,11 +237,11 @@ export function ContactSearchInput({
             <div className="absolute left-0 top-full mt-1 z-50 w-full max-h-48 overflow-y-auto rounded-lg border border-border-light bg-surface-elevated shadow-md">
               {isLoading ? (
                 <div className="px-3 py-2 text-xs text-content-tertiary">
-                  {t('common.searching', { defaultValue: 'Searching...' })}
+                  {t('common.searching', { defaultValue: 'Searching...‌⁠‍' })}
                 </div>
               ) : results.length === 0 ? (
                 <div className="px-3 py-2 text-xs text-content-tertiary">
-                  {t('contacts.no_results', { defaultValue: 'No contacts found' })}
+                  {t('contacts.no_results', { defaultValue: 'No contacts found‌⁠‍' })}
                 </div>
               ) : (
                 results.map((c) => (
@@ -273,7 +273,7 @@ export function ContactSearchInput({
             <button
               type="button"
               onClick={handleBrowseOpen}
-              title={t('contacts.select_from_contacts', { defaultValue: 'Select from contacts' })}
+              title={t('contacts.select_from_contacts', { defaultValue: 'Select from contacts‌⁠‍' })}
               className={`flex h-10 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-all ${
                 browseOpen
                   ? 'border-oe-blue bg-oe-blue/5 text-oe-blue'
@@ -282,7 +282,7 @@ export function ContactSearchInput({
             >
               <BookUser size={15} />
               <span className="hidden sm:inline">
-                {t('contacts.select_from_contacts', { defaultValue: 'Select from contacts' })}
+                {t('contacts.select_from_contacts', { defaultValue: 'Select from contacts‌⁠‍' })}
               </span>
             </button>
 

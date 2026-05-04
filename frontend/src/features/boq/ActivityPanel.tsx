@@ -115,7 +115,7 @@ export function ActivityPanel({
         <div className="flex items-center gap-2.5">
           <Activity size={16} className="text-content-tertiary" strokeWidth={1.75} />
           <span className="text-sm font-semibold text-content-primary">
-            {t('boq.recent_activity', { defaultValue: 'Recent Activity' })}
+            {t('boq.recent_activity', { defaultValue: 'Recent Activity‌⁠‍' })}
           </span>
           {activities.length > 0 && (
             <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-surface-secondary px-1.5 text-2xs font-medium text-content-secondary tabular-nums">
@@ -136,7 +136,7 @@ export function ActivityPanel({
               <Inbox size={18} className="text-content-tertiary" />
             </div>
             <p className="text-xs text-content-tertiary">
-              {t('boq.no_activity', { defaultValue: 'No activity yet. Changes will appear here.' })}
+              {t('boq.no_activity', { defaultValue: 'No activity yet. Changes will appear here.‌⁠‍' })}
             </p>
           </div>
         </div>
@@ -189,7 +189,7 @@ export function ActivityPanel({
                 onClick={onToggle}
                 className="text-xs font-medium text-oe-blue hover:text-oe-blue-hover transition-colors"
               >
-                {t('boq.show_all_activity', { defaultValue: 'Show all activity...' })}
+                {t('boq.show_all_activity', { defaultValue: 'Show all activity...‌⁠‍' })}
               </button>
             </div>
           )}

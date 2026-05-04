@@ -1,4 +1,4 @@
-"""Pydantic schemas for the Background Jobs status module."""
+"""‌⁠‍Pydantic schemas for the Background Jobs status module."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 
 class JobRunRead(BaseModel):
-    """Read-only view of a JobRun row.
+    """‌⁠‍Read-only view of a JobRun row.
 
     Mirrors the columns on :class:`app.core.job_run.JobRun` that are
     safe and useful to expose over HTTP. Mutating fields (payload,
@@ -46,7 +46,7 @@ class JobRunRead(BaseModel):
 
 
 class JobRunListResponse(BaseModel):
-    """Paginated list payload for ``GET /jobs``."""
+    """‌⁠‍Paginated list payload for ``GET /jobs``."""
 
     items: list[JobRunRead]
     total: int

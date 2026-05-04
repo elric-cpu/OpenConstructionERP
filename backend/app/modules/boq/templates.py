@@ -1,4 +1,4 @@
-"""Built-in BOQ templates for common building types.
+"""‌⁠‍Built-in BOQ templates for common building types.
 
 Each template is a complete BOQ structure with sections and positions.
 Positions use a ``qty_factor`` that is multiplied by the user-provided gross

@@ -1,4 +1,4 @@
-"""OpenCDE service — maps internal data to BuildingSMART BCF 3.0 format.
+"""‌⁠‍OpenCDE service — maps internal data to BuildingSMART BCF 3.0 format.
 
 This service bridges our internal project/collaboration models to the
 BCF API 3.0 specification. It reads from our existing tables and
@@ -38,7 +38,7 @@ BCF_TOPIC_ENTITY_TYPE = "bcf_topic"
 
 
 class OpenCDEService:
-    """Maps internal data to/from BuildingSMART BCF 3.0 format."""
+    """‌⁠‍Maps internal data to/from BuildingSMART BCF 3.0 format."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -46,7 +46,7 @@ class OpenCDEService:
     # ── Projects ─────────────────────────────────────────────────────────
 
     async def list_projects(self) -> list[BCFProject]:
-        """List all projects in BCF format."""
+        """‌⁠‍List all projects in BCF format."""
         stmt = select(Project).order_by(Project.created_at.desc())
         result = await self.session.execute(stmt)
         projects = result.scalars().all()

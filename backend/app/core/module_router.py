@@ -1,4 +1,4 @@
-"""Module management API — list, enable, disable modules at runtime.
+"""‌⁠‍Module management API — list, enable, disable modules at runtime.
 
 Provides RESTful endpoints for the frontend Modules page to interact
 with the :class:`~app.core.module_loader.ModuleLoader`.
@@ -21,13 +21,13 @@ router = APIRouter(prefix="/api/v1/modules", tags=["Module Management"])
 
 @router.get("/")
 async def list_all_modules() -> list[dict[str, Any]]:
-    """List all discovered modules with enabled/disabled status."""
+    """‌⁠‍List all discovered modules with enabled/disabled status."""
     return module_loader.list_modules()
 
 
 @router.get("/{module_name}")
 async def get_module_detail(module_name: str) -> dict[str, Any]:
-    """Get detailed info about a module."""
+    """‌⁠‍Get detailed info about a module."""
     try:
         return module_loader.get_module_info(module_name)
     except ValueError:

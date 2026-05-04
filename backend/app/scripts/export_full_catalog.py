@@ -1,4 +1,4 @@
-"""Export FULL resource catalog from ONE CWICR region.
+"""‌⁠‍Export FULL resource catalog from ONE CWICR region.
 
 Columns match oe_catalog_resource DB schema exactly, so the file
 can be imported directly via API.
@@ -18,7 +18,7 @@ import pandas as pd
 
 
 def _f(val) -> float | None:
-    """Safe float."""
+    """‌⁠‍Safe float."""
     if val is None or (isinstance(val, float) and math.isnan(val)):
         return None
     try:
@@ -28,7 +28,7 @@ def _f(val) -> float | None:
 
 
 def _s(val) -> str:
-    """Safe string."""
+    """‌⁠‍Safe string."""
     if val is None or (isinstance(val, float) and math.isnan(val)):
         return ""
     return str(val).strip()

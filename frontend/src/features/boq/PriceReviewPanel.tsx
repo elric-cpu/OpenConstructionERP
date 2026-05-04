@@ -86,7 +86,7 @@ export function PriceReviewPanel({
         <div className="flex items-center gap-2">
           <AlertTriangle size={16} className="text-amber-500" />
           <h3 className="text-sm font-semibold text-content-primary">
-            {t('boq.price_review_title', { defaultValue: 'Price Check Results' })}
+            {t('boq.price_review_title', { defaultValue: 'Price Check Results‌⁠‍' })}
           </h3>
           <span className="rounded-full bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 text-2xs font-bold text-amber-700 dark:text-amber-300">
             {items.length}
@@ -94,7 +94,7 @@ export function PriceReviewPanel({
         </div>
         <div className="flex items-center gap-2">
           <Button variant="primary" size="sm" icon={<CheckCheck size={14} />} onClick={onApplyAll}>
-            {t('boq.apply_all_suggestions', { defaultValue: 'Apply All' })}
+            {t('boq.apply_all_suggestions', { defaultValue: 'Apply All‌⁠‍' })}
           </Button>
           <button onClick={onDismiss} aria-label={t('common.close', { defaultValue: 'Close' })} className="p-1 rounded-md hover:bg-surface-secondary transition-colors">
             <X size={14} className="text-content-tertiary" />
@@ -103,7 +103,7 @@ export function PriceReviewPanel({
       </div>
 
       <p className="text-xs text-content-secondary mb-3">
-        {t('boq.price_review_desc', { defaultValue: 'Review each suggestion below. Accept to update the rate, or ignore to keep your current price.' })}
+        {t('boq.price_review_desc', { defaultValue: 'Review each suggestion below. Accept to update the rate, or ignore to keep your current price.‌⁠‍' })}
       </p>
 
       {/* Items */}
@@ -122,7 +122,7 @@ export function PriceReviewPanel({
               <div className="flex items-center gap-3 mt-1">
                 {/* Current rate */}
                 <div className="text-xs">
-                  <span className="text-content-tertiary">{t('boq.current', { defaultValue: 'Current' })}: </span>
+                  <span className="text-content-tertiary">{t('boq.current', { defaultValue: 'Current‌⁠‍' })}: </span>
                   <span className="font-mono font-medium text-content-secondary">
                     {fmtWithCurrency(item.currentRate, locale, currencyCode)}
                   </span>
@@ -133,7 +133,7 @@ export function PriceReviewPanel({
 
                 {/* Suggested rate */}
                 <div className="text-xs">
-                  <span className="text-content-tertiary">{t('boq.suggested', { defaultValue: 'Suggested' })}: </span>
+                  <span className="text-content-tertiary">{t('boq.suggested', { defaultValue: 'Suggested‌⁠‍' })}: </span>
                   <span className={`font-mono font-bold ${item.diff < 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                     {fmtWithCurrency(item.suggestedRate, locale, currencyCode)}
                   </span>

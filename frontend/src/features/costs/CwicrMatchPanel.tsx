@@ -181,18 +181,18 @@ export function CwicrMatchPanel(props: CwicrMatchPanelProps) {
   );
 
   const placeholder = t('costs.cwicr_match.placeholder', {
-    defaultValue: 'Describe the work item (e.g. reinforced concrete wall)',
+    defaultValue: 'Describe the work item (e.g. reinforced concrete wall)‌⁠‍',
   });
 
   const titleLabel = t('costs.cwicr_match.title', {
-    defaultValue: 'CWICR rate match',
+    defaultValue: 'CWICR rate match‌⁠‍',
   });
 
   const modeOptions = useMemo(
     () => [
-      { value: 'lexical' as const, label: t('costs.cwicr_match.mode_lexical', { defaultValue: 'Lexical' }) },
-      { value: 'semantic' as const, label: t('costs.cwicr_match.mode_semantic', { defaultValue: 'Semantic' }) },
-      { value: 'hybrid' as const, label: t('costs.cwicr_match.mode_hybrid', { defaultValue: 'Hybrid' }) },
+      { value: 'lexical' as const, label: t('costs.cwicr_match.mode_lexical', { defaultValue: 'Lexical‌⁠‍' }) },
+      { value: 'semantic' as const, label: t('costs.cwicr_match.mode_semantic', { defaultValue: 'Semantic‌⁠‍' }) },
+      { value: 'hybrid' as const, label: t('costs.cwicr_match.mode_hybrid', { defaultValue: 'Hybrid‌⁠‍' }) },
     ],
     [t],
   );

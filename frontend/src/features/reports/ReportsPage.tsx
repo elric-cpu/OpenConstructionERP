@@ -871,7 +871,7 @@ export function ReportsPage() {
           addToast({
             type: 'warning',
             title: t('reports.select_project_first', {
-              defaultValue: 'Please select a project first',
+              defaultValue: 'Please select a project first‌⁠‍',
             }),
           });
           return;
@@ -885,14 +885,14 @@ export function ReportsPage() {
           addToast({
             type: 'success',
             title: t('reports.download_success', {
-              defaultValue: 'Report downloaded successfully',
+              defaultValue: 'Report downloaded successfully‌⁠‍',
             }),
           });
         } catch (err) {
           addToast({
             type: 'error',
             title: t('reports.download_error', {
-              defaultValue: 'Failed to generate report',
+              defaultValue: 'Failed to generate report‌⁠‍',
             }),
             message: err instanceof Error ? err.message : undefined,
           });
@@ -906,7 +906,7 @@ export function ReportsPage() {
       if (!selectedBoqId || !selectedBoq) {
         addToast({
           type: 'warning',
-          title: t('reports.select_boq_first', { defaultValue: 'Please select a project and BOQ first' }),
+          title: t('reports.select_boq_first', { defaultValue: 'Please select a project and BOQ first‌⁠‍' }),
         });
         return;
       }
@@ -919,7 +919,7 @@ export function ReportsPage() {
         addToast({
           type: 'success',
           title: t('reports.download_success', {
-            defaultValue: 'Report downloaded successfully',
+            defaultValue: 'Report downloaded successfully‌⁠‍',
           }),
         });
       } catch (err) {

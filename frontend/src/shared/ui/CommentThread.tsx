@@ -65,15 +65,15 @@ function formatTimeAgo(
 ): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const seconds = Math.floor(diff / 1000);
-  if (seconds < 60) return t('comments.just_now', { defaultValue: 'Just now' });
+  if (seconds < 60) return t('comments.just_now', { defaultValue: 'Just now‌⁠‍' });
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60)
-    return t('time.minutes_ago', { defaultValue: '{{count}}m ago', count: minutes });
+    return t('time.minutes_ago', { defaultValue: '{{count}}m ago‌⁠‍', count: minutes });
   const hours = Math.floor(minutes / 60);
   if (hours < 24)
-    return t('time.hours_ago', { defaultValue: '{{count}}h ago', count: hours });
+    return t('time.hours_ago', { defaultValue: '{{count}}h ago‌⁠‍', count: hours });
   const days = Math.floor(hours / 24);
-  return t('time.days_ago', { defaultValue: '{{count}}d ago', count: days });
+  return t('time.days_ago', { defaultValue: '{{count}}d ago‌⁠‍', count: days });
 }
 
 /** Get the first letter of a user ID for avatar placeholder. */
@@ -182,7 +182,7 @@ function CommentItem({
         )}
       >
         <p className="text-xs text-content-quaternary italic">
-          {t('comments.deleted', { defaultValue: 'This comment was deleted.' })}
+          {t('comments.deleted', { defaultValue: 'This comment was deleted.‌⁠‍' })}
         </p>
       </div>
     );

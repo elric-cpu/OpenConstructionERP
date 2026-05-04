@@ -1,4 +1,4 @@
-"""5D Cost Model service — business logic for EVM, budgets, and cash flow.
+"""‌⁠‍5D Cost Model service — business logic for EVM, budgets, and cash flow.
 
 Stateless service layer.  Handles:
 - EVM snapshot creation and S-curve data
@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 
 
 def _str_to_float(value: str | None) -> float:
-    """Convert a string-stored numeric value to float, defaulting to 0.0."""
+    """‌⁠‍Convert a string-stored numeric value to float, defaulting to 0.0."""
     if value is None:
         return 0.0
     try:
@@ -63,7 +63,7 @@ def _str_to_float(value: str | None) -> float:
 
 
 def _safe_divide(numerator: float, denominator: float) -> float:
-    """Safely divide two floats, returning 0.0 on zero denominator."""
+    """‌⁠‍Safely divide two floats, returning 0.0 on zero denominator."""
     if denominator == 0.0:
         return 0.0
     return numerator / denominator

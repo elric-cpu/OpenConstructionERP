@@ -1,4 +1,4 @@
-"""Tendering Pydantic schemas — request/response models.
+"""‌⁠‍Tendering Pydantic schemas — request/response models.
 
 Defines create, update, and response schemas for tender packages and bids.
 """
@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class PackageCreate(BaseModel):
-    """Create a new tender package."""
+    """‌⁠‍Create a new tender package."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -26,7 +26,7 @@ class PackageCreate(BaseModel):
 
 
 class PackageUpdate(BaseModel):
-    """Partial update for a tender package."""
+    """‌⁠‍Partial update for a tender package."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 

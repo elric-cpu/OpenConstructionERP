@@ -115,12 +115,12 @@ export function ProcurementPage() {
   const tabs: { key: ProcurementTab; label: string; icon: React.ReactNode }[] = [
     {
       key: 'purchase-orders',
-      label: t('procurement.purchase_orders', { defaultValue: 'Purchase Orders' }),
+      label: t('procurement.purchase_orders', { defaultValue: 'Purchase Orders‌⁠‍' }),
       icon: <Package size={15} />,
     },
     {
       key: 'goods-receipts',
-      label: t('procurement.goods_receipts', { defaultValue: 'Goods Receipts' }),
+      label: t('procurement.goods_receipts', { defaultValue: 'Goods Receipts‌⁠‍' }),
       icon: <ClipboardCheck size={15} />,
     },
   ];
@@ -133,7 +133,7 @@ export function ProcurementPage() {
           ...(projectName
             ? [{ label: projectName, to: `/projects/${projectId}` }]
             : []),
-          { label: t('procurement.title', { defaultValue: 'Procurement' }) },
+          { label: t('procurement.title', { defaultValue: 'Procurement‌⁠‍' }) },
         ]}
         className="mb-4"
       />
@@ -141,11 +141,11 @@ export function ProcurementPage() {
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-content-primary">
-          {t('procurement.title', { defaultValue: 'Procurement' })}
+          {t('procurement.title', { defaultValue: 'Procurement‌⁠‍' })}
         </h1>
         <p className="mt-1 text-sm text-content-secondary">
           {t('procurement.subtitle', {
-            defaultValue: 'Purchase orders and goods receipts',
+            defaultValue: 'Purchase orders and goods receipts‌⁠‍',
           })}
         </p>
       </div>

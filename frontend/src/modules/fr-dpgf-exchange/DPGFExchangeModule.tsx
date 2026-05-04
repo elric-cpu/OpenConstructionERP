@@ -72,8 +72,8 @@ function ImportPreview({
     <div className="border border-border-light rounded-lg overflow-hidden">
       <div className="px-3 py-2 bg-surface-tertiary/50 flex items-center justify-between">
         <span className="text-xs font-medium text-content-secondary">
-          {t('dpgf.preview', { defaultValue: 'Preview' })}: {positions.length}{' '}
-          {t('dpgf.positions', { defaultValue: 'positions' })}
+          {t('dpgf.preview', { defaultValue: 'Preview‌⁠‍' })}: {positions.length}{' '}
+          {t('dpgf.positions', { defaultValue: 'positions‌⁠‍' })}
         </span>
         {positions.length > 20 && (
           <button
@@ -81,7 +81,7 @@ function ImportPreview({
             className="text-2xs text-oe-blue hover:underline"
           >
             {showAll
-              ? t('dpgf.show_less', { defaultValue: 'Show less' })
+              ? t('dpgf.show_less', { defaultValue: 'Show less‌⁠‍' })
               : t('dpgf.show_all', { defaultValue: `Show all ${positions.length}` })}
           </button>
         )}
@@ -91,10 +91,10 @@ function ImportPreview({
           <thead>
             <tr className="bg-surface-secondary/50 sticky top-0">
               <th className="px-3 py-1.5 text-left font-medium text-content-secondary w-24">
-                {t('boq.ordinal', { defaultValue: 'Ordinal' })}
+                {t('boq.ordinal', { defaultValue: 'Ordinal‌⁠‍' })}
               </th>
               <th className="px-3 py-1.5 text-left font-medium text-content-secondary">
-                {t('boq.description', { defaultValue: 'Description' })}
+                {t('boq.description', { defaultValue: 'Description‌⁠‍' })}
               </th>
               <th className="px-3 py-1.5 text-center font-medium text-content-secondary w-16">
                 {t('boq.unit', { defaultValue: 'Unit' })}

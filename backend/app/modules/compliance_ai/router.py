@@ -1,4 +1,4 @@
-"""Compliance-AI router — populated incrementally by T08 and T13."""
+"""‌⁠‍Compliance-AI router — populated incrementally by T08 and T13."""
 
 from __future__ import annotations
 

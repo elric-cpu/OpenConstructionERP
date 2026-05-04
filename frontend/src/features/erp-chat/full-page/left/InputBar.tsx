@@ -119,8 +119,8 @@ export default function InputBar({ onSend, isStreaming, suggestions }: InputBarP
           disabled={isStreaming}
           placeholder={
             isStreaming
-              ? t('chat.responding', { defaultValue: 'AI is responding...' })
-              : t('chat.placeholder', { defaultValue: 'Ask anything about your ERP data...' })
+              ? t('chat.responding', { defaultValue: 'AI is responding...‌⁠‍' })
+              : t('chat.placeholder', { defaultValue: 'Ask anything about your ERP data...‌⁠‍' })
           }
           rows={1}
           style={{
@@ -150,7 +150,7 @@ export default function InputBar({ onSend, isStreaming, suggestions }: InputBarP
           type="button"
           onClick={handleSend}
           disabled={!canSend}
-          aria-label={t('chat.send_message', { defaultValue: 'Send message' })}
+          aria-label={t('chat.send_message', { defaultValue: 'Send message‌⁠‍' })}
           style={{
             width: 40,
             height: 40,
@@ -181,7 +181,7 @@ export default function InputBar({ onSend, isStreaming, suggestions }: InputBarP
           textAlign: 'center',
         }}
       >
-        {t('chat.kbd_hint', { defaultValue: 'Enter to send · Shift+Enter for newline' })}
+        {t('chat.kbd_hint', { defaultValue: 'Enter to send · Shift+Enter for newline‌⁠‍' })}
       </div>
     </div>
   );

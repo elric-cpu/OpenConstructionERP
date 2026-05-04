@@ -861,7 +861,7 @@ export function IntegrationsPage() {
       });
     },
     onError: (err: Error) => {
-      addToast({ type: 'error', title: t('integrations.disconnect_failed', { defaultValue: 'Failed to disconnect' }), message: err.message });
+      addToast({ type: 'error', title: t('integrations.disconnect_failed', { defaultValue: 'Failed to disconnect‌⁠‍' }), message: err.message });
     },
   });
 
@@ -1033,7 +1033,7 @@ export function IntegrationsPage() {
                           <button
                             onClick={async () => {
                               const ok = await confirm({
-                                title: t('integrations.confirm_disconnect_title', { defaultValue: 'Disconnect integration?' }),
+                                title: t('integrations.confirm_disconnect_title', { defaultValue: 'Disconnect integration?‌⁠‍' }),
                                 message: t('integrations.confirm_disconnect', 'Disconnect this integration?'),
                               });
                               if (ok) deleteMut.mutate(cfg.id);

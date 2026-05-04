@@ -1,4 +1,4 @@
-"""Cost item service — business logic for cost database management.
+"""‌⁠‍Cost item service — business logic for cost database management.
 
 Stateless service layer. Handles:
 - Cost item CRUD
@@ -56,13 +56,13 @@ logger = logging.getLogger(__name__)
 # without leaking parser internals to the caller.
 
 def encode_cursor(code: str, item_id: str) -> str:
-    """Pack ``(code, id)`` into a URL-safe base64 cursor token."""
+    """‌⁠‍Pack ``(code, id)`` into a URL-safe base64 cursor token."""
     payload = _json.dumps({"code": code, "id": item_id}, separators=(",", ":"))
     return base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii")
 
 
 def decode_cursor(token: str) -> tuple[str, str] | None:
-    """Decode a cursor back to ``(code, id)``.
+    """‌⁠‍Decode a cursor back to ``(code, id)``.
 
     Returns ``None`` for any malformed input — empty / wrong base64 /
     non-JSON / missing keys — so callers can map the failure to a 400

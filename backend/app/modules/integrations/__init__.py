@@ -1,1 +1,1 @@
-"""Integrations module — chat connectors (Teams, Slack, Telegram), webhooks, calendar feeds."""
+"""‌⁠‍Integrations module — chat connectors (Teams, Slack, Telegram), webhooks, calendar feeds."""

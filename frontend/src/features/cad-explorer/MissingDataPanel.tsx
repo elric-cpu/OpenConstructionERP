@@ -231,7 +231,7 @@ export function MissingDataPanel({ sessionId }: MissingDataPanelProps) {
     void navigator.clipboard.writeText(csv).then(() => {
       addToast({
         type: 'success',
-        title: t('explorer.missingness_csv_copied', { defaultValue: 'CSV summary copied to clipboard' }),
+        title: t('explorer.missingness_csv_copied', { defaultValue: 'CSV summary copied to clipboard‌⁠‍' }),
       });
     });
   }
@@ -242,7 +242,7 @@ export function MissingDataPanel({ sessionId }: MissingDataPanelProps) {
       <div className="flex items-center justify-center py-12 text-content-tertiary">
         <Loader2 className="animate-spin mr-2" size={16} />
         <span className="text-xs">
-          {t('explorer.missingness_loading', { defaultValue: 'Computing fill-rates...' })}
+          {t('explorer.missingness_loading', { defaultValue: 'Computing fill-rates...‌⁠‍' })}
         </span>
       </div>
     );
@@ -253,7 +253,7 @@ export function MissingDataPanel({ sessionId }: MissingDataPanelProps) {
       <Card className="p-4 border-red-200 bg-red-50 dark:bg-red-950/20 dark:border-red-900">
         <p className="text-xs text-red-700 dark:text-red-300">
           {t('explorer.missingness_error', {
-            defaultValue: 'Unable to compute column fill-rates for this session.',
+            defaultValue: 'Unable to compute column fill-rates for this session.‌⁠‍',
           })}
         </p>
       </Card>
@@ -264,12 +264,12 @@ export function MissingDataPanel({ sessionId }: MissingDataPanelProps) {
 
   const footerLabel = data.sampled
     ? t('explorer.missingness_footer_sampled', {
-        defaultValue: 'Showing {{n}} of {{m}} rows (random sample)',
+        defaultValue: 'Showing {{n}} of {{m}} rows (random sample)‌⁠‍',
         n: data.sampled_rows.toLocaleString(),
         m: data.total_rows.toLocaleString(),
       })
     : t('explorer.missingness_footer_full', {
-        defaultValue: 'Showing all {{n}} rows',
+        defaultValue: 'Showing all {{n}} rows‌⁠‍',
         n: data.total_rows.toLocaleString(),
       });
 

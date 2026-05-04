@@ -1,10 +1,10 @@
-"""Schedule module permission definitions."""
+"""‌⁠‍Schedule module permission definitions."""
 
 from app.core.permissions import Role, permission_registry
 
 
 def register_schedule_permissions() -> None:
-    """Register permissions for the Schedule module.
+    """‌⁠‍Register permissions for the Schedule module.
 
     ``schedule.baselines.delete`` is scoped to ADMIN because baselines are
     snapshot-in-time records used for EVM and contractual forensics — an

@@ -1,4 +1,4 @@
-"""CDE module manifest."""
+"""‌⁠‍CDE module manifest."""
 
 from app.core.module_loader import ModuleManifest
 

@@ -1,4 +1,4 @@
-"""Risk Register API routes.
+"""‌⁠‍Risk Register API routes.
 
 Endpoints:
     POST   /                       — Create risk item
@@ -37,7 +37,7 @@ def _get_service(session: SessionDep) -> RiskService:
 
 
 def _risk_to_response(item: object) -> RiskResponse:
-    """Build a RiskResponse from a RiskItem ORM object."""
+    """‌⁠‍Build a RiskResponse from a RiskItem ORM object."""
     return RiskResponse(
         id=item.id,  # type: ignore[attr-defined]
         project_id=item.project_id,  # type: ignore[attr-defined]
@@ -71,7 +71,7 @@ async def get_summary(
     user_id: CurrentUserId = None,  # type: ignore[assignment]
     service: RiskService = Depends(_get_service),
 ) -> RiskSummary:
-    """Aggregated risk stats for a project."""
+    """‌⁠‍Aggregated risk stats for a project."""
     data = await service.get_summary(project_id)
     return RiskSummary(**data)
 

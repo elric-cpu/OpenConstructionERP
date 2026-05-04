@@ -1,4 +1,4 @@
-"""Markups & Annotations data access layer.
+"""‌⁠‍Markups & Annotations data access layer.
 
 All database queries for markups, scale configs, and stamp templates live here.
 No business logic — pure data access.
@@ -14,13 +14,13 @@ from app.modules.markups.models import Markup, ScaleConfig, StampTemplate
 
 
 class MarkupRepository:
-    """Data access for Markup models."""
+    """‌⁠‍Data access for Markup models."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
     async def get_by_id(self, markup_id: uuid.UUID) -> Markup | None:
-        """Get markup by ID."""
+        """‌⁠‍Get markup by ID."""
         return await self.session.get(Markup, markup_id)
 
     async def list_for_document(

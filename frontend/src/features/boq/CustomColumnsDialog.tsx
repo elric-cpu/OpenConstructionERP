@@ -224,13 +224,13 @@ export function CustomColumnsDialog({
       setShowCustomForm(false);
       addToast({
         type: 'success',
-        title: t('boq.column_added', { defaultValue: 'Column added' }),
+        title: t('boq.column_added', { defaultValue: 'Column added‌⁠‍' }),
       });
     },
     onError: (err) => {
       addToast({
         type: 'error',
-        title: t('boq.column_add_failed', { defaultValue: 'Could not add column' }),
+        title: t('boq.column_add_failed', { defaultValue: 'Could not add column‌⁠‍' }),
         message: getErrorMessage(err),
       });
     },
@@ -242,13 +242,13 @@ export function CustomColumnsDialog({
       invalidateAll();
       addToast({
         type: 'success',
-        title: t('boq.column_removed', { defaultValue: 'Column removed' }),
+        title: t('boq.column_removed', { defaultValue: 'Column removed‌⁠‍' }),
       });
     },
     onError: (err) => {
       addToast({
         type: 'error',
-        title: t('boq.column_delete_failed', { defaultValue: 'Could not remove column' }),
+        title: t('boq.column_delete_failed', { defaultValue: 'Could not remove column‌⁠‍' }),
         message: getErrorMessage(err),
       });
     },
@@ -264,7 +264,7 @@ export function CustomColumnsDialog({
         addToast({
           type: 'info',
           title: t('boq.preset_already_applied', {
-            defaultValue: 'All columns from this preset already exist',
+            defaultValue: 'All columns from this preset already exist‌⁠‍',
           }),
         });
         return;

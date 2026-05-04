@@ -1,4 +1,4 @@
-"""Seed loader for oe_i18n_foundation module.
+"""‌⁠‍Seed loader for oe_i18n_foundation module.
 
 Loads countries, work calendars, and tax configurations from JSON files.
 Idempotent: checks row count before inserting. Only seeds empty tables.
@@ -19,14 +19,14 @@ _SEED_DIR = Path(__file__).parent / "seed_data"
 
 
 def _load_json(filename: str) -> list[dict]:
-    """Load and parse a JSON seed file from the seed_data directory."""
+    """‌⁠‍Load and parse a JSON seed file from the seed_data directory."""
     path = _SEED_DIR / filename
     with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
 async def _count_rows(session: AsyncSession, model: type) -> int:
-    """Return the number of rows in a table."""
+    """‌⁠‍Return the number of rows in a table."""
     result = await session.execute(select(func.count()).select_from(model))
     return result.scalar_one()
 

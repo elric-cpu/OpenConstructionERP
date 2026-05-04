@@ -697,9 +697,9 @@ export function BIMViewer({
       onMiss: () => {
         useToastStore.getState().addToast({
           type: 'info',
-          title: t('bim.measure_miss_title', { defaultValue: 'Click missed the model' }),
+          title: t('bim.measure_miss_title', { defaultValue: 'Click missed the model‌⁠‍' }),
           message: t('bim.measure_miss_msg', {
-            defaultValue: 'Click directly on an element to place a measurement point.',
+            defaultValue: 'Click directly on an element to place a measurement point.‌⁠‍',
           }),
         });
       },
@@ -1370,10 +1370,10 @@ export function BIMViewer({
       addToast?.({
         type: 'error',
         title: t('bim.screenshot_failed_title', {
-          defaultValue: 'Screenshot failed',
+          defaultValue: 'Screenshot failed‌⁠‍',
         }),
         message: t('bim.screenshot_failed', {
-          defaultValue: 'WebGL context unavailable — try reloading the viewer.',
+          defaultValue: 'WebGL context unavailable — try reloading the viewer.‌⁠‍',
         }),
       });
       return;
@@ -1423,7 +1423,7 @@ export function BIMViewer({
     addToast?.({
       type: 'success',
       title: t('bim.screenshot_saved_title', {
-        defaultValue: 'Screenshot saved',
+        defaultValue: 'Screenshot saved‌⁠‍',
       }),
       message: filename,
     });

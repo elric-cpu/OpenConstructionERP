@@ -1,4 +1,4 @@
-"""Transmittals ORM models.
+"""‌⁠‍Transmittals ORM models.
 
 Tables:
     oe_transmittals_transmittal — formal document transmittal
@@ -15,7 +15,7 @@ from app.database import GUID, Base
 
 
 class Transmittal(Base):
-    """A formal document transmittal package."""
+    """‌⁠‍A formal document transmittal package."""
 
     __tablename__ = "oe_transmittals_transmittal"
 
@@ -63,7 +63,7 @@ class Transmittal(Base):
 
 
 class TransmittalRecipient(Base):
-    """A recipient of a transmittal with acknowledgement and response tracking."""
+    """‌⁠‍A recipient of a transmittal with acknowledgement and response tracking."""
 
     __tablename__ = "oe_transmittals_recipient"
 

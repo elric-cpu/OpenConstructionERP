@@ -1,4 +1,4 @@
-"""Core schemas — shared Pydantic models for the entire platform.
+"""‌⁠‍Core schemas — shared Pydantic models for the entire platform.
 
 These models define the canonical data structures.
 Used for API request/response, internal data passing, and validation.
@@ -50,7 +50,7 @@ class ValidationStatusEnum(StrEnum):
 
 
 class OEBase(BaseModel):
-    """Base model with common config."""
+    """‌⁠‍Base model with common config."""
 
     model_config = ConfigDict(
         from_attributes=True,
@@ -60,7 +60,7 @@ class OEBase(BaseModel):
 
 
 class OEResponse(OEBase):
-    """Base for API responses with id and timestamps."""
+    """‌⁠‍Base for API responses with id and timestamps."""
 
     id: UUID
     created_at: datetime

@@ -102,7 +102,7 @@ export default function SimilarItemsPanel({
         <div className="flex items-center gap-1.5">
           <Sparkles size={12} className="text-amber-500" />
           <span className="text-[10px] font-semibold uppercase tracking-wider text-content-tertiary">
-            {t('similar.title', { defaultValue: 'Similar items' })}
+            {t('similar.title', { defaultValue: 'Similar items‌⁠‍' })}
           </span>
           {query.data && (
             <span className="text-[10px] text-content-quaternary tabular-nums">
@@ -116,10 +116,10 @@ export default function SimilarItemsPanel({
           title={
             crossProjectState
               ? t('similar.scope_all_title', {
-                  defaultValue: 'Searching across all projects — click to limit to current',
+                  defaultValue: 'Searching across all projects — click to limit to current‌⁠‍',
                 })
               : t('similar.scope_one_title', {
-                  defaultValue: 'Searching current project only — click to expand',
+                  defaultValue: 'Searching current project only — click to expand‌⁠‍',
                 })
           }
           className="inline-flex items-center gap-1 text-[10px] text-content-tertiary hover:text-content-primary"
@@ -127,12 +127,12 @@ export default function SimilarItemsPanel({
           {crossProjectState ? (
             <>
               <Globe size={10} />
-              {t('similar.scope_all', { defaultValue: 'All projects' })}
+              {t('similar.scope_all', { defaultValue: 'All projects‌⁠‍' })}
             </>
           ) : (
             <>
               <Layers size={10} />
-              {t('similar.scope_one', { defaultValue: 'This project' })}
+              {t('similar.scope_one', { defaultValue: 'This project‌⁠‍' })}
             </>
           )}
         </button>

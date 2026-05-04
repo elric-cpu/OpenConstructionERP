@@ -103,13 +103,13 @@ export function SnapshotTimeline({
         <div>
           <h3 className="text-sm font-semibold text-content-primary">
             {t('dashboards.timeline_title', {
-              defaultValue: 'Snapshot history',
+              defaultValue: 'Snapshot history‌⁠‍',
             })}
           </h3>
           <p className="text-xs text-content-tertiary">
             {t('dashboards.timeline_subtitle', {
               defaultValue:
-                'Pick any snapshot to drive the dashboards, or tick two to compare schemas.',
+                'Pick any snapshot to drive the dashboards, or tick two to compare schemas.‌⁠‍',
             })}
           </p>
         </div>
@@ -121,7 +121,7 @@ export function SnapshotTimeline({
           data-testid="snapshot-timeline-compare-button"
         >
           <GitCompareArrows className="mr-1 h-3 w-3" />
-          {t('dashboards.timeline_compare', { defaultValue: 'Compare' })}
+          {t('dashboards.timeline_compare', { defaultValue: 'Compare‌⁠‍' })}
           {comparing.length > 0 && ` (${comparing.length}/2)`}
         </Button>
       </div>
@@ -141,7 +141,7 @@ export function SnapshotTimeline({
             data-testid="snapshot-timeline-error"
           >
             {t('dashboards.timeline_error', {
-              defaultValue: 'Could not load the snapshot history.',
+              defaultValue: 'Could not load the snapshot history.‌⁠‍',
             })}
           </div>
         )}
@@ -152,7 +152,7 @@ export function SnapshotTimeline({
             <EmptyState
               icon={<Layers className="h-8 w-8 text-content-tertiary" />}
               title={t('dashboards.timeline_empty_title', {
-                defaultValue: 'No snapshots yet',
+                defaultValue: 'No snapshots yet‌⁠‍',
               })}
               description={t('dashboards.timeline_empty_desc', {
                 defaultValue:

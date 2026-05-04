@@ -1,4 +1,4 @@
-"""ERP Chat event handlers — vector indexing.
+"""‌⁠‍ERP Chat event handlers — vector indexing.
 
 Subscribes to ``erp_chat.message.*`` events and keeps the ``oe_chat``
 vector collection in sync with persisted ChatMessage rows.

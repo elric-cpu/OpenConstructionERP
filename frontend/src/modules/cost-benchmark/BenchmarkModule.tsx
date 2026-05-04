@@ -28,10 +28,10 @@ function getPercentileColor(pct: number): string {
 }
 
 function getPercentileLabelKey(pct: number): { key: string; defaultValue: string } {
-  if (pct <= 25) return { key: 'benchmarks.pct_below_avg', defaultValue: 'Below average (cost-effective)' };
-  if (pct <= 50) return { key: 'benchmarks.pct_below_median', defaultValue: 'Below median' };
-  if (pct <= 75) return { key: 'benchmarks.pct_above_median', defaultValue: 'Above median' };
-  return { key: 'benchmarks.pct_above_avg', defaultValue: 'Above average (premium)' };
+  if (pct <= 25) return { key: 'benchmarks.pct_below_avg', defaultValue: 'Below average (cost-effective)‌⁠‍' };
+  if (pct <= 50) return { key: 'benchmarks.pct_below_median', defaultValue: 'Below median‌⁠‍' };
+  if (pct <= 75) return { key: 'benchmarks.pct_above_median', defaultValue: 'Above median‌⁠‍' };
+  return { key: 'benchmarks.pct_above_avg', defaultValue: 'Above average (premium)‌⁠‍' };
 }
 
 /* ── Component ─────────────────────────────────────────────────────── */
@@ -85,7 +85,7 @@ export default function BenchmarkModule() {
         </div>
         <div>
           <h1 className="text-xl font-bold text-content-primary">
-            {t('benchmarks.title', { defaultValue: 'Cost Benchmarks' })}
+            {t('benchmarks.title', { defaultValue: 'Cost Benchmarks‌⁠‍' })}
           </h1>
           <p className="text-sm text-content-tertiary">
             {t('benchmarks.subtitle', { defaultValue: 'Compare your estimate against industry benchmarks' })}

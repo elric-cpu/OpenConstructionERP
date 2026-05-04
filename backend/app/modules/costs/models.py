@@ -1,4 +1,4 @@
-"""Cost item ORM models.
+"""‌⁠‍Cost item ORM models.
 
 Tables:
     oe_costs_item — cost database entries (CWICR, RSMeans, BKI, custom)
@@ -11,7 +11,7 @@ from app.database import Base
 
 
 class CostItem(Base):
-    """A single cost database entry (rate, unit price, assembly component)."""
+    """‌⁠‍A single cost database entry (rate, unit price, assembly component)."""
 
     __tablename__ = "oe_costs_item"
     __table_args__ = (

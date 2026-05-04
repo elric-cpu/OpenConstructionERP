@@ -1,4 +1,4 @@
-"""Finance API routes.
+"""‌⁠‍Finance API routes.
 
 Endpoints:
     GET    /                    — List invoices with filters
@@ -70,7 +70,7 @@ def _get_service(session: SessionDep) -> FinanceService:
 
 
 def _contact_display_name(c: Contact) -> str:
-    """Return the human-readable contact label (company > "first last" > email)."""
+    """‌⁠‍Return the human-readable contact label (company > "first last" > email)."""
     if c.company_name:
         return c.company_name
     full = f"{c.first_name or ''} {c.last_name or ''}".strip()
@@ -80,7 +80,7 @@ def _contact_display_name(c: Contact) -> str:
 async def _fetch_counterparty_names(
     session: AsyncSession, contact_ids: Iterable[str | None]
 ) -> dict[str, str]:
-    """Resolve Invoice.contact_id → display name in one round trip."""
+    """‌⁠‍Resolve Invoice.contact_id → display name in one round trip."""
     ids = {cid for cid in contact_ids if cid}
     if not ids:
         return {}

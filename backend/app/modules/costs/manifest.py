@@ -1,4 +1,4 @@
-"""Cost Database module manifest."""
+"""‌⁠‍Cost Database module manifest."""
 
 from app.core.module_loader import ModuleManifest
 

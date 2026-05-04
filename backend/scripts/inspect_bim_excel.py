@@ -1,4 +1,4 @@
-"""Inspect a DDC cad2data / RvtExporter Excel (or Parquet) output.
+"""‌⁠‍Inspect a DDC cad2data / RvtExporter Excel (or Parquet) output.
 
 Run this against the ``original.xlsx`` that DDC produces next to a saved
 ``geometry.dae`` to diagnose why BIM elements come back without ``mesh_ref``,

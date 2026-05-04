@@ -1,4 +1,4 @@
-"""Tighten para3 closing sentence + simplify para4 (drop the redundant
+"""‌⁠‍Tighten para3 closing sentence + simplify para4 (drop the redundant
 '10 years' lead-in that already exists earlier in para3)."""
 import json
 from pathlib import Path

@@ -1,4 +1,4 @@
-"""BIM Requirements Import/Export module manifest."""
+"""‌⁠‍BIM Requirements Import/Export module manifest."""
 
 from app.core.module_loader import ModuleManifest
 

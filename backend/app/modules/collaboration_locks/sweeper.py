@@ -1,4 +1,4 @@
-"""Background task that prunes expired locks.
+"""‌⁠‍Background task that prunes expired locks.
 
 Runs every :data:`SWEEP_INTERVAL_SECONDS` for the lifetime of the
 process.  On shutdown the task is cancelled cooperatively so the
@@ -22,7 +22,7 @@ _task: asyncio.Task[None] | None = None
 
 
 async def _sweep_once() -> int:
-    """Delete every expired lock in a short-lived session.
+    """‌⁠‍Delete every expired lock in a short-lived session.
 
     Returns the number of rows removed.  Publishes a ``collab.lock.expired``
     event for every row so subscribers (presence hub, audit log) can react.
@@ -83,7 +83,7 @@ async def _sweep_once() -> int:
 
 
 async def _sweeper_loop() -> None:
-    """Main loop. Safe to cancel."""
+    """‌⁠‍Main loop. Safe to cancel."""
     logger.info(
         "collab lock sweeper started (interval=%ss)", SWEEP_INTERVAL_SECONDS
     )

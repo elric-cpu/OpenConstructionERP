@@ -1,4 +1,4 @@
-"""Shared HTML email templates.
+"""‌⁠‍Shared HTML email templates.
 
 Centralises the visual shell (logo, CSS, footer) and the per-event
 templates (task-assigned, invoice-approved, safety-alert, meeting,
@@ -32,7 +32,7 @@ def wrap(
     action_url: str | None = None,
     action_label: str = "View",
 ) -> str:
-    """Wrap *body* in the standard email shell (logo, title, CTA, footer)."""
+    """‌⁠‍Wrap *body* in the standard email shell (logo, title, CTA, footer)."""
     btn = ""
     if action_url:
         btn = (
@@ -124,7 +124,7 @@ def template_password_reset(
     reset_url: str,
     token_lifetime_minutes: int = 60,
 ) -> tuple[str, str]:
-    """Password-reset template.
+    """‌⁠‍Password-reset template.
 
     ``reset_url`` already carries the token as a query parameter — the
     template does not embed the raw token separately so we never leak it

@@ -203,7 +203,7 @@ function Lightbox({
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-label={t('photos.lightbox', { defaultValue: 'Photo viewer' })}
+      aria-label={t('photos.lightbox', { defaultValue: 'Photo viewer‌⁠‍' })}
     >
       {/* Close button */}
       <button
@@ -219,7 +219,7 @@ function Lightbox({
         <button
           onClick={(e) => { e.stopPropagation(); onNavigate(currentIndex - 1); }}
           className="absolute left-4 top-1/2 -translate-y-1/2 z-10 flex h-12 w-12 items-center justify-center rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors"
-          aria-label={t('photos.previous', { defaultValue: 'Previous photo' })}
+          aria-label={t('photos.previous', { defaultValue: 'Previous photo‌⁠‍' })}
         >
           <ChevronLeft size={24} />
         </button>
@@ -228,7 +228,7 @@ function Lightbox({
         <button
           onClick={(e) => { e.stopPropagation(); onNavigate(currentIndex + 1); }}
           className="absolute right-4 top-1/2 -translate-y-1/2 z-10 flex h-12 w-12 items-center justify-center rounded-full bg-black/50 text-white hover:bg-black/70 transition-colors"
-          aria-label={t('photos.next', { defaultValue: 'Next photo' })}
+          aria-label={t('photos.next', { defaultValue: 'Next photo‌⁠‍' })}
         >
           <ChevronRight size={24} />
         </button>
@@ -292,7 +292,7 @@ function Lightbox({
               <button
                 onClick={() => onDelete(photo)}
                 className="flex h-8 w-8 items-center justify-center rounded-lg text-white/70 hover:bg-red-500/30 hover:text-red-300 transition-colors"
-                aria-label={t('common.delete', { defaultValue: 'Delete' })}
+                aria-label={t('common.delete', { defaultValue: 'Delete‌⁠‍' })}
               >
                 <Trash2 size={16} />
               </button>
@@ -360,7 +360,7 @@ function EditPhotoModal({
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-label={t('photos.edit_photo', { defaultValue: 'Edit photo' })}
+      aria-label={t('photos.edit_photo', { defaultValue: 'Edit photo‌⁠‍' })}
     >
       <div
         className="w-full max-w-md mx-4 rounded-xl bg-surface-elevated shadow-xl border border-border-light overflow-hidden"

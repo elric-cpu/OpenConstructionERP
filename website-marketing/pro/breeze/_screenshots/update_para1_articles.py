@@ -1,4 +1,4 @@
-"""Replace the inline article-search phrase in voices.para1 with a series-of-articles
+"""‌⁠‍Replace the inline article-search phrase in voices.para1 with a series-of-articles
 phrase, in en/de/ru locale files."""
 import json
 from pathlib import Path

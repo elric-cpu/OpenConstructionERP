@@ -1,4 +1,4 @@
-"""SARIF v2.1.0 exporter for OpenConstructionERP validation reports.
+"""‌⁠‍SARIF v2.1.0 exporter for OpenConstructionERP validation reports.
 
 Translates a :class:`ValidationReport` (from :mod:`app.core.validation.engine`
 OR the persisted :class:`app.modules.validation.models.ValidationReport` ORM
@@ -56,14 +56,14 @@ _SEVERITY_TO_LEVEL: dict[str, str] = {
 
 
 def _level_for(severity: str | Severity) -> str:
-    """Map our :class:`Severity` to a SARIF ``level`` string."""
+    """‌⁠‍Map our :class:`Severity` to a SARIF ``level`` string."""
     if isinstance(severity, Severity):
         severity = severity.value
     return _SEVERITY_TO_LEVEL.get(str(severity).lower(), "none")
 
 
 def _get_tool_version() -> str:
-    """Read the package version from pyproject — fall back to '0.0.0'."""
+    """‌⁠‍Read the package version from pyproject — fall back to '0.0.0'."""
     try:
         from importlib.metadata import PackageNotFoundError, version
 

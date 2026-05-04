@@ -1,4 +1,4 @@
-"""RFI ORM models.
+"""‌⁠‍RFI ORM models.
 
 Tables:
     oe_rfi_rfi — requests for information with response tracking and impact assessment
@@ -13,7 +13,7 @@ from app.database import GUID, Base
 
 
 class RFI(Base):
-    """A Request for Information with response tracking and impact assessment."""
+    """‌⁠‍A Request for Information with response tracking and impact assessment."""
 
     __tablename__ = "oe_rfi_rfi"
 

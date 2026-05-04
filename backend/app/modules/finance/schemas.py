@@ -1,4 +1,4 @@
-"""Finance Pydantic schemas — request/response models."""
+"""‌⁠‍Finance Pydantic schemas — request/response models."""
 
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 def _validate_non_negative_decimal(v: str, field_name: str = "value") -> str:
-    """Validate that a string is a valid non-negative decimal number."""
+    """‌⁠‍Validate that a string is a valid non-negative decimal number."""
     try:
         d = Decimal(v)
     except (InvalidOperation, ValueError, TypeError) as exc:
@@ -20,7 +20,7 @@ def _validate_non_negative_decimal(v: str, field_name: str = "value") -> str:
 
 
 def _validate_decimal(v: str, field_name: str = "value") -> str:
-    """Validate that a string is a valid decimal number (allows negative for EVM)."""
+    """‌⁠‍Validate that a string is a valid decimal number (allows negative for EVM)."""
     try:
         Decimal(v)
     except (InvalidOperation, ValueError, TypeError) as exc:

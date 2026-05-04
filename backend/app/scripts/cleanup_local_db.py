@@ -1,4 +1,4 @@
-"""Local SQLite cleanup — delete QA / test cruft, keep deeply-worked demos.
+"""‌⁠‍Local SQLite cleanup — delete QA / test cruft, keep deeply-worked demos.
 
 Why this exists
 ---------------
@@ -149,7 +149,7 @@ _KEEPER_NAMES: frozenset[str] = frozenset(
 
 
 def _classify(name: str) -> str:
-    """Return one of KEEP / DELETE / UNCERTAIN."""
+    """‌⁠‍Return one of KEEP / DELETE / UNCERTAIN."""
     if name in _KEEPER_NAMES:
         return "KEEP"
     for pattern in _BLACKLIST_PATTERNS:
@@ -159,7 +159,7 @@ def _classify(name: str) -> str:
 
 
 def _project_id_tables(con: sqlite3.Connection) -> list[str]:
-    """Return all table names that have a ``project_id`` column."""
+    """‌⁠‍Return all table names that have a ``project_id`` column."""
     cur = con.execute(
         "SELECT m.name FROM sqlite_master m, pragma_table_info(m.name) p "
         "WHERE m.type='table' AND p.name='project_id' "

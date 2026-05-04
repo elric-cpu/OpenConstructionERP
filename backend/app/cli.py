@@ -1,4 +1,4 @@
-"""OpenConstructionERP CLI — run the platform from the command line.
+"""‌⁠‍OpenConstructionERP CLI — run the platform from the command line.
 
 Usage:
     openestimate serve   [--host HOST] [--port PORT] [--data-dir DIR] [--open]
@@ -85,7 +85,7 @@ _UNICODE = _stdout_supports_unicode()
 
 
 def _u(unicode_str: str, ascii_fallback: str) -> str:
-    """Pick the unicode form when the console can render it, else ASCII."""
+    """‌⁠‍Pick the unicode form when the console can render it, else ASCII."""
     return unicode_str if _UNICODE else ascii_fallback
 
 
@@ -121,7 +121,7 @@ def _bold(text: str) -> str:
 
 
 # ── Banner ────────────────────────────────────────────────────────────────
-_BANNER_ART = r"""  ___                  ____                _                   _   _
+_BANNER_ART = r"""‌⁠‍  ___                  ____                _                   _   _
  / _ \ _ __   ___ _ _ / ___|___  _ __  ___| |_ _ _ _   _  ___ | |_(_) ___  _ _
 | | | | '_ \ / _ \ '_| |   / _ \| '_ \/ __| __| '_| | | |/ __|| __| |/ _ \| '_ \
 | |_| | |_) |  __/ | | |__| (_) | | | \__ \ |_| |  | |_| | (__ | |_| | (_) | | | |

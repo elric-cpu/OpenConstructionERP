@@ -1,4 +1,4 @@
-"""Architecture Map API routes.
+"""‌⁠‍Architecture Map API routes.
 
 Read-only endpoints that serve the architecture manifest JSON and provide
 search/filter capabilities over modules, connections, and statistics.
@@ -51,7 +51,7 @@ _EMPTY_MANIFEST: dict[str, Any] = {
 
 
 def _load_manifest(force: bool = False) -> dict[str, Any]:
-    """Load the architecture manifest from disk, with in-memory caching.
+    """‌⁠‍Load the architecture manifest from disk, with in-memory caching.
 
     Args:
         force: If True, bypass cache and re-read from disk.
@@ -88,7 +88,7 @@ def _load_manifest(force: bool = False) -> dict[str, Any]:
 async def get_manifest(
     refresh: bool = Query(False, description="Force reload manifest from disk"),
 ) -> dict[str, Any]:
-    """Return the full architecture manifest JSON.
+    """‌⁠‍Return the full architecture manifest JSON.
 
     Pass ?refresh=true to force re-reading the file from disk.
     """

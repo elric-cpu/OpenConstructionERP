@@ -116,11 +116,11 @@ export function EscalationCalculator({
         </div>
         <div>
           <h3 className="text-sm font-semibold text-content-primary">
-            {t('costs.escalation_calculator', { defaultValue: 'Cost Escalation Calculator' })}
+            {t('costs.escalation_calculator', { defaultValue: 'Cost Escalation Calculator‌⁠‍' })}
           </h3>
           <p className="text-2xs text-content-tertiary">
             {t('costs.escalation_desc', {
-              defaultValue: 'Adjust costs for inflation using published construction indices',
+              defaultValue: 'Adjust costs for inflation using published construction indices‌⁠‍',
             })}
           </p>
         </div>
@@ -131,7 +131,7 @@ export function EscalationCalculator({
         {/* Region */}
         <div>
           <label className="block text-2xs font-medium text-content-secondary mb-1">
-            {t('common.region', { defaultValue: 'Region' })}
+            {t('common.region', { defaultValue: 'Region‌⁠‍' })}
           </label>
           <select
             value={region}
@@ -149,7 +149,7 @@ export function EscalationCalculator({
         {/* Base year */}
         <div>
           <label className="block text-2xs font-medium text-content-secondary mb-1">
-            {t('costs.base_year', { defaultValue: 'Base year' })}
+            {t('costs.base_year', { defaultValue: 'Base year‌⁠‍' })}
           </label>
           <select
             value={baseYear}
@@ -167,7 +167,7 @@ export function EscalationCalculator({
         {/* Target year */}
         <div>
           <label className="block text-2xs font-medium text-content-secondary mb-1">
-            {t('costs.target_year', { defaultValue: 'Target year' })}
+            {t('costs.target_year', { defaultValue: 'Target year‌⁠‍' })}
           </label>
           <select
             value={targetYear}

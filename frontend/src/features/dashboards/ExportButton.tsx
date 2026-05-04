@@ -55,7 +55,7 @@ export function ExportButton({ snapshotId, query }: ExportButtonProps) {
         toast({
           type: 'error',
           title: t('dashboards.export_failed', {
-            defaultValue: 'Export failed',
+            defaultValue: 'Export failed‌⁠‍',
           }),
           message: err instanceof Error ? err.message : String(err),
         });
@@ -76,7 +76,7 @@ export function ExportButton({ snapshotId, query }: ExportButtonProps) {
         data-testid="export-button-trigger"
       >
         <Download className="mr-1 h-3 w-3" />
-        {t('common.export', { defaultValue: 'Export' })}
+        {t('common.export', { defaultValue: 'Export‌⁠‍' })}
       </Button>
       {open && (
         <div

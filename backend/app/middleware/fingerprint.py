@@ -2,7 +2,7 @@
 # CWICR Cost Database Engine · CAD2DATA Pipeline
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 # AGPL-3.0 License · DDC-CWICR-OE-2026
-"""DDC digital fingerprint middleware.
+"""‌⁠‍DDC digital fingerprint middleware.
 
 Embeds DataDrivenConstruction origin markers in API responses
 for intellectual property verification. CWICR-OE-2026.
@@ -22,7 +22,7 @@ _INSTANCE_HASH = hashlib.sha256(f"DDC-OE-{uuid.uuid4()}".encode()).hexdigest()[:
 
 
 class DDCFingerprintMiddleware(BaseHTTPMiddleware):
-    """Adds origin headers to all API responses.
+    """‌⁠‍Adds origin headers to all API responses.
 
     Static IP/authorship markers (``X-Powered-By``, ``X-DDC-Engine``) are
     emitted everywhere — they're part of the project identity and carry

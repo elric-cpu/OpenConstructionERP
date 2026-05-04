@@ -1,4 +1,4 @@
-"""WhatsApp Business connector via Meta Cloud API.
+"""‌⁠‍WhatsApp Business connector via Meta Cloud API.
 
 Setup: Requires a Meta Business account with WhatsApp Business API access.
 The user needs a verified Business phone number ID and a permanent access token.
@@ -27,7 +27,7 @@ async def send_whatsapp_notification(
     template_language: str = "en",
     template_params: list[str] | None = None,
 ) -> bool:
-    """Send a template message via WhatsApp Business Cloud API.
+    """‌⁠‍Send a template message via WhatsApp Business Cloud API.
 
     Args:
         phone_number_id: The WhatsApp Business phone number ID from Meta dashboard.

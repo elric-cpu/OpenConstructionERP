@@ -47,7 +47,7 @@ export function FloatingQueuePanel() {
             <>
               <Loader2 size={14} className="text-oe-blue animate-spin" />
               <span className="text-xs font-medium text-content-primary">
-                {activeTasks.length} {t('queue.processing', { defaultValue: 'processing' })}
+                {activeTasks.length} {t('queue.processing', { defaultValue: 'processing‌⁠‍' })}
               </span>
             </>
           ) : (
@@ -76,8 +76,8 @@ export function FloatingQueuePanel() {
           )}
           <span className="text-xs font-semibold text-content-primary">
             {activeTasks.length > 0
-              ? t('queue.title_active', { defaultValue: 'Processing ({{count}})', count: activeTasks.length })
-              : t('queue.title_done', { defaultValue: 'All tasks complete' })}
+              ? t('queue.title_active', { defaultValue: 'Processing ({{count}})‌⁠‍', count: activeTasks.length })
+              : t('queue.title_done', { defaultValue: 'All tasks complete‌⁠‍' })}
           </span>
         </div>
         <div className="flex items-center gap-1">
@@ -92,7 +92,7 @@ export function FloatingQueuePanel() {
           <button
             onClick={() => setMinimized(true)}
             className="p-1 rounded hover:bg-surface-secondary text-content-tertiary"
-            title={t('queue.minimize', { defaultValue: 'Minimize' })}
+            title={t('queue.minimize', { defaultValue: 'Minimize‌⁠‍' })}
           >
             <ChevronDown size={14} />
           </button>
@@ -147,7 +147,7 @@ export function FloatingQueuePanel() {
                       className="inline-flex items-center gap-1 text-2xs text-oe-blue hover:underline font-medium"
                     >
                       <ExternalLink size={10} />
-                      {t('queue.open_result', { defaultValue: 'Open in Explorer' })}
+                      {t('queue.open_result', { defaultValue: 'Open in Explorer‌⁠‍' })}
                     </button>
                   )}
                   <span className="text-2xs text-content-quaternary">

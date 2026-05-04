@@ -1,4 +1,4 @@
-"""IDS importer — buildingSMART Information Delivery Specification → ValidationRule.
+"""‌⁠‍IDS importer — buildingSMART Information Delivery Specification → ValidationRule.
 
 Parses an IDS v1.0 XML file (one ``<specification>`` per business rule) and
 generates one :class:`ValidationRule` per specification.  The rules check
@@ -52,7 +52,7 @@ _NS = {"ids": _IDS_NS, "xs": _XS_NS}
 
 
 class IDSImportError(ValueError):
-    """Raised when an IDS file cannot be parsed (malformed XML, missing root, etc.)."""
+    """‌⁠‍Raised when an IDS file cannot be parsed (malformed XML, missing root, etc.)."""
 
 
 # ── Predicate dataclasses ───────────────────────────────────────────────────
@@ -60,7 +60,7 @@ class IDSImportError(ValueError):
 
 @dataclass(frozen=True)
 class _ValueRestriction:
-    """Compiled value restriction extracted from an ``<ids:value>`` block."""
+    """‌⁠‍Compiled value restriction extracted from an ``<ids:value>`` block."""
 
     simple_value: str | None = None
     enum: tuple[str, ...] | None = None

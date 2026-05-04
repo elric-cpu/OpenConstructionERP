@@ -1,4 +1,4 @@
-"""Meetings API routes.
+"""‌⁠‍Meetings API routes.
 
 Endpoints:
     GET    /                              - List meetings for a project
@@ -43,7 +43,7 @@ def _get_service(session: SessionDep) -> MeetingService:
 
 
 def _meeting_to_response(meeting: object) -> MeetingResponse:
-    """Build a MeetingResponse from a Meeting ORM object."""
+    """‌⁠‍Build a MeetingResponse from a Meeting ORM object."""
     return MeetingResponse(
         id=meeting.id,  # type: ignore[attr-defined]
         project_id=meeting.project_id,  # type: ignore[attr-defined]
@@ -91,7 +91,7 @@ async def list_meetings(
     sort_order: str = Query(default="desc", pattern="^(asc|desc)$"),
     service: MeetingService = Depends(_get_service),
 ) -> list[MeetingResponse]:
-    """List meetings for a project with optional filters and search."""
+    """‌⁠‍List meetings for a project with optional filters and search."""
     await verify_project_access(project_id, user_id, session)
     # Map friendly alias "date" to the actual model column
     resolved_sort = "meeting_date" if sort_by == "date" else sort_by

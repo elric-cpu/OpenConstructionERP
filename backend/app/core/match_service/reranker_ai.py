@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""LLM rerank tier — opt-in, cost-capped, gracefully degrades.
+"""‌⁠‍LLM rerank tier — opt-in, cost-capped, gracefully degrades.
 
 When ``MatchRequest.use_reranker=True`` the ranker calls
 :func:`rerank_top_k` to ask an LLM to re-score the top candidates by
@@ -48,7 +48,7 @@ _SYSTEM_PROMPT = (
 
 
 def _build_user_prompt(envelope: ElementEnvelope, candidates: list[MatchCandidate]) -> str:
-    """Render the rerank prompt body — element + shortlist as JSON."""
+    """‌⁠‍Render the rerank prompt body — element + shortlist as JSON."""
     element_payload: dict[str, Any] = {
         "category": envelope.category,
         "description": envelope.description,
@@ -80,7 +80,7 @@ def _build_user_prompt(envelope: ElementEnvelope, candidates: list[MatchCandidat
 
 
 def _parse_rerank_response(raw: str) -> list[dict[str, Any]]:
-    """Best-effort parse of the LLM rerank output.
+    """‌⁠‍Best-effort parse of the LLM rerank output.
 
     Returns an empty list on any failure — callers must treat that as
     "rerank gave us nothing useful, keep the boosted ranking".

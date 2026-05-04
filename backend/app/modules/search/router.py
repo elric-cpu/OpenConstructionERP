@@ -1,4 +1,4 @@
-"""Unified semantic search HTTP router.
+"""‌⁠‍Unified semantic search HTTP router.
 
 Routes:
     GET  /api/v1/search/         — cross-collection semantic search
@@ -44,7 +44,7 @@ async def unified_search_endpoint(
     limit_per_collection: int = Query(default=10, ge=1, le=50),
     final_limit: int = Query(default=25, ge=1, le=100),
 ) -> UnifiedSearchResponse:
-    """Run a cross-collection semantic search.
+    """‌⁠‍Run a cross-collection semantic search.
 
     The query text is embedded once via the active multilingual model and
     the resulting vector is searched against every selected collection in
@@ -69,7 +69,7 @@ async def unified_search_endpoint(
 
 @router.get("/status/", response_model=SearchStatusResponse)
 async def search_status_endpoint(_user_id: CurrentUserId) -> SearchStatusResponse:
-    """Return aggregated vector-store status + per-collection counts.
+    """‌⁠‍Return aggregated vector-store status + per-collection counts.
 
     Used by the admin panel and the global Cmd+K modal to show whether
     semantic search is ready and which collections currently have data.

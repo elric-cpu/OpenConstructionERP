@@ -1,4 +1,4 @@
-"""Migrate CostModel data (CostSnapshot, BudgetLine) into Finance module tables.
+"""‌⁠‍Migrate CostModel data (CostSnapshot, BudgetLine) into Finance module tables.
 
 Reads from the legacy ``oe_costmodel_snapshot`` and ``oe_costmodel_budget_line``
 tables and creates corresponding ``oe_finance_evm_snapshot`` and
@@ -26,13 +26,13 @@ logger = logging.getLogger(__name__)
 
 
 def _table_exists(conn: sa.engine.Connection, table_name: str) -> bool:
-    """Return True if *table_name* exists in the current database."""
+    """‌⁠‍Return True if *table_name* exists in the current database."""
     insp = sa.inspect(conn)
     return table_name in insp.get_table_names()
 
 
 def _get_sync_url() -> str:
-    """Resolve the synchronous DB URL from app settings or fallback."""
+    """‌⁠‍Resolve the synchronous DB URL from app settings or fallback."""
     try:
         from app.config import get_settings
 

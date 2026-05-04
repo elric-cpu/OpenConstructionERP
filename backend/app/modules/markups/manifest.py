@@ -1,4 +1,4 @@
-"""Markups & Annotations module manifest."""
+"""‌⁠‍Markups & Annotations module manifest."""
 
 from app.core.module_loader import ModuleManifest
 

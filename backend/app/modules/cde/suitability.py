@@ -1,4 +1,4 @@
-"""ISO 19650 suitability-code lookup table.
+"""‌⁠‍ISO 19650 suitability-code lookup table.
 
 Exposes the fixed set of ISO 19650-1 suitability codes grouped by CDE state,
 plus a helper that validates whether a given code is allowed for a given
@@ -44,7 +44,7 @@ SUITABILITY_CODES: dict[CDEStateKey, list[tuple[str, str]]] = {
 
 
 def codes_for_state(state: str) -> list[tuple[str, str]]:
-    """Return the list of (code, label) tuples valid for a CDE state.
+    """‌⁠‍Return the list of (code, label) tuples valid for a CDE state.
 
     Unknown states return an empty list so the validator can reject the
     combination cleanly.
@@ -53,7 +53,7 @@ def codes_for_state(state: str) -> list[tuple[str, str]]:
 
 
 def validate_suitability_for_state(code: str | None, state: str) -> tuple[bool, str]:
-    """Validate that ``code`` is allowed for the given CDE ``state``.
+    """‌⁠‍Validate that ``code`` is allowed for the given CDE ``state``.
 
     A blank / None code is always valid — suitability is optional at
     container-create time (the UI surfaces the picker but users can defer).

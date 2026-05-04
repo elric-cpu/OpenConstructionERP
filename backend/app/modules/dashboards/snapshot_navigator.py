@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Historical Snapshot Navigator (T11).
+"""‌⁠‍Historical Snapshot Navigator (T11).
 
 Pure helpers that power the snapshot timeline + diff UX. The functions
 in this module never reach into FastAPI — they take a session-shaped
@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class SnapshotMeta:
-    """Lightweight timeline row.
+    """‌⁠‍Lightweight timeline row.
 
     The historical navigator pulls these in pages of 50 — keeping the
     shape narrow makes the JSON payload small for projects with
@@ -92,7 +92,7 @@ class SnapshotMeta:
 
 @dataclass(frozen=True)
 class SchemaSnapshot:
-    """Column inventory for a single snapshot.
+    """‌⁠‍Column inventory for a single snapshot.
 
     Used only as an internal handle by :func:`diff_two_snapshots`. Not
     exposed to the API — the diff endpoint returns the *delta*, not the

@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Dashboards ORM models (T01 and later tasks).
+"""‌⁠‍Dashboards ORM models (T01 and later tasks).
 
 Tables:
     oe_dashboards_snapshot        — point-in-time Parquet dumps of entity data
@@ -32,7 +32,7 @@ from app.database import GUID, Base
 
 
 class Snapshot(Base):
-    """One named Parquet dump of a project's entity data.
+    """‌⁠‍One named Parquet dump of a project's entity data.
 
     A snapshot is immutable once created — re-running cad2data produces
     a fresh snapshot with a new id. Users compare snapshots via the
@@ -93,7 +93,7 @@ class Snapshot(Base):
 
 
 class SnapshotSourceFile(Base):
-    """Per-file descriptor inside a snapshot.
+    """‌⁠‍Per-file descriptor inside a snapshot.
 
     Populated by the cad2data bridge during snapshot creation. One row
     per uploaded file. The discipline free-text is user-provided at

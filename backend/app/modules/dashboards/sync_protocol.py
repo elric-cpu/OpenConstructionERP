@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Preset → Snapshot Sync Protocol (T09 / task #192).
+"""‌⁠‍Preset → Snapshot Sync Protocol (T09 / task #192).
 
 A dashboard preset (T05) freezes a bundle of column choices and filter
 values that came out of a *snapshot at a given point in time*. When the
@@ -56,7 +56,7 @@ logger = logging.getLogger(__name__)
 
 
 SNAPSHOT_REFRESHED: Final = "snapshot.refreshed"
-"""Fired by the snapshot service when an existing snapshot's data is
+"""‌⁠‍Fired by the snapshot service when an existing snapshot's data is
 re-materialised from a fresh upload. Payload contains at minimum
 ``{snapshot_id, project_id, tenant_id}``. Marked-stale presets carry
 the same ``snapshot_id`` inside their ``config_json``."""
@@ -66,7 +66,7 @@ the same ``snapshot_id`` inside their ``config_json``."""
 
 
 SyncStatus = Literal["synced", "stale", "needs_review"]
-"""Lifecycle states for the :attr:`DashboardPreset.sync_status` column."""
+"""‌⁠‍Lifecycle states for the :attr:`DashboardPreset.sync_status` column."""
 
 Severity = Literal["warning", "error"]
 """Per-issue severity. Errors mean the preset cannot be loaded as-is

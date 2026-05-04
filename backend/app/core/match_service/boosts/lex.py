@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Lexical boost — rewards near-verbatim description overlap.
+"""‌⁠‍Lexical boost — rewards near-verbatim description overlap.
 
 Vector search excels at semantic similarity but can promote candidates
 whose surface text shares little with the element. ``rapidfuzz``
@@ -27,7 +27,7 @@ from app.core.match_service.envelope import ElementEnvelope, MatchCandidate
 
 
 def _token_set_ratio(left: str, right: str) -> int:
-    """Wrap rapidfuzz so we degrade to 0 if the optional dep is missing.
+    """‌⁠‍Wrap rapidfuzz so we degrade to 0 if the optional dep is missing.
 
     rapidfuzz is already in base deps (``backend/pyproject.toml``), so
     this should always succeed in production. The fallback is a
@@ -48,7 +48,7 @@ def boost(
     candidate: MatchCandidate,
     settings: Any,  # noqa: ARG001
 ) -> dict[str, float]:
-    """Add lex-overlap boost based on rapidfuzz token_set_ratio."""
+    """‌⁠‍Add lex-overlap boost based on rapidfuzz token_set_ratio."""
     description = candidate.description or ""
     # Use the *translated* envelope text where available — the matcher
     # writes the translated description back into ``envelope.description``

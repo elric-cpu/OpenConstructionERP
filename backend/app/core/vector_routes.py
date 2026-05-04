@@ -1,4 +1,4 @@
-"""Factory for per-module ``/vector/status/`` and ``/vector/reindex/`` routes.
+"""‌⁠‍Factory for per-module ``/vector/status/`` and ``/vector/reindex/`` routes.
 
 Every module that plugs into the cross-module semantic memory layer
 (``app.core.vector_index``) needs the same two HTTP endpoints:
@@ -91,7 +91,7 @@ def create_vector_routes(
     project_id_attr: str | None = None,
     loader: LoaderFn | None = None,
 ) -> APIRouter:
-    """Build a sub-router exposing ``/vector/status/`` and ``/vector/reindex/``.
+    """‌⁠‍Build a sub-router exposing ``/vector/status/`` and ``/vector/reindex/``.
 
     Exactly one of ``model`` or ``loader`` must be supplied.  When ``model``
     is given the factory builds a simple ``select(model)`` with optional
@@ -124,7 +124,7 @@ def create_vector_routes(
 
     @sub.get("/vector/status/", dependencies=read_deps)
     async def vector_status(_user_id: CurrentUserId) -> dict[str, Any]:
-        """Return health + row count for this module's vector collection."""
+        """‌⁠‍Return health + row count for this module's vector collection."""
         return collection_status(collection)
 
     @sub.post("/vector/reindex/", dependencies=write_deps)

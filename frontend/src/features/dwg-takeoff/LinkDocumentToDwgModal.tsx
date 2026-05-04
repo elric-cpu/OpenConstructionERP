@@ -103,9 +103,9 @@ export default function LinkDocumentToDwgModal({
     onSuccess: (count) => {
       addToast({
         type: 'success',
-        title: t('dwg_takeoff.doc_linked_title', { defaultValue: 'Document linked' }),
+        title: t('dwg_takeoff.doc_linked_title', { defaultValue: 'Document linked‌⁠‍' }),
         message: t('dwg_takeoff.doc_linked_msg', {
-          defaultValue: 'Linked to {{count}} DWG entity/entities',
+          defaultValue: 'Linked to {{count}} DWG entity/entities‌⁠‍',
           count,
         }),
       });
@@ -139,13 +139,13 @@ export default function LinkDocumentToDwgModal({
           <div className="flex items-center gap-2">
             <FileText size={16} className="text-violet-600" />
             <h2 className="text-sm font-semibold text-content-primary">
-              {t('dwg_takeoff.link_doc_title', { defaultValue: 'Link a document' })}
+              {t('dwg_takeoff.link_doc_title', { defaultValue: 'Link a document‌⁠‍' })}
             </h2>
             <span className="text-[11px] text-content-tertiary">
               {entityIds.length === 1
-                ? '→ ' + (entityLabel || t('dwg_takeoff.entity', { defaultValue: 'Entity' }))
+                ? '→ ' + (entityLabel || t('dwg_takeoff.entity', { defaultValue: 'Entity‌⁠‍' }))
                 : t('dwg_takeoff.link_doc_bulk', {
-                    defaultValue: '→ {{count}} entities',
+                    defaultValue: '→ {{count}} entities‌⁠‍',
                     count: entityIds.length,
                   })}
             </span>

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exhaustive API Test Suite for OpenEstimate Backend.
+"""‌⁠‍Exhaustive API Test Suite for OpenEstimate Backend.
 
 Tests all API endpoints for:
 - Correct status codes
@@ -51,7 +51,7 @@ def log_warn(endpoint: str, desc: str, note: str) -> None:
 
 def api(method: str, path: str, body: Any = None, token: str | None = None,
         expected: int | None = None, raw: bool = False, timeout: int = 30) -> tuple[int, Any]:
-    """Make an API call and return (status_code, parsed_json_or_bytes)."""
+    """‌⁠‍Make an API call and return (status_code, parsed_json_or_bytes)."""
     url = f"{BASE}{path}"
     data = None
     if body is not None:

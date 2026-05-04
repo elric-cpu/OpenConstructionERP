@@ -1,4 +1,4 @@
-"""Internationalization system.
+"""‌⁠‍Internationalization system.
 
 20 languages built into core. Zero hardcoded strings.
 New language = add a JSON file to locales/.
@@ -79,7 +79,7 @@ LOCALES_DIR = Path(__file__).parent.parent.parent / "locales"
 
 
 def load_translations(locales_dir: Path | None = None) -> None:
-    """Load all locale JSON files into memory."""
+    """‌⁠‍Load all locale JSON files into memory."""
     global _translations
     scan_dir = locales_dir or LOCALES_DIR
 
@@ -102,7 +102,7 @@ def load_translations(locales_dir: Path | None = None) -> None:
 
 
 def _flatten_dict(d: dict, prefix: str = "") -> dict[str, str]:
-    """Flatten nested dict: {"validation": {"error": "msg"}} → {"validation.error": "msg"}"""
+    """‌⁠‍Flatten nested dict: {"validation": {"error": "msg"}} → {"validation.error": "msg"}"""
     items: dict[str, str] = {}
     for k, v in d.items():
         key = f"{prefix}.{k}" if prefix else k

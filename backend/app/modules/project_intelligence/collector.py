@@ -1,4 +1,4 @@
-"""Project state collector — gathers project data from all modules.
+"""‌⁠‍Project state collector — gathers project data from all modules.
 
 Uses raw SQL via session.execute(text(...)) for speed and to avoid
 circular imports with other module services. All queries are project-scoped
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class BOQState:
-    """Bill of Quantities domain state."""
+    """‌⁠‍Bill of Quantities domain state."""
 
     exists: bool = False
     total_items: int = 0
@@ -39,7 +39,7 @@ class BOQState:
 
 @dataclass
 class ScheduleState:
-    """Schedule domain state."""
+    """‌⁠‍Schedule domain state."""
 
     exists: bool = False
     activities_count: int = 0

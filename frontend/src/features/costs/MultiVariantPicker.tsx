@@ -306,7 +306,7 @@ export function MultiVariantPicker({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <h3 id="mvp-title" className="text-base font-semibold truncate">
-                {t('boq.mvp.title', { defaultValue: 'Choose materials' })}
+                {t('boq.mvp.title', { defaultValue: 'Choose materials‌⁠‍' })}
               </h3>
               {batchProgress && batchProgress.total > 1 && (
                 <Badge
@@ -315,7 +315,7 @@ export function MultiVariantPicker({
                   data-testid="mvp-batch-progress"
                 >
                   {t('boq.mvp.batch_progress', {
-                    defaultValue: 'Item {{current}} of {{total}}',
+                    defaultValue: 'Item {{current}} of {{total}}‌⁠‍',
                     current: batchProgress.current,
                     total: batchProgress.total,
                   })}
@@ -327,7 +327,7 @@ export function MultiVariantPicker({
             </p>
             <p className="text-xs text-content-tertiary mt-0.5">
               {t('boq.mvp.subtitle', {
-                defaultValue: '{{count}} resource needs a choice',
+                defaultValue: '{{count}} resource needs a choice‌⁠‍',
                 defaultValue_other: '{{count}} resources need a choice',
                 count: slots.length,
               })}
@@ -347,11 +347,11 @@ export function MultiVariantPicker({
         <div className="px-6 py-3 border-b border-border-light bg-surface-secondary/40 flex flex-wrap items-center gap-2">
           <span className="text-[11px] uppercase tracking-wide text-content-tertiary font-medium me-1">
             <Wand2 size={12} className="inline me-1 -mt-0.5" />
-            {t('boq.mvp.bulk_label', { defaultValue: 'Quick fill:' })}
+            {t('boq.mvp.bulk_label', { defaultValue: 'Quick fill:‌⁠‍' })}
           </span>
           <BulkChip
             onClick={allMedian}
-            label={t('boq.mvp.bulk_median', { defaultValue: 'Median for all' })}
+            label={t('boq.mvp.bulk_median', { defaultValue: 'Median for all‌⁠‍' })}
             testId="mvp-bulk-median"
           />
           <BulkChip

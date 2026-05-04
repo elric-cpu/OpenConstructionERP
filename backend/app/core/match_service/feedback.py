@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Match feedback loop — captures user confirmations for offline tuning.
+"""‌⁠‍Match feedback loop — captures user confirmations for offline tuning.
 
 Every time the user accepts, rejects, or hand-overrides a match
 suggestion the router calls :func:`record_feedback`. The captured
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 def _candidate_payload(candidate: MatchCandidate) -> dict[str, Any]:
-    """Compact dict for audit storage — drops fields a downstream
+    """‌⁠‍Compact dict for audit storage — drops fields a downstream
     re-ranker can recompute from ``code`` (description, currency, etc.)
     while keeping the score / boost trail."""
     return {
@@ -46,7 +46,7 @@ async def record_feedback(
     user_chose_code: str | None = None,
     user_id: str | None = None,
 ) -> None:
-    """Persist one feedback event for the matcher's training corpus.
+    """‌⁠‍Persist one feedback event for the matcher's training corpus.
 
     Args:
         db: Async session.

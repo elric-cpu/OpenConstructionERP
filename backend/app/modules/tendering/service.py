@@ -1,4 +1,4 @@
-"""Tendering service — business logic for tender packages and bids.
+"""‌⁠‍Tendering service — business logic for tender packages and bids.
 
 Stateless service layer. Handles:
 - Package CRUD with status workflow
@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 
 class TenderingService:
-    """Business logic for tendering operations."""
+    """‌⁠‍Business logic for tendering operations."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -48,7 +48,7 @@ class TenderingService:
     # ── Packages ─────────────────────────────────────────────────────────
 
     async def create_package(self, data: PackageCreate) -> TenderPackage:
-        """Create a new tender package."""
+        """‌⁠‍Create a new tender package."""
         package = TenderPackage(
             project_id=data.project_id,
             boq_id=data.boq_id,

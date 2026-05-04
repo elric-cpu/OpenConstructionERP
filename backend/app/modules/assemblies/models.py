@@ -1,4 +1,4 @@
-"""Assembly ORM models.
+"""‌⁠‍Assembly ORM models.
 
 Tables:
     oe_assemblies_assembly — composite cost items (calculations / recipes)
@@ -14,7 +14,7 @@ from app.database import GUID, Base
 
 
 class Assembly(Base):
-    """A composite cost item built from cost database entries with factors.
+    """‌⁠‍A composite cost item built from cost database entries with factors.
 
     Example: "RC Wall C30/37 d=25cm" = concrete + rebar + formwork + labor,
     each with a factor that defines how much of the component is needed per
@@ -67,7 +67,7 @@ class Assembly(Base):
 
 
 class Component(Base):
-    """A single line item within an assembly — links to a cost database entry."""
+    """‌⁠‍A single line item within an assembly — links to a cost database entry."""
 
     __tablename__ = "oe_assemblies_component"
 

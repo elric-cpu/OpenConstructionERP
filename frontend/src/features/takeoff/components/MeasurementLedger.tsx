@@ -142,7 +142,7 @@ export function MeasurementLedger({
     >
       <div className="flex items-center justify-between mb-2 gap-2">
         <p className="text-xs font-semibold text-content-primary">
-          {t('takeoff_viewer.ledger', { defaultValue: 'Ledger' })}{' '}
+          {t('takeoff_viewer.ledger', { defaultValue: 'Ledger‌⁠‍' })}{' '}
           <span className="text-content-tertiary tabular-nums">
             ({rows.length}/{measurements.length})
           </span>
@@ -161,7 +161,7 @@ export function MeasurementLedger({
             data-testid="ledger-filter-toggle"
           >
             <Filter size={10} />
-            {t('takeoff_viewer.filters', { defaultValue: 'Filters' })}
+            {t('takeoff_viewer.filters', { defaultValue: 'Filters‌⁠‍' })}
             {hasFilters && (
               <span className="ml-0.5 h-1.5 w-1.5 rounded-full bg-oe-blue" />
             )}
@@ -172,7 +172,7 @@ export function MeasurementLedger({
             disabled={rows.length === 0}
             className="flex items-center gap-1 px-1.5 py-1 rounded text-[10px] hover:bg-surface-secondary text-content-tertiary disabled:opacity-40 disabled:pointer-events-none transition-colors"
             title={t('takeoff_viewer.export_filtered_csv', {
-              defaultValue: 'Export filtered view as CSV',
+              defaultValue: 'Export filtered view as CSV‌⁠‍',
             })}
             data-testid="ledger-export-csv"
           >
@@ -188,7 +188,7 @@ export function MeasurementLedger({
           data-testid="ledger-filters"
         >
           <FilterChipGroup
-            label={t('takeoff_viewer.filter_groups', { defaultValue: 'Groups' })}
+            label={t('takeoff_viewer.filter_groups', { defaultValue: 'Groups‌⁠‍' })}
             options={options.groups}
             active={filter.groups}
             onToggle={(v) =>
@@ -224,7 +224,7 @@ export function MeasurementLedger({
               className="flex items-center gap-1 text-[10px] text-content-tertiary hover:text-content-primary transition-colors"
             >
               <X size={9} />
-              {t('takeoff_viewer.clear_filters', { defaultValue: 'Clear filters' })}
+              {t('takeoff_viewer.clear_filters', { defaultValue: 'Clear filters‌⁠‍' })}
             </button>
           )}
         </div>

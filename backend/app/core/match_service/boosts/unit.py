@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Unit boost — rewards unit alignment, penalises type-mismatches.
+"""‌⁠‍Unit boost — rewards unit alignment, penalises type-mismatches.
 
 CWICR position units stay in canonical short codes: ``m``, ``m2`` /
 ``m²``, ``m3`` / ``m³``, ``kg``, ``pcs``, ``lsum``. Element envelopes
@@ -54,7 +54,7 @@ _DIMENSION_GROUP: dict[str, str] = {
 
 
 def _normalise_unit(unit: str) -> str:
-    """Strip whitespace, lowercase, fold superscript m² / m³ → m2 / m3."""
+    """‌⁠‍Strip whitespace, lowercase, fold superscript m² / m³ → m2 / m3."""
     if not unit:
         return ""
     cleaned = unit.strip().lower()
@@ -67,7 +67,7 @@ def _normalise_unit(unit: str) -> str:
 
 
 def _infer_from_quantities(quantities: dict[str, float]) -> str | None:
-    """Pick the unit implied by the highest-precedence non-empty quantity.
+    """‌⁠‍Pick the unit implied by the highest-precedence non-empty quantity.
 
     Precedence is dimensional: volume > area > length > mass > count.
     A wall element typically carries both ``area_m2`` and ``length_m``;

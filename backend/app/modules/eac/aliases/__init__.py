@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""EAC v2 parameter aliases (RFC 35 §6 — Wave EAC-2).
+"""‌⁠‍EAC v2 parameter aliases (RFC 35 §6 — Wave EAC-2).
 
 Public surface:
 

@@ -1,4 +1,4 @@
-"""Final logo update — corrects two domains and adds their direct logo URLs."""
+"""‌⁠‍Final logo update — corrects two domains and adds their direct logo URLs."""
 from pathlib import Path
 import re
 

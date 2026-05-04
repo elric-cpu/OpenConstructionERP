@@ -1,4 +1,4 @@
-"""Locale-scoped message bundle for the compliance_ai module.
+"""‌⁠‍Locale-scoped message bundle for the compliance_ai module.
 
 Populated as T08 and T13 land. Until then the bundle is empty and
 ``translate()`` falls back to the raw key (logged WARNING once per key).

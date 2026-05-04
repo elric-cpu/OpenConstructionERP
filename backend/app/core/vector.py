@@ -1,4 +1,4 @@
-"""Vector database integration — LanceDB (embedded) or Qdrant (server).
+"""‌⁠‍Vector database integration — LanceDB (embedded) or Qdrant (server).
 
 Default: LanceDB — embedded vector DB, runs in-process like SQLite.
 No Docker, no server, no network. Data at ~/.openestimator/data/vectors/.
@@ -62,7 +62,7 @@ _embedder_tried: bool = False
 
 
 def _has_module(name: str) -> bool:
-    """Check if a module is importable WITHOUT actually importing it.
+    """‌⁠‍Check if a module is importable WITHOUT actually importing it.
 
     Used during startup to report availability of optional dependencies
     (qdrant-client, sentence-transformers) without triggering heavy
@@ -78,7 +78,7 @@ def _has_module(name: str) -> bool:
 
 
 def _resolve_active_model() -> tuple[str, int]:
-    """Resolve the embedding model name + dim from settings.
+    """‌⁠‍Resolve the embedding model name + dim from settings.
 
     Returns ``(model_name, dim)``.  Settings are consulted lazily so that
     test fixtures can override them via the env var ``EMBEDDING_MODEL_NAME``

@@ -83,8 +83,8 @@ export function InfoHint({ text, className, style, inline, label }: InfoHintProp
         <Info size={14} strokeWidth={2} className="shrink-0" />
         <span>
           {label ?? (open
-            ? t('common.hide_info', { defaultValue: 'Hide info' })
-            : t('common.how_it_works', { defaultValue: 'How it works' }))}
+            ? t('common.hide_info', { defaultValue: 'Hide info‌⁠‍' })
+            : t('common.how_it_works', { defaultValue: 'How it works‌⁠‍' }))}
         </span>
       </button>
       <div

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""
+"""‌⁠‍
 OpenEstimate — Comprehensive Module Test Suite
 ================================================
 
@@ -103,7 +103,7 @@ class TestSuite:
 
 
 class API:
-    """Thin HTTP client wrapper with auth and timing."""
+    """‌⁠‍Thin HTTP client wrapper with auth and timing."""
 
     def __init__(self, base: str) -> None:
         self.base = base
@@ -147,7 +147,7 @@ def check(
     *,
     must_have: list[str] | None = None,
 ) -> dict | list | None:
-    """Assert response status and optional body checks."""
+    """‌⁠‍Assert response status and optional body checks."""
     exp_list = [expected] if isinstance(expected, int) else expected
     ok = response.status_code in exp_list
     detail = ""

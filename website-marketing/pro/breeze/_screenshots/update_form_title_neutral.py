@@ -1,4 +1,4 @@
-"""Replace the personal 'I read every message myself' form_title with a
+"""‌⁠‍Replace the personal 'I read every message myself' form_title with a
    neutral, less first-person version, in en/de/ru."""
 import json
 from pathlib import Path

@@ -1,4 +1,4 @@
-"""Generic bulk operation helpers.
+"""‌⁠‍Generic bulk operation helpers.
 
 Provides reusable schemas and a bulk delete/update/status SQL builder so each
 module can expose POST /batch/delete/, POST /batch/update/, and PATCH /batch/status/
@@ -31,13 +31,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class BulkDeleteRequest(BaseModel):
-    """IDs of records to delete in a single transaction."""
+    """‌⁠‍IDs of records to delete in a single transaction."""
 
     ids: list[uuid.UUID] = Field(..., min_length=1, max_length=500)
 
 
 class BulkStatusRequest(BaseModel):
-    """IDs to update + new status string."""
+    """‌⁠‍IDs to update + new status string."""
 
     ids: list[uuid.UUID] = Field(..., min_length=1, max_length=500)
     status: str = Field(..., min_length=1, max_length=50)

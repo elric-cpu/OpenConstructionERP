@@ -1,4 +1,4 @@
-"""Add two real testimonials about DataDrivenConstruction (Chris Andrew at
+"""‌⁠‍Add two real testimonials about DataDrivenConstruction (Chris Andrew at
 AECOM and Prof. Dr.-Ing. Michael Buehler at GemeinWerk Ventures) into the
 DDC section of the breeze index.html.
 
@@ -32,7 +32,7 @@ michael = grab_avatar("Michael")
 
 # ---------- 1. CSS ----------
 # Insert after the .ddc-marquee CSS rules and before .ddc-logo.
-css = """
+css = """‌⁠‍
     /* Testimonials block — two glass cards matching the ecosystem card
        language: hairline border, soft glass surface, accent on hover. The
        big quote glyph is a decorative pseudo-element on each card. */

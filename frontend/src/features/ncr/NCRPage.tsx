@@ -181,17 +181,17 @@ function CreateNCRModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-2xl bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true" aria-label={t('ncr.new_ncr', { defaultValue: 'New NCR' })}>
+      <div className="w-full max-w-2xl bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true" aria-label={t('ncr.new_ncr', { defaultValue: 'New NCR‌⁠‍' })}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border-light">
           <div>
             <h2 className="text-lg font-semibold text-content-primary">
-              {t('ncr.new_ncr', { defaultValue: 'New NCR' })}
+              {t('ncr.new_ncr', { defaultValue: 'New NCR‌⁠‍' })}
             </h2>
             {projectName && (
               <p className="text-xs text-content-tertiary mt-0.5">
                 {t('common.creating_in_project', {
-                  defaultValue: 'In {{project}}',
+                  defaultValue: 'In {{project}}‌⁠‍',
                   project: projectName,
                 })}
               </p>
@@ -211,7 +211,7 @@ function CreateNCRModal({
           {/* ── NCR Type ── */}
           <div>
             <label className="block text-sm font-medium text-content-primary mb-2">
-              {t('ncr.field_type', { defaultValue: 'Non-Conformance Type' })}
+              {t('ncr.field_type', { defaultValue: 'Non-Conformance Type‌⁠‍' })}
             </label>
             <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
               {NCR_TYPES.map((nt) => {
@@ -245,7 +245,7 @@ function CreateNCRModal({
           {/* ── Severity ── */}
           <div>
             <label className="block text-sm font-medium text-content-primary mb-2">
-              {t('ncr.field_severity', { defaultValue: 'Severity' })}
+              {t('ncr.field_severity', { defaultValue: 'Severity‌⁠‍' })}
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {NCR_SEVERITIES.map((sev) => {

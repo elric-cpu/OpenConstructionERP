@@ -1,4 +1,4 @@
-"""Add workshops.{eyebrow,title,lede} keys to en/de/ru locale files."""
+"""‌⁠‍Add workshops.{eyebrow,title,lede} keys to en/de/ru locale files."""
 import json
 from pathlib import Path
 

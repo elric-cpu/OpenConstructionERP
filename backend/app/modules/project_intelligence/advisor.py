@@ -1,4 +1,4 @@
-"""AI Advisor — generates project recommendations using the LLM service.
+"""‌⁠‍AI Advisor — generates project recommendations using the LLM service.
 
 Reuses the existing AI client from app.modules.ai.ai_client.
 Falls back to rule-based recommendations when no LLM is configured.
@@ -57,13 +57,13 @@ SYSTEM_PROMPTS = {
 
 
 def _build_system_prompt(role: str, language: str, standard: str) -> str:
-    """Build the system prompt for the given role."""
+    """‌⁠‍Build the system prompt for the given role."""
     template = SYSTEM_PROMPTS.get(role, SYSTEM_PROMPTS["estimator"])
     return template.format(language=language, standard=standard or "international")
 
 
 def _build_context_prompt(state: ProjectState, score: ProjectScore) -> str:
-    """Serialize project state into a token-efficient prompt context."""
+    """‌⁠‍Serialize project state into a token-efficient prompt context."""
     lines = [
         f"Project: \"{state.project_name}\" | Type: {state.project_type or 'unspecified'} "
         f"| Standard: {state.standard or 'unspecified'} | Region: {state.region or 'unspecified'} "

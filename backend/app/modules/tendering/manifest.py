@@ -1,4 +1,4 @@
-"""Tendering module manifest."""
+"""‌⁠‍Tendering module manifest."""
 
 from app.core.module_loader import ModuleManifest
 

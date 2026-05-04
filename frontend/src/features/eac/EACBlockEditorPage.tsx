@@ -37,7 +37,7 @@ export function EACBlockEditorPage() {
         <main className="flex flex-1 flex-col overflow-hidden">
           <header className="border-b border-border bg-surface-secondary px-4 py-2">
             <h1 className="text-sm font-semibold text-content-primary">
-              {t('eac.editor.title', { defaultValue: 'EAC Block Editor' })}
+              {t('eac.editor.title', { defaultValue: 'EAC Block Editor‌⁠‍' })}
               <span className="ml-2 font-normal text-content-tertiary">· {eacId}</span>
             </h1>
           </header>

@@ -1,4 +1,4 @@
-"""Activity feed API router.
+"""‌⁠‍Activity feed API router.
 
 Endpoint:
     GET /api/v1/activity?project_id=...&limit=20&offset=0
@@ -24,7 +24,7 @@ async def activity_feed(
     limit: int = Query(default=20, ge=1, le=100, description="Maximum entries to return"),
     offset: int = Query(default=0, ge=0, description="Pagination offset"),
 ) -> list[dict[str, Any]]:
-    """Get a chronological feed of recent actions across all modules.
+    """‌⁠‍Get a chronological feed of recent actions across all modules.
 
     Aggregates from the audit log with user name resolution.
     Each entry includes: type, entity_type, entity_id, title, action,

@@ -91,13 +91,13 @@ export function FeedbackDialog({ open, onClose }: FeedbackDialogProps) {
       });
       addToast({
         type: 'success',
-        title: t('feedback.success', { defaultValue: 'Thank you! Your feedback has been received.' }),
+        title: t('feedback.success', { defaultValue: 'Thank you! Your feedback has been received.‌⁠‍' }),
       });
       onClose();
     } catch {
       addToast({
         type: 'error',
-        title: t('feedback.error', { defaultValue: 'Could not send feedback. Please try again or report on GitHub.' }),
+        title: t('feedback.error', { defaultValue: 'Could not send feedback. Please try again or report on GitHub.‌⁠‍' }),
       });
     } finally {
       setSending(false);
@@ -124,7 +124,7 @@ export function FeedbackDialog({ open, onClose }: FeedbackDialogProps) {
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-label={t('feedback.title', { defaultValue: 'Send Feedback' })}
+        aria-label={t('feedback.title', { defaultValue: 'Send Feedback‌⁠‍' })}
         tabIndex={-1}
         className={clsx(
           'relative z-10 w-full max-w-md mx-4',
@@ -137,7 +137,7 @@ export function FeedbackDialog({ open, onClose }: FeedbackDialogProps) {
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-5 pb-3">
           <h2 className="text-base font-semibold text-content-primary">
-            {t('feedback.title', { defaultValue: 'Send Feedback' })}
+            {t('feedback.title', { defaultValue: 'Send Feedback‌⁠‍' })}
           </h2>
           <button
             onClick={onClose}
@@ -184,7 +184,7 @@ export function FeedbackDialog({ open, onClose }: FeedbackDialogProps) {
           {/* Subject */}
           <div>
             <label className="block text-xs font-medium text-content-secondary mb-1">
-              {t('feedback.subject', { defaultValue: 'Subject' })}
+              {t('feedback.subject', { defaultValue: 'Subject‌⁠‍' })}
               <span className="text-semantic-error ml-0.5">*</span>
             </label>
             <input

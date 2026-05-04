@@ -72,7 +72,7 @@ export function BOQPicker({
             )}
           >
             <option value="">
-              {t('common.select_project', { defaultValue: 'Select project...' })}
+              {t('common.select_project', { defaultValue: 'Select project...‌⁠‍' })}
             </option>
             {activeProjects.map((p) => (
               <option key={p.id} value={p.id}>
@@ -104,10 +104,10 @@ export function BOQPicker({
           >
             <option value="">
               {boqsLoading
-                ? t('common.loading', { defaultValue: 'Loading...' })
+                ? t('common.loading', { defaultValue: 'Loading...‌⁠‍' })
                 : boqs && boqs.length > 0
-                  ? t('common.select_boq', { defaultValue: 'Select BOQ...' })
-                  : t('boq.no_boqs', { defaultValue: 'No BOQs found' })}
+                  ? t('common.select_boq', { defaultValue: 'Select BOQ...‌⁠‍' })
+                  : t('boq.no_boqs', { defaultValue: 'No BOQs found‌⁠‍' })}
             </option>
             {(boqs ?? []).map((b) => (
               <option key={b.id} value={b.id}>

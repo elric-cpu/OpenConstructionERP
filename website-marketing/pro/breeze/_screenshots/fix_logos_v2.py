@@ -1,4 +1,4 @@
-"""Replace Merks with Merck and apply curated Wikipedia logo URLs to as
+"""‌⁠‍Replace Merks with Merck and apply curated Wikipedia logo URLs to as
 many marquee chips as possible.
 
 For each chip we rewrite:

@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""High-level helpers around the JobRun row — RFC 34 §4 W0.1.
+"""‌⁠‍High-level helpers around the JobRun row — RFC 34 §4 W0.1.
 
 This module is the API surface every other Wave (CDE upload pipeline,
 BIM diff engine, EAC validator, QTO export, …) talks to:
@@ -60,7 +60,7 @@ _HANDLERS: dict[str, JobHandler] = {}
 
 
 def register_handler(kind: str, handler: JobHandler) -> None:
-    """Register a handler for a JobRun ``kind``.
+    """‌⁠‍Register a handler for a JobRun ``kind``.
 
     Re-registering the same kind silently overrides — useful in tests,
     matches the Pythonic "last write wins" convention, and avoids
@@ -71,7 +71,7 @@ def register_handler(kind: str, handler: JobHandler) -> None:
 
 
 def unregister_handler(kind: str) -> None:
-    """Remove a handler from the registry. No-op if absent."""
+    """‌⁠‍Remove a handler from the registry. No-op if absent."""
     _HANDLERS.pop(kind, None)
 
 

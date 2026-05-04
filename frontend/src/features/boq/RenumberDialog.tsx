@@ -219,11 +219,11 @@ export function RenumberDialog({
                 id="renumber-dialog-title"
                 className="text-base font-bold text-content-primary"
               >
-                {t('boq.renumber_dialog_title', { defaultValue: 'Renumber positions' })}
+                {t('boq.renumber_dialog_title', { defaultValue: 'Renumber positions‌⁠‍' })}
               </h2>
               <p className="text-xs text-content-secondary mt-0.5">
                 {t('boq.renumber_dialog_subtitle', {
-                  defaultValue: 'Pick a numbering scheme. The current order is preserved — only ordinals are rewritten.',
+                  defaultValue: 'Pick a numbering scheme. The current order is preserved — only ordinals are rewritten.‌⁠‍',
                 })}
               </p>
             </div>
@@ -280,7 +280,7 @@ export function RenumberDialog({
                         </span>
                         {s.recommended && (
                           <span className="text-[9px] font-bold uppercase tracking-wider text-sky-600 dark:text-sky-400 bg-sky-500/15 px-1.5 py-0.5 rounded">
-                            {t('common.recommended', { defaultValue: 'Recommended' })}
+                            {t('common.recommended', { defaultValue: 'Recommended‌⁠‍' })}
                           </span>
                         )}
                       </div>
@@ -313,11 +313,11 @@ export function RenumberDialog({
           <label className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface-base px-3 py-2.5 cursor-pointer hover:bg-surface-secondary/40 transition-colors">
             <div className="flex-1 min-w-0">
               <div className="text-sm font-medium text-content-primary">
-                {t('boq.renumber_pad', { defaultValue: 'Zero-pad section numbers' })}
+                {t('boq.renumber_pad', { defaultValue: 'Zero-pad section numbers‌⁠‍' })}
               </div>
               <div className="text-[11px] text-content-tertiary">
                 {pad
-                  ? t('boq.renumber_pad_on', { defaultValue: 'Sections will be 01, 02, 03 (two-digit padded)' })
+                  ? t('boq.renumber_pad_on', { defaultValue: 'Sections will be 01, 02, 03 (two-digit padded)‌⁠‍' })
                   : t('boq.renumber_pad_off', { defaultValue: 'Sections will be 1, 2, 3 (no padding)' })}
               </div>
             </div>

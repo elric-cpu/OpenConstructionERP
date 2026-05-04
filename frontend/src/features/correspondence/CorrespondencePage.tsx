@@ -150,12 +150,12 @@ function CreateCorrespondenceModal({
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in" role="dialog" aria-modal="true" aria-label={t('correspondence.new_entry', { defaultValue: 'New Entry' })}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in" role="dialog" aria-modal="true" aria-label={t('correspondence.new_entry', { defaultValue: 'New Entry‌⁠‍' })}>
       <div className="w-full max-w-2xl bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border-light">
           <h2 className="text-lg font-semibold text-content-primary">
-            {t('correspondence.new_entry', { defaultValue: 'New Entry' })}
+            {t('correspondence.new_entry', { defaultValue: 'New Entry‌⁠‍' })}
           </h2>
           <button
             onClick={onClose}
@@ -171,7 +171,7 @@ function CreateCorrespondenceModal({
           {/* ── Direction Cards ── */}
           <div>
             <label id="corr-direction-label" className="block text-sm font-medium text-content-primary mb-2">
-              {t('correspondence.field_direction', { defaultValue: 'Direction' })}
+              {t('correspondence.field_direction', { defaultValue: 'Direction‌⁠‍' })}
             </label>
             <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-labelledby="corr-direction-label">
               {(['incoming', 'outgoing'] as CorrespondenceDirection[]).map((dir) => {
@@ -244,7 +244,7 @@ function CreateCorrespondenceModal({
           <div className="flex items-center gap-2 pt-2 pb-1">
             <Mail size={14} className="text-content-tertiary" />
             <span className="text-xs font-semibold uppercase tracking-wider text-content-tertiary">
-              {t('correspondence.section_details', { defaultValue: 'Correspondence Details' })}
+              {t('correspondence.section_details', { defaultValue: 'Correspondence Details‌⁠‍' })}
             </span>
             <div className="flex-1 h-px bg-border-light" />
           </div>
@@ -252,7 +252,7 @@ function CreateCorrespondenceModal({
           {/* Subject */}
           <div>
             <label htmlFor="corr-subject" className="block text-sm font-medium text-content-primary mb-1.5">
-              {t('correspondence.field_subject', { defaultValue: 'Subject' })}{' '}
+              {t('correspondence.field_subject', { defaultValue: 'Subject‌⁠‍' })}{' '}
               <span className="text-semantic-error">*</span>
             </label>
             <input

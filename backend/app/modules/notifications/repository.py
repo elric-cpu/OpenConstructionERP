@@ -1,4 +1,4 @@
-"""Notification data access layer.
+"""‌⁠‍Notification data access layer.
 
 All database queries for notifications live here.
 No business logic — pure data access.
@@ -14,7 +14,7 @@ from app.modules.notifications.models import Notification
 
 
 class NotificationRepository:
-    """Data access for Notification models."""
+    """‌⁠‍Data access for Notification models."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -27,7 +27,7 @@ class NotificationRepository:
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[Notification], int]:
-        """List notifications for a user with optional read-status filter.
+        """‌⁠‍List notifications for a user with optional read-status filter.
 
         Returns (items, total_count).
         """

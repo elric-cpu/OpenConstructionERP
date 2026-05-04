@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Dataset Integrity Overview (T07).
+"""‌⁠‍Dataset Integrity Overview (T07).
 
 Surfaces data-quality issues across snapshot columns *before* users slice
 dashboards. The aim is "did the upload land cleanly?" rather than
@@ -61,7 +61,7 @@ IssueCode = Literal[
     "low_cardinality_string",
     "uuid_like",
 ]
-"""Machine-readable issue codes surfaced per column.
+"""‌⁠‍Machine-readable issue codes surfaced per column.
 
 The frontend maps each code to a localised label + colour. New codes
 land here when a new heuristic is added — keep them lowercase and
@@ -74,7 +74,7 @@ InferredType = Literal["numeric", "datetime", "boolean", "string", "empty"]
 
 @dataclass
 class ColumnIntegrity:
-    """Per-column integrity diagnostics."""
+    """‌⁠‍Per-column integrity diagnostics."""
 
     name: str
     dtype: str

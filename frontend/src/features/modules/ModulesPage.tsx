@@ -188,11 +188,11 @@ export function ModulesPage() {
       <div className="mb-6 animate-card-in flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-content-primary">
-            {t('modules.page_title', { defaultValue: 'Modules & Marketplace' })}
+            {t('modules.page_title', { defaultValue: 'Modules & Marketplace‌⁠‍' })}
           </h1>
           <p className="mt-1 text-sm text-content-secondary">
             {t('modules.page_subtitle', {
-              defaultValue: 'Manage your company profile, data packages, and system modules.',
+              defaultValue: 'Manage your company profile, data packages, and system modules.‌⁠‍',
             })}
           </p>
         </div>
@@ -200,16 +200,16 @@ export function ModulesPage() {
           to="/modules/developer-guide"
           className="inline-flex items-center gap-2 h-9 px-3 rounded-lg border border-oe-blue/30 bg-oe-blue/5 text-xs font-medium text-oe-blue hover:bg-oe-blue/10 hover:border-oe-blue/50 transition-colors shrink-0"
           title={t('modules.dev_guide_hint', {
-            defaultValue: 'Learn how to build your own module',
+            defaultValue: 'Learn how to build your own module‌⁠‍',
           })}
         >
           <Info size={14} />
-          {t('modules.dev_guide', { defaultValue: 'Build a module — developer guide' })}
+          {t('modules.dev_guide', { defaultValue: 'Build a module — developer guide‌⁠‍' })}
         </Link>
       </div>
 
       {/* Tab bar */}
-      <div className="mb-6 flex gap-1 rounded-lg bg-surface-secondary p-1 animate-card-in" role="tablist" aria-label={t('modules.tabs', { defaultValue: 'Module sections' })} style={{ animationDelay: '30ms' }}>
+      <div className="mb-6 flex gap-1 rounded-lg bg-surface-secondary p-1 animate-card-in" role="tablist" aria-label={t('modules.tabs', { defaultValue: 'Module sections‌⁠‍' })} style={{ animationDelay: '30ms' }}>
         {TABS.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.key;

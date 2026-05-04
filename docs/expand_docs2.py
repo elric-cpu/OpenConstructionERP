@@ -1,4 +1,4 @@
-"""Expand docs.html with step-by-step tutorials for each module."""
+"""‌⁠‍Expand docs.html with step-by-step tutorials for each module."""
 
 html = open('docs/docs.html', encoding='utf-8').read()
 

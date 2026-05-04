@@ -1,4 +1,4 @@
-"""Russia & CIS regional pack API routes.
+"""‌⁠‍Russia & CIS regional pack API routes.
 
 Endpoints:
     GET /config  — Return the full Russia & CIS regional configuration
@@ -17,5 +17,5 @@ logger = logging.getLogger(__name__)
 
 @router.get("/config/")
 async def get_config() -> dict:
-    """Return the Russia & CIS regional pack configuration."""
+    """‌⁠‍Return the Russia & CIS regional pack configuration."""
     return PACK_CONFIG

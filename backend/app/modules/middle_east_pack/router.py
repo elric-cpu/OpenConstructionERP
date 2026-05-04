@@ -1,4 +1,4 @@
-"""Middle East & GCC regional pack API routes.
+"""‌⁠‍Middle East & GCC regional pack API routes.
 
 Endpoints:
     GET /config  — Return the full Middle East regional configuration
@@ -17,5 +17,5 @@ logger = logging.getLogger(__name__)
 
 @router.get("/config/")
 async def get_config() -> dict:
-    """Return the Middle East & GCC regional pack configuration."""
+    """‌⁠‍Return the Middle East & GCC regional pack configuration."""
     return PACK_CONFIG

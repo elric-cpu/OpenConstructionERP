@@ -1,4 +1,4 @@
-"""4D module services (Section 6).
+"""‌⁠‍4D module services (Section 6).
 
 This module hosts the four service classes the spec carves out for the 4D
 slice: EAC link management, snapshot resolution, progress recording and
@@ -65,7 +65,7 @@ VALID_STATUSES: tuple[str, ...] = (
 
 
 class EacPredicateResolver(Protocol):
-    """Resolves an EAC predicate / rule to a list of canonical element IDs.
+    """‌⁠‍Resolves an EAC predicate / rule to a list of canonical element IDs.
 
     Production code passes :class:`DefaultEacResolver` which calls into the
     real EAC engine. Tests may inject a stub that returns deterministic IDs
@@ -79,7 +79,7 @@ class EacPredicateResolver(Protocol):
         predicate_json: dict | None,
         model_version_id: uuid.UUID | None,
     ) -> list[str]:
-        """Return the list of element IDs matching the selector."""
+        """‌⁠‍Return the list of element IDs matching the selector."""
         ...
 
 

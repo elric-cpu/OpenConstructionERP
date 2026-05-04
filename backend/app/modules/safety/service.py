@@ -1,4 +1,4 @@
-"""Safety service — business logic for incident and observation management."""
+"""‌⁠‍Safety service — business logic for incident and observation management."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 def _compute_risk_tier(risk_score: int) -> str:
-    """Derive risk tier from risk_score.
+    """‌⁠‍Derive risk tier from risk_score.
 
     Tiers: low (1-5), medium (6-10), high (11-15), critical (16-25).
     """
@@ -39,7 +39,7 @@ def _compute_risk_tier(risk_score: int) -> str:
 
 
 class SafetyService:
-    """Business logic for safety incidents and observations."""
+    """‌⁠‍Business logic for safety incidents and observations."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session

@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""EAC v2 Engine module manifest.
+"""‌⁠‍EAC v2 Engine module manifest.
 
 Wave EAC-1.1 + EAC-1.2 of RFC 35: foundational ORM layer plus
 ``EacRuleDefinition`` JSON Schema + Pydantic mirror + scaffolded

@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Locale-scoped message bundle for the compliance DSL module."""
+"""‌⁠‍Locale-scoped message bundle for the compliance DSL module."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ _bundle = MessageBundle(messages_dir=_MESSAGES_DIR)
 
 
 def translate(key: str, locale: str = DEFAULT_LOCALE, **params: object) -> str:
-    """Return the translated message for ``key`` in ``locale``."""
+    """‌⁠‍Return the translated message for ``key`` in ``locale``."""
     return _bundle.translate(key, locale=locale, **params)
 
 

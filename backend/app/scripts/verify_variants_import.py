@@ -1,4 +1,4 @@
-"""Scratch verification for CWICR abstract-resource variant parsing.
+"""‌⁠‍Scratch verification for CWICR abstract-resource variant parsing.
 
 Exercises the new `_split_bul` + variant-build logic from
 `backend/app/modules/costs/router.py::_process_and_insert_cwicr` in isolation
@@ -49,7 +49,7 @@ def _split_bul(value: object) -> list[str]:
 
 
 def parse_variants(row: dict[str, Any], cols: dict[str, str]) -> dict[str, Any]:
-    """Run the variant-build logic on a single row dict using a column-name map.
+    """‌⁠‍Run the variant-build logic on a single row dict using a column-name map.
 
     `cols` maps logical names to actual column names in the row. This allows
     running the same logic against either the plan's names or the real

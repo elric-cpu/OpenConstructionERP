@@ -180,31 +180,31 @@ function getIncidentTypeCards(t: (key: string, opts?: Record<string, unknown>) =
       icon: Heart,
       color:
         'text-red-600 bg-red-50 border-red-200 dark:text-red-400 dark:bg-red-950/30 dark:border-red-800',
-      description: t('safety.incident_type_injury', { defaultValue: 'Worker injury' }),
+      description: t('safety.incident_type_injury', { defaultValue: 'Worker injury‌⁠‍' }),
     },
     near_miss: {
       icon: AlertTriangle,
       color:
         'text-amber-600 bg-amber-50 border-amber-200 dark:text-amber-400 dark:bg-amber-950/30 dark:border-amber-800',
-      description: t('safety.incident_type_near_miss', { defaultValue: 'Close call' }),
+      description: t('safety.incident_type_near_miss', { defaultValue: 'Close call‌⁠‍' }),
     },
     property_damage: {
       icon: Home,
       color:
         'text-orange-600 bg-orange-50 border-orange-200 dark:text-orange-400 dark:bg-orange-950/30 dark:border-orange-800',
-      description: t('safety.incident_type_property_damage', { defaultValue: 'Equipment/structure damage' }),
+      description: t('safety.incident_type_property_damage', { defaultValue: 'Equipment/structure damage‌⁠‍' }),
     },
     environmental: {
       icon: Leaf,
       color:
         'text-green-600 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-950/30 dark:border-green-800',
-      description: t('safety.incident_type_environmental', { defaultValue: 'Spill or emission' }),
+      description: t('safety.incident_type_environmental', { defaultValue: 'Spill or emission‌⁠‍' }),
     },
     fire: {
       icon: Flame,
       color:
         'text-rose-600 bg-rose-50 border-rose-200 dark:text-rose-400 dark:bg-rose-950/30 dark:border-rose-800',
-      description: t('safety.incident_type_fire', { defaultValue: 'Fire or explosion' }),
+      description: t('safety.incident_type_fire', { defaultValue: 'Fire or explosion‌⁠‍' }),
     },
   };
 }

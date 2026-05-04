@@ -1,4 +1,4 @@
-"""RFI data access layer."""
+"""‌⁠‍RFI data access layer."""
 
 import uuid
 
@@ -9,7 +9,7 @@ from app.modules.rfi.models import RFI
 
 
 class RFIRepository:
-    """Data access for RFI models."""
+    """‌⁠‍Data access for RFI models."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -49,7 +49,7 @@ class RFIRepository:
         return list(result.scalars().all()), total
 
     async def next_rfi_number(self, project_id: uuid.UUID) -> str:
-        """Generate the next RFI number using MAX to avoid duplicates under concurrency."""
+        """‌⁠‍Generate the next RFI number using MAX to avoid duplicates under concurrency."""
         from sqlalchemy import Integer as SAInteger
         from sqlalchemy import cast
         from sqlalchemy.sql import func as sqlfunc

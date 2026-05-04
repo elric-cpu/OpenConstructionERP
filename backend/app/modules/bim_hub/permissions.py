@@ -1,10 +1,10 @@
-"""BIM Hub module permission definitions."""
+"""‌⁠‍BIM Hub module permission definitions."""
 
 from app.core.permissions import Role, permission_registry
 
 
 def register_bim_hub_permissions() -> None:
-    """Register permissions for the BIM Hub module.
+    """‌⁠‍Register permissions for the BIM Hub module.
 
     BIM uploads are expensive to recreate (CAD conversion, element extraction,
     geometry file storage), so delete is restricted to MANAGER+ while the rest

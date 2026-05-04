@@ -1,4 +1,4 @@
-"""Symmetric encryption for at-rest secrets (API keys, OAuth tokens).
+"""‌⁠‍Symmetric encryption for at-rest secrets (API keys, OAuth tokens).
 
 Uses Fernet (cryptography lib, already in deps via python-jose). The key
 is derived from settings.jwt_secret + a fixed app salt so existing

@@ -1,4 +1,4 @@
-"""Project service — business logic for project management.
+"""‌⁠‍Project service — business logic for project management.
 
 Stateless service layer. Handles:
 - Project CRUD with ownership enforcement
@@ -30,7 +30,7 @@ async def _safe_audit(
     user_id: str | None = None,
     details: dict | None = None,
 ) -> None:
-    """Best-effort audit log — never blocks the caller on failure."""
+    """‌⁠‍Best-effort audit log — never blocks the caller on failure."""
     try:
         from app.core.audit import audit_log
 
@@ -61,7 +61,7 @@ logger = logging.getLogger(__name__)
 
 
 class ProjectService:
-    """Business logic for project operations."""
+    """‌⁠‍Business logic for project operations."""
 
     def __init__(self, session: AsyncSession, settings: Settings) -> None:
         self.session = session

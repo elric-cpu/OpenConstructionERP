@@ -1,4 +1,4 @@
-"""Parquet-based dataframe storage for BIM element properties.
+"""‌⁠‍Parquet-based dataframe storage for BIM element properties.
 
 Writes the full DDC converter output (1000+ columns) as a compressed
 Parquet file alongside the model's geometry and original upload.  DuckDB
@@ -47,7 +47,7 @@ def write_dataframe(
     rows: list[dict[str, Any]],
     data_root: Path = _DATA_ROOT,
 ) -> Path:
-    """Write a list of element dicts as a Parquet file.
+    """‌⁠‍Write a list of element dicts as a Parquet file.
 
     Each dict is one row (one BIM element).  Keys become columns.
     Missing keys become null.  ZSTD compression, row groups of 50 000.
@@ -117,7 +117,7 @@ def read_schema(
     model_id: str,
     data_root: Path = _DATA_ROOT,
 ) -> list[dict[str, str]]:
-    """Return column names and Arrow types from the Parquet schema.
+    """‌⁠‍Return column names and Arrow types from the Parquet schema.
 
     Used by the frontend to build dynamic filter dropdowns.
     Returns ``[{"name": "Fire Rating", "type": "string"}, ...]``.

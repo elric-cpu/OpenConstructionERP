@@ -1,4 +1,4 @@
-"""DWG Takeoff service — business logic.
+"""‌⁠‍DWG Takeoff service — business logic.
 
 Stateless service layer. Handles:
 - Drawing upload, processing, and retrieval
@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 
 def _normalize_entity(raw: dict[str, Any], index: int) -> dict[str, Any]:
-    """Flatten stored entity format to the shape the frontend DxfViewer expects.
+    """‌⁠‍Flatten stored entity format to the shape the frontend DxfViewer expects.
 
     Stored format: {entity_type, layer, color, geometry_data: {…}}
     Frontend format: {id, type, layer, color, start?, end?, vertices?, …}
@@ -113,7 +113,7 @@ def _normalize_entity(raw: dict[str, Any], index: int) -> dict[str, Any]:
 
 
 def _get_upload_dir() -> str:
-    """Get the upload directory for DWG files."""
+    """‌⁠‍Get the upload directory for DWG files."""
     base = os.environ.get("DATA_DIR", os.path.join(os.getcwd(), "data"))
     upload_dir = os.path.join(base, "dwg_uploads")
     os.makedirs(upload_dir, exist_ok=True)

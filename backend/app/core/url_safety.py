@@ -1,4 +1,4 @@
-"""SSRF-safe URL validation.
+"""‌⁠‍SSRF-safe URL validation.
 
 Used by webhook and outbound-webhook-like features to reject URLs that would
 point a server-side HTTP client at the loopback interface, RFC1918 / carrier-
@@ -56,11 +56,11 @@ _BLOCKED_HOSTNAMES = frozenset(
 
 
 class UnsafeUrlError(ValueError):
-    """Raised when a URL points at a blocklisted host or scheme."""
+    """‌⁠‍Raised when a URL points at a blocklisted host or scheme."""
 
 
 def _is_blocked_address(addr: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    """Return True if *addr* is in a blocklisted range."""
+    """‌⁠‍Return True if *addr* is in a blocklisted range."""
     return (
         addr.is_loopback
         or addr.is_private

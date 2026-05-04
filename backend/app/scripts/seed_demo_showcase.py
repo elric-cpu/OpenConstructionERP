@@ -1,4 +1,4 @@
-"""Seed 3 showcase demo projects from Sample_Projects/test CAD files.
+"""‌⁠‍Seed 3 showcase demo projects from Sample_Projects/test CAD files.
 
 End-to-end demo seed:
   1. Delete every existing project (cascades into BOQs, BIM models, links, …).
@@ -221,7 +221,7 @@ DEMO_PROJECTS = [
 # ── HTTP helpers ───────────────────────────────────────────────────────────
 
 async def login_or_register(client: httpx.AsyncClient) -> dict[str, str]:
-    """Return auth headers; register the admin if login fails."""
+    """‌⁠‍Return auth headers; register the admin if login fails."""
     r = await client.post(
         "/api/v1/users/auth/login",
         json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD},
@@ -245,7 +245,7 @@ async def login_or_register(client: httpx.AsyncClient) -> dict[str, str]:
 
 
 def wipe_all_projects_direct() -> int:
-    """Delete every project via direct SQLite access.
+    """‌⁠‍Delete every project via direct SQLite access.
 
     The HTTP list endpoint filters projects by ownership for non-admin users,
     so the API route misses 95 % of the stale demo/test projects. We want a

@@ -1,4 +1,4 @@
-"""Change Orders API routes.
+"""‌⁠‍Change Orders API routes.
 
 Endpoints:
     POST   /                       — Create change order
@@ -43,7 +43,7 @@ def _get_service(session: SessionDep) -> ChangeOrderService:
 
 
 def _order_to_response(order: object) -> ChangeOrderResponse:
-    """Build a ChangeOrderResponse from a ChangeOrder ORM object."""
+    """‌⁠‍Build a ChangeOrderResponse from a ChangeOrder ORM object."""
     # `items` may not be eager-loaded in async context — only attempt to access
     # if the relationship was populated upstream (via selectinload or similar).
     # Returning an empty list when unloaded is intentional: this response type
@@ -79,7 +79,7 @@ def _order_to_response(order: object) -> ChangeOrderResponse:
 
 
 def _order_to_with_items(order: object) -> ChangeOrderWithItems:
-    """Build a ChangeOrderWithItems from a ChangeOrder ORM object."""
+    """‌⁠‍Build a ChangeOrderWithItems from a ChangeOrder ORM object."""
     try:
         items = list(order.items)  # type: ignore[attr-defined]
     except Exception:

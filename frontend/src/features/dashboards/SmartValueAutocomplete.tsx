@@ -196,7 +196,7 @@ export function SmartValueAutocomplete({
   const ph =
     placeholder ??
     t('dashboards.value_autocomplete_ph', {
-      defaultValue: 'Filter values…',
+      defaultValue: 'Filter values…‌⁠‍',
     });
 
   return (
@@ -263,7 +263,7 @@ export function SmartValueAutocomplete({
           {!error && items.length === 0 && !isLoading && (
             <li className="px-3 py-2 text-xs text-content-tertiary">
               {t('dashboards.no_values_found', {
-                defaultValue: 'No matching values',
+                defaultValue: 'No matching values‌⁠‍',
               })}
             </li>
           )}

@@ -1,4 +1,4 @@
-"""Unified search service — fan-out + RRF over every vector collection."""
+"""‌⁠‍Unified search service — fan-out + RRF over every vector collection."""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ _SHORT_NAME_ALIASES: dict[str, str] = {
 
 
 def _normalize_types(raw: list[str] | None) -> list[str]:
-    """Resolve a list of user-supplied type names to canonical collections."""
+    """‌⁠‍Resolve a list of user-supplied type names to canonical collections."""
     if not raw:
         return list(ALL_COLLECTIONS)
     out: list[str] = []
@@ -68,7 +68,7 @@ async def unified_search_service(
     limit_per_collection: int = 10,
     final_limit: int = 25,
 ) -> UnifiedSearchResponse:
-    """Search every selected collection in parallel and merge via RRF.
+    """‌⁠‍Search every selected collection in parallel and merge via RRF.
 
     The merge uses Reciprocal Rank Fusion (Cormack et al., 2009) which is
     parameter-free, robust to score scale differences across collections,

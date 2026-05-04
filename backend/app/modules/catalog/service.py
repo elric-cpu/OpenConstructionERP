@@ -1,4 +1,4 @@
-"""Catalog resource service — business logic for resource catalog management.
+"""‌⁠‍Catalog resource service — business logic for resource catalog management.
 
 Stateless service layer. Handles:
 - Resource CRUD
@@ -68,7 +68,7 @@ EQUIPMENT_CATEGORIES: list[tuple[list[str], str]] = [
 
 
 def _categorize_material(name: str) -> str:
-    """Categorize a material resource by name keywords."""
+    """‌⁠‍Categorize a material resource by name keywords."""
     name_lower = name.lower()
     for keywords, category in MATERIAL_CATEGORIES:
         if any(kw in name_lower for kw in keywords):
@@ -77,7 +77,7 @@ def _categorize_material(name: str) -> str:
 
 
 def _categorize_equipment(name: str) -> str:
-    """Categorize an equipment resource by name keywords."""
+    """‌⁠‍Categorize an equipment resource by name keywords."""
     name_lower = name.lower()
     for keywords, category in EQUIPMENT_CATEGORIES:
         if any(kw in name_lower for kw in keywords):

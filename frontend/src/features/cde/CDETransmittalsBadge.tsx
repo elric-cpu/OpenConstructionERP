@@ -37,13 +37,13 @@ export function CDETransmittalsBadge({
         }}
         className="inline-flex items-center gap-1 text-2xs text-oe-blue hover:text-oe-blue/80 font-medium px-1.5 py-0.5 rounded hover:bg-oe-blue/10 transition-colors"
         aria-label={t('cde.transmittals_badge_aria', {
-          defaultValue: '{{count}} transmittals linked to this container',
+          defaultValue: '{{count}} transmittals linked to this container‌⁠‍',
           count: links.length,
         })}
       >
         <Send size={11} />
         {t('cde.transmittals_badge', {
-          defaultValue: '{{count}} transmittals',
+          defaultValue: '{{count}} transmittals‌⁠‍',
           count: links.length,
         })}
       </button>
@@ -72,7 +72,7 @@ function TransmittalsDrawer({
       onClick={onClose}
       role="dialog"
       aria-label={t('cde.transmittals_drawer_title', {
-        defaultValue: 'Transmittals carrying this container',
+        defaultValue: 'Transmittals carrying this container‌⁠‍',
       })}
     >
       <div
@@ -84,7 +84,7 @@ function TransmittalsDrawer({
             <Send size={18} className="text-oe-blue" />
             <h3 className="text-base font-semibold">
               {t('cde.transmittals_drawer_title', {
-                defaultValue: 'Transmittals carrying this container',
+                defaultValue: 'Transmittals carrying this container‌⁠‍',
               })}
             </h3>
           </div>
