@@ -84,8 +84,12 @@ export default defineConfig({
           if (id.includes('node_modules/yjs') || id.includes('node_modules/y-webrtc')) return 'vendor-collab';
           if (id.includes('node_modules/jspdf') || id.includes('node_modules/html2canvas')) return 'vendor-charts';
           if (id.includes('node_modules/exceljs')) return 'vendor-exceljs';
-          // i18n fallback translations — separate chunk (~2MB of translation data)
-          if (id.includes('i18n-fallbacks')) return 'i18n-data';
+          // i18n locales: each ``src/app/locales/<code>.ts`` is fetched
+          // on demand via dynamic import in ``i18n.ts``. Vite emits one
+          // chunk per locale automatically; pin a stable name so cache
+          // keys survive minor unrelated edits.
+          const localeMatch = id.match(/[\\/]src[\\/]app[\\/]locales[\\/]([a-z]{2})\.ts$/);
+          if (localeMatch) return `i18n-${localeMatch[1]}`;
         },
       },
     },

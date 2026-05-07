@@ -38,10 +38,42 @@ export function getLanguageByCode(code: string): (typeof SUPPORTED_LANGUAGES)[nu
 // Re-export useTranslation for convenience
 export const useTranslation = useI18nTranslation;
 
-import { fallbackResources } from './i18n-fallbacks';
+// English ships in the main bundle as the i18next fallback. Every other
+// locale lives in its own per-language chunk and is fetched on demand —
+// see ``loadLocaleResource`` below.
+import enResource from './locales/en';
 
 // Module translations applied at runtime
 const moduleTranslations: Record<string, Record<string, Record<string, string>>> = {};
+
+// Track which non-English locales have been hydrated so we don't fetch
+// the same chunk twice (e.g. on every ``languageChanged`` round trip).
+const loadedLocales = new Set<string>(['en']);
+
+/**
+ * Load a per-locale resource chunk and merge it into i18next.
+ *
+ * Vite turns the dynamic ``import(`./locales/${code}.ts`)`` literal into
+ * one chunk per matching file under ``src/app/locales/``, so a French
+ * user only downloads ``fr.ts`` (~50 KB gzip) instead of the previous
+ * ~1.28 MB monolithic ``i18n-data`` chunk.
+ *
+ * Idempotent. Safe to call repeatedly. Failures are logged and treated
+ * as non-fatal — i18next's ``fallbackLng: 'en'`` keeps the UI usable.
+ */
+export async function loadLocaleResource(code: string): Promise<void> {
+  if (loadedLocales.has(code)) return;
+  if (!SUPPORTED_LANGUAGES.some((l) => l.code === code)) return;
+  try {
+    const mod = await import(`./locales/${code}.ts`);
+    const resource = (mod.default ?? mod) as { translation: Record<string, string> };
+    i18n.addResourceBundle(code, 'translation', resource.translation, true, true);
+    loadedLocales.add(code);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn(`i18n: failed to load locale "${code}", falling back to English`, err);
+  }
+}
 
 export function applyModuleTranslations(
   moduleId: string,
@@ -108,11 +140,17 @@ function resolveInitialLanguage(): string {
   return 'en';
 }
 
+const initialLanguage = resolveInitialLanguage();
+
 i18n
   .use(initReactI18next)
   .init({
-    resources: fallbackResources,
-    lng: resolveInitialLanguage(),
+    // Only English is bundled synchronously — every other locale is
+    // lazy-loaded by ``loadLocaleResource`` below. ``fallbackLng: 'en'``
+    // means missing keys (e.g. while the locale chunk is still in
+    // flight) render in English instead of as raw key strings.
+    resources: { en: enResource },
+    lng: initialLanguage,
     fallbackLng: 'en',
     interpolation: {
       escapeValue: false,
@@ -122,14 +160,24 @@ i18n
     },
   });
 
-// Persist language choice to localStorage so it survives page reloads
+// Persist language choice to localStorage so it survives page reloads,
+// AND fetch the corresponding locale chunk if it isn't loaded yet.
 i18n.on('languageChanged', (lng) => {
   try {
     localStorage.setItem('i18nextLng', lng);
   } catch {
     // localStorage not available (private browsing, etc.)
   }
+  // Fire-and-forget; i18next will trigger a re-render when addResourceBundle
+  // resolves. UI flashes English for the in-flight ms then re-paints.
+  void loadLocaleResource(lng);
 });
+
+// If the user's resolved language isn't English, kick off the lazy-load
+// straight away so the UI doesn't sit in English longer than necessary.
+if (initialLanguage !== 'en') {
+  void loadLocaleResource(initialLanguage);
+}
 
 // Merge module-bundled translations (nav keys for regional modules, etc.)
 import { getModuleTranslations } from '@/modules/_registry';

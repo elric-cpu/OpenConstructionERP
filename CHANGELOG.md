@@ -5,6 +5,15 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.20] — 2026-05-07
+
+### Changed (i18n perf — per-locale lazy chunks)
+
+- **Split `i18n-fallbacks.ts` into 26 per-locale chunks.** The monolithic 5.5 MB / 90,119-line `fallbackResources` constant was replaced with one auto-generated file per locale under `frontend/src/app/locales/{en,de,fr,…}.ts`. The runtime now bundles English synchronously (~45 KB gzip) as i18next's `fallbackLng` and lazy-loads the user's resolved locale via `import(`./locales/${code}.ts`)`. Vite emits one stable `i18n-{code}.js` chunk per language (44–58 KB gzip each).
+- **~96% boot-bundle reduction for English users**, ~92% for non-English users after the first locale fetch resolves. Old build shipped a single 4.94 MB / 1.28 MB-gzip `i18n-data` chunk to every page load regardless of language; the new build ships only the active locale.
+- **`i18n-fallbacks.ts` retained as a test-only aggregator.** Existing tests (notably `boqResourceTypes.test.ts`) still walk every locale, but the file is no longer reachable from the runtime entrypoint, so tree-shaking removes it from the production bundle.
+- New `loadLocaleResource(code)` helper exported from `app/i18n.ts` — idempotent, logs and falls back to English if the chunk fails to load.
+
 ## [2.9.19] — 2026-05-07
 
 ### Added (Tendering — readable bid comparison)
