@@ -440,10 +440,11 @@ async def export_tender_pdf(
         for bt in comparison.bid_totals:
             company = bt.get("company_name", "Unknown")
             total = bt.get("total", 0)
-            currency = bt.get("currency", "EUR")
+            currency = bt.get("currency", "")
             dev = bt.get("deviation_pct", 0)
             sign = "+" if dev >= 0 else ""
-            lines.append(f"  {company}: {total:,.2f} {currency} ({sign}{dev}%)")
+            tail = f"{currency} " if currency else ""
+            lines.append(f"  {company}: {total:,.2f} {tail}({sign}{dev}%)")
         lines.append("")
 
     if comparison.rows:

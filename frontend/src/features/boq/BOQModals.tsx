@@ -1097,9 +1097,10 @@ export function CostDatabaseSearchModal({
           }
         }
 
-        // Currency for the variant resource entry — falls back to the
-        // catalog's native currency, then EUR.
-        const itemCurrency = item.currency && item.currency.trim() ? item.currency : 'EUR';
+        // Currency for the variant resource entry — uses the catalog's
+        // native currency when present, else "" (let the BOQ row inherit
+        // from the project, do not lie with EUR).
+        const itemCurrency = item.currency && item.currency.trim() ? item.currency : '';
         // common_start is the abstract resource's base name
         // (price_abstract_resource_common_start). When non-empty it is the
         // shared prefix every variant variable_part hangs off of (e.g.
@@ -1255,13 +1256,15 @@ export function CostDatabaseSearchModal({
             cost_item_region: item.region,
             cost_item_id: item.id,
             // Resolve currency: catalog field (now populated server-side
-            // via _resolve_currency) → region map fallback → EUR. Avoid
-            // the legacy "USD" default, which mislabelled every RU/RO/UK
-            // rate when the catalog row had an empty currency string.
+            // via _resolve_currency) → region map fallback → empty.
+            // Empty string means "let the BOQ row inherit project
+            // currency". Defaulting to EUR here mislabelled every
+            // non-Eurozone rate (USD/GBP/BRL/RUB) when the catalog
+            // row had an empty currency string.
             currency:
               (item.currency && item.currency.trim()) ||
               (item.region && REGION_MAP[item.region]?.currency) ||
-              'EUR',
+              '',
             ...variantCacheMeta,
             ...variantMeta,
             // Provenance — which UI surface produced this position so

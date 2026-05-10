@@ -72,7 +72,7 @@ class CostItemCreate(BaseModel):
     )
     rate: float = Field(..., ge=0, description="Unit rate (must be >= 0)")
     currency: str = Field(
-        default="EUR", max_length=10, description="ISO 4217 currency code"
+        default="", max_length=10, description="ISO 4217 currency code (empty when unknown)"
     )
     source: str = Field(
         default="cwicr", max_length=50, description="Data source (e.g. cwicr, rsmeans, manual)"

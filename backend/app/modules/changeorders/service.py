@@ -405,7 +405,9 @@ class ChangeOrderService:
         from app.modules.finance.models import ProjectBudget
 
         try:
-            # Resolve currency: CO-level → project default → EUR fallback.
+            # Resolve currency: CO-level → project default → "EUR" only as
+            # a last-resort literal because ProjectBudget.currency_code is
+            # NOT NULL and a missing project here is exceptional.
             currency_code = currency
             if not currency_code:
                 from app.modules.projects.models import Project
@@ -417,7 +419,10 @@ class ChangeOrderService:
                 ).scalar_one_or_none()
                 if project is not None:
                     currency_code = project.currency
-            currency_code = currency_code or "EUR"
+            # Empty when neither CO nor project carries a currency —
+            # the budget row stores empty rather than mis-stamping EUR
+            # onto a non-Eurozone project.
+            currency_code = currency_code or ""
 
             # Idempotent lookup keyed by metadata.change_order_id.
             existing = (

@@ -870,13 +870,27 @@ export function MarkupsPage() {
   const projectId = activeProjectId || projects[0]?.id || '';
 
   const { data: documents = [] } = useQuery({
-    queryKey: ['documents-list', projectId],
+    // Share the queryKey with ``useUnifiedMarkups`` (mounted by the
+    // ``UnifiedMarkupsList`` tab on this same page) so React Query dedupes
+    // the GET /v1/documents/ request — without this both queries fire
+    // their own copy. ``staleTime`` matches the hook so the cache window
+    // covers re-mounts cleanly.
+    queryKey: ['unified-markups', projectId, 'documents'],
     queryFn: () => apiGet<DocItem[]>(`/v1/documents/?project_id=${projectId}`),
     enabled: !!projectId,
+    staleTime: 60_000,
   });
 
+  // When no filters are set the request body is identical to the
+  // ``useUnifiedMarkups`` hub query (mounted by the sibling Unified tab).
+  // Share the queryKey in that case so React Query dedupes the fetch —
+  // otherwise both queries fire their own copy of GET /v1/markups/ on
+  // every page open.
+  const noFilters = !filterType && !filterStatus && !filterDocumentId;
   const { data: markups = [], isLoading } = useQuery({
-    queryKey: ['markups', projectId, filterType, filterStatus, filterDocumentId],
+    queryKey: noFilters
+      ? ['unified-markups', projectId, 'hub']
+      : ['markups', projectId, filterType, filterStatus, filterDocumentId],
     queryFn: () =>
       fetchMarkups(projectId, {
         type: filterType || undefined,
@@ -884,6 +898,7 @@ export function MarkupsPage() {
         document_id: filterDocumentId || undefined,
       }),
     enabled: !!projectId,
+    staleTime: noFilters ? 30_000 : 0,
   });
 
   const { data: summary } = useQuery({

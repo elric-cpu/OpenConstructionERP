@@ -75,11 +75,18 @@ export function EntityNameFilter({
 
   return (
     <div className="flex flex-col gap-2 mt-4">
-      {/* Collapsible header */}
-      <button
-        type="button"
+      {/* Collapsible header — div+role to allow nested action buttons */}
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => setCollapsed((v) => !v)}
-        className="flex items-center justify-between group"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setCollapsed((v) => !v);
+          }
+        }}
+        className="flex items-center justify-between group cursor-pointer focus:outline-none focus:ring-2 focus:ring-oe-blue/40 rounded"
       >
         <div className="flex items-center gap-1.5">
           {collapsed ? (
@@ -97,6 +104,7 @@ export function EntityNameFilter({
         {!collapsed && (
           <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
             <button
+              type="button"
               onClick={onShowAllNames}
               className="text-xs text-muted-foreground hover:text-foreground transition-colors"
               title={t('dwg_takeoff.show_all', 'Show all')}
@@ -105,6 +113,7 @@ export function EntityNameFilter({
             </button>
             <span className="text-muted-foreground">/</span>
             <button
+              type="button"
               onClick={onHideAllNames}
               className="text-xs text-muted-foreground hover:text-foreground transition-colors"
               title={t('dwg_takeoff.hide_all', 'Hide all')}
@@ -113,7 +122,7 @@ export function EntityNameFilter({
             </button>
           </div>
         )}
-      </button>
+      </div>
 
       {!collapsed && (
         <>
@@ -139,6 +148,7 @@ export function EntityNameFilter({
               return (
                 <button
                   key={group.name}
+                  type="button"
                   onClick={() => onToggleName(group.name)}
                   className={clsx(
                     'flex items-center gap-2 rounded px-2 py-1 text-xs transition-colors',
@@ -165,6 +175,7 @@ export function EntityNameFilter({
           {/* Show all / Show less toggle */}
           {hasMore && (
             <button
+              type="button"
               onClick={() => setShowAll((v) => !v)}
               className="text-[11px] text-oe-blue hover:text-oe-blue-dark font-medium text-center py-1 transition-colors"
             >

@@ -18,18 +18,23 @@ from fastapi.responses import Response
 from sqlalchemy import select
 
 from app.dependencies import CurrentUserId, CurrentUserPayload, SessionDep, SettingsDep
-from app.modules.projects.schemas import (
-    MatchProjectSettingsRead,
-    MatchProjectSettingsUpdate,
-    MilestoneCreate,
-    MilestoneResponse,
-    MilestoneUpdate,
-    ProjectCreate,
-    ProjectResponse,
-    ProjectUpdate,
-    WBSCreate,
-    WBSResponse,
-    WBSUpdate,
+from app.modules.projects.bundle_export import (
+    export_bundle as fm_export_bundle,
+)
+from app.modules.projects.bundle_export import (
+    filename_for_bundle as fm_bundle_filename,
+)
+from app.modules.projects.bundle_export import (
+    preview_bundle as fm_preview_bundle,
+)
+from app.modules.projects.bundle_import import (
+    BundleError,
+)
+from app.modules.projects.bundle_import import (
+    import_bundle as fm_import_bundle,
+)
+from app.modules.projects.bundle_import import (
+    validate_bundle as fm_validate_bundle,
 )
 from app.modules.projects.file_manager_schemas import (
     EmailLinkResponse,
@@ -45,18 +50,25 @@ from app.modules.projects.file_manager_schemas import (
 )
 from app.modules.projects.file_manager_service import (
     file_tree as fm_file_tree,
+)
+from app.modules.projects.file_manager_service import (
     list_project_files as fm_list_files,
+)
+from app.modules.projects.file_manager_service import (
     resolve_storage_locations as fm_resolve_locations,
 )
-from app.modules.projects.bundle_export import (
-    export_bundle as fm_export_bundle,
-    filename_for_bundle as fm_bundle_filename,
-    preview_bundle as fm_preview_bundle,
-)
-from app.modules.projects.bundle_import import (
-    BundleError,
-    import_bundle as fm_import_bundle,
-    validate_bundle as fm_validate_bundle,
+from app.modules.projects.schemas import (
+    MatchProjectSettingsRead,
+    MatchProjectSettingsUpdate,
+    MilestoneCreate,
+    MilestoneResponse,
+    MilestoneUpdate,
+    ProjectCreate,
+    ProjectResponse,
+    ProjectUpdate,
+    WBSCreate,
+    WBSResponse,
+    WBSUpdate,
 )
 from app.modules.projects.service import (
     ProjectService,
@@ -1220,7 +1232,7 @@ async def dashboard_cards(
                 "name": p.name,
                 "description": p.description or "",
                 "region": p.region or "",
-                "currency": p.currency or "EUR",
+                "currency": p.currency or "",
                 "classification_standard": p.classification_standard or "",
                 "status": p.status or "active",
                 "phase": getattr(p, "phase", None),

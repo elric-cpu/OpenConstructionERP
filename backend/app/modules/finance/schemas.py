@@ -106,7 +106,7 @@ class InvoiceCreate(BaseModel):
         max_length=20,
         examples=["2026-05-01"],
     )
-    currency_code: str = Field(default="EUR", max_length=10, examples=["EUR"])
+    currency_code: str = Field(default="", max_length=10, examples=["USD", "EUR", "GBP", "BRL"])
     amount_subtotal: str = Field(default="0", max_length=50, examples=["50000.00"])
     tax_amount: str = Field(default="0", max_length=50, examples=["9500.00"])
     retention_amount: str = Field(default="0", max_length=50, examples=["2500.00"])
@@ -195,7 +195,7 @@ class InvoiceResponse(BaseModel):
     invoice_number: str
     invoice_date: str
     due_date: str | None = None
-    currency_code: str = "EUR"
+    currency_code: str = ""
     amount_subtotal: str = "0"
     tax_amount: str = "0"
     retention_amount: str = "0"
@@ -236,7 +236,7 @@ class PaymentCreate(BaseModel):
     invoice_id: UUID
     payment_date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$", max_length=20)
     amount: str = Field(..., max_length=50)
-    currency_code: str = Field(default="EUR", max_length=10)
+    currency_code: str = Field(default="", max_length=10)
     exchange_rate_snapshot: str = Field(default="1", max_length=50)
     reference: str | None = Field(default=None, max_length=255)
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -261,7 +261,7 @@ class PaymentResponse(BaseModel):
     invoice_id: UUID
     payment_date: str
     amount: str
-    currency_code: str = "EUR"
+    currency_code: str = ""
     exchange_rate_snapshot: str = "1"
     reference: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
@@ -291,7 +291,7 @@ class BudgetCreate(BaseModel):
     project_id: UUID
     wbs_id: str | None = Field(default=None, max_length=36)
     category: str | None = Field(default=None, max_length=100)
-    currency_code: str = Field(default="EUR", max_length=3, examples=["EUR"])
+    currency_code: str = Field(default="", max_length=3, examples=["USD", "EUR", "GBP", "BRL"])
     original_budget: str = Field(default="0", max_length=50)
     revised_budget: str = Field(default="0", max_length=50)
     committed: str = Field(default="0", max_length=50)
@@ -341,7 +341,7 @@ class BudgetResponse(BaseModel):
     project_id: UUID
     wbs_id: str | None = None
     category: str | None = None
-    currency_code: str = "EUR"
+    currency_code: str = ""
     # Phase 2d: the ORM now hands us ``Decimal`` values (see MoneyType
     # on ``ProjectBudget``). We still emit strings on the wire so the
     # API contract is unchanged. ``mode="before"`` runs the coercion

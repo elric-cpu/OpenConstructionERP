@@ -67,8 +67,24 @@ export async function loadLocaleResource(code: string): Promise<void> {
   try {
     const mod = await import(`./locales/${code}.ts`);
     const resource = (mod.default ?? mod) as { translation: Record<string, string> };
-    i18n.addResourceBundle(code, 'translation', resource.translation, true, true);
+    // ``deep=false`` keeps the resource bundle as a flat dictionary —
+    // critical because every locale file ships dotted keys like
+    // ``"match_elements.title"`` and a deep merge auto-nests them under
+    // ``match_elements.title``, which then can't be found by the flat
+    // lookup the rest of the app expects (and breaks Header/Sidebar
+    // translations for any locale loaded after init).
+    i18n.addResourceBundle(code, 'translation', resource.translation, false, true);
     loadedLocales.add(code);
+    // Force every ``useTranslation`` subscriber to re-render with the
+    // freshly merged bundle. ``addResourceBundle`` already emits
+    // ``store#added``, but components mounted outside Suspense (Header,
+    // Sidebar) sometimes miss that event when StrictMode re-mounts them
+    // mid-flight. Explicitly re-emitting ``languageChanged`` is the
+    // signal react-i18next listens to unconditionally — every
+    // useTranslation hook re-resolves its t() and re-renders.
+    if (i18n.language === code) {
+      i18n.emit('languageChanged', code);
+    }
   } catch (err) {
     // eslint-disable-next-line no-console
     console.warn(`i18n: failed to load locale "${code}", falling back to English`, err);
@@ -152,11 +168,30 @@ i18n
     resources: { en: enResource },
     lng: initialLanguage,
     fallbackLng: 'en',
+    // All translation keys are stored as flat strings with literal dots
+    // (e.g. "match_elements.title"). Disable the dot-as-namespace
+    // separator so lookups don't try to walk a nested object path that
+    // doesn't exist in the resource shape. Without this, keys lazy-loaded
+    // via ``addResourceBundle(..., deep=true)`` get auto-nested and become
+    // unreachable from headers/sidebars rendered before the chunk arrives,
+    // while the synchronously bundled EN resource stays flat — yielding a
+    // silent EN-only fallback for every dotted key once a non-EN locale
+    // is active.
+    keySeparator: false,
+    nsSeparator: false,
     interpolation: {
       escapeValue: false,
     },
     react: {
       useSuspense: false,
+      // Re-render useTranslation subscribers when a resource bundle is
+      // added (e.g. when a non-EN locale chunk lazy-loads via
+      // ``loadLocaleResource``). Without this, components rendered
+      // before the chunk arrives (Header, Sidebar) stay stuck on the
+      // English fallback for their lifetime — visible only for keys
+      // first painted by such early components, since later-mounting
+      // components re-render naturally on every state change.
+      bindI18nStore: 'added',
     },
   });
 

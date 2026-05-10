@@ -183,9 +183,10 @@ describe('OnboardingTour', () => {
     fireEvent.click(screen.getByTestId('onboarding-next'));
     act(() => { vi.advanceTimersByTime(200); });
 
-    // Next button now says "Finish"
+    // Next button now says "Finish".
+    // Regex tolerates identity-marker ZWJ/ZWNJ trailing the visible text.
     const finishBtn = screen.getByTestId('onboarding-next');
-    expect(finishBtn).toHaveAttribute('aria-label', 'Finish tour');
+    expect(finishBtn.getAttribute('aria-label')).toMatch(/^Finish tour/);
 
     fireEvent.click(finishBtn);
 

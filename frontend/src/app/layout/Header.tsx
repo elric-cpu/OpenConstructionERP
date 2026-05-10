@@ -15,6 +15,7 @@ import { apiGet } from '@/shared/lib/api';
 import { exportErrorReport, getErrorCount, getLastError } from '@/shared/lib/errorLogger';
 import { APP_VERSION, APP_BUILD_FINGERPRINT } from '@/shared/lib/version';
 import { useToastStore } from '@/stores/useToastStore';
+import { useI18nReady } from '@/shared/lib/useI18nReady';
 
 /** Map English page titles (passed from App.tsx routes) to i18n keys. */
 const TITLE_I18N_MAP: Record<string, string> = {
@@ -22,6 +23,7 @@ const TITLE_I18N_MAP: Record<string, string> = {
   'AI Quick Estimate': 'nav.ai_estimate',
   'AI Cost Advisor': 'nav.ai_advisor',
   'CAD/BIM Takeoff': 'nav.cad_takeoff',
+  'Match Elements': 'match_elements.title',
   'Projects': 'nav.projects',
   'New Project': 'projects.new_project',
   'Project': 'nav.projects',
@@ -62,7 +64,17 @@ interface HeaderProps {
 
 export function Header({ title, onMenuClick }: HeaderProps) {
   const { t, i18n } = useTranslation();
-  const translatedTitle = title ? t(TITLE_I18N_MAP[title] ?? title, title) : undefined;
+  // Header mounts at app boot, before lazy-loaded locale chunks arrive.
+  // ``useTranslation`` doesn't always pick up bundle-added events under
+  // React StrictMode (subscription gets churned by double-mount), so we
+  // attach an external-store subscription that survives the remount and
+  // forces a re-render whenever a new resource bundle is merged in. The
+  // returned version number is unused — its role is to invalidate the
+  // memoization React applies to this render.
+  useI18nReady();
+  const translatedTitle = title
+    ? t(TITLE_I18N_MAP[title] ?? title, { defaultValue: title })
+    : undefined;
   const currentLang = getLanguageByCode(i18n.language) ?? { code: 'en', name: 'English', flag: '', country: 'gb' };
   const openCommandPalette = useCallback(() => {
     // Dispatch Ctrl+K to open the CommandPalette managed by App.tsx

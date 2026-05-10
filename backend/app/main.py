@@ -761,9 +761,9 @@ def create_app() -> FastAPI:
                 try:
                     _orjson.loads(bytes(body))
                 except _orjson.JSONDecodeError:
-                    from starlette.responses import JSONResponse as _JR
+                    from starlette.responses import JSONResponse
 
-                    resp = _JR(
+                    resp = JSONResponse(
                         status_code=422,
                         content={
                             "detail": (
@@ -1273,12 +1273,11 @@ def create_app() -> FastAPI:
             })
 
         from datetime import datetime as _dt
-        from datetime import timezone as _tz
         response = {
             "converters": results,
             "any_outdated": any_outdated,
             "network_ok": network_ok,
-            "checked_at": _dt.now(_tz.utc).isoformat(),
+            "checked_at": _dt.now(UTC).isoformat(),
             "ttl_seconds": TTL,
         }
         if network_ok:
@@ -1803,6 +1802,23 @@ def create_app() -> FastAPI:
         # are env-var-gated so dev startup stays fast unless the
         # operator opted in. See ``app.core.embedding_pool`` for the
         # full rationale and trade-offs.
+        #
+        # We unconditionally call get_embedder() here as well: the
+        # auto-backfill task (scheduled below) and /match-elements
+        # vector matcher both call ``encode_texts_async`` from worker
+        # threads. On Windows + Anaconda the first SentenceTransformer
+        # load from a worker thread can race with concurrent torch
+        # imports and silently leave the singleton at None — every
+        # subsequent encode then raises "No embedding model available".
+        # Loading on the main thread once primes the singleton so
+        # later calls just hit the cache.
+        try:
+            from app.core.vector import get_embedder as _ge
+
+            _ge()
+        except Exception as exc:  # noqa: BLE001 — never fatal for startup
+            logger.info("Embedder main-thread prime skipped: %s", exc)
+
         try:
             from app.core.embedding_pool import init_pool, maybe_preload_in_process
 

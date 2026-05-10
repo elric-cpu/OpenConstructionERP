@@ -241,8 +241,9 @@ class CatalogResourceService:
                 f"Import the cost database first via /v1/costs/load-cwicr/{region}",
             )
 
-        # Determine currency from first cost item
-        currency = "EUR"
+        # Determine currency from first cost item (no project context here —
+        # this is a tenant-wide region extraction; rely on CostItem.currency).
+        currency = ""
         first_item = cost_items[0]
         if hasattr(first_item, "currency") and first_item.currency:
             currency = first_item.currency
@@ -362,6 +363,7 @@ class CatalogResourceService:
 
         for item in cost_items:
             components = item.components or []
+            item_currency = getattr(item, "currency", "") or ""
             for comp in components:
                 code = comp.get("code", "")
                 if not code:
@@ -382,7 +384,10 @@ class CatalogResourceService:
                         "unit": comp.get("unit", "unit"),
                         "rates": [],
                         "count": 0,
+                        "currency": item_currency,
                     }
+                elif not component_data[key].get("currency") and item_currency:
+                    component_data[key]["currency"] = item_currency
 
                 component_data[key]["rates"].append(rate)
                 component_data[key]["count"] += 1
@@ -420,7 +425,12 @@ class CatalogResourceService:
                     base_price=f"{avg_rate:.2f}",
                     min_price=f"{min_rate:.2f}",
                     max_price=f"{max_rate:.2f}",
-                    currency="EUR",
+                    # Inherit currency from the parent CostItem when
+                    # available. Empty (NOT NULL allows ``""``) when the
+                    # parent has no currency stamped — the renderer
+                    # falls back to the bare-number formatter rather
+                    # than mis-stamping EUR onto a USD/GBP/JPY rate.
+                    currency=comp.get("currency") or "",
                     usage_count=comp["count"],
                     source="cwicr_extraction",
                     specifications={

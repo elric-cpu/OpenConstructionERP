@@ -1,18 +1,35 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { Map as MapIcon, MapPin } from 'lucide-react';
 import clsx from 'clsx';
-import type { MapRef } from 'react-map-gl/maplibre';
+import type { MapRef, MarkerProps } from 'react-map-gl/maplibre';
 import { buildGeocodeQuery } from '@/shared/ui/ProjectMap/geocode';
+// maplibre-gl ships its canvas / control styles separately. The static
+// import lets Vite hoist the CSS into the dashboard chunk so markers
+// have correct positioning the moment the JS module resolves —
+// dynamic CSS imports leave the Marker positioned at (0,0) of the
+// page until the browser commits the style sheet, which is the second
+// half of the "no-pins" bug the user reported.
+import 'maplibre-gl/dist/maplibre-gl.css';
 
 const MAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/positron';
 const CACHE_PREFIX = 'oe.geocode.';
 const CACHE_TTL_MS = 1000 * 60 * 60 * 24 * 30;
 
-const MapLibre = lazy(() =>
-  import('react-map-gl/maplibre').then((m) => ({ default: m.default })),
-);
+// Dynamic-import both Map and Marker together via a single shared state
+// in the parent. The previous pattern (``lazy()`` for Map + per-marker
+// inline ``import()`` inside each ``MarkerPin``) suffered a React 18 +
+// Suspense race: the first render of every MarkerPin returned ``null``
+// because its own dynamic import hadn't resolved yet, and although the
+// follow-up ``setMarker`` call did trigger a second render, the
+// markers never actually showed up in production for some users —
+// likely because MapLibre's children registration runs once during the
+// first child render and the late-arriving Marker components weren't
+// attached to the underlying GL canvas. Fixing the lazy pattern at
+// once: the parent waits for the whole module, then renders both the
+// Map and all Markers in a single pass with the cached components.
+type MapLibreModule = typeof import('react-map-gl/maplibre');
 
 interface ProjectPin {
   id: string;
@@ -152,7 +169,23 @@ export function DashboardProjectsMap({ projects, className }: DashboardProjectsM
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [resolved, setResolved] = useState<ResolvedMarker[]>([]);
+  const [mapLib, setMapLib] = useState<MapLibreModule | null>(null);
   const mapRef = useRef<MapRef | null>(null);
+
+  // Pull the maplibre bundle once. Cached by Vite after first call so
+  // subsequent dashboard visits resolve synchronously. CSS for the GL
+  // canvas comes via the static side-effect import below the
+  // component (kept off the main bundle because this whole module is
+  // route-split via DashboardPage).
+  useEffect(() => {
+    let cancelled = false;
+    import('react-map-gl/maplibre').then((mod) => {
+      if (!cancelled) setMapLib(mod);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -268,6 +301,9 @@ export function DashboardProjectsMap({ projects, className }: DashboardProjectsM
     return null;
   }
 
+  const Map = mapLib?.default;
+  const Marker = mapLib?.Marker;
+
   return (
     <div
       className={clsx(
@@ -280,15 +316,9 @@ export function DashboardProjectsMap({ projects, className }: DashboardProjectsM
         className,
       )}
     >
-      <Suspense
-        fallback={
-          <div className="absolute inset-0 flex items-center justify-center text-content-tertiary">
-            <MapIcon size={24} strokeWidth={1.5} />
-          </div>
-        }
-      >
-        <MapLibre
-          ref={(instance) => {
+      {Map && Marker ? (
+        <Map
+          ref={(instance: MapRef | null) => {
             mapRef.current = instance;
           }}
           initialViewState={initialView}
@@ -299,10 +329,34 @@ export function DashboardProjectsMap({ projects, className }: DashboardProjectsM
           attributionControl={false}
         >
           {resolved.map((m) => (
-            <MarkerPin key={m.id} marker={m} onClick={() => navigate(`/projects/${m.id}`)} />
+            <Marker
+              key={m.id}
+              longitude={m.lng}
+              latitude={m.lat}
+              anchor="bottom"
+              onClick={(e: Parameters<NonNullable<MarkerProps['onClick']>>[0]) => {
+                e.originalEvent.stopPropagation();
+                navigate(`/projects/${m.id}`);
+              }}
+            >
+              <div
+                className="relative flex h-7 w-7 items-center justify-center cursor-pointer group"
+                title={m.name}
+                aria-label={m.name}
+              >
+                <span className="absolute inset-0 rounded-full bg-oe-blue/25 opacity-0 group-hover:opacity-100 transition-opacity animate-ping" />
+                <span className="relative flex h-5 w-5 items-center justify-center rounded-full bg-oe-blue text-white shadow-md shadow-oe-blue/40 ring-2 ring-white">
+                  <MapPin size={11} fill="currentColor" strokeWidth={0} />
+                </span>
+              </div>
+            </Marker>
           ))}
-        </MapLibre>
-      </Suspense>
+        </Map>
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center text-content-tertiary">
+          <MapIcon size={24} strokeWidth={1.5} />
+        </div>
+      )}
 
       {/* Legend chip */}
       <div className="pointer-events-none absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-md bg-surface-elevated/90 backdrop-blur-sm px-2 py-1 shadow-sm">
@@ -315,50 +369,5 @@ export function DashboardProjectsMap({ projects, className }: DashboardProjectsM
         </span>
       </div>
     </div>
-  );
-}
-
-function MarkerPin({ marker, onClick }: { marker: ResolvedMarker; onClick: () => void }) {
-  const [Marker, setMarker] = useState<React.ComponentType<{
-    longitude: number;
-    latitude: number;
-    anchor?: 'top' | 'bottom' | 'left' | 'right' | 'center';
-    onClick?: (e: { originalEvent: MouseEvent }) => void;
-    children?: React.ReactNode;
-  }> | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    import('react-map-gl/maplibre').then((m) => {
-      if (!cancelled) setMarker(() => m.Marker as never);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  if (!Marker) return null;
-
-  return (
-    <Marker
-      longitude={marker.lng}
-      latitude={marker.lat}
-      anchor="bottom"
-      onClick={(e) => {
-        e.originalEvent.stopPropagation();
-        onClick();
-      }}
-    >
-      <div
-        className="relative flex h-7 w-7 items-center justify-center cursor-pointer group"
-        title={marker.name}
-        aria-label={marker.name}
-      >
-        <span className="absolute inset-0 rounded-full bg-oe-blue/25 opacity-0 group-hover:opacity-100 transition-opacity animate-ping" />
-        <span className="relative flex h-5 w-5 items-center justify-center rounded-full bg-oe-blue text-white shadow-md shadow-oe-blue/40 ring-2 ring-white">
-          <MapPin size={11} fill="currentColor" strokeWidth={0} />
-        </span>
-      </div>
-    </Marker>
   );
 }

@@ -608,25 +608,25 @@ async def preview_bundle(
 def _readme_md(manifest: BundleManifest, attachment_count: int) -> str:
     """Plain-text README packed inside the bundle for the recipient."""
     lines = [
-        f"# OpenConstructionERP Project Bundle",
-        f"",
+        "# OpenConstructionERP Project Bundle",
+        "",
         f"Project: **{manifest.project_name}**",
         f"Scope: **{manifest.scope}**",
         f"Exported: {manifest.exported_at.isoformat()}",
         f"Engine: {manifest.engine_name} v{manifest.engine_version}",
-        f"",
+        "",
         f"This zip contains {sum(manifest.record_counts.values())} rows "
         f"across {len(manifest.tables)} tables and {attachment_count} attachment(s).",
-        f"",
-        f"## How to open",
-        f"",
-        f"1. Install OpenConstructionERP — `pip install openconstructionerp` "
-        f"or download from openconstructionerp.com.",
-        f"2. Run `openestimate serve` and sign in.",
-        f"3. Use **Files → Import project bundle** and select this `.ocep` file.",
-        f"",
-        f"## Compatibility",
-        f"",
+        "",
+        "## How to open",
+        "",
+        "1. Install OpenConstructionERP — `pip install openconstructionerp` "
+        "or download from openconstructionerp.com.",
+        "2. Run `openestimate serve` and sign in.",
+        "3. Use **Files → Import project bundle** and select this `.ocep` file.",
+        "",
+        "## Compatibility",
+        "",
         f"Format version: {manifest.format_version} · "
         f"Minimum app version: {manifest.compat_min_app_version}.",
     ]

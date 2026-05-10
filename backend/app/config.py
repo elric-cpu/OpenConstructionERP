@@ -11,7 +11,7 @@ from importlib.metadata import version as _pkg_version
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, computed_field
+from pydantic import Field, computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -160,7 +160,11 @@ class Settings(BaseSettings):
     registration_mode: Literal["open", "email-verify", "admin-approve", "closed"] = "admin-approve"
 
     # ── AI / Vector ──────────────────────────────────────────────────────
-    vector_backend: str = "lancedb"  # "lancedb" (embedded, default) or "qdrant" (server)
+    # Default: Qdrant (CWICR v3 pipeline — BAAI/bge-m3 + 30 per-language
+    # collections + parquet lookup). LanceDB remains as a legacy fallback
+    # for pre-v3 deployments that haven't migrated their cost-vector store
+    # yet; it will be removed entirely in a future release.
+    vector_backend: str = "qdrant"  # "qdrant" (default) or "lancedb" (legacy fallback)
     qdrant_url: str | None = "http://localhost:6333"
     vector_data_dir: str = ""  # LanceDB storage path, default: ~/.openestimator/data/vectors
     # Embedding model used by the multi-collection semantic memory layer.
@@ -174,6 +178,46 @@ class Settings(BaseSettings):
     embedding_model_name: str = "intfloat/multilingual-e5-small"
     embedding_model_dim: int = 384
     embedding_model_fallback: str = "sentence-transformers/all-MiniLM-L6-v2"
+    # ── Match backend ────────────────────────────────────────────────────
+    # The CWICR migration to Qdrant (BAAI/bge-m3, 30 per-language
+    # collections, hard/soft filter split, BGE local reranker) is the
+    # only supported ranker as of v3. The historical ``"lancedb"`` value
+    # is rejected by the validator below; .env files left over from
+    # pre-v3 deployments surface as a clear error at boot instead of
+    # silently routing through dead code.
+    match_backend: Literal["qdrant"] = "qdrant"
+    # ── CWICR Qdrant (new pipeline, parallel to legacy LanceDB) ──────────
+    # Qdrant path/URL for the 30-collection CWICR store (cwicr_<lang>).
+    # When ``cwicr_qdrant_path`` is set, qdrant_adapter uses embedded mode
+    # (`QdrantClient(path=...)`); when empty, it falls back to
+    # ``cwicr_qdrant_url``. Embedded keeps the dependency footprint inside
+    # the app's data dir; URL is for shared/Dockerised deployments.
+    cwicr_qdrant_path: str = ""  # default resolved to ~/.openestimator/qdrant_cwicr
+    cwicr_qdrant_url: str | None = None
+    # Root directory that holds the per-region parquet files
+    # ``<XX>___DDC_CWICR/<region>_workitems_costs_resources_DDC_CWICR.parquet``.
+    # parquet_lookup uses this to fetch the 84-column row payload missing
+    # from the minimal Qdrant store. When empty, lookups return only what
+    # is in the Qdrant payload.
+    cwicr_parquet_root: str = ""
+    # BAAI/bge-m3 — 1024-dim dense + sparse + colbert in one forward pass,
+    # MIT license, 100+ languages. Replaces e5-small for CWICR matching
+    # only; the legacy multi-collection memory layer (BOQ/Document/Task)
+    # still uses ``embedding_model_name`` until that path is migrated.
+    cwicr_embedding_model: str = "BAAI/bge-m3"
+    cwicr_embedding_dim: int = 1024
+    # When True, qdrant_adapter loads ``gpahal/bge-m3-onnx-int8`` (~700 MB)
+    # instead of FP32 (~2.3 GB). VPS-friendly default; flip off on
+    # workstations if you want maximum recall fidelity.
+    cwicr_embedding_int8: bool = True
+    # CWICR Qdrant collection schema version suffix. Per MAPPING_PROCESS.md
+    # v3 (2026-05-09) the production collections are named
+    # ``cwicr_{LANG}_v3`` so the schema can evolve without overwriting the
+    # currently-served index. Override (e.g. ``v4``) when DDC publishes a
+    # new schema and the application needs to start reading the new
+    # collections without a code change. Empty string strips the suffix
+    # for legacy installs that vectorised before the v3 cutover.
+    cwicr_collection_version: str = "v3"
     # On startup, scan every multi-collection vector store and backfill
     # any rows that are not yet indexed.  Cheap on a fresh DB, useful when
     # upgrading from a pre-v1.4.0 install where existing BOQ / Document /
@@ -268,6 +312,25 @@ class Settings(BaseSettings):
             "Conversion artifacts are always retained regardless of this flag."
         ),
     )
+
+    # ── Validators ───────────────────────────────────────────────────────
+    @field_validator("match_backend", mode="before")
+    @classmethod
+    def _reject_lancedb_match_backend(cls, value: object) -> object:
+        """Reject pre-v3 ``MATCH_BACKEND=lancedb`` env values explicitly.
+
+        The legacy LanceDB ranker, boost stack, and lexical matcher were
+        removed in v3. An old ``.env`` carrying ``MATCH_BACKEND=lancedb``
+        would silently fail to find the modules, so we surface a clear
+        deprecation error at boot instead.
+        """
+        if isinstance(value, str) and value.strip().lower() == "lancedb":
+            raise ValueError(
+                "MATCH_BACKEND=lancedb is no longer supported — the legacy "
+                "ranker was removed in v3. Set MATCH_BACKEND=qdrant (the new "
+                "default) or remove the line from your .env."
+            )
+        return value
 
     # ── Computed ─────────────────────────────────────────────────────────
     @computed_field  # type: ignore[prop-decorator]

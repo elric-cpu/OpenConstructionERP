@@ -130,7 +130,7 @@ def extract(raw: dict[str, Any]) -> ElementEnvelope:
         raw=raw,
         description=description,
         category=str(raw.get("category") or "").strip(),
-        source_lang=str(raw.get("language") or properties.get("language") or "en"),
+        source_lang=str(raw.get("language") or properties.get("language") or ""),
         properties=dict(properties),
         quantities=extract_quantities(raw),
         classifier_hint=classifier_hint,

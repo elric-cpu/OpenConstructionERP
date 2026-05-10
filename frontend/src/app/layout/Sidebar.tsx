@@ -51,6 +51,7 @@ import {
   PinOff,
   Github,
   HardDrive,
+  Link2,
   type LucideIcon,
 } from 'lucide-react';
 import { useModuleStore } from '@/stores/useModuleStore';
@@ -106,6 +107,7 @@ const navGroups: NavGroup[] = [
     defaultOpen: true,
     items: [
       { labelKey: 'boq.title', to: '/boq', icon: Table2, tourId: 'boq' },
+      { labelKey: 'nav.match_elements', to: '/match-elements', icon: Link2, badge: 'NEW' },
       { labelKey: 'costs.title', to: '/costs', icon: Database, tourId: 'costs' },
       { labelKey: 'nav.assemblies', to: '/assemblies', icon: Layers },
       { labelKey: 'catalog.title', to: '/catalog', icon: Boxes },

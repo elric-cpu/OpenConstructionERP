@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { getIntlLocale } from '@/shared/lib/formatters';
 import {
@@ -29,7 +30,7 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { apiGet, apiPost, extractErrorMessageFromBody, triggerDownload } from '@/shared/lib/api';
 import { projectsApi, type Project } from '@/features/projects/api';
-import { boqApi, type BOQ } from '@/features/boq/api';
+import { boqApi } from '@/features/boq/api';
 import { scheduleApi } from '@/features/schedule/api';
 import { costModelApi } from '@/features/costmodel/api';
 
@@ -794,11 +795,20 @@ export function ReportsPage() {
 
   // Project & BOQ selectors
   const [projects, setProjects] = useState<Project[]>([]);
-  const [boqs, setBoqs] = useState<BOQ[]>([]);
   const selectedProjectId = activeProjectId ?? '';
   const [selectedBoqId, setSelectedBoqId] = useState('');
   const [loadingProjects, setLoadingProjects] = useState(true);
-  const [loadingBoqs, setLoadingBoqs] = useState(false);
+
+  // BOQs are loaded via React Query so the request is automatically deduped
+  // across StrictMode double-mounts and across any other components that ask
+  // for the same project's BOQs in the same session — the previous imperative
+  // useEffect issued the request twice on every fresh page mount.
+  const { data: boqs = [], isLoading: loadingBoqs } = useQuery({
+    queryKey: ['boqs', selectedProjectId],
+    queryFn: () => boqApi.list(selectedProjectId),
+    enabled: !!selectedProjectId,
+    staleTime: 30_000,
+  });
 
   // Per-format loading state: "cardId:extension"
   const [downloading, setDownloading] = useState<string | null>(null);
@@ -808,65 +818,52 @@ export function ReportsPage() {
   );
   const [builderGenerating, setBuilderGenerating] = useState(false);
 
-  // Load projects on mount
+  // Load projects on mount.
+  //
+  // We deliberately fire-and-forget here without an unmount guard: the previous
+  // version had `[activeProjectId, setActiveProject]` in the dep array, so when
+  // the effect itself called setActiveProject(first) the store update bumped
+  // activeProjectId, the effect re-ran (no-op via useRef guard), the cleanup
+  // flipped cancelled=true, and the in-flight `setLoadingProjects(false)` was
+  // skipped — leaving the page wedged on the spinner forever (#172). Reading
+  // store state via getState() inside the effect avoids the dep-loop entirely.
   const hasLoadedProjects = useRef(false);
   useEffect(() => {
     if (hasLoadedProjects.current) return;
     hasLoadedProjects.current = true;
-    let cancelled = false;
     (async () => {
       try {
         const data = await projectsApi.list();
-        if (cancelled) return;
         setProjects(data);
-        // If no project is selected in the global store yet, pick the first one
-        if (!activeProjectId && data.length > 0) {
+        const { activeProjectId: currentActive, setActiveProject: setProj } =
+          useProjectContextStore.getState();
+        if (!currentActive && data.length > 0) {
           const first = data[0]!;
-          setActiveProject(first.id, first.name);
+          setProj(first.id, first.name);
         }
       } catch {
-        if (!cancelled) setProjects([]);
+        setProjects([]);
       } finally {
-        if (!cancelled) setLoadingProjects(false);
+        setLoadingProjects(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeProjectId, setActiveProject]);
+  }, []);
 
-  // Load BOQs when project changes
+  // Default the BOQ picker to the first BOQ once the query resolves, and
+  // clear the selection when the project switches or the list empties.
   useEffect(() => {
     if (!selectedProjectId) {
-      setBoqs([]);
       setSelectedBoqId('');
       return;
     }
-
-    let cancelled = false;
-    setLoadingBoqs(true);
-
-    (async () => {
-      try {
-        const data = await boqApi.list(selectedProjectId);
-        if (cancelled) return;
-        setBoqs(data);
-        const firstBoq = data[0];
-        setSelectedBoqId(firstBoq ? firstBoq.id : '');
-      } catch {
-        if (!cancelled) {
-          setBoqs([]);
-          setSelectedBoqId('');
-        }
-      } finally {
-        if (!cancelled) setLoadingBoqs(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedProjectId]);
+    if (boqs.length === 0) {
+      setSelectedBoqId('');
+      return;
+    }
+    if (!boqs.some((b) => b.id === selectedBoqId)) {
+      setSelectedBoqId(boqs[0]!.id);
+    }
+  }, [selectedProjectId, boqs, selectedBoqId]);
 
   const selectedBoq = boqs.find((b) => b.id === selectedBoqId);
 

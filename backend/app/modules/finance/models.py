@@ -37,7 +37,7 @@ class Invoice(Base):
     invoice_number: Mapped[str] = mapped_column(String(50), nullable=False)
     invoice_date: Mapped[str] = mapped_column(String(20), nullable=False)
     due_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    currency_code: Mapped[str] = mapped_column(String(10), nullable=False, default="EUR")
+    currency_code: Mapped[str] = mapped_column(String(10), nullable=False, default="")
     # Phase 2e: money columns back to NUMERIC on PG while staying VARCHAR
     # on SQLite for dev-DB compatibility. Python always sees ``Decimal``.
     amount_subtotal: Mapped[Decimal] = mapped_column(
@@ -129,7 +129,7 @@ class Payment(Base):
     )
     payment_date: Mapped[str] = mapped_column(String(20), nullable=False)
     amount: Mapped[Decimal] = mapped_column(MoneyType(), nullable=False)
-    currency_code: Mapped[str] = mapped_column(String(10), nullable=False, default="EUR")
+    currency_code: Mapped[str] = mapped_column(String(10), nullable=False, default="")
     exchange_rate_snapshot: Mapped[Decimal] = mapped_column(
         MoneyType(scale=6), nullable=False, default=Decimal("1")
     )
@@ -165,7 +165,11 @@ class ProjectBudget(Base):
     wbs_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     category: Mapped[str | None] = mapped_column(String(100), nullable=True)
     currency_code: Mapped[str] = mapped_column(
-        String(3), nullable=False, default="EUR", server_default="EUR"
+        # v3 universality #217 — no DB default; service code MUST supply
+        # currency from the project context so per-project rollups don't
+        # silently bias toward EUR. server_default preserved for backfill
+        # safety on rows inserted via raw SQL paths during migration.
+        String(3), nullable=False, default="", server_default=""
     )
     # Phase 2d pilot: money columns now return Decimal in Python.
     # On PostgreSQL this emits NUMERIC(18, 2); on the existing SQLite

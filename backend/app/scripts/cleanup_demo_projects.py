@@ -64,7 +64,7 @@ for tbl, _ in project_tables:
 cur.execute("SELECT id FROM oe_boq_boq WHERE project_id IS NULL")  # any orphans
 orphan_boqs = [r[0] for r in cur.fetchall()]
 if orphan_boqs:
-    print(f"  Orphan BOQs already gone (children purged)")
+    print("  Orphan BOQs already gone (children purged)")
 
 # Finally drop the projects themselves
 for chunk in chunked(to_delete):

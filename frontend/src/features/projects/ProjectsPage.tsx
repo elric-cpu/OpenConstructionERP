@@ -16,7 +16,6 @@ import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/lib/api';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useLocalStorage } from '@/shared/hooks/useLocalStorage';
-import { type BOQWithPositions } from '../boq/api';
 import { CreateProjectModal } from './CreateProjectPage';
 import { BIMConverterStatusBanner } from '../bim/BIMConverterStatusBanner';
 
@@ -26,6 +25,11 @@ interface BOQBasic {
   name: string;
   status: string;
   created_at: string;
+  // The list endpoint already returns the rolled-up grand_total per BOQ —
+  // no need to fetch /v1/boq/boqs/{id} just for one number (each detail
+  // payload is 100-200 KB of positions we don't render on the projects
+  // grid). Backend type: BOQListItem (boq/schemas.py).
+  grand_total?: number;
 }
 
 interface ProjectBOQStats {
@@ -134,31 +138,20 @@ export function ProjectsPage() {
       );
       const allBoqs = perProject.flatMap((pp) => pp.boqs);
 
-      // Group BOQs by project_id
+      // Group BOQs by project_id and roll up grand_total straight from the
+      // list response. Previously this issued one /v1/boq/boqs/{id} per BOQ
+      // (each ~100-200 KB of positions we don't render here) just to read
+      // grand_total — backend already returns it on the list endpoint.
       const boqsByProject = new Map<string, BOQBasic[]>();
+      const totalsByProject = new Map<string, number>();
       for (const b of allBoqs) {
         const list = boqsByProject.get(b.project_id) ?? [];
         list.push(b);
         boqsByProject.set(b.project_id, list);
-      }
-
-      // Fetch grand_total for each BOQ in parallel
-      const detailPromises = allBoqs.map(async (b) => {
-        try {
-          const full = await apiGet<BOQWithPositions>(`/v1/boq/boqs/${b.id}`);
-          return { boqId: b.id, projectId: b.project_id, grandTotal: full.grand_total, failed: false };
-        } catch (err) {
-          if (import.meta.env.DEV) console.warn(`Failed to fetch BOQ ${b.id} detail:`, err);
-          return { boqId: b.id, projectId: b.project_id, grandTotal: 0, failed: true };
-        }
-      });
-      const details = await Promise.all(detailPromises);
-
-      // Aggregate totals per project
-      const totalsByProject = new Map<string, number>();
-      for (const d of details) {
-        totalsByProject.set(d.projectId, (totalsByProject.get(d.projectId) ?? 0) + d.grandTotal);
-        if (d.failed) failedProjectIds.add(d.projectId);
+        totalsByProject.set(
+          b.project_id,
+          (totalsByProject.get(b.project_id) ?? 0) + (b.grand_total ?? 0),
+        );
       }
 
       return projects.map((p) => ({

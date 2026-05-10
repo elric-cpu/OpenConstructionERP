@@ -2567,6 +2567,13 @@ class BIMHubService:
             category_values = category if isinstance(category, list) else [category]
             category_values = [str(v) for v in category_values if v]
 
+        # Cap dynamic group materialisation. Dynamic groups are interactive
+        # (3D-viewer click) so we trade exhaustive coverage for a bounded
+        # response time. 50K elements is 2× the largest realistic single
+        # model and the truncation will be obvious in the UI element-count.
+        _DYNAMIC_GROUP_CAP = 50_000
+        base = base.limit(_DYNAMIC_GROUP_CAP)
+
         # On Postgres: use @> JSON containment when possible (property_filter
         # only; category with multiple values still needs Python-side check).
         if is_postgres and expected_props and not category_values:

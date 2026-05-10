@@ -242,10 +242,21 @@ function ModelCard({ model, isActive, onClick, onDelete }: {
           ? t('bim.status_error', { defaultValue: 'Error' })
           : model.status;
 
+  // The card itself acts as a button (click selects the model). We render
+  // it as a <div role="button"> so the inner delete button can stay a real
+  // <button> — nested <button> trips React's DOM validation warning.
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      className={`group relative shrink-0 w-52 text-start rounded-xl border-2 transition-all duration-200 overflow-hidden ${
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      className={`group relative shrink-0 w-52 text-start rounded-xl border-2 transition-all duration-200 overflow-hidden cursor-pointer focus:outline-none focus:ring-2 focus:ring-oe-blue/50 ${
         isActive
           ? 'border-oe-blue bg-oe-blue/5 shadow-lg shadow-oe-blue/8 ring-1 ring-oe-blue/20'
           : 'border-transparent bg-surface-primary hover:bg-surface-secondary hover:border-border-light shadow-sm'
@@ -310,7 +321,7 @@ function ModelCard({ model, isActive, onClick, onDelete }: {
           )}
         </div>
       </div>
-    </button>
+    </div>
   );
 }
 

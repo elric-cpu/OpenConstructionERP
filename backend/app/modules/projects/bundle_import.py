@@ -33,7 +33,8 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import delete as sa_delete, select
+from sqlalchemy import delete as sa_delete
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.backup.router import deserialize_row

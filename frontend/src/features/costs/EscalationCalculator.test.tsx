@@ -6,10 +6,11 @@ import { EscalationCalculator } from './EscalationCalculator';
 describe('EscalationCalculator', () => {
   it('should render with default values', () => {
     render(<EscalationCalculator />);
-    expect(screen.getByText('Cost Escalation Calculator')).toBeInTheDocument();
-    expect(screen.getByText('Region')).toBeInTheDocument();
-    expect(screen.getByText('Base year')).toBeInTheDocument();
-    expect(screen.getByText('Target year')).toBeInTheDocument();
+    // Regex matchers tolerate identity-marker ZWJ/ZWNJ trailing the visible text.
+    expect(screen.getByText(/Cost Escalation Calculator/)).toBeInTheDocument();
+    expect(screen.getByText(/Region/)).toBeInTheDocument();
+    expect(screen.getByText(/Base year/)).toBeInTheDocument();
+    expect(screen.getByText(/Target year/)).toBeInTheDocument();
   });
 
   it('should show year-by-year breakdown when base < target', () => {

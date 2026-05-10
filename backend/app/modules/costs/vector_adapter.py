@@ -63,52 +63,14 @@ logger = logging.getLogger(__name__)
 # the supported set.  Anything outside the table falls back to ``en``
 # so search ranking still works on rows whose language we couldn't
 # infer (we just lose a small amount of cross-lingual signal).
+#
+# The lookup table lives in :mod:`app.core.match_service.region_language`
+# so the costs adapter and the match-service ranker stay in sync — the
+# two used to drift (``UK_GBP`` vs ``GB_LONDON``, ``CS_PRAGUE`` vs
+# ``CZ_PRAGUE``, etc.), which silently broke the translation cascade
+# for any catalogue id that lived in only one of the two tables.
 
-_REGION_LANGUAGE: dict[str, str] = {
-    # German-speaking
-    "DE_BERLIN": "de",
-    "DE_MUNICH": "de",
-    "DE_HAMBURG": "de",
-    "AT_VIENNA": "de",
-    "CH_ZURICH": "de",
-    # Romance
-    "FR_PARIS": "fr",
-    "ES_MADRID": "es",
-    "IT_ROME": "it",
-    "PT_LISBON": "pt",
-    "PT_SAOPAULO": "pt",
-    "BR_SAOPAULO": "pt",
-    # English / Anglophone
-    "GB_LONDON": "en",
-    "IE_DUBLIN": "en",
-    "USA_USD": "en",
-    "USA_NEWYORK": "en",
-    "CA_TORONTO": "en",
-    "AU_SYDNEY": "en",
-    "NZ_AUCKLAND": "en",
-    "ZA_JOHANNESBURG": "en",
-    # Slavic / CIS
-    "PL_WARSAW": "pl",
-    "CZ_PRAGUE": "cs",
-    "RO_BUCHAREST": "ro",
-    "RU_STPETERSBURG": "ru",
-    "RU_MOSCOW": "ru",
-    "BG_SOFIA": "bg",
-    "LT_VILNIUS": "lt",
-    # Benelux
-    "NL_AMSTERDAM": "nl",
-    "BE_BRUSSELS": "nl",
-    # Asia / MENA
-    "CN_SHANGHAI": "zh",
-    "JP_TOKYO": "ja",
-    "IN_MUMBAI": "en",
-    "AE_DUBAI": "ar",
-    "SA_RIYADH": "ar",
-    "TR_ISTANBUL": "tr",
-    # LatAm
-    "MX_MEXICO": "es",
-    "AR_BUENOSAIRES": "es",
-}
+from app.core.match_service.region_language import language_for as _language_for_region
 
 
 def _language_for(item: CostItem) -> str:
@@ -116,7 +78,7 @@ def _language_for(item: CostItem) -> str:
 
     Resolution order:
         1. Explicit ``metadata['language']`` (operator override).
-        2. Region prefix lookup in :data:`_REGION_LANGUAGE`.
+        2. Region prefix lookup via the unified ``language_for`` helper.
         3. ``"en"`` fallback so the column is never empty.
     """
     metadata = getattr(item, "metadata_", None) or {}
@@ -124,10 +86,7 @@ def _language_for(item: CostItem) -> str:
         explicit = metadata.get("language")
         if isinstance(explicit, str) and explicit.strip():
             return explicit.strip().lower()
-    region = (item.region or "").strip().upper()
-    if region and region in _REGION_LANGUAGE:
-        return _REGION_LANGUAGE[region]
-    return "en"
+    return _language_for_region(item.region)
 
 
 # ── E5 prefix convention ─────────────────────────────────────────────────
@@ -165,15 +124,22 @@ _FIXTURE_CODE_RE = None  # lazy compile on first use
 
 
 def _looks_like_fixture(payload: dict[str, Any]) -> bool:
-    """‌⁠‍Heuristic: is this LanceDB hit a test fixture, not real CWICR?"""
+    """‌⁠‍Heuristic: is this LanceDB hit a test fixture, not real CWICR?
+
+    Earlier versions used a generic ``^[A-Z]\\d{3}$`` regex that silently
+    dropped legitimate short CWICR codes (``M001``, ``B100``, ``S420``)
+    from BYO catalogues — they look like test fixtures but aren't. The
+    filter now only catches markers a real catalogue would NEVER use:
+    the explicit ``TEST-<hex>`` prefix and the legacy ``"desc "`` /
+    ``"Test concrete C30/37"`` description fixtures from older test
+    suites. Anything else passes through.
+    """
     global _FIXTURE_CODE_RE
     if _FIXTURE_CODE_RE is None:
         import re
-        _FIXTURE_CODE_RE = re.compile(r"^[A-Z]\d{3}$|^TEST-[a-f0-9]{6,}$")
+        _FIXTURE_CODE_RE = re.compile(r"^TEST-[a-f0-9]{6,}$")
     code = str(payload.get("code", "") or "")
-    if not code:
-        return False
-    if _FIXTURE_CODE_RE.match(code):
+    if code and _FIXTURE_CODE_RE.match(code):
         return True
     desc = str(payload.get("description", "") or "")
     if desc.startswith("desc ") or desc == "Test concrete C30/37":
@@ -207,6 +173,7 @@ async def _sql_lexical_search(
         return []
     try:
         from sqlalchemy import or_, select  # noqa: PLC0415
+
         from app.database import async_session_factory  # noqa: PLC0415
         from app.modules.costs.models import CostItem  # noqa: PLC0415
     except Exception as exc:  # pragma: no cover — defensive
@@ -254,7 +221,7 @@ async def _sql_lexical_search(
         # so the lexical fallback never fights a real vector candidate.
         denom = max(1, total_tokens)
         score = 0.3 + 0.3 * (hits_count / denom)
-        row_lang = _REGION_LANGUAGE.get((row.region or "").upper(), "en")
+        row_lang = _language_for_region(row.region)
         payload: dict[str, Any] = {
             "code": row.code or "",
             "description": row.description or "",
@@ -547,6 +514,8 @@ async def search(
     region: str | None = None,
     language: str | None = None,
     source: str | None = None,
+    din276_kg_prefix: str | None = None,
+    project_currency: str | None = None,
 ) -> list[dict[str, Any]]:
     """Semantic search inside ``oe_cost_items``.
 
@@ -556,6 +525,15 @@ async def search(
     are post-applied to hits — the underlying generic LanceDB schema
     only filters on tenant_id / project_id natively, so we filter the
     payload in Python after retrieval.
+
+    ``din276_kg_prefix`` adds a trade-aware pre-filter on the leading
+    digits of ``payload.classification_din276``. A 2-digit prefix (e.g.
+    ``"33"`` for walls) keeps siblings within the same DIN 276 main
+    cost group while excluding unrelated trades (e.g. MEP "44" hits
+    competing for top-K slots against a structural envelope). The filter
+    auto-disables when the catalogue is unclassified — i.e. fewer than
+    ~20% of hits carry any DIN 276 value — so BYO catalogues without
+    DIN 276 metadata still surface results.
 
     Returns hits sorted by similarity (highest first), shaped as
     ``{"id", "score", "payload": {...}, "text"}``.  Empty list on any
@@ -596,7 +574,8 @@ async def search(
     # Pull a wider window when payload-side filters are active so we
     # still have ``limit`` results after filtering — capped at 5x the
     # request to keep the round-trip cheap.
-    fetch = limit if not (region or language or source) else min(limit * 5, 250)
+    any_filter = bool(region or language or source or din276_kg_prefix)
+    fetch = limit if not any_filter else min(limit * 5, 250)
     try:
         raw_hits = vector_search_collection(
             COLLECTION_COSTS,
@@ -609,8 +588,9 @@ async def search(
         logger.debug("cost-vector search: store failed: %s", exc)
         return []
 
-    out: list[dict[str, Any]] = []
-    fixture_count = 0
+    # Decode payloads once so we can probe DIN 276 coverage before
+    # committing to the trade-aware pre-filter.
+    decoded: list[tuple[dict[str, Any], dict[str, Any]]] = []
     for raw in raw_hits:
         payload_raw = raw.get("payload")
         payload: dict[str, Any]
@@ -618,13 +598,31 @@ async def search(
             payload = payload_raw
         elif isinstance(payload_raw, str) and payload_raw:
             try:
-                decoded = json.loads(payload_raw)
-                payload = decoded if isinstance(decoded, dict) else {}
+                decoded_payload = json.loads(payload_raw)
+                payload = decoded_payload if isinstance(decoded_payload, dict) else {}
             except Exception:
                 payload = {}
         else:
             payload = {}
+        decoded.append((raw, payload))
 
+    # Auto-disable the DIN 276 pre-filter when the catalogue isn't
+    # classified — a BYO catalogue without DIN 276 codes would otherwise
+    # silently filter to zero results. Threshold is intentionally
+    # permissive (20%) so partial classification still benefits from the
+    # filter.
+    active_din_prefix = din276_kg_prefix
+    if active_din_prefix and decoded:
+        classified = sum(
+            1 for (_r, pl) in decoded
+            if str(pl.get("classification_din276") or "").strip()
+        )
+        if classified < max(3, int(len(decoded) * 0.20)):
+            active_din_prefix = None
+
+    out: list[dict[str, Any]] = []
+    fixture_count = 0
+    for raw, payload in decoded:
         if _looks_like_fixture(payload):
             fixture_count += 1
             continue
@@ -635,6 +633,19 @@ async def search(
             continue
         if source and payload.get("source", "") != source:
             continue
+        if active_din_prefix:
+            kg = str(payload.get("classification_din276") or "")
+            if not kg.startswith(active_din_prefix):
+                continue
+        # Currency-aware post-filter (universality fix). When the caller
+        # knows the project's currency, drop hits whose currency disagrees
+        # so a USD project doesn't see EUR rates ranked into the top-K.
+        # Empty / null payload currency is treated as "compatible" so
+        # legacy rows without a currency stamp still surface.
+        if project_currency:
+            payload_ccy = str(payload.get("currency") or "").strip().upper()
+            if payload_ccy and payload_ccy != project_currency.upper():
+                continue
 
         out.append(
             {
@@ -748,6 +759,7 @@ async def catalog_dominant_language() -> str | None:
 
     try:
         from sqlalchemy import func, select  # noqa: PLC0415
+
         from app.database import async_session_factory  # noqa: PLC0415
         from app.modules.costs.models import CostItem  # noqa: PLC0415
     except Exception:  # pragma: no cover — defensive
@@ -770,7 +782,7 @@ async def catalog_dominant_language() -> str | None:
 
     by_lang: dict[str, int] = {}
     for region, count in rows:
-        lang = _REGION_LANGUAGE.get((region or "").upper(), "en")
+        lang = _language_for_region(region)
         by_lang[lang] = by_lang.get(lang, 0) + int(count or 0)
     if not by_lang:
         _catalog_lang_cache = (None, now + _CATALOG_LANG_TTL)

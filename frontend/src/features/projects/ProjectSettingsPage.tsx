@@ -252,6 +252,40 @@ function FxRateModal({
                   : undefined
               }
             />
+            {/* Issue #111 — live preview of both conversion directions.
+             * Pre-2.9.34 users had no visual confirmation of what their
+             * rate meant; e.g. someone entering 1415 thinking "1 USD =
+             * 1415 ARS" would silently get 1 ARS = 1415 USD. Showing
+             * both directions catches the inversion before save. */}
+            {rateLooksValid && effectiveCode && baseCurrency && !isSameAsBase && (() => {
+              const rateNum = parseFloat(rate);
+              if (!Number.isFinite(rateNum) || rateNum <= 0) return null;
+              const inverseRate = 1 / rateNum;
+              const fmt = (n: number) =>
+                n >= 1000 || n < 0.001
+                  ? n.toLocaleString(undefined, { maximumSignificantDigits: 6 })
+                  : n.toLocaleString(undefined, { maximumFractionDigits: 6 });
+              return (
+                <div className="rounded-lg bg-surface-tertiary px-3 py-2 text-xs text-content-secondary space-y-0.5">
+                  <div>
+                    {t('project.settings.fx.preview_forward', {
+                      defaultValue: '1 {{code}} = {{value}} {{base}}',
+                      code: effectiveCode,
+                      value: fmt(rateNum),
+                      base: baseCurrency,
+                    })}
+                  </div>
+                  <div className="text-content-tertiary">
+                    {t('project.settings.fx.preview_inverse', {
+                      defaultValue: '1 {{base}} = {{value}} {{code}}',
+                      base: baseCurrency,
+                      value: fmt(inverseRate),
+                      code: effectiveCode,
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
             <p className="text-xs text-content-tertiary">
               {t('project.settings.fx.rate_hint', {
                 defaultValue:

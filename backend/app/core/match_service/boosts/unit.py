@@ -52,9 +52,115 @@ _DIMENSION_GROUP: dict[str, str] = {
     "h": "time",
 }
 
+# Locale-specific unit spellings. CWICR rows in non-Latin catalogues store
+# the unit in the catalogue's native script — Chinese 立方米, Japanese 立方メートル,
+# Russian шт, Polish szt, Turkish adet etc. Without folding these into the
+# canonical short codes the unit_match boost can't fire and a perfectly-
+# aligned wall (envelope m3 vs candidate 立方米) silently loses the signal.
+#
+# Kept lowercase keys; the lookup goes after .strip().lower(). Latin-script
+# spellings are added too because some catalogues mix locale labels with
+# English in the same column ("cubic meter" / "metro cúbico" / "metro cubo").
+_LOCALE_UNIT_ALIASES: dict[str, str] = {
+    # ── Chinese (Simplified + Traditional) ──────────────────────────
+    "立方米": "m3", "立方公尺": "m3",  # zh-CN / zh-TW cubic metre
+    "平方米": "m2", "平方公尺": "m2",  # zh-CN / zh-TW square metre
+    "米": "m",  "公尺": "m",          # zh-CN / zh-TW metre
+    "千克": "kg", "公斤": "kg",        # zh-CN / zh-TW kilogram
+    "吨": "t", "公噸": "t",            # zh-CN / zh-TW tonne
+    "件": "pcs", "个": "pcs", "個": "pcs",
+    "套": "pcs",                       # set — bucket as pcs (no separate set canon)
+    "小时": "h", "小時": "h",
+    # ── Japanese ─────────────────────────────────────────────────────
+    "立方メートル": "m3", "立米": "m3",
+    "平方メートル": "m2", "平米": "m2",
+    "メートル": "m",
+    "キログラム": "kg", "キロ": "kg",
+    "トン": "t",
+    "本": "pcs", "枚": "pcs",  # 個 covered in Chinese block above
+    "セット": "pcs", "式": "lsum",
+    "時間": "h",
+    # ── Korean ───────────────────────────────────────────────────────
+    "입방미터": "m3", "세제곱미터": "m3",
+    "제곱미터": "m2", "평방미터": "m2",
+    "미터": "m",
+    "킬로그램": "kg",
+    "톤": "t",
+    "개": "pcs",  # English "ea" handled in English variants block below
+    "세트": "pcs",
+    "시간": "h",
+    # ── Russian / Cyrillic ───────────────────────────────────────────
+    "м": "m",
+    "м2": "m2", "м²": "m2", "кв.м": "m2", "кв м": "m2",
+    "м3": "m3", "м³": "m3", "куб.м": "m3", "куб м": "m3",
+    "кг": "kg",
+    "т": "t", "тн": "t",
+    "шт": "pcs", "шт.": "pcs", "штук": "pcs",
+    "комп": "pcs", "компл": "pcs", "комплект": "pcs",
+    "ч": "h", "час": "h",
+    # ── Polish ───────────────────────────────────────────────────────
+    "szt": "pcs", "szt.": "pcs", "sztuka": "pcs",
+    "kpl": "pcs", "kpl.": "pcs", "komplet": "pcs",
+    "godz": "h", "godz.": "h", "godzina": "h",
+    "tona": "t",
+    # ── Turkish ──────────────────────────────────────────────────────
+    "adet": "pcs",
+    "takım": "pcs", "takim": "pcs",
+    "saat": "h",
+    "ton": "t",
+    # ── Spanish / Portuguese ────────────────────────────────────────
+    "ud": "pcs", "ud.": "pcs", "uds": "pcs", "unidad": "pcs",
+    "un": "pcs", "un.": "pcs", "unidade": "pcs",
+    "ml": "m",  # metro lineal — Spanish / metro linear — Portuguese
+    "metro lineal": "m", "metro linear": "m",
+    "metro cúbico": "m3", "metro cubico": "m3",
+    "metro cuadrado": "m2", "metro quadrado": "m2",
+    "tonelada": "t",
+    "hora": "h",
+    # ── French / Italian / German extras ─────────────────────────────
+    "stk": "pcs", "stck": "pcs", "stück": "pcs",
+    "stunde": "h", "stunden": "h", "std": "h",
+    "tonne": "t", "tonnes": "t", "tonnen": "t",
+    "unité": "pcs", "unite": "pcs", "pce": "pcs", "pièce": "pcs",
+    "heure": "h", "heures": "h",
+    "ora": "h", "ore": "h",
+    "pezzo": "pcs", "pezzi": "pcs",
+    # ── Arabic / Hindi (transliteration tolerant) ───────────────────
+    "متر": "m",
+    "متر مربع": "m2", "م2": "m2",
+    "متر مكعب": "m3", "م3": "m3",
+    "كيلوغرام": "kg", "كغ": "kg",
+    "طن": "t",
+    "قطعة": "pcs", "وحدة": "pcs",
+    "ساعة": "h",
+    "मीटर": "m",
+    "वर्ग मीटर": "m2",
+    "घन मीटर": "m3",
+    "किलोग्राम": "kg", "किलो": "kg",
+    "टन": "t",
+    "पीस": "pcs", "नग": "pcs",
+    "घंटा": "h",
+    # ── English variants commonly seen ───────────────────────────────
+    "cum": "m3", "cu.m": "m3", "cubic meter": "m3", "cubic metre": "m3",
+    "sqm": "m2", "sq.m": "m2", "square meter": "m2", "square metre": "m2",
+    "rm": "m", "lin.m": "m", "lin m": "m", "running meter": "m",
+    "ea": "pcs", "no": "pcs", "no.": "pcs", "nr": "pcs",
+    "ls": "lsum", "lump sum": "lsum", "lump-sum": "lsum",
+    "hour": "h", "hours": "h", "hr": "h", "hrs": "h",
+}
+
 
 def _normalise_unit(unit: str) -> str:
-    """‌⁠‍Strip whitespace, lowercase, fold superscript m² / m³ → m2 / m3."""
+    """‌⁠‍Strip whitespace, lowercase, fold superscript and locale spellings.
+
+    Resolution order:
+        1. Strip + lowercase
+        2. Fold ``²`` / ``³`` and ``^`` / ``**`` to ASCII (``m²`` → ``m2``)
+        3. Locale alias table (``立方米`` → ``m3``, ``шт`` → ``pcs``, …)
+        4. Pass through verbatim — comparisons still work even on unknown
+           codes (two envelopes / candidates with the same exotic spelling
+           still match).
+    """
     if not unit:
         return ""
     cleaned = unit.strip().lower()
@@ -63,6 +169,8 @@ def _normalise_unit(unit: str) -> str:
     cleaned = cleaned.replace("^", "").replace("**", "")
     if cleaned in _VALID_UNITS:
         return cleaned
+    if cleaned in _LOCALE_UNIT_ALIASES:
+        return _LOCALE_UNIT_ALIASES[cleaned]
     return cleaned  # Pass through unknown codes — the comparison still works
 
 

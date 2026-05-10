@@ -435,7 +435,7 @@ async def handle_get_all_projects(
                         "code": getattr(p, "project_code", ""),
                         "status": p.status,
                         "region": getattr(p, "region", ""),
-                        "currency": getattr(p, "currency", "EUR"),
+                        "currency": getattr(p, "currency", "") or "",
                         "contract_value": float(getattr(p, "contract_value", 0) or 0),
                     }
                     for p in projects
@@ -472,7 +472,7 @@ async def handle_get_project_summary(
                 "code": getattr(p, "project_code", ""),
                 "status": p.status,
                 "region": getattr(p, "region", ""),
-                "currency": getattr(p, "currency", "EUR"),
+                "currency": getattr(p, "currency", "") or "",
                 "contract_value": float(getattr(p, "contract_value", 0) or 0),
                 "budget_estimate": float(getattr(p, "budget_estimate", 0) or 0),
                 "phase": getattr(p, "phase", ""),
@@ -838,7 +838,7 @@ async def handle_compare_projects(
                     "contract_value": float(getattr(p, "contract_value", 0) or 0),
                     "budget_estimate": float(getattr(p, "budget_estimate", 0) or 0),
                     "region": getattr(p, "region", ""),
-                    "currency": getattr(p, "currency", "EUR"),
+                    "currency": getattr(p, "currency", "") or "",
                 })
             except Exception:
                 comparisons.append({"id": str(pid), "error": "Project not found"})

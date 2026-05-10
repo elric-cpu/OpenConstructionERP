@@ -32,7 +32,7 @@ class Assembly(Base):
         JSON, nullable=False, default=dict, server_default="{}"
     )
     total_rate: Mapped[str] = mapped_column(String(50), nullable=False, default="0")
-    currency: Mapped[str] = mapped_column(String(10), nullable=False, default="EUR")
+    currency: Mapped[str] = mapped_column(String(10), nullable=False, default="")
     bid_factor: Mapped[str] = mapped_column(String(10), nullable=False, default="1.0")
     regional_factors: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         JSON, nullable=False, default=dict, server_default="{}"

@@ -101,13 +101,13 @@ export function AssemblyEditorPage() {
 
   const handleAddComponent = useCallback(() => {
     addComponentMutation.mutate({
-      description: 'New component',
+      description: t('assemblies.new_component_default', { defaultValue: 'New component' }),
       factor: 1,
       quantity: 1,
       unit: assembly?.unit || 'm2',
       unit_cost: 0,
     });
-  }, [addComponentMutation, assembly?.unit]);
+  }, [addComponentMutation, assembly?.unit, t]);
 
   const handleExportJson = useCallback(async () => {
     if (!assemblyId) return;

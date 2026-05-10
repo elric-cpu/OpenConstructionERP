@@ -116,7 +116,7 @@ def extract(raw: dict[str, Any]) -> ElementEnvelope:
         raw=raw,
         description=description,
         category=category,
-        source_lang=str(raw.get("language") or "en"),
+        source_lang=str(raw.get("language") or ""),
         properties={
             k: v
             for k, v in raw.items()

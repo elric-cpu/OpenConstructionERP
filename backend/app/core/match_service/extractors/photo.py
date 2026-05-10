@@ -76,7 +76,7 @@ def extract(raw: dict[str, Any]) -> ElementEnvelope:
         raw=raw,
         description=description,
         category=category,
-        source_lang=str(raw.get("language") or "en"),
+        source_lang=str(raw.get("language") or ""),
         properties=properties,
         quantities=quantities or None,
         unit_hint=unit_hint,

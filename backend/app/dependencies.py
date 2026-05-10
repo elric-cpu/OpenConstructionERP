@@ -15,7 +15,10 @@ Usage in routers:
 import logging
 import uuid as _uuid
 from datetime import UTC
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
+
+if TYPE_CHECKING:
+    from app.modules.users.models import User
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer

@@ -119,6 +119,8 @@ class ChangeOrderRepository:
 
     async def get_summary(self, project_id: uuid.UUID) -> dict[str, object]:
         """Aggregate change order stats for a project."""
+        from app.modules.projects.models import Project
+
         base = select(ChangeOrder).where(ChangeOrder.project_id == project_id)
         result = await self.session.execute(base)
         orders = list(result.scalars().all())
@@ -133,7 +135,12 @@ class ChangeOrderRepository:
         total_time_impact_days = 0
         by_status: dict[str, int] = {}
         by_type: dict[str, int] = {}
-        currency = "EUR"
+        # Default to the project's own currency; later overridden if any
+        # CO carries an explicit currency.
+        project = (
+            await self.session.execute(select(Project).where(Project.id == project_id))
+        ).scalar_one_or_none()
+        currency = (project.currency if project is not None else "") or ""
 
         for order in orders:
             # by_status aggregation

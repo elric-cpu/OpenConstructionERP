@@ -1,10 +1,10 @@
 /**
- * ProjectWeather — 18-day forecast card for a project's location.
+ * ProjectWeather — 16-day forecast card for a project's location.
  *
  * Uses Open-Meteo (https://open-meteo.com) — a free, keyless weather API
  * aligned with the project's "no vendor lock-in, no credentials required
  * to run the demo" stance.  We call /v1/forecast with daily aggregates
- * (min/max temp, precipitation sum, weather code) for 18 days and render
+ * (min/max temp, precipitation sum, weather code) for 16 days and render
  * a compact horizontal strip.
  *
  * Caching: same `localStorage` strategy as the geocoder — 1-hour TTL on
@@ -35,7 +35,7 @@ interface ProjectWeatherProps {
   locale?: string;
   className?: string;
   /** Display variant.
-   *  `full` — wide card with 18-day grid (detail page).
+   *  `full` — wide card with 16-day grid (detail page).
    *  `summary` — one-line two-stat chip with week + month averages
    *              (fits in a project list card). */
   variant?: 'full' | 'summary';
@@ -92,12 +92,16 @@ async function fetchForecast(
   const cached = readCache(lat, lng);
   if (cached) return cached;
 
+  // Open-Meteo's free /v1/forecast endpoint caps forecast_days at 16. Sending
+  // a higher number (we shipped 18 in v2.9.30) returns HTTP 400 with no body
+  // and the widget renders an empty state. Stay at 16 — the practical horizon
+  // for site planning is two-week anyway.
   const params = new URLSearchParams({
     latitude: lat.toString(),
     longitude: lng.toString(),
     daily: 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum',
     timezone: 'auto',
-    forecast_days: '18',
+    forecast_days: '16',
   });
   try {
     const res = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`, {
@@ -213,7 +217,7 @@ export function ProjectWeather({
       ) : null;
     }
     const week = days.slice(0, 7);
-    const month = days;   // up to 18 days — best we get from Open-Meteo free tier
+    const month = days;   // up to 16 days — best we get from Open-Meteo free tier
     const avg = (arr: DailyForecast[], pick: (d: DailyForecast) => number) =>
       arr.length > 0 ? arr.reduce((s, d) => s + pick(d), 0) / arr.length : 0;
     const weekMax = avg(week, (d) => d.tMax);
@@ -231,7 +235,7 @@ export function ProjectWeather({
         )}
         title={t('weather.card_summary_hint', {
           defaultValue:
-            'Rough forecast for this location — next 7 days and ~18 days avg',
+            'Rough forecast for this location — next 7 days and ~16 days avg',
         })}
       >
         <WeekIcon size={12} className="text-oe-blue shrink-0" />
@@ -264,7 +268,7 @@ export function ProjectWeather({
         <div className="flex items-center gap-2">
           <CloudSun size={16} className="text-oe-blue" />
           <h3 className="text-sm font-semibold text-content-primary">
-            {t('weather.title_18d', { defaultValue: '18-day forecast' })}
+            {t('weather.title_18d', { defaultValue: '16-day forecast' })}
           </h3>
         </div>
         {days?.[0] && (

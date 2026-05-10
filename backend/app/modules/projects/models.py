@@ -9,6 +9,15 @@ Tables:
     oe_projects_match_settings   — per-project element-to-CWICR auto-match settings
 """
 
+# ── Match-settings defaults (v2.8.0) ─────────────────────────────────────
+# Module-level constants so the model, schemas, service, and Alembic
+# migration all share a single source of truth — no magic numbers.
+#
+# Values are env-overridable so a deploy that ships in a non-English
+# market (e.g. a Russian rollout) can change the default for fresh
+# projects without a code change. Existing projects keep whatever they
+# were saved with — these constants only pin the *new-row* default.
+import os as _os
 import uuid
 
 from sqlalchemy import JSON, Boolean, Float, ForeignKey, Integer, String, Text, UniqueConstraint
@@ -16,12 +25,25 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import GUID, Base
 
-# ── Match-settings defaults (v2.8.0) ─────────────────────────────────────
-# Module-level constants so the model, schemas, service, and Alembic
-# migration all share a single source of truth — no magic numbers.
-MATCH_DEFAULT_TARGET_LANGUAGE: str = "en"
+MATCH_DEFAULT_TARGET_LANGUAGE: str = _os.environ.get(
+    "MATCH_DEFAULT_TARGET_LANGUAGE", "en"
+).strip().lower() or "en"
 MATCH_DEFAULT_CLASSIFIER: str = "none"
-MATCH_DEFAULT_AUTO_LINK_THRESHOLD: float = 0.85
+
+
+def _env_float_default(name: str, fallback: float) -> float:
+    raw = _os.environ.get(name)
+    if raw is None or not raw.strip():
+        return fallback
+    try:
+        return float(raw)
+    except ValueError:
+        return fallback
+
+
+MATCH_DEFAULT_AUTO_LINK_THRESHOLD: float = _env_float_default(
+    "MATCH_DEFAULT_AUTO_LINK_THRESHOLD", 0.85
+)
 MATCH_DEFAULT_AUTO_LINK_ENABLED: bool = False
 MATCH_DEFAULT_MODE: str = "manual"
 MATCH_DEFAULT_SOURCES: tuple[str, ...] = ("bim", "pdf", "dwg", "photo")

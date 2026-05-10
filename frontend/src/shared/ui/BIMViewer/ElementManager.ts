@@ -16,6 +16,16 @@ import { ColladaLoader } from 'three/addons/loaders/ColladaLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import type { SceneManager } from './SceneManager';
 
+// Module-level in-flight buffer fetches, shared across ElementManager
+// instances. React StrictMode's dev double-mount creates two managers
+// for the same model and both kick off the geometry GET before either
+// can populate the per-model BIM geometry cache; without this dedup the
+// browser issued the same N00-KB request twice on every BIM page mount.
+const inFlightGeometryFetches = new Map<
+  string,
+  Promise<{ buffer: ArrayBuffer; format: 'glb' | 'dae' }>
+>();
+
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
 export interface BIMBoundingBox {
@@ -296,6 +306,11 @@ export class ElementManager {
   private baseMaterials = new Map<string, THREE.MeshStandardMaterial>();
   private wireframeEnabled = false;
   private geometryLoaded = false;
+  // In-flight promise per URL so concurrent ``loadGeometry`` calls share the
+  // same fetch. React StrictMode double-mounts the BIMViewer effect in dev,
+  // and even in prod a fast re-render before the first fetch resolves would
+  // otherwise issue a second 100s-of-KB GET for the same geometry URL.
+  private inFlightLoad: { url: string; promise: Promise<void> } | null = null;
   /**
    * Every material we allocate via `clone()` inside `colorBy*` paths is
    * tracked here so `resetColors()` / `dispose()` can free the GPU
@@ -412,6 +427,16 @@ export class ElementManager {
       store: (url: string, buffer: ArrayBuffer, format: 'glb' | 'dae') => void;
     },
   ): Promise<void> {
+    // 0. Concurrency guard — if a load for this exact URL is already in
+    //    flight, hand the caller the same promise instead of issuing a
+    //    second network request. This dedupes the StrictMode dev
+    //    double-mount and any production race where a parent re-renders
+    //    before the previous load resolved. We DO still fire onProgress
+    //    so the second caller's overlay updates correctly.
+    if (this.inFlightLoad?.url === geometryUrl) {
+      return this.inFlightLoad.promise.then(() => onProgress?.(1));
+    }
+
     // 1. Cache hit fast-path — parse the cached buffer in-process, no network.
     const hit = cache?.lookup(geometryUrl);
     if (hit) {
@@ -420,62 +445,104 @@ export class ElementManager {
       return this.parseGeometryBuffer(hit.buffer, hit.format);
     }
 
-    // 2. Cache miss — fetch the bytes ourselves so we can both parse them
-    //    AND keep them around for the next visit. Using fetch rather than
-    //    the loader's internal XHR loses ColladaLoader's per-resource path
-    //    resolution, but for the GLB/DAE artefacts the backend serves the
-    //    geometry is self-contained (binary GLB or single-file DAE).
-    let format: 'glb' | 'dae' = 'glb';
+    // Wrap the rest of the load in a promise we cache so concurrent calls
+    // can dedupe. Cleared in finally so a later mount with the same URL
+    // (e.g. after a remount) still re-runs the cache lookup at the top.
+    const loadPromise = this.doLoadGeometry(geometryUrl, onProgress, cache);
+    this.inFlightLoad = { url: geometryUrl, promise: loadPromise };
     try {
-      const headResp = await fetch(geometryUrl, { method: 'HEAD' });
-      if (headResp.ok) {
-        const ct = headResp.headers.get('content-type') || '';
-        if (ct.includes('collada') || ct.includes('xml') || ct.includes('dae')) {
-          format = 'dae';
-        }
+      await loadPromise;
+    } finally {
+      if (this.inFlightLoad?.url === geometryUrl) {
+        this.inFlightLoad = null;
       }
-    } catch {
-      // HEAD failed — keep the GLB default. parseGeometryBuffer falls back
-      // to DAE if GLB parsing fails.
+    }
+  }
+
+  private async doLoadGeometry(
+    geometryUrl: string,
+    onProgress?: (fraction: number) => void,
+    cache?: {
+      lookup: (url: string) =>
+        | { buffer: ArrayBuffer; format: 'glb' | 'dae' }
+        | null;
+      store: (url: string, buffer: ArrayBuffer, format: 'glb' | 'dae') => void;
+    },
+  ): Promise<void> {
+
+    // 2. Cache miss — fetch the bytes. The actual network IO is funnelled
+    //    through a module-level in-flight Map so that a parallel
+    //    ElementManager (e.g. the second StrictMode mount, which creates
+    //    its own manager instance) waits on the same fetch instead of
+    //    issuing a duplicate GET. Each manager still parses the buffer
+    //    into its own scene independently — only the bytes are shared.
+    let buffer: ArrayBuffer;
+    let format: 'glb' | 'dae' = 'glb';
+    const inFlight = inFlightGeometryFetches.get(geometryUrl);
+    if (inFlight) {
+      const result = await inFlight;
+      buffer = result.buffer;
+      format = result.format;
+      onProgress?.(0.95);
+    } else {
+      const fetchPromise = (async (): Promise<{ buffer: ArrayBuffer; format: 'glb' | 'dae' }> => {
+        let detectedFormat: 'glb' | 'dae' = 'glb';
+        try {
+          const headResp = await fetch(geometryUrl, { method: 'HEAD' });
+          if (headResp.ok) {
+            const ct = headResp.headers.get('content-type') || '';
+            if (ct.includes('collada') || ct.includes('xml') || ct.includes('dae')) {
+              detectedFormat = 'dae';
+            }
+          }
+        } catch {
+          // HEAD failed — keep the GLB default. parseGeometryBuffer falls
+          // back to DAE if GLB parsing fails.
+        }
+        const resp = await fetch(geometryUrl);
+        if (!resp.ok) {
+          throw new Error(`Failed to fetch geometry: ${resp.status}`);
+        }
+        const total = Number(resp.headers.get('content-length')) || 0;
+        const reader = resp.body?.getReader();
+        if (!reader) {
+          const buf = await resp.arrayBuffer();
+          onProgress?.(0.95);
+          return { buffer: buf, format: detectedFormat };
+        }
+        const chunks: Uint8Array[] = [];
+        let received = 0;
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) {
+            chunks.push(value);
+            received += value.byteLength;
+            if (onProgress && total > 0) {
+              onProgress(Math.min(0.95, received / total));
+            }
+          }
+        }
+        const fetchedBuffer = new ArrayBuffer(received);
+        const view = new Uint8Array(fetchedBuffer);
+        let offset = 0;
+        for (const c of chunks) {
+          view.set(c, offset);
+          offset += c.byteLength;
+        }
+        return { buffer: fetchedBuffer, format: detectedFormat };
+      })();
+      inFlightGeometryFetches.set(geometryUrl, fetchPromise);
+      try {
+        const result = await fetchPromise;
+        buffer = result.buffer;
+        format = result.format;
+      } finally {
+        inFlightGeometryFetches.delete(geometryUrl);
+      }
     }
 
-    const resp = await fetch(geometryUrl);
-    if (!resp.ok) {
-      throw new Error(`Failed to fetch geometry: ${resp.status}`);
-    }
-    const total = Number(resp.headers.get('content-length')) || 0;
-    const reader = resp.body?.getReader();
-    if (!reader) {
-      // Browsers without ReadableStream support — fall back to a single-shot
-      // arrayBuffer() call. We still report final progress so the bar fills.
-      const buffer = await resp.arrayBuffer();
-      onProgress?.(0.95);
-      await this.parseGeometryBuffer(buffer, format);
-      cache?.store(geometryUrl, buffer, format);
-      return;
-    }
-    const chunks: Uint8Array[] = [];
-    let received = 0;
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      if (value) {
-        chunks.push(value);
-        received += value.byteLength;
-        if (onProgress && total > 0) {
-          onProgress(Math.min(0.95, received / total));
-        }
-      }
-    }
-    // Concatenate chunks into a single ArrayBuffer.
-    const buffer = new ArrayBuffer(received);
-    const view = new Uint8Array(buffer);
-    let offset = 0;
-    for (const c of chunks) {
-      view.set(c, offset);
-      offset += c.byteLength;
-    }
     await this.parseGeometryBuffer(buffer, format);
     cache?.store(geometryUrl, buffer, format);
   }

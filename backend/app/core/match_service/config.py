@@ -7,6 +7,11 @@ and cost caps. The defaults here were calibrated on the v2.8.0 golden
 set (``backend/tests/eval/golden_set.yaml``) — keep them in sync if you
 re-tune.
 
+v3 — bands re-pinned for BGE-M3 (2026-05-10): ``CONFIDENCE_HIGH`` 0.85
+→ 0.78, ``CONFIDENCE_MEDIUM`` 0.70 → 0.62, ``AUTO_CONFIRM_DEFAULT``
+0.95 → 0.88. The BGE-M3 RRF score distribution sits ~5–8 points lower
+than the e5-small + LanceDB cosine the v2.8.0 numbers were tuned on.
+
 Env-var overrides
 =================
 
@@ -68,6 +73,8 @@ class BoostWeights:
     region_match: float
     lex_high: float
     lex_medium: float
+    rare_token_per_hit: float
+    rare_token_cap: float
 
 
 BOOST_WEIGHTS: BoostWeights = BoostWeights(
@@ -78,6 +85,12 @@ BOOST_WEIGHTS: BoostWeights = BoostWeights(
     region_match=_env_float("MATCH_BOOST_REGION_MATCH", 0.05),
     lex_high=_env_float("MATCH_BOOST_LEX_HIGH", 0.05),
     lex_medium=_env_float("MATCH_BOOST_LEX_MEDIUM", 0.02),
+    # Distinctive technical tokens (concrete grades, pipe nominals, steel
+    # profiles) embed poorly in multilingual semantic space. Reward
+    # verbatim overlap to repair the recall loss without touching the
+    # encoder.
+    rare_token_per_hit=_env_float("MATCH_BOOST_RARE_TOKEN_PER_HIT", 0.06),
+    rare_token_cap=_env_float("MATCH_BOOST_RARE_TOKEN_CAP", 0.15),
 )
 
 
@@ -87,9 +100,27 @@ BOOST_WEIGHTS: BoostWeights = BoostWeights(
 SCORE_FLOOR: float = 0.0
 SCORE_CEIL: float = 1.0
 
-# Confidence-band thresholds — match the v2.8.0 brief verbatim.
-CONFIDENCE_HIGH_THRESHOLD: float = 0.85
-CONFIDENCE_MEDIUM_THRESHOLD: float = 0.70
+# Confidence-band thresholds — pinned for BGE-M3 + Qdrant RRF as of
+# 2026-05-10. The earlier defaults (HIGH=0.85 / MEDIUM=0.70) were
+# calibrated against e5-small + LanceDB cosine; BGE-M3's RRF-fused
+# score distribution sits roughly 5-8 points lower for the same
+# semantic neighborhood, so v3 lowers HIGH→0.78 and MEDIUM→0.62.
+# Both are env-overridable so operators can re-calibrate after a
+# fresh golden-set run (or future model swap) without a code deploy.
+CONFIDENCE_HIGH_THRESHOLD: float = _env_float("MATCH_CONFIDENCE_HIGH", 0.78)
+CONFIDENCE_MEDIUM_THRESHOLD: float = _env_float("MATCH_CONFIDENCE_MEDIUM", 0.62)
+
+# Default auto-confirm threshold for new MatchSessions. Each session can
+# override per-project via the API; this is the factory default. A
+# session-scoped slider is still the right UX for per-project trust
+# calibration — this constant only changes what new sessions inherit.
+# v3: lowered 0.95 → 0.88 because a 0.95 BGE-M3 RRF score is essentially
+# a perfect match. We want auto-confirm to catch HIGH-band hits (≥0.78
+# under the re-calibrated thresholds), so 0.88 sits comfortably above
+# HIGH while still letting strong-but-not-perfect candidates through.
+DEFAULT_AUTO_CONFIRM_THRESHOLD: float = _env_float(
+    "MATCH_AUTO_CONFIRM_DEFAULT", 0.88
+)
 
 
 # ── Fuzzy lex thresholds (rapidfuzz token_set_ratio, 0-100) ──────────────
@@ -124,3 +155,20 @@ RERANK_TOP_K: int = _env_int("MATCH_RERANK_TOP_K", 5)
 RERANK_MAX_TOKENS: int = _env_int("MATCH_RERANK_MAX_TOKENS", 1024)
 RERANK_MAX_COST_USD: float = _env_float("MATCH_RERANK_MAX_COST_USD", 0.05)
 RERANK_MODEL_HINT: str = os.environ.get("MATCH_RERANK_MODEL", "claude-sonnet")
+
+
+# ── BGE local cross-encoder reranker ─────────────────────────────────────
+#
+# When :mod:`reranker_bge` is enabled, the top-``RERANK_BGE_TOP_K``
+# candidates from the bi-encoder + RRF fusion are re-scored by a local
+# cross-encoder (BAAI/bge-reranker-v2-m3 by default). Free, fast,
+# multilingual. See :mod:`reranker_bge` for the lifecycle and graceful
+# degradation behaviour.
+
+RERANK_BGE_TOP_K: int = _env_int("MATCH_RERANK_BGE_TOP_K", 10)
+RERANK_BGE_MODEL_NAME: str = os.environ.get(
+    "MATCH_RERANK_BGE_MODEL", "BAAI/bge-reranker-v2-m3"
+)
+# fp16 saves ~50% VRAM on GPU but is a no-op on CPU; default off so the
+# CPU-only VPS path stays bit-identical regardless of env.
+RERANK_BGE_USE_FP16: bool = os.environ.get("MATCH_RERANK_BGE_FP16", "0") in ("1", "true", "True")

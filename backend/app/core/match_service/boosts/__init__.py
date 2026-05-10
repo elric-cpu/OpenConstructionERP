@@ -19,7 +19,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from app.core.match_service.boosts import classifier, lex, region, unit
+from app.core.match_service.boosts import classifier, region, unit
 from app.core.match_service.envelope import ElementEnvelope, MatchCandidate
 
 # Boost callable signature.
@@ -28,12 +28,14 @@ BoostFn = Callable[[ElementEnvelope, MatchCandidate, Any], dict[str, float]]
 # Order doesn't affect math (sum is commutative) but it does affect the
 # ``boosts_applied`` insertion order shown in the API response — so we
 # keep them in "most explainable first" order: classifier → unit →
-# region → lex.
+# region. The ``lex`` and ``rare_token`` boosts were removed in v3 —
+# the Qdrant ranker handles sparse matching natively via the BAAI/bge-m3
+# sparse vector + RRF fusion, so duplicating that work in the boost
+# stack only added noise.
 BOOSTS: list[BoostFn] = [
     classifier.boost,
     unit.boost,
     region.boost,
-    lex.boost,
 ]
 
 

@@ -56,9 +56,11 @@ class TestCostItemCreate:
         with pytest.raises(ValidationError):
             CostItemCreate(code="X", unit="m2", rate=-1.0)
 
-    def test_default_currency_eur(self):
+    def test_default_currency_blank(self):
+        # v3 universality (#215): schema default is "" — caller resolves via
+        # project/region context. EUR-as-default was DACH-centric.
         data = CostItemCreate(code="X", unit="m2", rate=10.0)
-        assert data.currency == "EUR"
+        assert data.currency == ""
 
     def test_default_source_cwicr(self):
         data = CostItemCreate(code="X", unit="m2", rate=10.0)

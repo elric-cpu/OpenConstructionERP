@@ -3997,11 +3997,22 @@ function DrawingFilmstrip({
             }
 
             return (
-              <button
+              // Card itself acts as a button (click selects); rendered as a
+              // <div role="button"> so the inner delete button can stay a
+              // real <button> — nesting buttons trips React's DOM warning.
+              <div
                 key={d.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => onSelectDrawing(d.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onSelectDrawing(d.id);
+                  }
+                }}
                 className={clsx(
-                  'group relative shrink-0 w-36 h-[72px] text-start rounded-md border overflow-hidden flex flex-col',
+                  'group relative shrink-0 w-36 h-[72px] text-start rounded-md border overflow-hidden flex flex-col cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/50',
                   'transition-all duration-150',
                   activeDrawingId === d.id
                     ? 'border-blue-500/80 bg-blue-500/10 shadow shadow-blue-500/20'
@@ -4047,6 +4058,7 @@ function DrawingFilmstrip({
                 </div>
                 {/* Delete button */}
                 <button
+                  type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     onDeleteDrawing(d.id);
@@ -4057,7 +4069,7 @@ function DrawingFilmstrip({
                 >
                   <Trash2 size={9} />
                 </button>
-              </button>
+              </div>
             );
           })
         ) : (

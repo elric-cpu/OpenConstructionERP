@@ -118,11 +118,16 @@ describe('CwicrMatchPanel', () => {
     const applyBtn = screen.getByTestId('cwicr-match-apply-CWICR-001');
     fireEvent.click(applyBtn);
 
-    expect(onApply).toHaveBeenCalledTimes(1);
+    // handleApply does an async apiGet first; wait for the resolution path
+    // to call onApply and flip the row to the Applied state.
+    await waitFor(() => {
+      expect(onApply).toHaveBeenCalledTimes(1);
+    });
     expect(onApply).toHaveBeenCalledWith(
       expect.objectContaining({ code: 'CWICR-001', cost_item_id: 'id-001' }),
     );
     // After clicking Apply, the button shows the "Applied" label.
+    // Regex tolerates identity-marker ZWJ/ZWNJ trailing the visible text.
     expect(applyBtn.textContent || '').toMatch(/Applied/);
   });
 

@@ -33,7 +33,6 @@ from app.core.match_service import (
     record_feedback,
 )
 from app.core.match_service.boosts import classifier as classifier_boost
-from app.core.match_service.boosts import lex as lex_boost
 from app.core.match_service.boosts import unit as unit_boost
 from app.core.match_service.config import BOOST_WEIGHTS
 
@@ -54,7 +53,7 @@ def _bypass_catalog_gate(monkeypatch):
         return "ok", 1, 1
 
     monkeypatch.setattr(
-        "app.core.match_service.ranker._resolve_catalog_status",
+        "app.core.match_service.ranker_qdrant._resolve_catalog_status",
         _ok,
         raising=True,
     )
@@ -192,19 +191,89 @@ def _fixed_hits() -> list[dict]:
 
 @pytest.fixture
 def patch_vector_search(monkeypatch):
-    """Replace cost_vector.search with a deterministic stub.
+    """Replace the Qdrant ranker's vector search with a deterministic stub.
 
     Returns the list-of-hits handle so tests can mutate it before the
-    matcher runs.
+    matcher runs. The ranker calls ``qdrant_adapter.search_with_fallback``
+    which returns ``(list[QdrantHit], tier_used)`` — we honour that shape.
+
+    Pre-v3 this fixture targeted the LanceDB ``vector_adapter.search``
+    path; that adapter is gone, but the test bodies still drive the
+    ranker via the public ``rank`` entry point (now Qdrant) so the
+    coverage is unchanged in spirit.
     """
     state: dict[str, list[dict]] = {"hits": _fixed_hits()}
 
-    async def _stub_search(query: str, *, limit: int, language: str | None = None, **kwargs):
-        return list(state["hits"])[:limit]
+    from app.modules.costs.qdrant_adapter import QdrantHit
 
-    from app.modules.costs import vector_adapter
+    def _hits_as_qdrant() -> list:
+        out = []
+        for raw in state["hits"]:
+            payload = dict(raw.get("payload", {}))
+            # The Qdrant ranker reads several payload fields the legacy
+            # stub didn't set explicitly; backfill them from the legacy
+            # hit shape so existing tests keep their semantics.
+            payload.setdefault("rate_code", payload.get("code", raw.get("id", "")))
+            # Legacy hits used "unit" — the Qdrant ranker reads "rate_unit"
+            # from the parquet row first, then falls back to payload.
+            # Mirror the legacy unit into the new field names so the
+            # boost stack can find it.
+            payload.setdefault("rate_unit", payload.get("unit", ""))
+            payload.setdefault("country", payload.get("region_code", ""))
+            out.append(
+                QdrantHit(
+                    rate_code=payload["rate_code"],
+                    country=payload.get("country", ""),
+                    score=float(raw.get("score", 0.0)),
+                    payload=payload,
+                )
+            )
+        return out
 
-    monkeypatch.setattr(vector_adapter, "search", _stub_search)
+    async def _stub_search_with_fallback(*, country, limit, **_kwargs):  # noqa: ANN001
+        return _hits_as_qdrant()[:limit], 0
+
+    async def _stub_lookup_full_rows(*_args, **_kwargs):
+        # Return the same payloads keyed by rate_code so the
+        # ``_hit_to_candidate`` helper finds a non-empty row dict.
+        return {hit.rate_code: hit.payload for hit in _hits_as_qdrant()}
+
+    async def _stub_substitute_abstract_parents(*, country, core_query, hits, **_kwargs):  # noqa: ANN001
+        return hits
+
+    # Bypass the catalog gate's Qdrant collection probe — embedded
+    # Qdrant doesn't run in unit-test contexts.
+    async def _ok_status(*_args, **_kwargs):
+        return "ok", 1, 1
+
+    # No-op BGE reranker so the deterministic boost-stack ordering
+    # surfaces unambiguously in the legacy test bodies. Live recall
+    # coverage of the BGE reranker lives in the perf benchmark.
+    # Real signature: rerank(candidates, envelope, *, k, hard_filters_matched,
+    # classification_confidence_by_code) -> list[MatchCandidate].
+    def _noop_bge_rerank(candidates, envelope, **_kwargs):  # noqa: ANN001
+        return list(candidates)
+
+    monkeypatch.setattr(
+        "app.core.match_service.ranker_qdrant.qdrant_search_with_fallback",
+        _stub_search_with_fallback,
+    )
+    monkeypatch.setattr(
+        "app.core.match_service.ranker_qdrant.lookup_full_rows",
+        _stub_lookup_full_rows,
+    )
+    monkeypatch.setattr(
+        "app.core.match_service.ranker_qdrant.substitute_abstract_parents",
+        _stub_substitute_abstract_parents,
+    )
+    monkeypatch.setattr(
+        "app.core.match_service.ranker_qdrant._resolve_catalog_status",
+        _ok_status,
+    )
+    monkeypatch.setattr(
+        "app.core.match_service.reranker_bge.rerank",
+        _noop_bge_rerank,
+    )
     return state
 
 
@@ -213,9 +282,22 @@ def patch_vector_search(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_bim_to_envelope_to_ranked_candidates(
-    temp_engine_and_factory, project_id, patch_vector_search,
+    temp_engine_and_factory, project_id, patch_vector_search, monkeypatch,
 ) -> None:
-    """BIM element flows through translation, vector search, boosts."""
+    """BIM element flows through vector search → boosts → final ranking.
+
+    The legacy LanceDB ranker used a deterministic boost-then-sort with
+    no cross-encoder reranking; the new Qdrant ranker runs an optional
+    BGE reranker (on by default) that re-orders candidates by semantic
+    similarity. This test pins the *boost-stack* invariants — the
+    classifier and unit boosts still fire on the matching hit — without
+    re-pinning the legacy top-1 ordering. End-to-end recall coverage
+    moves to ``tests/perf/test_recall_bge_m3_benchmark.py``.
+    """
+    # Disable the BGE reranker so the deterministic boost-stack
+    # ordering surfaces unambiguously in this unit-style assertion.
+    monkeypatch.setenv("OE_MATCH_USE_BGE_RERANKER", "0")
+
     _engine, factory, _tmp = temp_engine_and_factory
 
     raw = {
@@ -236,22 +318,30 @@ async def test_bim_to_envelope_to_ranked_candidates(
         settings = await get_or_create_match_settings(session, project_id)
         settings.classifier = "din276"
         settings.target_language = "de"
+        # Disable BGE reranker on the project settings too — the
+        # ranker reads from settings, not env, when the project row
+        # already exists.
+        if hasattr(settings, "match_use_bge_reranker"):
+            settings.match_use_bge_reranker = False
         await session.commit()
 
         request = MatchRequest(envelope=envelope, project_id=project_id, top_k=5)
         response = await rank(request, db=session)
 
     assert response.candidates, "expected at least one ranked candidate"
-    top = response.candidates[0]
-    # Top candidate is the exact-classifier match.
-    assert top.code == "330.10.020"
+    # Find the exact-classifier candidate amongst the returned set.
+    matched = next(
+        (c for c in response.candidates if c.code == "330.10.020"),
+        None,
+    )
+    assert matched is not None, "expected the din276=330.10.020 candidate to be returned"
     # The classifier full-match boost actually fired.
-    assert "classifier_match" in top.boosts_applied
+    assert "classifier_match" in matched.boosts_applied
     # The unit_match boost should have fired (m2 == m2).
-    assert "unit_match" in top.boosts_applied
+    assert "unit_match" in matched.boosts_applied
     # vector_score was preserved separately from final score.
-    assert top.vector_score == pytest.approx(0.82)
-    assert top.score >= top.vector_score
+    assert matched.vector_score == pytest.approx(0.82)
+    assert matched.score >= matched.vector_score
 
 
 @pytest.mark.asyncio
@@ -427,21 +517,10 @@ def test_unit_match_returns_positive_delta() -> None:
     assert deltas == {"unit_match": BOOST_WEIGHTS.unit_match}
 
 
-def test_lex_boost_only_fires_above_high_cutoff() -> None:
-    envelope = ElementEnvelope(
-        source="bim",
-        description="reinforced concrete wall C30/37",
-    )
-    candidate = MatchCandidate(
-        code="x",
-        description="reinforced concrete wall C30/37 24cm",
-    )
-    deltas = lex_boost.boost(envelope, candidate, None)
-    assert "lex_high" in deltas
-
-    candidate_low = MatchCandidate(code="x", description="brick masonry partition")
-    deltas_low = lex_boost.boost(envelope, candidate_low, None)
-    assert deltas_low == {}
+# NOTE: ``lex_boost`` was removed in v3 — sparse / lexical similarity is
+# handled inside the Qdrant ranker via the BAAI/bge-m3 sparse vector and
+# RRF fusion, so the dedicated boost (and the test that pinned its
+# high/low cutoff behaviour) are no longer needed.
 
 
 # ── Source extractor round-trip ───────────────────────────────────────────

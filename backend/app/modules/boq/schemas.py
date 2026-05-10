@@ -14,7 +14,6 @@ from uuid import UUID
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
-
 # Probe-A scenario 11: hard cap on ``quantity * unit_rate``. A 1e10 × 1e10
 # input would compute to 1e20, which is far beyond any plausible
 # construction line item and likely indicates fat-fingered input or
@@ -618,11 +617,18 @@ class BOQFromTemplateRequest(BaseModel):
 
 
 class AIChatContext(BaseModel):
-    """Context about the current BOQ for AI chat prompts."""
+    """Context about the current BOQ for AI chat prompts.
+
+    Currency / standard default to empty so the AI prompt renders bare
+    blanks (interpreted by the LLM as "no constraint specified") rather
+    than steering the model toward EUR + DIN-276. A hardcoded default
+    of EUR/din276 silently mis-orientated suggestions on every USD/UK/
+    LATAM project that didn't pass an explicit context.
+    """
 
     project_name: str = ""
-    currency: str = "EUR"
-    standard: str = "din276"
+    currency: str = ""
+    standard: str = ""
     existing_positions_count: int = 0
 
 
@@ -1165,7 +1171,10 @@ class CostItemSearchResult(BaseModel):
     score: float = Field(ge=0.0, le=1.0)
     classification: dict[str, str] = Field(default_factory=dict)
     components: list[dict[str, Any]] = Field(default_factory=list)
-    currency: str = "EUR"
+    # Empty when the underlying CostItem row has no currency; the
+    # frontend renders bare numbers in that case rather than mis-stamping
+    # EUR onto a USD/GBP/JPY-currency catalogue row.
+    currency: str = ""
 
 
 class CostItemSearchResponse(BaseModel):
@@ -1229,11 +1238,17 @@ class SuggestPrerequisitesResponse(BaseModel):
 
 
 class CheckScopeRequest(BaseModel):
-    """Request to check BOQ scope completeness."""
+    """Request to check BOQ scope completeness.
+
+    Region / currency default to empty so the LLM scope analysis runs
+    without DACH-biased trade packages (Bauhauptgewerbe / Ausbaugewerbe
+    only make sense in German practice). The AI prompt is responsible
+    for picking region-appropriate trade lists when these are populated.
+    """
 
     project_type: str = "general"  # residential, commercial, industrial, infrastructure
-    region: str = "DACH"
-    currency: str = "EUR"
+    region: str = ""
+    currency: str = ""
     locale: str = Field(default="en", max_length=10)
 
 
@@ -1291,15 +1306,22 @@ class BOQStatisticsResponse(BaseModel):
 
 
 class EscalateRateRequest(BaseModel):
-    """Request to escalate a rate to current prices."""
+    """Request to escalate a rate to current prices.
+
+    Currency / region default to empty so the AI prompt pipes blank
+    strings into the LLM template — interpreted as "no constraint
+    specified". Hardcoding EUR + DACH steered every escalation toward
+    BKI (the German construction cost index), even on US/UK projects
+    where ENR / BCIS would be the right index.
+    """
 
     description: str = Field(..., min_length=2, max_length=500)
     unit: str = "m2"
     rate: float = Field(..., gt=0)
-    currency: str = "EUR"
+    currency: str = ""
     base_year: int = Field(default=2023, ge=2000, le=2030)
     target_year: int = Field(default=2026, ge=2000, le=2035)
-    region: str = "DACH"
+    region: str = ""
     locale: str = Field(default="en", max_length=10)
 
 

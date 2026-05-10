@@ -43,6 +43,13 @@ from app.modules.projects.file_manager_schemas import (
 logger = logging.getLogger(__name__)
 
 
+# Hard cap per collector. The file manager aggregates across 7 modules and
+# returns the union to the client; without a cap, a project with 50k photos
+# would block the request thread loading every row before serialising. The
+# UI paginates client-side so 5k is plenty for one collector.
+_PER_COLLECTOR_LIMIT = 5_000
+
+
 # Stable category labels — UI re-translates them via i18n keys
 # ``files.category.<id>`` and falls back to these defaults.
 _CATEGORY_LABELS: dict[FileKind, str] = {
@@ -159,7 +166,9 @@ async def _collect_documents(
         return []
     rows = (
         await session.execute(
-            select(Document).where(Document.project_id == project_id),
+            select(Document)
+            .where(Document.project_id == project_id)
+            .limit(_PER_COLLECTOR_LIMIT),
         )
     ).scalars().all()
     out: list[FileRow] = []
@@ -201,7 +210,9 @@ async def _collect_photos(
         return []
     rows = (
         await session.execute(
-            select(ProjectPhoto).where(ProjectPhoto.project_id == project_id),
+            select(ProjectPhoto)
+            .where(ProjectPhoto.project_id == project_id)
+            .limit(_PER_COLLECTOR_LIMIT),
         )
     ).scalars().all()
     out: list[FileRow] = []
@@ -250,7 +261,9 @@ async def _collect_sheets(
         return []
     rows = (
         await session.execute(
-            select(Sheet).where(Sheet.project_id == project_id),
+            select(Sheet)
+            .where(Sheet.project_id == project_id)
+            .limit(_PER_COLLECTOR_LIMIT),
         )
     ).scalars().all()
     out: list[FileRow] = []
@@ -300,7 +313,9 @@ async def _collect_bim_models(
         return []
     rows = (
         await session.execute(
-            select(BIMModel).where(BIMModel.project_id == project_id),
+            select(BIMModel)
+            .where(BIMModel.project_id == project_id)
+            .limit(_PER_COLLECTOR_LIMIT),
         )
     ).scalars().all()
     out: list[FileRow] = []
@@ -346,7 +361,9 @@ async def _collect_dwg_drawings(
         return []
     rows = (
         await session.execute(
-            select(DwgDrawing).where(DwgDrawing.project_id == project_id),
+            select(DwgDrawing)
+            .where(DwgDrawing.project_id == project_id)
+            .limit(_PER_COLLECTOR_LIMIT),
         )
     ).scalars().all()
     out: list[FileRow] = []

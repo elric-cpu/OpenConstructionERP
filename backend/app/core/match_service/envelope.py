@@ -55,18 +55,87 @@ class ElementEnvelope(BaseModel):
         classifier_hint: ``{"din276": "330.10", "masterformat": "..."}``.
             BIM elements typically arrive pre-classified; PDF/photo
             usually don't.
+
+    v3 ProjectItem fields (added 2026-05-09 per MAPPING_PROCESS.md §3.2):
+    upstream extractors that know the structured value should populate
+    these fields directly. The query builder routes them to either
+    Qdrant ``hard_filters`` or ``soft_boosts`` based on the
+    "if classifier errs, would the right answer be discarded?" rule
+    from §4.2.1 — BIM Pset values are hard, DWG / heuristic guesses
+    are soft. Each is optional so existing callers don't break.
+
+    Attributes (v3):
+        ifc_class: Verbatim ``IfcWall`` / ``IfcSlab`` / ``IfcBeam`` from
+            the BIM extractor. Hard filter when present — IFC class is
+            authoritative for source-of-truth IFC files.
+        ifc_predefined_type: ``"PARTITIONING"``, ``"FLOOR"``, etc.
+            Hard filter when present.
+        ost_category: Revit ``OST_Walls`` / ``OST_Floors`` from the
+            Revit RVT export. Soft boost — Revit families occasionally
+            mislabel category vs ifc_class.
+        material_class: Normalised material bucket — ``"concrete"``,
+            ``"steel"``, ``"wood"``, ``"ceramic"``. Soft boost.
+        nominal_size_mm: Integer mm thickness / diameter / nominal size.
+            Soft boost — sized rates within ±10% range still rank well.
+        is_external: Pset ``IsExternal`` — hard filter when present
+            (BIM Pset is trustworthy).
+        is_loadbearing: Pset ``LoadBearing`` — hard filter when present.
+        is_structural: ``StructuralUsage == "Bearing"`` from Revit —
+            hard filter when present.
+        construction_stage_hint: User-picked stage (``"02_Demolition"``
+            … ``"13_Sitework"``). Hard filter when present — the user
+            explicitly narrowed the search.
     """
 
     model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
 
     source: SourceType
-    source_lang: str = Field(default="en", min_length=2, max_length=8)
+    # Empty string is a valid value: the upstream extractor didn't
+    # detect a language tag. The translation cascade short-circuits on
+    # empty source_lang and runs the search verbatim — preferable to
+    # the historical ``"en"`` default, which forced an English-source
+    # assumption on every untagged element.
+    source_lang: str = Field(default="", max_length=8)
     category: str = Field(default="", max_length=64)
     description: str = Field(default="", max_length=2000)
     properties: dict[str, Any] = Field(default_factory=dict)
     quantities: dict[str, float] = Field(default_factory=dict)
     unit_hint: str | None = Field(default=None, max_length=20)
     classifier_hint: dict[str, str] | None = None
+
+    # ── v3 ProjectItem-equivalent structured fields ──────────────────
+    ifc_class: str | None = Field(default=None, max_length=64)
+    ifc_predefined_type: str | None = Field(default=None, max_length=64)
+    ost_category: str | None = Field(default=None, max_length=64)
+    material_class: str | None = Field(default=None, max_length=32)
+    nominal_size_mm: int | None = Field(default=None, ge=0, le=100_000)
+    is_external: bool | None = None
+    is_loadbearing: bool | None = None
+    is_structural: bool | None = None
+    construction_stage_hint: str | None = Field(default=None, max_length=32)
+
+    # Verbatim CWICR rate_code carried over from the source — set when
+    # the upstream extractor knows the exact match (e.g., a BoQ row with
+    # a populated ``Code`` column, or a manual override). When present,
+    # the ranker short-circuits the Qdrant fan-out and pulls the rate
+    # directly from parquet (MAPPING_PROCESS.md §4.1.5). Falls through
+    # to the normal vector path when the code isn't in the bound
+    # catalogue (stale code, wrong catalogue, typo).
+    exact_code: str | None = Field(default=None, max_length=128)
+
+    # Project-context fields — populated by the caller (service.run_match)
+    # so matchers can scope candidate search by the project's expected
+    # currency / region without a per-group project lookup. Empty string
+    # means "no preference" (matchers degrade to global search).
+    #
+    # The lexical matcher uses ``project_currency`` as a hard SQL filter:
+    # for a USD project we don't want EUR candidates pretending to be
+    # USD rates — return no candidates instead and let the UI render
+    # "no rates loaded for USD" so the operator loads the right
+    # catalogue. This is what makes /match-elements universal across
+    # currency zones — it never lies about the rate's currency.
+    project_currency: str = Field(default="", max_length=8)
+    project_region: str = Field(default="", max_length=32)
 
 
 class MatchCandidate(BaseModel):
@@ -85,6 +154,12 @@ class MatchCandidate(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
+    # Database id of the underlying record (CostItem.id for CWICR hits,
+    # CatalogResource.id for resource hits). The UI posts this back when
+    # confirming so the BOQ Position links to the real row, not a code
+    # string. Optional because some legacy candidates serialised before
+    # this field landed don't carry an id.
+    id: str | None = None
     code: str
     description: str = ""
     unit: str = ""
@@ -103,11 +178,59 @@ class MatchCandidate(BaseModel):
     classification: dict[str, str] = Field(default_factory=dict)
 
 
-def confidence_band_for(score: float) -> ConfidenceBand:
-    """Map a final score onto the high/medium/low confidence band."""
-    if score >= CONFIDENCE_HIGH_THRESHOLD:
+# Lower thresholds applied when the candidate is supported by hard
+# filter matches or a high-quality classification signal — see v3-P9
+# MAPPING_PROCESS.md §6.4. Three or more hard filters that survive into
+# the SearchPlan (e.g., ifc_class + is_loadbearing + construction_stage)
+# tighten the search so much that a moderate vector score still earns
+# HIGH band; a single hard filter is not enough on its own.
+_HARD_FILTER_HIGH_BONUS_FLOOR: float = 0.75
+_HARD_FILTER_MEDIUM_BONUS_FLOOR: float = 0.60
+_HARD_FILTER_BONUS_MIN_COUNT: int = 3
+_HARD_FILTER_MEDIUM_MIN_COUNT: int = 1
+
+
+def confidence_band_for(
+    score: float,
+    hard_filters_matched: int = 0,
+    classification_confidence: str | None = None,
+) -> ConfidenceBand:
+    """Map a final score onto the high/medium/low confidence band.
+
+    Backwards-compatible: ``confidence_band_for(score)`` keeps the v2
+    semantics (pure threshold check). The two extra arguments power the
+    v3 §6.4 derivation:
+
+    * ``hard_filters_matched`` — count of *hard* SearchPlan predicates
+      whose value is also present (and matches) on the candidate's
+      Qdrant payload. Ignored when ``0``. ``≥3`` lets a vector score
+      ≥0.75 promote to HIGH; ``≥1`` lets ≥0.60 promote to MEDIUM.
+    * ``classification_confidence`` — value from the candidate's CWICR
+      payload; ``"high"`` shifts the floors slightly downward,
+      ``"low"`` shifts them upward. ``None`` is a no-op.
+
+    The bonuses are additive, not multiplicative — they relax the
+    *floor* required to clear a band, never above the original
+    ``CONFIDENCE_HIGH_THRESHOLD`` (so a high score with no hard filter
+    support still lands in HIGH).
+    """
+
+    cls = (classification_confidence or "").strip().lower()
+    cls_offset = -0.02 if cls == "high" else 0.03 if cls == "low" else 0.0
+
+    high_floor = CONFIDENCE_HIGH_THRESHOLD + cls_offset
+    medium_floor = CONFIDENCE_MEDIUM_THRESHOLD + cls_offset
+
+    if hard_filters_matched >= _HARD_FILTER_BONUS_MIN_COUNT:
+        # 3+ hard filters: the search was narrow enough that 0.75 is
+        # convincing — drop the HIGH floor for this candidate only.
+        high_floor = min(high_floor, _HARD_FILTER_HIGH_BONUS_FLOOR + cls_offset)
+    if hard_filters_matched >= _HARD_FILTER_MEDIUM_MIN_COUNT:
+        medium_floor = min(medium_floor, _HARD_FILTER_MEDIUM_BONUS_FLOOR + cls_offset)
+
+    if score >= high_floor:
         return "high"
-    if score >= CONFIDENCE_MEDIUM_THRESHOLD:
+    if score >= medium_floor:
         return "medium"
     return "low"
 

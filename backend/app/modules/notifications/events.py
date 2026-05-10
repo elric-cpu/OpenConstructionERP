@@ -98,7 +98,7 @@ async def _on_boq_created(event: Event) -> None:
                 body_context={"boq_name": data.get("name") or data.get("boq_name") or ""},
                 entity_type="boq",
                 entity_id=str(boq_id),
-                action_url=f"/boq?id={boq_id}",
+                action_url=f"/boq/{boq_id}",
             )
             await session.commit()
     except Exception:
@@ -253,7 +253,7 @@ async def _on_risk_assigned(event: Event) -> None:
                 },
                 entity_type="risk",
                 entity_id=str(risk_id),
-                action_url=f"/risk?id={risk_id}",
+                action_url=f"/risks?id={risk_id}",
             )
             await session.commit()
     except Exception:

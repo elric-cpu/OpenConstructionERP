@@ -272,16 +272,21 @@ describe('CostDatabaseSearchModal — paginated catalog', () => {
   });
 
   it('shows the inline retry CTA when the category tree fails', async () => {
-    (fetchCategoryTree as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+    // mockRejectedValue (not Once) so React's StrictMode double-mount + any
+    // internal react-query refetch all hit the rejection path. Without this
+    // the second call returns the default success and the error UI never
+    // renders.
+    (fetchCategoryTree as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(
       new Error('boom'),
     );
 
     renderModal();
     const sidebar = await screen.findByTestId('cost-modal-sidebar');
+    // Regex matchers tolerate identity-marker ZWJ/ZWNJ trailing the visible text.
     expect(
-      await within(sidebar).findByText('Could not load categories'),
+      await within(sidebar).findByText(/Could not load categories/),
     ).toBeInTheDocument();
-    expect(within(sidebar).getByText('Retry')).toBeInTheDocument();
+    expect(within(sidebar).getByText(/^Retry/)).toBeInTheDocument();
 
     // The list pane keeps working — the search query fired regardless.
     expect(fetchCostSearch).toHaveBeenCalled();

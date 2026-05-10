@@ -287,7 +287,17 @@ export function getErrorCount(): number {
 }
 
 /**
- * Return the most recent captured error (anonymized) for use in bug reports.
+ * Return the most recent *meaningful* captured error for bug reports.
+ *
+ * Prefers level=error entries over warnings, because warning-level entries are
+ * dominated by benign 404s the UI already handled gracefully (e.g. /bim/<stale-id>
+ * auto-detect, optional polling endpoints). Without this filter the issue
+ * template would attach a noise 404 as the "last error captured", and users
+ * would file false-positive bugs (cf. GitHub issue #115).
+ *
+ * Lookup window: scans the most recent 32 entries for an error-level match;
+ * if none, falls back to the most recent entry (preserving prior behaviour
+ * for sessions that genuinely only produced warnings).
  *
  * The stack is capped at ~2KB so the returned payload stays URL-safe even
  * when concatenated into a GitHub issue body.
@@ -298,15 +308,23 @@ export function getLastError(): {
   at: string;
 } | null {
   if (memoryBuffer.length === 0) return null;
-  const last = memoryBuffer[memoryBuffer.length - 1];
-  if (!last) return null;
-  const stack = last.stack ?? '';
-  // Cap to ~2KB. Keep header lines (most informative) by slicing from start.
+  const window = memoryBuffer.slice(-32);
+  let pick: ErrorLogEntry | undefined;
+  for (let i = window.length - 1; i >= 0; i--) {
+    const e = window[i];
+    if (e && e.level === 'error') {
+      pick = e;
+      break;
+    }
+  }
+  if (!pick) pick = memoryBuffer[memoryBuffer.length - 1];
+  if (!pick) return null;
+  const stack = pick.stack ?? '';
   const cappedStack = stack.length > 2048 ? stack.slice(0, 2048) + '\n... [truncated]' : stack;
   return {
-    message: last.message,
+    message: pick.message,
     stack: cappedStack,
-    at: last.timestamp,
+    at: pick.timestamp,
   };
 }
 

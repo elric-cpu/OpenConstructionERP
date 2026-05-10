@@ -76,7 +76,7 @@ Existing BOQ positions (do NOT repeat these):
 Rules:
 1. Only suggest items genuinely needed for this type of work
 2. Do not repeat anything already in the BOQ
-3. Provide realistic market rates in EUR
+3. Provide realistic market rates in the project's currency (or omit when uncertain)
 4. 3-6 suggestions maximum
 5. Each suggestion must have a clear relationship to the target position
 
@@ -85,7 +85,7 @@ Return ONLY this JSON array (no markdown fences):
   {{
     "description": "Full technical description of the work item",
     "unit": "m2",
-    "typical_rate_eur": 45.50,
+    "typical_rate": 45.50,
     "relationship": "prerequisite",
     "reason": "Why this is needed"
   }}
@@ -157,7 +157,19 @@ Target year: {target_year}
 Region: {region}
 
 Consider:
-1. Construction cost index changes (BKI for DACH, BCIS for UK, ENR for US)
+1. Construction cost index changes — pick the one that fits the region:
+   - BKI / Statistisches Bundesamt (DACH / Germany / Austria)
+   - BCIS (UK / Ireland / Australia / NZ — RICS heritage)
+   - ENR / RSMeans (US / Canada)
+   - SINAPI / FGV / IPCA-construção (Brazil)
+   - INDEC ICC (Argentina) / DANE (Colombia) / INEGI (Mexico)
+   - GESN / FER / Rosstat-construction (Russia / CIS)
+   - CPI-construction (China GB) / GBOC
+   - CPWD / RICS-India indices (India)
+   - Birim Fiyat / TÜİK (Turkey)
+   - JBCI (Japan) / KOSCA (Korea)
+   When the region is empty / unknown, pick a globally-applicable
+   weighted-average construction inflation rate (typically 4-7% annually).
 2. Material-specific inflation (steel, concrete, timber, labor, energy)
 3. Labor cost trends in the region
 4. Supply chain and market conditions

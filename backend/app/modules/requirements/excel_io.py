@@ -208,7 +208,7 @@ def parse_xlsx(payload: bytes) -> tuple[list[dict[str, Any]], list[str]]:
         if not entity and not attribute:
             continue
 
-        record: dict[str, Any] = {col: "" for col in COLUMNS}
+        record: dict[str, Any] = dict.fromkeys(COLUMNS, "")
         for col, idx in col_index.items():
             if idx >= len(raw_row):
                 continue
@@ -251,7 +251,7 @@ def parse_csv(payload: bytes) -> tuple[list[dict[str, Any]], list[str]]:
     for line_no, raw_row in enumerate(reader, start=2):
         if not raw_row or all(not cell.strip() for cell in raw_row):
             continue
-        record = {col: "" for col in COLUMNS}
+        record = dict.fromkeys(COLUMNS, "")
         for col, idx in col_index.items():
             if idx < len(raw_row):
                 record[col] = raw_row[idx]

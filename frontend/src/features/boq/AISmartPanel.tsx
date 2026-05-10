@@ -68,8 +68,13 @@ export function AISmartPanel({
   allPositions,
   onUpdatePosition,
   onAddPosition,
-  currencyCode = 'EUR',
-  locale = 'de-DE',
+  // Empty defaults — fmtCurrency renders the number without a symbol
+  // when no currency is known; getIntlLocale() picks the active i18n
+  // locale when ``locale`` is empty. Hardcoding EUR/de-DE here forced
+  // German formatting on every USD/GBP/JPY project that didn't
+  // explicitly pass a prop.
+  currencyCode = '',
+  locale = '',
   projectRegion,
 }: AISmartPanelProps) {
   const { t, i18n } = useTranslation();
@@ -189,7 +194,10 @@ export function AISmartPanel({
         description: selectedPosition.description,
         unit: selectedPosition.unit,
         rate: selectedPosition.unit_rate,
-        region: projectRegion || 'DACH',
+        // Empty region means "no preference" on the backend — DON'T
+        // hardcode DACH here, that biased every untagged project to
+        // German cost escalation indices.
+        region: projectRegion || '',
         locale: i18n.language,
       });
       setEscalateResult(res);
@@ -217,7 +225,7 @@ export function AISmartPanel({
     try {
       const res = await boqApi.checkScope(boqId, {
         project_type: 'general',
-        region: projectRegion || 'DACH',
+        region: projectRegion || '',
         locale: i18n.language,
       });
       setScopeResult(res);

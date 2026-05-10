@@ -144,6 +144,20 @@ class _StubBudgetRepo:
             rows = [r for r in rows if r.category == category]
         return rows, len(rows)
 
+    async def aggregate_for_dashboard(
+        self, *, project_id: uuid.UUID | None = None
+    ) -> dict[str, Any]:
+        # EVM zero-input fallback path (service.create_evm_snapshot) calls
+        # this when any of BAC/PV/EV/AC is "0". For unit tests we return
+        # an empty aggregate so derived values stay zero and the test
+        # asserts the divide-by-zero guard, not the fallback math.
+        return {
+            "total_budget_original": 0.0,
+            "total_budget_revised": 0.0,
+            "total_committed": 0.0,
+            "total_actual": 0.0,
+        }
+
 
 class _StubEVMRepo:
     def __init__(self) -> None:

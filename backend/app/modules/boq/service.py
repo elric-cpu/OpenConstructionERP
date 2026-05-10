@@ -125,7 +125,7 @@ def _stamp_variant_snapshot(
     metadata["variant_snapshot"] = {
         "label": label,
         "rate": rate_val,
-        "currency": currency or "USD",
+        "currency": currency or "",
         "captured_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "source": source,
     }
@@ -195,10 +195,14 @@ def _stamp_resource_variant_snapshots(
             continue
 
         resource_currency = resource.get("currency")
+        # Resource currency wins; fall back to position currency; finally
+        # leave empty rather than stamping "USD" / "EUR" — both lie when
+        # the project is in another currency. The variant_snapshot reader
+        # tolerates empty currency and renders the rate as a bare number.
         currency = (
             resource_currency
             if isinstance(resource_currency, str) and resource_currency
-            else position_currency or "USD"
+            else (position_currency or "")
         )
 
         resource["variant_snapshot"] = {
@@ -4673,7 +4677,7 @@ class BOQService:
                     "score": round(float(m.get("score", 0)), 4),
                     "classification": (db_item.classification or {}) if db_item else {},
                     "components": (db_item.components or []) if db_item else [],
-                    "currency": (db_item.currency if db_item else "EUR") or "EUR",
+                    "currency": (db_item.currency if db_item else "") or "",
                 }
             )
 
@@ -4856,8 +4860,8 @@ class BOQService:
         user_id: str,
         boq_id: Any,
         project_type: str = "general",
-        region: str = "DACH",
-        currency: str = "EUR",
+        region: str = "",
+        currency: str = "",
         locale: str = "en",
     ) -> dict[str, Any]:
         """Check BOQ scope completeness using LLM analysis.
@@ -4963,10 +4967,10 @@ class BOQService:
         description: str,
         unit: str,
         rate: float,
-        currency: str = "EUR",
+        currency: str = "",
         base_year: int = 2023,
         target_year: int = 2026,
-        region: str = "DACH",
+        region: str = "",
         locale: str = "en",
     ) -> dict[str, Any]:
         """Escalate a unit rate to current prices using LLM analysis.
@@ -5041,8 +5045,19 @@ class BOQService:
 
     # ── Project Intelligence (RFC 25) ──────────────────────────────────────
 
+    # Project Intelligence widgets fire on every project page load and
+    # iterate every position in Python. A 10K-position project is the
+    # high end of realistic load; cap at 2× that so a runaway project
+    # can't OOM the worker. Anything bigger is genuinely abusive and
+    # the widgets degrade to "first 20K" which is still a useful Pareto.
+    _PI_POSITION_CAP = 20_000
+
     async def _list_positions_for_project(self, project_id: uuid.UUID) -> list[Position]:
-        """Return every non-section Position across all BOQs of a project."""
+        """Return every non-section Position across all BOQs of a project.
+
+        Capped at ``_PI_POSITION_CAP`` to bound memory use on the always-on
+        Project Intelligence widgets.
+        """
         from sqlalchemy import select as _select
 
         stmt = (
@@ -5051,6 +5066,7 @@ class BOQService:
             .where(BOQ.project_id == project_id)
             .where(Position.unit != "")
             .order_by(Position.sort_order, Position.ordinal)
+            .limit(self._PI_POSITION_CAP)
         )
         rows = await self.session.execute(stmt)
         return list(rows.scalars().all())

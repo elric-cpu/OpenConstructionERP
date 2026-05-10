@@ -1679,7 +1679,22 @@ function MonteCarloPanel({ projectId, currency }: { projectId: string; currency:
   const [loading, setLoading] = useState(false);
 
   const fmt = useCallback(
-    (n: number) => new Intl.NumberFormat(getIntlLocale(), { style: 'currency', currency: currency || 'EUR', maximumFractionDigits: 0 }).format(n),
+    (n: number) => {
+      const trimmed = (currency || '').trim().toUpperCase();
+      const isValid = /^[A-Z]{3}$/.test(trimmed);
+      if (!isValid) {
+        // Render bare number — DON'T fall back to EUR on a USD/GBP/JPY
+        // Monte-Carlo simulation, that lies about the cost unit.
+        return new Intl.NumberFormat(getIntlLocale(), {
+          maximumFractionDigits: 0,
+        }).format(n);
+      }
+      return new Intl.NumberFormat(getIntlLocale(), {
+        style: 'currency',
+        currency: trimmed,
+        maximumFractionDigits: 0,
+      }).format(n);
+    },
     [currency],
   );
 

@@ -186,23 +186,34 @@ function writeCustomUnits(units: string[]): void {
 
 interface CustomUnitsResponse { units: string[] }
 
+// Module-level promise cache. ``syncCustomUnitsFromServer()`` is called from
+// a ``useEffect`` in App.tsx — under React StrictMode in dev that effect
+// double-fires, and even in prod a fast re-render would otherwise issue two
+// concurrent GETs. Caching the in-flight promise dedupes both paths and
+// returns the same merged result to every caller within the session.
+let inFlightSync: Promise<string[]> | null = null;
+
 /** Pull the server-side catalogue into local cache. Called once on app boot
  *  after auth resolves. Returns the merged list for callers that want it. */
 export async function syncCustomUnitsFromServer(): Promise<string[]> {
-  try {
-    const resp = await apiGet<CustomUnitsResponse>('/v1/users/me/custom-units/');
-    const server = Array.isArray(resp?.units) ? resp.units : [];
-    const merged = [...new Set([...loadCustomUnits(), ...server])];
-    writeCustomUnits(merged);
-    // If the merge produced new entries that weren't on the server, push them.
-    if (merged.length !== server.length) {
-      apiPatch('/v1/users/me/custom-units/', { units: merged }).catch(() => undefined);
+  if (inFlightSync) return inFlightSync;
+  inFlightSync = (async () => {
+    try {
+      const resp = await apiGet<CustomUnitsResponse>('/v1/users/me/custom-units/');
+      const server = Array.isArray(resp?.units) ? resp.units : [];
+      const merged = [...new Set([...loadCustomUnits(), ...server])];
+      writeCustomUnits(merged);
+      // If the merge produced new entries that weren't on the server, push them.
+      if (merged.length !== server.length) {
+        apiPatch('/v1/users/me/custom-units/', { units: merged }).catch(() => undefined);
+      }
+      return merged;
+    } catch {
+      // 401 (anonymous) or network failure — local-only path stays valid.
+      return loadCustomUnits();
     }
-    return merged;
-  } catch {
-    // 401 (anonymous) or network failure — local-only path stays valid.
-    return loadCustomUnits();
-  }
+  })();
+  return inFlightSync;
 }
 
 export function saveCustomUnit(unit: string): void {
@@ -405,20 +416,32 @@ export function fmtWithCurrency(
   locale: string,
   currencyCode: string,
 ): string {
+  // Empty / invalid currency → render the number without a symbol.
+  // Better than forcing EUR (or whatever default the call site happened
+  // to ship with) on a project that's actually USD/GBP/JPY/RUB.
+  const trimmed = (currencyCode || '').trim().toUpperCase();
+  const isValid = /^[A-Z]{3}$/.test(trimmed);
+  const safeLocale = (locale || '').trim() || undefined;
+  if (!isValid) {
+    return new Intl.NumberFormat(safeLocale, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
+  }
   try {
-    return new Intl.NumberFormat(locale, {
+    return new Intl.NumberFormat(safeLocale, {
       style: 'currency',
-      currency: currencyCode,
+      currency: trimmed,
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(value);
   } catch {
     // Fallback: use the plain number formatter + symbol
-    const fmt = new Intl.NumberFormat(locale, {
+    const fmt = new Intl.NumberFormat(safeLocale, {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
-    return `${fmt.format(value)} ${currencyCode}`;
+    return `${fmt.format(value)} ${trimmed}`;
   }
 }
 

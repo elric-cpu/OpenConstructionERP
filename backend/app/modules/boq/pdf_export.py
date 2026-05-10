@@ -779,7 +779,7 @@ def _build_boq_table(
 def generate_boq_pdf(
     boq_data: Any,
     project_name: str,
-    currency: str = "EUR",
+    currency: str = "",
     prepared_by: str = "",
 ) -> bytes:
     """Generate a professional PDF cost estimate report.
@@ -925,7 +925,7 @@ LARGE_BOQ_THRESHOLD = 500
 def generate_boq_pdf_simple(
     boq_data: Any,
     project_name: str,
-    currency: str = "EUR",
+    currency: str = "",
     prepared_by: str = "",
 ) -> bytes:
     """Generate a simplified PDF for large BOQs (> 500 positions).

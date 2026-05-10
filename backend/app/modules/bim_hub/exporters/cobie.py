@@ -143,7 +143,11 @@ class CobieOptions:
     linear_units: str = "meters"
     area_units: str = "square meters"
     volume_units: str = "cubic meters"
-    currency_unit: str = "EUR"
+    # COBie's Project.Currency cell accepts an empty value; readers
+    # tolerant to blank fields render as "—". Better than stamping
+    # "EUR" onto a US (USD) or UK (GBP) handover where the wrong
+    # currency in the cell misleads facilities-management consumers.
+    currency_unit: str = ""
     # Pin the CreatedOn timestamp so snapshot tests stay deterministic;
     # callers pass ``frozen_now`` when exporting and None in production.
     frozen_now: datetime | None = None

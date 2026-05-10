@@ -25,6 +25,7 @@ user already exists (or will be registered). Safe to re-run.
 from __future__ import annotations
 
 import asyncio
+import os
 import pathlib
 import shutil
 import sqlite3
@@ -46,9 +47,9 @@ ADMIN_EMAIL = "admin@openestimate.io"
 ADMIN_PASSWORD = "OpenEstimate2026"
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
+_default_cad = REPO_ROOT / "data" / "cad2data" / "Sample_Projects" / "test"
 CAD_SOURCE_DIR = pathlib.Path(
-    r"C:\Users\Artem Boiko\Downloads\cad2data-Revit-IFC-DWG-DGN-main"
-    r"\cad2data-Revit-IFC-DWG-DGN-main\Sample_Projects\test"
+    os.environ.get("OE_CAD_SAMPLES_DIR", str(_default_cad))
 )
 BIM_DATA_DIR = REPO_ROOT / "backend" / "data" / "bim"
 

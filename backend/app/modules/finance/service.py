@@ -393,7 +393,10 @@ class FinanceService:
                 "project_id": str(invoice.project_id),
                 "invoice_id": str(invoice.id),
                 "amount_total": str(invoice.amount_total),
-                "currency_code": invoice.currency_code or "EUR",
+                # Empty when the invoice carries no currency; subscribers
+                # receive the truth ("no currency stamped") instead of a
+                # mis-labelled EUR.
+                "currency_code": invoice.currency_code or "",
             },
             source_module="finance",
         )

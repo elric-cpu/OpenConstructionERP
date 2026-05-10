@@ -52,6 +52,30 @@ from app.modules.ai.schemas import (
 logger = logging.getLogger(__name__)
 
 
+async def _resolve_project_currency(
+    session: AsyncSession,
+    project_id: uuid.UUID | None,
+) -> str:
+    """Look up the project's default currency.
+
+    Returns empty string when no project_id is supplied or the project is
+    missing — callers fall back to a literal default for prompt rendering.
+    Inline import keeps the AI module decoupled from projects at module level.
+    """
+    if project_id is None:
+        return ""
+    from sqlalchemy import select
+
+    from app.modules.projects.models import Project
+
+    project = (
+        await session.execute(select(Project).where(Project.id == project_id))
+    ).scalar_one_or_none()
+    if project is None:
+        return ""
+    return project.currency or ""
+
+
 def _validate_items(raw_items: Any) -> list[dict[str, Any]]:
     """‌⁠‍Validate and clean AI-generated work items.
 
@@ -360,8 +384,16 @@ class AIService:
             extra_parts.append(f"Location: {request.location}")
         extra_context = "\n".join(extra_parts)
 
-        currency = request.currency or "EUR"
-        standard_val = request.standard or "din276"
+        # Currency precedence: explicit request → project default →
+        # empty string (LLM prompts tolerate a blank currency token).
+        currency = (
+            request.currency
+            or await _resolve_project_currency(self.session, request.project_id)
+            or ""
+        )
+        # No standard fallback — empty token signals "no preferred classification"
+        # so the LLM is steered by the project's explicit setting (or absence).
+        standard_val = request.standard or ""
 
         prompt = TEXT_ESTIMATE_PROMPT.format(
             description=request.description,
@@ -528,10 +560,16 @@ class AIService:
         job = await self.job_repo.create(job)
         job_id = job.id  # Save before expire_all() in update_fields
 
-        # Build prompt
-        currency_val = currency or "EUR"
-        standard_val = standard or "din276"
-        location_val = location or "Europe"
+        # Build prompt — currency: explicit arg → project default → blank.
+        currency_val = (
+            currency
+            or await _resolve_project_currency(self.session, project_id)
+            or ""
+        )
+        # No standard / location fallback — explicit-only avoids steering
+        # the LLM toward DIN 276 / Europe on non-DACH projects.
+        standard_val = standard or ""
+        location_val = location or ""
 
         prompt = PHOTO_ESTIMATE_PROMPT.format(
             location=location_val,
@@ -704,9 +742,16 @@ class AIService:
         job = await self.job_repo.create(job)
         job_id = job.id  # Save before expire_all() in update_fields
 
-        currency_val = currency or "EUR"
-        standard_val = standard or "din276"
-        location_val = location or "Europe"
+        # Currency: explicit arg → project default → blank token.
+        currency_val = (
+            currency
+            or await _resolve_project_currency(self.session, project_id)
+            or ""
+        )
+        # No region/standard steering — empty tokens let the LLM rely on
+        # the file's content rather than defaulting to DACH / DIN 276.
+        standard_val = standard or ""
+        location_val = location or ""
 
         # ── Extract content based on file category ──
         extracted_text = ""

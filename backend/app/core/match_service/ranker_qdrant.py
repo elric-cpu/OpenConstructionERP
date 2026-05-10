@@ -1,0 +1,954 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
+"""Qdrant-backed ranker — replacement for the legacy LanceDB ranker.
+
+Pipeline (no LLM by default, BGE-M3 multilingual covers cross-lang):
+
+    1. Load ``MatchProjectSettings`` for the project.
+    2. Resolve catalogue binding (which CWICR collection + parquet pair).
+    3. Build a structured query via :func:`query_builder.build_query`:
+       CORE text + native filters + optional resources_query.
+    4. One-shot hybrid search through :func:`qdrant_adapter.search`
+       (dense + sparse + resources fused via Qdrant native RRF).
+    5. Attach 84-column parquet data via
+       :func:`qdrant_adapter.lookup_full_rows`.
+    6. Convert each hit → :class:`MatchCandidate`.
+    7. Apply the **narrow** boost stack (classifier + unit + region only —
+       lex and rare_token are dropped: sparse RRF in Qdrant subsumes them).
+    8. Sort, slice to ``top_k``, set confidence band, derive auto-link.
+
+The legacy :mod:`app.core.match_service.ranker` keeps working unchanged
+during Phase 2-4 so we can A/B compare under live load. Phase 5 deletes
+``ranker.py`` and renames this module into its place.
+
+Translation cascade is intentionally OFF by default — BGE-M3 multilingual
+covers most cross-lang recall and the cascade adds 50-200 ms p50. Flip
+``MatchProjectSettings.translate_query=True`` per project to re-enable.
+"""
+
+from __future__ import annotations
+
+import logging
+import time
+import uuid
+from types import SimpleNamespace
+from typing import Any
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.match_service.boosts import classifier as boost_classifier
+from app.core.match_service.boosts import region as boost_region
+from app.core.match_service.boosts import unit as boost_unit
+from app.core.match_service.config import (
+    SCORE_CEIL,
+    SCORE_FLOOR,
+    SEARCH_OVERFETCH,
+)
+from app.core.match_service.envelope import (
+    ElementEnvelope,
+    MatchCandidate,
+    MatchRequest,
+    MatchResponse,
+    MatchStatus,
+    confidence_band_for,
+)
+from app.core.match_service.region_language import language_for as _language_for_catalog
+from app.core.translation import TranslationResult, translate
+from app.modules.costs.qdrant_adapter import (
+    QdrantHit,
+    country_to_collection,
+    lookup_full_rows,
+    substitute_abstract_parents,
+)
+from app.modules.costs.qdrant_adapter import (
+    search_with_fallback as qdrant_search_with_fallback,
+)
+from app.modules.costs.query_builder import build_search_plan
+from app.modules.projects.service import get_or_create_match_settings
+
+logger = logging.getLogger(__name__)
+
+
+# Narrow boost stack — see module docstring for the reasoning. Order
+# follows "most explainable first" so the API response's
+# ``boosts_applied`` dict is human-readable.
+_BOOSTS = (
+    boost_classifier.boost,
+    boost_unit.boost,
+    boost_region.boost,
+)
+
+
+# ── Catalogue resolution ─────────────────────────────────────────────────
+
+
+async def _resolve_catalog_status(
+    db: AsyncSession,
+    catalog_id: str | None,
+) -> tuple[MatchStatus, int, int]:
+    """Resolve catalog → (status, sql_count, qdrant_vector_count).
+
+    Mirrors the legacy ranker's status taxonomy so the UI's empty-state
+    rendering doesn't need to change. The vector count comes from
+    Qdrant collection info instead of the legacy LanceDB table.
+
+    A failure to reach Qdrant (collection missing, embedded store
+    uninitialised, server unreachable) collapses to
+    ``"catalog_not_vectorized"`` so the UI surfaces a clear next step.
+    """
+
+    from sqlalchemy import func, select
+
+    from app.modules.costs.models import CostItem
+
+    if not catalog_id:
+        try:
+            total_loaded = (
+                await db.execute(
+                    select(func.count(CostItem.id)).where(CostItem.is_active.is_(True))
+                )
+            ).scalar() or 0
+        except Exception:
+            total_loaded = 0
+        return ("no_catalogs_loaded", 0, 0) if total_loaded == 0 else ("no_catalog_selected", 0, 0)
+
+    try:
+        sql_count = (
+            await db.execute(
+                select(func.count(CostItem.id))
+                .where(CostItem.is_active.is_(True))
+                .where(CostItem.region == catalog_id)
+            )
+        ).scalar() or 0
+    except Exception as exc:
+        logger.warning("ranker_qdrant: catalog count failed for %s: %s", catalog_id, exc)
+        sql_count = 0
+
+    if sql_count == 0:
+        try:
+            total_loaded = (
+                await db.execute(
+                    select(func.count(CostItem.id)).where(CostItem.is_active.is_(True))
+                )
+            ).scalar() or 0
+        except Exception:
+            total_loaded = 0
+        return ("no_catalogs_loaded", 0, 0) if total_loaded == 0 else ("no_catalog_selected", 0, 0)
+
+    vec_count = await _qdrant_vector_count(catalog_id)
+    if vec_count == 0:
+        return "catalog_not_vectorized", int(sql_count), 0
+    return "ok", int(sql_count), int(vec_count)
+
+
+async def _qdrant_vector_count(catalog_id: str) -> int:
+    """Return the number of points in the catalogue's Qdrant collection.
+
+    Returns 0 (rather than raising) when Qdrant is unreachable so the
+    catalogue resolver can collapse onto ``catalog_not_vectorized`` and
+    the UI can render the right CTA.
+    """
+
+    try:
+        from app.modules.costs.qdrant_adapter import _get_client
+
+        client = _get_client()
+        collection = country_to_collection(catalog_id)
+        info = client.get_collection(collection)
+        # ``points_count`` is exposed on the v1.12+ client; older
+        # versions named it ``vectors_count``. Be tolerant.
+        return int(getattr(info, "points_count", None) or getattr(info, "vectors_count", 0) or 0)
+    except Exception as exc:
+        logger.debug("ranker_qdrant: collection count for %s failed: %s", catalog_id, exc)
+        return 0
+
+
+# ── Translation step (optional, off by default) ──────────────────────────
+
+
+async def _maybe_translate(
+    envelope: ElementEnvelope,
+    target_language: str,
+    *,
+    user_settings: Any = None,
+    enabled: bool = False,
+) -> tuple[ElementEnvelope, TranslationResult | None]:
+    """Translate envelope into ``target_language`` only when explicitly enabled.
+
+    BGE-M3 multilingual handles most cross-lang recall natively, so the
+    cascade is opt-in per project. When ``enabled=False``, this helper
+    is a no-op and saves the 50-200 ms a translation tier would cost.
+    """
+
+    if not enabled:
+        return envelope, None
+    src = (envelope.source_lang or "").lower()
+    tgt = (target_language or "").lower()
+    if not src or not tgt or src == tgt:
+        return envelope, None
+    if not envelope.description:
+        return envelope, None
+
+    result = await translate(
+        envelope.description,
+        source_lang=src,
+        target_lang=tgt,
+        user_settings=user_settings,
+    )
+    if result.tier_used.value != "fallback" and result.translated:
+        envelope = envelope.model_copy(update={"description": result.translated})
+    return envelope, result
+
+
+# ── Hit → candidate ──────────────────────────────────────────────────────
+
+
+def _hit_to_candidate(
+    hit: QdrantHit,
+    full_row: dict[str, Any] | None,
+) -> MatchCandidate:
+    """Map a Qdrant hit + parquet row → :class:`MatchCandidate`.
+
+    Payload is intentionally minimal so we lean on the parquet row for
+    description / unit / unit_cost / classification fields. The Qdrant
+    score (RRF fused) is treated as the raw vector_score that the
+    boost stack adjusts on top.
+    """
+
+    payload = hit.payload or {}
+    full = full_row or {}
+
+    # Classification: the parquet may carry several mappings.
+    classification: dict[str, str] = {}
+    for cls_key, parquet_key in (
+        ("din276", "classification_din276"),
+        ("nrm", "classification_nrm"),
+        ("masterformat", "classification_masterformat"),
+    ):
+        v = full.get(parquet_key) or payload.get(parquet_key)
+        if v:
+            classification[cls_key] = str(v)
+
+    raw_score = float(hit.score)
+    rate_code = hit.rate_code
+
+    # Description / unit / cost prefer the parquet (richer) and fall
+    # back to whatever the Qdrant payload happened to carry.
+    description = str(full.get("description") or payload.get("description") or "")
+    unit = str(full.get("rate_unit") or payload.get("rate_unit") or "")
+    unit_rate = float(
+        full.get("total_cost_per_position")
+        or full.get("unit_cost")
+        or payload.get("unit_cost", 0.0)
+        or 0.0
+    )
+    currency = str(full.get("currency") or payload.get("currency") or "")
+    region_code = str(full.get("country") or payload.get("country") or hit.country)
+
+    return MatchCandidate(
+        id=rate_code or None,
+        code=rate_code,
+        description=description,
+        unit=unit,
+        unit_rate=unit_rate,
+        currency=currency,
+        score=raw_score,
+        vector_score=raw_score,
+        boosts_applied={},
+        confidence_band=confidence_band_for(raw_score),
+        region_code=region_code,
+        source=str(payload.get("source") or "cwicr"),
+        language=str(full.get("language") or payload.get("language") or ""),
+        classification=classification,
+    )
+
+
+def _apply_narrow_boosts(
+    envelope: ElementEnvelope,
+    candidate: MatchCandidate,
+    settings: Any,
+) -> dict[str, float]:
+    """Run the narrow Qdrant-era boost stack — classifier + unit + region.
+
+    rare_token and lex_* boosts are intentionally NOT called: the
+    sparse channel in the Qdrant RRF fusion already accounts for
+    verbatim term hits, so layering rare_token on top double-counts and
+    inflates ties.
+    """
+
+    out: dict[str, float] = {}
+    for fn in _BOOSTS:
+        try:
+            delta = fn(envelope, candidate, settings)
+        except Exception:
+            continue
+        if delta:
+            out.update(delta)
+    return out
+
+
+def _apply_soft_boosts(
+    hit: QdrantHit,
+    full_row: dict[str, Any] | None,
+    soft_boosts: list[tuple[str, Any, float]],
+) -> tuple[float, dict[str, float]]:
+    """Apply v3 SearchPlan soft boosts to one candidate's RRF score.
+
+    Per MAPPING_PROCESS.md §4.6, soft boosts are multiplicative on the
+    RRF score: when ``hit.payload[field] == value`` the score gets
+    multiplied by the boost factor. The full parquet row is consulted
+    as a fallback because the Qdrant payload is intentionally minimal
+    in v3 (only filter columns) — fields like ``ost_category`` or
+    ``material_class`` may live only in the parquet.
+
+    Returns the adjusted score and a per-boost breakdown for the UI's
+    explainability panel (``MatchCandidate.boosts_applied``). The
+    breakdown is the *delta* (boost-1) so the dashboard can render
+    "ost_category +50%" rather than "1.5".
+    """
+
+    if not soft_boosts:
+        return float(hit.score), {}
+
+    payload = hit.payload or {}
+    full = full_row or {}
+
+    score = float(hit.score)
+    deltas: dict[str, float] = {}
+    for field_key, expected, boost in soft_boosts:
+        actual = payload.get(field_key)
+        if actual is None:
+            actual = full.get(field_key)
+        if actual is None:
+            continue
+        # Numeric soft boosts (e.g. nominal_size_mm) tolerate ±10%
+        # on either side so a 220mm-wall rate still picks up the
+        # 200mm boost. String boosts are exact-match.
+        matched = False
+        if isinstance(expected, (int, float)) and isinstance(actual, (int, float)):
+            if expected and abs(actual - expected) / max(expected, 1) <= 0.10:
+                matched = True
+        elif str(actual) == str(expected):
+            matched = True
+        if matched:
+            score *= boost
+            deltas[f"soft_{field_key}"] = float(boost) - 1.0
+    return score, deltas
+
+
+# ── Core entrypoint ──────────────────────────────────────────────────────
+
+
+async def rank(
+    req: MatchRequest,
+    *,
+    db: AsyncSession,
+    ai_settings: Any = None,
+) -> MatchResponse:
+    """Run the full Qdrant-backed match pipeline. Never raises for normal input.
+
+    Drop-in alternative to :func:`app.core.match_service.ranker.rank` —
+    same request and response shapes, different vector backend.
+    """
+
+    started = time.perf_counter()
+    cost_usd = 0.0
+
+    project_uuid: uuid.UUID = (
+        req.project_id
+        if isinstance(req.project_id, uuid.UUID)
+        else uuid.UUID(str(req.project_id))
+    )
+    try:
+        settings = await get_or_create_match_settings(db, project_uuid)
+    except Exception as exc:
+        logger.info(
+            "ranker_qdrant: project %s has no settings row (%s); using transient defaults",
+            project_uuid,
+            type(exc).__name__,
+        )
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+        # Pull defaults from the canonical constants — env-overridable
+        # via MATCH_DEFAULT_TARGET_LANGUAGE / MATCH_DEFAULT_AUTO_LINK_THRESHOLD.
+        # Without this hop a non-English deployment whose project's
+        # settings row was missing would fall back to English-only
+        # ranking and a 0.85 auto-link cutoff regardless of the
+        # tenant's calibration.
+        from app.modules.projects.models import (  # noqa: PLC0415
+            MATCH_DEFAULT_AUTO_LINK_ENABLED,
+            MATCH_DEFAULT_AUTO_LINK_THRESHOLD,
+            MATCH_DEFAULT_CLASSIFIER,
+            MATCH_DEFAULT_MODE,
+            MATCH_DEFAULT_SOURCES,
+            MATCH_DEFAULT_TARGET_LANGUAGE,
+        )
+        settings = SimpleNamespace(
+            project_id=project_uuid,
+            target_language=MATCH_DEFAULT_TARGET_LANGUAGE,
+            classifier=MATCH_DEFAULT_CLASSIFIER,
+            auto_link_threshold=MATCH_DEFAULT_AUTO_LINK_THRESHOLD,
+            auto_link_enabled=MATCH_DEFAULT_AUTO_LINK_ENABLED,
+            mode=MATCH_DEFAULT_MODE,
+            sources_enabled=list(MATCH_DEFAULT_SOURCES),
+            translate_query=False,
+        )
+
+    # Project context for boosts (region etc.).
+    project_region: str | None = None
+    try:
+        from app.core.match_service.region_cache import region_for
+
+        project_region = await region_for(db, project_uuid)
+    except Exception:
+        pass
+    settings_with_project: Any = settings
+    try:
+        settings.project = SimpleNamespace(  # type: ignore[attr-defined]
+            id=project_uuid,
+            region=project_region,
+        )
+    except Exception:
+        pass
+
+    envelope = req.envelope
+
+    # ── Catalogue binding ────────────────────────────────────────────
+    catalog_id: str | None = getattr(settings, "cost_database_id", None) or None
+    catalog_status, catalog_count, catalog_vec = await _resolve_catalog_status(db, catalog_id)
+    if catalog_status != "ok":
+        return MatchResponse(
+            request=req,
+            candidates=[],
+            translation_used=None,
+            auto_linked=None,
+            took_ms=int((time.perf_counter() - started) * 1000),
+            cost_usd=cost_usd,
+            status=catalog_status,
+            catalog_id=catalog_id,
+            catalog_count=catalog_count,
+            catalog_vectorized_count=catalog_vec,
+        )
+
+    # ── exact_code short-circuit (MAPPING_PROCESS.md §4.1.5) ─────────
+    # When the upstream extractor populated ``envelope.exact_code``
+    # (today: BoQ row with an explicit ``Code`` column, tomorrow: any
+    # source that knows the rate verbatim) we bypass the Qdrant fan-out
+    # entirely and pull the rate from parquet. Saves ~25-50 ms + the
+    # full reranker stack and guarantees the operator-supplied code
+    # wins over whatever the encoder thinks is "close enough".
+    #
+    # When the code isn't in the bound catalogue (stale code, wrong
+    # catalogue, typo), the helper returns None and we fall through to
+    # the normal vector path — degrade, never fail.
+    if envelope.exact_code:
+        short_resp = await _try_exact_code_short_circuit(
+            envelope=envelope,
+            req=req,
+            catalog_id=catalog_id,
+            catalog_count=catalog_count,
+            catalog_vec=catalog_vec,
+            cost_usd=cost_usd,
+            started=started,
+        )
+        if short_resp is not None:
+            return short_resp
+        logger.warning(
+            "ranker_qdrant: exact_code %r not in catalogue %r — falling back to vector search",
+            envelope.exact_code,
+            catalog_id,
+        )
+
+    # ── Translation (optional) ───────────────────────────────────────
+    target_language = _language_for_catalog(catalog_id)
+    translate_enabled = bool(getattr(settings, "translate_query", False))
+    translated_envelope, translation_used = await _maybe_translate(
+        envelope,
+        target_language,
+        user_settings=ai_settings,
+        enabled=translate_enabled,
+    )
+    if translation_used and translation_used.cost_usd:
+        cost_usd += float(translation_used.cost_usd or 0.0)
+
+    # ── Build structured v3 SearchPlan ───────────────────────────────
+    plan = build_search_plan(translated_envelope)
+    if not plan.dense_query:
+        return MatchResponse(
+            request=req,
+            candidates=[],
+            translation_used=translation_used,
+            auto_linked=None,
+            took_ms=int((time.perf_counter() - started) * 1000),
+            cost_usd=cost_usd,
+            status="ok",
+            catalog_id=catalog_id,
+            catalog_count=catalog_count,
+            catalog_vectorized_count=catalog_vec,
+        )
+
+    fetch = max(req.top_k, req.top_k * SEARCH_OVERFETCH)
+
+    # ── Vector search (hardened: relax-tier fallback + abstract sub) ─
+    # ``search_with_fallback`` walks the §5.2 relax ladder if the full
+    # hard-filter set under-returns. ``tier_used`` is logged so the
+    # planned v3-P10 ``match_search_log`` can correlate filter-set
+    # tightness with downstream confirmation rate.
+    tier_used = 0
+    try:
+        hits, tier_used = await qdrant_search_with_fallback(
+            country=catalog_id,
+            limit=fetch,
+            **plan.search_kwargs,
+        )
+        if hits:
+            hits = await substitute_abstract_parents(
+                country=catalog_id,
+                core_query=plan.search_kwargs["core_query"],
+                hits=hits,
+            )
+        if tier_used > 0:
+            logger.debug(
+                "ranker_qdrant: search fell back to relax tier %d (%d hits)",
+                tier_used,
+                len(hits),
+            )
+    except RuntimeError as exc:
+        # Qdrant unreachable / [semantic] extra missing — surface an
+        # empty result with the catalog_not_vectorized status so the UI
+        # can render the right CTA instead of a generic empty state.
+        logger.warning("ranker_qdrant: search degraded (%s)", exc)
+        return MatchResponse(
+            request=req,
+            candidates=[],
+            translation_used=translation_used,
+            auto_linked=None,
+            took_ms=int((time.perf_counter() - started) * 1000),
+            cost_usd=cost_usd,
+            status="catalog_not_vectorized",
+            catalog_id=catalog_id,
+            catalog_count=catalog_count,
+            catalog_vectorized_count=0,
+        )
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.warning("ranker_qdrant: vector search failed: %s", exc)
+        hits = []
+
+    # ── Attach 84-column parquet data ────────────────────────────────
+    full_rows: dict[str, dict[str, Any]] = {}
+    if hits:
+        try:
+            rows = await lookup_full_rows(
+                country=catalog_id,
+                rate_codes=[h.rate_code for h in hits],
+            )
+            full_rows = {str(r.get("rate_code")): r for r in rows}
+        except Exception as exc:  # pragma: no cover — parquet missing is OK
+            logger.debug("ranker_qdrant: parquet lookup failed (%s); using payload only", exc)
+
+    # ── Apply v3 soft boosts BEFORE the candidate cast ───────────────
+    # The soft boosts are multiplicative on the raw RRF score (per
+    # §4.6) so we tweak ``hit.score`` first, then let
+    # ``_hit_to_candidate`` carry the boosted value into ``vector_score``.
+    # ``_apply_narrow_boosts`` runs on top with additive deltas — the
+    # two stacks are intentionally orthogonal: soft boosts say "this
+    # rate matches the source's structural classifier", narrow boosts
+    # say "this rate matches the unit / region / DIN trade".
+    soft_deltas_by_code: dict[str, dict[str, float]] = {}
+    for hit in hits:
+        adjusted, soft_deltas = _apply_soft_boosts(
+            hit, full_rows.get(hit.rate_code), plan.soft_boosts,
+        )
+        hit.score = adjusted
+        if soft_deltas:
+            soft_deltas_by_code[hit.rate_code] = soft_deltas
+
+    # ── Convert + narrow boost stack ─────────────────────────────────
+    candidates: list[MatchCandidate] = []
+    for hit in hits:
+        candidate = _hit_to_candidate(hit, full_rows.get(hit.rate_code))
+        soft_deltas = soft_deltas_by_code.get(hit.rate_code, {})
+        narrow_deltas = _apply_narrow_boosts(
+            translated_envelope, candidate, settings_with_project,
+        )
+        merged_deltas: dict[str, float] = {**soft_deltas, **narrow_deltas}
+        if merged_deltas:
+            candidate.boosts_applied = merged_deltas
+            adjusted = candidate.vector_score + sum(narrow_deltas.values())
+            candidate.score = max(SCORE_FLOOR, min(SCORE_CEIL, adjusted))
+        else:
+            candidate.score = candidate.vector_score
+        # v3-P9 §6.4: derive confidence with hard-filter density and
+        # the candidate's classification_confidence stamp.
+        hard_filter_count = len(plan.hard_filters)
+        candidate.confidence_band = confidence_band_for(
+            candidate.score,
+            hard_filters_matched=hard_filter_count,
+            classification_confidence=(
+                full_rows.get(hit.rate_code, {}).get("classification_confidence")
+                or hit.payload.get("classification_confidence")
+            ),
+        )
+        candidates.append(candidate)
+
+    # Deterministic tie-break on rate_code.
+    candidates.sort(key=lambda c: (-c.score, c.code))
+    candidates = candidates[: req.top_k]
+
+    # ── v3-P9: local BGE cross-encoder rerank (free, fast, optional) ─
+    # Default-on when ``[semantic]`` extra is installed. Gracefully no-op
+    # when the model isn't available, so the same code path runs whether
+    # or not the operator has provisioned the reranker.
+    if candidates and bool(getattr(settings, "match_use_bge_reranker", True)):
+        try:
+            from app.core.match_service.reranker_bge import rerank as bge_rerank
+
+            classification_confidence_by_code: dict[str, str] = {}
+            for c in candidates:
+                row = full_rows.get(c.code) or {}
+                cc = row.get("classification_confidence")
+                if cc:
+                    classification_confidence_by_code[c.code] = str(cc)
+            candidates = bge_rerank(
+                candidates,
+                translated_envelope,
+                hard_filters_matched=len(plan.hard_filters),
+                classification_confidence_by_code=classification_confidence_by_code,
+            )
+        except Exception as exc:  # pragma: no cover — defensive
+            logger.debug("ranker_qdrant: BGE rerank skipped: %s", exc)
+
+    # ── Optional LLM reranker (cost-gated, opt-in per request) ────────
+    if req.use_reranker and candidates:
+        try:
+            from app.core.match_service.reranker_ai import rerank_top_k
+
+            candidates, rerank_cost = await rerank_top_k(
+                candidates, translated_envelope, ai_settings=ai_settings,
+            )
+            cost_usd += float(rerank_cost or 0.0)
+        except Exception as exc:  # pragma: no cover — defensive
+            logger.debug("ranker_qdrant: rerank skipped: %s", exc)
+
+    # ── Auto-link gate ───────────────────────────────────────────────
+    auto_linked: MatchCandidate | None = None
+    if (
+        candidates
+        and bool(getattr(settings, "auto_link_enabled", False))
+        and candidates[0].score >= float(settings.auto_link_threshold or 1.0)
+    ):
+        auto_linked = candidates[0]
+
+    took_ms = int((time.perf_counter() - started) * 1000)
+
+    # ── v3-P10: write the analytics row (best-effort, never raises) ──
+    # Logging failures must not break the match request — wrap in
+    # try/except. The session is committed inside the helper so the
+    # caller's session lifecycle is unaffected.
+    try:
+        await _write_search_log(
+            project_id=req.project_id,
+            catalog_id=catalog_id,
+            collection_name=country_to_collection(catalog_id),
+            plan=plan,
+            candidates=candidates,
+            tier_used=tier_used,
+            took_ms=took_ms,
+            status="ok",
+            bge_used=bool(candidates and getattr(settings, "match_use_bge_reranker", True)),
+            llm_used=bool(req.use_reranker and candidates),
+            envelope=envelope,
+        )
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.debug("ranker_qdrant: search log skipped: %s", exc)
+
+    return MatchResponse(
+        request=req,
+        candidates=candidates,
+        translation_used=translation_used,
+        auto_linked=auto_linked,
+        took_ms=took_ms,
+        cost_usd=cost_usd,
+        status="ok",
+        catalog_id=catalog_id,
+        catalog_count=catalog_count,
+        catalog_vectorized_count=catalog_vec,
+    )
+
+
+async def _write_search_log(
+    *,
+    project_id: Any,
+    catalog_id: str,
+    collection_name: str,
+    plan: Any,
+    candidates: list[MatchCandidate],
+    tier_used: int,
+    took_ms: int,
+    status: str,
+    bge_used: bool,
+    llm_used: bool,
+    envelope: ElementEnvelope | None = None,
+    session_id: Any | None = None,
+    group_id: Any | None = None,
+) -> None:
+    """Best-effort INSERT into ``oe_match_elements_search_log``.
+
+    Uses an independent SQLAlchemy session so failures here can't
+    poison the caller's transaction. Truncates ``core_query`` to the
+    column's max length defensively (the model declares 2000 chars but
+    SearchPlan can produce longer strings for noisy envelopes).
+
+    ``plan`` may be ``None`` for paths that bypass the SearchPlan (e.g.,
+    the §4.1.5 exact_code short-circuit) — in that case ``core_query``,
+    ``hard_filters`` and ``soft_boosts`` collapse to empty defaults so
+    the log row still INSERTs cleanly.
+
+    v2936 additions:
+        * ``envelope``    — when supplied, ``source_type`` / ``ifc_class``
+                            land as top-level columns so analytics can
+                            filter without a 3-table JOIN.
+        * ``catalog_id`` head (e.g. ``"DE"`` for ``"DE_BERLIN"``) lands
+                            in the new ``country`` column for the same
+                            reason.
+        * ``metadata.candidate_codes`` carries the top-N rate_codes so
+                            ``MatchService.confirm()`` can later derive
+                            ``picked_rank`` without a re-search — the
+                            candidates fall out of memory after the
+                            response is returned to the user.
+    """
+
+    from app.database import async_session_factory
+    from app.modules.costs.qdrant_adapter import country_filter_for
+    from app.modules.match_elements.models import MatchSearchLog
+
+    top = candidates[0] if candidates else None
+    core_query = ""
+    hard_filters: dict[str, Any] = {}
+    soft_boosts: list[dict[str, Any]] = []
+    if plan is not None:
+        core_query = (getattr(plan, "dense_query", "") or "")[:2000]
+        hard_filters = dict(getattr(plan, "hard_filters", None) or {})
+        soft_boosts = [
+            {"key": k, "value": v, "weight": w}
+            for k, v, w in (getattr(plan, "soft_boosts", None) or [])
+        ]
+
+    # Envelope-derived analytics columns. Source/IFC are read-only on
+    # the envelope; country is the region head pinned for the search
+    # so MX_MEXICO and ES_MADRID land as ``MX`` and ``ES`` respectively
+    # (the v3 ES collection mixes regions, see qdrant_adapter docstring).
+    source_type: str | None = None
+    ifc_class: str | None = None
+    if envelope is not None:
+        source_type = (getattr(envelope, "source", "") or None)
+        ifc_class = (getattr(envelope, "ifc_class", "") or None)
+    country = country_filter_for(catalog_id) or (
+        catalog_id.split("_", 1)[0] if catalog_id else None
+    )
+
+    # Carry the top-N rate_codes through to the log row so ``confirm``
+    # can compute picked_rank without another search. Truncate to the
+    # candidate cap + cast for JSON safety.
+    candidate_codes = [str(c.code) for c in candidates[:50] if c.code]
+    metadata: dict[str, Any] = {"candidate_codes": candidate_codes}
+
+    async with async_session_factory() as session:
+        log_row = MatchSearchLog(
+            project_id=project_id,
+            session_id=session_id,
+            group_id=group_id,
+            catalog_id=catalog_id or None,
+            collection_name=collection_name or None,
+            core_query=core_query or None,
+            hard_filters=hard_filters,
+            soft_boosts=soft_boosts,
+            hits_count=len(candidates),
+            relax_tier_used=int(tier_used or 0),
+            top_score=float(top.score) if top else None,
+            top_confidence_band=top.confidence_band if top else None,
+            bge_rerank_used=bge_used,
+            llm_rerank_used=llm_used,
+            took_ms=int(took_ms),
+            status=status,
+            source_type=source_type,
+            ifc_class=ifc_class,
+            country=country,
+            metadata_=metadata,
+        )
+        session.add(log_row)
+        await session.commit()
+
+
+# ─────────────────────────────────────────────────────────────────────
+#  exact_code short-circuit (MAPPING_PROCESS.md §4.1.5)
+# ─────────────────────────────────────────────────────────────────────
+
+
+# Sentinel for ``relax_tier_used`` on the search log — distinguishes
+# the §4.1.5 short-circuit from tier 0 (full filter set, no relaxation
+# needed) without needing a separate column. Negative values are
+# reserved for non-tier paths in the analytics query.
+_EXACT_CODE_TIER_SENTINEL: int = -1
+
+
+def _build_exact_candidate(
+    *,
+    rate_code: str,
+    row: dict[str, Any],
+    catalog_id: str | None,
+) -> MatchCandidate:
+    """Materialise a high-confidence MatchCandidate from a single parquet row.
+
+    Used by :func:`_try_exact_code_short_circuit`. Score is pinned at
+    1.0 and confidence at HIGH because the source supplied a verbatim
+    rate code — there is nothing to rank against. ``boosts_applied``
+    is stamped with ``exact_code`` so the audit trail and the UI can
+    surface "matched by source-supplied code, not by similarity".
+    """
+
+    description = (
+        row.get("rate_original_name")
+        or row.get("rate_final_name")
+        or row.get("description")
+        or ""
+    )
+    unit = row.get("rate_unit") or row.get("unit") or ""
+    raw_rate = (
+        row.get("rate_total")
+        or row.get("unit_rate")
+        or row.get("rate")
+        or 0.0
+    )
+    try:
+        unit_rate = float(raw_rate)
+    except (TypeError, ValueError):
+        unit_rate = 0.0
+    currency = (
+        row.get("currency") or row.get("rate_currency") or row.get("ccy") or ""
+    )
+    region = row.get("country") or row.get("region") or catalog_id or ""
+
+    classification: dict[str, str] = {}
+    for key in ("classification_din276", "classification_masterformat", "classification_nrm"):
+        v = row.get(key)
+        if v:
+            classification[key.removeprefix("classification_")] = str(v)
+
+    return MatchCandidate(
+        id=None,
+        code=rate_code,
+        description=str(description),
+        unit=str(unit),
+        unit_rate=unit_rate,
+        currency=str(currency),
+        score=1.0,
+        vector_score=1.0,
+        boosts_applied={"exact_code": 1.0},
+        confidence_band="high",
+        reasoning=(
+            "Direct match by rate_code from source (e.g., BoQ Code column)."
+        ),
+        region_code=str(region),
+        source="exact_code",
+        language=str(row.get("language") or ""),
+        classification=classification,
+    )
+
+
+async def _try_exact_code_short_circuit(
+    *,
+    envelope: ElementEnvelope,
+    req: MatchRequest,
+    catalog_id: str | None,
+    catalog_count: int,
+    catalog_vec: int,
+    cost_usd: float,
+    started: float,
+) -> MatchResponse | None:
+    """Bypass Qdrant when the source carries an explicit rate_code.
+
+    Returns a fully-formed :class:`MatchResponse` with one HIGH-band
+    candidate when the code is found in ``catalog_id``'s parquet.
+    Returns ``None`` when:
+
+    * ``envelope.exact_code`` is empty (caller is responsible for
+      checking, but we double-check defensively),
+    * ``catalog_id`` isn't bound (no parquet to query),
+    * ``lookup_full_rows`` doesn't return a matching row (stale code,
+      wrong catalogue, typo) — the caller falls through to the normal
+      vector path which still has a chance to surface the right rate.
+
+    Auto-link policy: an exact-code hit is unconditionally auto-linked
+    when ``settings.auto_link_enabled`` is on, regardless of the
+    threshold — the source declared the answer, no policy override
+    needed.
+    """
+
+    code = (envelope.exact_code or "").strip()
+    if not code or not catalog_id:
+        return None
+
+    try:
+        rows = await lookup_full_rows(country=catalog_id, rate_codes=[code])
+    except Exception as exc:  # pragma: no cover — parquet missing is OK
+        logger.debug(
+            "ranker_qdrant: exact_code parquet lookup failed for %r: %s", code, exc,
+        )
+        return None
+
+    if not rows:
+        return None
+
+    # Prefer the row whose rate_code matches verbatim (parquet may
+    # return adjacent rows on ambiguous filter), fall back to first.
+    matching = next(
+        (r for r in rows if str(r.get("rate_code") or "").strip() == code),
+        rows[0],
+    )
+
+    candidate = _build_exact_candidate(
+        rate_code=code, row=matching, catalog_id=catalog_id,
+    )
+    auto_linked: MatchCandidate | None = candidate
+
+    took_ms = int((time.perf_counter() - started) * 1000)
+
+    # Log the short-circuit so analytics can audit "how often does the
+    # source already know the answer". tier_used = -1 (sentinel)
+    # distinguishes from the relax-tier ladder; status = "exact_code"
+    # makes filtering trivial (``WHERE status = 'exact_code'``).
+    try:
+        await _write_search_log(
+            project_id=req.project_id,
+            catalog_id=catalog_id,
+            collection_name=country_to_collection(catalog_id),
+            plan=None,
+            candidates=[candidate],
+            tier_used=_EXACT_CODE_TIER_SENTINEL,
+            took_ms=took_ms,
+            status="exact_code",
+            bge_used=False,
+            llm_used=False,
+            envelope=envelope,
+        )
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.debug("ranker_qdrant: search log skipped (exact_code): %s", exc)
+
+    return MatchResponse(
+        request=req,
+        candidates=[candidate],
+        translation_used=None,
+        auto_linked=auto_linked,
+        took_ms=took_ms,
+        cost_usd=cost_usd,
+        status="ok",
+        catalog_id=catalog_id,
+        catalog_count=catalog_count,
+        catalog_vectorized_count=catalog_vec,
+    )
+
+
+__all__ = ["rank"]

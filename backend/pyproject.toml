@@ -1,6 +1,6 @@
 [project]
 name = "openconstructionerp"
-version = "2.9.31"
+version = "2.9.34"
 description = "Open-source construction cost estimation — BOQ, 4D/5D, AI, CAD/BIM takeoff. After install, run: openestimate"
 license = "AGPL-3.0-or-later"
 requires-python = ">=3.12"
@@ -120,6 +120,21 @@ vector = [
 semantic = [
     "qdrant-client>=1.12.0",
     "sentence-transformers>=3.3.0",
+    # BAAI/bge-m3 multilingual encoder — 1024-dim dense + sparse + colbert
+    # in one forward pass, MIT license, 100+ languages. Powers the CWICR
+    # 30-collection Qdrant store (cwicr_<lang>) where every point holds
+    # named vectors `dense` (semantic), `sparse` (BM25-like exact terms),
+    # and `resources` (top-12 unique resources of the rate). Wheels are
+    # ~700 MB INT8 ONNX (gpahal/bge-m3-onnx-int8) so the VPS path stays
+    # viable; FP32 path is fine on workstations.
+    "FlagEmbedding>=1.3.0",
+    # Lazy parquet reader for the CWICR 84-column rate-data lookup. The
+    # Qdrant payload is intentionally minimal (rate_code + filter columns)
+    # and the heavy fields (prices, labor, resources, budget sums) live in
+    # `<region>_workitems_costs_resources_DDC_CWICR.parquet`. polars'
+    # `pl.scan_parquet()` mmap-backed lazy frame keeps lookup-by-rate_code
+    # under 50 ms across 50K-row catalogues without loading everything.
+    "polars>=1.0.0",
 ]
 # Backwards-compat alias. Deprecated since v1.3.14 — prefer `[semantic]`.
 # Kept so existing `pip install openconstructionerp[ai]` commands still work.
@@ -245,6 +260,7 @@ markers = [
     "unit: Unit tests (no database)",
     "integration: Integration tests (requires database)",
     "slow: Slow tests (>5s)",
+    "benchmark: Recall/perf benchmarks — opt-in via `pytest -m benchmark`",
 ]
 
 [tool.mypy]

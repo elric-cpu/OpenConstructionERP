@@ -95,14 +95,27 @@ def build_envelope_base(
 
     Centralises:
 
-    * ``source_lang`` resolution (raw["language"] → "en" fallback)
+    * ``source_lang`` resolution (raw["language"] → empty fallback)
     * quantity extraction via :func:`extract_quantities`
     * classifier-hint extraction via :func:`extract_classifier_hint`
 
     so individual source extractors stay focussed on the bits that
     differ (where to read ``description`` from, what's the category).
+
+    ``source_lang`` defaults to empty (not ``"en"``) when the raw input
+    doesn't carry a language tag. An empty source_lang short-circuits
+    the translation cascade in :func:`ranker._maybe_translate` so the
+    search runs verbatim against the catalogue — which is what BGE-M3's
+    multilingual encoder wants. Hardcoding ``"en"`` here would force
+    a redundant en→catalogue-language translation pass for elements
+    extracted from a non-English BIM model that just happened to lack
+    a language tag, degrading recall on RU / DE / ES projects.
     """
-    lang = (source_lang or str(raw.get("language") or raw.get("source_lang") or "en")).strip().lower() or "en"
+    raw_lang = (
+        source_lang
+        or str(raw.get("language") or raw.get("source_lang") or "")
+    ).strip().lower()
+    lang = raw_lang  # may be ""; downstream is empty-tolerant
     final_props = dict(properties or {})
     final_quantities = quantities if quantities is not None else extract_quantities(raw)
     final_hint = classifier_hint if classifier_hint is not None else extract_classifier_hint(raw)

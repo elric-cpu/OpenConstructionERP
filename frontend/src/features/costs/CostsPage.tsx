@@ -903,7 +903,7 @@ export function CostsPage() {
               {t('costs.categories_title', { defaultValue: 'Categories' })}
             </span>
           </div>
-          <div className="max-h-[calc(100vh-8rem)] min-h-[400px] flex flex-col">
+          <div className="h-[calc(100vh-8rem)] min-h-[400px] flex flex-col">
             <CostCategoryTree
               tree={categoryTree ?? []}
               selectedPath={classificationPath}

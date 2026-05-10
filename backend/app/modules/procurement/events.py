@@ -174,7 +174,7 @@ async def _create_po_from_award(event: Event) -> None:
                 po_type="standard",
                 issue_date=None,
                 delivery_date=None,
-                currency_code=bid.currency or "EUR",
+                currency_code=bid.currency or "",
                 amount_subtotal=str(subtotal),
                 tax_amount="0",
                 amount_total=str(subtotal),
@@ -208,7 +208,7 @@ async def _create_po_from_award(event: Event) -> None:
                 "Auto-PO created from tender award: po=%s package=%s bid=%s "
                 "items=%d subtotal=%s %s",
                 po.po_number, package_id, bid_id,
-                len(po_items), subtotal, bid.currency or "EUR",
+                len(po_items), subtotal, bid.currency or "",
             )
     except Exception:
         logger.exception(

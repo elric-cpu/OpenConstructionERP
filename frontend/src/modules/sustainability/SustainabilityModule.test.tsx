@@ -7,7 +7,8 @@ import { EPD_MATERIALS, EU_CPR_BENCHMARKS } from './data/epd-materials';
 describe('SustainabilityModule', () => {
   it('should render the page header', () => {
     render(<SustainabilityModule />);
-    expect(screen.getByText('EPD / Embodied Carbon')).toBeInTheDocument();
+    // Regex matchers tolerate identity-marker ZWJ/ZWNJ trailing the visible text.
+    expect(screen.getByText(/EPD \/ Embodied Carbon/)).toBeInTheDocument();
     // EU CPR text appears in multiple places — just verify at least one
     const euCprElements = screen.getAllByText(/EU CPR/);
     expect(euCprElements.length).toBeGreaterThan(0);
@@ -15,8 +16,8 @@ describe('SustainabilityModule', () => {
 
   it('should render the EPD material database section', () => {
     render(<SustainabilityModule />);
-    expect(screen.getByText('EPD Material Database')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('Search materials...')).toBeInTheDocument();
+    expect(screen.getByText(/EPD Material Database/)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Search materials/)).toBeInTheDocument();
   });
 
   it('should render category filter dropdown', () => {
@@ -30,7 +31,7 @@ describe('SustainabilityModule', () => {
 
   it('should filter materials by search term', () => {
     render(<SustainabilityModule />);
-    const searchInput = screen.getByPlaceholderText('Search materials...');
+    const searchInput = screen.getByPlaceholderText(/Search materials/);
     fireEvent.change(searchInput, { target: { value: 'steel' } });
     // Steel-related materials should be visible in expanded categories
   });

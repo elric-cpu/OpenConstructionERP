@@ -337,9 +337,9 @@ def generate_svg_thumbnail(file_path: str) -> str:
         # ezdxf 1.5+ — backend exposes ``get_xml_root()`` instead; fall
         # back to that and serialise via the stdlib.
         if hasattr(backend, "get_xml_root"):
-            from xml.etree import ElementTree as _ET
+            from xml.etree import ElementTree
 
-            return _ET.tostring(backend.get_xml_root(), encoding="unicode")
+            return ElementTree.tostring(backend.get_xml_root(), encoding="unicode")
         raise RuntimeError(
             "SVGBackend exposes neither get_string nor get_xml_root; "
             "ezdxf API may have shifted again — bump the dependency pin."

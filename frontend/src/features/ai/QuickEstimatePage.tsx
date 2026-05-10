@@ -103,7 +103,23 @@ const CURRENCIES: Array<{ value: string; label?: string; labelKey?: string; fall
   { value: 'JPY', label: 'JPY' },
   { value: 'CNY', label: 'CNY' },
   { value: 'INR', label: 'INR' },
+  { value: 'BRL', label: 'BRL' },
+  { value: 'MXN', label: 'MXN' },
+  { value: 'ZAR', label: 'ZAR' },
+  { value: 'RUB', label: 'RUB' },
+  { value: 'TRY', label: 'TRY' },
+  { value: 'SEK', label: 'SEK' },
+  { value: 'NOK', label: 'NOK' },
+  { value: 'DKK', label: 'DKK' },
+  { value: 'PLN', label: 'PLN' },
+  { value: 'CZK', label: 'CZK' },
   { value: 'AED', label: 'AED' },
+  { value: 'SAR', label: 'SAR' },
+  { value: 'SGD', label: 'SGD' },
+  { value: 'HKD', label: 'HKD' },
+  { value: 'KRW', label: 'KRW' },
+  { value: 'NZD', label: 'NZD' },
+  { value: 'ILS', label: 'ILS' },
 ];
 
 // ── File accept maps ─────────────────────────────────────────────────────────

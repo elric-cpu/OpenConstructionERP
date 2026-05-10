@@ -451,7 +451,7 @@ class ProcurementService:
                 "project_id": str(updated.project_id),
                 "po_number": updated.po_number,
                 "amount_total": updated.amount_total,
-                "currency_code": updated.currency_code or "EUR",
+                "currency_code": updated.currency_code or "",
             },
         )
 
@@ -629,7 +629,7 @@ class ProcurementService:
                 "po_id": str(updated.po_id),
                 "project_id": str(po.project_id),
                 "amount": str(gr_amount),
-                "currency_code": po.currency_code or "EUR",
+                "currency_code": po.currency_code or "",
             },
         )
 

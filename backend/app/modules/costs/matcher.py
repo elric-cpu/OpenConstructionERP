@@ -500,7 +500,7 @@ def _to_match_result(
         description=item.description or "",
         unit=item.unit or "",
         unit_rate=rate_val,
-        currency=item.currency or "EUR",
+        currency=item.currency or "",
         score=round(min(max(score, 0.0), 1.0), 4),
         source=channel,
     )

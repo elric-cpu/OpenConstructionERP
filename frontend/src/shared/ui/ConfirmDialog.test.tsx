@@ -41,8 +41,9 @@ describe('ConfirmDialog', () => {
   it('calls onCancel when cancel clicked', () => {
     const onCancel = vi.fn();
     renderDialog({ onCancel });
-    // The cancel button uses the default label "Cancel" (from the i18n mock defaultValue)
-    fireEvent.click(screen.getByText('Cancel'));
+    // The cancel button uses the default label "Cancel" (from the i18n mock defaultValue).
+    // Regex tolerates identity-marker ZWJ/ZWNJ trailing the visible text.
+    fireEvent.click(screen.getByText(/^Cancel/));
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
@@ -70,6 +71,6 @@ describe('ConfirmDialog', () => {
     const confirmBtn = screen.getByTestId('confirm-dialog-confirm');
     expect(confirmBtn).toBeDisabled();
     // The cancel button should also be disabled
-    expect(screen.getByText('Cancel')).toBeDisabled();
+    expect(screen.getByText(/^Cancel/)).toBeDisabled();
   });
 });

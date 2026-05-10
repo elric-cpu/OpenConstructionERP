@@ -1,0 +1,406 @@
+# DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+# Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
+"""Registry of DDC v3 BGE-M3 catalogues — the 30-region master list.
+
+This is the single source of truth that the ``GET /catalogues-v3/``
+endpoint serves to the frontend. Each entry describes one CWICR region
+DDC publishes (or plans to publish) a BGE-M3 v3 snapshot for, together
+with the metadata the UI needs to render a card:
+
+* ``region``        — canonical CWICR region id (``RU_STPETERSBURG``)
+* ``country_iso``   — ISO-3166 alpha-2 / alpha-3 head, used for the
+                      flag component on the frontend
+* ``city``          — city / locale qualifier for the display name
+* ``language``      — ISO-639-1 code (drives the
+                      ``cwicr_{lang}_v3`` collection name)
+* ``currency``      — ISO 4217 of the rates inside the catalogue
+* ``ddc_path``      — relative path inside the DDC GitHub repo
+                      (``<LANG>___DDC_CWICR/<region>_workitems_…_BGEM3_V3_DDC_CWICR.snapshot``)
+* ``size_mb``       — best-effort estimated size; used so the UI can
+                      warn about download cost before starting
+* ``available``     — ``True`` if DDC has actually published the v3
+                      snapshot today. Regions still on the v3 backlog
+                      ship as ``available=False`` so the frontend can
+                      grey them out with a "Coming soon" badge instead
+                      of erroring on click.
+
+How this list grows:
+
+* DDC publishes new v3 snapshots → flip ``available`` to ``True`` and
+  fill in the real ``size_mb``. A nightly probe job is on the v4
+  backlog; for now this is a manual, intentional curation.
+* New regions enter CWICR (e.g. an Ireland catalogue) → add a row,
+  mirror in :mod:`region_language` so the language collection routes,
+  ship.
+
+The registry is intentionally *not* derived from
+:mod:`region_language` — that table grows for any catalogue someone
+loads (BYO third-party rates, alias rows, deprecated cities) and we
+don't want every alias to surface as a downloadable card on /setup.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class CwicrV3Catalogue:
+    """One row in the v3 catalogue registry. Frozen so callers can't mutate."""
+
+    region: str
+    country_iso: str
+    city: str
+    language: str
+    currency: str
+    ddc_path: str
+    size_mb: int
+    available: bool
+
+    @property
+    def collection(self) -> str:
+        """Target Qdrant collection — the search-time name."""
+        return f"cwicr_{self.language}_v3"
+
+
+# ── Master list ──────────────────────────────────────────────────────────
+#
+# Order: alphabetical by ``region`` — the UI sorts by ``country_iso`` /
+# language anyway, but a stable backend order keeps diffs readable.
+#
+# ``size_mb`` for ``available=True`` rows is the actual file size
+# observed on GitHub; for ``available=False`` it's the legacy 3072-dim
+# size as a rough estimate so the UI can still say "~XXX MB expected".
+
+
+CWICR_V3_CATALOGUES: tuple[CwicrV3Catalogue, ...] = (
+    # ── German-speaking (DACH) ────────────────────────────────────────
+    CwicrV3Catalogue(
+        region="DE_BERLIN",
+        country_iso="DE",
+        city="Berlin",
+        language="de",
+        currency="EUR",
+        ddc_path="DE___DDC_CWICR/DE_BERLIN_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=420,
+        available=False,
+    ),
+    CwicrV3Catalogue(
+        region="DE_MUNICH",
+        country_iso="DE",
+        city="Munich",
+        language="de",
+        currency="EUR",
+        ddc_path="DE___DDC_CWICR/DE_MUNICH_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=420,
+        available=False,
+    ),
+    CwicrV3Catalogue(
+        region="AT_VIENNA",
+        country_iso="AT",
+        city="Vienna",
+        language="de",
+        currency="EUR",
+        ddc_path="AT___DDC_CWICR/AT_VIENNA_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=420,
+        available=False,
+    ),
+    CwicrV3Catalogue(
+        region="CH_ZURICH",
+        country_iso="CH",
+        city="Zurich",
+        language="de",
+        currency="CHF",
+        ddc_path="CH___DDC_CWICR/CH_ZURICH_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=420,
+        available=False,
+    ),
+    # ── English-speaking ─────────────────────────────────────────────
+    CwicrV3Catalogue(
+        region="USA_USD",
+        country_iso="US",
+        city="National (USD)",
+        language="en",
+        currency="USD",
+        ddc_path="EN___DDC_CWICR/USA_USD_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=420,
+        available=False,
+    ),
+    CwicrV3Catalogue(
+        region="GB_LONDON",
+        country_iso="GB",
+        city="London",
+        language="en",
+        currency="GBP",
+        ddc_path="EN___DDC_CWICR/GB_LONDON_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=420,
+        available=False,
+    ),
+    CwicrV3Catalogue(
+        region="CA_TORONTO",
+        country_iso="CA",
+        city="Toronto",
+        language="en",
+        currency="CAD",
+        ddc_path="EN___DDC_CWICR/CA_TORONTO_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=420,
+        available=False,
+    ),
+    CwicrV3Catalogue(
+        region="AU_SYDNEY",
+        country_iso="AU",
+        city="Sydney",
+        language="en",
+        currency="AUD",
+        ddc_path="EN___DDC_CWICR/AU_SYDNEY_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=420,
+        available=False,
+    ),
+    CwicrV3Catalogue(
+        region="IN_MUMBAI",
+        country_iso="IN",
+        city="Mumbai",
+        language="en",
+        currency="INR",
+        ddc_path="EN___DDC_CWICR/IN_MUMBAI_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=420,
+        available=False,
+    ),
+    CwicrV3Catalogue(
+        region="ZA_JOHANNESBURG",
+        country_iso="ZA",
+        city="Johannesburg",
+        language="en",
+        currency="ZAR",
+        ddc_path="EN___DDC_CWICR/ZA_JOHANNESBURG_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=420,
+        available=False,
+    ),
+    # ── Romance ──────────────────────────────────────────────────────
+    CwicrV3Catalogue(
+        region="FR_PARIS",
+        country_iso="FR",
+        city="Paris",
+        language="fr",
+        currency="EUR",
+        ddc_path="FR___DDC_CWICR/FR_PARIS_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=420,
+        available=False,
+    ),
+    CwicrV3Catalogue(
+        region="ES_MADRID",
+        country_iso="ES",
+        city="Madrid",
+        language="es",
+        currency="EUR",
+        ddc_path="ES___DDC_CWICR/ES_MADRID_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=420,
+        available=False,
+    ),
+    CwicrV3Catalogue(
+        region="IT_ROME",
+        country_iso="IT",
+        city="Rome",
+        language="it",
+        currency="EUR",
+        ddc_path="IT___DDC_CWICR/IT_ROME_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=420,
+        available=False,
+    ),
+    CwicrV3Catalogue(
+        region="PT_LISBON",
+        country_iso="PT",
+        city="Lisbon",
+        language="pt",
+        currency="EUR",
+        ddc_path="PT___DDC_CWICR/PT_LISBON_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=420,
+        available=False,
+    ),
+    CwicrV3Catalogue(
+        region="BR_SAOPAULO",
+        country_iso="BR",
+        city="São Paulo",
+        language="pt",
+        currency="BRL",
+        ddc_path="PT___DDC_CWICR/BR_SAOPAULO_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=420,
+        available=False,
+    ),
+    CwicrV3Catalogue(
+        region="MX_MEXICO",
+        country_iso="MX",
+        city="Mexico City",
+        language="es",
+        currency="MXN",
+        ddc_path="ES___DDC_CWICR/MX_MEXICO_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=420,
+        available=False,
+    ),
+    CwicrV3Catalogue(
+        region="AR_BUENOSAIRES",
+        country_iso="AR",
+        city="Buenos Aires",
+        language="es",
+        currency="ARS",
+        ddc_path="ES___DDC_CWICR/AR_BUENOSAIRES_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=420,
+        available=False,
+    ),
+    # ── Slavic / CIS ─────────────────────────────────────────────────
+    CwicrV3Catalogue(
+        region="RU_STPETERSBURG",
+        country_iso="RU",
+        city="St. Petersburg",
+        language="ru",
+        currency="RUB",
+        ddc_path="RU___DDC_CWICR/RU_STPETERSBURG_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=415,
+        available=True,
+    ),
+    CwicrV3Catalogue(
+        region="RU_MOSCOW",
+        country_iso="RU",
+        city="Moscow",
+        language="ru",
+        currency="RUB",
+        ddc_path="RU___DDC_CWICR/RU_MOSCOW_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=415,
+        available=False,
+    ),
+    CwicrV3Catalogue(
+        region="PL_WARSAW",
+        country_iso="PL",
+        city="Warsaw",
+        language="pl",
+        currency="PLN",
+        ddc_path="PL___DDC_CWICR/PL_WARSAW_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=420,
+        available=False,
+    ),
+    CwicrV3Catalogue(
+        region="CZ_PRAGUE",
+        country_iso="CZ",
+        city="Prague",
+        language="cs",
+        currency="CZK",
+        ddc_path="CZ___DDC_CWICR/CZ_PRAGUE_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=420,
+        available=False,
+    ),
+    CwicrV3Catalogue(
+        region="RO_BUCHAREST",
+        country_iso="RO",
+        city="Bucharest",
+        language="ro",
+        currency="RON",
+        ddc_path="RO___DDC_CWICR/RO_BUCHAREST_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=420,
+        available=False,
+    ),
+    # ── Benelux / Nordic ─────────────────────────────────────────────
+    CwicrV3Catalogue(
+        region="NL_AMSTERDAM",
+        country_iso="NL",
+        city="Amsterdam",
+        language="nl",
+        currency="EUR",
+        ddc_path="NL___DDC_CWICR/NL_AMSTERDAM_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=420,
+        available=False,
+    ),
+    CwicrV3Catalogue(
+        region="SV_STOCKHOLM",
+        country_iso="SE",
+        city="Stockholm",
+        language="sv",
+        currency="SEK",
+        ddc_path="SV___DDC_CWICR/SV_STOCKHOLM_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=420,
+        available=False,
+    ),
+    # ── Asia / MENA ──────────────────────────────────────────────────
+    CwicrV3Catalogue(
+        region="CN_SHANGHAI",
+        country_iso="CN",
+        city="Shanghai",
+        language="zh",
+        currency="CNY",
+        ddc_path="ZH___DDC_CWICR/CN_SHANGHAI_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=420,
+        available=False,
+    ),
+    CwicrV3Catalogue(
+        region="JP_TOKYO",
+        country_iso="JP",
+        city="Tokyo",
+        language="ja",
+        currency="JPY",
+        ddc_path="JA___DDC_CWICR/JP_TOKYO_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=420,
+        available=False,
+    ),
+    CwicrV3Catalogue(
+        region="KR_SEOUL",
+        country_iso="KR",
+        city="Seoul",
+        language="ko",
+        currency="KRW",
+        ddc_path="KO___DDC_CWICR/KR_SEOUL_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=420,
+        available=False,
+    ),
+    CwicrV3Catalogue(
+        region="TR_ISTANBUL",
+        country_iso="TR",
+        city="Istanbul",
+        language="tr",
+        currency="TRY",
+        ddc_path="TR___DDC_CWICR/TR_ISTANBUL_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=420,
+        available=False,
+    ),
+    CwicrV3Catalogue(
+        region="AE_DUBAI",
+        country_iso="AE",
+        city="Dubai",
+        language="ar",
+        currency="AED",
+        ddc_path="AR___DDC_CWICR/AE_DUBAI_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=420,
+        available=False,
+    ),
+    CwicrV3Catalogue(
+        region="ID_JAKARTA",
+        country_iso="ID",
+        city="Jakarta",
+        language="id",
+        currency="IDR",
+        ddc_path="ID___DDC_CWICR/ID_JAKARTA_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot",
+        size_mb=420,
+        available=False,
+    ),
+)
+
+
+def get_catalogue(region: str) -> CwicrV3Catalogue | None:
+    """Return the registry entry for ``region`` or ``None`` if unknown.
+
+    Lookup is case-insensitive on the input but exact on the keys —
+    aliases are NOT followed. A caller hitting the install endpoint
+    with a legacy id (``UK_GBP``, ``ENG_TORONTO``) gets a clear 404
+    instead of a silently-wrong restore. Convert via
+    :mod:`region_language._ALIASES` upstream if alias support is
+    needed.
+    """
+
+    if not region:
+        return None
+    key = region.strip().upper()
+    for cat in CWICR_V3_CATALOGUES:
+        if cat.region == key:
+            return cat
+    return None
+
+
+__all__ = ["CWICR_V3_CATALOGUES", "CwicrV3Catalogue", "get_catalogue"]

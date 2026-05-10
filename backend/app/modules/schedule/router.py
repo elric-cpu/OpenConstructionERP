@@ -388,7 +388,6 @@ async def generate_from_boq(
     Creates one activity per BOQ section with cost-proportional durations
     and sequential finish-to-start dependencies.
     """
-    import traceback as _tb
 
     try:
         await service.generate_from_boq(schedule_id, body.boq_id, body.total_project_days)

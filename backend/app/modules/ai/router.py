@@ -310,9 +310,9 @@ async def photo_estimate(
     user_id: CurrentUserId,
     response: Response,
     file: UploadFile = File(..., description="Building or construction site photo"),
-    location: str = Form(default="Europe", description="Location for pricing context"),
-    currency: str = Form(default="EUR", description="Currency code"),
-    standard: str = Form(default="din276", description="Classification standard"),
+    location: str = Form(default="", description="Location for pricing context (empty = AI infers from photo)"),
+    currency: str = Form(default="", description="Currency code (empty = AI suggests from project context)"),
+    standard: str = Form(default="", description="Classification standard (empty = AI uses region-native default)"),
     project_id: str | None = Form(default=None, description="Optional project ID"),
     content_length: int | None = Header(default=None),
     remaining: int = Depends(check_ai_rate_limit),
@@ -379,9 +379,9 @@ async def file_estimate(
     user_id: CurrentUserId,
     response: Response,
     file: UploadFile = File(..., description="Any file: PDF, Excel, CSV, CAD, or image"),
-    location: str = Form(default="Europe", description="Location for pricing context"),
-    currency: str = Form(default="EUR", description="Currency code"),
-    standard: str = Form(default="din276", description="Classification standard"),
+    location: str = Form(default="", description="Location for pricing context (empty = AI infers from file)"),
+    currency: str = Form(default="", description="Currency code (empty = AI suggests from project context)"),
+    standard: str = Form(default="", description="Classification standard (empty = AI uses region-native default)"),
     project_id: str | None = Form(default=None, description="Optional project ID"),
     content_length: int | None = Header(default=None),
     remaining: int = Depends(check_ai_rate_limit),
@@ -490,13 +490,13 @@ async def enrich_estimate(
 
     Body:
         - region (str, optional): Region filter for cost lookup (e.g. "DE_BERLIN")
-        - currency (str, optional): Currency code (default "EUR")
+        - currency (str, optional): Currency code; empty when unknown
 
     Returns enriched items with cost database matches and a best_match per item.
     """
     uid = uuid.UUID(user_id)
     region = body.get("region", "")
-    currency = body.get("currency", "EUR")
+    currency = body.get("currency", "")
 
     # 1. Get the estimate job from DB
     from app.modules.ai.repository import AIEstimateJobRepository

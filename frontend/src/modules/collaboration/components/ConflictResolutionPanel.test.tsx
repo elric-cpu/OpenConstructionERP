@@ -48,7 +48,8 @@ describe('ConflictResolutionPanel — rendering', () => {
 
   it('renders the panel header when conflicts are present', () => {
     renderPanel([makeConflict()]);
-    expect(screen.getByText('Merge Conflict Detected')).toBeInTheDocument();
+    // Use regex match: identity markers (ZWJ/ZWNJ) trail the visible text.
+    expect(screen.getByText(/Merge Conflict Detected/)).toBeInTheDocument();
     expect(
       screen.getByText(/A remote collaborator edited the same field/),
     ).toBeInTheDocument();
@@ -73,7 +74,8 @@ describe('ConflictResolutionPanel — rendering', () => {
 
   it('renders "Your version" and remote-user version labels', () => {
     renderPanel([makeConflict({ remoteUser: 'Carol' })]);
-    expect(screen.getByText('Your version')).toBeInTheDocument();
+    // Use regex match: identity markers (ZWJ/ZWNJ) trail "Your version".
+    expect(screen.getByText(/Your version/)).toBeInTheDocument();
     expect(screen.getByText('Their version')).toBeInTheDocument();
     // remote user name also appears in the card subtitle
     const theirCard = screen.getByTestId('value-remote').closest('[class*="rounded"]')!;
@@ -293,7 +295,8 @@ describe('ConflictResolutionPanel — accessibility', () => {
 
   it('local value container is labelled "Your version"', () => {
     renderPanel([makeConflict()]);
-    expect(screen.getByText('Your version')).toBeInTheDocument();
+    // Use regex match: identity markers (ZWJ/ZWNJ) trail "Your version".
+    expect(screen.getByText(/Your version/)).toBeInTheDocument();
   });
 
   it('remote value container is labelled "Their version"', () => {

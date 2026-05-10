@@ -32,6 +32,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import json
+import os
 import pathlib
 import sqlite3
 import sys
@@ -60,9 +61,9 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 BACKEND_DIR = REPO_ROOT / "backend"
 DB_PATH = BACKEND_DIR / "openestimate.db"
 
+_default_cad = REPO_ROOT / "data" / "cad2data" / "Sample_Projects" / "test"
 CAD_SOURCE_DIR = pathlib.Path(
-    r"C:\Users\Artem Boiko\Downloads\cad2data-Revit-IFC-DWG-DGN-main"
-    r"\cad2data-Revit-IFC-DWG-DGN-main\Sample_Projects\test"
+    os.environ.get("OE_CAD_SAMPLES_DIR", str(_default_cad))
 )
 
 # Stable tag we put in metadata.source for everything we create here.

@@ -450,7 +450,7 @@ class TenderingService:
                 {
                     "company_name": company,
                     "total": 0.0,
-                    "currency": bid.currency or "EUR",
+                    "currency": bid.currency or "",
                     "bid_count": 0,
                 },
             )

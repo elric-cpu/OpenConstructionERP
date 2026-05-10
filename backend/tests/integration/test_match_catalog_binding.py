@@ -155,7 +155,7 @@ async def test_no_catalog_no_rows_returns_no_catalogs_loaded(
     """Empty DB + no binding → ``no_catalogs_loaded``."""
     _engine, factory, _tmp = engine_factory
 
-    from app.core.match_service.ranker import _resolve_catalog_status
+    from app.core.match_service.ranker_qdrant import _resolve_catalog_status
 
     async with factory() as session:
         status, count, vec = await _resolve_catalog_status(session, None)
@@ -173,7 +173,7 @@ async def test_no_catalog_with_rows_returns_no_catalog_selected(
     _engine, factory, _tmp = engine_factory
     await _add_cost_items(factory, "RU_STPETERSBURG", 3)
 
-    from app.core.match_service.ranker import _resolve_catalog_status
+    from app.core.match_service.ranker_qdrant import _resolve_catalog_status
 
     async with factory() as session:
         status, _count, _vec = await _resolve_catalog_status(session, None)
@@ -191,7 +191,7 @@ async def test_picked_unknown_catalog_with_others_loaded_falls_to_no_catalog_sel
     _engine, factory, _tmp = engine_factory
     await _add_cost_items(factory, "RU_STPETERSBURG", 3)
 
-    from app.core.match_service.ranker import _resolve_catalog_status
+    from app.core.match_service.ranker_qdrant import _resolve_catalog_status
 
     async with factory() as session:
         status, count, vec = await _resolve_catalog_status(session, "USA_USD")
@@ -208,7 +208,7 @@ async def test_picked_unknown_catalog_with_no_others_returns_no_catalogs_loaded(
     """Pure-empty DB + binding to a non-loaded id → ``no_catalogs_loaded``."""
     _engine, factory, _tmp = engine_factory
 
-    from app.core.match_service.ranker import _resolve_catalog_status
+    from app.core.match_service.ranker_qdrant import _resolve_catalog_status
 
     async with factory() as session:
         status, _count, _vec = await _resolve_catalog_status(session, "USA_USD")
@@ -220,16 +220,22 @@ async def test_picked_unknown_catalog_with_no_others_returns_no_catalogs_loaded(
 async def test_picked_loaded_catalog_no_vectors_returns_catalog_not_vectorized(
     engine_factory, monkeypatch,
 ) -> None:
-    """SQL rows present but LanceDB empty for this region → not_vectorized."""
+    """SQL rows present but Qdrant collection empty for this region → not_vectorized."""
     _engine, factory, _tmp = engine_factory
     await _add_cost_items(factory, "DE_BERLIN", 5)
 
+    # The Qdrant ranker calls a private helper to count points in the
+    # per-language collection; patch it directly so the test stays
+    # independent of an embedded Qdrant being installed.
+    async def _zero(_catalog_id):  # noqa: ANN001
+        return 0
+
     monkeypatch.setattr(
-        "app.core.vector.vector_count_with_payload_substring",
-        lambda _coll, _sub: 0,
+        "app.core.match_service.ranker_qdrant._qdrant_vector_count",
+        _zero,
     )
 
-    from app.core.match_service.ranker import _resolve_catalog_status
+    from app.core.match_service.ranker_qdrant import _resolve_catalog_status
 
     async with factory() as session:
         status, count, vec = await _resolve_catalog_status(session, "DE_BERLIN")
@@ -247,12 +253,15 @@ async def test_picked_loaded_catalog_with_vectors_returns_ok(
     _engine, factory, _tmp = engine_factory
     await _add_cost_items(factory, "DE_BERLIN", 5)
 
+    async def _twelve(_catalog_id):  # noqa: ANN001
+        return 12
+
     monkeypatch.setattr(
-        "app.core.vector.vector_count_with_payload_substring",
-        lambda _coll, _sub: 12,
+        "app.core.match_service.ranker_qdrant._qdrant_vector_count",
+        _twelve,
     )
 
-    from app.core.match_service.ranker import _resolve_catalog_status
+    from app.core.match_service.ranker_qdrant import _resolve_catalog_status
 
     async with factory() as session:
         status, count, vec = await _resolve_catalog_status(session, "DE_BERLIN")

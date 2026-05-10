@@ -40,10 +40,27 @@ from app.core.match_service.envelope import (
 )
 from app.core.match_service.extractors import EXTRACTORS, build_envelope
 from app.core.match_service.feedback import record_feedback
-from app.core.match_service.ranker import rank
+from app.core.match_service.ranker_qdrant import rank as _rank_qdrant
 from app.database import async_session_factory
 
 logger = logging.getLogger(__name__)
+
+
+def _select_ranker():
+    """Return the ranker callable.
+
+    Historically toggled between LanceDB and Qdrant via
+    ``settings.match_backend``; the LanceDB path was removed in v3 so
+    this now always returns the Qdrant ranker. Kept as a function (not
+    inlined) so test code that monkeypatched the selector still works.
+    """
+    return _rank_qdrant
+
+
+# Backwards-compat: the legacy public name ``rank`` still resolves to
+# the active (Qdrant) ranker so importers outside the package keep
+# working without a code change.
+rank = _rank_qdrant
 
 
 async def match_envelope(
@@ -80,12 +97,14 @@ async def match_envelope(
         use_reranker=use_reranker,
     )
 
+    rank_fn = _select_ranker()
+
     if db is not None:
-        return await rank(request, db=db, ai_settings=ai_settings)
+        return await rank_fn(request, db=db, ai_settings=ai_settings)
 
     async with async_session_factory() as session:
         try:
-            response = await rank(request, db=session, ai_settings=ai_settings)
+            response = await rank_fn(request, db=session, ai_settings=ai_settings)
             await session.commit()
             return response
         except Exception:

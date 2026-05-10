@@ -194,7 +194,7 @@ async def import_catalog_from_github(
                 base_price=str(round(float(row.get("price_avg") or 0), 2)),
                 min_price=str(round(float(row.get("price_min") or 0), 2)),
                 max_price=str(round(float(row.get("price_max") or 0), 2)),
-                currency=(row.get("currency") or "EUR").strip(),
+                currency=(row.get("currency") or "").strip(),
                 usage_count=int(float(row.get("usage_count") or 0)),
                 source="github_import",
                 region=region,

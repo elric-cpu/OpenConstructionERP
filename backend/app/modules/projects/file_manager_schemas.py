@@ -14,7 +14,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-
 # Kind of file as far as the UI is concerned. Drives the icon + which
 # download endpoint to call. Stable string identifiers — never i18n.
 FileKind = Literal[
@@ -79,7 +78,7 @@ class FileTreeNode(BaseModel):
         description="Real on-disk parent for files inside this node (None for virtual nodes)",
     )
     storage_backend: Literal["local", "s3"] = "local"
-    children: list["FileTreeNode"] = Field(default_factory=list)
+    children: list[FileTreeNode] = Field(default_factory=list)
 
 
 # Pydantic v2 forward-reference resolution — the recursive list[FileTreeNode]

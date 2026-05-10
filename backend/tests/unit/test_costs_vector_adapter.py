@@ -727,14 +727,21 @@ async def test_reindex_all_degrades_gracefully_without_lancedb() -> None:
     assert "took_ms" in result
 
 
-def test_collection_count_degrades_gracefully_without_lancedb() -> None:
+@pytest.mark.asyncio
+async def test_collection_count_degrades_gracefully_without_lancedb() -> None:
+    """When LanceDB is unavailable, ``collection_count`` returns 0 (not raises).
+
+    Was previously written as a sync test that did
+    ``asyncio.get_event_loop().run_until_complete(...)`` — brittle on
+    Python 3.13 where ``get_event_loop()`` raises ``RuntimeError`` when
+    no loop is running on the main thread (full-suite run order leaves
+    the loop closed, single-test run finds it open). pytest-asyncio
+    handles loop lifecycle for us.
+    """
     from app.modules.costs import vector_adapter as cost_vec
 
     with patch.object(cost_vec, "_vector_available", return_value=False):
-        # collection_count is async but cheap to await synchronously here
-        import asyncio as _asyncio
-
-        n = _asyncio.get_event_loop().run_until_complete(cost_vec.collection_count())
+        n = await cost_vec.collection_count()
     assert n == 0
 
 
@@ -783,17 +790,25 @@ async def test_reindex_all_batches_correctly() -> None:
 # ── Fixture-detection heuristic (v2.8.2) ─────────────────────────────────
 
 
-def test_looks_like_fixture_detects_short_alpha_digit_codes() -> None:
-    """``_looks_like_fixture`` flags codes that match the test-fixture
-    pattern ``^[A-Z]\\d{3}$`` (e.g. ``A001``)."""
+def test_looks_like_fixture_detects_test_hex_codes() -> None:
+    """``_looks_like_fixture`` flags codes matching ``^TEST-[a-f0-9]{6,}$``.
+
+    Task #179 (BYO BUG FIX): the earlier ``^[A-Z]\\d{3}$`` regex silently
+    dropped legitimate short CWICR codes (``M001``, ``B100``, ``S420``)
+    from BYO catalogues. The heuristic now only catches markers a real
+    catalogue would NEVER use, so short alpha-digit codes pass through.
+    """
     from app.modules.costs.vector_adapter import _looks_like_fixture
 
     # Reset the lazy regex so a previous test can't leave it in place.
     import app.modules.costs.vector_adapter as va
     va._FIXTURE_CODE_RE = None
 
-    assert _looks_like_fixture({"code": "A001", "description": "anything"}) is True
-    assert _looks_like_fixture({"code": "Z999"}) is True
+    # Real-looking BYO codes — must NOT be flagged anymore.
+    assert _looks_like_fixture({"code": "A001", "description": "anything"}) is False
+    assert _looks_like_fixture({"code": "Z999"}) is False
+    assert _looks_like_fixture({"code": "M001", "description": "Hammer"}) is False
+    # Explicit TEST-<hex> marker — still flagged.
     assert _looks_like_fixture({"code": "TEST-deadbeef", "description": "x"}) is True
 
 

@@ -423,6 +423,108 @@ def _settings_snapshot(row: object) -> dict:
     }
 
 
+async def auto_bind_dominant_catalogue(
+    db: AsyncSession,
+    project_id: uuid.UUID,
+) -> str | None:
+    """Bind the project's match settings to the dominant loaded CWICR catalogue.
+
+    Used to make /match-elements (and any other matcher consumer) Just Work
+    on a fresh project — without this, ``cost_database_id`` stays NULL and
+    the ranker short-circuits with ``status="no_catalog_selected"``.
+
+    Selection rule (language-aware, since 2.9.34):
+
+    1. **Prefer a vectorised catalogue whose language matches the project's
+       region**, even if a different-language catalogue has more rows.
+       Without this, a US project with the Russian CWICR catalogue loaded
+       (which has the most rows globally) would auto-bind to ``RU_MOSCOW``
+       and surface Russian descriptions on /match-elements. The project's
+       region resolves to a language via :func:`region_language.language_for`;
+       any catalogue with the same language wins ahead of any other.
+
+    2. **Fall back to the dominant vectorised catalogue** (most rows, any
+       language) when no language match is available. Better cross-language
+       BGE-M3 recall than no catalogue at all.
+
+    Returns the bound catalogue id (e.g. ``"USA_NEWYORK"``), or ``None``
+    when no catalogue qualifies (fresh install, vectoriser not run yet).
+    Idempotent: callers can invoke this on every session create; if the
+    project already has a non-NULL ``cost_database_id`` this is a no-op.
+    """
+    from sqlalchemy import func, select  # noqa: PLC0415
+
+    from app.core.match_service.region_language import language_for  # noqa: PLC0415
+    from app.core.vector import vector_count_with_payload_substring  # noqa: PLC0415
+    from app.core.vector_index import COLLECTION_COSTS  # noqa: PLC0415
+    from app.modules.costs.models import CostItem  # noqa: PLC0415
+    from app.modules.projects.models import Project  # noqa: PLC0415
+
+    row = await get_or_create_match_settings(db, project_id)
+    if row.cost_database_id:
+        return row.cost_database_id
+
+    # Resolve the project's preferred catalogue language so we can
+    # bias selection toward language-matching candidates first.
+    project_lang: str | None = None
+    try:
+        proj = await db.get(Project, project_id)
+        if proj and proj.region:
+            project_lang = language_for(proj.region)
+    except Exception:  # pragma: no cover — defensive
+        project_lang = None
+
+    try:
+        candidates = (
+            await db.execute(
+                select(CostItem.region, func.count().label("c"))
+                .where(CostItem.is_active.is_(True))
+                .where(CostItem.region.is_not(None))
+                .group_by(CostItem.region)
+                .order_by(func.count().desc())
+                .limit(16)
+            )
+        ).all()
+    except Exception:  # pragma: no cover — defensive
+        return None
+
+    def _bind(region: str) -> str:
+        row.cost_database_id = region
+        return region
+
+    # Pass 1 — prefer same-language catalogues.
+    if project_lang:
+        for region, _count in candidates:
+            if not region:
+                continue
+            if language_for(region) != project_lang:
+                continue
+            try:
+                vec = vector_count_with_payload_substring(COLLECTION_COSTS, region)
+            except Exception:
+                vec = 0
+            if vec > 0:
+                bound = _bind(region)
+                await db.flush()
+                await db.refresh(row)
+                return bound
+
+    # Pass 2 — fall back to dominant catalogue regardless of language.
+    for region, _count in candidates:
+        if not region:
+            continue
+        try:
+            vec = vector_count_with_payload_substring(COLLECTION_COSTS, region)
+        except Exception:
+            vec = 0
+        if vec > 0:
+            bound = _bind(region)
+            await db.flush()
+            await db.refresh(row)
+            return bound
+    return None
+
+
 async def get_or_create_match_settings(
     db: AsyncSession,
     project_id: uuid.UUID,

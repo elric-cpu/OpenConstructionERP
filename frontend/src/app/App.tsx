@@ -47,6 +47,9 @@ const TakeoffPage = lazy(() =>
 const CadDataExplorerPage = lazy(() =>
   import('@/features/cad-explorer/CadDataExplorerPage').then((m) => ({ default: m.CadDataExplorerPage }))
 );
+const MatchElementsPage = lazy(() =>
+  import('@/features/match-elements/MatchElementsPage').then((m) => ({ default: m.MatchElementsPage }))
+);
 const TenderingPage = lazy(() =>
   import('@/features/tendering/TenderingPage').then((m) => ({ default: m.TenderingPage }))
 );
@@ -390,6 +393,7 @@ export default function App() {
         <Route path="/chat" element={<P title="AI Chat"><ERPChatPage /></P>} />
         <Route path="/cad-takeoff" element={<Navigate to="/data-explorer" replace />} />
         <Route path="/data-explorer" element={<P title="Data Explorer"><CadDataExplorerPage /></P>} />
+        <Route path="/match-elements" element={<P title="Match Elements"><MatchElementsPage /></P>} />
         <Route path="/bim" element={<P title="BIM Viewer"><BIMPage /></P>} />
         <Route path="/bim/rules" element={<P title="BIM Rules"><BIMQuantityRulesPage /></P>} />
         {/* Legacy alias — must come BEFORE /bim/:modelId so the literal

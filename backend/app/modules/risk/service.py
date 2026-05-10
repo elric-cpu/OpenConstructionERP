@@ -321,7 +321,7 @@ class RiskService:
         total_exposure = 0.0
         risk_scores: list[float] = []
         scored_items: list[tuple[str, float]] = []
-        currency = "EUR"
+        currency = ""
 
         for item in items:
             by_status[item.status] = by_status.get(item.status, 0) + 1

@@ -59,6 +59,24 @@ function getIconConfig(type: Notification['type']) {
   return NOTIFICATION_ICON_MAP[type] ?? NOTIFICATION_ICON_MAP.info;
 }
 
+// Backend pre-v2.9.34 emitted action_urls like `/risk?id=...` (singular)
+// and `/boq?id={boq_id}` (list-page with stray query). Re-shape any stale
+// rows already in the database so a click never lands on an unknown route
+// (which would render the catch-all NotFoundPage and *look* blank to the
+// user during the lazy-chunk load).
+const ACTION_URL_REWRITES: Array<[RegExp, (m: RegExpMatchArray) => string]> = [
+  [/^\/risk(\?.*)?$/, (m) => `/risks${m[1] ?? ''}`],
+  [/^\/boq\?id=([0-9a-fA-F-]{8,})$/, (m) => `/boq/${m[1]}`],
+];
+
+function normalizeActionUrl(url: string): string {
+  for (const [re, build] of ACTION_URL_REWRITES) {
+    const m = url.match(re);
+    if (m) return build(m);
+  }
+  return url;
+}
+
 // ── Time formatting ──────────────────────────────────────────────────────────
 
 function formatTimeAgo(
@@ -163,7 +181,7 @@ export function NotificationBell() {
         markReadMutation.mutate(notification.id);
       }
       if (notification.action_url) {
-        navigate(notification.action_url);
+        navigate(normalizeActionUrl(notification.action_url));
         setOpen(false);
       }
     },

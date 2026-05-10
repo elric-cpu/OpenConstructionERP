@@ -15,35 +15,31 @@
  */
 
 import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, X, Download, ExternalLink } from 'lucide-react';
 
 const SESSION_KEY = 'oe_demo_modal_dismissed';
 
 export function DemoBanner() {
-  const [demoMode, setDemoMode] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
 
+  // Reuse the shared ['system-status'] query so DashboardPage and this banner
+  // share a single network call instead of firing /api/system/status twice on
+  // every page render. ``staleTime: Infinity`` is fine — demo_mode is fixed
+  // for the life of the deployment and the query is invalidated on logout.
+  const { data } = useQuery<{ demo_mode?: boolean }>({
+    queryKey: ['system-status'],
+    queryFn: () => fetch('/api/system/status').then((r) => r.json()),
+    retry: false,
+    staleTime: Infinity,
+  });
+  const demoMode = data?.demo_mode === true;
+
   useEffect(() => {
-    let cancelled = false;
-    fetch('/api/system/status')
-      .then((r) => r.json())
-      .then((data) => {
-        if (cancelled) return;
-        if (data?.demo_mode === true) {
-          setDemoMode(true);
-          // Show the full modal once per session
-          if (sessionStorage.getItem(SESSION_KEY) !== '1') {
-            setModalOpen(true);
-          }
-        }
-      })
-      .catch(() => {
-        // Network or backend error — silently skip the banner
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    if (demoMode && sessionStorage.getItem(SESSION_KEY) !== '1') {
+      setModalOpen(true);
+    }
+  }, [demoMode]);
 
   const closeModal = () => {
     sessionStorage.setItem(SESSION_KEY, '1');

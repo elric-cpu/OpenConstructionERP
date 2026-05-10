@@ -16,7 +16,7 @@ import logging
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
 
 from app.dependencies import CurrentUserId, RequirePermission, SessionDep, verify_project_access
@@ -35,12 +35,6 @@ logger = logging.getLogger(__name__)
 
 # Directory for storing uploaded punch list photos
 PHOTOS_DIR = Path("uploads/punchlist/photos")
-
-# Max photo upload size for punch list. Lower than the generic
-# documents-module 50MB cap because punch photos are mobile-captured
-# site snapshots, not engineering drawings — 25MB is plenty and keeps
-# memory pressure predictable on the worker pool.
-MAX_PUNCHLIST_PHOTO_BYTES = 25 * 1024 * 1024  # 25 MB
 
 
 def _get_service(session: SessionDep) -> PunchListService:
@@ -331,7 +325,6 @@ async def pin_to_sheet(
 async def upload_photo(
     item_id: uuid.UUID,
     file: UploadFile = File(...),
-    content_length: int | None = Header(default=None),
     user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("punchlist.update")),
     service: PunchListService = Depends(_get_service),

@@ -1952,7 +1952,11 @@ function AnalyticsSection({ projects }: { projects: ProjectSummary[] }) {
 
   // Fetch all BOQs for each project
   const { data: allBoqs } = useQuery({
-    queryKey: ['dashboard-analytics-boqs', projects.map((p) => p.id).join(',')],
+    // Reuse the parent's per-project BOQ fan-out by sharing the query key
+    // with the KPI ribbon's ``['dashboard-all-boqs', …]`` query above. React
+    // Query dedupes when keys match, so the analytics section gets the same
+    // ``allBoqs`` data without firing a second 1×N round of GETs.
+    queryKey: ['dashboard-all-boqs', projects.map((p) => p.id).join(',')],
     queryFn: async () => {
       const results: BOQWithTotal[] = [];
       for (const project of projects) {

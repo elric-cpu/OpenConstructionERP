@@ -854,8 +854,12 @@ export function BOQEditorPage() {
   const aiChatContext = useMemo(
     () => ({
       project_name: boq?.name ?? 'Unnamed project',
-      currency: project?.currency ?? 'EUR',
-      standard: (project as unknown as Record<string, unknown>)?.classification_standard as string ?? 'din276',
+      // Empty currency / standard means "tell the AI the project doesn't
+      // carry one yet, so it can decline to make currency-specific
+      // recommendations" — preferable to lying with EUR/din276 on a
+      // project that's actually USD/MasterFormat.
+      currency: project?.currency ?? '',
+      standard: (project as unknown as Record<string, unknown>)?.classification_standard as string ?? '',
       existing_positions_count: boq?.positions.length ?? 0,
     }),
     [boq?.name, boq?.positions.length, project?.currency, project],
@@ -2569,7 +2573,11 @@ export function BOQEditorPage() {
       const pos = boq?.positions.find((p) => p.id === positionId);
       if (!pos) return;
       try {
-        const projectStandard = (project as unknown as Record<string, unknown>)?.classification_standard as string ?? 'din276';
+        // Empty when project hasn't set a standard — backend's
+        // _resolve_classification_order picks region-native default.
+        // Hardcoding 'din276' here forced DACH classification on every
+        // unset US/UK/LATAM project.
+        const projectStandard = (project as unknown as Record<string, unknown>)?.classification_standard as string ?? '';
         const result = await boqApi.classify({
           description: pos.description,
           unit: pos.unit,

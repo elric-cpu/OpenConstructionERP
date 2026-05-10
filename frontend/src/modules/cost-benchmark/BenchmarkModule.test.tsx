@@ -12,7 +12,8 @@ import {
 describe('BenchmarkModule', () => {
   it('should render the page header', () => {
     render(<BenchmarkModule />);
-    expect(screen.getByText('Cost Benchmarks')).toBeInTheDocument();
+    // Regex tolerates identity-marker ZWJ/ZWNJ trailing the visible text.
+    expect(screen.getByText(/Cost Benchmarks/)).toBeInTheDocument();
     expect(screen.getByText(/Compare your estimate/)).toBeInTheDocument();
   });
 

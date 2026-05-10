@@ -827,6 +827,322 @@ async def vector_region_stats() -> list[dict]:
         return []
 
 
+@router.get("/vector/v3-status/")
+async def vector_v3_status(
+    db: SessionDep,
+    country: str = Query(
+        "",
+        description=(
+            "Region or country code (e.g. DE, DE_BERLIN, USA_USD). "
+            "Resolves to the per-language v3 collection — "
+            "DE_BERLIN → cwicr_de_v3, USA_USD → cwicr_en_v3, etc. "
+            "Empty string returns the engine state without a collection probe."
+        ),
+    ),
+    project_id: uuid.UUID | None = Query(
+        None,
+        description=(
+            "Optional project id. When provided, the response includes "
+            "``language_mismatch`` describing whether the project's bound "
+            "cost catalogue speaks a different language than the project "
+            "region — used to surface a 'wrong catalogue' warning on /match-elements."
+        ),
+    ),
+) -> dict[str, Any]:
+    """Per-language CWICR v3 collection readiness for /match-elements.
+
+    Used by the match-elements page to surface a "vector DB ready / missing"
+    banner in the same style as the BIM converter status panel. Single
+    Qdrant probe — does NOT trigger reindexing; that lives on /costs.
+
+    When ``project_id`` is supplied, also returns ``language_mismatch``
+    diagnostics so the UI can warn about a cross-language catalogue
+    binding (e.g. a US project bound to RU_MOSCOW would surface Russian
+    descriptions). The mismatch is detected by resolving both the project
+    region and the bound catalogue id through ``language_for``.
+    """
+    from app.core.match_service.region_language import language_for
+    from app.core.vector import vector_status as vs
+    from app.modules.costs.qdrant_adapter import country_to_collection
+
+    base = vs()
+    payload: dict[str, Any] = {
+        "engine": base.get("engine", "unknown"),
+        "connected": bool(base.get("connected")),
+        "country": country or "",
+        "language": language_for(country) if country else "",
+        "collection": "",
+        "exists": False,
+        "points_count": 0,
+        "status_band": "disconnected",
+    }
+
+    # Cross-language binding diagnostics — independent of Qdrant probe so
+    # the warning fires even when the engine is offline.
+    if project_id is not None:
+        payload["language_mismatch"] = await _detect_language_mismatch(db, project_id)
+
+    if not payload["connected"]:
+        payload["error"] = base.get("error", "")
+        return payload
+
+    if not country:
+        # Engine reachable but the caller didn't ask about a specific collection.
+        payload["status_band"] = "no_country"
+        return payload
+
+    payload["collection"] = country_to_collection(country)
+
+    if base.get("engine") != "qdrant":
+        # LanceDB or other backend — v3 collection naming doesn't apply.
+        payload["status_band"] = "non_qdrant"
+        return payload
+
+    try:
+        from app.core.vector import _get_qdrant
+
+        client = _get_qdrant()
+        if client is None:
+            payload["status_band"] = "disconnected"
+            return payload
+        names = {c.name for c in client.get_collections().collections}
+        if payload["collection"] in names:
+            payload["exists"] = True
+            try:
+                col = client.get_collection(payload["collection"])
+                pc = int(col.points_count or 0)
+                payload["points_count"] = pc
+                payload["status_band"] = "ready" if pc > 0 else "empty"
+            except Exception:
+                payload["status_band"] = "ready"
+        else:
+            payload["status_band"] = "missing"
+    except Exception as exc:
+        logger.debug("Qdrant v3 status probe failed", exc_info=True)
+        payload["error"] = str(exc)
+        payload["status_band"] = "disconnected"
+
+    return payload
+
+
+async def _detect_language_mismatch(
+    db: AsyncSession,
+    project_id: uuid.UUID,
+) -> dict[str, Any]:
+    """Compare the project region's language with the bound catalogue's language.
+
+    Returns a structured payload that the UI can render as either a
+    ``ok`` / ``mismatch`` banner. The "mismatch" status fires when the
+    bound ``cost_database_id`` resolves to a different ISO-639-1 code
+    than the project's region — almost always a sign that
+    ``auto_bind_dominant_catalogue`` picked by row count before the
+    language-aware fix landed (#236).
+
+    Status values:
+        - ``unknown``      — project not found, or no region set
+        - ``unbound``      — project has no cost_database_id yet
+        - ``ok``           — languages match (or both fall back to default)
+        - ``mismatch``     — project language ≠ catalogue language
+    """
+    from sqlalchemy import select  # noqa: PLC0415
+
+    from app.core.match_service.region_language import language_for
+    from app.modules.projects.models import MatchProjectSettings, Project
+
+    out: dict[str, Any] = {
+        "status": "unknown",
+        "project_region": "",
+        "project_language": "",
+        "bound_catalogue": "",
+        "bound_language": "",
+    }
+    try:
+        project = await db.get(Project, project_id)
+        if not project or not project.region:
+            return out
+        out["project_region"] = project.region
+        out["project_language"] = language_for(project.region)
+
+        # MatchProjectSettings uses an ``id`` PK with a unique FK on
+        # ``project_id``; ``db.get`` cannot be used here.
+        result = await db.execute(
+            select(MatchProjectSettings).where(
+                MatchProjectSettings.project_id == project_id
+            )
+        )
+        settings = result.scalar_one_or_none()
+        if not settings or not settings.cost_database_id:
+            out["status"] = "unbound"
+            return out
+        out["bound_catalogue"] = settings.cost_database_id
+        out["bound_language"] = language_for(settings.cost_database_id)
+
+        if out["project_language"] and out["bound_language"]:
+            out["status"] = (
+                "ok" if out["project_language"] == out["bound_language"] else "mismatch"
+            )
+    except Exception:  # pragma: no cover — defensive
+        logger.debug("language mismatch probe failed", exc_info=True)
+    return out
+
+
+@router.get("/embedder/status/")
+async def embedder_status() -> dict[str, Any]:
+    """Free / open-source language model readiness for /match-elements.
+
+    Surfaces enough information for the UI to render a "language model
+    required" panel when the optional ``[semantic]`` extra is missing,
+    plus reassurance ("MIT, multilingual, 100+ languages, runs locally")
+    so users understand it's a one-time install of a free model rather
+    than a paid API.
+
+    Returns
+    -------
+    {
+        "installed": bool,            # FlagEmbedding importable?
+        "model_loaded": bool,         # encoder initialised in this process?
+        "model_name": str,            # configured HF id, e.g. "BAAI/bge-m3"
+        "model_id_runtime": str,      # actual HF id used at runtime
+                                      # (may differ when int8_mode is True)
+        "license": "MIT",
+        "open_source": True,
+        "homepage": str,
+        "languages_supported": int,   # 100+ via BGE-M3
+        "size_mb_int8": int,          # ONNX INT8 footprint
+        "size_mb_fp32": int,          # full-precision footprint
+        "int8_mode": bool,            # current setting
+        "pip_command": str,           # one-liner the UI shows in a copy box
+        "missing_packages": list[str],
+        "extra_name": "semantic",     # hint for advanced users
+    }
+
+    Always returns 200 — the UI distinguishes states from the payload,
+    not from HTTP status, so a missing-extra install can render a clean
+    install card instead of an error toast.
+    """
+    from app.config import get_settings  # noqa: PLC0415
+
+    s = get_settings()
+    model_name = getattr(s, "cwicr_embedding_model", "BAAI/bge-m3")
+    int8_mode = bool(getattr(s, "cwicr_embedding_int8", True))
+    runtime_id = "gpahal/bge-m3-onnx-int8" if int8_mode else model_name
+
+    missing: list[str] = []
+    installed = False
+    try:
+        import FlagEmbedding  # type: ignore[import-not-found]  # noqa: F401, PLC0415
+        installed = True
+    except ImportError:
+        missing.append("FlagEmbedding")
+    try:
+        import qdrant_client  # type: ignore[import-not-found]  # noqa: F401, PLC0415
+    except ImportError:
+        missing.append("qdrant-client")
+
+    # Probe whether the encoder has been initialised in this worker
+    # without forcing a load — qdrant_adapter._encoder is a module-level
+    # singleton that is None until the first /qdrant-search hits.
+    model_loaded = False
+    try:
+        from app.modules.costs import qdrant_adapter  # noqa: PLC0415
+
+        model_loaded = qdrant_adapter._encoder is not None  # type: ignore[attr-defined]
+    except Exception:
+        model_loaded = False
+
+    return {
+        "installed": installed and not missing,
+        "model_loaded": model_loaded,
+        "model_name": model_name,
+        "model_id_runtime": runtime_id,
+        "license": "MIT",
+        "open_source": True,
+        "homepage": f"https://huggingface.co/{model_name}",
+        "languages_supported": 100,
+        "size_mb_int8": 700,
+        "size_mb_fp32": 2300,
+        "int8_mode": int8_mode,
+        "pip_command": "pip install --upgrade openconstructionerp[semantic]",
+        "missing_packages": missing,
+        "extra_name": "semantic",
+    }
+
+
+@router.get("/qdrant-search/")
+async def qdrant_smoke_search(
+    q: str = Query(..., min_length=1, description="Query text — passed verbatim as the CORE query"),
+    country: str = Query("DE", description="Region or country code, e.g. DE, DE_BERLIN, USA_USD"),
+    limit: int = Query(10, ge=1, le=50),
+    is_abstract: bool | None = Query(False, description="Drop aggregator headers (None to leave open)"),
+    department_code: str | None = Query(None, description="DIN-276-derived trade bucket (optional)"),
+    unit_dim: str | None = Query(None, description="volume / area / length / count (optional)"),
+    diag: bool = Query(False, description="Return diagnostics (resolved collection + parquet path)"),
+) -> dict[str, Any]:
+    """Smoke endpoint for the new BGE-M3 + Qdrant CWICR pipeline.
+
+    One-shot hybrid search: dense + sparse fused via Qdrant native RRF,
+    then parquet lookup attaches the 84-column rate data. Use this to
+    verify the new pipeline before wiring it into ``/match-elements``.
+
+    Example:
+        GET /api/v1/costs/qdrant-search/?q=Stahlbetonwand%20C30/37&country=DE
+    """
+
+    from app.modules.costs.parquet_lookup import parquet_path_for_country, parquet_root
+    from app.modules.costs.qdrant_adapter import (
+        country_to_collection,
+        lookup_full_rows,
+        search,
+    )
+
+    filters: dict[str, Any] = {}
+    if is_abstract is not None:
+        filters["is_abstract"] = is_abstract
+    if department_code:
+        filters["department_code"] = department_code
+    if unit_dim:
+        filters["unit_dim"] = unit_dim
+
+    try:
+        hits = await search(
+            country=country,
+            core_query=q,
+            filters=filters,
+            limit=limit,
+        )
+    except RuntimeError as exc:
+        # Optional [semantic] extra missing or no Qdrant reachable.
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("CWICR Qdrant smoke search failed")
+        raise HTTPException(status_code=500, detail=f"qdrant search failed: {exc}") from exc
+
+    rate_codes = [h.rate_code for h in hits]
+    full_rows = await lookup_full_rows(country=country, rate_codes=rate_codes)
+    full_by_code = {str(r.get("rate_code")): r for r in full_rows}
+
+    response_hits = [
+        {
+            "rate_code": h.rate_code,
+            "country": h.country,
+            "score": h.score,
+            "payload": h.payload,
+            "full": full_by_code.get(h.rate_code),
+        }
+        for h in hits
+    ]
+
+    body: dict[str, Any] = {"hits": response_hits, "count": len(response_hits)}
+    if diag:
+        body["diagnostics"] = {
+            "collection": country_to_collection(country),
+            "parquet_root": str(parquet_root()),
+            "parquet_file": str(parquet_path_for_country(country) or ""),
+            "parquet_rows_attached": len(full_rows),
+        }
+    return body
+
+
 @router.post(
     "/vector/index/",
     dependencies=[Depends(RequirePermission("costs.create"))],
@@ -1301,6 +1617,258 @@ async def restore_qdrant_snapshot(
         "vectors_count": vectors_count,
         "source": "github_snapshot",
         "duration_seconds": duration,
+    }
+
+
+# ── v3 BGE-M3 catalogues (UI-facing install flow) ─────────────────────────
+#
+# `/vector/restore-snapshot/{db_id}` above ships the legacy 3072-dim snapshots
+# and writes into per-region collections (`cwicr_de_berlin`, …). The v3 path
+# below ships BGE-M3 v3 snapshots and writes into per-language collections
+# (`cwicr_de_v3`, …) — the schema the production /match-elements pipeline
+# already searches against. Once Phase 5 cleanup retires the 3072 path, the
+# legacy endpoint goes away; until then they coexist so existing installs
+# don't break.
+
+
+def _v3_snapshot_cache_path(region: str) -> Path:
+    """Local cache path for a v3 snapshot file. One per CWICR region.
+
+    Cache lives under ``~/.openestimator/cache/snapshots-v3/`` so it
+    doesn't collide with the 3072-dim cache (``cache/snapshots/``) used
+    by the legacy endpoint. Re-using the same file across restores
+    avoids re-downloading 400+ MB on retry.
+    """
+    return Path.home() / ".openestimator" / "cache" / "snapshots-v3" / f"{region}.snapshot"
+
+
+def _v3_qdrant_url() -> str | None:
+    """Resolve the server-mode Qdrant URL for the v3 catalogue path.
+
+    Prefers ``settings.cwicr_qdrant_url`` (the dedicated v3 setting);
+    falls back to ``settings.qdrant_url`` which the legacy adapter uses
+    — in single-server dev they point at the same instance and the
+    fallback removes one configuration step. Returns ``None`` when
+    neither is set so the caller can surface a clear "no server" error.
+    """
+    from app.config import get_settings
+
+    s = get_settings()
+    return getattr(s, "cwicr_qdrant_url", None) or getattr(s, "qdrant_url", None)
+
+
+@router.get("/catalogues-v3/")
+async def list_v3_catalogues() -> dict:
+    """List the 30 CWICR v3 catalogues with install status.
+
+    Frontend powers the `/setup/databases` "Quick install from DDC" grid
+    from this endpoint. Each row gets a flag, name, currency, size,
+    and a status suitable for picking the right CTA:
+
+    * ``loaded`` — the collection exists on the configured Qdrant server
+      and has at least one point. Multiple regions sharing a language
+      (USA_USD + GB_LONDON → cwicr_en_v3) all report ``loaded`` because
+      the search-time collection is populated; per-region cache state
+      is exposed separately as ``snapshot_cached``.
+    * ``installing`` — reserved; current implementation runs the install
+      synchronously, so the only way to see this state is via the
+      transient cache file probe. Kept in the schema so the frontend
+      can reuse it once we move to background jobs.
+    * ``available`` — DDC has published the v3 snapshot but it's not
+      installed on this server. The "Install" CTA is enabled.
+    * ``coming_soon`` — registry knows the region but the snapshot
+      hasn't shipped yet. CTA is disabled with a "coming soon" hint.
+    """
+    from app.modules.costs.cwicr_v3_catalogue import CWICR_V3_CATALOGUES
+
+    qdrant_url = _v3_qdrant_url()
+
+    # Probe Qdrant once for the whole list. A single REST call is much
+    # cheaper than per-region collection lookups, especially for the 30
+    # cards where most regions share a language collection anyway.
+    server_collections: set[str] = set()
+    server_reachable = False
+    if qdrant_url:
+        try:
+            from app.modules.costs.qdrant_snapshot_loader import server_collections as _probe
+
+            server_collections = set(_probe(qdrant_url=qdrant_url))
+            server_reachable = True
+        except Exception as exc:  # pragma: no cover — defensive
+            logger.debug("v3 catalogues: server probe failed: %s", exc)
+
+    catalogues: list[dict] = []
+    for cat in CWICR_V3_CATALOGUES:
+        cache_path = _v3_snapshot_cache_path(cat.region)
+        snapshot_cached = cache_path.exists() and cache_path.stat().st_size > 1_000_000
+
+        if cat.collection in server_collections:
+            install_status = "loaded"
+        elif not cat.available:
+            install_status = "coming_soon"
+        else:
+            install_status = "available"
+
+        catalogues.append(
+            {
+                "region": cat.region,
+                "country_iso": cat.country_iso,
+                "city": cat.city,
+                "language": cat.language,
+                "currency": cat.currency,
+                "collection": cat.collection,
+                "size_mb": cat.size_mb,
+                "available": cat.available,
+                "snapshot_cached": snapshot_cached,
+                "install_status": install_status,
+            }
+        )
+
+    # Sort: loaded → available → coming_soon, then alpha by country_iso
+    # within each bucket. The UI can re-sort, but a sensible default
+    # surfaces actionable rows at the top.
+    _STATUS_ORDER = {"loaded": 0, "available": 1, "installing": 2, "coming_soon": 3}
+    catalogues.sort(key=lambda c: (_STATUS_ORDER.get(c["install_status"], 9), c["country_iso"]))
+
+    return {
+        "catalogues": catalogues,
+        "server": {
+            "url": qdrant_url,
+            "reachable": server_reachable,
+            "total_collections": len(server_collections),
+            "v3_collections": sorted(c for c in server_collections if c.endswith("_v3")),
+        },
+    }
+
+
+@router.post(
+    "/catalogues-v3/{region}/install",
+    dependencies=[Depends(RequirePermission("costs.create"))],
+)
+async def install_v3_catalogue(
+    region: str,
+    _user_id: CurrentUserId,
+) -> dict:
+    """Download a DDC v3 BGE-M3 snapshot from GitHub and restore into Qdrant.
+
+    Synchronous: the call returns when the restore completes, so the UI
+    should drive a spinner / progress hint for the duration of the
+    download + upload (typically 30–120 s on a decent connection).
+    Returns ``409`` when the catalogue isn't yet published by DDC,
+    ``404`` for unknown region ids, ``503`` when no Qdrant server is
+    reachable, ``502`` on a failed GitHub download.
+
+    The file is cached under ``~/.openestimator/cache/snapshots-v3/`` —
+    repeated calls hit the cache and skip the download. To force a
+    redownload, delete the cache file (or wait for the v4 endpoint
+    that will accept ``force_redownload=true``).
+    """
+    import asyncio
+    import time
+
+    from app.modules.costs.cwicr_v3_catalogue import get_catalogue
+    from app.modules.costs.qdrant_snapshot_loader import (
+        restore_snapshot_file,
+        server_collections,
+    )
+
+    cat = get_catalogue(region)
+    if cat is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            f"Unknown CWICR region: {region}. See GET /catalogues-v3/ for the list.",
+        )
+    if not cat.available:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"DDC has not yet published the v3 snapshot for {region}. "
+            "Track the catalogue in /setup/databases and try again later.",
+        )
+
+    qdrant_url = _v3_qdrant_url()
+    if not qdrant_url:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "No Qdrant server configured. Set CWICR_QDRANT_URL or QDRANT_URL "
+            "and ensure the server is reachable (docker compose up -d qdrant).",
+        )
+
+    start = time.monotonic()
+
+    # 1. Download (or hit cache) — same pattern the legacy endpoint uses.
+    cache_path = _v3_snapshot_cache_path(cat.region)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if not cache_path.exists() or cache_path.stat().st_size < 1_000_000:
+        url = f"{_GITHUB_CWICR_BASE_URL}/{cat.ddc_path}"
+        logger.info(
+            "Downloading v3 snapshot %s from DDC (~%d MB): %s",
+            cat.region,
+            cat.size_mb,
+            url,
+        )
+        try:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, _download_to_file, url, cache_path, 600.0)
+        except Exception as exc:
+            cache_path.unlink(missing_ok=True)
+            logger.error("v3 snapshot download failed for %s: %s", cat.region, exc)
+            raise HTTPException(
+                status.HTTP_502_BAD_GATEWAY,
+                f"Failed to download v3 snapshot from DDC: {exc}",
+            ) from exc
+
+        if not cache_path.exists() or cache_path.stat().st_size < 1_000_000:
+            cache_path.unlink(missing_ok=True)
+            raise HTTPException(
+                status.HTTP_502_BAD_GATEWAY,
+                "Downloaded snapshot is too small or missing — DDC may not "
+                "have published this region yet.",
+            )
+
+    # 2. Restore via the loader (httpx multipart upload to server).
+    loop = asyncio.get_event_loop()
+    try:
+        ok = await loop.run_in_executor(
+            None,
+            lambda: restore_snapshot_file(
+                qdrant_url=qdrant_url,
+                collection_name=cat.collection,
+                snapshot_path=cache_path,
+            ),
+        )
+    except (FileNotFoundError, RuntimeError) as exc:
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            f"Snapshot restore failed: {exc}",
+        ) from exc
+    if not ok:
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "Qdrant rejected the snapshot upload — check server logs for details.",
+        )
+
+    duration = round(time.monotonic() - start, 1)
+
+    # 3. Best-effort post-probe so the response shows the new collection.
+    collections_after = server_collections(qdrant_url=qdrant_url)
+    appeared = cat.collection in collections_after
+
+    logger.info(
+        "v3 catalogue installed: region=%s collection=%s appeared=%s duration=%.1fs",
+        cat.region,
+        cat.collection,
+        appeared,
+        duration,
+    )
+
+    return {
+        "status": "ok",
+        "region": cat.region,
+        "collection": cat.collection,
+        "snapshot_size_mb": round(cache_path.stat().st_size / (1024 * 1024), 1),
+        "duration_seconds": duration,
+        "collection_appeared": appeared,
     }
 
 
@@ -1874,10 +2442,8 @@ async def import_cost_file(
             # Parse rate
             rate = _safe_float(row.get("rate"), default=0.0)
 
-            # Parse currency (default: EUR)
-            currency = str(row.get("currency", "EUR")).strip().upper()
-            if not currency:
-                currency = "EUR"
+            # Parse currency — empty if absent, never country-default.
+            currency = str(row.get("currency", "")).strip().upper()
 
             # Build classification
             classification: dict[str, str] = {}

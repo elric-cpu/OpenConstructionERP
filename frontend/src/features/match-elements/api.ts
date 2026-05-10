@@ -1,0 +1,606 @@
+// DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
+// Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
+//
+// Match-Elements API client. Surface mirrors backend
+// app/modules/match_elements/schemas.py exactly — no client-side
+// extrapolation, no kludges.
+
+import { useAuthStore } from '@/stores/useAuthStore';
+
+const PREFIX = '/api/v1/match_elements';
+
+async function call<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = useAuthStore.getState().accessToken;
+  const res = await fetch(`${PREFIX}${path}`, {
+    ...init,
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      ...(init?.headers || {}),
+    },
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = await res.json();
+      detail = body.detail || JSON.stringify(body);
+    } catch {
+      // ignore
+    }
+    throw new Error(`${res.status} ${detail}`);
+  }
+  if (res.status === 204) return undefined as unknown as T;
+  return (await res.json()) as T;
+}
+
+export type SourceName = 'bim' | 'dwg' | 'boq' | 'text' | 'pdf' | 'photo' | 'image';
+
+/** A single BoQ row for the 'boq' source (MAPPING_PROCESS.md §4.1.5).
+ *  Either pre-parse client-side and post via createSession, or upload an
+ *  xlsx via createSessionFromExcel and let the backend parse it. */
+export interface BoqRow {
+  description: string;
+  qty?: number;
+  unit?: string;
+  /** Exact CWICR rate code — when present, the matcher short-circuits
+   *  Qdrant fan-out and fetches the rate directly from parquet. */
+  code?: string;
+  category?: string;
+  source_lang?: string;
+  /** Pass-through: any extra columns are preserved in attributes. */
+  [k: string]: unknown;
+}
+
+/** A single text input for the 'text' source (MAPPING_PROCESS.md §4.1.6).
+ *  Plain string is fine for the simple case; the dict shape lets the
+ *  caller pin per-line ``project_country`` / ``stage`` overrides. */
+export type TextInput =
+  | string
+  | {
+      raw_text: string;
+      project_country?: string;
+      stage?: string;
+      category?: string;
+    };
+export type MatcherName = 'vector' | 'lexical' | 'resources' | 'llm';
+export type ConfirmMethod = 'vector' | 'lexical' | 'llm' | 'manual' | 'auto';
+export type GroupStatus =
+  | 'unmatched'
+  | 'suggested'
+  | 'confirmed'
+  | 'overridden'
+  | 'skipped'
+  | 'tbd'
+  | 'applied';
+export type ConfidenceBand = 'high' | 'medium' | 'low' | 'none';
+export type TradeBucket =
+  | 'architectural'
+  | 'structural'
+  | 'mep'
+  | 'civil'
+  | 'spatial'
+  | 'subtractive'
+  | 'annotation'
+  | 'other';
+
+export interface MatchSession {
+  id: string;
+  project_id: string;
+  bim_model_id: string | null;
+  source: SourceName;
+  name: string | null;
+  group_by: string[];
+  filters: Record<string, unknown[]>;
+  excluded_categories: string[];
+  auto_confirm_threshold: number;
+  use_net_quantities: boolean;
+  catalogue_id: string | null;
+  is_archived: boolean;
+  /**
+   * v3-P10b: User-picked construction stage from the dropdown. When set,
+   * the SearchPlan stamps it as a hard filter so the catalogue search
+   * only surfaces rates from the chosen phase. Null = no stage pin.
+   */
+  construction_stage: ConstructionStage | null;
+  last_active_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** 12 OmniClass-aligned construction stages from MAPPING_PROCESS.md v3 §4.2. */
+export type ConstructionStage =
+  | '02_Demolition'
+  | '03_Earthwork'
+  | '04_Foundations'
+  | '05_Substructure'
+  | '06_Superstructure'
+  | '07_Envelope'
+  | '08_Interior'
+  | '09_MEP'
+  | '10_Finishes'
+  | '11_FixedFurnishings'
+  | '12_Equipment'
+  | '13_Sitework';
+
+export const CONSTRUCTION_STAGES: ConstructionStage[] = [
+  '02_Demolition',
+  '03_Earthwork',
+  '04_Foundations',
+  '05_Substructure',
+  '06_Superstructure',
+  '07_Envelope',
+  '08_Interior',
+  '09_MEP',
+  '10_Finishes',
+  '11_FixedFurnishings',
+  '12_Equipment',
+  '13_Sitework',
+];
+
+export interface SessionSummary {
+  id: string;
+  project_id: string;
+  bim_model_id: string | null;
+  name: string | null;
+  source: SourceName;
+  last_active_at: string | null;
+  created_at: string;
+  is_archived: boolean;
+  group_count: number;
+  confirmed_count: number;
+  applied_count: number;
+  total_value: number;
+  currency: string | null;
+}
+
+export interface MatchCandidate {
+  /** Real CostItem.id (or CatalogResource.id for method=resources). */
+  id: string | null;
+  code: string;
+  description: string;
+  unit: string;
+  unit_rate: number;
+  currency: string;
+  score: number;
+  vector_score: number;
+  boosts_applied: Record<string, number>;
+  confidence_band: ConfidenceBand;
+  region_code: string;
+  source: string;
+  classification: Record<string, string>;
+}
+
+export interface GroupSummary {
+  id: string;
+  group_key: string;
+  display_label: string;
+  trade: TradeBucket;
+  is_subtractive: boolean;
+  signature: string | null;
+  element_count: number;
+  quantities: Record<string, number>;
+  chosen_unit: string | null;
+  primary_quantity: number;
+  gross_quantity: number | null;
+  net_quantity: number | null;
+  opening_warning: boolean;
+  chosen_method: string | null;
+  confidence: string | null;
+  confidence_band: ConfidenceBand;
+  status: GroupStatus;
+  boq_position_id: string | null;
+  suggested_code: string | null;
+  suggested_description: string | null;
+  suggested_unit_rate: number | null;
+  suggested_currency: string | null;
+  sample_names: string[];
+}
+
+export interface GroupListResponse {
+  session_id: string;
+  total: number;
+  groups: GroupSummary[];
+  summary: Record<string, number>;
+  confidence_high_threshold: number;
+  confidence_medium_threshold: number;
+}
+
+export interface GroupDetail extends GroupSummary {
+  session_id: string;
+  element_ids: string[];
+  methods: Record<string, MatchCandidate[]>;
+  chosen_candidate_id: string | null;
+  confirmed_by: string | null;
+  confirmed_at: string | null;
+  notes: string | null;
+}
+
+export interface AttributeKey {
+  key: string;
+  sample_values: string[];
+}
+
+export interface CategoryCount {
+  category: string;
+  display_label: string;
+  trade: TradeBucket;
+  is_subtractive: boolean;
+  count: number;
+}
+
+export interface BIMModelOption {
+  id: string;
+  name: string;
+  model_format: string | null;
+  element_count: number;
+  storey_count: number;
+  status: string;
+  created_at: string | null;
+}
+
+export interface ApplyResourcePreview {
+  description: string;
+  factor: number;
+  quantity: number;
+  unit: string;
+  unit_rate: number;
+}
+
+export interface ApplyPositionPreview {
+  group_key: string;
+  section_path: string[];
+  description: string;
+  unit: string;
+  quantity: number;
+  unit_rate: number;
+  currency: string;
+  line_total: number;
+  resources: ApplyResourcePreview[];
+}
+
+export interface ApplyToBoqResponse {
+  dry_run: boolean;
+  boq_id: string | null;
+  positions_created: number;
+  positions: ApplyPositionPreview[];
+  grand_total: number;
+  currency: string | null;
+}
+
+export interface MatchTemplate {
+  id: string;
+  tenant_id: string | null;
+  signature: string;
+  label: string | null;
+  cwicr_position_id: string;
+  source_fields: string[];
+  use_count: number;
+  last_used_at: string | null;
+  created_at: string;
+}
+
+/** Vector DB readiness for the project's language. Surfaced on the page
+ *  so the user can see whether the cwicr_<lang>_v3 collection is loaded
+ *  and which collection a match query will hit. */
+export type VectorReadinessBand =
+  | 'ready'        // collection exists, points_count > 0
+  | 'empty'        // collection exists but is empty
+  | 'missing'      // Qdrant connected but no collection of this name
+  | 'disconnected' // Qdrant unreachable (or any backend error)
+  | 'no_country'   // engine reachable but caller didn't pass a country
+  | 'non_qdrant';  // backend is LanceDB / other — v3 layout doesn't apply
+
+/** Cross-language binding diagnostic. Returned when ``project_id`` is
+ *  passed to /vector/v3-status/. Lets the UI surface a "wrong catalogue"
+ *  warning when the bound CWICR catalogue speaks a different language
+ *  than the project's region. */
+export type LanguageMismatchStatus =
+  | 'unknown'   // project not found, region missing, or probe failed
+  | 'unbound'   // project has no cost_database_id yet
+  | 'ok'        // project language matches catalogue language
+  | 'mismatch'; // project language ≠ catalogue language → render warning
+
+export interface LanguageMismatch {
+  status: LanguageMismatchStatus;
+  project_region: string;
+  project_language: string;
+  bound_catalogue: string;
+  bound_language: string;
+}
+
+export interface VectorReadiness {
+  engine: string;
+  connected: boolean;
+  country: string;
+  language: string;
+  collection: string;
+  exists: boolean;
+  points_count: number;
+  status_band: VectorReadinessBand;
+  error?: string;
+  language_mismatch?: LanguageMismatch;
+}
+
+/** Free / open-source language-model readiness for /match-elements.
+ *  Mirrors backend ``GET /api/v1/costs/embedder/status/`` exactly
+ *  (costs/router.py:embedder_status). The endpoint always returns 200 —
+ *  the UI distinguishes installed/loaded/missing from the JSON payload. */
+export interface EmbedderStatus {
+  installed: boolean;
+  model_loaded: boolean;
+  model_name: string;
+  model_id_runtime: string;
+  license: string;
+  open_source: boolean;
+  homepage: string;
+  languages_supported: number;
+  size_mb_int8: number;
+  size_mb_fp32: number;
+  int8_mode: boolean;
+  pip_command: string;
+  missing_packages: string[];
+  extra_name: string;
+}
+
+/** GET /api/v1/costs/embedder/status/ — see EmbedderStatus above. */
+export async function fetchEmbedderStatus(): Promise<EmbedderStatus> {
+  const token = useAuthStore.getState().accessToken;
+  const res = await fetch('/api/v1/costs/embedder/status/', {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      Accept: 'application/json',
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`embedder/status ${res.status}`);
+  }
+  return (await res.json()) as EmbedderStatus;
+}
+
+/** GET /api/v1/costs/vector/v3-status/?country=...&project_id=...
+ *  Returns the per-language CWICR v3 collection state for the active
+ *  project. When ``projectId`` is passed, the response also includes
+ *  ``language_mismatch`` diagnostics. */
+export async function fetchVectorReadiness(
+  country: string,
+  projectId?: string | null,
+): Promise<VectorReadiness> {
+  const token = useAuthStore.getState().accessToken;
+  const qs = new URLSearchParams();
+  if (country) qs.set('country', country);
+  if (projectId) qs.set('project_id', projectId);
+  const res = await fetch(`/api/v1/costs/vector/v3-status/?${qs.toString()}`, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      Accept: 'application/json',
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`${res.status} ${res.statusText}`);
+  }
+  return (await res.json()) as VectorReadiness;
+}
+
+export const matchElementsApi = {
+  // ── Sessions ─────────────────────────────────────────────────────────
+
+  createSession: (spec: {
+    project_id: string;
+    bim_model_id?: string | null;
+    source?: SourceName;
+    name?: string;
+    group_by?: string[];
+    filters?: Record<string, unknown[]>;
+    /** null = use server-side defaults (subtractive set). [] = show everything. */
+    excluded_categories?: string[] | null;
+    auto_confirm_threshold?: number;
+    use_net_quantities?: boolean;
+    catalogue_id?: string | null;
+    construction_stage?: ConstructionStage | null;
+    /** §4.1.6 — only honoured when source = 'text'. */
+    text_inputs?: TextInput[];
+    /** §4.1.5 — only honoured when source = 'boq'. */
+    boq_rows?: BoqRow[];
+  }) =>
+    call<MatchSession>('/sessions', {
+      method: 'POST',
+      body: JSON.stringify({
+        source: 'bim',
+        ...spec,
+      }),
+    }),
+
+  /** §4.1.5 — convenience path: upload an xlsx file and let the backend
+   *  parse it (multi-language column detection: EN/DE/RU/ES/PT/CJK/...).
+   *  Returns the created session — the caller then drives the regular
+   *  match flow. */
+  createSessionFromExcel: async (
+    spec: {
+      project_id: string;
+      file: File;
+      name?: string;
+      catalogue_id?: string | null;
+      construction_stage?: ConstructionStage | null;
+    },
+  ): Promise<MatchSession> => {
+    const token = useAuthStore.getState().accessToken;
+    const fd = new FormData();
+    fd.append('project_id', spec.project_id);
+    fd.append('file', spec.file);
+    if (spec.name) fd.append('name', spec.name);
+    if (spec.catalogue_id) fd.append('catalogue_id', spec.catalogue_id);
+    if (spec.construction_stage)
+      fd.append('construction_stage', spec.construction_stage);
+    const res = await fetch(`${PREFIX}/sessions/from-excel`, {
+      method: 'POST',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        Accept: 'application/json',
+      },
+      body: fd,
+    });
+    if (!res.ok) {
+      let detail = res.statusText;
+      try {
+        const body = await res.json();
+        detail = body.detail || JSON.stringify(body);
+      } catch {
+        /* ignore */
+      }
+      throw new Error(`${res.status} ${detail}`);
+    }
+    return (await res.json()) as MatchSession;
+  },
+
+  listSessions: (
+    projectId: string,
+    params?: { include_archived?: boolean; limit?: number },
+  ) => {
+    const qs = new URLSearchParams({ project_id: projectId });
+    if (params?.include_archived) qs.set('include_archived', 'true');
+    if (params?.limit) qs.set('limit', String(params.limit));
+    return call<SessionSummary[]>(`/sessions?${qs.toString()}`);
+  },
+
+  getSession: (id: string) => call<MatchSession>(`/sessions/${id}`),
+
+  updateSession: (
+    id: string,
+    patch: Partial<{
+      name: string;
+      bim_model_id: string | null;
+      group_by: string[];
+      filters: Record<string, unknown[]>;
+      excluded_categories: string[];
+      auto_confirm_threshold: number;
+      use_net_quantities: boolean;
+      catalogue_id: string | null;
+      construction_stage: ConstructionStage | null;
+      is_archived: boolean;
+    }>,
+  ) =>
+    call<MatchSession>(`/sessions/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+
+  touchSession: (id: string) =>
+    call<void>(`/sessions/${id}/touch`, { method: 'POST' }),
+
+  // ── BIM models ────────────────────────────────────────────────────────
+
+  listBIMModels: (projectId: string) =>
+    call<BIMModelOption[]>(`/projects/${projectId}/bim-models`),
+
+  // ── Groups ────────────────────────────────────────────────────────────
+
+  listGroups: (
+    sessionId: string,
+    params?: { status?: string; limit?: number; offset?: number },
+  ) => {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set('status', params.status);
+    if (params?.limit) qs.set('limit', String(params.limit));
+    if (params?.offset) qs.set('offset', String(params.offset));
+    const q = qs.toString();
+    return call<GroupListResponse>(
+      `/sessions/${sessionId}/groups${q ? `?${q}` : ''}`,
+    );
+  },
+
+  getGroup: (sessionId: string, groupKey: string) =>
+    call<GroupDetail>(
+      `/sessions/${sessionId}/group?group_key=${encodeURIComponent(groupKey)}`,
+    ),
+
+  runMatch: (
+    sessionId: string,
+    spec: {
+      method: MatcherName;
+      group_keys?: string[];
+      max_groups?: number;
+      top_k?: number;
+    },
+  ) =>
+    call<GroupSummary[]>(`/sessions/${sessionId}/match`, {
+      method: 'POST',
+      body: JSON.stringify(spec),
+    }),
+
+  confirm: (
+    sessionId: string,
+    spec: {
+      group_key: string;
+      /** null = manual override with custom rate/description. */
+      candidate_id: string | null;
+      method?: ConfirmMethod;
+      confidence?: number;
+      save_to_template_library?: boolean;
+    },
+  ) =>
+    call<GroupDetail>(`/sessions/${sessionId}/confirm`, {
+      method: 'POST',
+      body: JSON.stringify({
+        method: 'manual',
+        save_to_template_library: true,
+        ...spec,
+      }),
+    }),
+
+  bulkConfirm: (
+    sessionId: string,
+    spec: { threshold?: number; group_keys?: string[] },
+  ) =>
+    call<{ confirmed_count: number }>(`/sessions/${sessionId}/bulk-confirm`, {
+      method: 'POST',
+      body: JSON.stringify(spec),
+    }),
+
+  apply: (
+    sessionId: string,
+    spec: { dry_run?: boolean; target_boq_id?: string; group_keys?: string[] },
+  ) =>
+    call<ApplyToBoqResponse>(`/sessions/${sessionId}/apply`, {
+      method: 'POST',
+      body: JSON.stringify({
+        dry_run: true,
+        organize_by_classification: true,
+        ...spec,
+      }),
+    }),
+
+  listAttributes: (sessionId: string) =>
+    call<AttributeKey[]>(`/sessions/${sessionId}/attributes`),
+
+  listCategories: (sessionId: string) =>
+    call<CategoryCount[]>(`/sessions/${sessionId}/categories`),
+
+  // ── Templates ────────────────────────────────────────────────────────
+
+  listTemplates: () => call<MatchTemplate[]>('/templates'),
+
+  deleteTemplate: (id: string) =>
+    call<void>(`/templates/${id}`, { method: 'DELETE' }),
+
+  noMatch: (
+    sessionId: string,
+    spec: {
+      group_key: string;
+      action: 'custom' | 'rfq' | 'tbd';
+      custom_description?: string;
+      custom_unit?: string;
+      custom_rate?: number;
+    },
+  ) =>
+    call<GroupDetail>(`/sessions/${sessionId}/no-match`, {
+      method: 'POST',
+      body: JSON.stringify(spec),
+    }),
+
+  skip: (sessionId: string, groupKey: string) =>
+    call<GroupDetail>(`/sessions/${sessionId}/no-match`, {
+      method: 'POST',
+      body: JSON.stringify({ group_key: groupKey, action: 'tbd' }),
+    }),
+};

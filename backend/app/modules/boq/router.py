@@ -655,7 +655,7 @@ async def search_cost_items(
             score=r["score"],
             classification=r.get("classification", {}),
             components=r.get("components", []),
-            currency=r.get("currency", "EUR"),
+            currency=r.get("currency", ""),
         )
         for r in result.get("results", [])
     ]
@@ -2047,11 +2047,16 @@ async def validate_boq(
         for pos in boq_data.positions
     ]
 
-    # Determine rule sets from project config
+    # Determine rule sets from project config. Empty classification /
+    # region means "no preference"; the rule registry resolves to a
+    # universal rule set (boq_quality only) instead of biasing every
+    # untagged project to DIN-276 / DACH validation. Hardcoding the
+    # DACH defaults here mis-validated US/UK/LATAM projects that
+    # happened to have a NULL region or standard.
     rule_sets = _build_rule_sets(
         project_rule_sets=project.validation_rule_sets or ["boq_quality"],
-        classification_standard=project.classification_standard or "din276",
-        region=project.region or "DACH",
+        classification_standard=project.classification_standard or "",
+        region=project.region or "",
     )
 
     # Run validation
@@ -2150,14 +2155,17 @@ async def ai_chat_boq(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    # Build prompt
+    # Build prompt. Empty strings render in the prompt as bare blanks
+    # which the LLM interprets as "no constraint specified" rather than
+    # "use DACH/EUR conventions" — preferable on a USD/UK/LATAM project
+    # where EUR + din276 would steer the response wrong.
     ctx = data.context
     locale = getattr(data, "locale", "en") or "en"
     prompt = BOQ_CHAT_USER_PROMPT.format(
         project_name=ctx.project_name or "Unnamed project",
         existing_positions_count=ctx.existing_positions_count,
-        standard=ctx.standard or "din276",
-        currency=ctx.currency or "EUR",
+        standard=ctx.standard or "",
+        currency=ctx.currency or "",
         locale=locale,
         message=data.message,
     )
@@ -2222,9 +2230,10 @@ async def ai_chat_boq(
         )
 
     grand_total = sum(item.total for item in items)
+    currency_label = ctx.currency or ""
     summary = (
         f"Generated {len(items)} position{'s' if len(items) != 1 else ''} "
-        f"totalling {grand_total:,.2f} {ctx.currency or 'EUR'}."
+        f"totalling {grand_total:,.2f}{(' ' + currency_label) if currency_label else ''}."
     )
 
     return AIChatResponse(items=items, message=summary)
@@ -2834,17 +2843,21 @@ async def export_boq_pdf(
                 position_count,
                 LARGE_BOQ_THRESHOLD,
             )
+            # Empty currency renders as bare numbers in the PDF rather
+            # than mis-stamped "EUR" on a USD/GBP/JPY project. Operators
+            # who genuinely have a NULL project currency see "1,234,567"
+            # without a symbol — honest, not lying.
             pdf_bytes = generate_boq_pdf_simple(
                 boq_data=boq_data,
                 project_name=project.name,
-                currency=project.currency or "EUR",
+                currency=(project.currency or "").strip(),
                 prepared_by=prepared_by,
             )
         else:
             pdf_bytes = generate_boq_pdf(
                 boq_data=boq_data,
                 project_name=project.name,
-                currency=project.currency or "EUR",
+                currency=(project.currency or "").strip(),
                 prepared_by=prepared_by,
             )
     except Exception:
@@ -2932,10 +2945,13 @@ async def export_boq_gaeb(
     ET.SubElement(gaeb_info, "ProgSystem").text = "OpenEstimate.io"
     ET.SubElement(gaeb_info, "ProgName").text = "OpenEstimate"
 
-    # Determine currency from project
-    project_currency = "EUR"
+    # Determine currency from project. Empty when the project hasn't
+    # set one — the GAEB schema's <Cur> element accepts an empty value
+    # (parsers we tested fall through to their own default), and that's
+    # better than stamping a wrong "EUR" onto a USD/GBP/JPY tender.
+    project_currency = ""
     if project:
-        project_currency = (project.currency or "EUR").strip()[:3].upper()
+        project_currency = (project.currency or "").strip()[:3].upper()
 
     # Award
     award = ET.SubElement(gaeb, "Award")
@@ -3931,13 +3947,16 @@ async def import_boq_gaeb(
     errors: list[dict[str, Any]] = []
     sections_seen: list[dict[str, str]] = []
 
-    # Capture currency for round-trip metadata.
+    # Capture currency for round-trip metadata. Empty when the source
+    # GAEB doesn't carry <Cur> — preferable to a EUR fallback that
+    # mis-stamps non-Eurozone tenders. Downstream code that needs a
+    # currency falls back to project.currency at the consumer side.
     award = None
     for el in root.iter():
         if _local(el.tag) == "Award":
             award = el
             break
-    currency = (_text_of(award, "Cur") if award is not None else "") or "EUR"
+    currency = (_text_of(award, "Cur") if award is not None else "") or ""
 
     def _process_category(ctgy: ET.Element, parent_ordinal: str = "") -> None:
         nonlocal imported, skipped
@@ -4359,8 +4378,16 @@ async def smart_import(
     Returns:
         Summary with imported/error counts, method used, and AI model if applicable.
     """
-    # Verify BOQ exists
-    await service.get_boq(boq_id)
+    # Verify BOQ exists, capture project currency for downstream LLM prompts.
+    boq_obj = await service.get_boq(boq_id)
+    _project_currency: str = ""
+    try:
+        from app.modules.projects.repository import ProjectRepository
+
+        _proj = await ProjectRepository(session).get_by_id(boq_obj.project_id)
+        _project_currency = (getattr(_proj, "currency", "") or "").strip()
+    except Exception:  # noqa: BLE001 — currency is best-effort, prompt tolerates blank
+        _project_currency = ""
 
     filename = (file.filename or "unknown").lower()
     ext = filename.rsplit(".", 1)[-1] if "." in filename else ""
@@ -4526,7 +4553,7 @@ async def smart_import(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="CAD conversion produced no element data. The file may be empty or corrupt.",
             )
-        prompt = CAD_IMPORT_PROMPT.format(text=text_content, currency="EUR")
+        prompt = CAD_IMPORT_PROMPT.format(text=text_content, currency=_project_currency)
     else:
         # Text-based: use text prompt (truncate to 8000 chars for context window)
         text_content = extracted.get("text", "")[:8000]
