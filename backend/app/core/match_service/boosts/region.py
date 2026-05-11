@@ -14,10 +14,14 @@ should bias ties, not override clear semantic mismatches.
 
 from __future__ import annotations
 
+import logging
+from pathlib import Path
 from typing import Any
 
 from app.core.match_service.config import BOOST_WEIGHTS
 from app.core.match_service.envelope import ElementEnvelope, MatchCandidate
+
+_log = logging.getLogger(__name__)
 
 # Project-region keyword → tuple of CWICR country prefixes the candidate's
 # ``region_code`` should start with for a region match.
@@ -52,7 +56,16 @@ from app.core.match_service.envelope import ElementEnvelope, MatchCandidate
 #     AR rates as fallback when ES coverage is thin.
 # The two are NOT auto-merged — picking "ES" stays single-country to
 # avoid surprise. Operators opt into language coupling explicitly.
-_REGION_GROUP_ALIASES: dict[str, tuple[str, ...]] = {
+#
+# Two-layer composition:
+#   1. ``_HARDCODED_REGION_GROUPS`` — the baseline 17 groups inlined
+#      below. Acts as the defensive fallback when the YAML file is
+#      missing, malformed, or pyyaml is unavailable. Boot never breaks.
+#   2. ``data/match/region_groups.yaml`` — operator-extendable mapping
+#      loaded at import time. Merged into the baseline (YAML wins on
+#      key conflicts) so post-Phase-A additions (ASEAN, MENA_AR,
+#      ANGLO_AFRICA, ANDEAN, CAUCASUS, ...) ship without a Python edit.
+_HARDCODED_REGION_GROUPS: dict[str, tuple[str, ...]] = {
     # ── Geographic ──────────────────────────────────────────────────
     "dach": ("DE_", "AT_", "CH_"),
     "uk": ("GB_", "IE_"),
@@ -90,6 +103,129 @@ _REGION_GROUP_ALIASES: dict[str, tuple[str, ...]] = {
     "turkic": ("TR_", "AZ_", "KZ_", "UZ_", "TM_", "KG_", "TJ_"),
     "sinic": ("CN_", "TW_", "HK_", "SG_"),
 }
+
+
+def _normalise_prefix(value: str) -> str:
+    """Coerce a YAML entry to the trailing-underscore prefix form.
+
+    YAML supports either bare country codes (``"DE"``) or full
+    ``COUNTRY_CITY`` ids (``"DE_BERLIN"``). Both are normalised to the
+    trailing-underscore prefix form (``"DE_"``, ``"DE_BERLIN_"``) so
+    they slot into the same ``startswith()`` comparison the existing
+    hardcoded baseline uses (every entry there already ends in ``_``).
+    The unit invariant ``test_region_group_aliases_are_uppercase_prefixes``
+    enforces the convention; merging non-suffixed city codes would
+    silently break it.
+
+    For city-level entries this means a project pinned to e.g. ``ID``
+    matches catalogues like ``ID_JAKARTA`` / ``ID_SURABAYA`` via the
+    bare-country prefix (``ID_``, also present in every group spec).
+    The city-suffixed entry (``ID_JAKARTA_``) is a forward-compatible
+    no-op today and only fires if the catalogue layer ships a sub-zone
+    ``ID_JAKARTA_<area>`` row. We keep it for symmetry with the data
+    spec and for future sub-city granularity.
+
+    Empty / non-string values are dropped silently — bad YAML rows
+    must never crash boot.
+    """
+    if not isinstance(value, str):
+        return ""
+    upper = value.strip().upper()
+    if not upper:
+        return ""
+    if upper.endswith("_"):
+        return upper
+    return f"{upper}_"
+
+
+def _load_region_groups_from_yaml() -> dict[str, tuple[str, ...]]:
+    """Load ``data/match/region_groups.yaml`` into the alias dict shape.
+
+    Returns an empty dict when:
+      * pyyaml isn't importable in this environment,
+      * the YAML file doesn't exist at the expected path,
+      * the file is unreadable or contains malformed YAML,
+      * the top-level structure isn't a mapping with a ``groups`` key.
+
+    Each failure mode is logged at WARNING level (not ERROR) so the
+    matcher continues to operate on the hardcoded fallback. The intent
+    is "data-driven extension is best-effort, never load-bearing".
+    """
+    try:
+        import yaml  # type: ignore[import-not-found]
+    except ImportError:
+        _log.warning(
+            "pyyaml unavailable — region_groups.yaml extension disabled, "
+            "matcher uses hardcoded baseline only"
+        )
+        return {}
+
+    # backend/app/core/match_service/boosts/region.py → repo root via 5x ``parents``.
+    repo_root = Path(__file__).resolve().parents[5]
+    yaml_path = repo_root / "data" / "match" / "region_groups.yaml"
+    if not yaml_path.is_file():
+        _log.debug(
+            "region_groups.yaml not found at %s — using hardcoded baseline",
+            yaml_path,
+        )
+        return {}
+
+    try:
+        with yaml_path.open("r", encoding="utf-8") as fh:
+            raw = yaml.safe_load(fh)
+    except (OSError, yaml.YAMLError) as exc:  # type: ignore[attr-defined]
+        _log.warning(
+            "region_groups.yaml at %s could not be parsed (%s) — "
+            "using hardcoded baseline",
+            yaml_path,
+            exc,
+        )
+        return {}
+
+    if not isinstance(raw, dict):
+        _log.warning(
+            "region_groups.yaml at %s top-level is not a mapping — "
+            "using hardcoded baseline",
+            yaml_path,
+        )
+        return {}
+
+    groups = raw.get("groups")
+    if not isinstance(groups, dict):
+        _log.warning(
+            "region_groups.yaml at %s has no ``groups`` mapping — "
+            "using hardcoded baseline",
+            yaml_path,
+        )
+        return {}
+
+    parsed: dict[str, tuple[str, ...]] = {}
+    for name, codes in groups.items():
+        if not isinstance(name, str) or not name.strip():
+            continue
+        if not isinstance(codes, (list, tuple)):
+            _log.warning(
+                "region_groups.yaml group %r value is not a list — skipped",
+                name,
+            )
+            continue
+        prefixes = tuple(p for p in (_normalise_prefix(c) for c in codes) if p)
+        if not prefixes:
+            continue
+        parsed[name.strip().lower()] = prefixes
+    return parsed
+
+
+def _merge_region_groups() -> dict[str, tuple[str, ...]]:
+    """Combine hardcoded baseline with YAML extension (YAML wins on key clash)."""
+    merged: dict[str, tuple[str, ...]] = dict(_HARDCODED_REGION_GROUPS)
+    overlay = _load_region_groups_from_yaml()
+    if overlay:
+        merged.update(overlay)
+    return merged
+
+
+_REGION_GROUP_ALIASES: dict[str, tuple[str, ...]] = _merge_region_groups()
 
 
 def _build_country_prefix_table() -> dict[str, tuple[str, ...]]:

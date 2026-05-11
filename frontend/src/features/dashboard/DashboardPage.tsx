@@ -36,10 +36,12 @@ import {
   Users,
   Lightbulb,
   CircleDashed,
+  Activity,
 } from 'lucide-react';
-import { Card, CardHeader, CardContent, Button, Badge, Skeleton, InfoHint, ActivityFeed as CrossModuleActivityFeed, EmptyState } from '@/shared/ui';
+import { Card, CardHeader, CardContent, Button, Badge, Skeleton, ActivityFeed as CrossModuleActivityFeed, EmptyState } from '@/shared/ui';
 import BIMCoverageCard from './BIMCoverageCard';
 import { CompactProjectCard } from './components/CompactProjectCard';
+import { DashboardBackdrop } from './components/DashboardBackdrop';
 import { DashboardProjectsMap } from './components/DashboardProjectsMap';
 import { ShowAllProjectsCard } from './components/ShowAllProjectsCard';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
@@ -159,16 +161,6 @@ const DEMO_TYPE_COLORS: Record<string, string> = {
   Industrial: '#ca8a04',
   Education: '#16a34a',
 };
-
-/* ── Constants ─────────────────────────────────────────────────────────── */
-
-const STATUS_COLORS: Record<string, string> = {
-  draft: '#2563eb',
-  final: '#16a34a',
-  archived: '#6b7280',
-};
-
-const BAR_COLORS = ['#2563eb', '#7c3aed', '#0891b2', '#dc2626', '#ca8a04', '#16a34a'];
 
 /* ── Import Demo Modal ─────────────────────────────────────────────────── */
 
@@ -664,7 +656,11 @@ function KpiRibbon({
 
   const activeEstimates = useMemo(() => {
     if (!boqs) return 0;
-    return boqs.filter((b) => b.status === 'draft').length;
+    // "Active" = anything not archived/closed/cancelled. Previously this
+    // counted only `draft` and silently dropped tendered/in-review BOQs,
+    // which made the tile misleading for late-stage projects.
+    const INACTIVE = new Set(['archived', 'closed', 'cancelled', 'rejected']);
+    return boqs.filter((b) => !INACTIVE.has((b.status ?? '').toLowerCase())).length;
   }, [boqs]);
 
   const scheduleCount = schedules?.length ?? 0;
@@ -685,16 +681,29 @@ function KpiRibbon({
 
   const currency = projects?.[0]?.currency ?? 'EUR';
 
-  const formatCurrency = (value: number) => {
-    if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-    if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
-    return new Intl.NumberFormat(getIntlLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+  // Compact currency formatter using Intl.NumberFormat \u2014 handles every ISO
+  // 4217 code natively (BRL, INR, JPY, etc.). For values \u2265 1M we use the
+  // built-in compact notation; below that, two decimals. Previously this
+  // had an ad-hoc switch covering only EUR/GBP/USD/AED.
+  const formatMoney = (value: number) => {
+    try {
+      const compact = value >= 1_000;
+      return new Intl.NumberFormat(getIntlLocale(), {
+        style: 'currency',
+        currency,
+        notation: compact ? 'compact' : 'standard',
+        maximumFractionDigits: compact ? 1 : 2,
+      }).format(value);
+    } catch {
+      // Unknown currency code \u2014 fall back to raw number with code suffix.
+      return `${value.toFixed(2)} ${currency}`;
+    }
   };
 
   const cards = [
     {
       icon: <DollarSign size={20} strokeWidth={1.75} />,
-      value: boqs ? `${currency === 'EUR' ? '\u20AC' : currency === 'GBP' ? '\u00A3' : currency === 'USD' ? '$' : currency === 'AED' ? 'AED ' : ''}${formatCurrency(totalValue)}` : null,
+      value: boqs ? formatMoney(totalValue) : null,
       label: t('dashboard.kpi_total_value', { defaultValue: 'Total Value' }),
       color: 'text-oe-blue',
       bg: 'bg-oe-blue-subtle',
@@ -709,8 +718,8 @@ function KpiRibbon({
           }).replace('{{s}}', activeEstimates === 1 ? '' : 's')
         : '',
       label: t('dashboard.kpi_active_estimates', { defaultValue: 'Active Estimates' }),
-      color: 'text-[#7c3aed]',
-      bg: 'bg-[#7c3aed]/10',
+      color: 'text-violet-600 dark:text-violet-400',
+      bg: 'bg-violet-500/10',
     },
     {
       icon: <Calendar size={20} strokeWidth={1.75} />,
@@ -721,8 +730,8 @@ function KpiRibbon({
           : t('dashboard.kpi_no_schedules', { defaultValue: 'No schedules' })
         : '',
       label: t('dashboard.kpi_schedule', { defaultValue: 'Schedule Status' }),
-      color: 'text-[#0891b2]',
-      bg: 'bg-[#0891b2]/10',
+      color: 'text-cyan-600 dark:text-cyan-400',
+      bg: 'bg-cyan-500/10',
     },
     {
       icon: <ShieldCheck size={20} strokeWidth={1.75} />,
@@ -733,11 +742,15 @@ function KpiRibbon({
         ? `${qualityScore}%`
         : (<CircleDashed size={18} strokeWidth={1.75} className="text-content-quaternary opacity-70" />),
       sublabel: qualityScore !== null
-        ? t('dashboard.kpi_quality_score_label', { defaultValue: 'score' })
+        ? t('dashboard.kpi_priced_label', { defaultValue: 'priced' })
         : t('dashboard.kpi_run_validation', { defaultValue: 'run validation' }),
-      label: t('dashboard.kpi_quality', { defaultValue: 'Quality Score' }),
-      color: qualityScore !== null && qualityScore >= 80 ? 'text-[#16a34a]' : qualityScore !== null && qualityScore >= 50 ? 'text-[#ca8a04]' : 'text-content-tertiary',
-      bg: qualityScore !== null && qualityScore >= 80 ? 'bg-[#16a34a]/10' : qualityScore !== null && qualityScore >= 50 ? 'bg-[#ca8a04]/10' : 'bg-surface-secondary',
+      // Renamed 2026-05-11 from "Quality Score" → "Priced positions".
+      // Previously the label implied DIN/NRM validation but the math was
+      // just `positions_with_unit_rate / total_positions`. The renamed tile
+      // is accurate to what it measures.
+      label: t('dashboard.kpi_priced_positions', { defaultValue: 'Priced positions' }),
+      color: qualityScore !== null && qualityScore >= 80 ? 'text-semantic-success' : qualityScore !== null && qualityScore >= 50 ? 'text-[#b45309]' : 'text-content-tertiary',
+      bg: qualityScore !== null && qualityScore >= 80 ? 'bg-semantic-success-bg' : qualityScore !== null && qualityScore >= 50 ? 'bg-semantic-warning-bg' : 'bg-surface-secondary',
       onClick: qualityScore === null ? () => navigate('/validation') : undefined,
     },
   ];
@@ -901,6 +914,174 @@ function PortfolioOverview({ projects: _projects }: { projects: ProjectSummary[]
   );
 }
 
+/* ── Today widget — action items, scoped to the active project ────────
+   Source data is `/v1/projects/dashboard/cards/` (per-project aggregates).
+   The destination pages (/tasks, /rfi, /safety) are project-scoped via
+   `useProjectContextStore.activeProjectId`. To prevent the dashboard
+   widget from showing a portfolio total that doesn't match the next
+   page, we scope this widget the same way:
+     · activeProjectId set → that project's counts, /tasks etc. land
+       on the same data.
+     · not set            → portfolio aggregate as a read-only summary;
+       clicks route to /projects so the user can pick a project first. */
+
+function TodaySnapshot({ cards }: { cards?: ProjectCardMetrics[] }) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const activeProjectId = useProjectContextStore((s) => s.activeProjectId);
+  const activeProjectName = useProjectContextStore((s) => s.activeProjectName);
+
+  // Scope to the active project's row if there is one; otherwise sum.
+  const activeCard = activeProjectId
+    ? cards?.find((c) => c.id === activeProjectId)
+    : undefined;
+
+  const totals = useMemo(() => {
+    if (activeCard) {
+      return {
+        tasks:     activeCard.open_tasks ?? 0,
+        rfis:      activeCard.open_rfis ?? 0,
+        incidents: activeCard.safety_incidents ?? 0,
+        projects:  1,
+      };
+    }
+    if (!cards || cards.length === 0) {
+      return { tasks: 0, rfis: 0, incidents: 0, projects: 0 };
+    }
+    return cards.reduce(
+      (acc, c) => ({
+        tasks:     acc.tasks     + (c.open_tasks ?? 0),
+        rfis:      acc.rfis      + (c.open_rfis ?? 0),
+        incidents: acc.incidents + (c.safety_incidents ?? 0),
+        projects:  acc.projects  + 1,
+      }),
+      { tasks: 0, rfis: 0, incidents: 0, projects: 0 },
+    );
+  }, [activeCard, cards]);
+
+  const everythingClear = totals.tasks === 0 && totals.rfis === 0 && totals.incidents === 0;
+  if (everythingClear || !cards || cards.length === 0) return null;
+
+  type ItemTone = 'urgent' | 'attention' | 'info';
+  const tone = (count: number, urgentAt: number, attentionAt: number): ItemTone =>
+    count >= urgentAt ? 'urgent' : count >= attentionAt ? 'attention' : 'info';
+
+  // When we're in portfolio mode, clicking a tile sends the user to the
+  // project list so they can pick one — the destination pages need a
+  // project context to render anything meaningful.
+  const tileUrl = (singleProjectUrl: string) =>
+    activeCard ? singleProjectUrl : '/projects';
+
+  const items: Array<{
+    id: string;
+    value: number;
+    label: string;
+    sublabel: string;
+    icon: React.ReactNode;
+    tone: ItemTone;
+    url: string;
+  }> = [
+    {
+      id: 'tasks',
+      value: totals.tasks,
+      label: t('dashboard.today_tasks', { defaultValue: 'Open tasks' }),
+      sublabel: t('dashboard.today_tasks_sub', { defaultValue: 'awaiting your attention' }),
+      icon: <CheckCircle2 size={18} strokeWidth={1.75} />,
+      tone: tone(totals.tasks, 10, 3),
+      url: tileUrl('/tasks'),
+    },
+    {
+      id: 'rfis',
+      value: totals.rfis,
+      label: t('dashboard.today_rfis', { defaultValue: 'Open RFIs' }),
+      sublabel: t('dashboard.today_rfis_sub', { defaultValue: 'awaiting response' }),
+      icon: <FileText size={18} strokeWidth={1.75} />,
+      tone: tone(totals.rfis, 5, 1),
+      url: tileUrl('/rfi'),
+    },
+    {
+      id: 'incidents',
+      value: totals.incidents,
+      label: t('dashboard.today_incidents', { defaultValue: 'Safety incidents' }),
+      sublabel: t('dashboard.today_incidents_sub', { defaultValue: 'open this week' }),
+      icon: <AlertTriangle size={18} strokeWidth={1.75} />,
+      tone: tone(totals.incidents, 1, 1),
+      url: tileUrl('/safety'),
+    },
+  ];
+
+  const toneStyles: Record<ItemTone, { dot: string; value: string; iconColor: string }> = {
+    urgent: {
+      dot:       'bg-semantic-error',
+      value:     'text-semantic-error',
+      iconColor: 'text-semantic-error',
+    },
+    attention: {
+      dot:       'bg-semantic-warning',
+      value:     'text-[#b45309] dark:text-amber-400',
+      iconColor: 'text-[#b45309] dark:text-amber-400',
+    },
+    info: {
+      dot:       'bg-content-quaternary',
+      value:     'text-content-secondary',
+      iconColor: 'text-content-tertiary',
+    },
+  };
+
+  return (
+    <div
+      className="rounded-xl border border-border-light bg-surface-primary p-4 animate-card-in"
+      style={{ animationDelay: '80ms' }}
+    >
+      <div className="flex items-center gap-2 mb-3">
+        <Activity size={14} className="text-oe-blue" strokeWidth={2} />
+        <h3 className="text-sm font-semibold text-content-primary">
+          {activeCard
+            ? t('dashboard.today_title_single', { defaultValue: 'Today · {{project}}', project: activeProjectName || activeCard.name })
+            : t('dashboard.today_title', { defaultValue: 'Today across your portfolio' })}
+        </h3>
+        <span className="text-2xs text-content-tertiary tabular-nums">
+          {activeCard
+            ? t('dashboard.today_meta_single', { defaultValue: 'this project' })
+            : t('dashboard.today_meta', { defaultValue: '{{count}} projects · pick one to drill in', count: totals.projects })}
+        </span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {items.map((it) => {
+          const s = toneStyles[it.tone];
+          const hasItems = it.value > 0;
+          return (
+            <button
+              key={it.id}
+              onClick={() => navigate(it.url)}
+              className="group flex items-center gap-3 rounded-lg border border-border-light bg-surface-primary px-4 py-3 text-left transition-all duration-normal ease-oe hover:border-oe-blue/30 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-oe-blue/30"
+            >
+              <span className={`${s.iconColor} shrink-0`}>{it.icon}</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline gap-2">
+                  <span className={`text-xl font-bold tabular-nums ${hasItems ? s.value : 'text-content-tertiary'}`}>
+                    {it.value}
+                  </span>
+                  <span className="text-xs text-content-tertiary truncate">{it.label}</span>
+                </div>
+                <div className="text-2xs text-content-tertiary mt-0.5 truncate">{it.sublabel}</div>
+              </div>
+              {hasItems && (
+                <span className={`relative flex h-1.5 w-1.5 shrink-0 ${s.dot} rounded-full`}>
+                  {it.tone === 'urgent' && (
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-semantic-error opacity-60" />
+                  )}
+                </span>
+              )}
+              <ArrowRight size={14} className="shrink-0 text-content-quaternary group-hover:text-oe-blue group-hover:translate-x-0.5 transition-all" />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /* ── Next Steps (context-aware suggestions) ───────────────────────────── */
 
 interface NextStepSuggestion {
@@ -1013,6 +1194,37 @@ function NextSteps({
       });
     }
 
+    // Evergreen filler — always-on suggestions added at the END so they
+    // only surface when the conditional state-aware ones leave space.
+    // Guarantees the 3-card grid stays visually complete regardless of
+    // the user's setup. (Added 2026-05-11.)
+    items.push({
+      id: 'try-ai-estimate',
+      icon: <Sparkles size={18} strokeWidth={1.75} />,
+      title: t('dashboard.next_ai_estimate', { defaultValue: 'Try the AI Quick Estimate' }),
+      description: t('dashboard.next_ai_estimate_desc', { defaultValue: 'Describe a project in plain language and get a draft BOQ in seconds — review, adjust, and ship.' }),
+      actionLabel: t('dashboard.next_ai_estimate_action', { defaultValue: 'Open AI Estimate' }),
+      url: '/ai-estimate',
+    });
+
+    items.push({
+      id: 'upload-cad',
+      icon: <Layers size={18} strokeWidth={1.75} />,
+      title: t('dashboard.next_upload_cad', { defaultValue: 'Upload a CAD or BIM model' }),
+      description: t('dashboard.next_upload_cad_desc', { defaultValue: 'Drop a RVT, IFC, DWG or DGN file — the converter extracts quantities and matches elements to cost positions.' }),
+      actionLabel: t('dashboard.next_upload_cad_action', { defaultValue: 'Open BIM' }),
+      url: '/bim',
+    });
+
+    items.push({
+      id: 'explore-costs',
+      icon: <Database size={18} strokeWidth={1.75} />,
+      title: t('dashboard.next_explore_costs', { defaultValue: 'Explore the cost database' }),
+      description: t('dashboard.next_explore_costs_desc', { defaultValue: 'Browse 55,000+ regional unit rates with semantic search across CWICR / RSMeans / GAEB sources.' }),
+      actionLabel: t('dashboard.next_explore_costs_action', { defaultValue: 'Open Costs' }),
+      url: '/costs',
+    });
+
     return items.slice(0, 3);
   }, [projects, boqs, schedules, allContacts, t]);
 
@@ -1037,7 +1249,9 @@ function NextSteps({
             className="group flex flex-col items-start gap-2 rounded-xl border border-border-light bg-surface-primary p-4 text-left transition-all duration-normal ease-oe hover:border-oe-blue/30 hover:bg-oe-blue-subtle/20 hover:shadow-sm animate-stagger-in"
             style={{ animationDelay: `${100 + i * 60}ms` }}
           >
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 transition-transform group-hover:scale-110">
+            {/* Plain Stroke per 2026-05-11 design-system: icon-only, no chip.
+                Amber accent comes from the icon color, not a fill block. */}
+            <div className="text-amber-600 transition-transform group-hover:scale-110">
               {s.icon}
             </div>
             <div>
@@ -1173,6 +1387,7 @@ function SystemStatusSummary({
   boqs?: BOQWithTotal[];
 }) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
 
   const { data: modules } = useQuery({
     queryKey: ['modules'],
@@ -1206,6 +1421,7 @@ function SystemStatusSummary({
       label: t('dashboard.ss_projects', { defaultValue: 'Projects' }),
       color: 'text-oe-blue',
       bg: 'bg-oe-blue-subtle',
+      to: '/projects',
     },
     {
       icon: <FileSpreadsheet size={12} strokeWidth={2} />,
@@ -1213,6 +1429,7 @@ function SystemStatusSummary({
       label: t('dashboard.ss_boqs', { defaultValue: 'BOQs' }),
       color: 'text-[#7c3aed]',
       bg: 'bg-[#7c3aed]/10',
+      to: '/boq',
     },
     {
       icon: <Cpu size={12} strokeWidth={2} />,
@@ -1220,6 +1437,7 @@ function SystemStatusSummary({
       label: t('dashboard.ss_modules', { defaultValue: 'Modules' }),
       color: 'text-[#0891b2]',
       bg: 'bg-[#0891b2]/10',
+      to: '/modules',
     },
     {
       icon: <Users size={12} strokeWidth={2} />,
@@ -1227,6 +1445,7 @@ function SystemStatusSummary({
       label: t('dashboard.ss_users', { defaultValue: 'Users' }),
       color: 'text-[#16a34a]',
       bg: 'bg-[#16a34a]/10',
+      to: '/users',
     },
   ];
 
@@ -1236,14 +1455,17 @@ function SystemStatusSummary({
       style={{ animationDelay: '40ms' }}
     >
       {badges.map((b) => (
-        <div
+        <button
           key={b.label}
-          className={`inline-flex items-center gap-1.5 rounded-lg ${b.bg} px-2.5 py-1.5 transition-colors`}
+          type="button"
+          onClick={() => navigate(b.to)}
+          className={`inline-flex items-center gap-1.5 rounded-lg ${b.bg} px-2.5 py-1.5 transition-colors hover:brightness-95 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40 cursor-pointer`}
+          aria-label={`${b.value} ${b.label}`}
         >
           <span className={b.color}>{b.icon}</span>
           <span className={`text-xs font-bold tabular-nums ${b.color}`}>{b.value}</span>
           <span className="text-2xs text-content-tertiary">{b.label}</span>
-        </div>
+        </button>
       ))}
     </div>
   );
@@ -1553,16 +1775,22 @@ export function DashboardPage() {
   });
   const contactsCount = contactsList?.length ?? 0;
 
-  // Determine the most recently updated BOQ for "Continue your work"
+  // Determine the most recently updated BOQ for "Continue your work".
+  // Only consider BOQs with a valid `updated_at` — previously, missing
+  // timestamps coerced to Date(0) and would have ranked unstamped BOQs
+  // ahead of legitimate recent edits (fix from dashboard audit 2026-05-11).
   const lastBoq = useMemo(() => {
     if (!allBoqs || allBoqs.length === 0) return null;
-    // Sort by updated_at descending (most recent first)
-    const sorted = [...allBoqs].sort((a, b) => {
-      const da = new Date((a as unknown as { updated_at?: string }).updated_at ?? 0).getTime();
-      const db = new Date((b as unknown as { updated_at?: string }).updated_at ?? 0).getTime();
-      return db - da;
-    });
-    const picked = sorted[0]!;
+    const withTimestamp = allBoqs
+      .map((b) => {
+        const raw = (b as unknown as { updated_at?: string }).updated_at;
+        const ts = raw ? new Date(raw).getTime() : NaN;
+        return Number.isFinite(ts) ? { boq: b, ts } : null;
+      })
+      .filter((x): x is { boq: BOQWithTotal; ts: number } => x !== null);
+    if (withTimestamp.length === 0) return null;
+    withTimestamp.sort((a, b) => b.ts - a.ts);
+    const picked = withTimestamp[0]!.boq;
     const project = projects?.find((p) => p.id === picked.project_id);
     return {
       id: picked.id,
@@ -1577,103 +1805,72 @@ export function DashboardPage() {
   }, [allBoqs, projects]);
 
   return (
-    <div className="space-y-5 animate-fade-in pt-4">
-      {/* ─── 1. Hero row ─────────────────────────────────────────────── */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between animate-card-in">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight gradient-text">
-            {t('dashboard.welcome')}
-          </h1>
-          <a
-            href="https://datadrivenconstruction.io/?utm_source=erp"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-3 mt-2.5 animate-stagger-in group/ddc"
-            style={{ animationDelay: '100ms' }}
-          >
-            <div className="flex flex-col items-start gap-0.5 shrink-0">
-              <span className="text-[9px] lowercase tracking-normal text-content-quaternary font-normal pl-2">
-                {t('dashboard.developed_by', { defaultValue: 'Developed by' })}
-              </span>
-              <img
-                src="/brand/ddc-logo.webp"
-                alt="DataDrivenConstruction"
-                className="h-[34px] w-auto opacity-75 group-hover/ddc:opacity-100 transition-opacity"
-              />
-            </div>
-            <div className="flex flex-col leading-tight">
-              <span className="text-xs font-semibold text-content-secondary">
-                {t('dashboard.subtitle')}
-              </span>
-              <span className="text-[11px] text-content-tertiary">
-                {t('dashboard.subtitle_2', { defaultValue: 'Smart resource planning for your construction projects' })}
-              </span>
-            </div>
-          </a>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap animate-stagger-in" style={{ animationDelay: '150ms' }}>
+    <div className="relative isolate space-y-5 animate-fade-in">
+      {/* Apple-product-style layered backdrop — aurora mesh, dotted
+          blueprint grid, vignette, fine grain. Lives behind everything
+          via `-z-10`; pointer-events: none so it never intercepts. */}
+      <DashboardBackdrop />
+      {/* ─── 1. Hero · row A — greeting + primary actions ────────────────
+          Compressed from the previous 6-row hero (audit 2026-05-11): the
+          greeting and the 3 CTAs share a single line on desktop; row B
+          below merges DDC attribution + OSS badge + status pills into a
+          thin meta-strip. Saves ~180px above the fold. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between animate-card-in">
+        <h1 className="text-2xl font-semibold tracking-tight gradient-text pl-2">
+          {(() => {
+            const h = new Date().getHours();
+            const key =
+              h < 5  ? 'dashboard.greet_night'
+            : h < 12 ? 'dashboard.greet_morning'
+            : h < 18 ? 'dashboard.greet_afternoon'
+            :          'dashboard.greet_evening';
+            const fallback =
+              h < 5  ? 'Welcome back'
+            : h < 12 ? 'Good morning'
+            : h < 18 ? 'Good afternoon'
+            :          'Good evening';
+            return t(key, { defaultValue: fallback });
+          })()}
+        </h1>
+        <div className="flex items-center gap-2 flex-wrap animate-stagger-in" style={{ animationDelay: '100ms' }}>
           <Button
             variant="primary"
-            size="lg"
-            icon={<FolderPlus size={18} />}
+            size="md"
+            icon={<FolderPlus size={16} />}
             onClick={() => navigate('/projects/new')}
-            className="btn-shimmer"
           >
             {t('projects.new_project')}
           </Button>
-          {/* New Estimate — always lands on a working create-BOQ flow.
-              Pure navigation, no API writes on the click itself, so this
-              cannot silently 403 on a user who lacks `boq.create` at the
-              button-press moment (the create page surfaces that error
-              inline if they submit).  */}
           <Button
             variant="secondary"
-            size="lg"
-            icon={<FileSpreadsheet size={16} />}
+            size="md"
+            icon={<FileSpreadsheet size={15} />}
             onClick={() => {
               const firstProject = projects?.[0];
               if (firstProject) {
                 navigate(`/projects/${firstProject.id}/boq/new`);
               } else {
-                // No projects yet — nudge the user through the project
-                // wizard first. After creating the project we land back
-                // on its detail page, from which they can start a BOQ.
                 navigate('/projects/new');
               }
             }}
-            title={t('dashboard.new_estimate_hint', {
-              defaultValue: 'Start a new Bill of Quantities for an existing project',
-            })}
+            title={t('dashboard.new_estimate_hint', { defaultValue: 'Start a new Bill of Quantities for an existing project' })}
           >
             {t('dashboard.new_estimate', { defaultValue: 'New Estimate' })}
           </Button>
-          {/* Quick Start — resume the most recently-edited BOQ in one click.
-              Falls through to New-Estimate behaviour if no BOQ exists yet. */}
           <Button
             variant="ghost"
-            size="lg"
+            size="md"
             icon={<Sparkles size={14} />}
             onClick={() => {
-              if (lastBoq) {
-                navigate(`/boq/${lastBoq.id}`);
-                return;
-              }
+              if (lastBoq) { navigate(`/boq/${lastBoq.id}`); return; }
               const firstProject = projects?.[0];
-              if (firstProject) {
-                navigate(`/projects/${firstProject.id}/boq/new`);
-              } else {
-                navigate('/projects/new');
-              }
+              if (firstProject) navigate(`/projects/${firstProject.id}/boq/new`);
+              else navigate('/projects/new');
             }}
             title={
               lastBoq
-                ? t('dashboard.quick_start_resume_hint', {
-                    defaultValue: 'Continue your most recent estimate: {{name}}',
-                    name: lastBoq.name,
-                  })
-                : t('dashboard.quick_start_hint', {
-                    defaultValue: 'Jump into an estimate — resumes the latest or starts a new one',
-                  })
+                ? t('dashboard.quick_start_resume_hint', { defaultValue: 'Continue your most recent estimate: {{name}}', name: lastBoq.name })
+                : t('dashboard.quick_start_hint', { defaultValue: 'Jump into an estimate — resumes the latest or starts a new one' })
             }
           >
             {lastBoq
@@ -1683,74 +1880,97 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* ─── 2. Stats row ────────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-        {/* Open-source badge */}
+      {/* ─── 2. Hero · row B — thin meta-strip ───────────────────────── */}
+      <div className="flex items-center flex-wrap gap-x-4 gap-y-2 pl-2 animate-stagger-in" style={{ animationDelay: '140ms' }}>
+        {/* DDC attribution — slim inline link with tiny logo */}
+        <a
+          href="https://datadrivenconstruction.io/?utm_source=erp"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="group/ddc inline-flex items-center gap-1.5 text-[11px] text-content-tertiary hover:text-content-secondary transition-colors"
+        >
+          <img
+            src="/brand/ddc-logo.webp"
+            alt="DataDrivenConstruction"
+            className="h-3.5 w-auto opacity-60 group-hover/ddc:opacity-100 transition-opacity"
+          />
+          <span className="hidden sm:inline">
+            {t('dashboard.developed_by_short', { defaultValue: 'by DataDrivenConstruction' })}
+          </span>
+        </a>
+
+        <span aria-hidden className="h-3 w-px bg-border-light" />
+
+        {/* Open-source pill — slimmer (was a heavy gradient card) */}
         <a
           href="https://github.com/datadrivenconstruction/OpenConstructionERP"
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-2.5 rounded-xl bg-gradient-to-r from-oe-blue/8 via-violet-500/8 to-emerald-500/8 border border-oe-blue/15 py-1.5 px-3 hover:shadow-md hover:border-oe-blue/30 transition-all animate-stagger-in shrink-0"
-          style={{ animationDelay: '200ms' }}
+          className="group/oss inline-flex items-center gap-2 text-xs font-medium text-content-secondary hover:text-content-primary transition-colors"
         >
-          <span className="relative flex h-2.5 w-2.5 shrink-0">
+          <span className="relative flex h-2 w-2 shrink-0">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
           </span>
-          <span className="text-sm font-bold bg-gradient-to-r from-oe-blue via-violet-600 to-emerald-600 bg-clip-text text-transparent">
-            {t('dashboard.open_source_erp', { defaultValue: 'Erste Open-Source Bau-ERP' })}
-          </span>
-          <ExternalLink size={12} className="text-oe-blue opacity-50 shrink-0" />
+          <span>{t('dashboard.open_source_badge', { defaultValue: 'Open-source construction ERP' })}</span>
+          <ExternalLink size={11} className="text-content-quaternary group-hover/oss:text-oe-blue transition-colors" />
         </a>
-        {/* Stat pills */}
+
+        <span aria-hidden className="h-3 w-px bg-border-light" />
+
+        {/* System status pills */}
         <SystemStatusSummary projects={projects} boqs={allBoqs} />
       </div>
-      <InfoHint text={t('dashboard.kpi_hint', { defaultValue: 'Summary across all projects. Values update as you add estimates and schedule activities.' })} />
 
-      {/* ─── 3. Continue Your Work — full-width banner ────────────────── */}
+      {/* ─── 3. Continue Your Work — slim strip ────────────────────────
+          Was a 124px gradient banner with a 48px chip + h2. Now a single
+          line (~52px) — name + project · positions · total · arrow. The
+          heavy gradient + border-2 removed per audit 2026-05-11. */}
       {lastBoq && (
-        <div
-          className="group relative overflow-hidden rounded-xl border-2 border-oe-blue/30 bg-gradient-to-br from-oe-blue-subtle/40 via-surface-elevated to-violet-500/5 p-5 cursor-pointer hover:border-oe-blue/60 hover:shadow-lg transition-all animate-card-in"
-          style={{ animationDelay: '60ms' }}
+        <button
+          type="button"
           onClick={() => navigate(`/boq/${lastBoq.id}`)}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/boq/${lastBoq.id}`); }}
+          className="group flex w-full items-center gap-3 rounded-lg border border-border-light bg-surface-primary px-4 py-3 text-left transition-all duration-normal ease-oe hover:border-oe-blue/40 hover:bg-oe-blue-subtle/20 hover:shadow-sm animate-card-in focus:outline-none focus:ring-2 focus:ring-oe-blue/30"
+          style={{ animationDelay: '60ms' }}
+          title={t('dashboard.continue_work', { defaultValue: 'Continue your work' })}
         >
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-2xs font-semibold text-oe-blue uppercase tracking-wider">
-                  {t('dashboard.continue_work', { defaultValue: 'Continue your work' })}
-                </span>
-                <span className="text-2xs text-content-quaternary">&middot;</span>
-                <span className="text-2xs text-content-tertiary">
-                  {lastBoq.status === 'draft' ? t('boq.status_draft', { defaultValue: 'Draft' }) : lastBoq.status}
-                </span>
-              </div>
-              <h2 className="text-lg font-bold text-content-primary truncate">{lastBoq.name}</h2>
-              {lastBoq.projectName && (
-                <p className="text-xs text-content-tertiary truncate mt-0.5">{lastBoq.projectName}</p>
-              )}
-              <div className="mt-3 flex items-center gap-4 text-xs text-content-secondary">
-                {lastBoq.positionCount > 0 && (
-                  <span className="tabular-nums">
-                    <strong className="text-content-primary">{lastBoq.positionCount}</strong> {t('boq.positions', { defaultValue: 'positions' })}
-                  </span>
-                )}
-                {lastBoq.grandTotal > 0 && (
-                  <span className="tabular-nums">
-                    <strong className="text-content-primary">{lastBoq.currency} {lastBoq.grandTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}</strong>
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-oe-blue text-white shadow-md group-hover:scale-110 transition-transform">
-              <ArrowRight size={22} />
-            </div>
-          </div>
-        </div>
+          <span className="relative flex h-2 w-2 shrink-0">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-oe-blue/40 opacity-75" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-oe-blue" />
+          </span>
+          <span className="text-2xs uppercase tracking-wider font-semibold text-oe-blue shrink-0">
+            {t('dashboard.continue_work', { defaultValue: 'Resume' })}
+          </span>
+          <span className="text-sm font-semibold text-content-primary truncate min-w-0">
+            {lastBoq.name}
+          </span>
+          {lastBoq.projectName && (
+            <>
+              <span aria-hidden className="text-content-quaternary shrink-0">·</span>
+              <span className="text-xs text-content-tertiary truncate min-w-0 hidden sm:inline">
+                {lastBoq.projectName}
+              </span>
+            </>
+          )}
+          <span className="ml-auto flex items-center gap-3 shrink-0">
+            {lastBoq.positionCount > 0 && (
+              <span className="text-xs text-content-secondary tabular-nums hidden md:inline">
+                <strong className="text-content-primary">{lastBoq.positionCount}</strong>{' '}
+                {t('boq.positions', { defaultValue: 'positions' })}
+              </span>
+            )}
+            {lastBoq.grandTotal > 0 && (
+              <span className="text-xs font-semibold text-content-primary tabular-nums">
+                {lastBoq.currency} {lastBoq.grandTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              </span>
+            )}
+            <ArrowRight size={16} className="text-content-tertiary group-hover:text-oe-blue group-hover:translate-x-0.5 transition-all" />
+          </span>
+        </button>
       )}
+
+      {/* ─── 3b. Today Snapshot — aggregated alerts across projects ──── */}
+      <TodaySnapshot cards={projectCards} />
 
       {/* ─── 4. KPI Ribbon ───────────────────────────────────────────── */}
       <KpiRibbon boqs={allBoqs} schedules={allSchedules} projects={projects} />
@@ -1821,7 +2041,7 @@ export function DashboardPage() {
 
       {/* ─── 9. Analytics + Activity + System Status ─────────────────── */}
       {projects && projects.length > 0 && (
-        <div className="animate-card-in" style={{ animationDelay: '350ms' }}>
+        <div className="animate-card-in" style={{ animationDelay: '180ms' }}>
           <div className="mb-4 flex items-center gap-2">
             <BarChart3 size={18} className="text-content-tertiary" strokeWidth={1.75} />
             <h2 className="text-lg font-semibold text-content-primary">
@@ -1834,7 +2054,7 @@ export function DashboardPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {projects && projects.length > 0 && (
-          <div className="lg:col-span-2 animate-card-in" style={{ animationDelay: '400ms' }}>
+          <div className="lg:col-span-2 animate-card-in" style={{ animationDelay: '200ms' }}>
             <Card className="h-full">
               <CardHeader
                 title={t('dashboard.activity', { defaultValue: 'Recent Activity' })}
@@ -1850,7 +2070,7 @@ export function DashboardPage() {
             </Card>
           </div>
         )}
-        <div className={`${projects && projects.length > 0 ? 'lg:col-start-3' : ''} animate-card-in`} style={{ animationDelay: '450ms' }}>
+        <div className={`${projects && projects.length > 0 ? 'lg:col-start-3' : ''} animate-card-in`} style={{ animationDelay: '220ms' }}>
           <Card className="h-full">
             <CardHeader title={t('dashboard.system_status')} />
             <CardContent>
@@ -2022,8 +2242,6 @@ function AnalyticsSection({ projects }: { projects: ProjectSummary[] }) {
   const maxValue = Math.max(...stats.projectValues.map((p) => p.value), 1);
 
   // Status donut segments
-  const statusEntries = Object.entries(stats.statusCounts);
-  const totalForDonut = statusEntries.reduce((sum, [, c]) => sum + c, 0) || 1;
 
   return (
     <Card>
@@ -2064,145 +2282,53 @@ function AnalyticsSection({ projects }: { projects: ProjectSummary[] }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          {/* Bar chart — value by project */}
-          <div className="lg:col-span-2">
-            <div className="text-xs font-medium uppercase tracking-wider text-content-tertiary mb-3">
-              {t('dashboard.value_by_project', 'Value by Project')}
-            </div>
-            <div className="space-y-2.5">
-              {stats.projectValues.filter((pv) => pv.value > 0).slice(0, 10).map((pv, i) => {
-                const barWidth = maxValue > 0 ? (pv.value / maxValue) * 100 : 0;
-                const color = BAR_COLORS[i % BAR_COLORS.length];
-                const formattedValue =
-                  pv.value >= 1_000_000
-                    ? `${(pv.value / 1_000_000).toFixed(1)}M`
-                    : pv.value >= 1_000
-                      ? `${(pv.value / 1_000).toFixed(0)}K`
-                      : pv.value.toLocaleString();
-                return (
-                  <div key={`${pv.name}-${i}`} className="flex items-center gap-3">
-                    <div className="w-24 shrink-0 text-xs text-content-secondary truncate text-right">
-                      {pv.name}
-                    </div>
-                    <div className="flex-1 h-6 bg-surface-secondary rounded overflow-hidden">
-                      <div
-                        className="h-full rounded transition-all duration-500 ease-out"
-                        style={{
-                          width: `${Math.max(barWidth, 1)}%`,
-                          backgroundColor: color,
-                        }}
-                      />
-                    </div>
-                    <div className="w-16 shrink-0 text-xs font-medium tabular-nums text-content-primary text-right">
-                      {formattedValue}
-                    </div>
-                  </div>
-                );
-              })}
-              {stats.projectValues.length === 0 && (
-                <p className="text-xs text-content-tertiary text-center py-4">
-                  {t('dashboard.no_boq_data', 'No BOQ data available')}
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* Status donut */}
-          <div>
-            <div className="text-xs font-medium uppercase tracking-wider text-content-tertiary mb-3">
-              {t('dashboard.boq_status', 'BOQ Status')}
-            </div>
-            <div className="flex items-center gap-4">
-              <StatusDonut statusCounts={stats.statusCounts} total={totalForDonut} />
-              <div className="space-y-2">
-                {statusEntries.map(([status, count]) => (
-                  <div key={status} className="flex items-center gap-2">
-                    <div
-                      className="h-2.5 w-2.5 rounded-full shrink-0"
-                      style={{ backgroundColor: STATUS_COLORS[status] || '#6b7280' }}
-                    />
-                    <span className="text-xs text-content-secondary capitalize">{status}:</span>
+        {/* Cleaned per audit 2026-05-11: removed the BOQ-status donut
+            (vanity metric — nobody asks "how many of my BOQs are drafts?").
+            Bars now span full-width with slimmer height (h-2 vs h-6) and
+            use the oe-blue brand color instead of a 10-colour rainbow. */}
+        <div className="text-xs font-medium uppercase tracking-wider text-content-tertiary mb-3">
+          {t('dashboard.value_by_project', 'Value by Project')}
+        </div>
+        <div className="space-y-3">
+          {stats.projectValues.filter((pv) => pv.value > 0).slice(0, 10).map((pv, i) => {
+            const barWidth = maxValue > 0 ? (pv.value / maxValue) * 100 : 0;
+            const formattedValue =
+              pv.value >= 1_000_000
+                ? `${(pv.value / 1_000_000).toFixed(1)}M`
+                : pv.value >= 1_000
+                  ? `${(pv.value / 1_000).toFixed(0)}K`
+                  : pv.value.toLocaleString();
+            const shareLabel = `${Math.round(barWidth)}%`;
+            return (
+              <div key={`${pv.name}-${i}`}>
+                <div className="flex items-baseline justify-between gap-3 mb-1">
+                  <span className="text-xs font-medium text-content-primary truncate">
+                    {pv.name}
+                  </span>
+                  <span className="flex items-baseline gap-2 shrink-0">
+                    <span className="text-2xs text-content-tertiary tabular-nums">{shareLabel}</span>
                     <span className="text-xs font-semibold tabular-nums text-content-primary">
-                      {count}
+                      {formattedValue}
                     </span>
-                  </div>
-                ))}
+                  </span>
+                </div>
+                <div className="h-2 w-full bg-surface-secondary rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-oe-blue to-oe-blue-hover transition-all duration-500 ease-out"
+                    style={{ width: `${Math.max(barWidth, 2)}%` }}
+                  />
+                </div>
               </div>
-            </div>
-          </div>
+            );
+          })}
+          {stats.projectValues.length === 0 && (
+            <p className="text-xs text-content-tertiary text-center py-4">
+              {t('dashboard.no_boq_data', 'No BOQ data available')}
+            </p>
+          )}
         </div>
       </CardContent>
     </Card>
-  );
-}
-
-/* ── Status Donut (SVG) ───────────────────────────────────────────────── */
-
-function StatusDonut({
-  statusCounts,
-  total,
-}: {
-  statusCounts: Record<string, number>;
-  total: number;
-}) {
-  const size = 100;
-  const cx = size / 2;
-  const cy = size / 2;
-  const outerR = 42;
-  const innerR = 28;
-
-  const entries = Object.entries(statusCounts);
-  let cumulative = 0;
-
-  function polarToCartesian(radius: number, angleInDegrees: number) {
-    const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180.0;
-    return {
-      x: cx + radius * Math.cos(angleInRadians),
-      y: cy + radius * Math.sin(angleInRadians),
-    };
-  }
-
-  function describeArc(startAngle: number, endAngle: number) {
-    const sweep = Math.min(endAngle - startAngle, 359.999);
-    const largeArc = sweep > 180 ? 1 : 0;
-    const outerStart = polarToCartesian(outerR, startAngle);
-    const outerEnd = polarToCartesian(outerR, startAngle + sweep);
-    const innerStart = polarToCartesian(innerR, startAngle + sweep);
-    const innerEnd = polarToCartesian(innerR, startAngle);
-
-    return [
-      `M ${outerStart.x} ${outerStart.y}`,
-      `A ${outerR} ${outerR} 0 ${largeArc} 1 ${outerEnd.x} ${outerEnd.y}`,
-      `L ${innerStart.x} ${innerStart.y}`,
-      `A ${innerR} ${innerR} 0 ${largeArc} 0 ${innerEnd.x} ${innerEnd.y}`,
-      'Z',
-    ].join(' ');
-  }
-
-  return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
-      {entries.map(([status, count]) => {
-        const pct = count / total;
-        const startAngle = cumulative * 360;
-        cumulative += pct;
-        const endAngle = cumulative * 360;
-        const color = STATUS_COLORS[status] || '#6b7280';
-        return <path key={status} d={describeArc(startAngle, endAngle)} fill={color} />;
-      })}
-      <circle cx={cx} cy={cy} r={innerR - 1} fill="var(--color-surface-primary, white)" />
-      <text
-        x={cx}
-        y={cy + 4}
-        textAnchor="middle"
-        fontSize={16}
-        fontWeight="bold"
-        className="fill-content-primary"
-        fontFamily="system-ui"
-      >
-        {total}
-      </text>
-    </svg>
   );
 }
 
@@ -2322,7 +2448,7 @@ function SystemStatus() {
       {/* Modules & Rules */}
       <div
         className="flex items-center justify-between animate-stagger-in"
-        style={{ animationDelay: '640ms' }}
+        style={{ animationDelay: '180ms' }}
       >
         <span className="text-sm text-content-secondary">{t('dashboard.modules_loaded')}</span>
         <span className="text-sm font-semibold text-content-primary tabular-nums">
@@ -2331,7 +2457,7 @@ function SystemStatus() {
       </div>
       <div
         className="flex items-center justify-between animate-stagger-in"
-        style={{ animationDelay: '700ms' }}
+        style={{ animationDelay: '200ms' }}
       >
         <span className="text-sm text-content-secondary">{t('dashboard.validation_rules')}</span>
         <span className="text-sm font-semibold text-content-primary tabular-nums">
@@ -2340,7 +2466,7 @@ function SystemStatus() {
       </div>
       <div
         className="flex items-center justify-between animate-stagger-in"
-        style={{ animationDelay: '760ms' }}
+        style={{ animationDelay: '220ms' }}
       >
         <span className="text-sm text-content-secondary">{t('dashboard.languages')}</span>
         <span className="text-sm font-semibold text-content-primary tabular-nums">{SUPPORTED_LANGUAGES.length}</span>

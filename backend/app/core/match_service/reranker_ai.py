@@ -26,12 +26,40 @@ from app.core.match_service.config import (
     RERANK_MAX_TOKENS,
     RERANK_MODEL_HINT,
     RERANK_TOP_K,
+    confidence_thresholds_for_model,
 )
 from app.core.match_service.envelope import (
+    ConfidenceBand,
     ElementEnvelope,
     MatchCandidate,
     confidence_band_for,
 )
+
+
+# The LLM rerank tier consumes the BGE-RRF score distribution and shifts
+# scores ~5 points higher (LLMs are more decisive than embeddings). The
+# ``sonnet-rerank`` profile in encoder_profiles.json pins HIGH=0.82,
+# MEDIUM=0.66 to compensate so the dashboard's band colour stays calibrated.
+_AI_RERANK_PROFILE_KEY: str = "sonnet-rerank"
+
+
+def _dynamic_band_for_ai(score: float) -> ConfidenceBand:
+    """Confidence band keyed off the LLM rerank profile.
+
+    Falls back to :func:`confidence_band_for` whenever the profile file
+    is missing / malformed so callers never crash on a misconfigured
+    deployment.
+    """
+    try:
+        high, medium, _ = confidence_thresholds_for_model(_AI_RERANK_PROFILE_KEY)
+    except Exception:
+        return confidence_band_for(score)
+
+    if score >= high:
+        return "high"
+    if score >= medium:
+        return "medium"
+    return "low"
 
 logger = logging.getLogger(__name__)
 
@@ -187,9 +215,10 @@ async def rerank_top_k(
             new_score = float(new_score_raw) if new_score_raw is not None else cand.score
         except (TypeError, ValueError):
             new_score = cand.score
+        clamped_score = max(0.0, min(1.0, new_score))
         cand = cand.model_copy(update={
-            "score": max(0.0, min(1.0, new_score)),
-            "confidence_band": confidence_band_for(max(0.0, min(1.0, new_score))),
+            "score": clamped_score,
+            "confidence_band": _dynamic_band_for_ai(clamped_score),
             "reasoning": str(entry.get("reasoning") or "")[:500] or None,
         })
         reordered.append(cand)

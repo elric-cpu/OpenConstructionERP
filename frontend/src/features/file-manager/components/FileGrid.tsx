@@ -5,6 +5,7 @@ import clsx from 'clsx';
 import { ExternalLink, FileText, Image as ImageIcon, Layout, Box, Pencil, File, PenTool, FileBarChart, Tag } from 'lucide-react';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { primaryModule } from '../kindModule';
+import { CDEBadge } from './CDEBadge';
 import type { FileRow, FileKind } from '../types';
 
 const KIND_ICON: Record<FileKind, typeof FileText> = {
@@ -32,7 +33,7 @@ const KIND_TINT: Record<FileKind, string> = {
 interface FileGridProps {
   items: FileRow[];
   selectedIds: Set<string>;
-  onSelect: (id: string, additive: boolean) => void;
+  onSelect: (id: string, additive: boolean, shift?: boolean) => void;
   onOpen: (row: FileRow) => void;
   isLoading?: boolean;
 }
@@ -96,7 +97,7 @@ export function FileGrid({ items, selectedIds, onSelect, onOpen, isLoading }: Fi
           >
             <button
               type="button"
-              onClick={(e) => onSelect(row.id, e.metaKey || e.ctrlKey)}
+              onClick={(e) => onSelect(row.id, e.metaKey || e.ctrlKey, e.shiftKey)}
               onDoubleClick={() => onOpen(row)}
               className="flex flex-col text-left w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
             >
@@ -118,10 +119,28 @@ export function FileGrid({ items, selectedIds, onSelect, onOpen, isLoading }: Fi
                 )}
               </div>
               <div className="px-2.5 py-2 min-w-0">
+                {typeof row.extra?.drawing_number === 'string' && row.extra.drawing_number && (
+                  <p className="font-mono text-[10px] text-content-tertiary truncate" title="Drawing number">
+                    {row.extra.drawing_number}
+                  </p>
+                )}
                 <p className="text-xs font-medium text-content-primary truncate" title={row.name}>
                   {row.name}
                 </p>
-                <div className="mt-0.5 flex items-center justify-between text-[10px] text-content-tertiary tabular-nums">
+                <div className="mt-1 flex items-center gap-1 flex-wrap">
+                  {typeof row.extra?.revision_code === 'string' && row.extra.revision_code && (
+                    <span className="inline-flex items-center rounded-md border border-border-light px-1 py-px text-[9px] font-medium text-content-secondary">
+                      Rev {row.extra.revision_code}
+                    </span>
+                  )}
+                  <CDEBadge state={row.extra?.cde_state as string | undefined} size="xs" />
+                  {row.discipline && (
+                    <span className="inline-flex items-center rounded-md bg-surface-secondary px-1 py-px text-[9px] font-medium text-content-secondary truncate max-w-[80px]">
+                      {row.discipline}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-1 flex items-center justify-between text-[10px] text-content-tertiary tabular-nums">
                   <span>{fmtBytes(row.size_bytes)}</span>
                   {row.modified_at && (
                     <DateDisplay value={row.modified_at} format="relative" className="ms-2 shrink-0" />

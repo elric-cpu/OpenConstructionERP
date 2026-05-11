@@ -119,7 +119,8 @@ export function CompactProjectCard({
           {name}
         </h3>
         {description && (
-          <p className="mt-0.5 text-2xs leading-relaxed text-content-secondary line-clamp-1">
+          /* Bumped from text-2xs to text-xs for legibility (audit 2026-05-11). */
+          <p className="mt-1 text-xs leading-snug text-content-secondary line-clamp-1">
             {description}
           </p>
         )}

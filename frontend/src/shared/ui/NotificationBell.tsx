@@ -24,15 +24,33 @@ import clsx from 'clsx';
 import { apiGet, apiPost } from '@/shared/lib/api';
 
 // ── Types ────────────────────────────────────────────────────────────────────
+//
+// Matches `NotificationResponse` on the backend (see
+// backend/app/modules/notifications/schemas.py). The server pre-renders
+// `title_default` + `body_default` from the stored i18n keys and the
+// JSON body_context so the bell always has readable text even when the
+// frontend i18n layer hasn't loaded the key (or doesn't know it).
+
+type IconCategory =
+  | 'success'
+  | 'error'
+  | 'warning'
+  | 'info'
+  | 'import'
+  | 'validation'
+  | 'system';
 
 interface Notification {
   id: string;
-  type: 'success' | 'error' | 'warning' | 'info' | 'import' | 'validation' | 'system';
+  notification_type: string;
+  icon_category: IconCategory;
   title_key: string;
   title_default: string;
-  message?: string;
-  action_url?: string;
-  read: boolean;
+  body_key?: string | null;
+  body_default: string;
+  body_context: Record<string, unknown>;
+  action_url?: string | null;
+  is_read: boolean;
   created_at: string;
 }
 
@@ -43,7 +61,7 @@ interface UnreadCountResponse {
 // ── Icon config ──────────────────────────────────────────────────────────────
 
 const NOTIFICATION_ICON_MAP: Record<
-  Notification['type'],
+  IconCategory,
   { icon: typeof CheckCircle2; colorClass: string }
 > = {
   success: { icon: CheckCircle2, colorClass: 'text-semantic-success' },
@@ -55,8 +73,8 @@ const NOTIFICATION_ICON_MAP: Record<
   system: { icon: Settings, colorClass: 'text-content-tertiary' },
 };
 
-function getIconConfig(type: Notification['type']) {
-  return NOTIFICATION_ICON_MAP[type] ?? NOTIFICATION_ICON_MAP.info;
+function getIconConfig(category: IconCategory) {
+  return NOTIFICATION_ICON_MAP[category] ?? NOTIFICATION_ICON_MAP.info;
 }
 
 // Backend pre-v2.9.34 emitted action_urls like `/risk?id=...` (singular)
@@ -177,7 +195,7 @@ export function NotificationBell() {
 
   const handleNotificationClick = useCallback(
     (notification: Notification) => {
-      if (!notification.read) {
+      if (!notification.is_read) {
         markReadMutation.mutate(notification.id);
       }
       if (notification.action_url) {
@@ -247,8 +265,21 @@ export function NotificationBell() {
           ) : (
             <div className="max-h-80 overflow-y-auto">
               {displayItems.map((notification) => {
-                const config = getIconConfig(notification.type);
+                const config = getIconConfig(notification.icon_category);
                 const TypeIcon = config.icon;
+                // i18n with body_context interpolation; defaultValue is the
+                // server-rendered English string, so even an unknown key
+                // still surfaces readable text.
+                const title = t(notification.title_key, {
+                  defaultValue: notification.title_default || notification.title_key,
+                  ...(notification.body_context as Record<string, unknown>),
+                });
+                const body = notification.body_key
+                  ? t(notification.body_key, {
+                      defaultValue: notification.body_default,
+                      ...(notification.body_context as Record<string, unknown>),
+                    })
+                  : notification.body_default;
                 return (
                   <button
                     key={notification.id}
@@ -258,7 +289,7 @@ export function NotificationBell() {
                       'flex w-full items-start gap-2.5 px-4 py-2.5 text-left',
                       'hover:bg-surface-secondary transition-colors',
                       'border-b border-border-light last:border-b-0',
-                      !notification.read && 'border-l-2 border-l-oe-blue',
+                      !notification.is_read && 'border-l-2 border-l-oe-blue',
                     )}
                   >
                     <TypeIcon
@@ -269,18 +300,16 @@ export function NotificationBell() {
                       <p
                         className={clsx(
                           'text-xs truncate',
-                          notification.read
+                          notification.is_read
                             ? 'font-medium text-content-primary'
                             : 'font-semibold text-content-primary',
                         )}
                       >
-                        {t(notification.title_key, {
-                          defaultValue: notification.title_default,
-                        })}
+                        {title}
                       </p>
-                      {notification.message && (
-                        <p className="text-2xs text-content-tertiary truncate mt-0.5">
-                          {notification.message}
+                      {body && (
+                        <p className="text-2xs text-content-tertiary line-clamp-2 mt-0.5">
+                          {body}
                         </p>
                       )}
                     </div>

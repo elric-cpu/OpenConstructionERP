@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  FolderPlus, FolderOpen, ArrowRight, MoreHorizontal, Copy, Trash2, Archive, ExternalLink,
+  FolderPlus, FolderOpen, ArrowRight, MoreHorizontal, Copy, Trash2, Archive, ArchiveRestore, ExternalLink,
   Search, ChevronDown, ArrowUpDown, Star, Map as MapIcon, CloudSun,
   Building2, DollarSign, Euro, PoundSterling, Globe2, MapPin, Layers, AlertTriangle,
 } from 'lucide-react';
@@ -18,19 +18,6 @@ import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useLocalStorage } from '@/shared/hooks/useLocalStorage';
 import { CreateProjectModal } from './CreateProjectPage';
 import { BIMConverterStatusBanner } from '../bim/BIMConverterStatusBanner';
-
-interface BOQBasic {
-  id: string;
-  project_id: string;
-  name: string;
-  status: string;
-  created_at: string;
-  // The list endpoint already returns the rolled-up grand_total per BOQ —
-  // no need to fetch /v1/boq/boqs/{id} just for one number (each detail
-  // payload is 100-200 KB of positions we don't render on the projects
-  // grid). Backend type: BOQListItem (boq/schemas.py).
-  grand_total?: number;
-}
 
 interface ProjectBOQStats {
   projectId: string;
@@ -114,54 +101,40 @@ export function ProjectsPage() {
     staleTime: 60_000,
   });
 
-  /* Fetch BOQ stats for all projects (count + total value) — single request + parallel detail fetches */
+  /* BOQ stats per project — pulled from the single dashboard/cards aggregator
+     so the grid does not fan out N requests per project. The endpoint excludes
+     archived projects, so archived rows simply show 0 stats (acceptable trade-off:
+     archived projects are rarely sorted by value). */
+  interface DashboardCard {
+    id: string;
+    boq_total_value: number;
+    boq_count: number;
+    open_tasks?: number;
+    open_rfis?: number;
+    safety_incidents?: number;
+    progress_pct?: number;
+  }
+  const projectIdsKey = useMemo(
+    () => (projects ? projects.map((p) => p.id).join(',') : ''),
+    [projects],
+  );
   const { data: boqStats, error: boqStatsError } = useQuery({
-    queryKey: ['projects-boq-stats', projects],
+    queryKey: ['projects-dashboard-cards', projectIdsKey],
     queryFn: async () => {
-      if (!projects || projects.length === 0) return [];
-
-      // Fetch BOQs per project (endpoint requires project_id)
-      // Track per-project errors so we can surface degraded loads to the UI.
-      const perProject = await Promise.all(
-        projects.map(async (p) => {
-          try {
-            const boqs = await apiGet<BOQBasic[]>(`/v1/boq/boqs/?project_id=${p.id}`);
-            return { projectId: p.id, boqs, failed: false };
-          } catch (err) {
-            if (import.meta.env.DEV) console.warn(`Failed to fetch BOQs for project ${p.id}:`, err);
-            return { projectId: p.id, boqs: [] as BOQBasic[], failed: true };
-          }
-        }),
-      );
-      const failedProjectIds = new Set(
-        perProject.filter((pp) => pp.failed).map((pp) => pp.projectId),
-      );
-      const allBoqs = perProject.flatMap((pp) => pp.boqs);
-
-      // Group BOQs by project_id and roll up grand_total straight from the
-      // list response. Previously this issued one /v1/boq/boqs/{id} per BOQ
-      // (each ~100-200 KB of positions we don't render here) just to read
-      // grand_total — backend already returns it on the list endpoint.
-      const boqsByProject = new Map<string, BOQBasic[]>();
-      const totalsByProject = new Map<string, number>();
-      for (const b of allBoqs) {
-        const list = boqsByProject.get(b.project_id) ?? [];
-        list.push(b);
-        boqsByProject.set(b.project_id, list);
-        totalsByProject.set(
-          b.project_id,
-          (totalsByProject.get(b.project_id) ?? 0) + (b.grand_total ?? 0),
-        );
-      }
-
-      return projects.map((p) => ({
-        projectId: p.id,
-        boqCount: boqsByProject.get(p.id)?.length ?? 0,
-        totalValue: totalsByProject.get(p.id) ?? 0,
-        hasError: failedProjectIds.has(p.id),
-      }));
+      const cards = await apiGet<DashboardCard[]>('/v1/projects/dashboard/cards/');
+      const cardMap = new Map(cards.map((c) => [c.id, c]));
+      return (projects ?? []).map((p) => {
+        const c = cardMap.get(p.id);
+        return {
+          projectId: p.id,
+          boqCount: c?.boq_count ?? 0,
+          totalValue: c?.boq_total_value ?? 0,
+          hasError: false,
+        };
+      });
     },
     enabled: !!projects && projects.length > 0,
+    staleTime: 60_000,
   });
 
   // Show a persistent warning if BOQ stats failed to load at the top level
@@ -654,14 +627,39 @@ function ProjectCard({
 
   const duplicateMutation = useMutation({
     mutationFn: async () => {
-      // Create a copy of the project with a new name
-      return apiPost<Project>('/v1/projects/', {
+      /* Create a copy of the project with as many settings carried over
+         as the create payload supports. There is no server-side deep-clone
+         endpoint yet, so per-project resources that live in other tables
+         (FX rates, custom units, VAT, address) are forwarded explicitly.
+         The newly created row is then PATCHed for fields the create
+         endpoint does not accept (those are no-ops on legacy backends). */
+      const newProject = await apiPost<Project>('/v1/projects/', {
         name: `${project.name} (Copy)`,
         description: project.description,
         region: project.region,
         classification_standard: project.classification_standard,
         currency: project.currency,
+        locale: project.locale,
+        address: project.address ?? null,
       });
+      const patchPayload: Record<string, unknown> = {};
+      if (project.fx_rates && project.fx_rates.length > 0) {
+        patchPayload.fx_rates = project.fx_rates;
+      }
+      if (project.default_vat_rate) {
+        patchPayload.default_vat_rate = project.default_vat_rate;
+      }
+      if (project.custom_units && project.custom_units.length > 0) {
+        patchPayload.custom_units = project.custom_units;
+      }
+      if (Object.keys(patchPayload).length > 0) {
+        try {
+          await apiPatch(`/v1/projects/${newProject.id}`, patchPayload);
+        } catch (err) {
+          if (import.meta.env.DEV) console.warn('Duplicate: post-create patch failed', err);
+        }
+      }
+      return newProject;
     },
     onSuccess: (newProject) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
@@ -685,6 +683,24 @@ function ProjectCard({
     },
     onError: (error: Error) => {
       addToast({ type: 'error', title: t('toasts.archive_failed', { defaultValue: 'Failed to archive project' }), message: error.message });
+    },
+  });
+
+  const restoreMutation = useMutation({
+    mutationFn: () => projectsApi.restore(project.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      addToast({
+        type: 'success',
+        title: t('toasts.project_restored', { defaultValue: 'Project restored' }),
+      });
+    },
+    onError: (error: Error) => {
+      addToast({
+        type: 'error',
+        title: t('toasts.restore_failed', { defaultValue: 'Failed to restore project' }),
+        message: error.message,
+      });
     },
   });
 
@@ -809,15 +825,29 @@ function ProjectCard({
             >
               <Copy size={14} /> {t('common.duplicate', 'Duplicate')}
             </button>
-            <button
-              onClick={() => {
-                archiveMutation.mutate();
-                setMenuOpen(false);
-              }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-content-secondary hover:bg-surface-secondary transition-colors"
-            >
-              <Archive size={14} /> {t('common.archive', 'Archive')}
-            </button>
+            {project.status === 'archived' ? (
+              <button
+                onClick={() => {
+                  restoreMutation.mutate();
+                  setMenuOpen(false);
+                }}
+                disabled={restoreMutation.isPending}
+                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-content-secondary hover:bg-surface-secondary transition-colors disabled:opacity-60"
+              >
+                <ArchiveRestore size={14} /> {t('common.restore', { defaultValue: 'Restore' })}
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  archiveMutation.mutate();
+                  setMenuOpen(false);
+                }}
+                disabled={archiveMutation.isPending}
+                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-content-secondary hover:bg-surface-secondary transition-colors disabled:opacity-60"
+              >
+                <Archive size={14} /> {t('common.archive', 'Archive')}
+              </button>
+            )}
             <div className="h-px bg-border-light" />
             <button
               onClick={() => {

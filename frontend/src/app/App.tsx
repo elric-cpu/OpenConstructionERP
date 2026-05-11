@@ -170,6 +170,10 @@ const EacDemoPage = lazy(() =>
 const EACBlockEditorPage = lazy(() =>
   import('@/features/eac/EACBlockEditorPage').then((m) => ({ default: m.EACBlockEditorPage }))
 );
+// Styles Lab — internal design exploration page (modern style variants).
+const StylesLabPage = lazy(() =>
+  import('@/features/styles-lab/StylesLabPage').then((m) => ({ default: m.StylesLabPage }))
+);
 
 function LoadingScreen() {
   return (
@@ -503,6 +507,9 @@ export default function App() {
         {/* EAC v2 (RFC 35) — block editor primitives preview, dev-only */}
         <Route path="/eac/demo" element={<P title="EAC Block Primitives"><EacDemoPage /></P>} />
         <Route path="/eac/blocks/:eacId" element={<P title="EAC Block Editor"><EACBlockEditorPage /></P>} />
+
+        {/* Styles Lab — design exploration, internal */}
+        <Route path="/styles-lab" element={<P title="Styles Lab"><StylesLabPage /></P>} />
 
         {/* Convenience route aliases — redirect to canonical paths */}
         <Route path="/dashboard" element={<Navigate to="/" replace />} />

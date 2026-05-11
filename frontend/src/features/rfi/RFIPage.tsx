@@ -23,6 +23,7 @@ import {
   ArrowRightLeft,
 } from 'lucide-react';
 import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, SkeletonTable } from '@/shared/ui';
+import { UserSearchInput } from '@/shared/ui/UserSearchInput';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { useCreateShortcut } from '@/shared/hooks/useCreateShortcut';
 import { apiGet, apiPost, triggerDownload, extractErrorMessageFromBody } from '@/shared/lib/api';
@@ -31,6 +32,7 @@ import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import {
   fetchRFIs,
+  fetchRFIStats,
   createRFI,
   respondToRFI,
   closeRFI,
@@ -77,18 +79,28 @@ interface RFIFormData {
   subject: string;
   question: string;
   ball_in_court: string;
+  ball_in_court_name: string;
+  assigned_to: string;
+  assigned_to_name: string;
   due_date: string;
   cost_impact: boolean;
+  cost_impact_value: string;
   schedule_impact: boolean;
+  schedule_impact_days: string;
 }
 
 const EMPTY_FORM: RFIFormData = {
   subject: '',
   question: '',
   ball_in_court: '',
+  ball_in_court_name: '',
+  assigned_to: '',
+  assigned_to_name: '',
   due_date: '',
   cost_impact: false,
+  cost_impact_value: '',
   schedule_impact: false,
+  schedule_impact_days: '',
 };
 
 function CreateRFIModal({
@@ -235,37 +247,55 @@ function CreateRFIModal({
             <div className="flex-1 h-px bg-border-light" />
           </div>
 
-          {/* Two-column: Ball in Court + Due Date */}
+          {/* Two-column: Ball in Court + Assigned To */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label htmlFor="rfi-ball-in-court" className="block text-sm font-medium text-content-primary mb-1.5">
-                {t('rfi.field_ball_in_court', { defaultValue: 'Assigned To' })}
+                {t('rfi.field_ball_in_court', { defaultValue: 'Ball in Court' })}
               </label>
-              <input
-                id="rfi-ball-in-court"
+              <UserSearchInput
                 value={form.ball_in_court}
-                onChange={(e) => set('ball_in_court', e.target.value)}
-                className={inputCls}
+                displayValue={form.ball_in_court_name}
+                onChange={(id, name) => {
+                  setForm((prev) => ({ ...prev, ball_in_court: id, ball_in_court_name: name }));
+                }}
                 placeholder={t('rfi.bic_placeholder', {
                   defaultValue: 'Person responsible for response',
                 })}
               />
             </div>
             <div>
-              <label htmlFor="rfi-due-date" className="block text-sm font-medium text-content-primary mb-1.5">
-                {t('rfi.field_due_date', { defaultValue: 'Response Due Date' })}
+              <label htmlFor="rfi-assigned-to" className="block text-sm font-medium text-content-primary mb-1.5">
+                {t('rfi.field_assigned_to', { defaultValue: 'Assigned To' })}
               </label>
-              <input
-                id="rfi-due-date"
-                type="date"
-                value={form.due_date}
-                onChange={(e) => set('due_date', e.target.value)}
-                className={inputCls}
+              <UserSearchInput
+                value={form.assigned_to}
+                displayValue={form.assigned_to_name}
+                onChange={(id, name) => {
+                  setForm((prev) => ({ ...prev, assigned_to: id, assigned_to_name: name }));
+                }}
+                placeholder={t('rfi.assigned_to_placeholder', {
+                  defaultValue: 'Reviewer / coordinator',
+                })}
               />
-              <p className="mt-1 text-xs text-content-quaternary">
-                {t('rfi.response_due_date_hint', { defaultValue: 'Typical: 14 business days from submission' })}
-              </p>
             </div>
+          </div>
+
+          {/* Response due date — full width */}
+          <div>
+            <label htmlFor="rfi-due-date" className="block text-sm font-medium text-content-primary mb-1.5">
+              {t('rfi.field_due_date', { defaultValue: 'Response Due Date' })}
+            </label>
+            <input
+              id="rfi-due-date"
+              type="date"
+              value={form.due_date}
+              onChange={(e) => set('due_date', e.target.value)}
+              className={inputCls}
+            />
+            <p className="mt-1 text-xs text-content-quaternary">
+              {t('rfi.response_due_date_hint', { defaultValue: 'Typical: 14 business days from submission' })}
+            </p>
           </div>
 
           {/* ── Impact Assessment ── */}
@@ -338,6 +368,54 @@ function CreateRFIModal({
               </div>
             </button>
           </div>
+
+          {(form.cost_impact || form.schedule_impact) && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {form.cost_impact && (
+                <div>
+                  <label htmlFor="rfi-cost-value" className="block text-sm font-medium text-content-primary mb-1.5">
+                    {t('rfi.field_cost_impact_value', { defaultValue: 'Cost exposure' })}
+                  </label>
+                  <input
+                    id="rfi-cost-value"
+                    type="text"
+                    inputMode="decimal"
+                    value={form.cost_impact_value}
+                    onChange={(e) => set('cost_impact_value', e.target.value)}
+                    placeholder={t('rfi.cost_value_placeholder', { defaultValue: 'e.g. 15000' })}
+                    className={inputCls}
+                  />
+                  <p className="mt-1 text-xs text-content-quaternary">
+                    {t('rfi.cost_value_hint', {
+                      defaultValue: 'Estimated impact in project currency (optional)',
+                    })}
+                  </p>
+                </div>
+              )}
+              {form.schedule_impact && (
+                <div>
+                  <label htmlFor="rfi-schedule-days" className="block text-sm font-medium text-content-primary mb-1.5">
+                    {t('rfi.field_schedule_impact_days', { defaultValue: 'Schedule slip (days)' })}
+                  </label>
+                  <input
+                    id="rfi-schedule-days"
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={form.schedule_impact_days}
+                    onChange={(e) => set('schedule_impact_days', e.target.value)}
+                    placeholder={t('rfi.schedule_days_placeholder', { defaultValue: 'e.g. 5' })}
+                    className={inputCls}
+                  />
+                  <p className="mt-1 text-xs text-content-quaternary">
+                    {t('rfi.schedule_days_hint', {
+                      defaultValue: 'Working days the response could delay the schedule',
+                    })}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* ── Linked Drawings (optional) ── */}
           <div className="flex items-center gap-2 pt-2 pb-1">
@@ -683,6 +761,14 @@ export function RFIPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [respondingRfi, setRespondingRfi] = useState<RFI | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  /* Debounced copy of the search input that drives the backend `?search=`
+     query. Keeps typing fluid (no fetch storm) but still hits the server
+     so search reaches RFI rows past the current page. */
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearch(searchQuery), 300);
+    return () => clearTimeout(handle);
+  }, [searchQuery]);
   const [statusFilter, setStatusFilter] = useState<RFIStatus | ''>('');
 
   // "n" shortcut → open new RFI form
@@ -702,30 +788,43 @@ export function RFIPage() {
   const projectName = projects.find((p) => p.id === projectId)?.name || '';
 
   const { data: rfis = [], isLoading } = useQuery({
-    queryKey: ['rfis', projectId, statusFilter],
+    queryKey: ['rfis', projectId, statusFilter, debouncedSearch],
     queryFn: () =>
       fetchRFIs({
         project_id: projectId,
         status: statusFilter || undefined,
+        search: debouncedSearch || undefined,
+        limit: 100,
       }),
     enabled: !!projectId,
   });
 
-  // Client-side search
-  const filtered = useMemo(() => {
-    if (!searchQuery.trim()) return rfis;
-    const q = searchQuery.toLowerCase();
-    return rfis.filter(
-      (r) =>
-        r.subject.toLowerCase().includes(q) ||
-        r.question.toLowerCase().includes(q) ||
-        String(r.rfi_number).includes(q) ||
-        (r.ball_in_court && r.ball_in_court.toLowerCase().includes(q)),
-    );
-  }, [rfis, searchQuery]);
+  /* Server already filters by ?search= so `filtered` is now a pass-through.
+     Kept as an alias so the rest of the component does not need touching. */
+  const filtered = rfis;
 
-  // Stats
+  /* Real stats come from the dedicated /stats/ endpoint, which scans the
+     full RFI table for the project — not just the loaded page. The
+     in-memory rollup only stays as a fallback while the stats query is
+     in flight or unavailable. */
+  const { data: serverStats } = useQuery({
+    queryKey: ['rfi-stats', projectId],
+    queryFn: () => fetchRFIStats(projectId),
+    enabled: !!projectId,
+    staleTime: 30_000,
+  });
+
   const stats = useMemo(() => {
+    if (serverStats) {
+      return {
+        total: serverStats.total,
+        open: serverStats.open,
+        overdue: serverStats.overdue,
+        avgDays: serverStats.avg_days_to_response
+          ? Math.round(serverStats.avg_days_to_response)
+          : 0,
+      };
+    }
     const total = rfis.length;
     const open = rfis.filter((r) => r.status === 'open').length;
     const overdue = rfis.filter(
@@ -736,11 +835,12 @@ export function RFIPage() {
         ? Math.round(rfis.reduce((sum, r) => sum + (r.days_open ?? daysOpen(r.created_at, null)), 0) / rfis.length)
         : 0;
     return { total, open, overdue, avgDays };
-  }, [rfis]);
+  }, [rfis, serverStats]);
 
   // Invalidation
   const invalidateAll = useCallback(() => {
     qc.invalidateQueries({ queryKey: ['rfis'] });
+    qc.invalidateQueries({ queryKey: ['rfi-stats'] });
   }, [qc]);
 
   // Mutations
@@ -829,14 +929,24 @@ export function RFIPage() {
         addToast({ type: 'error', title: t('rfi.no_project_error', { defaultValue: 'No project selected' }), message: t('common.select_project_first', { defaultValue: 'Please select a project first' }) });
         return;
       }
+      const scheduleDays = Number.parseInt(formData.schedule_impact_days, 10);
       createMut.mutate({
         project_id: projectId,
         subject: formData.subject,
         question: formData.question,
         ball_in_court: formData.ball_in_court || undefined,
+        assigned_to: formData.assigned_to || undefined,
         response_due_date: formData.due_date || undefined,
         cost_impact: formData.cost_impact,
+        cost_impact_value:
+          formData.cost_impact && formData.cost_impact_value.trim()
+            ? formData.cost_impact_value.trim()
+            : undefined,
         schedule_impact: formData.schedule_impact,
+        schedule_impact_days:
+          formData.schedule_impact && Number.isFinite(scheduleDays) && scheduleDays >= 0
+            ? scheduleDays
+            : undefined,
       });
     },
     [createMut, projectId, addToast, t],

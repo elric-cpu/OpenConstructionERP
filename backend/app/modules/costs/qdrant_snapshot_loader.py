@@ -386,9 +386,55 @@ def server_collections(
     return [str(c.get("name")) for c in collections if c.get("name")]
 
 
+def enumerate_qdrant_v3_collections(
+    *,
+    qdrant_url: str | None = None,
+    api_key: str | None = None,
+    timeout_s: int = 30,
+) -> list[str]:
+    """Return the names of v3 collections currently on the configured Qdrant.
+
+    Wraps :func:`server_collections` and filters to names matching the
+    ``cwicr_*_v3`` convention so callers can answer "what BGE-M3 v3
+    catalogues are actually installed on this server, including the ones
+    not listed in :data:`CWICR_V3_CATALOGUES`?" — e.g. tenant-installed
+    custom rate books that landed in Qdrant via the operator CLI.
+
+    Resolves ``qdrant_url`` from ``cwicr_qdrant_url`` then ``qdrant_url``
+    on :func:`get_settings` when not passed, mirroring the router's
+    ``_v3_qdrant_url`` resolver. Returns an empty list (with a DEBUG log)
+    when no server is configured or the probe fails — callers treat the
+    result as authoritative only when non-empty, and the static
+    registry remains the source of truth for installable cards.
+    """
+    if qdrant_url is None:
+        try:
+            settings = get_settings()
+            qdrant_url = getattr(settings, "cwicr_qdrant_url", None) or getattr(
+                settings, "qdrant_url", None
+            )
+        except Exception as exc:  # pragma: no cover — defensive
+            logger.debug("enumerate_qdrant_v3_collections: settings read failed: %s", exc)
+            qdrant_url = None
+
+    if not qdrant_url:
+        logger.debug(
+            "enumerate_qdrant_v3_collections: no Qdrant URL configured — returning []"
+        )
+        return []
+
+    all_collections = server_collections(
+        qdrant_url=qdrant_url,
+        api_key=api_key,
+        timeout_s=timeout_s,
+    )
+    return sorted(c for c in all_collections if c.startswith("cwicr_") and c.endswith("_v3"))
+
+
 __all__ = [
     "SnapshotLoadSummary",
     "cwicr_snapshot_target_for",
+    "enumerate_qdrant_v3_collections",
     "load_ddc_snapshot_dir",
     "restore_snapshot_file",
     "server_collections",

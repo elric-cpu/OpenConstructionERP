@@ -5,6 +5,45 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.39] — 2026-05-11
+
+### Added
+
+- Africa catalogue pack: 12 new `CWICR_V3_CATALOGUES` entries (NG_LAGOS, KE_NAIROBI, GH_ACCRA, UG_KAMPALA, TZ_DARESSALAAM, SN_DAKAR, CI_ABIDJAN, CM_DOUALA, AO_LUANDA, MA_CASABLANCA, EG_CAIRO, TN_TUNIS). Registry size 30 → 42. Anglo-Africa → nrm, Francophone → untec, Lusophone-Africa → masterformat, Maghreb-AR → masterformat.
+
+### Fixed
+
+- 71 legacy ranker monkeypatch refs in 3 test files (`test_phase0_edge_cases.py`, `test_match_concurrency.py`, `test_phase0_perf.py`) — dotted-path updated from deleted `app.core.match_service.ranker` to `ranker_qdrant`. Import errors cleared; 122 previously-erroring tests now pass.
+
+## [2.9.38] — 2026-05-11
+
+### Added
+
+- Match-service universalisation: classification standards (`_KNOWN_CLASSIFICATION_STANDARDS`) + region-preferred-standard map (`_REGION_PREFERRED_STANDARD`) now data-driven from `CWICR_V3_CATALOGUES` + 30-country heuristic. 11 standards (DIN276, MasterFormat, NRM, UNTEC, VOCI, BC3, GB50500, SEKISAN, KBIM, GESN, BirimFiyat) instead of 3. FR→untec, IT→voci, ES→bc3, CN→gb50500, JP→sekisan, KR→kbim, RU/UA/BY/KZ→gesn, TR→birimfiyat.
+- Region-group aliases moved to `data/match/region_groups.yaml`: 28 groups (19 baseline + ASEAN, MENA_AR, FRANCOPHONE_AFRICA, LUSOPHONE_AFRICA, ANGLO_AFRICA, ANDEAN, CAUCASUS, ANGLO_CARIBBEAN, LUSOPHONE_LATAM). Hardcoded fallback retained for resilience.
+- Region-language mirror `data/match/region_language.yaml` (54 entries; not yet wired into runtime, ready for next pass).
+- `CwicrV3Catalogue.default_classification_standard` field — populated on 19/30 entries with known mappings.
+- `make seed-cwicr-v3` Makefile target + `backend/scripts/seed_cwicr_v3.py` CLI (`--regions CSV` xor `--top-n N`, `--dry-run`). One-shot install of N most-popular v3 catalogues for fresh deployments.
+- `enumerate_qdrant_v3_collections()` helper in `qdrant_snapshot_loader.py` — live-probes the configured Qdrant for `cwicr_*_v3` collections.
+- Per-encoder confidence profiles (`data/match/encoder_profiles.json`): bge-m3 / bge-small / e5-small / sonnet-rerank, each with high/medium/low bands. Surfaced via `config.confidence_thresholds_for_model()`.
+- Per-language lex thresholds (`data/match/lex_thresholds.json`): 20 languages. Inflectional langs (pl/ru/uk/fi/tr/hu) drop to 70/50, CJK to 75/55, base 80/60. Surfaced via `config.lex_thresholds_for_language()`.
+- `config.boost_weights_for_standard()` API stub for future per-standard tuning.
+- `pyyaml>=6.0` added to base dependencies.
+
+## [2.9.37] — 2026-05-11
+
+### Added
+
+- Africa pack: 19 currencies (NGN, KES, GHS, MAD, TND, DZD, ETB, UGX, TZS, RWF, XOF, XAF, AOA, MZN, BWP, ZMW, NAD, MGA + ZAR/EGP); 24 region codes (Anglophone, Maghreb, Francophone, Lusophone, ETB Amharic) — exposed in user settings dropdown.
+- Dashboard stats badges (Projects/BOQs/Modules/Users) navigate to their pages.
+- Dashboard Apple-style backdrop: aurora mesh, blueprint dot grid, vignette, cursor spotlight, fine-grain noise — auto-disabled by `prefers-reduced-motion`.
+- /match-elements CatalogueAdvisor: one-click install for project-language catalogues when none are loaded — no /costs side-trip.
+- Demo register: explicit email-domain-aggregate disclosure in the consent line.
+
+### Fixed
+
+- Typecheck: `Catalogue | undefined` narrowing in `CataloguesPanelCard` after positive `findIndex`.
+
 ## [2.9.36] — 2026-05-10
 
 ### Changed

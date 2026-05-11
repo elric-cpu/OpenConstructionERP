@@ -86,9 +86,8 @@ export function AboutPage() {
           {/* Community — invite for feedback & ideas */}
           <div className="mt-5 rounded-xl border border-oe-blue/20 bg-gradient-to-br from-oe-blue/5 via-transparent to-blue-50/40 dark:from-blue-950/20 dark:via-transparent dark:to-slate-900/30 p-5">
             <div className="flex items-start gap-3 mb-4">
-              <div className="shrink-0 h-9 w-9 rounded-xl bg-oe-blue/10 text-oe-blue flex items-center justify-center">
-                <MessageCircle size={18} />
-              </div>
+              {/* Plain Stroke — community icon, no chip wrapper. r-cleanup 2026-05-11. */}
+              <MessageCircle size={20} strokeWidth={1.75} className="shrink-0 mt-0.5 text-oe-blue" />
               <div className="min-w-0 flex-1">
                 <h3 className="text-sm font-semibold text-content-primary">
                   {t('about.community_title', { defaultValue: 'Join the community — your feedback shapes the roadmap' })}

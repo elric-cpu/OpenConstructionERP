@@ -915,7 +915,7 @@ exports[`Visual Regression — DashboardPage > renders loading/skeleton state 1`
         <span
           class="text-sm font-bold bg-gradient-to-r from-oe-blue via-violet-600 to-emerald-600 bg-clip-text text-transparent"
         >
-          Erste Open-Source Bau-ERP
+          The #1 open-source construction ERP
         </span>
         <svg
           class="lucide lucide-external-link text-oe-blue opacity-50 shrink-0"

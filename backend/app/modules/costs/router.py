@@ -2031,6 +2031,7 @@ async def list_loaded_databases(
     _ = user_id  # auth required via dependency; unused beyond that
     from sqlalchemy import func, select  # noqa: PLC0415
 
+    from app.core.match_service.region_language import language_for  # noqa: PLC0415
     from app.core.vector import vector_count_with_payload_substring  # noqa: PLC0415
     from app.core.vector_index import COLLECTION_COSTS  # noqa: PLC0415
     from app.modules.costs.models import CostItem  # noqa: PLC0415
@@ -2054,6 +2055,10 @@ async def list_loaded_databases(
                 "count": int(sql_count),
                 "vectorized_count": int(vectorized),
                 "ready": vectorized > 0,
+                # Lets the /match-elements smart advisor filter by project
+                # language without a second round-trip or a frontend mirror
+                # of REGION_LANGUAGE.
+                "language": language_for(region),
             }
         )
     return out

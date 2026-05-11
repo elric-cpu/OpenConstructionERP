@@ -294,17 +294,20 @@ def test_classifier_hint_dict_includes_all_present_standards():
         ("LATAM", "masterformat"),
         ("BR", "masterformat"),
         ("MX", "masterformat"),
-        ("ES", "masterformat"),
+        ("ES", "bc3"),           # Spain — native BC3 standard
         ("PT", "masterformat"),
         ("ASIA_PAC", "masterformat"),
-        # CIS lacks a perfect mapping — falls back to DIN-276 hierarchy.
-        ("RU", "din276"),
-        ("RU_STPETERSBURG", "din276"),  # city suffix strips
-        ("RU_MOSCOW", "din276"),
-        # ── Wave-5 expansion: Asia-Pacific single countries ─────────
-        ("JP", "masterformat"),
-        ("CN", "masterformat"),
-        ("KR", "masterformat"),
+        # ── CIS — GESN family via Russia anchor ─────────────────────
+        ("RU", "gesn"),
+        ("RU_STPETERSBURG", "gesn"),
+        ("RU_MOSCOW", "gesn"),
+        ("UA", "gesn"),
+        ("BY", "gesn"),
+        ("KZ", "gesn"),
+        # ── Asia-Pacific single countries — native standards ────────
+        ("JP", "sekisan"),
+        ("CN", "gb50500"),
+        ("KR", "kbim"),
         ("IN", "nrm"),         # India — RICS heritage
         ("HI", "nrm"),         # India Hindi region — same default
         ("HK", "nrm"),         # ex-British, RICS heritage
@@ -317,10 +320,10 @@ def test_classifier_hint_dict_includes_all_present_standards():
         ("SA", "masterformat"),
         ("QA", "masterformat"),
         ("GULF", "masterformat"),
-        # ── EU non-DACH ─────────────────────────────────────────────
-        ("FR", "din276"),       # France — DTU-aligned
-        ("IT", "din276"),
-        ("NL", "din276"),
+        # ── Romance — native standards ──────────────────────────────
+        ("FR", "untec"),        # France — UNTEC
+        ("IT", "voci"),         # Italy — VOCI
+        ("NL", "din276"),       # Benelux clusters to DACH/DIN-276
         ("BE", "din276"),
         ("BENELUX", "din276"),
         # ── Latin America extras ────────────────────────────────────
@@ -334,7 +337,6 @@ def test_classifier_hint_dict_includes_all_present_standards():
         ("BG", "din276"),
         ("RO", "din276"),
         ("HR", "din276"),
-        ("UA", "din276"),
         # ── Nordic ──────────────────────────────────────────────────
         ("SE", "din276"),
         ("NO", "din276"),
@@ -347,8 +349,8 @@ def test_classifier_hint_dict_includes_all_present_standards():
         ("ZA", "nrm"),
         ("NG", "nrm"),
         ("KE", "nrm"),
-        # ── Türkiye ─────────────────────────────────────────────────
-        ("TR", "masterformat"),
+        # ── Türkiye — native Birim Fiyat ────────────────────────────
+        ("TR", "birimfiyat"),
     ],
 )
 def test_classification_order_prefers_region_native_standard(region, expected_head):
@@ -373,14 +375,21 @@ def test_classification_order_explicit_choice_beats_region():
 
 
 def test_classification_order_unknown_region_falls_back_to_din276():
-    """An exotic region we haven't mapped still gets a non-empty result."""
+    """An exotic region we haven't mapped still gets a non-empty result.
+
+    The resolver's terminal fallback is DIN-276 (line 450 in
+    ``_resolve_classification_order``) — the heuristic in
+    ``_COUNTRY_TO_STANDARD`` may say masterformat for countries we
+    haven't bridged via the macro map, but the safety net for completely
+    unknown region codes is still DIN-276.
+    """
     from app.modules.match_elements.service import _resolve_classification_order
 
     order = _resolve_classification_order(None, "ZZ_FAKE_REGION")
     assert order[0] == "din276"
-    # Tail still covers the other two so the BOQ section path falls
-    # through if the catalogue lacks a din276 code on this row.
-    assert set(order) == {"din276", "masterformat", "nrm"}
+    # Tail must still include the three legacy giants so a catalogue
+    # encoded against any of them produces a valid section path.
+    assert {"din276", "masterformat", "nrm"}.issubset(set(order))
 
 
 def test_classification_order_empty_inputs_safe():

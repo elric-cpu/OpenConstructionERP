@@ -1,14 +1,86 @@
-"""‌⁠‍Notification Pydantic schemas — request/response models."""
+"""‌⁠‍Notification Pydantic schemas — request/response models.
+
+The response schema renders English fallback strings server-side so the
+bell always has readable text even when the frontend i18n layer hasn't
+loaded the matching key (or doesn't have one). The two fallback fields
+(``title_default``, ``body_default``) are computed via
+:func:`app.modules.notifications.templates.render` from the stored
+``title_key`` / ``body_key`` and the JSON ``body_context``.
+
+``icon_category`` is also computed server-side so the frontend's
+icon palette (success / error / warning / info / import / validation /
+system) doesn't need to know about every backend ``notification_type``
+the platform might emit (or that a third-party module added).
+"""
 
 from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.modules.notifications.templates import (
+    icon_category_for,
+    render as render_template,
+)
+
+# ── Backward-compat key aliases ──────────────────────────────────────────
+#
+# Some events were emitted with an older naming convention where the
+# title_key and body_key were the SAME string (e.g. both
+# ``notifications.rfi.assigned``). The active code now writes
+# ``.title`` / ``.body`` suffixes, but rows already in the DB still
+# have the old keys — without aliasing, those notifications would
+# render as the raw key string in the bell.
+#
+# Resolution: at serialise time, if the stored key has no template
+# entry and there's a ``.title`` / ``.body`` suffixed sibling, treat
+# it as that sibling.
+
+_LEGACY_TITLE_ALIASES: dict[str, str] = {
+    "notifications.rfi.assigned": "notifications.rfi.assigned.title",
+    "notifications.rfi.responded": "notifications.rfi.responded.title",
+    "notifications.risk.assigned": "notifications.risk.assigned.title",
+    "notifications.submittal.submitted": "notifications.submittal.submitted.title",
+    "notifications.submittal.approved": "notifications.submittal.approved.title",
+    "notifications.submittal.rejected": "notifications.submittal.rejected.title",
+    "notifications.submittal.revise_resubmit": "notifications.submittal.revise_resubmit.title",
+    "notifications.transmittal.issued": "notifications.transmittal.issued.title",
+    "notifications.transmittal.acknowledged": "notifications.transmittal.acknowledged.title",
+    "notifications.transmittal.responded": "notifications.transmittal.responded.title",
+}
+
+_LEGACY_BODY_ALIASES: dict[str, str] = {
+    "notifications.rfi.assigned": "notifications.rfi.assigned.body",
+    "notifications.rfi.responded": "notifications.rfi.responded.body",
+    "notifications.risk.assigned": "notifications.risk.assigned.body",
+    "notifications.submittal.submitted": "notifications.submittal.submitted.body",
+    "notifications.submittal.approved": "notifications.submittal.approved.body",
+    "notifications.submittal.rejected": "notifications.submittal.rejected.body",
+    "notifications.submittal.revise_resubmit": "notifications.submittal.revise_resubmit.body",
+    "notifications.transmittal.issued": "notifications.transmittal.issued.body",
+    "notifications.transmittal.acknowledged": "notifications.transmittal.acknowledged.body",
+    "notifications.transmittal.responded": "notifications.transmittal.responded.body",
+}
+
+
+def _resolve_title_key(stored: str) -> str:
+    return _LEGACY_TITLE_ALIASES.get(stored, stored)
+
+
+def _resolve_body_key(stored: str | None) -> str | None:
+    if stored is None:
+        return None
+    return _LEGACY_BODY_ALIASES.get(stored, stored)
 
 
 class NotificationResponse(BaseModel):
-    """‌⁠‍Single notification returned from the API."""
+    """Single notification returned from the API.
+
+    Wire the bell off ``title_default`` + ``body_default`` for guaranteed
+    readability, and use ``title_key`` / ``body_key`` + ``body_context``
+    for proper localisation when the locale file has the keys.
+    """
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
@@ -18,14 +90,53 @@ class NotificationResponse(BaseModel):
     entity_type: str | None = None
     entity_id: str | None = None
     title_key: str
+    title_default: str = ""
     body_key: str | None = None
+    body_default: str = ""
     body_context: dict[str, Any] = Field(default_factory=dict)
     action_url: str | None = None
+    icon_category: str = "info"
     is_read: bool = False
     read_at: datetime | None = None
     metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
     created_at: datetime
     updated_at: datetime
+
+    @model_validator(mode="after")
+    def _populate_defaults(self) -> "NotificationResponse":
+        """Render server-side English fallbacks + map icon category.
+
+        Runs after attribute hydration so the stored keys + context are
+        already on the model. Idempotent — re-running it produces the
+        same output, so it's safe inside FastAPI's response_model
+        revalidation cycle.
+        """
+        ctx = self.body_context or {}
+        # Resolve legacy aliases (DB rows from before .title/.body split)
+        # so the renderer hits the right template.
+        resolved_title_key = _resolve_title_key(self.title_key)
+        resolved_body_key = _resolve_body_key(self.body_key)
+
+        if not self.title_default:
+            object.__setattr__(
+                self, "title_default", render_template(resolved_title_key, ctx),
+            )
+        if not self.body_default and resolved_body_key:
+            object.__setattr__(
+                self, "body_default", render_template(resolved_body_key, ctx),
+            )
+        # Always compute icon_category — the stored notification_type is
+        # the source of truth and the model never persists icon_category.
+        object.__setattr__(
+            self, "icon_category", icon_category_for(self.notification_type),
+        )
+        # Surface the canonical key to the frontend so the i18n call
+        # uses the new convention even for legacy rows.
+        if resolved_title_key != self.title_key:
+            object.__setattr__(self, "title_key", resolved_title_key)
+        if resolved_body_key != self.body_key:
+            object.__setattr__(self, "body_key", resolved_body_key)
+        return self
 
 
 class NotificationListResponse(BaseModel):

@@ -30,6 +30,7 @@ export interface Project {
   locale: string;
   validation_rule_sets: string[];
   status: string;
+  phase?: string | null;
   owner_id: string;
   address?: ProjectAddress | null;
   metadata: Record<string, unknown>;

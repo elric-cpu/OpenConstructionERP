@@ -55,7 +55,7 @@ def _bypass_catalog_gate(monkeypatch):
         return "ok", 1, 1
 
     monkeypatch.setattr(
-        "app.core.match_service.ranker._resolve_catalog_status",
+        "app.core.match_service.ranker_qdrant._resolve_catalog_status",
         _ok,
         raising=True,
     )

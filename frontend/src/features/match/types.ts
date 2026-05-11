@@ -110,6 +110,10 @@ export interface LoadedDatabase {
   readonly count: number;
   readonly vectorized_count: number;
   readonly ready: boolean;
+  /** ISO-639-1 language tag derived from the region id by the backend's
+   *  REGION_LANGUAGE mapping. Used by the /match-elements catalogue
+   *  advisor to recommend catalogues matching the project language. */
+  readonly language?: string;
 }
 
 /** What we send to `POST /api/v1/match/feedback`. */

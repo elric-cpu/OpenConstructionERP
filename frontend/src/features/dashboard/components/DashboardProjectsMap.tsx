@@ -304,15 +304,17 @@ export function DashboardProjectsMap({ projects, className }: DashboardProjectsM
   const Map = mapLib?.default;
   const Marker = mapLib?.Marker;
 
+  // Map height scales with project count — a 1-2 project workspace doesn't
+  // need 256px of map real estate. Saves vertical space on small portfolios.
+  const heightClass = projects.length <= 3 ? 'h-48' : projects.length <= 6 ? 'h-56' : 'h-64';
+
   return (
     <div
       className={clsx(
         'relative overflow-hidden rounded-xl border border-border-light',
         'bg-gradient-to-br from-slate-100 via-slate-50 to-blue-50/30',
         'dark:from-slate-900 dark:via-slate-900/60 dark:to-slate-800',
-        // h-64 = +14% over previous h-56 — within the user's "~10% taller"
-        // ask and matches a clean Tailwind step.
-        'h-64',
+        heightClass,
         className,
       )}
     >

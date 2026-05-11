@@ -54,12 +54,14 @@
   --oe-shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(0, 0, 0, 0.06);
   --oe-shadow-xl: 0 24px 80px rgba(0, 0, 0, 0.14), 0 8px 24px rgba(0, 0, 0, 0.08);
 
-  /* Radius */
+  /* Radius — Apple-current scale (iOS 17+ / macOS Sequoia / WWDC25 Liquid Glass).
+     Reduced 2026-05-11 to match styles-lab tighter values:
+       xs 4 (unchanged)  sm 8→6   md 12→8   lg 16→10   xl 20→12. */
   --oe-radius-xs: 4px;
-  --oe-radius-sm: 8px;
-  --oe-radius-md: 12px;
-  --oe-radius-lg: 16px;
-  --oe-radius-xl: 20px;
+  --oe-radius-sm: 6px;
+  --oe-radius-md: 8px;
+  --oe-radius-lg: 10px;
+  --oe-radius-xl: 12px;
   --oe-radius-full: 9999px;
 
   /* Spacing scale — 4px base */

@@ -42,6 +42,19 @@ export interface RFI {
 export interface RFIFilters {
   project_id?: string;
   status?: RFIStatus | '';
+  search?: string;
+  offset?: number;
+  limit?: number;
+}
+
+export interface RFIStats {
+  total: number;
+  by_status: Record<string, number>;
+  open: number;
+  overdue: number;
+  avg_days_to_response: number | null;
+  cost_impact_count: number;
+  schedule_impact_count: number;
 }
 
 export interface CreateRFIPayload {
@@ -49,9 +62,13 @@ export interface CreateRFIPayload {
   subject: string;
   question: string;
   ball_in_court?: string;
+  assigned_to?: string;
   response_due_date?: string;
+  date_required?: string;
   cost_impact?: boolean;
+  cost_impact_value?: string;
   schedule_impact?: boolean;
+  schedule_impact_days?: number;
   linked_drawing_ids?: string[];
 }
 
@@ -65,8 +82,15 @@ export async function fetchRFIs(filters?: RFIFilters): Promise<RFI[]> {
   const params = new URLSearchParams();
   if (filters?.project_id) params.set('project_id', filters.project_id);
   if (filters?.status) params.set('status', filters.status);
+  if (filters?.search && filters.search.trim()) params.set('search', filters.search.trim());
+  if (typeof filters?.offset === 'number') params.set('offset', String(filters.offset));
+  if (typeof filters?.limit === 'number') params.set('limit', String(filters.limit));
   const qs = params.toString();
   return apiGet<RFI[]>(`/v1/rfi/${qs ? `?${qs}` : ''}`);
+}
+
+export async function fetchRFIStats(projectId: string): Promise<RFIStats> {
+  return apiGet<RFIStats>(`/v1/rfi/stats/?project_id=${encodeURIComponent(projectId)}`);
 }
 
 export async function createRFI(data: CreateRFIPayload): Promise<RFI> {

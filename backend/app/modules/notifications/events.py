@@ -215,8 +215,8 @@ async def _on_rfi_assigned(event: Event) -> None:
             await svc.create(
                 user_id=assignee_id,
                 notification_type="rfi_assigned",
-                title_key="notifications.rfi.assigned",
-                body_key="notifications.rfi.assigned",
+                title_key="notifications.rfi.assigned.title",
+                body_key="notifications.rfi.assigned.body",
                 body_context={
                     "code": data.get("rfi_number") or "",
                     "title": data.get("subject") or "",
@@ -245,8 +245,8 @@ async def _on_risk_assigned(event: Event) -> None:
             await svc.create(
                 user_id=owner_id,
                 notification_type="risk_assigned",
-                title_key="notifications.risk.assigned",
-                body_key="notifications.risk.assigned",
+                title_key="notifications.risk.assigned.title",
+                body_key="notifications.risk.assigned.body",
                 body_context={
                     "code": data.get("code") or "",
                     "title": data.get("title") or "",
@@ -279,8 +279,8 @@ async def _on_rfi_responded(event: Event) -> None:
             await svc.create(
                 user_id=requester_id,
                 notification_type="rfi_responded",
-                title_key="notifications.rfi.responded",
-                body_key="notifications.rfi.responded",
+                title_key="notifications.rfi.responded.title",
+                body_key="notifications.rfi.responded.body",
                 body_context={
                     "code": data.get("rfi_number") or "",
                     "title": data.get("subject") or "",
@@ -342,8 +342,8 @@ async def _on_submittal_submitted(event: Event) -> None:
                 await svc.create(
                     user_id=uid,
                     notification_type="submittal_submitted",
-                    title_key="notifications.submittal.submitted",
-                    body_key="notifications.submittal.submitted",
+                    title_key="notifications.submittal.submitted.title",
+                    body_key="notifications.submittal.submitted.body",
                     body_context={
                         "code": data.get("submittal_number") or "",
                         "title": data.get("title") or "",
@@ -372,8 +372,8 @@ async def _on_submittal_approved(event: Event) -> None:
             await svc.create(
                 user_id=submitter_id,
                 notification_type="submittal_approved",
-                title_key="notifications.submittal.approved",
-                body_key="notifications.submittal.approved",
+                title_key="notifications.submittal.approved.title",
+                body_key="notifications.submittal.approved.body",
                 body_context={
                     "code": data.get("submittal_number") or "",
                     "title": data.get("title") or "",
@@ -402,8 +402,8 @@ async def _on_submittal_rejected(event: Event) -> None:
             await svc.create(
                 user_id=submitter_id,
                 notification_type="submittal_rejected",
-                title_key="notifications.submittal.rejected",
-                body_key="notifications.submittal.rejected",
+                title_key="notifications.submittal.rejected.title",
+                body_key="notifications.submittal.rejected.body",
                 body_context={
                     "code": data.get("submittal_number") or "",
                     "title": data.get("title") or "",
@@ -433,8 +433,8 @@ async def _on_submittal_revise_resubmit(event: Event) -> None:
             await svc.create(
                 user_id=submitter_id,
                 notification_type="submittal_revise_resubmit",
-                title_key="notifications.submittal.revise_resubmit",
-                body_key="notifications.submittal.revise_resubmit",
+                title_key="notifications.submittal.revise_resubmit.title",
+                body_key="notifications.submittal.revise_resubmit.body",
                 body_context={
                     "code": data.get("submittal_number") or "",
                     "title": data.get("title") or "",
@@ -466,8 +466,8 @@ async def _on_transmittal_issued(event: Event) -> None:
             await svc.create(
                 user_id=recipient_id,
                 notification_type="transmittal_issued",
-                title_key="notifications.transmittal.issued",
-                body_key="notifications.transmittal.issued",
+                title_key="notifications.transmittal.issued.title",
+                body_key="notifications.transmittal.issued.body",
                 body_context={
                     "code": data.get("code") or "",
                     "title": data.get("title") or "",
@@ -496,8 +496,8 @@ async def _on_transmittal_acknowledged(event: Event) -> None:
             await svc.create(
                 user_id=sender_id,
                 notification_type="transmittal_acknowledged",
-                title_key="notifications.transmittal.acknowledged",
-                body_key="notifications.transmittal.acknowledged",
+                title_key="notifications.transmittal.acknowledged.title",
+                body_key="notifications.transmittal.acknowledged.body",
                 body_context={
                     "code": data.get("code") or "",
                     "title": data.get("title") or "",
@@ -528,8 +528,8 @@ async def _on_transmittal_responded(event: Event) -> None:
             await svc.create(
                 user_id=sender_id,
                 notification_type="transmittal_responded",
-                title_key="notifications.transmittal.responded",
-                body_key="notifications.transmittal.responded",
+                title_key="notifications.transmittal.responded.title",
+                body_key="notifications.transmittal.responded.body",
                 body_context={
                     "code": data.get("code") or "",
                     "title": data.get("title") or "",

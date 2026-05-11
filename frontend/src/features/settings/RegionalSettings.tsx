@@ -105,6 +105,27 @@ const CURRENCIES = [
   { code: 'MXN', symbol: 'MX$', name: 'Mexican Peso' },
   { code: 'SGD', symbol: 'S$', name: 'Singapore Dollar' },
   { code: 'NZD', symbol: 'NZ$', name: 'New Zealand Dollar' },
+  // Africa
+  { code: 'ZAR', symbol: 'R', name: 'South African Rand' },
+  { code: 'NGN', symbol: '₦', name: 'Nigerian Naira' },
+  { code: 'EGP', symbol: 'E£', name: 'Egyptian Pound' },
+  { code: 'KES', symbol: 'KSh', name: 'Kenyan Shilling' },
+  { code: 'GHS', symbol: '₵', name: 'Ghanaian Cedi' },
+  { code: 'MAD', symbol: 'DH', name: 'Moroccan Dirham' },
+  { code: 'TND', symbol: 'TND', name: 'Tunisian Dinar' },
+  { code: 'DZD', symbol: 'DA', name: 'Algerian Dinar' },
+  { code: 'ETB', symbol: 'Br', name: 'Ethiopian Birr' },
+  { code: 'UGX', symbol: 'USh', name: 'Ugandan Shilling' },
+  { code: 'TZS', symbol: 'TSh', name: 'Tanzanian Shilling' },
+  { code: 'RWF', symbol: 'FRw', name: 'Rwandan Franc' },
+  { code: 'XOF', symbol: 'CFA', name: 'West African CFA Franc' },
+  { code: 'XAF', symbol: 'FCFA', name: 'Central African CFA Franc' },
+  { code: 'AOA', symbol: 'Kz', name: 'Angolan Kwanza' },
+  { code: 'MZN', symbol: 'MT', name: 'Mozambique Metical' },
+  { code: 'BWP', symbol: 'P', name: 'Botswana Pula' },
+  { code: 'ZMW', symbol: 'ZK', name: 'Zambian Kwacha' },
+  { code: 'NAD', symbol: 'N$', name: 'Namibia Dollar' },
+  { code: 'MGA', symbol: 'Ar', name: 'Malagasy Ariary' },
 ] as const;
 
 // ── Backend preferences shape ────────────────────────────────────────────────

@@ -29,6 +29,7 @@ covers most cross-lang recall and the cascade adds 50-200 ms p50. Flip
 from __future__ import annotations
 
 import logging
+import os
 import time
 import uuid
 from types import SimpleNamespace
@@ -43,8 +44,10 @@ from app.core.match_service.config import (
     SCORE_CEIL,
     SCORE_FLOOR,
     SEARCH_OVERFETCH,
+    confidence_thresholds_for_model,
 )
 from app.core.match_service.envelope import (
+    ConfidenceBand,
     ElementEnvelope,
     MatchCandidate,
     MatchRequest,
@@ -77,6 +80,87 @@ _BOOSTS = (
     boost_unit.boost,
     boost_region.boost,
 )
+
+
+def _active_encoder_id() -> str | None:
+    """Resolve the active encoder model id for confidence-band calibration.
+
+    The encoder id keys ``data/match/encoder_profiles.json`` so a
+    deployment that swapped to e5-small or the Sonnet rerank tier gets
+    matching score bands without a code deploy. Returns ``None`` on any
+    failure so :func:`confidence_thresholds_for_model` falls back to the
+    canonical ``CONFIDENCE_*_THRESHOLD`` constants.
+    """
+    # Env var overrides the bound setting so operators can A/B without a
+    # config push — matches the env-override pattern used everywhere
+    # else in match_service/config.py.
+    env_val = os.environ.get("MATCH_EMBEDDING_MODEL")
+    if env_val:
+        return str(env_val).split("/")[-1].lower()
+    try:
+        from app.config import get_settings
+
+        s = get_settings()
+        model = getattr(s, "cwicr_embedding_model", None) or getattr(
+            s, "embedding_model_name", None,
+        )
+        if model:
+            # encoder_profiles.json keys are short labels ("bge-m3",
+            # "e5-small") while settings hold the full HuggingFace path
+            # ("BAAI/bge-m3"). Normalise by stripping the org prefix and
+            # lower-casing — keeps the profile file canonical.
+            short = str(model).split("/")[-1].lower()
+            return short
+    except Exception:
+        return None
+    return None
+
+
+def _dynamic_confidence_band(
+    score: float,
+    *,
+    encoder_id: str | None = None,
+    hard_filters_matched: int = 0,
+    classification_confidence: str | None = None,
+) -> ConfidenceBand:
+    """Confidence band keyed off per-encoder profile thresholds.
+
+    Wraps :func:`confidence_band_for` so existing hard-filter / classification
+    bonus logic stays in one place. When the encoder profile resolves
+    cleanly we use its ``(high, medium)`` floors; otherwise fall back to
+    the canonical constants the legacy helper consults.
+    """
+    try:
+        high, medium, _ = confidence_thresholds_for_model(encoder_id)
+    except Exception:
+        return confidence_band_for(
+            score,
+            hard_filters_matched=hard_filters_matched,
+            classification_confidence=classification_confidence,
+        )
+
+    # Apply the same v3 §6.4 derivation as the canonical helper, but
+    # against the profile-derived floors.
+    cls = (classification_confidence or "").strip().lower()
+    cls_offset = -0.02 if cls == "high" else 0.03 if cls == "low" else 0.0
+
+    high_floor = high + cls_offset
+    medium_floor = medium + cls_offset
+
+    # The bonus floors mirror envelope._HARD_FILTER_*_BONUS_FLOOR but
+    # scaled relative to the profile defaults — operators retuning bands
+    # for a different encoder shouldn't have to also retune the bonus
+    # floors. 0.96× HIGH ≈ original 0.75/0.78 ratio for BGE-M3.
+    if hard_filters_matched >= 3:
+        high_floor = min(high_floor, (high * 0.96) + cls_offset)
+    if hard_filters_matched >= 1:
+        medium_floor = min(medium_floor, (medium * 0.97) + cls_offset)
+
+    if score >= high_floor:
+        return "high"
+    if score >= medium_floor:
+        return "medium"
+    return "low"
 
 
 # ── Catalogue resolution ─────────────────────────────────────────────────
@@ -255,7 +339,9 @@ def _hit_to_candidate(
         score=raw_score,
         vector_score=raw_score,
         boosts_applied={},
-        confidence_band=confidence_band_for(raw_score),
+        confidence_band=_dynamic_confidence_band(
+            raw_score, encoder_id=_active_encoder_id(),
+        ),
         region_code=region_code,
         source=str(payload.get("source") or "cwicr"),
         language=str(full.get("language") or payload.get("language") or ""),
@@ -581,10 +667,14 @@ async def rank(
         else:
             candidate.score = candidate.vector_score
         # v3-P9 §6.4: derive confidence with hard-filter density and
-        # the candidate's classification_confidence stamp.
+        # the candidate's classification_confidence stamp. Encoder-aware
+        # band floors come from data/match/encoder_profiles.json so a
+        # cutover from BGE-M3 to a different encoder doesn't silently
+        # mis-classify candidates.
         hard_filter_count = len(plan.hard_filters)
-        candidate.confidence_band = confidence_band_for(
+        candidate.confidence_band = _dynamic_confidence_band(
             candidate.score,
+            encoder_id=_active_encoder_id(),
             hard_filters_matched=hard_filter_count,
             classification_confidence=(
                 full_rows.get(hit.rate_code, {}).get("classification_confidence")

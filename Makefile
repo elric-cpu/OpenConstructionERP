@@ -1,4 +1,4 @@
-.PHONY: help dev dev-backend dev-frontend dev-unix stop test lint format migrate seed build
+.PHONY: help dev dev-backend dev-frontend dev-unix stop test lint format migrate seed seed-cwicr-v3 build
 
 # ─── Variables ──────────────────────────────────────────────────────────────
 BACKEND_DIR = backend
@@ -95,6 +95,14 @@ migrate-down: ## Rollback last migration
 
 seed: ## Load seed data (cost catalog). Demo projects are auto-created on first backend startup.
 	cd $(BACKEND_DIR) && python -m app.scripts.seed_catalog
+
+# Override with REGIONS="--regions USA_USD,GB_LONDON" or REGIONS="--top-n 5".
+# Default ``--top-n 3`` installs the 3 most-popular catalogues so a fresh
+# deployment boots with US/UK/DE rate books pre-loaded — operators no
+# longer need to visit /costs and click Install for every region.
+REGIONS ?= --top-n 3
+seed-cwicr-v3: ## Install CWICR v3 catalogues (REGIONS="--top-n 3" by default; needs CWICR_QDRANT_URL)
+	cd $(BACKEND_DIR) && python -m scripts.seed_cwicr_v3 $(REGIONS)
 
 db-reset: ## Drop and recreate database (DESTRUCTIVE)
 	$(DOCKER_COMPOSE) exec postgres psql -U oe -c "DROP DATABASE IF EXISTS openestimate;"

@@ -30,6 +30,29 @@ Public API:
 
 from __future__ import annotations
 
+import logging
+import os
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+
+def _default_fallback_language() -> str:
+    """Resolve the universal fallback language from env, default ``"en"``.
+
+    The fallback only kicks in when the catalogue id can't be resolved by
+    any other path (canonical map, alias, head-prefix). Setting
+    ``MATCH_DEFAULT_FALLBACK_LANGUAGE`` lets a non-English deployment
+    point unknown catalogues at, say, ``"es"`` so a Spanish-only tenant
+    doesn't suddenly start tokenising rows in English.
+
+    Validated to a 2-letter ISO-639-1 lowercased tag; bogus values
+    silently fall back to ``"en"`` rather than break ranking.
+    """
+    raw = (os.getenv("MATCH_DEFAULT_FALLBACK_LANGUAGE") or "en").strip().lower()
+    return raw if len(raw) == 2 and raw.isalpha() else "en"
+
+
 # Canonical region/catalogue IDs. Keys here MUST be the form used by:
 #   - the parquet/CSV ``region`` column we ship in CWICR seed data
 #   - the ``project.cost_database_id`` catalogue picker
@@ -62,7 +85,35 @@ REGION_LANGUAGE: dict[str, str] = {
     "NZ_AUCKLAND": "en",
     "ZA_JOHANNESBURG": "en",
     "NG_LAGOS": "en",
+    "KE_NAIROBI": "en",
+    "GH_ACCRA": "en",
+    "UG_KAMPALA": "en",
+    "TZ_DARESSALAAM": "en",
+    "RW_KIGALI": "en",
+    "ZM_LUSAKA": "en",
+    "BW_GABORONE": "en",
+    "NA_WINDHOEK": "en",
+    "ZW_HARARE": "en",
+    "MW_LILONGWE": "en",
     "IN_MUMBAI": "en",
+    # Africa — Francophone / Arabic / Lusophone
+    "MA_CASABLANCA": "ar",
+    "DZ_ALGIERS": "ar",
+    "TN_TUNIS": "ar",
+    "EG_CAIRO": "ar",
+    "SD_KHARTOUM": "ar",
+    "LY_TRIPOLI": "ar",
+    "SN_DAKAR": "fr",
+    "CI_ABIDJAN": "fr",
+    "CM_DOUALA": "fr",
+    "BJ_COTONOU": "fr",
+    "ML_BAMAKO": "fr",
+    "BF_OUAGADOUGOU": "fr",
+    "TG_LOME": "fr",
+    "MG_ANTANANARIVO": "fr",
+    "AO_LUANDA": "pt",
+    "MZ_MAPUTO": "pt",
+    "ET_ADDISABABA": "am",
     # Slavic / CIS
     "PL_WARSAW": "pl",
     "CZ_PRAGUE": "cs",
@@ -112,6 +163,74 @@ _ALIASES: dict[str, str] = {
 }
 
 
+# YAML overlay — operators can extend region/alias mappings in
+# ``data/match/region_language.yaml`` without a code change. Loaded
+# defensively: any failure (missing pyyaml, missing file, malformed
+# content) logs a warning and leaves the hardcoded dicts untouched.
+def _load_region_language_yaml_overlay() -> None:
+    """Merge ``data/match/region_language.yaml`` into the canonical maps.
+
+    Schema (all sections optional):
+
+    .. code-block:: yaml
+
+        regions:
+          XX_CITY: lang
+        aliases:
+          OLD_ID: CANONICAL_ID
+        country_overrides:
+          XX: lang
+
+    YAML wins on conflicts so a tenant override sticks. Safe to call
+    multiple times — re-invocations re-merge from disk.
+    """
+    yaml_path = Path(__file__).resolve().parents[4] / "data" / "match" / "region_language.yaml"
+    if not yaml_path.is_file():
+        logger.debug("region_language YAML overlay not found at %s — using hardcoded only", yaml_path)
+        return
+
+    try:
+        import yaml  # noqa: PLC0415
+    except ImportError:
+        logger.warning("region_language: pyyaml not installed — skipping YAML overlay")
+        return
+
+    try:
+        raw = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        logger.warning("region_language: YAML overlay read failed (%s) — using hardcoded only", exc)
+        return
+
+    if not isinstance(raw, dict):
+        logger.warning("region_language: YAML overlay is not a mapping — skipping")
+        return
+
+    regions = raw.get("regions") or {}
+    aliases = raw.get("aliases") or {}
+    overrides = raw.get("country_overrides") or {}
+
+    merged = 0
+    for k, v in regions.items() if isinstance(regions, dict) else []:
+        if isinstance(k, str) and isinstance(v, str):
+            REGION_LANGUAGE[k.upper()] = v.lower()
+            merged += 1
+    for k, v in aliases.items() if isinstance(aliases, dict) else []:
+        if isinstance(k, str) and isinstance(v, str):
+            _ALIASES[k.upper()] = v.upper()
+            merged += 1
+    for k, v in overrides.items() if isinstance(overrides, dict) else []:
+        if isinstance(k, str) and isinstance(v, str):
+            _BARE_COUNTRY_OVERRIDES[k.upper()] = v.lower()
+            merged += 1
+
+    if merged:
+        logger.info("region_language: YAML overlay merged %d entries from %s", merged, yaml_path)
+
+
+# NOTE: _BARE_COUNTRY_OVERRIDES is defined below — we call the loader
+# AFTER it's declared (at the very bottom of the static-config block)
+# so the YAML can extend all three dicts in one pass.
+
 # Bare ISO-3166 alpha-2 country code → language tag, derived from
 # REGION_LANGUAGE at module load. ``"DE"`` resolves via the first
 # ``DE_*`` key (deterministic dict iteration since Python 3.7), so
@@ -119,18 +238,6 @@ _ALIASES: dict[str, str] = {
 # know which city is canonical. Built once at import — the underlying
 # REGION_LANGUAGE never mutates at runtime.
 #
-# This solves a v3-collection-naming corner: catalogues stored as bare
-# country codes (an early CWICR shipping convention before the
-# ``COUNTRY_CITY`` form settled) used to land in ``cwicr_en_v3`` because
-# ``"DE"`` had no direct REGION_LANGUAGE hit. With the head-fallback
-# they correctly route to their language collection.
-_HEAD_LANGUAGE: dict[str, str] = {}
-for _key, _lang in REGION_LANGUAGE.items():
-    _head = _key.split("_", 1)[0]
-    _HEAD_LANGUAGE.setdefault(_head, _lang)
-del _key, _lang, _head
-
-
 # Country codes whose ISO-3166 letters happen to clash with ISO-639
 # language codes — explicit overrides so the country interpretation
 # wins. ``AR`` is Argentina (es) not Arabic; ``ID`` is Indonesia (id);
@@ -159,6 +266,23 @@ _BARE_COUNTRY_OVERRIDES: dict[str, str] = {
 }
 
 
+# Merge YAML overlay (no-op when file missing or pyyaml unavailable),
+# then auto-build the bare-country head map from the final REGION_LANGUAGE.
+_load_region_language_yaml_overlay()
+
+# Auto-built bare-country head map. Iterates the (possibly YAML-extended)
+# REGION_LANGUAGE so ``"DE"`` resolves through the first ``DE_*`` key
+# without callers having to know which city is canonical.
+_HEAD_LANGUAGE: dict[str, str] = {}
+for _key, _lang in REGION_LANGUAGE.items():
+    _head = _key.split("_", 1)[0]
+    _HEAD_LANGUAGE.setdefault(_head, _lang)
+try:
+    del _key, _lang, _head
+except NameError:
+    pass
+
+
 def language_for(code: str | None) -> str:
     """Return the dominant ISO-639-1 language tag for a region or catalogue id.
 
@@ -177,11 +301,12 @@ def language_for(code: str | None) -> str:
     The lookup is case-insensitive on the input but case-sensitive on
     the table (matching the historical ``UPPER`` storage convention).
     """
+    fallback = _default_fallback_language()
     if not code:
-        return "en"
+        return fallback
     key = code.strip().upper()
     if not key:
-        return "en"
+        return fallback
     if key in REGION_LANGUAGE:
         return REGION_LANGUAGE[key]
     canonical = _ALIASES.get(key)
@@ -200,7 +325,7 @@ def language_for(code: str | None) -> str:
             return _HEAD_LANGUAGE[head]
     elif key in _HEAD_LANGUAGE:
         return _HEAD_LANGUAGE[key]
-    return "en"
+    return fallback
 
 
 def country_head(code: str | None) -> str | None:

@@ -6,7 +6,7 @@
  * preview pane) intact.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ChevronRight, HardDrive, UploadCloud } from 'lucide-react';
@@ -83,6 +83,7 @@ export function FileManagerPage() {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<NonNullable<FileFilters['sort']>>('modified');
   const [view, setView] = useState<ViewMode>(() => readViewMode());
+  const [extension, setExtension] = useState<string | undefined>(undefined);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [previewRow, setPreviewRow] = useState<FileRow | null>(null);
   const [showExport, setShowExport] = useState(false);
@@ -112,8 +113,9 @@ export function FileManagerPage() {
       sort,
       ...(selectedKind ? { category: selectedKind } : {}),
       ...(query.trim() ? { q: query.trim() } : {}),
+      ...(extension ? { extension } : {}),
     }),
-    [sort, selectedKind, query],
+    [sort, selectedKind, query, extension],
   );
 
   const { data: tree, isLoading: treeLoading } = useFileTree(projectId);
@@ -153,7 +155,31 @@ export function FileManagerPage() {
     }
   }, [fileIdParam, list]);
 
-  function handleSelect(id: string, additive: boolean) {
+  /* Anchor for shift-click range selection — the last single-clicked id.
+     Shift+click expands the visible range from anchor to target; plain click
+     resets the anchor. We keep this in a ref so it does not trigger renders. */
+  const lastClickedRef = useRef<string | null>(null);
+
+  function handleSelect(id: string, additive: boolean, shift = false) {
+    const items = list?.items ?? [];
+    if (shift && lastClickedRef.current) {
+      const anchor = lastClickedRef.current;
+      const a = items.findIndex((r) => r.id === anchor);
+      const b = items.findIndex((r) => r.id === id);
+      if (a >= 0 && b >= 0) {
+        const [lo, hi] = a < b ? [a, b] : [b, a];
+        const range = items.slice(lo, hi + 1).map((r) => r.id);
+        setSelectedIds((prev) => {
+          const next = new Set(additive ? prev : []);
+          for (const rid of range) next.add(rid);
+          return next;
+        });
+        const row = list?.items.find((r) => r.id === id);
+        if (row) setPreviewRow(row);
+        return;
+      }
+    }
+
     setSelectedIds((prev) => {
       const next = new Set(additive ? prev : []);
       if (prev.has(id) && additive) {
@@ -163,6 +189,7 @@ export function FileManagerPage() {
       }
       return next;
     });
+    lastClickedRef.current = id;
     const row = list?.items.find((r) => r.id === id);
     if (row) setPreviewRow(row);
   }
@@ -298,6 +325,8 @@ export function FileManagerPage() {
                 onExport={() => setShowExport(true)}
                 onImport={() => setShowImport(true)}
                 totalCount={list?.total ?? 0}
+                extension={extension}
+                onExtensionChange={setExtension}
               />
               <BulkActionsBar
                 selectedRows={selectedRows}

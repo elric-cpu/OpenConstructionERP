@@ -35,11 +35,59 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from app.core.match_service.config import confidence_thresholds_for_model
 from app.core.match_service.envelope import (
+    ConfidenceBand,
     ElementEnvelope,
     MatchCandidate,
     confidence_band_for,
 )
+
+
+# BGE cross-encoder shares its score distribution with the bge-m3 family
+# the bi-encoder uses, so we re-use that profile key. Operators who swap
+# the cross-encoder for a different model can override via env or by
+# editing data/match/encoder_profiles.json.
+_BGE_PROFILE_KEY: str = "bge-m3"
+
+
+def _dynamic_band_for_bge(
+    score: float,
+    *,
+    hard_filters_matched: int = 0,
+    classification_confidence: str | None = None,
+) -> ConfidenceBand:
+    """Confidence band keyed off the BGE encoder profile.
+
+    Falls back to the canonical :func:`confidence_band_for` whenever the
+    profile resolves to the global constants (the helper is a no-op then),
+    so legacy tests that pin behaviour against the env-overridable
+    constants stay green.
+    """
+    try:
+        high, medium, _ = confidence_thresholds_for_model(_BGE_PROFILE_KEY)
+    except Exception:
+        return confidence_band_for(
+            score,
+            hard_filters_matched=hard_filters_matched,
+            classification_confidence=classification_confidence,
+        )
+
+    cls = (classification_confidence or "").strip().lower()
+    cls_offset = -0.02 if cls == "high" else 0.03 if cls == "low" else 0.0
+
+    high_floor = high + cls_offset
+    medium_floor = medium + cls_offset
+    if hard_filters_matched >= 3:
+        high_floor = min(high_floor, (high * 0.96) + cls_offset)
+    if hard_filters_matched >= 1:
+        medium_floor = min(medium_floor, (medium * 0.97) + cls_offset)
+
+    if score >= high_floor:
+        return "high"
+    if score >= medium_floor:
+        return "medium"
+    return "low"
 
 logger = logging.getLogger(__name__)
 
@@ -206,7 +254,7 @@ def rerank(
     reranked: list[MatchCandidate] = []
     for cand, new_score in zip(head, normalized, strict=False):
         clamped = max(0.0, min(1.0, new_score))
-        band = confidence_band_for(
+        band = _dynamic_band_for_bge(
             clamped,
             hard_filters_matched=hard_filters_matched,
             classification_confidence=by_code.get(cand.code),

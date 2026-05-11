@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, ExternalLink, FileText, Image as ImageIcon, Layout,
 import clsx from 'clsx';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { primaryModule } from '../kindModule';
+import { CDEBadge } from './CDEBadge';
 import type { FileRow, FileKind, FileFilters } from '../types';
 
 const KIND_ICON: Record<FileKind, typeof FileText> = {
@@ -21,7 +22,7 @@ const KIND_ICON: Record<FileKind, typeof FileText> = {
 interface FileListProps {
   items: FileRow[];
   selectedIds: Set<string>;
-  onSelect: (id: string, additive: boolean) => void;
+  onSelect: (id: string, additive: boolean, shift?: boolean) => void;
   onOpen: (row: FileRow) => void;
   sort: NonNullable<FileFilters['sort']>;
   onSortChange: (sort: NonNullable<FileFilters['sort']>) => void;
@@ -35,6 +36,7 @@ function fmtBytes(bytes: number): string {
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
+
 
 type SortKey = NonNullable<FileFilters['sort']>;
 
@@ -119,15 +121,32 @@ export function FileList({
                       ? 'bg-oe-blue/10'
                       : 'hover:bg-surface-secondary/60',
                   )}
-                  onClick={(e) => onSelect(row.id, e.metaKey || e.ctrlKey)}
+                  onClick={(e) => onSelect(row.id, e.metaKey || e.ctrlKey, e.shiftKey)}
                   onDoubleClick={() => onOpen(row)}
                 >
                   <td className="px-3 py-2 max-w-0">
                     <div className="flex items-center gap-2 min-w-0">
                       <Icon size={14} strokeWidth={1.75} className="shrink-0 text-content-tertiary" />
+                      {typeof row.extra?.drawing_number === 'string' && row.extra.drawing_number && (
+                        <span
+                          className="font-mono text-[11px] text-content-tertiary shrink-0"
+                          title="Drawing number"
+                        >
+                          {row.extra.drawing_number}
+                        </span>
+                      )}
                       <span className="truncate text-content-primary" title={row.name}>
                         {row.name}
                       </span>
+                      {typeof row.extra?.revision_code === 'string' && row.extra.revision_code && (
+                        <span
+                          className="inline-flex items-center rounded-md border border-border-light px-1.5 py-0.5 text-[10px] font-medium text-content-secondary shrink-0"
+                          title="Revision"
+                        >
+                          Rev {row.extra.revision_code}
+                        </span>
+                      )}
+                      <CDEBadge state={row.extra?.cde_state as string | undefined} />
                     </div>
                   </td>
                   <td className="px-3 py-2 text-content-secondary text-xs">

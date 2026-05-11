@@ -21,12 +21,38 @@ from rapidfuzz import fuzz, process
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.match_service.config import lex_thresholds_for_language
 from app.core.match_service.envelope import (
+    ConfidenceBand,
     ElementEnvelope,
     MatchCandidate,
     confidence_band_for,
 )
 from app.modules.catalog.models import CatalogResource
+
+
+def _lex_band(raw_score: float, lang: str | None) -> ConfidenceBand:
+    """Map a rapidfuzz ``token_set_ratio`` (0-100) → confidence band.
+
+    Reads ``lex_thresholds_for_language`` so inflectional languages
+    (PL/RU/FI/TR/...) get a lower cutoff than analytical ones (EN/DE).
+    Falls back to :func:`confidence_band_for` against the normalised
+    [0,1] score whenever the helper raises / returns falsy values, so a
+    malformed ``data/match/lex_thresholds.json`` never breaks the matcher.
+    """
+    try:
+        high, medium = lex_thresholds_for_language(lang)
+    except Exception:
+        return confidence_band_for(raw_score / 100.0)
+
+    if not high or not medium:
+        return confidence_band_for(raw_score / 100.0)
+
+    if raw_score >= high:
+        return "high"
+    if raw_score >= medium:
+        return "medium"
+    return "low"
 
 
 def _to_float(s: str) -> float:
@@ -98,6 +124,15 @@ class ResourcesMatcher:
             query, choices, scorer=fuzz.token_set_ratio, limit=top_k,
         )
 
+        # Language hint for the lex-threshold profile — ``ElementEnvelope``
+        # exposes the upstream extractor's detection as ``source_lang``;
+        # ``project_region`` is the fallback when the source itself is
+        # untagged (no extractor language available).
+        lang_hint = (
+            (envelope.source_lang or "")
+            or (envelope.project_region or "").split("_", 1)[0].lower()
+        )
+
         out: list[MatchCandidate] = []
         for _matched, score, idx in scored:
             row = rows[idx]
@@ -113,7 +148,11 @@ class ResourcesMatcher:
                     score=score_norm,
                     vector_score=0.0,
                     boosts_applied={"resources_token_set": score_norm},
-                    confidence_band=confidence_band_for(score_norm),
+                    # Per-language lex thresholds (PL/RU/FI/TR have lower
+                    # cutoffs to compensate for declension noise). Falls
+                    # back to the canonical confidence_band_for whenever
+                    # the profile lookup misfires.
+                    confidence_band=_lex_band(float(score), lang_hint),
                     region_code=row.region or "",
                     source="resources",
                     classification={

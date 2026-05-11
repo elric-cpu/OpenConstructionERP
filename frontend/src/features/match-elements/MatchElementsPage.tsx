@@ -31,6 +31,7 @@ import {
   ChevronRight,
   ChevronsRight,
   Database,
+  Download,
   FileSpreadsheet,
   FileText,
   Languages,
@@ -69,6 +70,7 @@ import {
 } from './api';
 import { EmbedderStatusCard } from './EmbedderStatusCard';
 import { MatchAnalyticsCard } from './MatchAnalyticsCard';
+import { CataloguesPanelCard } from './CataloguesPanelCard';
 import { MatchDetailPanel } from './MatchDetailPanel';
 import { NewSessionFromExcelModal } from './NewSessionFromExcelModal';
 import { NewSessionFromTextModal } from './NewSessionFromTextModal';
@@ -303,7 +305,14 @@ function VectorReadinessPill({
   const isAmber = ['empty', 'missing', 'no_country', 'non_qdrant'].includes(
     readiness.status_band,
   );
-  const showCostsLink = isAmber && readiness.status_band !== 'no_country';
+  // Only the no_country / non_qdrant / disconnected cases benefit from the
+  // raw "Open /costs" link; missing & empty are handled by the
+  // CatalogueAdvisor below with one-click bindable recommendations.
+  const showCostsLink =
+    isAmber &&
+    readiness.status_band !== 'no_country' &&
+    readiness.status_band !== 'missing' &&
+    readiness.status_band !== 'empty';
 
   return (
     <div
@@ -547,13 +556,14 @@ function ProjectContextCard({
   });
 
   const queryClient = useQueryClient();
-  const rebindMut = useMutation({
-    mutationFn: async () => {
-      // Clear the binding — the next session-create or readiness probe
-      // triggers auto_bind_dominant_catalogue, which is now language-aware
-      // and prefers a catalogue whose language matches project.region.
+  // Direct rebind to a specific catalogue — replaces the v2.9.36 "set to
+  // null and pray auto-bind picks something better" mutation, which was
+  // non-deterministic. The advisor now chooses the catalogue and binds
+  // it explicitly via the same /match-settings PATCH.
+  const bindToCatalogueMut = useMutation({
+    mutationFn: async (catalogueId: string) => {
       const { setProjectCatalog } = await import('@/features/match/api');
-      return setProjectCatalog(projectId!, null);
+      return setProjectCatalog(projectId!, catalogueId);
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({
@@ -636,95 +646,329 @@ function ProjectContextCard({
         readiness={readinessQ.data}
         isLoading={readinessQ.isLoading}
       />
-      {readinessQ.data?.language_mismatch?.status === 'mismatch' && (
-        <LanguageMismatchBanner
-          mismatch={readinessQ.data.language_mismatch}
-          onRebind={() => rebindMut.mutate()}
-          isRebinding={rebindMut.isPending}
-          rebindError={
-            rebindMut.error ? String(rebindMut.error) : null
-          }
-        />
-      )}
+      <CatalogueAdvisor
+        projectRegion={project?.region ?? null}
+        readiness={readinessQ.data}
+        bindMut={bindToCatalogueMut}
+      />
     </div>
   );
 }
 
-/** Cross-language binding warning. Surfaces when the project's bound
- *  CWICR catalogue speaks a different language than the project region —
- *  e.g. a US project bound to RU_MOSCOW, which would surface Russian
- *  descriptions on /match-elements. The "Re-bind" CTA clears the binding
- *  and lets ``auto_bind_dominant_catalogue`` (now language-aware) pick
- *  a language-matching catalogue on the next session create. */
-function LanguageMismatchBanner({
-  mismatch,
-  onRebind,
-  isRebinding,
-  rebindError,
+/** Smart catalogue advisor — replaces the v2.9.36 dual-banner UX (a
+ *  warning pill + a "re-bind blindly" mutation that relied on auto-bind
+ *  picking the right thing). Now we *show* the user which catalogues are
+ *  loaded and ready in their language, and let them bind to a specific
+ *  one in a single click — no leaving the page, no manual /costs trip,
+ *  no auto-bind lottery.
+ *
+ *  Renders in three states:
+ *
+ *  1. **Language mismatch** (bound catalogue is a different language than
+ *     the project region). Shows top-3 ready catalogues in the project
+ *     language as one-click bind buttons, each with rate count. Region
+ *     prefix matches (e.g. USA_* for region "US") sort first.
+ *  2. **Collection not loaded / not vectorised**. Same picker, plus a
+ *     fallback link to /costs if no language-matching catalogue is loaded.
+ *  3. **All good** (status=ready, no mismatch). Renders nothing. */
+function CatalogueAdvisor({
+  projectRegion,
+  readiness,
+  bindMut,
 }: {
-  mismatch: NonNullable<VectorReadiness['language_mismatch']>;
-  onRebind: () => void;
-  isRebinding: boolean;
-  rebindError: string | null;
+  projectRegion: string | null;
+  readiness: VectorReadiness | undefined;
+  bindMut: ReturnType<typeof useMutation<
+    { cost_database_id: string | null },
+    Error,
+    string
+  >>;
 }) {
   const { t } = useTranslation();
-  const projLang = (mismatch.project_language || '').toUpperCase();
-  const boundLang = (mismatch.bound_language || '').toUpperCase();
+
+  const projectLanguage = (readiness?.language || '').toLowerCase();
+  const isMismatch = readiness?.language_mismatch?.status === 'mismatch';
+  const isMissing = readiness?.status_band === 'missing';
+  const isEmpty = readiness?.status_band === 'empty';
+  const showAdvisor = isMismatch || isMissing || isEmpty;
+
+  const dbsQ = useQuery({
+    enabled: showAdvisor,
+    queryKey: ['loaded-databases'],
+    queryFn: async () => {
+      const { listLoadedDatabases } = await import('@/features/match/api');
+      return listLoadedDatabases();
+    },
+    staleTime: 60_000,
+  });
+
+  // Language-matching, ready catalogues, sorted by region affinity then
+  // by rate count. Region prefix match: e.g. project region "US" boosts
+  // any catalogue id starting with "US" (USA_NEWYORK, USA_USD, …).
+  const recommendations = useMemo(() => {
+    if (!dbsQ.data || !projectLanguage) return [];
+    const regionPrefix = (projectRegion || '').slice(0, 2).toUpperCase();
+    return [...dbsQ.data]
+      .filter((db) => db.ready && (db.language || '').toLowerCase() === projectLanguage)
+      .sort((a, b) => {
+        const aMatch = regionPrefix && a.id.toUpperCase().startsWith(regionPrefix) ? 1 : 0;
+        const bMatch = regionPrefix && b.id.toUpperCase().startsWith(regionPrefix) ? 1 : 0;
+        if (aMatch !== bMatch) return bMatch - aMatch;
+        return b.count - a.count;
+      })
+      .slice(0, 3);
+  }, [dbsQ.data, projectLanguage, projectRegion]);
+
+  // Fallback: if zero loaded catalogues match the project language, surface
+  // the published-but-not-installed v3 snapshots so the user can one-click
+  // install instead of bouncing to /costs.
+  const showInstallables = showAdvisor && !dbsQ.isLoading && recommendations.length === 0;
+  const installablesQ = useQuery({
+    enabled: showInstallables,
+    queryKey: ['catalogues-v3'],
+    queryFn: async () => {
+      const token = (await import('@/stores/useAuthStore')).useAuthStore
+        .getState()
+        .accessToken;
+      const res = await fetch('/api/v1/costs/catalogues-v3/', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error(`catalogues-v3 ${res.status}`);
+      const data: { catalogues: Array<{ region: string; language: string; install_status: string; size_mb: number; country_iso: string }> } =
+        await res.json();
+      return data.catalogues || [];
+    },
+    staleTime: 60_000,
+  });
+  const installables = useMemo(() => {
+    if (!installablesQ.data || !projectLanguage) return [];
+    const regionPrefix = (projectRegion || '').slice(0, 2).toUpperCase();
+    return installablesQ.data
+      .filter(
+        (c) =>
+          c.install_status === 'available' &&
+          (c.language || '').toLowerCase() === projectLanguage,
+      )
+      .sort((a, b) => {
+        const aMatch = regionPrefix && a.region.toUpperCase().startsWith(regionPrefix) ? 1 : 0;
+        const bMatch = regionPrefix && b.region.toUpperCase().startsWith(regionPrefix) ? 1 : 0;
+        if (aMatch !== bMatch) return bMatch - aMatch;
+        return a.size_mb - b.size_mb;
+      })
+      .slice(0, 3);
+  }, [installablesQ.data, projectLanguage, projectRegion]);
+
+  const qcInstall = useQueryClient();
+  const installMut = useMutation({
+    mutationFn: async (region: string) => {
+      const token = (await import('@/stores/useAuthStore')).useAuthStore
+        .getState()
+        .accessToken;
+      const res = await fetch(
+        `/api/v1/costs/catalogues-v3/${encodeURIComponent(region)}/install`,
+        {
+          method: 'POST',
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        },
+      );
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: async (_data, region) => {
+      await qcInstall.invalidateQueries({ queryKey: ['catalogues-v3'] });
+      await qcInstall.invalidateQueries({ queryKey: ['loaded-databases'] });
+      // Auto-bind so the user gets a one-click "install + match" path.
+      bindMut.mutate(region);
+    },
+  });
+
+  if (!showAdvisor) return null;
+
+  const projLangUpper = projectLanguage.toUpperCase() || '—';
+  const boundCatalogue = readiness?.language_mismatch?.bound_catalogue || readiness?.collection || '';
+  const boundLangUpper = (
+    readiness?.language_mismatch?.bound_language || ''
+  ).toUpperCase();
+
+  let title: string;
+  let detail: string;
+  if (isMismatch) {
+    title = t(
+      'match_elements.advisor_mismatch_title',
+      'Switch to a {{lang}} catalogue',
+      { lang: projLangUpper },
+    );
+    detail = t(
+      'match_elements.advisor_mismatch_detail',
+      'Currently using {{cat}} ({{boundLang}}). Pick a {{lang}} catalogue below to match your project.',
+      { cat: boundCatalogue || '—', boundLang: boundLangUpper || '—', lang: projLangUpper },
+    );
+  } else if (isMissing) {
+    title = t(
+      'match_elements.advisor_missing_title',
+      '{{lang}} vector collection not loaded',
+      { lang: projLangUpper },
+    );
+    detail = t(
+      'match_elements.advisor_missing_detail',
+      'Pick a ready catalogue below, or load a new one.',
+    );
+  } else {
+    title = t(
+      'match_elements.advisor_empty_title',
+      'Catalogue not vectorised yet',
+    );
+    detail = t(
+      'match_elements.advisor_empty_detail',
+      'Pick a different ready catalogue below, or vectorise the current one.',
+    );
+  }
+
   return (
     <div
-      className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 px-3 py-2.5 text-xs"
+      className="rounded-lg border border-amber-300 bg-amber-50/80 dark:bg-amber-950/30 dark:border-amber-700 p-3.5"
       role="alert"
     >
-      <div className="flex items-start gap-2">
-        <AlertCircle className="w-4 h-4 text-amber-700 dark:text-amber-300 shrink-0 mt-0.5" />
+      <div className="flex items-start gap-3">
+        <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-300 shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
-          <div className="font-medium text-amber-900 dark:text-amber-100">
-            {t(
-              'match_elements.lang_mismatch_title',
-              'Catalogue language does not match project',
-            )}
+          <div className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+            {title}
           </div>
-          <div className="text-amber-800 dark:text-amber-200 mt-0.5">
-            {t(
-              'match_elements.lang_mismatch_detail',
-              'Project region {{region}} speaks {{projLang}}, but the bound catalogue {{catalogue}} is in {{boundLang}}. Match results will surface in the wrong language until you re-bind.',
-              {
-                region: mismatch.project_region || '—',
-                projLang: projLang || '—',
-                catalogue: mismatch.bound_catalogue || '—',
-                boundLang: boundLang || '—',
-              },
-            )}
+          <div className="text-xs text-amber-800 dark:text-amber-200 mt-0.5">
+            {detail}
           </div>
-          {rebindError && (
-            <div className="text-rose-700 dark:text-rose-300 mt-1.5">
-              {rebindError}
+
+          {dbsQ.isLoading && (
+            <div className="mt-2.5 inline-flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-300">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              {t('match_elements.advisor_loading', 'Loading available catalogues…')}
             </div>
           )}
-          <div className="mt-2 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onRebind}
-              disabled={isRebinding}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-600 hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium"
-            >
-              {isRebinding ? (
-                <Loader2 className="w-3 h-3 animate-spin" />
-              ) : (
-                <RefreshCw className="w-3 h-3" />
+
+          {!dbsQ.isLoading && recommendations.length > 0 && (
+            <div className="mt-3 flex flex-col gap-1.5">
+              {recommendations.map((db) => {
+                const regionPrefix = (projectRegion || '').slice(0, 2).toUpperCase();
+                const isRegionMatch = regionPrefix && db.id.toUpperCase().startsWith(regionPrefix);
+                return (
+                  <button
+                    key={db.id}
+                    type="button"
+                    onClick={() => bindMut.mutate(db.id)}
+                    disabled={bindMut.isPending}
+                    className="flex items-center justify-between gap-3 px-3 py-2 rounded-md bg-white dark:bg-surface-primary hover:bg-amber-100 dark:hover:bg-amber-900/40 border border-amber-200 dark:border-amber-700 text-left transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <div className="flex flex-col gap-0.5 min-w-0">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-sm font-semibold text-content-primary truncate">
+                          {db.id}
+                        </span>
+                        {isRegionMatch && (
+                          <span className="text-[9px] uppercase tracking-wider px-1.5 py-px rounded bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 font-bold">
+                            {t('match_elements.advisor_region_match', 'Best')}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-content-tertiary">
+                        {t('match_elements.advisor_rates_count', '{{n}} rates', {
+                          n: db.count.toLocaleString(),
+                        })}
+                        {' · '}
+                        {(db.language || '').toUpperCase()}
+                      </div>
+                    </div>
+                    {bindMut.isPending && bindMut.variables === db.id ? (
+                      <Loader2 className="w-4 h-4 text-amber-600 animate-spin shrink-0" />
+                    ) : (
+                      <ChevronRight className="w-4 h-4 text-amber-600 dark:text-amber-300 shrink-0" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {!dbsQ.isLoading && recommendations.length === 0 && (
+            <>
+              <div className="mt-2.5 text-xs text-amber-800 dark:text-amber-200">
+                {installables.length > 0
+                  ? t(
+                      'match_elements.advisor_install_hint',
+                      'No {{lang}} catalogues loaded yet. One-click install:',
+                      { lang: projLangUpper },
+                    )
+                  : t(
+                      'match_elements.advisor_none_available',
+                      'No {{lang}} catalogues are loaded yet. Visit /costs to import one.',
+                      { lang: projLangUpper },
+                    )}
+              </div>
+              {installables.length > 0 && (
+                <div className="mt-2 flex flex-col gap-1.5">
+                  {installables.map((c) => {
+                    const regionPrefix = (projectRegion || '').slice(0, 2).toUpperCase();
+                    const isRegionMatch =
+                      regionPrefix && c.region.toUpperCase().startsWith(regionPrefix);
+                    const isThisInstalling =
+                      installMut.isPending && installMut.variables === c.region;
+                    return (
+                      <button
+                        key={c.region}
+                        type="button"
+                        onClick={() => installMut.mutate(c.region)}
+                        disabled={installMut.isPending || bindMut.isPending}
+                        className="flex items-center justify-between gap-3 px-3 py-2 rounded-md bg-white dark:bg-surface-primary hover:bg-emerald-50 dark:hover:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-700 text-left transition disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <div className="flex flex-col gap-0.5 min-w-0">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-sm font-semibold text-content-primary truncate">
+                              {c.region}
+                            </span>
+                            {isRegionMatch && (
+                              <span className="text-[9px] uppercase tracking-wider px-1.5 py-px rounded bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 font-bold">
+                                {t('match_elements.advisor_region_match', 'Best')}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-content-tertiary">
+                            {t('match_elements.advisor_install_size', '~{{mb}} MB · {{lang}}', {
+                              mb: c.size_mb,
+                              lang: (c.language || '').toUpperCase(),
+                            })}
+                          </div>
+                        </div>
+                        {isThisInstalling ? (
+                          <Loader2 className="w-4 h-4 text-emerald-600 animate-spin shrink-0" />
+                        ) : (
+                          <Download className="w-4 h-4 text-emerald-600 dark:text-emerald-300 shrink-0" />
+                        )}
+                      </button>
+                    );
+                  })}
+                  {installMut.error && (
+                    <div className="text-xs text-rose-700 dark:text-rose-300 px-1">
+                      {String(installMut.error)}
+                    </div>
+                  )}
+                </div>
               )}
-              {t('match_elements.lang_mismatch_rebind', 'Re-bind catalogue')}
-            </button>
+            </>
+          )}
+
+          <div className="mt-3 flex items-center gap-3 text-xs">
             <Link
               to="/costs"
-              className="text-amber-800 dark:text-amber-200 underline hover:opacity-80"
+              className="inline-flex items-center gap-1 text-amber-800 dark:text-amber-200 underline hover:opacity-80"
             >
-              {t(
-                'match_elements.lang_mismatch_open_costs',
-                'Or load a {{lang}} catalogue',
-                { lang: projLang || '—' },
-              )}
+              <Library className="w-3 h-3" />
+              {t('match_elements.advisor_browse_all', 'Browse all catalogues')}
             </Link>
+            {bindMut.error && (
+              <span className="text-rose-700 dark:text-rose-300">
+                {String(bindMut.error)}
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -1140,6 +1384,16 @@ export function MatchElementsPage() {
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showAllGroupKeys, setShowAllGroupKeys] = useState(false);
+
+  // Project metadata (region) — needed at the page scope so we can pin the
+  // matching catalogue row in CataloguesPanelCard. Shares the React Query
+  // cache with ProjectContextCard (same queryKey), so this is one fetch.
+  const projectMetaQ = useQuery({
+    enabled: !!projectId,
+    queryKey: ['project', projectId],
+    queryFn: () => projectsApi.get(projectId!),
+  });
+  const projectRegion = projectMetaQ.data?.region ?? null;
 
   // ── BIM models for the current project ───────────────────────────────
   const bimModelsQ = useQuery({
@@ -1604,11 +1858,20 @@ export function MatchElementsPage() {
 
       {projectId && (
         <>
+          {/* Cost catalogues — surfaces all 30 CWICR v3 regions so the
+              user can install the one matching their project region.
+              Solves the "only Russian candidates" complaint when only
+              cwicr_ru_v3 happens to be loaded. Pinned region row sticks
+              to the top so the matching install path is one click away. */}
+          <div className="mt-4">
+            <CataloguesPanelCard preferredRegion={projectRegion} />
+          </div>
+
           {/* Free / open-source language model readiness — sits ABOVE
               Step 1 because if BGE-M3 is missing, semantic matching
               simply will not work, and the user should see the install
               path before investing time in picking a model. */}
-          <div className="mt-4">
+          <div className="mt-3">
             <EmbedderStatusCard />
           </div>
 

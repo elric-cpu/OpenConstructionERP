@@ -1,7 +1,7 @@
 /** Left-pane category list for the file manager. */
 
 import { useTranslation } from 'react-i18next';
-import { FileText, Image as ImageIcon, Layout, Box, Pencil, Folder, Tag, FileBarChart, PenTool } from 'lucide-react';
+import { FileText, Image as ImageIcon, Layout, Box, Pencil, Folder, Tag, FileBarChart, PenTool, HardDrive } from 'lucide-react';
 import clsx from 'clsx';
 import type { FileTreeNode, FileKind } from '../types';
 
@@ -37,8 +37,64 @@ export function FileTree({ nodes, selectedId, onSelect, isLoading }: FileTreePro
   const totalCount = nodes.reduce((acc, n) => acc + n.file_count, 0);
   const totalBytes = nodes.reduce((acc, n) => acc + n.total_bytes, 0);
 
+  /* Per-category breakdown drives the proportional storage bar. We cap at the
+     5 largest categories so the bar stays readable; everything else collapses
+     into a neutral "Other" wedge. */
+  const STORAGE_TINTS: Record<FileKind, string> = {
+    document: 'bg-blue-400',
+    photo: 'bg-emerald-400',
+    sheet: 'bg-amber-400',
+    bim_model: 'bg-violet-400',
+    dwg_drawing: 'bg-orange-400',
+    takeoff: 'bg-cyan-400',
+    report: 'bg-pink-400',
+    markup: 'bg-rose-400',
+  };
+  const storageBreakdown = totalBytes > 0
+    ? [...nodes]
+        .filter((n) => n.total_bytes > 0)
+        .sort((a, b) => b.total_bytes - a.total_bytes)
+        .slice(0, 6)
+    : [];
+
   return (
     <aside className="w-60 shrink-0 border-r border-border-light bg-surface-secondary/40 overflow-y-auto">
+      {totalBytes > 0 && (
+        <div className="px-3 pt-3 pb-3 border-b border-border-light">
+          <div className="flex items-center gap-1.5 mb-2 text-2xs font-medium uppercase tracking-wider text-content-tertiary">
+            <HardDrive size={11} strokeWidth={2} />
+            <span>{t('files.tree.storage_used', { defaultValue: 'Storage used' })}</span>
+          </div>
+          <div className="text-base font-semibold text-content-primary tabular-nums">
+            {fmtBytes(totalBytes)}
+          </div>
+          <div className="text-[10px] text-content-tertiary mb-2">
+            {t('files.tree.file_count', {
+              defaultValue: '{{count}} files',
+              count: totalCount,
+            })}
+          </div>
+          <div
+            className="flex h-1.5 w-full overflow-hidden rounded-full bg-surface-tertiary"
+            role="img"
+            aria-label={t('files.tree.storage_breakdown', { defaultValue: 'Storage by category' })}
+          >
+            {storageBreakdown.map((node) => {
+              const kind = node.id.replace(/^category:/, '') as FileKind;
+              const pct = (node.total_bytes / totalBytes) * 100;
+              return (
+                <span
+                  key={node.id}
+                  className={clsx('block h-full', STORAGE_TINTS[kind] ?? 'bg-gray-300')}
+                  style={{ width: `${pct}%` }}
+                  title={`${t(`files.category.${kind}`, { defaultValue: node.label })}: ${fmtBytes(node.total_bytes)}`}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="px-3 pt-3 pb-2">
         <div className="text-2xs font-medium uppercase tracking-wider text-content-tertiary px-2 mb-1">
           {t('files.tree.title', { defaultValue: 'Categories' })}
@@ -104,11 +160,6 @@ export function FileTree({ nodes, selectedId, onSelect, isLoading }: FileTreePro
         )}
       </ul>
 
-      {totalBytes > 0 && (
-        <div className="px-5 pb-4 text-[10px] text-content-quaternary border-t border-border-light pt-3">
-          {t('files.tree.total', { defaultValue: 'Total' })}: {fmtBytes(totalBytes)}
-        </div>
-      )}
     </aside>
   );
 }

@@ -19,7 +19,21 @@ interface FileActionsBarProps {
   onExport: () => void;
   onImport: () => void;
   totalCount: number;
+  extension?: string | undefined;
+  onExtensionChange?: (ext: string | undefined) => void;
 }
+
+/* Predefined file-type filter pills. Each pill maps to one or more extensions
+   passed as `?extension=` to the backend. Pills are intentionally small so the
+   whole row stays under one toolbar height. */
+const TYPE_PILLS: { key: string; label: string; ext?: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'pdf', label: 'PDF', ext: 'pdf' },
+  { key: 'image', label: 'Images', ext: 'jpg' },
+  { key: 'cad', label: 'CAD', ext: 'dwg' },
+  { key: 'bim', label: 'BIM', ext: 'ifc' },
+  { key: 'office', label: 'Office', ext: 'xlsx' },
+];
 
 export function FileActionsBar({
   query,
@@ -31,6 +45,8 @@ export function FileActionsBar({
   onExport,
   onImport,
   totalCount,
+  extension,
+  onExtensionChange,
 }: FileActionsBarProps) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState(query);
@@ -97,6 +113,30 @@ export function FileActionsBar({
       <span className="text-2xs text-content-tertiary tabular-nums">
         {totalCount} {t('files.count_files', { defaultValue: 'files' })}
       </span>
+
+      {onExtensionChange && (
+        <div className="inline-flex items-center gap-1">
+          {TYPE_PILLS.map((p) => {
+            const active = p.ext ? extension === p.ext : !extension;
+            return (
+              <button
+                key={p.key}
+                type="button"
+                onClick={() => onExtensionChange(p.ext)}
+                className={clsx(
+                  'inline-flex h-7 items-center rounded-full px-2.5 text-[11px] font-medium transition-colors',
+                  active
+                    ? 'bg-oe-blue text-white'
+                    : 'border border-border-light text-content-secondary hover:bg-surface-secondary',
+                )}
+                aria-pressed={active}
+              >
+                {t(`files.type_pill.${p.key}`, { defaultValue: p.label })}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div className="ms-auto flex items-center gap-2">
         <div ref={sortRef} className="relative">

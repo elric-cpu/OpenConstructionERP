@@ -1,4 +1,4 @@
-import { Component, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Component, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/app/i18n';
@@ -356,6 +356,89 @@ function computeProjectHealth(
  *   - "What should I do next?" (one prominent button + description)
  *   - "Where am I in the workflow?" (5 checkpoint dots, hover for label)
  */
+/* Construction lifecycle phases — canonical 5-step ribbon. We compare
+   the project's free-text `phase` to known tokens case-insensitively so a
+   project saved as "Construction" or "construction-phase" still highlights
+   the right step. Unmatched values fall back to a single chip. */
+const PHASE_STEPS = [
+  { key: 'planning', match: ['planning', 'pre', 'feasibility'] },
+  { key: 'design', match: ['design', 'concept', 'detailed'] },
+  { key: 'procurement', match: ['procurement', 'tender', 'bidding'] },
+  { key: 'construction', match: ['construction', 'execution', 'build'] },
+  { key: 'closeout', match: ['closeout', 'handover', 'commission', 'turnover'] },
+] as const;
+
+function ProjectPhaseRibbon({ phase }: { phase: string | null }) {
+  const { t } = useTranslation();
+  if (!phase || !phase.trim()) return null;
+
+  const norm = phase.toLowerCase();
+  const activeIdx = PHASE_STEPS.findIndex((s) => s.match.some((m) => norm.includes(m)));
+
+  // Unknown phase — show single chip instead of a fake stepper.
+  if (activeIdx < 0) {
+    return (
+      <div className="mb-4 flex items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-3 py-2 text-xs">
+        <span className="font-medium uppercase tracking-wider text-content-tertiary">
+          {t('projects.phase_label', { defaultValue: 'Phase' })}
+        </span>
+        <span className="font-semibold text-content-primary">{phase}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-4 rounded-lg border border-border-light bg-surface-secondary px-4 py-3">
+      <div className="flex items-center gap-1.5 overflow-x-auto">
+        {PHASE_STEPS.map((step, idx) => {
+          const isActive = idx === activeIdx;
+          const isPast = idx < activeIdx;
+          const label = t(`projects.phase_${step.key}`, {
+            defaultValue: step.key.charAt(0).toUpperCase() + step.key.slice(1),
+          });
+          return (
+            <React.Fragment key={step.key}>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span
+                  className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold tabular-nums ${
+                    isActive
+                      ? 'bg-oe-blue text-white ring-2 ring-oe-blue/30'
+                      : isPast
+                        ? 'bg-oe-blue/20 text-oe-blue'
+                        : 'bg-surface-tertiary text-content-quaternary'
+                  }`}
+                  aria-current={isActive ? 'step' : undefined}
+                >
+                  {isPast ? '✓' : idx + 1}
+                </span>
+                <span
+                  className={`text-xs font-medium whitespace-nowrap ${
+                    isActive
+                      ? 'text-content-primary'
+                      : isPast
+                        ? 'text-content-secondary'
+                        : 'text-content-quaternary'
+                  }`}
+                >
+                  {label}
+                </span>
+              </div>
+              {idx < PHASE_STEPS.length - 1 && (
+                <div
+                  className={`h-px flex-1 min-w-[12px] ${
+                    idx < activeIdx ? 'bg-oe-blue/40' : 'bg-border-light'
+                  }`}
+                  aria-hidden="true"
+                />
+              )}
+            </React.Fragment>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /**
  * ProjectLocationPanel — full-width panel combining an interactive OSM
  * map (left, 60%) with an 18-day weather forecast (right, 40%).  Each
@@ -1416,6 +1499,9 @@ export function ProjectDetailPage() {
 
       {/* ── Location map + weather (toggleable in widget settings) ───────── */}
       <ProjectLocationPanel project={project} />
+
+      {/* ── Phase Ribbon ────────────────────────────────────────────────── */}
+      <ProjectPhaseRibbon phase={project.phase ?? null} />
 
       {/* ── Summary Cards ───────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">

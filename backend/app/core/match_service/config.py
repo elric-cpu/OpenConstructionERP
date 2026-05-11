@@ -23,9 +23,13 @@ debug-level log line is emitted.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
+from functools import lru_cache
+from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -172,3 +176,172 @@ RERANK_BGE_MODEL_NAME: str = os.environ.get(
 # fp16 saves ~50% VRAM on GPU but is a no-op on CPU; default off so the
 # CPU-only VPS path stays bit-identical regardless of env.
 RERANK_BGE_USE_FP16: bool = os.environ.get("MATCH_RERANK_BGE_FP16", "0") in ("1", "true", "True")
+
+
+# ── Profile-driven thresholds (T3.1 / T3.2 / T3.3) ───────────────────────
+#
+# T3.1: confidence-band thresholds are calibrated for BGE-M3 + Qdrant RRF.
+#       Other encoders (e5-small, bge-small) and the Sonnet reranker have
+#       different score distributions and need their own bands.
+# T3.2: boost weights are tuned to v3 DIN-276; per-standard tuning will
+#       layer on top later. For now the API surface exists as a stub.
+# T3.3: lex-fuzz thresholds (RapidFuzz token_set_ratio) are language-
+#       blind by default but inflectional languages (PL/RU/FI/TR/...) need
+#       a lower cutoff to compensate for declension noise.
+#
+# Profile files live under ``data/match/`` so operators can hot-swap them
+# without a code deploy. Missing or malformed files fall back to the
+# existing module-level constants so the import path keeps working in
+# minimal/dev installs that don't ship the data tree.
+
+# Repo layout: ``<root>/backend/app/core/match_service/config.py`` → 5 up
+# = repo root. Then ``data/match/...``.
+_PROFILE_DIR: Path = Path(__file__).resolve().parents[4] / "data" / "match"
+_ENCODER_PROFILE_PATH: Path = _PROFILE_DIR / "encoder_profiles.json"
+_LEX_PROFILE_PATH: Path = _PROFILE_DIR / "lex_thresholds.json"
+
+
+@lru_cache(maxsize=1)
+def _load_encoder_profiles_raw() -> dict[str, Any]:
+    """‌⁠‍Read ``encoder_profiles.json`` once, cache for process lifetime.
+
+    Returns an empty dict on any I/O or parse error so callers can fall
+    back to the canonical constants without raising.
+    """
+    try:
+        with _ENCODER_PROFILE_PATH.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        if not isinstance(data, dict):
+            logger.debug(
+                "MATCH config: encoder_profiles.json root is not an object — ignoring"
+            )
+            return {}
+        return data
+    except FileNotFoundError:
+        return {}
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.debug("MATCH config: encoder_profiles.json unreadable (%s)", exc)
+        return {}
+
+
+@lru_cache(maxsize=1)
+def _load_lex_profiles_raw() -> dict[str, Any]:
+    """‌⁠‍Read ``lex_thresholds.json`` once, cache for process lifetime."""
+    try:
+        with _LEX_PROFILE_PATH.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        if not isinstance(data, dict):
+            logger.debug(
+                "MATCH config: lex_thresholds.json root is not an object — ignoring"
+            )
+            return {}
+        return data
+    except FileNotFoundError:
+        return {}
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.debug("MATCH config: lex_thresholds.json unreadable (%s)", exc)
+        return {}
+
+
+def _load_encoder_profile(model_id: str | None) -> dict[str, float]:
+    """‌⁠‍Return the encoder profile dict for ``model_id`` or {}.
+
+    Lookup order: explicit ``model_id`` → file's ``default`` key →
+    empty dict (caller falls back to canonical constants).
+    """
+    raw = _load_encoder_profiles_raw()
+    if not raw:
+        return {}
+    profiles = raw.get("profiles") or {}
+    if not isinstance(profiles, dict):
+        return {}
+
+    # 1. Exact match.
+    if model_id and model_id in profiles:
+        prof = profiles.get(model_id)
+        if isinstance(prof, dict):
+            return prof
+
+    # 2. Default key from the file.
+    default_key = raw.get("default")
+    if isinstance(default_key, str) and default_key in profiles:
+        prof = profiles.get(default_key)
+        if isinstance(prof, dict):
+            return prof
+
+    return {}
+
+
+def _load_lex_thresholds_for(lang: str) -> dict[str, int]:
+    """‌⁠‍Return the lex-threshold dict for ``lang`` or the file default."""
+    raw = _load_lex_profiles_raw()
+    if not raw:
+        return {}
+    languages = raw.get("languages") or {}
+    if isinstance(languages, dict) and lang:
+        prof = languages.get(lang)
+        if isinstance(prof, dict):
+            return prof
+    default_prof = raw.get("default")
+    if isinstance(default_prof, dict):
+        return default_prof
+    return {}
+
+
+def confidence_thresholds_for_model(
+    model_id: str | None,
+) -> tuple[float, float, float]:
+    """‌⁠‍Resolve ``(high, medium, low)`` confidence bands for ``model_id``.
+
+    Falls back to the canonical ``CONFIDENCE_HIGH_THRESHOLD`` /
+    ``CONFIDENCE_MEDIUM_THRESHOLD`` constants (and ``0.40`` for low)
+    when the profile file is missing or the model is unknown — so legacy
+    call sites keep working unchanged.
+    """
+    prof = _load_encoder_profile(model_id)
+    try:
+        high = float(prof.get("high", CONFIDENCE_HIGH_THRESHOLD))
+    except (TypeError, ValueError):
+        high = CONFIDENCE_HIGH_THRESHOLD
+    try:
+        medium = float(prof.get("medium", CONFIDENCE_MEDIUM_THRESHOLD))
+    except (TypeError, ValueError):
+        medium = CONFIDENCE_MEDIUM_THRESHOLD
+    try:
+        low = float(prof.get("low", 0.40))
+    except (TypeError, ValueError):
+        low = 0.40
+    return (high, medium, low)
+
+
+def lex_thresholds_for_language(lang: str | None) -> tuple[int, int]:
+    """‌⁠‍Resolve ``(high, medium)`` lex thresholds for ``lang``.
+
+    Falls back to ``LEX_HIGH_THRESHOLD`` / ``LEX_MEDIUM_THRESHOLD`` so
+    callers that don't pass a language (or pass an unknown one) keep the
+    historical behaviour.
+    """
+    prof = _load_lex_thresholds_for((lang or "").lower())
+    try:
+        high = int(prof.get("high", LEX_HIGH_THRESHOLD))
+    except (TypeError, ValueError):
+        high = LEX_HIGH_THRESHOLD
+    try:
+        medium = int(prof.get("medium", LEX_MEDIUM_THRESHOLD))
+    except (TypeError, ValueError):
+        medium = LEX_MEDIUM_THRESHOLD
+    return (high, medium)
+
+
+def boost_weights_for_standard(standard: str | None) -> dict[str, float]:
+    """‌⁠‍Resolve boost weights for a classification ``standard``.
+
+    Stub for T3.2 — currently returns the canonical ``BOOST_WEIGHTS`` as
+    a plain dict regardless of ``standard``. The API surface lets future
+    per-standard tuning (DIN 276 vs. NRM vs. MasterFormat) layer in
+    without changing the ranker call sites.
+    """
+    # ``standard`` intentionally ignored for now — see T3.2 in
+    # MATCH_HARDCODE_REGISTRY.md.
+    del standard
+    return asdict(BOOST_WEIGHTS)

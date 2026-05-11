@@ -25,8 +25,8 @@ from app.modules.costs.qdrant_adapter import country_to_collection
 
 
 def test_registry_size_is_intentional():
-    """30-region target from the v3 plan §2.1 — guards against accidental drops."""
-    assert len(CWICR_V3_CATALOGUES) == 30
+    """Region target from v3 plan §2.1 + Africa pack — guards against accidental drops."""
+    assert len(CWICR_V3_CATALOGUES) == 42
 
 
 def test_no_duplicate_regions():
