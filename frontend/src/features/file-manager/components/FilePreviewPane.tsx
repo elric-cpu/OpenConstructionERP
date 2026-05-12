@@ -2,7 +2,7 @@
 
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { Download, Mail, FolderOpen, Copy, X, FileText, Image as ImageIcon, Layout, Box, Pencil, File, PenTool, FileBarChart, Tag, ExternalLink, Activity } from 'lucide-react';
+import { Download, Mail, FolderOpen, Copy, X, FileText, Image as ImageIcon, Layout, Box, Pencil, File, PenTool, FileBarChart, Tag, ExternalLink, Activity, Share2 } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
@@ -28,6 +28,7 @@ interface FilePreviewPaneProps {
   row: FileRow | null;
   onClose: () => void;
   onEmail: (row: FileRow) => void;
+  onShare?: (row: FileRow) => void;
 }
 
 function fmtBytes(bytes: number): string {
@@ -49,7 +50,7 @@ function isPdf(row: FileRow): boolean {
   return false;
 }
 
-export function FilePreviewPane({ row, onClose, onEmail }: FilePreviewPaneProps) {
+export function FilePreviewPane({ row, onClose, onEmail, onShare }: FilePreviewPaneProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const addToast = useToastStore((s) => s.addToast);
@@ -214,6 +215,17 @@ export function FilePreviewPane({ row, onClose, onEmail }: FilePreviewPaneProps)
             <Mail size={13} />
             {t('files.actions.email', { defaultValue: 'Email link' })}
           </button>
+          {onShare && row.kind === 'document' && (
+            <button
+              type="button"
+              onClick={() => onShare(row)}
+              data-testid="file-share-button"
+              className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium border border-border-light text-content-primary hover:bg-surface-secondary transition-colors"
+            >
+              <Share2 size={13} />
+              {t('files.actions.share', { defaultValue: 'Share' })}
+            </button>
+          )}
           {isTauri && row.physical_path && (
             <button
               type="button"

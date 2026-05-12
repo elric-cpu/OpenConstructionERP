@@ -159,6 +159,9 @@ const ProjectIntelligencePage = lazy(() =>
 const FileManagerPage = lazy(() =>
   import('@/features/file-manager/FileManagerPage').then((m) => ({ default: m.FileManagerPage }))
 );
+const SharePage = lazy(() =>
+  import('@/features/file-manager/SharePage').then((m) => ({ default: m.SharePage }))
+);
 const SnapshotsPage = lazy(() =>
   import('@/features/dashboards').then((m) => ({ default: m.SnapshotsPage }))
 );
@@ -378,6 +381,9 @@ export default function App() {
           next page. */}
       {isAuthenticated && <OnboardingTour />}
       <Routes>
+        {/* Public share-link landing page — no auth required, no app shell */}
+        <Route path="/share/:token" element={<SharePage />} />
+
         {/* Auth — public */}
         <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />} />
         <Route path="/login-next" element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPageNext />} />

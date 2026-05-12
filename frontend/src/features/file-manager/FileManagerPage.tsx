@@ -23,6 +23,7 @@ import { FileActionsBar, type ViewMode } from './components/FileActionsBar';
 import { ExportWizard } from './components/ExportWizard';
 import { ImportWizard } from './components/ImportWizard';
 import { EmailDialog } from './components/EmailDialog';
+import { ShareLinkModal } from './components/ShareLinkModal';
 import { FolderCardGrid } from './components/FolderCardGrid';
 import { UploadDialog } from './components/UploadDialog';
 import { BulkActionsBar } from './components/BulkActionsBar';
@@ -90,6 +91,7 @@ export function FileManagerPage() {
   const [showExport, setShowExport] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [emailRow, setEmailRow] = useState<FileRow | null>(null);
+  const [shareRow, setShareRow] = useState<FileRow | null>(null);
   const [showUpload, setShowUpload] = useState(false);
   const [uploadKind, setUploadKind] = useState<FileKind | null>(null);
 
@@ -365,6 +367,7 @@ export function FileManagerPage() {
             row={previewRow}
             onClose={() => setPreviewRow(null)}
             onEmail={(row) => setEmailRow(row)}
+            onShare={(row) => setShareRow(row)}
           />
         )}
       </div>
@@ -376,6 +379,11 @@ export function FileManagerPage() {
         onClose={() => setShowExport(false)}
       />
       <ImportWizard open={showImport} onClose={() => setShowImport(false)} />
+      <ShareLinkModal
+        open={shareRow !== null}
+        row={shareRow}
+        onClose={() => setShareRow(null)}
+      />
       <EmailDialog
         open={emailRow !== null}
         row={emailRow}

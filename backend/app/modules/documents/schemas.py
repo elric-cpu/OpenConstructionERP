@@ -287,3 +287,81 @@ class DocumentActivityResponse(BaseModel):
     action: str
     meta: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
+
+
+# ── Share links ──────────────────────────────────────────────────────────
+
+
+class ShareLinkCreate(BaseModel):
+    """Create a password-protected share link for a document.
+
+    Both fields are optional:
+        * ``password`` — when omitted (or empty), the link is open
+          and any recipient who knows the URL can download.
+        * ``expires_in_days`` — when omitted, the link never
+          expires. ``0`` is rejected as a likely typo; callers
+          wanting "immediately expire" should DELETE instead.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    password: str | None = Field(default=None, min_length=1, max_length=128)
+    expires_in_days: int | None = Field(default=None, ge=1, le=3650)
+
+
+class ShareLinkResponse(BaseModel):
+    """Newly minted share link, returned to the owner."""
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    token: str
+    url: str
+    document_id: UUID
+    requires_password: bool = False
+    expires_at: datetime | None = None
+    created_at: datetime
+    download_count: int = 0
+    revoked: bool = False
+
+
+class ShareLinkListItem(BaseModel):
+    """Compact row in the owner-only "existing links" list."""
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    token: str
+    url: str
+    requires_password: bool = False
+    expires_at: datetime | None = None
+    created_at: datetime
+    download_count: int = 0
+    revoked: bool = False
+
+
+class ShareLinkPublicInfo(BaseModel):
+    """Public probe response — what the recipient sees before unlocking.
+
+    Intentionally omits ``download_count`` and ``id``/``created_by`` so
+    nothing about the owner or usage history leaks to recipients.
+    """
+
+    filename: str
+    requires_password: bool = False
+    expired: bool = False
+
+
+class ShareLinkAccessRequest(BaseModel):
+    """Recipient submits this with the optional password."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    password: str | None = Field(default=None, max_length=128)
+
+
+class ShareLinkAccessResponse(BaseModel):
+    """Successful unlock — recipient receives the authenticated download URL."""
+
+    download_url: str
+    filename: str

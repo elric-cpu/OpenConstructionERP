@@ -41,6 +41,12 @@ from app.modules.documents.schemas import (
     PhotoResponse,
     PhotoTimelineGroup,
     PhotoUpdate,
+    ShareLinkAccessRequest,
+    ShareLinkAccessResponse,
+    ShareLinkCreate,
+    ShareLinkListItem,
+    ShareLinkPublicInfo,
+    ShareLinkResponse,
     SheetResponse,
     SheetUpdate,
     SheetVersionHistory,
@@ -885,6 +891,141 @@ async def batch_delete_documents(
 
 
 # ══════════════════════════════════════════════════════════════════════════
+# Public share-link endpoints
+# NOTE: These MUST come BEFORE /{document_id} parametric routes to avoid
+#       FastAPI matching "share-links" as a document_id (route shadowing).
+#       Endpoints are intentionally public — they DO NOT require auth.
+# ══════════════════════════════════════════════════════════════════════════
+
+
+@router.get(
+    "/share-links/{token}/",
+    response_model=ShareLinkPublicInfo,
+)
+async def get_share_link_info(
+    token: str,
+    session: SessionDep,
+) -> ShareLinkPublicInfo:
+    """Public probe — what the recipient sees BEFORE entering a password.
+
+    Returns the filename so the share page can display a meaningful
+    title, plus two flags so the frontend knows whether to prompt for a
+    password or render an "expired" notice. Revoked links 404 so a
+    third party can't tell whether a token is wrong, revoked, or expired.
+    """
+    from app.modules.documents.share_service import (
+        _is_expired,
+        get_share_link_public,
+    )
+
+    link, doc = await get_share_link_public(session, token)
+    return ShareLinkPublicInfo(
+        filename=doc.name,
+        requires_password=bool(link.password_hash),
+        expired=_is_expired(link),
+    )
+
+
+@router.post(
+    "/share-links/{token}/access/",
+    response_model=ShareLinkAccessResponse,
+)
+async def access_share_link_endpoint(
+    token: str,
+    body: ShareLinkAccessRequest,
+    session: SessionDep,
+) -> ShareLinkAccessResponse:
+    """Public unlock — verify password, bump count, return download URL.
+
+    Returns 401 when a password is required and missing/wrong;
+    404 when the link is unknown, revoked, or expired.
+    """
+    from app.modules.documents.share_service import access_share_link
+
+    link, doc = await access_share_link(
+        session, token=token, password=body.password,
+    )
+    return ShareLinkAccessResponse(
+        download_url=f"/api/v1/documents/share-links/{link.token}/file/",
+        filename=doc.name,
+    )
+
+
+@router.get(
+    "/share-links/{token}/file/",
+)
+async def serve_share_link_file(
+    token: str,
+    session: SessionDep,
+    password: str | None = Query(default=None),
+) -> FileResponse:
+    """Stream the actual file bytes for a share link.
+
+    This is the URL we return from :func:`access_share_link_endpoint`.
+    Because share-link recipients are unauthenticated, we re-verify
+    the token + password here on every download rather than trusting
+    a short-lived signed URL.
+
+    Security: re-uses the same containment / symlink rules as the
+    authenticated ``/{document_id}/download/`` route.
+    """
+    from app.modules.documents.share_service import access_share_link
+
+    link, doc = await access_share_link(session, token=token, password=password)
+
+    upload_base = Path(UPLOAD_BASE).resolve()
+    raw = Path(doc.file_path) if doc.file_path else None
+    if raw is None:
+        # Share links cannot be issued for documents without a stored
+        # path — fall through to 404 rather than re-materialise demo
+        # placeholders (which is auth-side behaviour).
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found on disk",
+        )
+    file_path = (raw if raw.is_absolute() else upload_base / raw).resolve()
+
+    try:
+        file_path.relative_to(upload_base)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found on disk",
+        )
+    if file_path.is_symlink():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Symlinks not permitted",
+        )
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found on disk",
+        )
+
+    return FileResponse(
+        path=str(file_path),
+        filename=doc.name,
+        media_type=doc.mime_type or "application/octet-stream",
+    )
+
+
+def _link_to_response(link: object, public_url: str) -> ShareLinkResponse:
+    """Build a ShareLinkResponse from a DocumentShareLink ORM row."""
+    return ShareLinkResponse(
+        id=link.id,  # type: ignore[attr-defined]
+        token=link.token,  # type: ignore[attr-defined]
+        url=public_url,
+        document_id=link.document_id,  # type: ignore[attr-defined]
+        requires_password=bool(link.password_hash),  # type: ignore[attr-defined]
+        expires_at=link.expires_at,  # type: ignore[attr-defined]
+        created_at=link.created_at,  # type: ignore[attr-defined]
+        download_count=link.download_count or 0,  # type: ignore[attr-defined]
+        revoked=link.revoked,  # type: ignore[attr-defined]
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════
 # Document CRUD by ID (parametric routes — MUST be after /photos/* and /sheets/* routes)
 # ══════════════════════════════════════════════════════════════════════════
 
@@ -1098,6 +1239,116 @@ async def list_document_activity(
     await verify_project_access(existing.project_id, user_id, session)
     rows = await list_activity(session, document_id, limit=limit)
     return [DocumentActivityResponse.model_validate(r) for r in rows]
+
+
+# ── Share-link management (owner-only) ──────────────────────────────────
+
+
+@router.post(
+    "/{document_id}/share-links/",
+    response_model=ShareLinkResponse,
+    status_code=201,
+)
+async def create_document_share_link(
+    document_id: uuid.UUID,
+    body: ShareLinkCreate,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    _perm: None = Depends(RequirePermission("documents.update")),
+    service: DocumentService = Depends(_get_service),
+) -> ShareLinkResponse:
+    """Mint a password-protected share link for a document.
+
+    Owner-only: enforced via :func:`verify_project_access` against the
+    document's parent project. Returns the new token + public URL.
+    """
+    from app.modules.documents.share_service import (
+        _build_public_url,
+        create_share_link,
+    )
+
+    existing = await service.get_document(document_id)
+    await verify_project_access(existing.project_id, user_id, session)
+
+    try:
+        created_by_uuid = uuid.UUID(str(user_id))
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid user id in token",
+        ) from exc
+
+    link = await create_share_link(
+        session,
+        document_id=document_id,
+        created_by=created_by_uuid,
+        password=body.password,
+        expires_in_days=body.expires_in_days,
+    )
+    return _link_to_response(link, _build_public_url(link.token))
+
+
+@router.get(
+    "/{document_id}/share-links/",
+    response_model=list[ShareLinkListItem],
+)
+async def list_document_share_links(
+    document_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    _perm: None = Depends(RequirePermission("documents.read")),
+    service: DocumentService = Depends(_get_service),
+) -> list[ShareLinkListItem]:
+    """List active (non-revoked) share links for a document.
+
+    Owner-only. Returned newest-first. Revoked links are filtered server-
+    side so the UI list stays focused on the actionable surface.
+    """
+    from app.modules.documents.share_service import (
+        _build_public_url,
+        list_share_links_for_document,
+    )
+
+    existing = await service.get_document(document_id)
+    await verify_project_access(existing.project_id, user_id, session)
+    links = await list_share_links_for_document(session, document_id)
+    return [
+        ShareLinkListItem(
+            id=link.id,
+            token=link.token,
+            url=_build_public_url(link.token),
+            requires_password=bool(link.password_hash),
+            expires_at=link.expires_at,
+            created_at=link.created_at,
+            download_count=link.download_count or 0,
+            revoked=link.revoked,
+        )
+        for link in links
+    ]
+
+
+@router.delete(
+    "/{document_id}/share-links/{link_id}/",
+    status_code=204,
+)
+async def revoke_document_share_link(
+    document_id: uuid.UUID,
+    link_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    _perm: None = Depends(RequirePermission("documents.update")),
+    service: DocumentService = Depends(_get_service),
+) -> None:
+    """Soft-revoke a share link by id.
+
+    Owner-only. After revocation the token returns 404 (same as unknown
+    / expired) so attackers cannot distinguish the three states.
+    """
+    from app.modules.documents.share_service import revoke_share_link
+
+    existing = await service.get_document(document_id)
+    await verify_project_access(existing.project_id, user_id, session)
+    await revoke_share_link(session, link_id=link_id, document_id=document_id)
 
 
 # ── Vector / semantic memory endpoints ───────────────────────────────────

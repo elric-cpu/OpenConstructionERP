@@ -141,6 +141,36 @@ export interface EmailLinkResponse {
   size_bytes: number;
 }
 
+/* ── Password-protected share links ──────────────────────────────────── */
+
+export interface ShareLinkCreatePayload {
+  password?: string;
+  expires_in_days?: number;
+}
+
+export interface ShareLinkResponse {
+  id: string;
+  token: string;
+  url: string;
+  document_id: string;
+  requires_password: boolean;
+  expires_at: string | null;
+  created_at: string;
+  download_count: number;
+  revoked: boolean;
+}
+
+export interface ShareLinkPublicInfo {
+  filename: string;
+  requires_password: boolean;
+  expired: boolean;
+}
+
+export interface ShareLinkAccessResponse {
+  download_url: string;
+  filename: string;
+}
+
 export interface FileFilters {
   category?: FileKind;
   extension?: string;

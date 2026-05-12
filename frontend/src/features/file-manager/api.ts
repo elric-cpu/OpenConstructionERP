@@ -12,6 +12,10 @@ import type {
   ImportMode,
   ImportPreview,
   ImportResult,
+  ShareLinkAccessResponse,
+  ShareLinkCreatePayload,
+  ShareLinkPublicInfo,
+  ShareLinkResponse,
   StorageLocations,
 } from './types';
 
@@ -144,4 +148,85 @@ export async function mintEmailLink(
   return apiPost<EmailLinkResponse, void>(
     `${PROJECTS_BASE}/files/${fileId}/email-link/?ttl_hours=${ttlHours}`,
   );
+}
+
+/* ── Password-protected share links ──────────────────────────────────── */
+
+const DOCUMENTS_BASE = '/v1/documents';
+
+/** Mint a new share link for the given document. */
+export async function createShareLink(
+  documentId: string,
+  payload: ShareLinkCreatePayload,
+): Promise<ShareLinkResponse> {
+  return apiPost<ShareLinkResponse, ShareLinkCreatePayload>(
+    `${DOCUMENTS_BASE}/${documentId}/share-links/`,
+    payload,
+  );
+}
+
+/** List active (non-revoked) share links for a document. Owner-only. */
+export async function listShareLinks(
+  documentId: string,
+): Promise<ShareLinkResponse[]> {
+  return apiGet<ShareLinkResponse[]>(
+    `${DOCUMENTS_BASE}/${documentId}/share-links/`,
+  );
+}
+
+/** Soft-revoke a share link. Owner-only. */
+export async function revokeShareLink(
+  documentId: string,
+  linkId: string,
+): Promise<void> {
+  const res = await fetch(
+    `/api${DOCUMENTS_BASE}/${documentId}/share-links/${linkId}/`,
+    {
+      method: 'DELETE',
+      headers: buildAuthHeaders(),
+    },
+  );
+  if (!res.ok && res.status !== 204) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.detail || `Revoke failed (${res.status})`);
+  }
+}
+
+/* ── Public (unauthenticated) endpoints used by /share/:token ────────── */
+
+/** Recipient-facing probe — returns filename + flags. No auth required. */
+export async function fetchShareLinkInfo(
+  token: string,
+): Promise<ShareLinkPublicInfo> {
+  const res = await fetch(`/api${DOCUMENTS_BASE}/share-links/${token}/`, {
+    headers: { Accept: 'application/json' },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.detail || `Link not found (${res.status})`);
+  }
+  return (await res.json()) as ShareLinkPublicInfo;
+}
+
+/** Submit the password (if any), receive the authenticated download URL. */
+export async function accessShareLink(
+  token: string,
+  password?: string,
+): Promise<ShareLinkAccessResponse> {
+  const res = await fetch(
+    `/api${DOCUMENTS_BASE}/share-links/${token}/access/`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ password: password ?? null }),
+    },
+  );
+  if (res.status === 401) {
+    throw new Error('UNAUTHORIZED');
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.detail || `Access failed (${res.status})`);
+  }
+  return (await res.json()) as ShareLinkAccessResponse;
 }
