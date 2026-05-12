@@ -175,7 +175,7 @@ function Modal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" aria-hidden="true" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/70 backdrop-blur-lg" aria-hidden="true" onClick={onClose} />
       <div role="dialog" aria-modal="true" aria-labelledby="schedule-modal-title" className="relative z-10 w-full max-w-md rounded-2xl border border-border-light bg-surface-elevated p-6 shadow-xl animate-fade-in">
         <div className="mb-5 flex items-center justify-between">
           <h2 id="schedule-modal-title" className="text-lg font-semibold text-content-primary">{title}</h2>

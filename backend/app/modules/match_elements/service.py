@@ -70,6 +70,19 @@ logger = logging.getLogger(__name__)
 
 
 def _to_session_read(row: MatchSession) -> schemas.SessionRead:
+    # Catalogue id is either a legacy CostDatabase UUID (stored on the
+    # ``catalogue_id`` column) or a CWICR v3 region string like
+    # ``"DE_BERLIN"`` (stashed in ``metadata_["catalogue_region"]`` —
+    # the column itself is typed UUID and rejects region strings).
+    # Surface whichever is set so the wizard's "Catalogue" pill on
+    # subsequent reads matches what the user picked.
+    cat_id: str | None = None
+    if row.catalogue_id is not None:
+        cat_id = str(row.catalogue_id)
+    else:
+        region = (row.metadata_ or {}).get("catalogue_region")
+        if isinstance(region, str) and region:
+            cat_id = region
     return schemas.SessionRead(
         id=row.id,
         project_id=row.project_id,
@@ -83,7 +96,7 @@ def _to_session_read(row: MatchSession) -> schemas.SessionRead:
             row.auto_confirm_threshold, DEFAULT_AUTO_CONFIRM_THRESHOLD
         ),
         use_net_quantities=row.use_net_quantities,
-        catalogue_id=row.catalogue_id,
+        catalogue_id=cat_id,
         is_archived=bool(getattr(row, "is_archived", False) or False),
         construction_stage=getattr(row, "construction_stage", None) or None,
         last_active_at=getattr(row, "last_active_at", None),
@@ -1135,6 +1148,18 @@ class MatchElementsService:
             # this back on iter_elements.
             metadata["image"] = dict(spec.image)
 
+        # ``catalogue_id`` can arrive as either a legacy CostDatabase UUID
+        # (older callers / tests) or a CWICR v3 region string from the
+        # wizard's catalogues-v3 picker (e.g. ``"DE_BERLIN"``). The DB
+        # column is typed UUID, so route the region string into metadata
+        # and leave the column null. ``_to_session_read`` reads both.
+        catalogue_uuid: uuid.UUID | None = None
+        if spec.catalogue_id:
+            try:
+                catalogue_uuid = uuid.UUID(spec.catalogue_id)
+            except (ValueError, TypeError):
+                metadata["catalogue_region"] = spec.catalogue_id
+
         now = datetime.now(UTC)
         row = MatchSession(
             project_id=spec.project_id,
@@ -1146,7 +1171,7 @@ class MatchElementsService:
             excluded_categories=excluded,
             auto_confirm_threshold=str(spec.auto_confirm_threshold),
             use_net_quantities=spec.use_net_quantities,
-            catalogue_id=spec.catalogue_id,
+            catalogue_id=catalogue_uuid,
             construction_stage=spec.construction_stage,
             created_by=created_by,
             last_active_at=now,
@@ -1200,7 +1225,19 @@ class MatchElementsService:
             row.use_net_quantities = patch.use_net_quantities
             regroup = True
         if patch.catalogue_id is not None:
-            row.catalogue_id = patch.catalogue_id
+            # Same UUID-or-region routing as create_session — see comment
+            # there. Empty string clears the binding (both UUID + region).
+            md = dict(row.metadata_ or {})
+            md.pop("catalogue_region", None)
+            if not patch.catalogue_id:
+                row.catalogue_id = None
+            else:
+                try:
+                    row.catalogue_id = uuid.UUID(patch.catalogue_id)
+                except (ValueError, TypeError):
+                    row.catalogue_id = None
+                    md["catalogue_region"] = patch.catalogue_id
+            row.metadata_ = md
         if patch.is_archived is not None:
             row.is_archived = patch.is_archived
         # v3-P10b: stage flips don't trigger regroup — they only affect
@@ -1627,6 +1664,81 @@ class MatchElementsService:
 
     # ── Run match ─────────────────────────────────────────────────────
 
+    @staticmethod
+    def _write_progress(
+        sess: MatchSession,
+        *,
+        stage: str,
+        stage_idx: int,
+        groups_done: int = 0,
+        groups_total: int = 0,
+        started_at: str | None = None,
+        status: str = "running",
+        error: str | None = None,
+    ) -> None:
+        """Persist a progress snapshot onto the session's metadata bag.
+
+        Cheap — one JSON column update per stage transition. The
+        ``/sessions/{id}/progress`` polling endpoint reads this back so
+        the wizard can paint a real progress timeline while the match
+        runs server-side. Stages mirror the runner's loop boundaries:
+
+        * ``init``      — session loaded, project context fetched
+        * ``elements``  — source adapter iterating BIM/Excel/text rows
+        * ``ranking``   — per-group vector search + boost + rerank
+        * ``save``      — flushing results / auto-confirms to DB
+        * ``done``      — finished cleanly
+        * ``error``     — exception bubbled out of the runner
+
+        ``groups_done`` / ``groups_total`` populate the per-stage
+        counter rendered in the FE timeline.
+        """
+        meta = dict(sess.metadata_ or {})
+        progress = dict(meta.get("progress") or {})
+        progress.update(
+            {
+                "stage": stage,
+                "stage_idx": stage_idx,
+                "total_stages": 5,  # init, elements, ranking, save, done
+                "groups_done": groups_done,
+                "groups_total": groups_total,
+                "status": status,
+                "updated_at": datetime.now(UTC).isoformat(),
+            }
+        )
+        if started_at is not None:
+            progress["started_at"] = started_at
+        if error is not None:
+            progress["error"] = error
+        meta["progress"] = progress
+        sess.metadata_ = meta
+
+    async def get_progress(
+        self, db: AsyncSession, session_id: uuid.UUID,
+    ) -> dict[str, Any]:
+        """Read the latest progress snapshot for a match session.
+
+        Returns a stable shape even when no match has ever been kicked
+        off so the FE can render a neutral "idle" state without an
+        endpoint shape fork.
+        """
+        sess = await db.get(MatchSession, session_id)
+        if sess is None:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Session not found")
+        progress = dict((sess.metadata_ or {}).get("progress") or {})
+        return {
+            "stage": progress.get("stage", "idle"),
+            "stage_idx": int(progress.get("stage_idx") or 0),
+            "total_stages": int(progress.get("total_stages") or 5),
+            "groups_done": int(progress.get("groups_done") or 0),
+            "groups_total": int(progress.get("groups_total") or 0),
+            "status": progress.get("status", "idle"),
+            "started_at": progress.get("started_at"),
+            "updated_at": progress.get("updated_at"),
+            "error": progress.get("error"),
+        }
+
     async def run_match(
         self, db: AsyncSession, session_id: uuid.UUID,
         spec: schemas.RunMatchRequest,
@@ -1635,6 +1747,21 @@ class MatchElementsService:
         if sess is None:
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="Session not found")
+
+        # Stamp the initial progress snapshot before any work begins —
+        # the wizard's MatchProgressCard polls /progress every ~800ms and
+        # needs an authoritative "stage 1 / 5 — Loading" row to render
+        # the timeline even while we're still doing the project-context
+        # fetch. Wrapped in a flush so the next poll sees the change.
+        started_iso = datetime.now(UTC).isoformat()
+        self._write_progress(
+            sess,
+            stage="init",
+            stage_idx=1,
+            started_at=started_iso,
+            status="running",
+        )
+        await db.flush()
 
         # Load project context once so envelopes/matchers can scope
         # candidate search by the project's expected currency and region
@@ -1672,6 +1799,17 @@ class MatchElementsService:
 
         matcher = self._matcher(spec.method, db)
 
+        # Stage 2: loading source elements (BIM / Excel rows / text /
+        # photo). For BIM models this is the per-element fetch + join
+        # that can run a few seconds on a 50k-element model.
+        self._write_progress(
+            sess,
+            stage="elements",
+            stage_idx=2,
+            started_at=started_iso,
+        )
+        await db.flush()
+
         # Re-read source so we can compose envelopes per group.
         adapter = self._adapter(sess.source, db, sess)
         all_elements = await adapter.iter_elements(
@@ -1696,8 +1834,30 @@ class MatchElementsService:
             )
         rows = (await db.execute(stmt)).scalars().all()
 
+        # Stage 3: per-group ranking. The for-loop below dominates wall
+        # time on real matches — each iteration runs one Qdrant vector
+        # search + sparse fusion + region/unit boost + (sometimes) BGE
+        # cross-encoder rerank. Counter updates every group so the FE
+        # bar advances visibly even on small (5-10 group) sessions.
+        groups_total = len(rows)
+        self._write_progress(
+            sess,
+            stage="ranking",
+            stage_idx=3,
+            groups_done=0,
+            groups_total=groups_total,
+            started_at=started_iso,
+        )
+        await db.flush()
+
         out: list[schemas.GroupSummary] = []
-        for grow in rows:
+        # Throttle the per-group progress flush: at >50 groups, writing
+        # JSON + flushing every iteration adds measurable overhead on
+        # SQLite (the dev/VPS backend). The 4-group cadence keeps the FE
+        # bar moving at ~25fps-equivalent while halving the write
+        # amplification on big sessions.
+        flush_every = 1 if groups_total <= 20 else 4
+        for idx, grow in enumerate(rows):
             members = [
                 by_id[eid] for eid in (grow.element_ids or []) if eid in by_id
             ]
@@ -1789,9 +1949,50 @@ class MatchElementsService:
                     ],
                 )
             )
+
+            # Throttled per-group flush: keeps the polling bar advancing
+            # smoothly without writing on every single tick. The final
+            # update (idx == last) always flushes so the FE doesn't sit
+            # at "47 / 48" when the actual loop is done.
+            if (idx + 1) % flush_every == 0 or idx == groups_total - 1:
+                self._write_progress(
+                    sess,
+                    stage="ranking",
+                    stage_idx=3,
+                    groups_done=idx + 1,
+                    groups_total=groups_total,
+                    started_at=started_iso,
+                )
+                await db.flush()
+
+        # Stage 4: persisting results (auto-confirms, signature
+        # backfills, session activity bump). Briefly held — the bulk of
+        # the DB writes already happened in the per-group flushes above,
+        # so this stage usually flashes by in < 200ms.
+        self._write_progress(
+            sess,
+            stage="save",
+            stage_idx=4,
+            groups_done=groups_total,
+            groups_total=groups_total,
+            started_at=started_iso,
+        )
         # Bump session activity so the resume picker picks this run up.
         if rows:
             sess.last_active_at = datetime.now(UTC)
+        await db.flush()
+
+        # Stage 5: terminal — the FE polling card watches for this to
+        # fade out and reveal the results pane.
+        self._write_progress(
+            sess,
+            stage="done",
+            stage_idx=5,
+            groups_done=groups_total,
+            groups_total=groups_total,
+            started_at=started_iso,
+            status="done",
+        )
         await db.flush()
         return out
 

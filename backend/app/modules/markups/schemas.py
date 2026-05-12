@@ -222,3 +222,27 @@ class StampTemplateResponse(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
     created_at: datetime
     updated_at: datetime
+
+
+# ── Markup Comment schemas ──────────────────────────────────────────────
+
+
+class MarkupCommentCreate(BaseModel):
+    """Create a new threaded comment on a markup."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="ignore")
+
+    body: str = Field(..., min_length=1, max_length=10_000)
+
+
+class MarkupCommentResponse(BaseModel):
+    """Threaded comment returned from the API."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    markup_id: UUID
+    user_id: str
+    body: str
+    created_at: datetime
+    updated_at: datetime

@@ -1838,7 +1838,16 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
       onContextMenu={(e) => e.preventDefault()}
     >
       <div
-        className="ag-theme-quartz"
+        className={`ag-theme-quartz ${
+          // Shrink header text when many columns are visible so labels
+          // stop truncating before the description column has to give up
+          // width. Two tiers — see index.css for the exact rules.
+          columnDefs.length >= 18
+            ? 'oe-header-xs'
+            : columnDefs.length >= 13
+              ? 'oe-header-dense'
+              : ''
+        }`}
         // Cap the grid at the visible viewport so AG Grid's internal
         // horizontal scrollbar (which sits at the BOTTOM of the
         // viewport) always lands inside the user's screen. The previous

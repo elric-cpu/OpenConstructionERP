@@ -143,7 +143,7 @@ export default function GlobalSearchModal() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 backdrop-blur-sm pt-[10vh] px-4"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 backdrop-blur-lg pt-[10vh] px-4"
       onClick={closeModal}
     >
       <div

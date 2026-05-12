@@ -17,6 +17,8 @@ import {
   FileBarChart,
   PenTool,
   Folder,
+  Lock,
+  Settings,
   UploadCloud,
   type LucideIcon,
 } from 'lucide-react';
@@ -96,6 +98,12 @@ interface FolderCardGridProps {
   isLoading?: boolean;
   onOpenCategory: (kind: FileKind) => void;
   onUpload: (kind: FileKind | null) => void;
+  /** Owner-only: clicking the gear on a card opens the permissions modal. */
+  onManageAccess?: (kind: FileKind) => void;
+  /** ``{kind: count}`` of non-revoked grants per folder. Empty for non-owners. */
+  permissionCounts?: Record<string, number>;
+  /** True when the current user can manage permissions (project owner / admin). */
+  canManageAccess?: boolean;
 }
 
 export function FolderCardGrid({
@@ -103,6 +111,9 @@ export function FolderCardGrid({
   isLoading,
   onOpenCategory,
   onUpload,
+  onManageAccess,
+  permissionCounts,
+  canManageAccess,
 }: FolderCardGridProps) {
   const { t } = useTranslation();
 
@@ -142,12 +153,19 @@ export function FolderCardGrid({
     <div className="p-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
       {nodes.map((node) => {
         const kind = bareKind(node.id);
+        const count = permissionCounts?.[kind] ?? 0;
         return (
           <FolderCard
             key={node.id}
             node={node}
             onOpen={() => onOpenCategory(kind)}
             onUpload={() => onUpload(kind)}
+            onManageAccess={
+              canManageAccess && onManageAccess
+                ? () => onManageAccess(kind)
+                : undefined
+            }
+            permissionCount={count}
           />
         );
       })}
@@ -166,15 +184,33 @@ interface FolderCardProps {
   node: FileTreeNode;
   onOpen: () => void;
   onUpload: () => void;
+  onManageAccess?: () => void;
+  permissionCount?: number;
 }
 
-function FolderCard({ node, onOpen, onUpload }: FolderCardProps) {
+function FolderCard({
+  node,
+  onOpen,
+  onUpload,
+  onManageAccess,
+  permissionCount = 0,
+}: FolderCardProps) {
   const { t } = useTranslation();
   const kind = bareKind(node.id);
   const Icon = KIND_ICON[kind] ?? Folder;
   const tone = KIND_TONE[kind] ?? KIND_TONE.document;
   const isEmpty = node.file_count === 0;
   const label = t(`files.category.${kind}`, { defaultValue: node.label });
+  const isRestricted = permissionCount > 0;
+  const lockTooltip = t(
+    permissionCount === 1
+      ? 'files.permissions.lock_tooltip'
+      : 'files.permissions.lock_tooltip_plural',
+    {
+      defaultValue: 'Restricted: {{count}} members can access',
+      count: permissionCount,
+    },
+  );
 
   if (isEmpty) {
     return (
@@ -214,17 +250,52 @@ function FolderCard({ node, onOpen, onUpload }: FolderCardProps) {
   }
 
   return (
-    <button
-      type="button"
-      onClick={onOpen}
+    <div
+      data-testid={`folder-card-${kind}`}
       className={clsx(
-        'group relative flex flex-col items-start text-left rounded-2xl p-5 min-h-[176px]',
+        'group relative flex flex-col items-start text-left rounded-2xl min-h-[176px]',
         'border border-border-light bg-gradient-to-br from-surface-elevated to-surface-primary',
         'shadow-sm transition-all duration-150',
         'hover:-translate-y-0.5 hover:shadow-xl hover:border-border-medium',
-        'focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40',
       )}
     >
+      {/* Owner-only secondary actions overlay (gear + lock badge). */}
+      <div className="absolute top-3 right-3 flex items-center gap-1">
+        {isRestricted && (
+          <span
+            data-testid={`folder-lock-${kind}`}
+            title={lockTooltip}
+            aria-label={lockTooltip}
+            className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-300"
+          >
+            <Lock size={11} />
+          </span>
+        )}
+        {onManageAccess && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onManageAccess();
+            }}
+            data-testid={`folder-manage-access-${kind}`}
+            aria-label={t('files.permissions.manage', { defaultValue: 'Manage access' })}
+            title={t('files.permissions.manage', { defaultValue: 'Manage access' })}
+            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-content-tertiary opacity-0 group-hover:opacity-100 hover:bg-surface-secondary hover:text-content-primary transition-all"
+          >
+            <Settings size={12} />
+          </button>
+        )}
+      </div>
+
+      <button
+        type="button"
+        onClick={onOpen}
+        className={clsx(
+          'flex flex-col items-start text-left p-5 w-full h-full min-h-[176px]',
+          'focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40 rounded-2xl',
+        )}
+      >
       <div className="w-full flex items-start justify-between gap-3">
         <div
           className={clsx(
@@ -271,6 +342,7 @@ function FolderCard({ node, onOpen, onUpload }: FolderCardProps) {
         {t('files.folder.open', { defaultValue: 'Open' })}
         <ArrowRight size={12} />
       </span>
-    </button>
+      </button>
+    </div>
   );
 }

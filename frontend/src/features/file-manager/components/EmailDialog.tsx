@@ -110,7 +110,7 @@ export function EmailDialog({ open, row, onClose }: EmailDialogProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-lg"
       onClick={onClose}
       role="dialog"
       aria-modal="true"

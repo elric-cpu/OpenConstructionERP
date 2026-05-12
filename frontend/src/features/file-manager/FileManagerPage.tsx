@@ -13,7 +13,13 @@ import { ArrowLeft, ChevronRight, HardDrive, UploadCloud } from 'lucide-react';
 import clsx from 'clsx';
 import { EmptyState } from '@/shared/ui';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
-import { useFileList, useFileTree, useStorageLocations } from './hooks';
+import {
+  useFileList,
+  useFileTree,
+  useFolderPermissionCounts,
+  useIsProjectOwner,
+  useStorageLocations,
+} from './hooks';
 import { PathBar } from './components/PathBar';
 import { FileTree } from './components/FileTree';
 import { FileGrid } from './components/FileGrid';
@@ -24,11 +30,13 @@ import { ExportWizard } from './components/ExportWizard';
 import { ImportWizard } from './components/ImportWizard';
 import { EmailDialog } from './components/EmailDialog';
 import { ShareLinkModal } from './components/ShareLinkModal';
+import { FolderPermissionsModal } from './components/FolderPermissionsModal';
 import { FolderCardGrid } from './components/FolderCardGrid';
 import { UploadDialog } from './components/UploadDialog';
 import { BulkActionsBar } from './components/BulkActionsBar';
+import { InitialLoadProgress } from './components/InitialLoadProgress';
+import { FilesStatsStrip } from './components/FilesStatsStrip';
 import { primaryModule } from './kindModule';
-import { DashboardBackdrop } from '../dashboard/components/DashboardBackdrop';
 import type { FileFilters, FileKind, FileRow } from './types';
 
 const VIEW_MODE_KEY = 'file-manager:view-mode';
@@ -94,6 +102,11 @@ export function FileManagerPage() {
   const [shareRow, setShareRow] = useState<FileRow | null>(null);
   const [showUpload, setShowUpload] = useState(false);
   const [uploadKind, setUploadKind] = useState<FileKind | null>(null);
+  const [permsKind, setPermsKind] = useState<FileKind | null>(null);
+
+  // Folder-permissions surface — gear + lock badge.
+  const isOwner = useIsProjectOwner(projectId);
+  const permissionCounts = useFolderPermissionCounts(projectId, isOwner);
 
   useEffect(() => {
     writeViewMode(view);
@@ -248,9 +261,21 @@ export function FileManagerPage() {
     ? t(`files.category.${selectedKind}`, { defaultValue: selectedKind })
     : '';
 
+  // First-load overlay: shown only when at least one of the bootstrap
+  // queries is still in flight AND we have no cached data yet. After both
+  // queries resolve, the overlay disappears and never reappears for this
+  // mount (React Query caches the result).
+  const isFirstLoad = (treeLoading || locLoading) && (!tree || !locations);
+
   return (
-    <div className="relative isolate flex flex-col h-full">
-      <DashboardBackdrop />
+    <div className="flex flex-col h-full">
+      {isFirstLoad && (
+        <InitialLoadProgress
+          storageDone={!!locations}
+          treeDone={!!tree}
+          projectName={ctxProjectName}
+        />
+      )}
       <PathBar locations={locations} isLoading={locLoading} selectedKind={selectedKind} />
 
       {/* Page-level breadcrumb + primary upload CTA. Lives outside the
@@ -310,11 +335,15 @@ export function FileManagerPage() {
         <main className="flex-1 flex flex-col min-w-0">
           {showFolderGrid ? (
             <div className="flex-1 overflow-auto">
+              <FilesStatsStrip tree={tree} locations={locations} />
               <FolderCardGrid
                 nodes={tree ?? []}
                 isLoading={treeLoading}
                 onOpenCategory={handleOpenCategory}
                 onUpload={handleOpenUpload}
+                onManageAccess={(kind) => setPermsKind(kind)}
+                permissionCounts={permissionCounts}
+                canManageAccess={isOwner}
               />
             </div>
           ) : (
@@ -368,6 +397,9 @@ export function FileManagerPage() {
             onClose={() => setPreviewRow(null)}
             onEmail={(row) => setEmailRow(row)}
             onShare={(row) => setShareRow(row)}
+            onManageAccess={
+              isOwner ? (row) => setPermsKind(row.kind) : undefined
+            }
           />
         )}
       </div>
@@ -394,6 +426,15 @@ export function FileManagerPage() {
         projectId={projectId}
         defaultKind={uploadKind}
         onClose={() => setShowUpload(false)}
+      />
+      <FolderPermissionsModal
+        open={permsKind !== null}
+        projectId={projectId ?? null}
+        scopeKind={permsKind}
+        folderLabel={
+          permsKind ? t(`files.category.${permsKind}`, { defaultValue: permsKind }) : undefined
+        }
+        onClose={() => setPermsKind(null)}
       />
     </div>
   );

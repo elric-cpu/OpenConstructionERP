@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { ReactNode } from 'react';
+import { useLocation } from 'react-router-dom';
 import clsx from 'clsx';
 import { Sidebar, FloatingRecentButton } from './Sidebar';
 import { Header } from './Header';
@@ -8,7 +9,12 @@ import { FloatingQueuePanel } from './FloatingQueuePanel';
 import { GlobalProgress } from '@/shared/ui/GlobalProgress';
 import { GlobalUploadIndicator } from '@/shared/ui/GlobalUploadIndicator';
 import { DwgUploadIndicator } from '@/shared/ui/DwgUploadIndicator';
+import { GlobalCatalogueInstallIndicator } from '@/shared/ui/GlobalCatalogueInstallIndicator';
 import { DemoBanner } from '@/shared/ui/DemoBanner';
+import {
+  DashboardBackdrop,
+  backdropVariantForPath,
+} from '@/features/dashboard/components/DashboardBackdrop';
 
 import { useSwipeGesture, useEdgeSwipe } from '@/shared/hooks/useSwipeGesture';
 import { useIsRTL } from '@/shared/hooks/useIsRTL';
@@ -23,6 +29,8 @@ export function AppLayout({ title, children }: AppLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const isRTL = useIsRTL();
+  const location = useLocation();
+  const backdropVariant = backdropVariantForPath(location.pathname);
 
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
   const openSidebar = useCallback(() => setSidebarOpen(true), []);
@@ -59,7 +67,16 @@ export function AppLayout({ title, children }: AppLayoutProps) {
   });
 
   return (
-    <div className="min-h-screen bg-surface-secondary">
+    <div className="min-h-screen">
+      {/* Single global backdrop — route-aware variant. Mounted at the
+          AppLayout level (not per-page) so pages don't need a `relative
+          isolate` wrapper, which would otherwise trap full-screen modals
+          beneath the sticky header. The backdrop itself paints the base
+          `bg-surface-secondary` wash on its layer 1, so the AppLayout
+          root MUST NOT also set `bg-surface-secondary` — otherwise it
+          paints above the `fixed -z-10` backdrop in the root stacking
+          context and hides the tinted spotlight. */}
+      <DashboardBackdrop variant={backdropVariant} />
       <DemoBanner />
       <GlobalProgress />
 
@@ -114,6 +131,11 @@ export function AppLayout({ title, children }: AppLayoutProps) {
           in the stack above it. Both ignore the current route so a user
           can kick off a DWG upload and immediately navigate anywhere. */}
       <DwgUploadIndicator />
+
+      {/* Catalogue install indicator — surfaces v3 snapshot downloads
+          kicked off from /match-elements so the user can navigate away
+          while the 200–500 MB snapshot downloads in the background. */}
+      <GlobalCatalogueInstallIndicator />
 
       {/* Floating Recent button — bottom-right corner */}
       <FloatingRecentButton />

@@ -520,7 +520,7 @@ function UpdateFullModal({
   // width instead of spanning the full viewport.
   return createPortal(
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-card-in"
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-lg p-4 animate-card-in"
       onClick={onClose}
       role="dialog"
       aria-modal="true"

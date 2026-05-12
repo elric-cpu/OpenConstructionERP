@@ -2237,7 +2237,7 @@ function DrillDownModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" data-testid="chart-drill-modal">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-fade-in" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-lg animate-fade-in" onClick={onClose} />
       <div className="relative w-full max-w-3xl mx-4 rounded-2xl bg-surface-elevated border border-border-light shadow-2xl animate-fade-in">
         <div className="flex items-center justify-between px-6 pt-5 pb-3 border-b border-border-light">
           <div>
@@ -2684,7 +2684,7 @@ function CreateBOQFromPivotModal({ open, onClose, groups, groupByColumns, aggCol
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-fade-in" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-lg animate-fade-in" onClick={onClose} />
       <div className="relative w-full max-w-lg mx-4 rounded-2xl bg-surface-elevated border border-border-light shadow-2xl animate-fade-in">
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-6 pb-4">

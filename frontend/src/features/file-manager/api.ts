@@ -1,14 +1,17 @@
 /** API client for the project file manager (Issue #109). */
 
-import { apiGet, apiPost } from '@/shared/lib/api';
+import { apiDelete, apiGet, apiPost } from '@/shared/lib/api';
 import { useAuthStore } from '@/stores/useAuthStore';
 import type {
   EmailLinkResponse,
   ExportOptions,
   ExportPreview,
   FileFilters,
+  FileKind,
   FileListResponse,
   FileTreeNode,
+  FolderPermissionCreatePayload,
+  FolderPermissionRow,
   ImportMode,
   ImportPreview,
   ImportResult,
@@ -208,6 +211,52 @@ export async function fetchShareLinkInfo(
   return (await res.json()) as ShareLinkPublicInfo;
 }
 
+/* ── Folder permissions (owner-only) ─────────────────────────────────── */
+
+/** List all non-revoked folder permissions for a project. */
+export async function listFolderPermissions(
+  projectId: string,
+  filters: { scope_kind?: string; scope_path?: string | null } = {},
+): Promise<FolderPermissionRow[]> {
+  const params = new URLSearchParams();
+  if (filters.scope_kind) params.set('scope_kind', filters.scope_kind);
+  if (filters.scope_path) params.set('scope_path', filters.scope_path);
+  const qs = params.toString();
+  const path = `${PROJECTS_BASE}/${projectId}/folder-permissions/${qs ? `?${qs}` : ''}`;
+  return apiGet<FolderPermissionRow[]>(path);
+}
+
+/** Grant viewer / editor / owner role to a member on a (kind, path) folder. */
+export async function grantFolderPermission(
+  projectId: string,
+  payload: FolderPermissionCreatePayload,
+): Promise<FolderPermissionRow> {
+  return apiPost<FolderPermissionRow, FolderPermissionCreatePayload>(
+    `${PROJECTS_BASE}/${projectId}/folder-permissions/`,
+    payload,
+  );
+}
+
+/** Soft-revoke a folder grant by id. */
+export async function revokeFolderPermission(
+  projectId: string,
+  permissionId: string,
+): Promise<void> {
+  const res = await fetch(
+    `/api${PROJECTS_BASE}/${projectId}/folder-permissions/${permissionId}/`,
+    {
+      method: 'DELETE',
+      headers: buildAuthHeaders(),
+    },
+  );
+  if (!res.ok && res.status !== 204) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.detail || `Revoke failed (${res.status})`);
+  }
+}
+
+/* ── Public (unauthenticated) endpoints used by /share/:token ────────── */
+
 /** Submit the password (if any), receive the authenticated download URL. */
 export async function accessShareLink(
   token: string,
@@ -229,4 +278,62 @@ export async function accessShareLink(
     throw new Error(body?.detail || `Access failed (${res.status})`);
   }
   return (await res.json()) as ShareLinkAccessResponse;
+}
+
+/* ── Per-kind delete helpers (bulk-delete dispatcher) ────────────────── */
+
+/** Bulk-delete response shape returned by /v1/documents/batch/delete/. */
+export interface BulkDeleteResponse {
+  requested: number;
+  deleted: number;
+}
+
+/** Outcome of a single per-kind delete pass. */
+export interface KindDeleteOutcome {
+  kind: FileKind;
+  requested: number;
+  deleted: number;
+  errors: { id: string; message: string }[];
+}
+
+/** Per-id DELETE for a single file row. Falls back to per-id loops when
+ * the receiving module exposes no batch endpoint. Errors bubble so the
+ * dispatcher can record a per-id failure entry.
+ */
+export async function deleteByKind(kind: FileKind, fileId: string): Promise<void> {
+  const path = deletePathForKind(kind, fileId);
+  await apiDelete(path);
+}
+
+/** Bulk-delete documents through the existing module-side batch endpoint. */
+export async function bulkDeleteDocuments(ids: string[]): Promise<BulkDeleteResponse> {
+  return apiPost<BulkDeleteResponse, { ids: string[] }>(
+    '/v1/documents/batch/delete/',
+    { ids },
+  );
+}
+
+/** Build the canonical DELETE path for one file kind + id. Exported so
+ * tests and the dispatcher share the same routing table.
+ */
+export function deletePathForKind(kind: FileKind, fileId: string): string {
+  const enc = encodeURIComponent(fileId);
+  switch (kind) {
+    case 'document':
+      return `/v1/documents/${enc}`;
+    case 'photo':
+      return `/v1/documents/photos/${enc}`;
+    case 'sheet':
+      return `/v1/documents/sheets/${enc}`;
+    case 'bim_model':
+      return `/v1/bim_hub/${enc}`;
+    case 'dwg_drawing':
+      return `/v1/dwg_takeoff/drawings/${enc}`;
+    case 'takeoff':
+      return `/v1/takeoff/documents/${enc}`;
+    case 'report':
+      return `/v1/reporting/reports/${enc}`;
+    case 'markup':
+      return `/v1/markups/${enc}`;
+  }
 }

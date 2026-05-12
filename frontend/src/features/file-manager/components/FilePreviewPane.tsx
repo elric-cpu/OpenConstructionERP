@@ -2,7 +2,7 @@
 
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { Download, Mail, FolderOpen, Copy, X, FileText, Image as ImageIcon, Layout, Box, Pencil, File, PenTool, FileBarChart, Tag, ExternalLink, Activity, Share2 } from 'lucide-react';
+import { Download, Mail, FolderOpen, Copy, X, FileText, Image as ImageIcon, Layout, Box, Pencil, File, PenTool, FileBarChart, Tag, ExternalLink, Activity, Share2, Lock } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
@@ -12,6 +12,7 @@ import { apiGet } from '@/shared/lib/api';
 import type { FileRow, FileKind } from '../types';
 import { isTauri, openInOSFinder, copyToClipboard } from '../lib/tauri';
 import { modulesForKind, primaryModule } from '../kindModule';
+import { ActivityDrawer } from './ActivityDrawer';
 
 const KIND_ICON: Record<FileKind, typeof FileText> = {
   document: FileText,
@@ -29,6 +30,8 @@ interface FilePreviewPaneProps {
   onClose: () => void;
   onEmail: (row: FileRow) => void;
   onShare?: (row: FileRow) => void;
+  /** Owner-only: opens FolderPermissionsModal scoped to this row's kind. */
+  onManageAccess?: (row: FileRow) => void;
 }
 
 function fmtBytes(bytes: number): string {
@@ -50,11 +53,16 @@ function isPdf(row: FileRow): boolean {
   return false;
 }
 
-export function FilePreviewPane({ row, onClose, onEmail, onShare }: FilePreviewPaneProps) {
+export function FilePreviewPane({ row, onClose, onEmail, onShare, onManageAccess }: FilePreviewPaneProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const addToast = useToastStore((s) => s.addToast);
   const [pathCopied, setPathCopied] = useState(false);
+  // Slide-over drawer with the full audit timeline. Opens on demand so
+  // we don't fire the activity request for every previewed file —
+  // unlike the inline ``ActivityLogSection`` below which renders a
+  // compact "last few events" strip eagerly.
+  const [activityOpen, setActivityOpen] = useState(false);
 
   if (!row) {
     return (
@@ -226,6 +234,30 @@ export function FilePreviewPane({ row, onClose, onEmail, onShare }: FilePreviewP
               {t('files.actions.share', { defaultValue: 'Share' })}
             </button>
           )}
+          {/* Activity drawer trigger — visible for any file kind, but
+              the drawer itself gracefully renders an empty / 404 state
+              for non-document backings. */}
+          <button
+            type="button"
+            onClick={() => setActivityOpen(true)}
+            data-testid="file-activity-button"
+            className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium border border-border-light text-content-primary hover:bg-surface-secondary transition-colors"
+            title={t('files.activity.open', { defaultValue: 'View activity history' })}
+          >
+            <Activity size={13} />
+            {t('files.activity.open', { defaultValue: 'View activity history' })}
+          </button>
+          {onManageAccess && (
+            <button
+              type="button"
+              onClick={() => onManageAccess(row)}
+              data-testid="file-manage-access-button"
+              className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium border border-border-light text-content-primary hover:bg-surface-secondary transition-colors"
+            >
+              <Lock size={13} />
+              {t('files.permissions.manage', { defaultValue: 'Manage access' })}
+            </button>
+          )}
           {isTauri && row.physical_path && (
             <button
               type="button"
@@ -295,9 +327,22 @@ export function FilePreviewPane({ row, onClose, onEmail, onShare }: FilePreviewP
         {/* Per-file audit timeline. Renders for any kind backed by the
             ``oe_documents_document`` table; the section gracefully
             returns null for other backings (photo / bim_model / dwg)
-            because the API responds 404 and useQuery is in retry:false. */}
+            because the API responds 404 and useQuery is in retry:false.
+            The compact in-pane strip stays for at-a-glance scanning;
+            the full timeline lives in the slide-over drawer below. */}
         <ActivityLogSection documentId={row.id} />
       </div>
+
+      {/* Full audit timeline as a right-edge slide-over. Mounted at the
+          end of the aside so it overlays the pane (and the rest of the
+          page via its own fixed positioning) without disrupting the
+          preview layout. */}
+      <ActivityDrawer
+        documentId={row.id}
+        documentName={row.name}
+        open={activityOpen}
+        onClose={() => setActivityOpen(false)}
+      />
     </aside>
   );
 }

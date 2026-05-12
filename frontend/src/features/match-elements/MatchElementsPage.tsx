@@ -25,13 +25,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
+import clsx from 'clsx';
 import {
   AlertCircle,
+  Check,
   CheckCircle2,
   ChevronRight,
   ChevronsRight,
   Database,
   Download,
+  ExternalLink,
   FileSpreadsheet,
   FileText,
   Languages,
@@ -39,6 +42,7 @@ import {
   Library,
   Link2,
   Loader2,
+  MessageSquarePlus,
   PlayCircle,
   RefreshCw,
   Search,
@@ -50,7 +54,6 @@ import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useToastStore } from '@/stores/useToastStore';
 import { projectsApi } from '@/features/projects/api';
 import { Toggle } from '@/shared/ui/Toggle';
-import { Slider } from '@/shared/ui/Slider';
 import { ChipBar, type Chip } from '@/shared/ui/ChipBar';
 import { BIMModelPicker } from '@/shared/ui/BIMModelPicker';
 
@@ -71,6 +74,9 @@ import {
 import { EmbedderStatusCard } from './EmbedderStatusCard';
 import { MatchAnalyticsCard } from './MatchAnalyticsCard';
 import { CataloguesPanelCard } from './CataloguesPanelCard';
+import { unwrapCataloguesPayload } from './catalogues-payload';
+import { MatchWizard } from './MatchWizard';
+import { MatchProgressCard } from './MatchProgressCard';
 import { MatchDetailPanel } from './MatchDetailPanel';
 import { NewSessionFromExcelModal } from './NewSessionFromExcelModal';
 import { NewSessionFromTextModal } from './NewSessionFromTextModal';
@@ -741,16 +747,12 @@ function CatalogueAdvisor({
     staleTime: 60_000,
   });
   const installables = useMemo(() => {
-    if (!installablesQ.data || !projectLanguage) return [];
-    // Tolerate both shapes the endpoint has shipped: a bare array (current
-    // queryFn) and the wrapped `{catalogues:[...]}` envelope (older cache
-    // rehydration). Without this guard the page crashes on
-    // `installablesQ.data.filter is not a function` whenever react-query
-    // rehydrates a pre-fix cache entry from sessionStorage.
-    const list = Array.isArray(installablesQ.data)
-      ? installablesQ.data
-      : (installablesQ.data as { catalogues?: typeof installablesQ.data })?.catalogues || [];
-    if (!Array.isArray(list)) return [];
+    if (!projectLanguage) return [];
+    // Shape-tolerant: see ./catalogues-payload.ts and Issue #122 — the
+    // endpoint has shipped both a bare array and a `{catalogues:[…]}`
+    // envelope, and a stale react-query cache of the *wrong* shape used
+    // to crash this page with `p.data.filter is not a function`.
+    const list = unwrapCataloguesPayload(installablesQ.data);
     const regionPrefix = (projectRegion || '').slice(0, 2).toUpperCase();
     return list
       .filter(
@@ -838,152 +840,119 @@ function CatalogueAdvisor({
 
   return (
     <div
-      className="rounded-lg border border-amber-300 bg-amber-50/80 dark:bg-amber-950/30 dark:border-amber-700 p-3.5"
+      className="rounded-lg border border-amber-300/70 bg-amber-50/70 dark:bg-amber-950/25 dark:border-amber-700/60 px-3 py-2.5"
       role="alert"
     >
-      <div className="flex items-start gap-3">
-        <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-300 shrink-0 mt-0.5" />
-        <div className="flex-1 min-w-0">
-          <div className="text-sm font-semibold text-amber-900 dark:text-amber-100">
-            {title}
-          </div>
-          <div className="text-xs text-amber-800 dark:text-amber-200 mt-0.5">
-            {detail}
-          </div>
+      {/* Compact advisor — single header row with title + Hugging Face
+          link + loading indicator, then a horizontal chip strip of bind
+          (loaded) / install (available) actions. The previous layout
+          stacked each option as a 50px button — for 3 options that came
+          out at ~250px, dwarfing the matching workspace below. The chip
+          row trades vertical space for horizontal scroll, which is fine
+          here because we cap it to ~3 chips per side anyway. */}
+      <div className="flex items-center gap-2 min-w-0">
+        <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-300 shrink-0" />
+        <div className="text-xs font-semibold text-amber-900 dark:text-amber-100 truncate">
+          {title}
+        </div>
+        {dbsQ.isLoading && (
+          <Loader2 className="w-3 h-3 text-amber-700 dark:text-amber-300 animate-spin shrink-0" />
+        )}
+        <a
+          href="https://huggingface.co/datasets/DataDrivenConstruction/cwicr-vector-db-bgem3-v3"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ms-auto shrink-0 text-[11px] inline-flex items-center gap-1 text-amber-800/80 dark:text-amber-200/80 hover:text-amber-900 dark:hover:text-amber-100 hover:underline"
+        >
+          <Library className="w-3 h-3" />
+          {t('match_elements.advisor_browse_all', 'All on Hugging Face')}
+        </a>
+      </div>
 
-          {dbsQ.isLoading && (
-            <div className="mt-2.5 inline-flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-300">
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              {t('match_elements.advisor_loading', 'Loading available catalogues…')}
-            </div>
-          )}
+      <div className="mt-1.5 ps-6 text-[11px] text-amber-800/80 dark:text-amber-200/80">
+        {detail}
+      </div>
 
-          {!dbsQ.isLoading && recommendations.length > 0 && (
-            <div className="mt-3 flex flex-col gap-1.5">
-              {recommendations.map((db) => {
-                const regionPrefix = (projectRegion || '').slice(0, 2).toUpperCase();
-                const isRegionMatch = regionPrefix && db.id.toUpperCase().startsWith(regionPrefix);
-                return (
-                  <button
-                    key={db.id}
-                    type="button"
-                    onClick={() => bindMut.mutate(db.id)}
-                    disabled={bindMut.isPending}
-                    className="flex items-center justify-between gap-3 px-3 py-2 rounded-md bg-white dark:bg-surface-primary hover:bg-amber-100 dark:hover:bg-amber-900/40 border border-amber-200 dark:border-amber-700 text-left transition disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <div className="flex flex-col gap-0.5 min-w-0">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-sm font-semibold text-content-primary truncate">
-                          {db.id}
-                        </span>
-                        {isRegionMatch && (
-                          <span className="text-[9px] uppercase tracking-wider px-1.5 py-px rounded bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 font-bold">
-                            {t('match_elements.advisor_region_match', 'Best')}
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-xs text-content-tertiary">
-                        {t('match_elements.advisor_rates_count', '{{n}} rates', {
-                          n: db.count.toLocaleString(),
-                        })}
-                        {' · '}
-                        {(db.language || '').toUpperCase()}
-                      </div>
-                    </div>
-                    {bindMut.isPending && bindMut.variables === db.id ? (
-                      <Loader2 className="w-4 h-4 text-amber-600 animate-spin shrink-0" />
-                    ) : (
-                      <ChevronRight className="w-4 h-4 text-amber-600 dark:text-amber-300 shrink-0" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          )}
+      {!dbsQ.isLoading && (recommendations.length > 0 || installables.length > 0) && (
+        <div className="mt-2 ps-6 flex flex-wrap items-center gap-1.5">
+          {recommendations.map((db) => {
+            const isPending = bindMut.isPending && bindMut.variables === db.id;
+            return (
+              <button
+                key={db.id}
+                type="button"
+                onClick={() => bindMut.mutate(db.id)}
+                disabled={bindMut.isPending}
+                className={clsx(
+                  'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium',
+                  'bg-white dark:bg-surface-primary border border-amber-300/70 dark:border-amber-700/50',
+                  'hover:bg-amber-100 dark:hover:bg-amber-900/30 hover:-translate-y-px hover:shadow-sm',
+                  'transition-all disabled:opacity-50 disabled:translate-y-0 disabled:hover:shadow-none',
+                )}
+                title={t('match_elements.advisor_bind_title', 'Use {{db}} ({{n}} rates)', {
+                  db: db.id,
+                  n: db.count.toLocaleString(),
+                })}
+              >
+                {isPending ? (
+                  <Loader2 className="w-3 h-3 animate-spin text-amber-600" />
+                ) : (
+                  <Check className="w-3 h-3 text-amber-600" />
+                )}
+                <span className="text-content-primary">{db.id}</span>
+              </button>
+            );
+          })}
+          {installables.map((c) => {
+            const isPending =
+              installMut.isPending && installMut.variables === c.region;
+            return (
+              <button
+                key={c.region}
+                type="button"
+                onClick={() => installMut.mutate(c.region)}
+                disabled={installMut.isPending || bindMut.isPending}
+                className={clsx(
+                  'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium',
+                  'bg-emerald-600 text-white border border-emerald-600',
+                  'hover:bg-emerald-700 hover:border-emerald-700 hover:-translate-y-px hover:shadow-sm hover:shadow-emerald-500/30',
+                  'transition-all disabled:opacity-50 disabled:translate-y-0 disabled:hover:shadow-none',
+                )}
+                title={t('match_elements.advisor_install_title', 'Install {{region}} (~{{mb}} MB)', {
+                  region: c.region,
+                  mb: c.size_mb,
+                })}
+              >
+                {isPending ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Download className="w-3 h-3" />
+                )}
+                <span>{c.region}</span>
+                <span className="opacity-70 font-normal">{c.size_mb}MB</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
-          {!dbsQ.isLoading && recommendations.length === 0 && (
-            <>
-              <div className="mt-2.5 text-xs text-amber-800 dark:text-amber-200">
-                {installables.length > 0
-                  ? t(
-                      'match_elements.advisor_install_hint',
-                      'No {{lang}} catalogues loaded yet. One-click install:',
-                      { lang: projLangUpper },
-                    )
-                  : t(
-                      'match_elements.advisor_none_available',
-                      'No {{lang}} catalogues are loaded yet. Visit /costs to import one.',
-                      { lang: projLangUpper },
-                    )}
-              </div>
-              {installables.length > 0 && (
-                <div className="mt-2 flex flex-col gap-1.5">
-                  {installables.map((c) => {
-                    const regionPrefix = (projectRegion || '').slice(0, 2).toUpperCase();
-                    const isRegionMatch =
-                      regionPrefix && c.region.toUpperCase().startsWith(regionPrefix);
-                    const isThisInstalling =
-                      installMut.isPending && installMut.variables === c.region;
-                    return (
-                      <button
-                        key={c.region}
-                        type="button"
-                        onClick={() => installMut.mutate(c.region)}
-                        disabled={installMut.isPending || bindMut.isPending}
-                        className="flex items-center justify-between gap-3 px-3 py-2 rounded-md bg-white dark:bg-surface-primary hover:bg-emerald-50 dark:hover:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-700 text-left transition disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <div className="flex flex-col gap-0.5 min-w-0">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="text-sm font-semibold text-content-primary truncate">
-                              {c.region}
-                            </span>
-                            {isRegionMatch && (
-                              <span className="text-[9px] uppercase tracking-wider px-1.5 py-px rounded bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 font-bold">
-                                {t('match_elements.advisor_region_match', 'Best')}
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs text-content-tertiary">
-                            {t('match_elements.advisor_install_size', '~{{mb}} MB · {{lang}}', {
-                              mb: c.size_mb,
-                              lang: (c.language || '').toUpperCase(),
-                            })}
-                          </div>
-                        </div>
-                        {isThisInstalling ? (
-                          <Loader2 className="w-4 h-4 text-emerald-600 animate-spin shrink-0" />
-                        ) : (
-                          <Download className="w-4 h-4 text-emerald-600 dark:text-emerald-300 shrink-0" />
-                        )}
-                      </button>
-                    );
-                  })}
-                  {installMut.error && (
-                    <div className="text-xs text-rose-700 dark:text-rose-300 px-1">
-                      {String(installMut.error)}
-                    </div>
-                  )}
-                </div>
-              )}
-            </>
-          )}
-
-          <div className="mt-3 flex items-center gap-3 text-xs">
-            <Link
-              to="/costs"
-              className="inline-flex items-center gap-1 text-amber-800 dark:text-amber-200 underline hover:opacity-80"
-            >
-              <Library className="w-3 h-3" />
-              {t('match_elements.advisor_browse_all', 'Browse all catalogues')}
-            </Link>
-            {bindMut.error && (
-              <span className="text-rose-700 dark:text-rose-300">
-                {String(bindMut.error)}
-              </span>
+      {!dbsQ.isLoading &&
+        recommendations.length === 0 &&
+        installables.length === 0 && (
+          <div className="mt-2 ps-6 text-[11px] text-amber-800/80 dark:text-amber-200/80">
+            {t(
+              'match_elements.advisor_none_available',
+              'No {{lang}} catalogues are loaded yet. Visit /costs to import one.',
+              { lang: projLangUpper },
             )}
           </div>
+        )}
+
+      {(installMut.error || bindMut.error) && (
+        <div className="mt-1.5 ps-6 text-[11px] text-rose-700 dark:text-rose-300 truncate">
+          {String(installMut.error || bindMut.error)}
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -1110,6 +1079,45 @@ function SessionPicker({
         <FileSpreadsheet className="w-4 h-4" />
         {t('match_elements.new_excel.button', 'From Excel BoQ')}
       </button>
+    </div>
+  );
+}
+
+/* Shared shell for Step-4 settings controls. Renders a consistent
+   label-on-top + control + help-below stack so that a Slider, a Toggle,
+   and a Select can sit side-by-side in the same grid row without
+   visually disagreeing on label style or vertical rhythm. The `trailing`
+   slot puts a value chip (e.g. "0.95" or "On") on the same baseline as
+   the label so the user can scan the row left-to-right and read the
+   current setting at a glance. */
+function FieldShell({
+  label,
+  help,
+  htmlFor,
+  trailing,
+  children,
+}: {
+  label: React.ReactNode;
+  help?: React.ReactNode;
+  htmlFor?: string;
+  trailing?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5 min-w-0">
+      <div className="flex items-baseline justify-between gap-2 min-h-[14px]">
+        <label
+          htmlFor={htmlFor}
+          className="text-[11px] uppercase tracking-wider text-content-tertiary font-semibold leading-none"
+        >
+          {label}
+        </label>
+        {trailing && <span className="shrink-0 leading-none">{trailing}</span>}
+      </div>
+      <div className="min-w-0">{children}</div>
+      {help && (
+        <p className="text-[11px] text-content-tertiary leading-snug">{help}</p>
+      )}
     </div>
   );
 }
@@ -1343,6 +1351,14 @@ export function MatchElementsPage() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [showTextModal, setShowTextModal] = useState(false);
   const [showExcelModal, setShowExcelModal] = useState(false);
+  // Set by the wizard's onComplete the moment a session is created and a
+  // match is kicked off. The MatchProgressCard polls /progress until the
+  // backend flips status to "done", then clears this flag so the regular
+  // results UI takes over. Surviving the brief race between "session
+  // created" and "first progress write reaches the DB" matters — without
+  // this flag we'd flash the empty results pane before the progress card
+  // ever painted.
+  const [matchInFlight, setMatchInFlight] = useState(false);
 
   // Honour the ?project=<id> deep-link: if the URL names a project that
   // differs from the active one, switch the store. This is what makes
@@ -1426,6 +1442,7 @@ export function MatchElementsPage() {
     setSessionId(null);
     setActiveBimModelId(null);
     setSelected(new Set());
+    setMatchInFlight(false);
   }, [projectId]);
 
   // ── Sessions for the resume picker ───────────────────────────────────
@@ -1435,20 +1452,25 @@ export function MatchElementsPage() {
     queryFn: () => matchElementsApi.listSessions(projectId!, { limit: 10 }),
   });
 
-  // Auto-pick the most-recent active session that targets the chosen
-  // BIM model. If none exists, leave the picker open so the user makes
-  // an explicit choice.
+  // Kept for the "+ New match" button below (still used to clear any
+  // in-flight selected groups, even though the auto-pick effect is gone).
+  // The auto-pick was removed: it was selecting the most-recent session
+  // on every mount, which made the wizard unreachable on any project
+  // that already had a session — confusing first-time UX. Power users
+  // can resume via the wizard's Resume strip (1 click) or via the
+  // ``?session=<id>`` deep-link below.
+  const userOptedOutOfAutoPick = useRef(false);
+
+  // Deep-link auto-pick: when the URL carries `?session=<id>`, honour
+  // it once on mount. This preserves bookmarks / "open in new tab"
+  // from elsewhere in the app without hijacking the wizard for fresh
+  // landings.
   useEffect(() => {
     if (sessionId) return;
-    const list = sessionsQ.data ?? [];
-    if (list.length === 0) return;
-    const matching = list.find(
-      (s) =>
-        !s.is_archived &&
-        (activeBimModelId ? s.bim_model_id === activeBimModelId : true),
-    );
-    if (matching) setSessionId(matching.id);
-  }, [sessionsQ.data, sessionId, activeBimModelId]);
+    const urlSessionId = searchParams.get('session');
+    if (!urlSessionId) return;
+    setSessionId(urlSessionId);
+  }, [searchParams, sessionId]);
 
   // ── Active session details ───────────────────────────────────────────
   const sessionQ = useQuery({
@@ -1529,6 +1551,11 @@ export function MatchElementsPage() {
               { method },
             ),
       );
+      // Surface the progress card for toolbar-driven re-runs too — same
+      // poll endpoint, same timeline. Without this the user re-runs
+      // "vector" from the toolbar and stares at the existing busy
+      // banner for 30-90s with no per-stage feedback.
+      setMatchInFlight(true);
       return matchElementsApi.runMatch(sessionId, {
         method,
         top_k: 10,
@@ -1544,6 +1571,7 @@ export function MatchElementsPage() {
     onError: (e: Error) => {
       setBusy(null);
       setError(e.message);
+      setMatchInFlight(false);
     },
   });
 
@@ -1822,6 +1850,33 @@ export function MatchElementsPage() {
             )}
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
+            {/* "New match" — opens the wizard. Visible only inside the
+                in-session view; in wizard view itself the button would be
+                redundant (the user is already there). Sets the opt-out
+                ref so the auto-resume effect doesn't immediately yank
+                them back into the session they just left. */}
+            {sessionId && (
+              <button
+                type="button"
+                onClick={() => {
+                  userOptedOutOfAutoPick.current = true;
+                  setSessionId(null);
+                  setSelected(new Set());
+                }}
+                aria-label={t(
+                  'match_elements.new_match_title',
+                  'Start a new match — opens the wizard',
+                )}
+                className="px-2.5 py-1 text-xs rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-700 text-white shadow-sm shadow-indigo-500/25 hover:shadow-md hover:shadow-indigo-500/35 hover:-translate-y-px inline-flex items-center gap-1 font-medium transition-all"
+                title={t(
+                  'match_elements.new_match_title',
+                  'Start a new match — opens the wizard',
+                )}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                {t('match_elements.new_match', 'New match')}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setTemplatesOpen(true)}
@@ -1875,9 +1930,86 @@ export function MatchElementsPage() {
         )}
       </section>
 
+      {/* "Beta · feedback wanted" banner.
+          /match-elements is the newest top-level feature in the product
+          and still has rough edges (catalogue install retries, occasional
+          stale-cache shape mismatches, ranker tuning). The banner sets
+          the right expectation and gives the user a 1-click path to file
+          an issue against the public repo so feedback doesn't sit in DMs.
+          Kept compact — single row, dismiss-free (the message stays
+          relevant for the whole beta period). */}
+      <div className="mb-2 rounded-xl border border-amber-200/60 dark:border-amber-800/40 bg-gradient-to-r from-amber-50/80 via-white to-white dark:from-amber-950/20 dark:via-surface-primary dark:to-surface-primary px-3 py-2 flex items-center gap-2.5 flex-wrap shadow-sm">
+        <span className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wider font-bold text-amber-900 dark:text-amber-100 bg-amber-100/80 dark:bg-amber-900/40 border border-amber-300/60 dark:border-amber-700/40">
+          <Sparkles className="w-2.5 h-2.5" />
+          {t('match_elements.beta_badge', 'Beta')}
+        </span>
+        <p className="text-xs text-content-secondary leading-snug min-w-0 flex-1">
+          {t(
+            'match_elements.beta_blurb',
+            'Match Elements is a new section and still has rough edges. Found a bug or have an idea? Please file an issue — every report tightens the next release.',
+          )}
+        </p>
+        <a
+          href="https://github.com/datadrivenconstruction/OpenConstructionERP/issues/new?labels=match-elements&template=bug_report.yml"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold text-amber-900 dark:text-amber-100 bg-white/90 dark:bg-surface-primary/80 border border-amber-300/60 dark:border-amber-700/40 hover:bg-amber-50 dark:hover:bg-amber-900/30 hover:-translate-y-px transition-all shadow-sm"
+        >
+          <MessageSquarePlus className="w-3 h-3" />
+          {t('match_elements.beta_cta', 'Open an issue')}
+          <ExternalLink className="w-2.5 h-2.5 opacity-70" />
+        </a>
+      </div>
+
       <ProjectContextCard projectId={projectId} />
 
-      {projectId && (
+      {/* New wizard entry — visible only when no session is active.
+          The wizard guides the user through stage → catalogue → source →
+          run, then sets sessionId via onComplete to drop them into the
+          existing matching/results UI. Power users with a saved session
+          (or who pick one in the wizard's Resume strip) skip straight
+          past this and see the full toolset below. */}
+      {projectId && !sessionId && (
+        <MatchWizard
+          projectId={projectId}
+          projectRegion={projectRegion}
+          sessions={sessionsQ.data ?? []}
+          onComplete={(id) => {
+            setSessionId(id);
+            // Mark a fresh match as in-flight so the MatchProgressCard
+            // takes over the viewport until the server reports
+            // ``status: "done"``.
+            setMatchInFlight(true);
+          }}
+          onResume={(id) => {
+            // Resume path — no kickoff is happening, so don't mount the
+            // progress card. User goes straight to the results UI.
+            setSessionId(id);
+          }}
+        />
+      )}
+
+      {projectId && sessionId && matchInFlight && (
+        <MatchProgressCard
+          sessionId={sessionId}
+          onDone={() => {
+            setMatchInFlight(false);
+            qc.invalidateQueries({ queryKey: ['match-groups', sessionId] });
+            qc.invalidateQueries({ queryKey: ['match-session', sessionId] });
+            qc.invalidateQueries({ queryKey: ['match-sessions', projectId] });
+          }}
+          onError={(msg) => {
+            setMatchInFlight(false);
+            addToast({
+              type: 'error',
+              title: t('match_progress.toast_failed_title', 'Match failed'),
+              message: msg,
+            });
+          }}
+        />
+      )}
+
+      {projectId && sessionId && !matchInFlight && (
         <>
           {/* System-readiness row — three status cards (Catalogues +
               Embedder + Analytics) share a single horizontal row at lg+,
@@ -2107,46 +2239,84 @@ export function MatchElementsPage() {
                   )}
                 </span>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-3">
-                <Slider
-                  label={t(
-                    'match_elements.auto_confirm_threshold',
-                    'Auto-confirm threshold',
-                  )}
-                  description={t(
+              {/* All three controls use the same FieldShell so labels,
+                  controls, and help text sit on the same baselines across
+                  the row regardless of the underlying control type. Before
+                  the refactor each control rendered its own label style
+                  (Slider: uppercase, Toggle: sentence-case inline, Select:
+                  uppercase) — the row looked ragged with three different
+                  type stacks side-by-side. The shell normalises that. */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-4 items-start">
+                <FieldShell
+                  label={t('match_elements.auto_confirm_threshold', 'Auto-confirm threshold')}
+                  help={t(
                     'match_elements.auto_confirm_help',
                     'Suggested matches at or above this score auto-confirm.',
                   )}
-                  value={threshold}
-                  onChange={(v) =>
-                    updateSessionMut.mutate({ auto_confirm_threshold: v })
+                  trailing={
+                    <span className="text-sm font-semibold text-content-primary tabular-nums">
+                      {threshold.toFixed(2)}
+                    </span>
                   }
-                  min={0.5}
-                  max={1.0}
-                  step={0.01}
-                  format={(v) => v.toFixed(2)}
-                />
-                <Toggle
-                  checked={useNet}
-                  onChange={(v) =>
-                    updateSessionMut.mutate({ use_net_quantities: v })
-                  }
-                  label={t(
-                    'match_elements.use_net',
-                    'Use net quantities (deduct openings)',
-                  )}
-                  description={t(
+                >
+                  <input
+                    type="range"
+                    min={0.5}
+                    max={1.0}
+                    step={0.01}
+                    value={threshold}
+                    onChange={(e) =>
+                      updateSessionMut.mutate({
+                        auto_confirm_threshold: Number(e.target.value),
+                      })
+                    }
+                    disabled={updateSessionMut.isPending}
+                    className="block w-full accent-oe-blue cursor-pointer disabled:cursor-not-allowed h-8"
+                  />
+                </FieldShell>
+
+                <FieldShell
+                  label={t('match_elements.use_net', 'Use net quantities')}
+                  help={t(
                     'match_elements.use_net_help',
-                    'Off = use gross. Default deducts IfcOpeningElement / IfcRelVoidsElement from host quantities.',
+                    'Off = gross. Default deducts IfcOpeningElement / IfcRelVoidsElement from host quantities.',
                   )}
-                />
-                <div>
-                  <label
-                    htmlFor="match-elements-stage"
-                    className="text-xs uppercase tracking-wider text-content-tertiary mb-1.5 block font-medium"
-                  >
-                    {t('match_elements.stage_label', 'Construction stage')}
-                  </label>
+                  trailing={
+                    <span
+                      className={`text-sm font-semibold tabular-nums ${useNet ? 'text-oe-blue' : 'text-content-tertiary'}`}
+                    >
+                      {useNet
+                        ? t('common.on', { defaultValue: 'On' })
+                        : t('common.off', { defaultValue: 'Off' })}
+                    </span>
+                  }
+                >
+                  {/* Toggle wrapped without its own label/description — the
+                      shell owns those so all three cells stay aligned. The
+                      switch sits in an h-8 box matching the other controls'
+                      input heights to keep baselines aligned vertically. */}
+                  <div className="h-8 flex items-center">
+                    <Toggle
+                      checked={useNet}
+                      onChange={(v) =>
+                        updateSessionMut.mutate({ use_net_quantities: v })
+                      }
+                      disabled={updateSessionMut.isPending}
+                    />
+                    <span className="ms-2 text-xs text-content-secondary">
+                      {t('match_elements.deduct_openings', 'Deduct openings (IfcOpeningElement)')}
+                    </span>
+                  </div>
+                </FieldShell>
+
+                <FieldShell
+                  label={t('match_elements.stage_label', 'Construction stage')}
+                  help={t(
+                    'match_elements.stage_help',
+                    'Pin matches to one OmniClass-aligned phase. Leave blank to search all stages.',
+                  )}
+                  htmlFor="match-elements-stage"
+                >
                   <select
                     id="match-elements-stage"
                     value={stage}
@@ -2157,7 +2327,7 @@ export function MatchElementsPage() {
                         construction_stage: v === '' ? null : v,
                       });
                     }}
-                    className="w-full text-sm rounded border border-border bg-surface-primary text-content-primary px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-oe-blue/40 disabled:opacity-50"
+                    className="block w-full h-8 text-sm rounded-md border border-border bg-surface-primary text-content-primary px-2 focus:outline-none focus:ring-2 focus:ring-oe-blue/40 disabled:opacity-50"
                   >
                     <option value="">
                       {t('match_elements.stage_any', 'Any stage')}
@@ -2168,13 +2338,7 @@ export function MatchElementsPage() {
                       </option>
                     ))}
                   </select>
-                  <p className="text-[11px] text-content-tertiary mt-1 leading-snug">
-                    {t(
-                      'match_elements.stage_help',
-                      'Pin matches to one OmniClass-aligned phase. Leave blank to search all stages.',
-                    )}
-                  </p>
-                </div>
+                </FieldShell>
               </div>
               <div className="mt-3 pt-2 border-t border-border-light">
                 <div className="text-xs uppercase tracking-wider text-content-tertiary mb-1.5 font-medium">

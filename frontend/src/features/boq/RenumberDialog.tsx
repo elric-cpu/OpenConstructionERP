@@ -198,7 +198,7 @@ export function RenumberDialog({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-card-in"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-lg p-4 animate-card-in"
       onClick={() => !isApplying && onClose()}
       role="dialog"
       aria-modal="true"

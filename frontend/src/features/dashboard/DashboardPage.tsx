@@ -41,7 +41,6 @@ import {
 import { Card, CardHeader, CardContent, Button, Badge, Skeleton, ActivityFeed as CrossModuleActivityFeed, EmptyState } from '@/shared/ui';
 import BIMCoverageCard from './BIMCoverageCard';
 import { CompactProjectCard } from './components/CompactProjectCard';
-import { DashboardBackdrop } from './components/DashboardBackdrop';
 import { DashboardProjectsMap } from './components/DashboardProjectsMap';
 import { ShowAllProjectsCard } from './components/ShowAllProjectsCard';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
@@ -223,7 +222,7 @@ function ImportDemoModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/70 backdrop-blur-lg"
         aria-hidden="true"
         onClick={onClose}
       />
@@ -1805,11 +1804,7 @@ export function DashboardPage() {
   }, [allBoqs, projects]);
 
   return (
-    <div className="relative isolate space-y-5 animate-fade-in">
-      {/* Apple-product-style layered backdrop — aurora mesh, dotted
-          blueprint grid, vignette, fine grain. Lives behind everything
-          via `-z-10`; pointer-events: none so it never intercepts. */}
-      <DashboardBackdrop />
+    <div className="space-y-5 animate-fade-in">
       {/* ─── 1. Hero · row A — greeting + primary actions ────────────────
           Compressed from the previous 6-row hero (audit 2026-05-11): the
           greeting and the 3 CTAs share a single line on desktop; row B

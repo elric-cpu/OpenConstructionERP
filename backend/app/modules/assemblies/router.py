@@ -140,7 +140,7 @@ def _assembly_to_response(
         component_count=len(components),
         usage_count=usage_count,
         tags=tags,
-        metadata_=metadata,
+        metadata=metadata,
         created_at=assembly.created_at,  # type: ignore[attr-defined]
         updated_at=assembly.updated_at,  # type: ignore[attr-defined]
     )
@@ -154,13 +154,14 @@ def _component_to_response(comp: object) -> ComponentResponse:
         cost_item_id=comp.cost_item_id,  # type: ignore[attr-defined]
         catalog_resource_id=getattr(comp, "catalog_resource_id", None),  # type: ignore[attr-defined]
         description=comp.description,  # type: ignore[attr-defined]
+        resource_type=getattr(comp, "resource_type", None),  # type: ignore[attr-defined]
         factor=_str_to_float(comp.factor),  # type: ignore[attr-defined]
         quantity=_str_to_float(comp.quantity),  # type: ignore[attr-defined]
         unit=comp.unit,  # type: ignore[attr-defined]
         unit_cost=_str_to_float(comp.unit_cost),  # type: ignore[attr-defined]
         total=_str_to_float(comp.total),  # type: ignore[attr-defined]
         sort_order=comp.sort_order,  # type: ignore[attr-defined]
-        metadata_=comp.metadata_,  # type: ignore[attr-defined]
+        metadata=comp.metadata_ or {},  # type: ignore[attr-defined]
         created_at=comp.created_at,  # type: ignore[attr-defined]
         updated_at=comp.updated_at,  # type: ignore[attr-defined]
     )
@@ -535,7 +536,7 @@ async def add_component(
             unit_cost=data.unit_cost,
             total=round(total, 2),
             sort_order=0,
-            metadata_={},
+            metadata={},
             created_at=now,
             updated_at=now,
         )

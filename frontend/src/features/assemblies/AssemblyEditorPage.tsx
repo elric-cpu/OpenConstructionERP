@@ -1,8 +1,28 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'react-router-dom';
-import { Plus, Trash2, Send, X, Database, Search, Loader2, Check, GripVertical, Share2, Tag } from 'lucide-react';
+import {
+  Plus,
+  Trash2,
+  Send,
+  X,
+  Database,
+  Search,
+  Loader2,
+  Check,
+  GripVertical,
+  Share2,
+  Tag,
+  Hammer,
+  HardHat,
+  Wrench,
+  Layers as LayersIcon,
+  Briefcase,
+  Boxes,
+  ChevronDown,
+} from 'lucide-react';
+import clsx from 'clsx';
 import { Button, Badge, Card, Input, Breadcrumb, ConfirmDialog } from '@/shared/ui';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { apiGet, triggerDownload } from '@/shared/lib/api';
@@ -11,7 +31,9 @@ import { useToastStore } from '@/stores/useToastStore';
 import {
   assembliesApi,
   type AssemblyComponent,
+  type ComponentMetadata,
   type CreateComponentData,
+  type ResourceType,
 } from './api';
 
 /* -- Constants ------------------------------------------------------------ */
@@ -27,6 +49,12 @@ export function AssemblyEditorPage() {
 
   const [applyModalOpen, setApplyModalOpen] = useState(false);
   const [costDbModalOpen, setCostDbModalOpen] = useState(false);
+  const [catalogPickerOpen, setCatalogPickerOpen] = useState(false);
+  const [catalogPickerType, setCatalogPickerType] = useState<ResourceType | null>(null);
+  // The "+ Add" split-button reveals six typed seeds — material is the
+  // common case, the rest cover the standard professional vocabulary
+  // (HeavyBid: M/L/E/S; iTWO/Гранд-Смета also include operator + overhead).
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [showTagEditor, setShowTagEditor] = useState(false);
   const [tagInput, setTagInput] = useState('');
   const addToast = useToastStore((s) => s.addToast);
@@ -99,15 +127,84 @@ export function AssemblyEditorPage() {
     },
   });
 
-  const handleAddComponent = useCallback(() => {
-    addComponentMutation.mutate({
-      description: t('assemblies.new_component_default', { defaultValue: 'New component' }),
-      factor: 1,
-      quantity: 1,
-      unit: assembly?.unit || 'm2',
-      unit_cost: 0,
-    });
-  }, [addComponentMutation, assembly?.unit, t]);
+  // Typed seed defaults — picked to look intentional in the editor right
+  // after add, so the user sees what each type expects (labor → "h",
+  // equipment → "h", material → assembly's own unit). The seed metadata
+  // primes the type-specific extended fields (waste/burden/fuel) at
+  // sensible defaults so the per-type formula activates immediately.
+  const handleAddComponent = useCallback(
+    (resource_type: ResourceType = 'material') => {
+      setAddMenuOpen(false);
+      const defaults: Record<
+        ResourceType,
+        { description: string; unit: string; metadata?: CreateComponentData['metadata'] }
+      > = {
+        material: {
+          description: t('assemblies.seed_material', { defaultValue: 'New material' }),
+          unit: assembly?.unit || 'm2',
+          metadata: { waste_pct: 0 },
+        },
+        labor: {
+          description: t('assemblies.seed_labor', { defaultValue: 'New labor line' }),
+          unit: 'h',
+          metadata: { crew_size: 1, burden_pct: 0 },
+        },
+        equipment: {
+          description: t('assemblies.seed_equipment', { defaultValue: 'New equipment' }),
+          unit: 'h',
+          metadata: { rental_days: 0, fuel_cost: 0 },
+        },
+        operator: {
+          description: t('assemblies.seed_operator', { defaultValue: 'New operator' }),
+          unit: 'h',
+          metadata: {},
+        },
+        subcontractor: {
+          description: t('assemblies.seed_subcontractor', { defaultValue: 'New subcontract' }),
+          unit: assembly?.unit || 'lsum',
+          metadata: {},
+        },
+        overhead: {
+          description: t('assemblies.seed_overhead', { defaultValue: 'Overhead / markup' }),
+          unit: assembly?.unit || 'lsum',
+          metadata: {},
+        },
+      };
+      const d = defaults[resource_type];
+      addComponentMutation.mutate({
+        description: d.description,
+        resource_type,
+        factor: 1,
+        quantity: 1,
+        unit: d.unit,
+        unit_cost: 0,
+        metadata: d.metadata,
+      });
+    },
+    [addComponentMutation, assembly?.unit, t],
+  );
+
+  const openCatalogPicker = useCallback((rt: ResourceType | null = null) => {
+    setCatalogPickerType(rt);
+    setCatalogPickerOpen(true);
+    setAddMenuOpen(false);
+  }, []);
+
+  // M/L/E roll-up — sums by component.resource_type (falling back to the
+  // legacy inference for un-typed rows so old assemblies still render
+  // a useful breakdown until the user re-types them).
+  const breakdown = useMemo(() => {
+    const comps = assembly?.components ?? [];
+    const totals: Record<string, number> = {};
+    let grand = 0;
+    for (const c of comps) {
+      const t = c.resource_type ?? inferResourceType(c);
+      totals[t] = (totals[t] ?? 0) + (c.total || 0);
+      grand += c.total || 0;
+    }
+    const bid = assembly?.bid_factor ?? 1;
+    return { totals, grand, withBid: grand * bid };
+  }, [assembly?.components, assembly?.bid_factor]);
 
   const handleExportJson = useCallback(async () => {
     if (!assemblyId) return;
@@ -251,16 +348,100 @@ export function AssemblyEditorPage() {
             icon={<Database size={15} />}
             onClick={() => setCostDbModalOpen(true)}
             className="border-purple-300/30 text-purple-600 hover:bg-purple-50"
+            title={t('assemblies.from_database_title', {
+              defaultValue: 'Pick a finished rate from the cost database (CWICR / RSMeans / …)',
+            })}
           >
-            {t('assemblies.from_database', { defaultValue: 'From Database' })}
+            {t('assemblies.from_database', { defaultValue: 'Cost DB' })}
           </Button>
           <Button
-            variant="primary"
-            icon={<Plus size={16} />}
-            onClick={handleAddComponent}
+            variant="secondary"
+            size="sm"
+            icon={<Boxes size={15} />}
+            onClick={() => openCatalogPicker(null)}
+            className="border-emerald-300/30 text-emerald-700 hover:bg-emerald-50"
+            title={t('assemblies.from_catalog_title', {
+              defaultValue: 'Pick a typed resource (material / labor / equipment) from the catalog',
+            })}
           >
-            {t('assemblies.add_component', { defaultValue: 'Add Component' })}
+            {t('assemblies.from_catalog', { defaultValue: 'From Catalog' })}
           </Button>
+          {/* Typed Add — split button. Default click adds a material;
+              chevron opens the menu with all six standard kinds. Mirrors
+              what every professional estimator uses (M/L/E/S + operator
+              + overhead) so the user thinks in those buckets from the
+              first row instead of typing free-text and hoping the
+              inference picks the right type. */}
+          <div className="relative">
+            <div className="inline-flex rounded-lg shadow-sm">
+              <Button
+                variant="primary"
+                icon={<Plus size={16} />}
+                onClick={() => handleAddComponent('material')}
+                className="rounded-r-none"
+              >
+                {t('assemblies.add_material', { defaultValue: 'Add material' })}
+              </Button>
+              <button
+                type="button"
+                onClick={() => setAddMenuOpen((o) => !o)}
+                aria-label={t('assemblies.add_other_aria', {
+                  defaultValue: 'Choose a different resource type',
+                })}
+                aria-expanded={addMenuOpen}
+                className="px-2 rounded-r-lg border-l border-white/20 bg-oe-blue text-white hover:bg-oe-blue-hover transition-colors inline-flex items-center"
+              >
+                <ChevronDown size={14} />
+              </button>
+            </div>
+            {addMenuOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-30"
+                  onClick={() => setAddMenuOpen(false)}
+                  aria-hidden
+                />
+                <div
+                  role="menu"
+                  className="absolute right-0 mt-1.5 w-56 rounded-lg border border-border-light bg-surface-elevated shadow-lg z-40 py-1 animate-fade-in"
+                >
+                  {(
+                    [
+                      { rt: 'material', icon: LayersIcon, color: 'text-emerald-700' },
+                      { rt: 'labor', icon: HardHat, color: 'text-blue-700' },
+                      { rt: 'equipment', icon: Wrench, color: 'text-amber-700' },
+                      { rt: 'operator', icon: Hammer, color: 'text-orange-700' },
+                      { rt: 'subcontractor', icon: Briefcase, color: 'text-violet-700' },
+                      { rt: 'overhead', icon: Plus, color: 'text-slate-700' },
+                    ] as const
+                  ).map(({ rt, icon: Icon, color }) => (
+                    <button
+                      key={rt}
+                      type="button"
+                      role="menuitem"
+                      onClick={() => handleAddComponent(rt)}
+                      className="w-full px-3 py-1.5 text-left text-xs hover:bg-surface-secondary flex items-center gap-2"
+                    >
+                      <Icon size={14} className={color} />
+                      {t(`assemblies.add_${rt}`, {
+                        defaultValue: `Add ${rt}`,
+                      })}
+                    </button>
+                  ))}
+                  <div className="my-1 h-px bg-border-light" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => openCatalogPicker(null)}
+                    className="w-full px-3 py-1.5 text-left text-xs hover:bg-surface-secondary flex items-center gap-2 text-emerald-700"
+                  >
+                    <Boxes size={14} />
+                    {t('assemblies.from_catalog', { defaultValue: 'From Catalog…' })}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -312,6 +493,12 @@ export function AssemblyEditorPage() {
         </Card>
       )}
 
+      {/* Two-column workspace: components table on the left, M/L/E
+          breakdown summary on the right. The summary is sticky so it
+          stays visible as the user scrolls a long component list — this
+          is the same pattern HeavyBid / Sage estimating tools use to
+          keep the rolled-up cost driver split always in view. */}
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_320px] gap-4">
       {/* Components Table */}
       <Card padding="none" className="overflow-hidden">
         <div className="overflow-x-auto">
@@ -372,7 +559,7 @@ export function AssemblyEditorPage() {
               {components.length === 0 && (
                 <tr>
                   <td colSpan={9} className="px-4 py-10 text-center text-content-tertiary">
-                    {t('assemblies.no_components_hint', { defaultValue: 'No components yet. Click "Add Component" or "From Database" to start building this assembly.' })}
+                    {t('assemblies.no_components_hint', { defaultValue: 'No components yet. Use the typed Add buttons (material / labor / equipment / …), pick a row from the cost database, or import a typed resource from the catalog.' })}
                   </td>
                 </tr>
               )}
@@ -423,6 +610,34 @@ export function AssemblyEditorPage() {
           </table>
         </div>
       </Card>
+
+      {/* M/L/E breakdown sidebar */}
+      <BreakdownSidebar
+        breakdown={breakdown}
+        currency={assembly.currency}
+        unit={assembly.unit}
+        bidFactor={assembly.bid_factor}
+      />
+      </div>
+
+      {/* Catalog Resource Picker Modal */}
+      {catalogPickerOpen && assemblyId && (
+        <CatalogResourcePickerModal
+          assemblyId={assemblyId}
+          initialType={catalogPickerType}
+          onClose={() => setCatalogPickerOpen(false)}
+          onAdded={() => {
+            setCatalogPickerOpen(false);
+            queryClient.invalidateQueries({ queryKey: ['assembly', assemblyId] });
+            addToast({
+              type: 'success',
+              title: t('assemblies.resource_added_from_catalog', {
+                defaultValue: 'Resource added from catalog',
+              }),
+            });
+          }}
+        />
+      )}
 
       {/* Apply to BOQ Modal */}
       {applyModalOpen && (
@@ -649,6 +864,20 @@ const RESOURCE_TYPE_STYLES: Record<string, string> = {
   material: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400',
   labor: 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400',
   equipment: 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400',
+  operator: 'bg-orange-50 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400',
+  subcontractor: 'bg-violet-50 text-violet-700 dark:bg-violet-900/20 dark:text-violet-400',
+  overhead: 'bg-slate-100 text-slate-700 dark:bg-slate-800/40 dark:text-slate-300',
+};
+
+// Hex bar colours for the M/L/E summary panel — slightly more saturated
+// than the badge backgrounds so the percent bar reads at-a-glance.
+const RESOURCE_TYPE_BAR: Record<string, string> = {
+  material: 'bg-emerald-500',
+  labor: 'bg-blue-500',
+  equipment: 'bg-amber-500',
+  operator: 'bg-orange-500',
+  subcontractor: 'bg-violet-500',
+  overhead: 'bg-slate-500',
 };
 
 /* -- Component Row (inline editable) -------------------------------------- */
@@ -677,6 +906,10 @@ function ComponentRow({
   const { t } = useTranslation();
   const { confirm, ...confirmProps } = useConfirm();
   const [editing, setEditing] = useState<string | null>(null);
+  // Per-row "details" panel toggle. Closed by default to keep the
+  // table compact; opens to reveal type-specific fields (waste_pct
+  // for material, burden_pct for labor, fuel_cost for equipment …).
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   const handleBlur = (field: string, value: string) => {
     setEditing(null);
@@ -686,6 +919,19 @@ function ComponentRow({
     };
     onUpdate(update);
   };
+
+  // Patch a single metadata field in-place. The server merges by
+  // replacing the whole `metadata` blob, so we always send the
+  // existing dict + the changed key — that way unrelated fields
+  // (vendor, notes, productivity) on the same row stay intact.
+  const patchMeta = (key: string, raw: string) => {
+    const parsed = raw === '' ? undefined : Number.isNaN(Number(raw)) ? raw : Number(raw);
+    const next = { ...(component.metadata as Record<string, unknown>), [key]: parsed };
+    onUpdate({ metadata: next as ComponentMetadata });
+  };
+
+  const resType = (component.resource_type ?? inferResourceType(component)) as ResourceType;
+  const meta = (component.metadata ?? {}) as ComponentMetadata;
 
   const cellClass =
     'px-4 py-2.5 transition-colors cursor-text hover:bg-oe-blue-subtle/50';
@@ -722,19 +968,29 @@ function ComponentRow({
         />
       </td>
 
-      {/* Resource Type */}
-      <td className="px-4 py-2.5 text-center">
+      {/* Resource Type — editable. Falls back to legacy text-inference
+          only when the column is null (i.e. legacy row pre-v2940). */}
+      <td className="px-2 py-2.5 text-center">
         {(() => {
-          const resType = inferResourceType(component);
-          const label = resType === 'labor'
-            ? t('assemblies.type_labor', { defaultValue: 'Labor' })
-            : resType === 'equipment'
-              ? t('assemblies.type_equipment', { defaultValue: 'Equip' })
-              : t('assemblies.type_material', { defaultValue: 'Mat' });
+          const resType = (component.resource_type ?? inferResourceType(component)) as ResourceType;
           return (
-            <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${RESOURCE_TYPE_STYLES[resType]}`}>
-              {label}
-            </span>
+            <select
+              value={resType}
+              onChange={(e) =>
+                onUpdate({ resource_type: e.target.value as ResourceType })
+              }
+              className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold cursor-pointer border-none outline-none focus:ring-1 focus:ring-oe-blue/40 ${RESOURCE_TYPE_STYLES[resType] ?? RESOURCE_TYPE_STYLES.material}`}
+              title={t('assemblies.type_change_hint', {
+                defaultValue: 'Change resource type — recomputes the line total',
+              })}
+            >
+              <option value="material">{t('assemblies.type_material', { defaultValue: 'Mat' })}</option>
+              <option value="labor">{t('assemblies.type_labor', { defaultValue: 'Labor' })}</option>
+              <option value="equipment">{t('assemblies.type_equipment', { defaultValue: 'Equip' })}</option>
+              <option value="operator">{t('assemblies.type_operator', { defaultValue: 'Oper' })}</option>
+              <option value="subcontractor">{t('assemblies.type_subcontractor', { defaultValue: 'Sub' })}</option>
+              <option value="overhead">{t('assemblies.type_overhead', { defaultValue: 'OH' })}</option>
+            </select>
           );
         })()}
       </td>
@@ -798,24 +1054,217 @@ function ComponentRow({
         {fmt(component.total)}
       </td>
 
-      {/* Delete */}
+      {/* Row actions: details toggle + delete. Details opens a sub-row
+          with type-specific extended fields (waste/burden/fuel/crew/…)
+          — kept off-screen by default to keep the table compact. */}
       <td className="px-2 py-2.5">
-        <button
-          onClick={async () => {
-            const ok = await confirm({
-              title: t('assemblies.confirm_delete_component_title', { defaultValue: 'Remove component?' }),
-              message: t('assemblies.confirm_delete_component', { defaultValue: 'Remove this component from the assembly?' }),
-            });
-            if (ok) onDelete();
-          }}
-          className="opacity-0 group-hover:opacity-100 flex h-7 w-7 items-center justify-center rounded-md text-content-tertiary hover:text-semantic-error hover:bg-semantic-error-bg transition-all"
-        >
-          <Trash2 size={14} />
-        </button>
+        <div className="flex items-center justify-end gap-0.5">
+          <button
+            type="button"
+            onClick={() => setDetailsOpen((o) => !o)}
+            aria-expanded={detailsOpen}
+            aria-label={t('assemblies.row_details_toggle', {
+              defaultValue: 'Toggle component details',
+            })}
+            title={t('assemblies.row_details_title', {
+              defaultValue: 'Show waste / burden / fuel / vendor fields for this row',
+            })}
+            className={clsx(
+              'flex h-7 w-7 items-center justify-center rounded-md transition-all',
+              detailsOpen
+                ? 'text-oe-blue bg-oe-blue/10'
+                : 'opacity-0 group-hover:opacity-100 text-content-tertiary hover:text-content-primary hover:bg-surface-secondary',
+            )}
+          >
+            <ChevronDown
+              size={14}
+              className={clsx('transition-transform', detailsOpen && 'rotate-180')}
+            />
+          </button>
+          <button
+            onClick={async () => {
+              const ok = await confirm({
+                title: t('assemblies.confirm_delete_component_title', { defaultValue: 'Remove component?' }),
+                message: t('assemblies.confirm_delete_component', { defaultValue: 'Remove this component from the assembly?' }),
+              });
+              if (ok) onDelete();
+            }}
+            className="opacity-0 group-hover:opacity-100 flex h-7 w-7 items-center justify-center rounded-md text-content-tertiary hover:text-semantic-error hover:bg-semantic-error-bg transition-all"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
       </td>
     </tr>
+
+    {/* Details sub-row — type-aware fields. Only the inputs that
+        actually drive the typed total formula appear; for
+        operator/subcontractor/overhead we show generic "vendor" +
+        "notes" so any structured info still has a home.
+        Spans the full table width and uses a soft surface so it
+        visually nests under its parent without breaking the row
+        rhythm. */}
+    {detailsOpen && (
+      <tr className="bg-surface-secondary/40 dark:bg-surface-secondary/30">
+        <td colSpan={9} className="px-4 py-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {resType === 'material' && (
+              <>
+                <DetailField
+                  label={t('assemblies.field_waste', { defaultValue: 'Waste %' })}
+                  hint={t('assemblies.field_waste_hint', {
+                    defaultValue: 'Adds to the line total — e.g. 10 = +10%.',
+                  })}
+                  type="number"
+                  value={meta.waste_pct ?? ''}
+                  onCommit={(v) => patchMeta('waste_pct', v)}
+                />
+                <DetailField
+                  label={t('assemblies.field_vendor', { defaultValue: 'Vendor' })}
+                  type="text"
+                  value={(meta.vendor as string | undefined) ?? ''}
+                  onCommit={(v) => patchMeta('vendor', v)}
+                />
+              </>
+            )}
+            {resType === 'labor' && (
+              <>
+                <DetailField
+                  label={t('assemblies.field_crew', { defaultValue: 'Crew size' })}
+                  type="number"
+                  value={meta.crew_size ?? ''}
+                  onCommit={(v) => patchMeta('crew_size', v)}
+                />
+                <DetailField
+                  label={t('assemblies.field_hours', { defaultValue: 'Hours' })}
+                  hint={t('assemblies.field_hours_hint', {
+                    defaultValue: 'Informational — use the Qty column to drive the total.',
+                  })}
+                  type="number"
+                  value={meta.hours ?? ''}
+                  onCommit={(v) => patchMeta('hours', v)}
+                />
+                <DetailField
+                  label={t('assemblies.field_burden', { defaultValue: 'Burden %' })}
+                  hint={t('assemblies.field_burden_hint', {
+                    defaultValue: 'Benefits / overhead uplift — e.g. 30 = +30%.',
+                  })}
+                  type="number"
+                  value={meta.burden_pct ?? ''}
+                  onCommit={(v) => patchMeta('burden_pct', v)}
+                />
+                <DetailField
+                  label={t('assemblies.field_skill', { defaultValue: 'Skill level' })}
+                  type="text"
+                  value={(meta.skill_level as string | undefined) ?? ''}
+                  onCommit={(v) => patchMeta('skill_level', v)}
+                />
+              </>
+            )}
+            {resType === 'equipment' && (
+              <>
+                <DetailField
+                  label={t('assemblies.field_rental_days', { defaultValue: 'Rental days' })}
+                  type="number"
+                  value={meta.rental_days ?? ''}
+                  onCommit={(v) => patchMeta('rental_days', v)}
+                />
+                <DetailField
+                  label={t('assemblies.field_hourly_rate', { defaultValue: 'Hourly rate' })}
+                  type="number"
+                  value={meta.hourly_rate ?? ''}
+                  onCommit={(v) => patchMeta('hourly_rate', v)}
+                />
+                <DetailField
+                  label={t('assemblies.field_fuel', { defaultValue: 'Fuel / day' })}
+                  hint={t('assemblies.field_fuel_hint', {
+                    defaultValue: 'Added on top of qty × unit cost: + days × fuel.',
+                  })}
+                  type="number"
+                  value={meta.fuel_cost ?? ''}
+                  onCommit={(v) => patchMeta('fuel_cost', v)}
+                />
+              </>
+            )}
+            {(resType === 'operator' ||
+              resType === 'subcontractor' ||
+              resType === 'overhead') && (
+              <DetailField
+                label={t('assemblies.field_vendor', { defaultValue: 'Vendor' })}
+                type="text"
+                value={(meta.vendor as string | undefined) ?? ''}
+                onCommit={(v) => patchMeta('vendor', v)}
+              />
+            )}
+            <DetailField
+              label={t('assemblies.field_notes', { defaultValue: 'Notes' })}
+              type="text"
+              value={(meta.notes as string | undefined) ?? ''}
+              onCommit={(v) => patchMeta('notes', v)}
+              span="sm:col-span-2 lg:col-span-2"
+            />
+          </div>
+        </td>
+      </tr>
+    )}
     <ConfirmDialog {...confirmProps} />
     </>
+  );
+}
+
+/* -- DetailField (used by the per-row details sub-row) ----------------- */
+
+function DetailField({
+  label,
+  hint,
+  type,
+  value,
+  onCommit,
+  span,
+}: {
+  label: string;
+  hint?: string;
+  type: 'number' | 'text';
+  value: number | string;
+  onCommit: (raw: string) => void;
+  span?: string;
+}) {
+  const [draft, setDraft] = useState<string>(String(value ?? ''));
+  // Re-sync when the upstream value changes (post-save round-trip
+  // from the server merges into the cached row).
+  const lastSeenRef = useRef<string>(String(value ?? ''));
+  useEffect(() => {
+    const next = String(value ?? '');
+    if (next !== lastSeenRef.current) {
+      lastSeenRef.current = next;
+      setDraft(next);
+    }
+  }, [value]);
+  return (
+    <label className={clsx('block', span)}>
+      <div className="text-[10px] uppercase tracking-wider text-content-tertiary font-semibold mb-1">
+        {label}
+      </div>
+      <input
+        type={type}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          if (draft !== lastSeenRef.current) {
+            onCommit(draft);
+          }
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+          if (e.key === 'Escape') {
+            setDraft(lastSeenRef.current);
+            (e.target as HTMLInputElement).blur();
+          }
+        }}
+        className="w-full rounded-md border border-border-light bg-surface-primary px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-oe-blue/40"
+      />
+      {hint && <div className="text-[10px] text-content-tertiary mt-1">{hint}</div>}
+    </label>
   );
 }
 
@@ -933,7 +1382,7 @@ function ApplyToBOQModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/70 backdrop-blur-lg"
         onClick={onClose}
       />
 
@@ -1063,6 +1512,347 @@ function ApplyToBOQModal({
           </form>
         </Card>
       </div>
+    </div>
+  );
+}
+
+/* -- M/L/E Breakdown Sidebar --------------------------------------------- */
+
+/**
+ * Sticky right-rail summary that mirrors the cost-driver split a
+ * professional estimator expects (HeavyBid, Sage, iTWO all show this
+ * always-visible). Renders one bar per resource type used by the
+ * assembly, plus a final "Total rate / unit" line that already includes
+ * the bid factor uplift.
+ */
+function BreakdownSidebar({
+  breakdown,
+  currency,
+  unit,
+  bidFactor,
+}: {
+  breakdown: { totals: Record<string, number>; grand: number; withBid: number };
+  currency: string;
+  unit: string;
+  bidFactor: number;
+}) {
+  const { t } = useTranslation();
+  const fmt = (n: number) =>
+    new Intl.NumberFormat(getIntlLocale(), {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(n);
+  const order: ResourceType[] = [
+    'material',
+    'labor',
+    'equipment',
+    'operator',
+    'subcontractor',
+    'overhead',
+  ];
+  const labelFor = (rt: string) =>
+    rt === 'material'
+      ? t('assemblies.type_material_full', { defaultValue: 'Material' })
+      : rt === 'labor'
+        ? t('assemblies.type_labor_full', { defaultValue: 'Labor' })
+        : rt === 'equipment'
+          ? t('assemblies.type_equipment_full', { defaultValue: 'Equipment' })
+          : rt === 'operator'
+            ? t('assemblies.type_operator_full', { defaultValue: 'Operator' })
+            : rt === 'subcontractor'
+              ? t('assemblies.type_subcontractor_full', { defaultValue: 'Subcontract' })
+              : t('assemblies.type_overhead_full', { defaultValue: 'Overhead' });
+  return (
+    <Card padding="md" className="xl:sticky xl:top-4 self-start">
+      <div className="flex items-center gap-1.5 mb-3">
+        <LayersIcon size={14} className="text-oe-blue" />
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-content-tertiary">
+          {t('assemblies.breakdown_title', { defaultValue: 'Cost Drivers' })}
+        </h3>
+      </div>
+      {breakdown.grand <= 0 ? (
+        <div className="text-xs text-content-tertiary leading-snug">
+          {t('assemblies.breakdown_empty', {
+            defaultValue: 'Add components to see how the rate is built up by material, labor and equipment.',
+          })}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {order
+            .filter((rt) => (breakdown.totals[rt] ?? 0) > 0)
+            .map((rt) => {
+              const value = breakdown.totals[rt] ?? 0;
+              const pct = breakdown.grand > 0 ? (value / breakdown.grand) * 100 : 0;
+              return (
+                <div key={rt}>
+                  <div className="flex items-baseline justify-between gap-2 text-xs mb-1">
+                    <span className="font-medium text-content-secondary">{labelFor(rt)}</span>
+                    <span className="text-content-tertiary tabular-nums">
+                      {pct.toFixed(0)}%
+                    </span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-surface-tertiary overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${RESOURCE_TYPE_BAR[rt]}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <div className="text-[11px] text-content-tertiary tabular-nums mt-0.5">
+                    {fmt(value)} {currency}
+                  </div>
+                </div>
+              );
+            })}
+        </div>
+      )}
+      {breakdown.grand > 0 && (
+        <div className="mt-4 pt-3 border-t border-border-light space-y-1">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-content-tertiary">
+              {t('assemblies.breakdown_subtotal', { defaultValue: 'Subtotal' })}
+            </span>
+            <span className="font-medium text-content-secondary tabular-nums">
+              {fmt(breakdown.grand)} {currency}
+            </span>
+          </div>
+          {bidFactor !== 1.0 && (
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-content-tertiary">
+                {t('assemblies.breakdown_bid', { defaultValue: 'Bid factor' })}
+              </span>
+              <span className="font-medium text-content-secondary tabular-nums">
+                ×{bidFactor}
+              </span>
+            </div>
+          )}
+          <div className="flex items-center justify-between text-sm pt-1">
+            <span className="font-semibold text-content-primary">
+              {t('assemblies.breakdown_total', { defaultValue: 'Total / unit' })}
+            </span>
+            <span className="font-bold text-content-primary tabular-nums">
+              {fmt(breakdown.withBid)} {currency} / {unit}
+            </span>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/* -- Catalog Resource Picker Modal --------------------------------------- */
+
+interface CatalogResourceItem {
+  id: string;
+  resource_code: string;
+  name: string;
+  resource_type: string;
+  category: string;
+  unit: string;
+  base_price: number;
+  currency: string;
+  region: string | null;
+}
+
+/**
+ * Modal that lets the user search the global resource catalog
+ * (`/v1/catalog/`) by type + free text and add the picked rows as
+ * typed components. Auto-fills description, unit, unit_cost,
+ * resource_type, currency from the catalog row — no double entry.
+ */
+function CatalogResourcePickerModal({
+  assemblyId,
+  initialType,
+  onClose,
+  onAdded,
+}: {
+  assemblyId: string;
+  initialType: ResourceType | null;
+  onClose: () => void;
+  onAdded: () => void;
+}) {
+  const { t } = useTranslation();
+  const [query, setQuery] = useState('');
+  const [type, setType] = useState<ResourceType | ''>(initialType ?? '');
+  const [adding, setAdding] = useState<string | null>(null);
+
+  const queryString = useMemo(() => {
+    const params = new URLSearchParams();
+    if (query.trim()) params.set('q', query.trim());
+    if (type) params.set('resource_type', type);
+    params.set('limit', '40');
+    return params.toString();
+  }, [query, type]);
+
+  const search = useQuery({
+    queryKey: ['catalog-search-for-assembly', queryString],
+    queryFn: () =>
+      apiGet<{ items: CatalogResourceItem[]; total: number }>(
+        `/v1/catalog/?${queryString}`,
+      ),
+  });
+
+  const addMut = useMutation({
+    mutationFn: async (item: CatalogResourceItem) => {
+      setAdding(item.id);
+      try {
+        await assembliesApi.addComponent(assemblyId, {
+          catalog_resource_id: item.id,
+          description: item.name,
+          resource_type: (item.resource_type as ResourceType) || 'material',
+          factor: 1,
+          quantity: 1,
+          unit: item.unit || 'pcs',
+          unit_cost: item.base_price || 0,
+        });
+      } finally {
+        setAdding(null);
+      }
+    },
+    onSuccess: onAdded,
+  });
+
+  const items = search.data?.items ?? [];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 overflow-y-auto">
+      <Card className="w-full max-w-3xl mt-12">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Boxes size={16} className="text-emerald-600" />
+            <h2 className="text-base font-semibold">
+              {t('assemblies.catalog_picker_title', {
+                defaultValue: 'Add resource from catalog',
+              })}
+            </h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-content-tertiary hover:text-content-primary"
+            aria-label={t('common.close', { defaultValue: 'Close' })}
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <div className="relative flex-1 min-w-[200px]">
+            <Search
+              size={14}
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-content-tertiary"
+            />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t('assemblies.catalog_search_ph', {
+                defaultValue: 'Search materials / labor / equipment…',
+              })}
+              className="w-full pl-8 pr-3 py-1.5 text-sm rounded-lg border border-border-light bg-surface-primary focus:outline-none focus:ring-1 focus:ring-emerald-400"
+              autoFocus
+            />
+          </div>
+          <select
+            value={type}
+            onChange={(e) => setType(e.target.value as ResourceType | '')}
+            className="text-xs rounded-lg border border-border-light bg-surface-primary px-2 py-1.5 cursor-pointer"
+          >
+            <option value="">
+              {t('assemblies.catalog_type_any', { defaultValue: 'All types' })}
+            </option>
+            <option value="material">{t('assemblies.type_material_full', { defaultValue: 'Material' })}</option>
+            <option value="labor">{t('assemblies.type_labor_full', { defaultValue: 'Labor' })}</option>
+            <option value="equipment">{t('assemblies.type_equipment_full', { defaultValue: 'Equipment' })}</option>
+            <option value="operator">{t('assemblies.type_operator_full', { defaultValue: 'Operator' })}</option>
+          </select>
+        </div>
+
+        {/* Results */}
+        <div className="max-h-[60vh] overflow-y-auto -mx-4 px-4 border-t border-border-light">
+          {search.isLoading && (
+            <div className="py-10 text-center text-content-tertiary">
+              <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
+              {t('common.loading', { defaultValue: 'Loading…' })}
+            </div>
+          )}
+          {!search.isLoading && items.length === 0 && (
+            <div className="py-10 text-center text-content-tertiary text-sm">
+              {t('assemblies.catalog_no_results', {
+                defaultValue: 'No matching resources. Try a broader search or import a regional catalog from /catalog.',
+              })}
+            </div>
+          )}
+          {items.length > 0 && (
+            <table className="w-full text-sm mt-2">
+              <thead>
+                <tr className="text-xs text-content-tertiary text-left">
+                  <th className="py-2 font-medium">
+                    {t('assemblies.catalog_col_name', { defaultValue: 'Name' })}
+                  </th>
+                  <th className="py-2 font-medium w-20 text-center">
+                    {t('assemblies.type', { defaultValue: 'Type' })}
+                  </th>
+                  <th className="py-2 font-medium w-16 text-center">
+                    {t('boq.unit', { defaultValue: 'Unit' })}
+                  </th>
+                  <th className="py-2 font-medium w-28 text-right">
+                    {t('assemblies.unit_cost', { defaultValue: 'Unit Cost' })}
+                  </th>
+                  <th className="py-2 w-16" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border-light">
+                {items.map((it) => (
+                  <tr key={it.id} className="hover:bg-surface-secondary/50">
+                    <td className="py-2 pr-2">
+                      <div className="font-medium text-content-primary truncate max-w-[260px]">
+                        {it.name}
+                      </div>
+                      <div className="text-[11px] text-content-tertiary truncate max-w-[260px]">
+                        {it.resource_code}{it.region ? ` · ${it.region}` : ''}
+                      </div>
+                    </td>
+                    <td className="py-2 text-center">
+                      <span
+                        className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                          RESOURCE_TYPE_STYLES[it.resource_type] ?? RESOURCE_TYPE_STYLES.material
+                        }`}
+                      >
+                        {it.resource_type}
+                      </span>
+                    </td>
+                    <td className="py-2 text-center text-content-secondary">{it.unit}</td>
+                    <td className="py-2 text-right tabular-nums text-content-primary">
+                      {new Intl.NumberFormat(getIntlLocale(), {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      }).format(it.base_price || 0)}{' '}
+                      <span className="text-[10px] text-content-tertiary">{it.currency}</span>
+                    </td>
+                    <td className="py-2 text-right">
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        onClick={() => addMut.mutate(it)}
+                        disabled={adding === it.id}
+                        icon={
+                          adding === it.id ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : (
+                            <Plus size={12} />
+                          )
+                        }
+                      >
+                        {t('common.add', { defaultValue: 'Add' })}
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </Card>
     </div>
   );
 }

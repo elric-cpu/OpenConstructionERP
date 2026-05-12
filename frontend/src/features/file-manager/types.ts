@@ -171,6 +171,33 @@ export interface ShareLinkAccessResponse {
   filename: string;
 }
 
+/* ── Folder permissions ──────────────────────────────────────────────── */
+
+export type FolderRole = 'viewer' | 'editor' | 'owner';
+
+export interface FolderPermissionRow {
+  id: string;
+  project_id: string;
+  user_id: string;
+  scope_kind: string;
+  scope_path: string | null;
+  role: FolderRole;
+  granted_by: string;
+  granted_at: string | null;
+  revoked: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+  user_email: string | null;
+  user_full_name: string | null;
+}
+
+export interface FolderPermissionCreatePayload {
+  user_id: string;
+  scope_kind: string;
+  scope_path?: string | null;
+  role: FolderRole;
+}
+
 export interface FileFilters {
   category?: FileKind;
   extension?: string;

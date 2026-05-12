@@ -48,7 +48,8 @@ def _to_response(n: object) -> NotificationResponse:
 # ── List ────────────────────────────────────────────────────────────────────
 
 
-@router.get("", response_model=NotificationListResponse)
+@router.get("", response_model=NotificationListResponse, include_in_schema=False)
+@router.get("/", response_model=NotificationListResponse)
 async def list_notifications(
     user_id: CurrentUserId,
     service: NotificationService = Depends(_get_service),

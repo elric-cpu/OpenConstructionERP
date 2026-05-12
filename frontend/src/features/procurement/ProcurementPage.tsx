@@ -406,7 +406,7 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
   /* ── Render PO create modal ── */
   function renderPOModal() {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-lg animate-fade-in">
         <div className="w-full max-w-2xl bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[85vh] flex flex-col" role="dialog" aria-label={t('procurement.new_po', { defaultValue: 'New Purchase Order' })}>
           <div className="flex items-center justify-between px-6 py-4 border-b border-border-light sticky top-0 z-10 bg-surface-elevated rounded-t-xl">
             <h2 className="text-lg font-semibold text-content-primary">

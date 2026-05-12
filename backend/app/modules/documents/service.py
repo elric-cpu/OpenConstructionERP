@@ -948,6 +948,29 @@ class SheetService:
 
     # ── Update ─────────────────────────────────────────────────────────────
 
+    async def delete_sheet(self, sheet_id: uuid.UUID) -> None:
+        """Hard-delete a sheet and its rendered thumbnail (best-effort).
+
+        Mirrors :meth:`PhotoService.delete_photo` — the DB row goes first
+        so a partial filesystem failure cannot leave an orphan record.
+        Caller is expected to enforce project access via
+        ``verify_project_access`` before invoking this.
+        """
+        sheet = await self.get_sheet(sheet_id)
+        thumb_path_str = getattr(sheet, "thumbnail_path", None)
+
+        await self.repo.delete(sheet_id)
+        logger.info("Sheet deleted: %s", sheet_id)
+
+        if thumb_path_str:
+            try:
+                thumb_path = Path(thumb_path_str)
+                if thumb_path.exists():
+                    thumb_path.unlink()
+                    logger.info("Sheet thumbnail removed: %s", thumb_path)
+            except Exception:
+                logger.warning("Failed to remove sheet thumbnail: %s", thumb_path_str)
+
     async def update_sheet(
         self,
         sheet_id: uuid.UUID,

@@ -88,7 +88,10 @@
   --oe-transition-slow: 350ms cubic-bezier(0.25, 0.1, 0.25, 1);
 
   /* Layout */
-  --oe-sidebar-width: 232px;
+  /* Bumped 232 → 264 (32px / ~4 extra chars on the label) so longer
+     menu items like "Match Elements", "Specifications",
+     "Communication" stop truncating with an ellipsis at default zoom. */
+  --oe-sidebar-width: 264px;
   --oe-header-height: 52px;
   --oe-content-max-width: 1440px;
 }
@@ -413,6 +416,33 @@ h4 {
   --ag-selected-row-background-color: var(--oe-blue-subtle);
   --ag-odd-row-background-color: var(--oe-bg-secondary);
   --ag-range-selection-background-color: rgba(59, 130, 246, 0.1);
+}
+
+/* ── BOQ header density — shrink header text when many columns ─────────
+   Three tiers based on column count (computed in BOQGrid.tsx and applied
+   as a className alongside `ag-theme-quartz`):
+   - default        : ≤ 12 cols → 13px header text (AG Quartz default)
+   - oe-header-dense: 13–17 cols → 11.5px header text + tighter padding
+   - oe-header-xs   : ≥ 18 cols → 10.5px header text + minimum padding
+   Cell content keeps the original 13px — only the header label scales,
+   so numbers stay readable while header labels accommodate more cols.
+*/
+.oe-header-dense .ag-header-cell-text {
+  font-size: 11.5px;
+  line-height: 1.15;
+}
+.oe-header-dense .ag-header-cell {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+.oe-header-xs .ag-header-cell-text {
+  font-size: 10.5px;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+.oe-header-xs .ag-header-cell {
+  padding-left: 4px;
+  padding-right: 4px;
 }
 
 /* ── AG Grid cell vertical alignment ─────────────────────────────────── */

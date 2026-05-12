@@ -318,3 +318,20 @@ async def get_report(
     report = await service.get_report(report_id)
     await verify_project_access(report.project_id, user_id, session)
     return GeneratedReportResponse.model_validate(report)
+
+
+@router.delete("/reports/{report_id}", status_code=204)
+async def delete_report(
+    report_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("reporting.create")),
+    service: ReportingService = Depends(_get_service),
+) -> None:
+    """Hard-delete a generated report. 404 if missing or if caller lacks
+    access to the report's parent project (same opaque-error convention
+    used by ``verify_project_access`` elsewhere).
+    """
+    report = await service.get_report(report_id)
+    await verify_project_access(report.project_id, user_id, session)
+    await service.delete_report(report_id)

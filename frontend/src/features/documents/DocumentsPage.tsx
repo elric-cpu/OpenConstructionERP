@@ -250,7 +250,7 @@ function PreviewModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-lg animate-fade-in"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -1418,7 +1418,7 @@ export function DocumentsPage() {
 
       {/* ── Properties dialog ────────────────────────────────────────── */}
       {editDoc && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in" onClick={() => setEditDoc(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-lg animate-fade-in" onClick={() => setEditDoc(null)}>
           <div className="relative w-full max-w-md mx-4 rounded-xl bg-surface-elevated shadow-xl border border-border-light overflow-hidden" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-3 border-b border-border-light">
@@ -1545,7 +1545,7 @@ export function DocumentsPage() {
 
       {/* ── Rename dialog ──────────────────────────────────────────────── */}
       {renameDoc && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in" onClick={() => setRenameDoc(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-lg animate-fade-in" onClick={() => setRenameDoc(null)}>
           <div className="relative w-full max-w-sm mx-4 rounded-xl bg-surface-elevated shadow-xl border border-border-light p-5" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-sm font-semibold text-content-primary mb-3">
               {t('documents.rename', { defaultValue: 'Rename' })}

@@ -17,13 +17,15 @@ from typing import Any
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.markups.models import Markup, ScaleConfig, StampTemplate
+from app.modules.markups.models import Markup, MarkupComment, ScaleConfig, StampTemplate
 from app.modules.markups.repository import (
+    MarkupCommentRepository,
     MarkupRepository,
     ScaleConfigRepository,
     StampTemplateRepository,
 )
 from app.modules.markups.schemas import (
+    MarkupCommentCreate,
     MarkupCreate,
     MarkupUpdate,
     ScaleConfigCreate,
@@ -116,6 +118,7 @@ class MarkupsService:
         self.markup_repo = MarkupRepository(session)
         self.scale_repo = ScaleConfigRepository(session)
         self.stamp_repo = StampTemplateRepository(session)
+        self.comment_repo = MarkupCommentRepository(session)
 
     # ── Markup CRUD ──────────────────────────────────────────────────────
 
@@ -454,3 +457,45 @@ class MarkupsService:
             )
         await self.stamp_repo.delete(template_id)
         logger.info("Stamp template deleted: %s", template_id)
+
+    # ── Markup Comments ─────────────────────────────────────────────────
+
+    async def list_comments(self, markup_id: uuid.UUID) -> list[MarkupComment]:
+        """List threaded comments on a markup, oldest first."""
+        # Ensure parent exists so callers get a 404 instead of an empty list
+        # for a non-existent markup id.
+        await self.get_markup(markup_id)
+        return await self.comment_repo.list_for_markup(markup_id)
+
+    async def create_comment(
+        self,
+        markup_id: uuid.UUID,
+        data: MarkupCommentCreate,
+        user_id: str,
+    ) -> MarkupComment:
+        """Append a comment to a markup thread."""
+        await self.get_markup(markup_id)  # 404 if missing
+        item = MarkupComment(
+            markup_id=markup_id,
+            user_id=user_id,
+            body=data.body,
+        )
+        item = await self.comment_repo.create(item)
+        logger.info("Markup comment created: markup=%s user=%s", markup_id, user_id)
+        return item
+
+    async def get_comment(self, comment_id: uuid.UUID) -> MarkupComment:
+        """Get a comment by id, raise 404 if missing."""
+        item = await self.comment_repo.get_by_id(comment_id)
+        if item is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Comment not found",
+            )
+        return item
+
+    async def delete_comment(self, comment_id: uuid.UUID) -> None:
+        """Delete a comment."""
+        await self.get_comment(comment_id)
+        await self.comment_repo.delete(comment_id)
+        logger.info("Markup comment deleted: %s", comment_id)

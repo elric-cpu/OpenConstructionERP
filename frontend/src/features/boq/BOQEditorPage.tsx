@@ -3540,7 +3540,7 @@ export function BOQEditorPage() {
 
       {/* ── Update Rates Confirmation Dialog ────────────────────────── */}
       {showRecalcConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in" onClick={() => setShowRecalcConfirm(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-lg animate-fade-in" onClick={() => setShowRecalcConfirm(false)}>
           <div role="dialog" aria-modal="true" aria-labelledby="boq-recalc-confirm-title" className="w-full max-w-md mx-4 rounded-2xl bg-surface-primary shadow-2xl border border-border-light overflow-hidden animate-scale-in" onClick={(e) => e.stopPropagation()}>
             <div className="px-6 py-5">
               <div className="flex items-center gap-3 mb-3">
@@ -3750,7 +3750,7 @@ export function BOQEditorPage() {
       {/* ── Keyboard Shortcuts Overlay ──────────────────────────────── */}
       {showShortcuts && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-label={t('boq.keyboard_shortcuts', { defaultValue: 'Keyboard Shortcuts' })}>
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowShortcuts(false)} />
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-lg" onClick={() => setShowShortcuts(false)} />
           <div className="relative z-10 rounded-xl bg-surface-primary shadow-2xl border border-border-light p-6 max-w-md w-full animate-scale-in">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
@@ -3808,7 +3808,7 @@ export function BOQEditorPage() {
       {/* ── Vector DB Setup Dialog ───────────────────────────────────── */}
       {showVectorSetup && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowVectorSetup(false)} />
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-lg" onClick={() => setShowVectorSetup(false)} />
           <div className="relative w-full max-w-md rounded-2xl border border-border-light bg-surface-elevated shadow-2xl animate-form-scale-in">
             <button
               onClick={() => setShowVectorSetup(false)}

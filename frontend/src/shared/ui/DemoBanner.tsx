@@ -75,7 +75,7 @@ export function DemoBanner() {
       {/* One-time modal */}
       {modalOpen && (
         <div
-          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in"
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-lg p-4 animate-fade-in"
           onClick={closeModal}
         >
           <div

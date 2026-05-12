@@ -315,7 +315,7 @@ function SaveToBOQDialog({ open, onClose, onSave, saving }: SaveDialogProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" aria-hidden="true" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-lg" aria-hidden="true" onClick={onClose} />
       <div role="dialog" aria-modal="true" aria-labelledby="save-boq-dialog-title" className="relative w-full max-w-md animate-card-in rounded-2xl border border-border-light bg-surface-elevated p-6 shadow-xl">
         <h3 id="save-boq-dialog-title" className="text-lg font-semibold text-content-primary mb-4">
           {t('ai.save_to_boq', { defaultValue: 'Save as BOQ' })}

@@ -90,7 +90,7 @@ export function ThresholdRulesModal({
       data-testid="threshold-rules-modal"
     >
       <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-fade-in"
+        className="absolute inset-0 bg-black/70 backdrop-blur-lg animate-fade-in"
         onClick={onClose}
       />
       <div className="relative w-full max-w-2xl mx-4 rounded-2xl bg-surface-elevated border border-border-light shadow-2xl animate-fade-in max-h-[85vh] flex flex-col">

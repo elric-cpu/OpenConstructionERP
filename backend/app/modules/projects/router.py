@@ -13,7 +13,7 @@ import os
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy import select
 
@@ -425,6 +425,163 @@ async def remove_project_member_endpoint(
     from app.modules.projects.member_service import remove_project_member
 
     await remove_project_member(session, project_id, member_user_id)
+
+
+# ── Per-folder permissions (owner-only) ────────────────────────────────
+#
+# These live on the projects router (rather than the documents router)
+# because they are project-scoped and only the project owner can
+# manage them. The router prefix gives us:
+#
+#     GET    /api/v1/projects/{project_id}/folder-permissions/
+#     POST   /api/v1/projects/{project_id}/folder-permissions/
+#     DELETE /api/v1/projects/{project_id}/folder-permissions/{permission_id}/
+
+
+@router.get(
+    "/{project_id}/folder-permissions/",
+    summary="List folder permissions",
+    description="List all non-revoked folder permissions for the project. "
+    "Owner / admin only.",
+)
+async def list_folder_permissions(
+    project_id: uuid.UUID,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    scope_kind: str | None = Query(default=None),
+    scope_path: str | None = Query(default=None),
+    service: ProjectService = Depends(_get_service),
+) -> list[dict]:
+    """List grants for a project, optionally narrowed by ``scope_kind``
+    (+ ``scope_path``).
+    """
+    from sqlalchemy import select as _select
+
+    from app.modules.documents.folder_permissions_service import list_permissions
+    from app.modules.users.models import User
+
+    await _verify_project_owner(service, project_id, user_id, payload)
+
+    rows = await list_permissions(
+        session,
+        project_id,
+        scope_kind=scope_kind,
+        scope_path=scope_path,
+    )
+
+    # Pre-join user details so the modal doesn't have to make N lookups.
+    user_ids = {r.user_id for r in rows}
+    user_map: dict[uuid.UUID, User] = {}
+    if user_ids:
+        users = (
+            await session.execute(_select(User).where(User.id.in_(user_ids)))
+        ).scalars().all()
+        user_map = {u.id: u for u in users}
+
+    out: list[dict] = []
+    for r in rows:
+        u = user_map.get(r.user_id)
+        out.append(
+            {
+                "id": str(r.id),
+                "project_id": str(r.project_id),
+                "user_id": str(r.user_id),
+                "scope_kind": r.scope_kind,
+                "scope_path": r.scope_path,
+                "role": r.role,
+                "granted_by": str(r.granted_by),
+                "granted_at": r.granted_at.isoformat() if r.granted_at else None,
+                "revoked": r.revoked,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+                "user_email": (u.email if u is not None else None),
+                "user_full_name": (
+                    u.full_name if u is not None and u.full_name else None
+                ),
+            }
+        )
+    return out
+
+
+@router.post(
+    "/{project_id}/folder-permissions/",
+    status_code=201,
+    summary="Grant folder permission",
+    description="Grant a project member viewer / editor / owner role on a "
+    "specific (scope_kind, scope_path) folder. Owner / admin only.",
+)
+async def grant_folder_permission_endpoint(
+    project_id: uuid.UUID,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    service: ProjectService = Depends(_get_service),
+    body: dict = Body(...),  # type: ignore[assignment]
+) -> dict:
+    """Mint a new grant. 409 on duplicate (scope, user). 400 on bad role."""
+    from app.modules.documents.folder_permissions_service import (
+        grant_permission,
+        is_project_member,
+    )
+    from app.modules.documents.schemas import FolderPermissionCreate
+
+    await _verify_project_owner(service, project_id, user_id, payload)
+
+    data = FolderPermissionCreate(**body)
+
+    # Refuse to grant to a non-member — leaks "this user doesn't exist
+    # on this project" but is more useful than a downstream FK error.
+    if not await is_project_member(session, project_id, data.user_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User is not a member of this project",
+        )
+
+    grant = await grant_permission(
+        session,
+        project_id=project_id,
+        user_id=data.user_id,
+        scope_kind=data.scope_kind,
+        scope_path=data.scope_path,
+        role=data.role,
+        granted_by=uuid.UUID(user_id),
+    )
+    return {
+        "id": str(grant.id),
+        "project_id": str(grant.project_id),
+        "user_id": str(grant.user_id),
+        "scope_kind": grant.scope_kind,
+        "scope_path": grant.scope_path,
+        "role": grant.role,
+        "granted_by": str(grant.granted_by),
+        "granted_at": grant.granted_at.isoformat() if grant.granted_at else None,
+        "revoked": grant.revoked,
+        "created_at": grant.created_at.isoformat() if grant.created_at else None,
+        "updated_at": grant.updated_at.isoformat() if grant.updated_at else None,
+    }
+
+
+@router.delete(
+    "/{project_id}/folder-permissions/{permission_id}/",
+    status_code=204,
+    summary="Revoke folder permission",
+    description="Soft-revoke a folder permission. Owner / admin only.",
+)
+async def revoke_folder_permission_endpoint(
+    project_id: uuid.UUID,
+    permission_id: uuid.UUID,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    service: ProjectService = Depends(_get_service),
+) -> None:
+    """Revoke a grant. 404 when the grant id is unknown or belongs to
+    a different project (cross-project IDOR defence)."""
+    from app.modules.documents.folder_permissions_service import revoke_permission
+
+    await _verify_project_owner(service, project_id, user_id, payload)
+    await revoke_permission(session, project_id=project_id, permission_id=permission_id)
 
 
 # ── Project Dashboard (cross-module aggregation) ───────────────────────

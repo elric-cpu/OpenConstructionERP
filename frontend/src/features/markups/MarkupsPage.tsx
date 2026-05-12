@@ -281,7 +281,7 @@ function AddMarkupModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-fade-in" />
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-lg animate-fade-in" />
       <div
         ref={dialogRef}
         role="dialog"

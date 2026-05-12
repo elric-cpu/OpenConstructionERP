@@ -1749,26 +1749,28 @@ async def install_v3_catalogue(
     region: str,
     _user_id: CurrentUserId,
 ) -> dict:
-    """Download a DDC v3 BGE-M3 snapshot from GitHub and restore into Qdrant.
+    """Install a DDC v3 BGE-M3 snapshot into Qdrant via recover-from-URL.
 
-    Synchronous: the call returns when the restore completes, so the UI
-    should drive a spinner / progress hint for the duration of the
-    download + upload (typically 30–120 s on a decent connection).
+    Synchronous: the call returns when the restore completes, which for
+    a 400 MB snapshot is typically 5–15 minutes on a decent connection
+    (the Qdrant server downloads from HuggingFace and restores inline).
     Returns ``409`` when the catalogue isn't yet published by DDC,
     ``404`` for unknown region ids, ``503`` when no Qdrant server is
-    reachable, ``502`` on a failed GitHub download.
+    reachable, ``502`` when Qdrant could not fetch or restore the file.
 
-    The file is cached under ``~/.openestimator/cache/snapshots-v3/`` —
-    repeated calls hit the cache and skip the download. To force a
-    redownload, delete the cache file (or wait for the v4 endpoint
-    that will accept ``force_redownload=true``).
+    Implementation note: this endpoint deliberately does NOT use
+    Qdrant's multipart ``/snapshots/upload`` because its default
+    ``service.max_request_size_mb`` is 32 MB — every v3 BGE-M3 snapshot
+    is several times that. The recover-from-URL endpoint
+    (``PUT /collections/{name}/snapshots/recover``) has Qdrant download
+    the file itself with no body-size ceiling.
     """
     import asyncio
     import time
 
     from app.modules.costs.cwicr_v3_catalogue import get_catalogue
     from app.modules.costs.qdrant_snapshot_loader import (
-        restore_snapshot_file,
+        restore_snapshot_from_url,
         server_collections,
     )
 
@@ -1795,78 +1797,109 @@ async def install_v3_catalogue(
 
     start = time.monotonic()
 
-    # 1. Download (or hit cache) — same pattern the legacy endpoint uses.
-    cache_path = _v3_snapshot_cache_path(cat.region)
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    # Build the public DDC URL the Qdrant server itself will fetch. Two
+    # host layouts coexist in the registry:
+    #   • Legacy: `<XX>___DDC_CWICR/<region>_workitems_…` lives on
+    #     GitHub LFS at _GITHUB_CWICR_BASE_URL.
+    #   • Current: `<XX>/<stem>_workitems_…` lives on HuggingFace under
+    #     HF_CWICR_BASE_URL. DDC stopped publishing to GitHub LFS in v3
+    #     because the LFS bandwidth cap kept getting hit.
+    # Detection is on the path shape, not on `cat.region`, so adding new
+    # HF rows in cwicr_v3_catalogue.py needs no router changes.
+    from app.modules.costs.cwicr_v3_catalogue import HF_CWICR_BASE_URL
 
-    if not cache_path.exists() or cache_path.stat().st_size < 1_000_000:
-        url = f"{_GITHUB_CWICR_BASE_URL}/{cat.ddc_path}"
-        logger.info(
-            "Downloading v3 snapshot %s from DDC (~%d MB): %s",
-            cat.region,
-            cat.size_mb,
-            url,
-        )
-        try:
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, _download_to_file, url, cache_path, 600.0)
-        except Exception as exc:
-            cache_path.unlink(missing_ok=True)
-            logger.error("v3 snapshot download failed for %s: %s", cat.region, exc)
-            raise HTTPException(
-                status.HTTP_502_BAD_GATEWAY,
-                f"Failed to download v3 snapshot from DDC: {exc}",
-            ) from exc
+    snapshot_url = (
+        f"{_GITHUB_CWICR_BASE_URL}/{cat.ddc_path}"
+        if "___DDC_CWICR" in cat.ddc_path
+        else f"{HF_CWICR_BASE_URL}/{cat.ddc_path}"
+    )
 
-        if not cache_path.exists() or cache_path.stat().st_size < 1_000_000:
-            cache_path.unlink(missing_ok=True)
-            raise HTTPException(
-                status.HTTP_502_BAD_GATEWAY,
-                "Downloaded snapshot is too small or missing — DDC may not "
-                "have published this region yet.",
-            )
-
-    # 2. Restore via the loader (httpx multipart upload to server).
+    # Restore via the recover-from-URL path. Qdrant's multipart
+    # ``snapshots/upload`` endpoint is bounded by
+    # ``service.max_request_size_mb`` (default 32 MB) — every BGE-M3 v3
+    # snapshot is 400–800 MB and gets rejected with HTTP 500 "An error
+    # occurred processing field: snapshot". The recover-from-URL
+    # endpoint instead has Qdrant download the file itself with no body
+    # size limit, then restore inline. The Qdrant call is synchronous —
+    # it returns once the restore finishes (5–15 min on a typical link
+    # for 400 MB). We run it in the executor so the event loop stays
+    # responsive for other tenants' requests during the wait.
+    logger.info(
+        "Installing v3 snapshot %s via Qdrant recover-from-URL (~%d MB): %s",
+        cat.region,
+        cat.size_mb,
+        snapshot_url,
+    )
     loop = asyncio.get_event_loop()
     try:
         ok = await loop.run_in_executor(
             None,
-            lambda: restore_snapshot_file(
+            lambda: restore_snapshot_from_url(
                 qdrant_url=qdrant_url,
                 collection_name=cat.collection,
-                snapshot_path=cache_path,
+                snapshot_url=snapshot_url,
+                # ~25 min budget: HF can be slow to first-byte for cold
+                # objects, and the restore step itself is CPU+disk
+                # bound on the Qdrant side.
+                timeout_s=1500,
             ),
         )
-    except (FileNotFoundError, RuntimeError) as exc:
+    except RuntimeError as exc:
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             f"Snapshot restore failed: {exc}",
         ) from exc
     if not ok:
         raise HTTPException(
-            status.HTTP_500_INTERNAL_SERVER_ERROR,
-            "Qdrant rejected the snapshot upload — check server logs for details.",
+            status.HTTP_502_BAD_GATEWAY,
+            f"Qdrant could not fetch or restore the snapshot from {snapshot_url}. "
+            "Check the backend log for Qdrant's error message (404, network "
+            "timeout, disk space, etc).",
         )
+
+    # Verify the collection actually registered. Qdrant returns
+    # ``result: true`` once the recover RPC finishes, but the
+    # ``/collections`` listing is cached briefly so we poll for up to
+    # 30s before declaring success. Without this we returned
+    # status="ok" while the catalogue stayed listed as "available" in
+    # the UI, exactly the "downloads to 100% then nothing happens"
+    # symptom.
+    appeared = False
+    poll_deadline = time.monotonic() + 30.0
+    poll_delay = 0.5
+    while time.monotonic() < poll_deadline:
+        collections_after = await loop.run_in_executor(
+            None, lambda: server_collections(qdrant_url=qdrant_url)
+        )
+        if cat.collection in collections_after:
+            appeared = True
+            break
+        await asyncio.sleep(poll_delay)
+        poll_delay = min(poll_delay * 1.5, 3.0)
 
     duration = round(time.monotonic() - start, 1)
 
-    # 3. Best-effort post-probe so the response shows the new collection.
-    collections_after = server_collections(qdrant_url=qdrant_url)
-    appeared = cat.collection in collections_after
-
     logger.info(
-        "v3 catalogue installed: region=%s collection=%s appeared=%s duration=%.1fs",
+        "v3 catalogue install: region=%s collection=%s appeared=%s duration=%.1fs",
         cat.region,
         cat.collection,
         appeared,
         duration,
     )
 
+    if not appeared:
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            f"Snapshot recovered but collection {cat.collection!r} did not "
+            f"appear on Qdrant after 30s. Check Qdrant server logs and "
+            f"disk space, then retry.",
+        )
+
     return {
         "status": "ok",
         "region": cat.region,
         "collection": cat.collection,
-        "snapshot_size_mb": round(cache_path.stat().st_size / (1024 * 1024), 1),
+        "snapshot_size_mb": cat.size_mb,
         "duration_seconds": duration,
         "collection_appeared": appeared,
     }

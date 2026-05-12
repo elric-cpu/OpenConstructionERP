@@ -107,7 +107,10 @@ async def create_session_from_excel(
     project_id: uuid.UUID = Form(...),
     file: UploadFile = File(..., description="Bill of Quantities .xlsx file"),
     name: str | None = Form(None),
-    catalogue_id: uuid.UUID | None = Form(None),
+    # Accepts a CWICR v3 region id ("DE_BERLIN", ...) or a legacy UUID —
+    # the service layer routes each kind to its own storage slot. Was
+    # ``uuid.UUID | None`` before, which 422'd every wizard submission.
+    catalogue_id: str | None = Form(None),
     construction_stage: str | None = Form(None),
 ) -> schemas.SessionRead:
     """Upload an xlsx BoQ and create a match session in one round-trip.
@@ -222,6 +225,25 @@ async def touch_session(
 ) -> None:
     await _assert_session_access(session, session_id, current_user_id)
     await get_service().touch_session(session, session_id)
+
+
+@router.get("/sessions/{session_id}/progress")
+async def get_match_progress(
+    session_id: uuid.UUID,
+    session: SessionDep,
+    current_user_id: CurrentUserId,
+) -> dict[str, object]:
+    """Lightweight progress poll for an in-flight or finished match run.
+
+    Read-only single-row SELECT into the session's ``metadata_["progress"]``
+    bag (populated by :meth:`MatchService.run_match`). The wizard's
+    MatchProgressCard polls this every ~800ms while the match is
+    running and stops as soon as ``status`` flips to ``done`` or
+    ``error``. Always 200 — an idle session returns a neutral payload
+    so the FE never has to special-case 404 vs "no run yet".
+    """
+    await _assert_session_access(session, session_id, current_user_id)
+    return await get_service().get_progress(session, session_id)
 
 
 # ── Groups ───────────────────────────────────────────────────────────────

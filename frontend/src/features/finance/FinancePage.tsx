@@ -691,7 +691,7 @@ function BudgetsTab({ projectId }: { projectId: string }) {
   ];
 
   const renderBudgetModal = () => (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-lg animate-fade-in">
       <div className="w-full max-w-lg bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[90vh] overflow-y-auto" role="dialog" aria-label={t('finance.new_budget', { defaultValue: 'New Budget Line' })}>
         <div className="flex items-center justify-between px-6 py-4 border-b border-border-light">
           <h2 className="text-lg font-semibold text-content-primary">
@@ -1168,7 +1168,7 @@ function BudgetsTab({ projectId }: { projectId: string }) {
 
     {/* Budget Import Modal */}
     {showImport && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-lg animate-fade-in">
         <div className="w-full max-w-lg bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[90vh] overflow-y-auto" role="dialog" aria-label={t('finance.import_budgets', { defaultValue: 'Import Budgets' })}>
           <div className="flex items-center justify-between px-6 py-4 border-b border-border-light">
             <h2 className="text-lg font-semibold text-content-primary">
@@ -1776,7 +1776,7 @@ function InvoicesTab({ projectId }: { projectId: string }) {
 
       {/* New Invoice Modal */}
       {showCreate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-lg animate-fade-in">
           <div className="w-full max-w-xl bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[90vh] overflow-y-auto" role="dialog" aria-label={t('finance.new_invoice', { defaultValue: 'New Invoice' })}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-border-light">
               <div>

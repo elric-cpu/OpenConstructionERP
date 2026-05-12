@@ -18,7 +18,6 @@ import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useLocalStorage } from '@/shared/hooks/useLocalStorage';
 import { CreateProjectModal } from './CreateProjectPage';
 import { BIMConverterStatusBanner } from '../bim/BIMConverterStatusBanner';
-import { DashboardBackdrop } from '../dashboard/components/DashboardBackdrop';
 
 interface ProjectBOQStats {
   projectId: string;
@@ -236,8 +235,47 @@ export function ProjectsPage() {
     const archivedProjects = projects.filter((p) => p.status === 'archived').length;
     const totalBoqs = boqStats ? boqStats.reduce((s, b) => s + b.boqCount, 0) : 0;
     const totalValue = boqStats ? boqStats.reduce((s, b) => s + b.totalValue, 0) : 0;
-    return { totalProjects, activeProjects, archivedProjects, totalBoqs, totalValue };
-  }, [projects, boqStats]);
+    const avgValue =
+      boqStats && activeProjects > 0 ? totalValue / activeProjects : 0;
+    const largestValue = boqStats
+      ? boqStats.reduce((m, b) => (b.totalValue > m ? b.totalValue : m), 0)
+      : 0;
+    const avgBoqsPerProject = totalProjects > 0 ? totalBoqs / totalProjects : 0;
+
+    const regions = new Set(projects.map((p) => p.region).filter(Boolean));
+    const currencies = new Set(projects.map((p) => p.currency).filter(Boolean));
+
+    const BIM_EXTS = new Set(['rvt', 'ifc', 'skp', 'nwc', 'nwd', 'dgn']);
+    const bimProjectCount = fileTypesByProject
+      ? projects.filter((p) =>
+          (fileTypesByProject[p.id] ?? []).some((ext) =>
+            BIM_EXTS.has(ext.toLowerCase()),
+          ),
+        ).length
+      : 0;
+
+    return {
+      totalProjects,
+      activeProjects,
+      archivedProjects,
+      totalBoqs,
+      totalValue,
+      avgValue,
+      largestValue,
+      avgBoqsPerProject,
+      regionCount: regions.size,
+      currencyCount: currencies.size,
+      primaryCurrency: currencies.size === 1 ? [...currencies][0] : '',
+      bimProjectCount,
+    };
+  }, [projects, boqStats, fileTypesByProject]);
+
+  const formatBigValue = (v: number) =>
+    v >= 1_000_000
+      ? `${(v / 1_000_000).toFixed(1)}M`
+      : v >= 1_000
+        ? `${(v / 1_000).toFixed(0)}K`
+        : currencyFmt.format(v);
 
   // Available region filter values — only regions actually present in the
   // user's project list (no globally hard-coded country/region inventory).
@@ -258,8 +296,7 @@ export function ProjectsPage() {
   ];
 
   return (
-    <div className="relative isolate w-full animate-fade-in">
-      <DashboardBackdrop />
+    <div className="w-full animate-fade-in">
       <Breadcrumb items={[{ label: t('nav.dashboard', 'Dashboard'), to: '/' }, { label: t('nav.projects', 'Projects') }]} className="mb-4" />
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
@@ -283,18 +320,20 @@ export function ProjectsPage() {
         </Button>
       </div>
 
-      {/* Stats cards */}
+      {/* Stats cards — 4-up portfolio summary, each card with primary
+          number + sub-line so no card is sparse. */}
       {stats && projects && projects.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-          <div className="rounded-xl bg-surface-elevated border border-border-light p-3">
-            <div className="text-2xs font-medium text-content-tertiary uppercase tracking-wider">
-              {t('projects.stats_total', { defaultValue: 'Total Projects' })}
-            </div>
-            <div className="mt-1 flex items-center gap-2">
-              <span className="text-xl font-bold text-content-primary tabular-nums">
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+            {/* 1. Total Projects */}
+            <div className="rounded-xl bg-surface-elevated border border-border-light p-3">
+              <div className="text-2xs font-medium text-content-tertiary uppercase tracking-wider">
+                {t('projects.stats_total', { defaultValue: 'Total Projects' })}
+              </div>
+              <div className="mt-1 text-xl font-bold text-content-primary tabular-nums leading-none">
                 {stats.totalProjects}
-              </span>
-              <div className="flex items-center gap-1.5">
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-1">
                 <Badge variant="success" size="sm" dot>
                   {t('projects.stats_active', {
                     defaultValue: '{{count}} active',
@@ -311,34 +350,71 @@ export function ProjectsPage() {
                 )}
               </div>
             </div>
+
+            {/* 2. Total BOQs */}
+            <div className="rounded-xl bg-surface-elevated border border-border-light p-3">
+              <div className="text-2xs font-medium text-content-tertiary uppercase tracking-wider">
+                {t('projects.stats_boqs', { defaultValue: 'Total BOQs' })}
+              </div>
+              <div className="mt-1 text-xl font-bold text-content-primary tabular-nums leading-none">
+                {boqStats ? stats.totalBoqs.toLocaleString() : (
+                  <span className="inline-block h-5 w-10 animate-pulse rounded bg-surface-tertiary" />
+                )}
+              </div>
+              <div className="mt-2 text-2xs text-content-tertiary">
+                {boqStats && stats.totalProjects > 0
+                  ? t('projects.stats_boqs_per_project', {
+                      defaultValue: '{{avg}} per project',
+                      avg: stats.avgBoqsPerProject.toFixed(1),
+                    })
+                  : ''}
+              </div>
+            </div>
+
+            {/* 3. Total Value */}
+            <div className="rounded-xl bg-surface-elevated border border-border-light p-3">
+              <div className="text-2xs font-medium text-content-tertiary uppercase tracking-wider">
+                {t('projects.stats_value', { defaultValue: 'Total Value' })}
+              </div>
+              <div className="mt-1 text-xl font-bold text-content-primary tabular-nums leading-none">
+                {boqStats ? formatBigValue(stats.totalValue) : (
+                  <span className="inline-block h-5 w-16 animate-pulse rounded bg-surface-tertiary" />
+                )}
+              </div>
+              <div className="mt-2 text-2xs text-content-tertiary">
+                {stats.currencyCount === 1 && stats.primaryCurrency
+                  ? stats.primaryCurrency
+                  : stats.currencyCount > 1
+                    ? t('projects.stats_currencies', {
+                        defaultValue: '{{count}} currencies',
+                        count: stats.currencyCount,
+                      })
+                    : ''}
+              </div>
+            </div>
+
+            {/* 4. Avg Project Size */}
+            <div className="rounded-xl bg-surface-elevated border border-border-light p-3">
+              <div className="text-2xs font-medium text-content-tertiary uppercase tracking-wider">
+                {t('projects.stats_avg', { defaultValue: 'Avg Project Size' })}
+              </div>
+              <div className="mt-1 text-xl font-bold text-content-primary tabular-nums leading-none">
+                {boqStats ? formatBigValue(stats.avgValue) : (
+                  <span className="inline-block h-5 w-16 animate-pulse rounded bg-surface-tertiary" />
+                )}
+              </div>
+              <div className="mt-2 text-2xs text-content-tertiary">
+                {boqStats && stats.largestValue > 0
+                  ? t('projects.stats_largest', {
+                      defaultValue: 'Largest {{value}}',
+                      value: formatBigValue(stats.largestValue),
+                    })
+                  : ''}
+              </div>
+            </div>
           </div>
-          <div className="rounded-xl bg-surface-elevated border border-border-light p-3">
-            <div className="text-2xs font-medium text-content-tertiary uppercase tracking-wider">
-              {t('projects.stats_boqs', { defaultValue: 'Total BOQs' })}
-            </div>
-            <div className="mt-1 text-xl font-bold text-content-primary tabular-nums">
-              {boqStats ? stats.totalBoqs.toLocaleString() : (
-                <span className="inline-block h-5 w-10 animate-pulse rounded bg-surface-tertiary" />
-              )}
-            </div>
-          </div>
-          <div className="rounded-xl bg-surface-elevated border border-border-light p-3 sm:col-span-2">
-            <div className="text-2xs font-medium text-content-tertiary uppercase tracking-wider">
-              {t('projects.stats_value', { defaultValue: 'Total Value' })}
-            </div>
-            <div className="mt-1 text-xl font-bold text-content-primary tabular-nums">
-              {boqStats ? (
-                stats.totalValue >= 1_000_000
-                  ? `${(stats.totalValue / 1_000_000).toFixed(1)}M`
-                  : stats.totalValue >= 1_000
-                    ? `${(stats.totalValue / 1_000).toFixed(0)}K`
-                    : currencyFmt.format(stats.totalValue)
-              ) : (
-                <span className="inline-block h-5 w-16 animate-pulse rounded bg-surface-tertiary" />
-              )}
-            </div>
-          </div>
-        </div>
+
+        </>
       )}
 
       {/* Search + Filters */}

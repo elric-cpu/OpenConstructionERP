@@ -286,7 +286,7 @@ export function MultiVariantPicker({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/70 backdrop-blur-lg animate-fade-in"
       onClick={onCancel}
       data-testid="multi-variant-picker-backdrop"
     >

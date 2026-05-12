@@ -784,8 +784,41 @@ export function DescriptionCellRenderer(params: ICellRendererParams) {
     </button>
   ) : null;
 
+  // Assembly-sourced positions carry a structured ``resource_breakdown``
+  // (per-type total + pct) that the apply-to-BOQ flow stamps into
+  // metadata. Render it as a tiny "60% Mat · 30% Lab · 10% Eq" pill so
+  // the estimator sees the cost-driver split without having to expand
+  // the resources sub-rows. Skipped silently when the field is absent
+  // (manual or non-assembly positions).
+  const breakdownRaw = (meta as { resource_breakdown?: Record<string, { pct?: number }> }).resource_breakdown;
+  const breakdownEntries: Array<{ rt: string; pct: number }> =
+    breakdownRaw && typeof breakdownRaw === 'object'
+      ? Object.entries(breakdownRaw)
+          .map(([rt, v]) => ({
+            rt,
+            pct: typeof v?.pct === 'number' ? Math.round(v.pct) : 0,
+          }))
+          .filter((e) => e.pct > 0)
+          .sort((a, b) => b.pct - a.pct)
+      : [];
+  const breakdownPill =
+    breakdownEntries.length > 0 ? (
+      <span
+        className="shrink-0 inline-flex items-center gap-0.5 rounded text-[10px] font-medium px-1 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 cursor-help"
+        title={t('boq.resource_breakdown_tip', {
+          defaultValue: 'Cost driver split — sourced from the linked assembly',
+        })}
+        data-testid="boq-resource-breakdown-pill"
+      >
+        {breakdownEntries
+          .slice(0, 3)
+          .map((e) => `${e.pct}% ${e.rt.slice(0, 3).toUpperCase()}`)
+          .join(' · ')}
+      </span>
+    ) : null;
+
   if (!hasVariant && !hasDefault) {
-    if (!variantIconButton && !scopeHint) {
+    if (!variantIconButton && !scopeHint && !breakdownPill) {
       return <span className="truncate">{displayValue}</span>;
     }
     return (
@@ -793,6 +826,7 @@ export function DescriptionCellRenderer(params: ICellRendererParams) {
         {variantIconButton}
         <span className="truncate min-w-0">{displayValue}</span>
         {scopeHint}
+        {breakdownPill}
       </span>
     );
   }
@@ -817,6 +851,7 @@ export function DescriptionCellRenderer(params: ICellRendererParams) {
         {variantIconButton}
         <span className="truncate min-w-0">{displayValue}</span>
         {scopeHint}
+        {breakdownPill}
       </span>
     );
   }
@@ -845,6 +880,7 @@ export function DescriptionCellRenderer(params: ICellRendererParams) {
       {variantIconButton}
       <span className="truncate min-w-0">{displayValue}</span>
       {scopeHint}
+      {breakdownPill}
       <span
         className="shrink-0 inline-flex items-center gap-1 rounded
                    bg-amber-100 dark:bg-amber-900/40

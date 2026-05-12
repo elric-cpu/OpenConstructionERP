@@ -38,6 +38,8 @@ from app.modules.documents.schemas import (
     DocumentResponse,
     DocumentSummary,
     DocumentUpdate,
+    FolderPermissionCreate,
+    FolderPermissionResponse,
     PhotoResponse,
     PhotoTimelineGroup,
     PhotoUpdate,
@@ -68,6 +70,67 @@ logger = logging.getLogger(__name__)
 
 def _get_service(session: SessionDep) -> DocumentService:
     return DocumentService(session)
+
+
+# ── Folder-permission integration helpers ───────────────────────────────────
+#
+# ``verify_project_access`` returns 404 for any non-owner. That keeps
+# cross-project IDOR clean for the strict majority of endpoints, but it
+# also blocks legitimate project MEMBERS from listing files they
+# nominally have access to. The folder-permissions feature (Issue #FP)
+# extends the contract: project members can list / read / delete /
+# upload files within the scope of any grant they have.
+#
+# We do NOT change ``verify_project_access`` itself — it's used by
+# dozens of unrelated routers and tightening it touches risk we don't
+# want here. Instead the document-list / get / delete endpoints use a
+# more permissive helper that allows project members through, and then
+# the folder-permissions service decides what they actually see.
+
+
+async def _verify_project_membership_or_404(
+    project_id: uuid.UUID,
+    user_id: str,
+    session,  # type: ignore[no-untyped-def]
+) -> None:
+    """Raise 404 unless the caller can see ``project_id`` at all.
+
+    Allowed callers:
+        * admins (matches ``verify_project_access`` admin bypass)
+        * project owner
+        * any member of the project's default team
+
+    The 404 surface matches ``verify_project_access`` so attackers
+    can't distinguish "wrong project id" from "project exists, you're
+    not a member".
+    """
+    from app.modules.documents.folder_permissions_service import is_project_member
+    from app.modules.users.repository import UserRepository
+
+    user_repo = UserRepository(session)
+    try:
+        user = await user_repo.get_by_id(uuid.UUID(str(user_id)))
+    except Exception:
+        user = None
+
+    if user is not None and getattr(user, "role", "") == "admin":
+        # Make sure the project actually exists for admins too — leaking
+        # "yes this id exists" on a non-existent project is undesirable.
+        from app.modules.projects.repository import ProjectRepository
+
+        proj_repo = ProjectRepository(session)
+        if await proj_repo.get_by_id(project_id) is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project not found",
+            )
+        return
+
+    if not await is_project_member(session, project_id, uuid.UUID(str(user_id))):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
+        )
 
 
 def _doc_to_response(doc: object) -> DocumentResponse:
@@ -128,8 +191,34 @@ async def upload_document(
     _perm: None = Depends(RequirePermission("documents.create")),
     service: DocumentService = Depends(_get_service),
 ) -> DocumentResponse:
-    """Upload a document to a project."""
-    await verify_project_access(project_id, user_id, session)
+    """Upload a document to a project, honoring folder permissions.
+
+    Members can upload into folders they have an ``editor`` or
+    ``owner`` grant on, OR into folders that have no grants at all
+    (still open to every project member). Non-members 404.
+    """
+    await _verify_project_membership_or_404(project_id, user_id, session)
+
+    from app.modules.documents.folder_permissions_service import (
+        can_write,
+        folder_access_for,
+        kind_and_path_for_document,
+    )
+
+    kind, path = kind_and_path_for_document(category)
+    role = await folder_access_for(
+        session,
+        project_id=project_id,
+        user_id=uuid.UUID(str(user_id)),
+        scope_kind=kind,
+        scope_path=path,
+    )
+    # 404 (not 403) keeps enumeration symmetric with list/get/delete.
+    if role is None or not can_write(role):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Not found",
+        )
     allowed, _ = upload_limiter.is_allowed(str(user_id))
     if not allowed:
         raise HTTPException(
@@ -167,8 +256,22 @@ async def list_documents(
     sort_order: str = Query(default="desc", pattern="^(asc|desc)$"),
     service: DocumentService = Depends(_get_service),
 ) -> list[DocumentResponse]:
-    """List documents for a project."""
-    await verify_project_access(project_id, user_id, session)
+    """List documents for a project, honoring folder permissions.
+
+    Project owners (and admins) see everything. Project members see:
+        * every document whose ``(scope_kind, scope_path)`` has NO
+          grant on the project (those folders are "open to all
+          members" by default), AND
+        * every document whose ``(scope_kind, scope_path)`` has at
+          least one grant covering this user.
+
+    Documents the caller cannot see are filtered out server-side. We
+    deliberately do not 404 here even when the filtered list is empty
+    — knowing the project exists and being told "no files" is the
+    expected surface for a member who hasn't been granted a folder
+    yet.
+    """
+    await _verify_project_membership_or_404(project_id, user_id, session)
     docs, _ = await service.list_documents(
         project_id,
         offset=offset,
@@ -178,7 +281,47 @@ async def list_documents(
         sort_by=sort_by,
         sort_order=sort_order,
     )
-    return [_doc_to_response(d) for d in docs]
+
+    # Owners and admins bypass folder filtering entirely.
+    from app.modules.documents.folder_permissions_service import (
+        effective_permissions_for,
+        is_project_owner,
+        kind_and_path_for_document,
+        restricted_scopes_for_project,
+    )
+
+    user_uuid = uuid.UUID(str(user_id))
+    if await is_project_owner(session, project_id, user_uuid):
+        return [_doc_to_response(d) for d in docs]
+
+    # Admin bypass — _verify_project_membership_or_404 already let them
+    # through, but we still need to skip filtering for them.
+    from app.modules.users.repository import UserRepository
+    user = await UserRepository(session).get_by_id(user_uuid)
+    if user is not None and getattr(user, "role", "") == "admin":
+        return [_doc_to_response(d) for d in docs]
+
+    grants = await effective_permissions_for(
+        session, project_id=project_id, user_id=user_uuid,
+    )
+    restricted = await restricted_scopes_for_project(session, project_id)
+
+    visible: list = []
+    for doc in docs:
+        kind, path = kind_and_path_for_document(doc.category)
+        # If the folder has any grant, only show docs the user has
+        # an explicit grant on (exact scope OR wildcard for the kind).
+        is_restricted = (
+            (kind, path) in restricted
+            or (kind, None) in restricted
+        )
+        if not is_restricted:
+            visible.append(doc)
+            continue
+        if (kind, path) in grants or (kind, None) in grants:
+            visible.append(doc)
+
+    return [_doc_to_response(d) for d in visible]
 
 
 @router.get("/file-types-by-project/")
@@ -729,6 +872,27 @@ async def update_sheet(
     return _sheet_to_response(sheet)
 
 
+# ── Delete sheet ───────────────────────────────────────────────────────
+
+
+@router.delete("/sheets/{sheet_id}", status_code=204)
+async def delete_sheet(
+    sheet_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    _perm: None = Depends(RequirePermission("documents.delete")),
+    service: SheetService = Depends(_get_sheet_service),
+) -> None:
+    """Hard-delete a sheet (drawing page extracted from a multi-page PDF).
+
+    IDOR-guarded via the parent project so a 404 is returned for sheets
+    the caller cannot reach.
+    """
+    sheet = await service.get_sheet(sheet_id)
+    await verify_project_access(sheet.project_id, user_id, session)
+    await service.delete_sheet(sheet_id)
+
+
 # ── Version history ────────────────────────────────────────────────────
 
 
@@ -1040,9 +1204,30 @@ async def get_document(
     session: SessionDep,
     service: DocumentService = Depends(_get_service),
 ) -> DocumentResponse:
-    """Get a single document metadata."""
+    """Get a single document, honoring folder permissions.
+
+    Non-owner project members are 404'd when the document lives in a
+    restricted folder they have no grant on. The 404 (not 403) keeps
+    enumeration symmetric with ``verify_project_access``.
+    """
     doc = await service.get_document(document_id)
-    await verify_project_access(doc.project_id, user_id, session)
+    await _verify_project_membership_or_404(doc.project_id, user_id, session)
+
+    from app.modules.documents.folder_permissions_service import (
+        folder_access_for,
+        kind_and_path_for_document,
+        require_read,
+    )
+
+    kind, path = kind_and_path_for_document(doc.category)
+    role = await folder_access_for(
+        session,
+        project_id=doc.project_id,
+        user_id=uuid.UUID(str(user_id)),
+        scope_kind=kind,
+        scope_path=path,
+    )
+    require_read(role)
     return _doc_to_response(doc)
 
 
@@ -1206,9 +1391,54 @@ async def delete_document(
     _perm: None = Depends(RequirePermission("documents.delete")),
     service: DocumentService = Depends(_get_service),
 ) -> None:
-    """Delete a document and its file."""
+    """Delete a document, honoring folder permissions.
+
+    Non-owner members are 404'd when:
+        * the folder is restricted and they have no grant, OR
+        * they only have a ``viewer`` grant (no write capability).
+
+    Editors can only delete their OWN uploads — a defence in depth so
+    a single member can't accidentally nuke another member's work
+    just because they share an "editor" grant.
+    """
     existing = await service.get_document(document_id)
-    await verify_project_access(existing.project_id, user_id, session)
+    await _verify_project_membership_or_404(existing.project_id, user_id, session)
+
+    from app.modules.documents.folder_permissions_service import (
+        can_write,
+        folder_access_for,
+        kind_and_path_for_document,
+        require_read,
+    )
+
+    kind, path = kind_and_path_for_document(existing.category)
+    role = await folder_access_for(
+        session,
+        project_id=existing.project_id,
+        user_id=uuid.UUID(str(user_id)),
+        scope_kind=kind,
+        scope_path=path,
+    )
+    require_read(role)
+
+    # Owner of the project bypasses write checks (folder_access_for
+    # returns "owner" for them).
+    if role != "owner" and not can_write(role):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Not found",
+        )
+
+    # Editors can only delete their own uploads. Folder "owner" role
+    # and project owner role bypass this rule.
+    if role == "editor":
+        uploaded_by = str(getattr(existing, "uploaded_by", "") or "")
+        if uploaded_by and uploaded_by != str(user_id):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Not found",
+            )
+
     await service.delete_document(document_id, user_id=str(user_id) if user_id else None)
 
 

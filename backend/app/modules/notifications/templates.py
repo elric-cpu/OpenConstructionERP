@@ -90,6 +90,35 @@ _TEMPLATES: dict[str, str] = {
 
     "notifications.transmittal.responded.title": "Transmittal answered",
     "notifications.transmittal.responded.body": "{code} ({title}). {response_summary}",
+
+    # ── Singular-namespace keys (event_handlers.py — Wave 5+) ────────
+    # These use the `notification.<event>_(title|body)` convention,
+    # distinct from the older `notifications.<module>.<event>.(title|body)`
+    # entries above. Keep both naming conventions until the legacy
+    # subscribers are migrated.
+    "notification.rfi_assigned_title": "RFI assigned to you",
+    "notification.rfi_assigned_body": "RFI {rfi_number} — {subject}",
+
+    "notification.task_assigned_title": "New task assigned",
+    "notification.task_assigned_body": "{task_title}",
+
+    "notification.invoice_approved_title": "Invoice approved",
+    "notification.invoice_approved_body": "Invoice {invoice_number} — {amount_total} {currency_code}",
+
+    "notification.inspection_scheduled_title": "Inspection scheduled",
+    "notification.inspection_scheduled_body": "{inspection_number} — {title} on {inspection_date}",
+
+    "notification.submittal_status_changed_title": "Submittal status changed",
+    "notification.submittal_status_changed_body": "{submittal_number} ({title}) — {new_status}",
+
+    "notification.meeting_scheduled_title": "Meeting scheduled",
+    "notification.meeting_scheduled_body": "{title} on {meeting_date}",
+
+    "notification.ncr_created_title": "Non-conformance raised",
+    "notification.ncr_created_body": "NCR {ncr_number} — {title} ({severity})",
+
+    "notification.document_uploaded_title": "Document uploaded",
+    "notification.document_uploaded_body": "{document_name}",
 }
 
 

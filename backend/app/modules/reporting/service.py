@@ -381,6 +381,22 @@ class ReportingService:
             )
         return report
 
+    async def delete_report(self, report_id: uuid.UUID) -> None:
+        """Hard-delete a generated report. 404 if not found.
+
+        Caller is expected to enforce project access via
+        ``verify_project_access`` before invoking this — the service layer
+        does not gate on the user's project ownership.
+        """
+        report = await self.report_repo.get_by_id(report_id)
+        if report is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Report not found",
+            )
+        await self.session.delete(report)
+        await self.session.flush()
+
     async def generate_report(
         self,
         data: GenerateReportRequest,

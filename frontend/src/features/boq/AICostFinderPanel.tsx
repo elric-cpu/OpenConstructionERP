@@ -27,6 +27,7 @@ import {
   type CreatePositionData,
   type Position,
 } from './api';
+import { useIsRTL } from '@/shared/hooks/useIsRTL';
 import { fmtWithCurrency, getUnitsForLocale } from './boqHelpers';
 
 /* ── Props ─────────────────────────────────────────────────────────── */
@@ -79,6 +80,7 @@ export function AICostFinderPanel({
   locale = 'de-DE',
 }: AICostFinderPanelProps) {
   const { t } = useTranslation();
+  const isRTL = useIsRTL();
 
   /* ── State ─────────────────────────────────────────────────────── */
   const [query, setQuery] = useState('');
@@ -162,10 +164,12 @@ export function AICostFinderPanel({
   /* ── Render ────────────────────────────────────────────────────── */
   // Bug 13: offset by app header height (52px = --oe-header-height) so the panel
   // does not cover the top app header / toolbar.
+  // RTL fix: see AISmartPanel for full explanation.
+  const offTranslate = isRTL ? '-translate-x-full' : 'translate-x-full';
   return (
     <div
       className={`fixed right-0 top-[52px] z-50 h-[calc(100%-52px)] w-[380px] bg-surface-elevated border-l border-border-light shadow-xl flex flex-col transition-transform duration-300 ease-in-out ${
-        isOpen ? 'translate-x-0' : 'translate-x-full'
+        isOpen ? 'translate-x-0' : offTranslate
       }`}
     >
       {/* ── Header ───────────────────────────────────────────────── */}

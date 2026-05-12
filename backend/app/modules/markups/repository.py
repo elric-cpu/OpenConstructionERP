@@ -10,7 +10,7 @@ from typing import Any
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.markups.models import Markup, ScaleConfig, StampTemplate
+from app.modules.markups.models import Markup, MarkupComment, ScaleConfig, StampTemplate
 
 
 class MarkupRepository:
@@ -229,6 +229,54 @@ class StampTemplateRepository:
     async def delete(self, template_id: uuid.UUID) -> None:
         """Hard delete a stamp template."""
         item = await self.get_by_id(template_id)
+        if item is not None:
+            await self.session.delete(item)
+            await self.session.flush()
+
+
+class MarkupCommentRepository:
+    """Data access for MarkupComment models."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def get_by_id(self, comment_id: uuid.UUID) -> MarkupComment | None:
+        """Get comment by ID."""
+        return await self.session.get(MarkupComment, comment_id)
+
+    async def list_for_markup(self, markup_id: uuid.UUID) -> list[MarkupComment]:
+        """List all comments for a markup, oldest first (thread order)."""
+        stmt = (
+            select(MarkupComment)
+            .where(MarkupComment.markup_id == markup_id)
+            .order_by(MarkupComment.created_at.asc())
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def count_by_markup_ids(
+        self, markup_ids: list[uuid.UUID]
+    ) -> dict[uuid.UUID, int]:
+        """Return a {markup_id: comment_count} map for bulk badge rendering."""
+        if not markup_ids:
+            return {}
+        stmt = (
+            select(MarkupComment.markup_id, func.count(MarkupComment.id))
+            .where(MarkupComment.markup_id.in_(markup_ids))
+            .group_by(MarkupComment.markup_id)
+        )
+        result = await self.session.execute(stmt)
+        return {row[0]: int(row[1]) for row in result.all()}
+
+    async def create(self, item: MarkupComment) -> MarkupComment:
+        """Insert a new comment."""
+        self.session.add(item)
+        await self.session.flush()
+        return item
+
+    async def delete(self, comment_id: uuid.UUID) -> None:
+        """Hard delete a comment."""
+        item = await self.get_by_id(comment_id)
         if item is not None:
             await self.session.delete(item)
             await self.session.flush()

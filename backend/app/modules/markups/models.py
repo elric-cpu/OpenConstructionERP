@@ -4,6 +4,7 @@ Tables:
     oe_markups_markup          — drawing markups (cloud, arrow, text, etc.)
     oe_markups_scale_config    — scale calibration per document page
     oe_markups_stamp_template  — reusable stamp templates (Approved, Rejected, etc.)
+    oe_markups_comment         — threaded comments attached to a markup
 """
 
 import uuid
@@ -111,3 +112,27 @@ class StampTemplate(Base):
 
     def __repr__(self) -> str:
         return f"<StampTemplate {self.name} ({self.category})>"
+
+
+class MarkupComment(Base):
+    """‌⁠‍Threaded comment attached to a markup.
+
+    Comments are flat per markup (no nested replies in v1). Authorisation
+    is delegated to the parent markup's project — anyone with project
+    read access can list/post; deletion is restricted to the author or
+    project owner via the router layer.
+    """
+
+    __tablename__ = "oe_markups_comment"
+
+    markup_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_markups_markup.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+
+    def __repr__(self) -> str:
+        return f"<MarkupComment markup={self.markup_id} user={self.user_id}>"

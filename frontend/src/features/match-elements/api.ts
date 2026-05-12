@@ -9,6 +9,41 @@ import { useAuthStore } from '@/stores/useAuthStore';
 
 const PREFIX = '/api/v1/match_elements';
 
+/**
+ * Render a FastAPI error payload (``{detail: ...}``) into a human-readable
+ * string. The framework's 422 shape is a list of dicts like
+ * ``[{type, loc, msg, input, ctx}]``; older 4xx/5xx send a plain
+ * ``{detail: "string"}``. Without this normaliser the React toast renders
+ * the list as ``[object Object]`` (the symptom Artem flagged on
+ * /match-elements Step 4).
+ */
+function formatErrorDetail(body: unknown): string {
+  if (body == null) return '';
+  if (typeof body === 'string') return body;
+  if (typeof body !== 'object') return String(body);
+  const obj = body as Record<string, unknown>;
+  const d = obj.detail;
+  if (typeof d === 'string') return d;
+  if (Array.isArray(d)) {
+    return d
+      .map((item) => {
+        if (item == null) return '';
+        if (typeof item === 'string') return item;
+        if (typeof item !== 'object') return String(item);
+        const it = item as Record<string, unknown>;
+        const loc = Array.isArray(it.loc) ? it.loc.join('.') : it.loc;
+        const msg = it.msg ?? it.message ?? it.type ?? '';
+        return loc ? `${loc}: ${msg}` : String(msg);
+      })
+      .filter(Boolean)
+      .join('; ');
+  }
+  if (d && typeof d === 'object') {
+    try { return JSON.stringify(d); } catch { return String(d); }
+  }
+  try { return JSON.stringify(body); } catch { return String(body); }
+}
+
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const token = useAuthStore.getState().accessToken;
   const res = await fetch(`${PREFIX}${path}`, {
@@ -24,7 +59,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
     let detail = res.statusText;
     try {
       const body = await res.json();
-      detail = body.detail || JSON.stringify(body);
+      detail = formatErrorDetail(body) || res.statusText;
     } catch {
       // ignore
     }
@@ -227,6 +262,32 @@ export interface CategoryCount {
   trade: TradeBucket;
   is_subtractive: boolean;
   count: number;
+}
+
+/** Live progress snapshot for a running match. See
+ *  ``MatchService.run_match`` for stage definitions and the
+ *  ``/sessions/{id}/progress`` endpoint for the poll contract. */
+export type MatchStage =
+  | 'idle'
+  | 'init'
+  | 'elements'
+  | 'ranking'
+  | 'save'
+  | 'done'
+  | 'error';
+
+export type MatchProgressStatus = 'idle' | 'running' | 'done' | 'error';
+
+export interface MatchProgress {
+  stage: MatchStage;
+  stage_idx: number;
+  total_stages: number;
+  groups_done: number;
+  groups_total: number;
+  status: MatchProgressStatus;
+  started_at: string | null;
+  updated_at: string | null;
+  error: string | null;
 }
 
 export interface BIMModelOption {
@@ -444,7 +505,7 @@ export const matchElementsApi = {
       let detail = res.statusText;
       try {
         const body = await res.json();
-        detail = body.detail || JSON.stringify(body);
+        detail = formatErrorDetail(body) || res.statusText;
       } catch {
         /* ignore */
       }
@@ -487,6 +548,16 @@ export const matchElementsApi = {
 
   touchSession: (id: string) =>
     call<void>(`/sessions/${id}/touch`, { method: 'POST' }),
+
+  /** Read the latest run-match progress snapshot for the session. The
+   *  wizard's MatchProgressCard polls this every ~800ms while a match
+   *  is running and stops as soon as ``status`` flips to ``done`` /
+   *  ``error``. The endpoint always returns 200 — idle sessions
+   *  surface ``stage: "idle"`` / ``status: "idle"``. Older backends
+   *  that predate the progress column will 404 here; the FE should
+   *  fall back to the existing spinner. */
+  getProgress: (id: string) =>
+    call<MatchProgress>(`/sessions/${id}/progress`),
 
   // ── BIM models ────────────────────────────────────────────────────────
 

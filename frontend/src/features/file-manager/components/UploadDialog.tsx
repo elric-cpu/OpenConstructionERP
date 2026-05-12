@@ -192,7 +192,7 @@ export function UploadDialog({
       role="dialog"
       aria-modal="true"
       aria-label={t('files.upload', { defaultValue: 'Upload files' })}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-lg animate-fade-in"
       onClick={onClose}
     >
       <div

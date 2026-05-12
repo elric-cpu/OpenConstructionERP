@@ -36,6 +36,8 @@ from app.dependencies import CurrentUserId, RequirePermission, SessionDep, verif
 from app.modules.markups.schemas import (
     BoqLinkRequest,
     MarkupBulkCreate,
+    MarkupCommentCreate,
+    MarkupCommentResponse,
     MarkupCreate,
     MarkupResponse,
     MarkupSummary,
@@ -214,6 +216,7 @@ async def create_markup(
 
 @router.get("/", response_model=list[MarkupResponse])
 async def list_markups(
+    session: SessionDep,
     project_id: uuid.UUID = Query(...),
     document_id: str | None = Query(default=None),
     page: int | None = Query(default=None, ge=1),
@@ -226,7 +229,14 @@ async def list_markups(
     user_id: CurrentUserId = None,  # type: ignore[assignment]
     service: MarkupsService = Depends(_get_service),
 ) -> list[MarkupResponse]:
-    """List markups for a project with filters."""
+    """List markups for a project with filters.
+
+    Project membership is verified before returning anything — a non-member
+    cannot enumerate markup ids by guessing project_ids (404 maps both
+    "no such project" and "not your project" to the same response shape).
+    """
+    await verify_project_access(project_id, str(user_id), session)
+
     if query:
         items = await service.search_markups(project_id, query)
         return [_markup_to_response(i) for i in items]
@@ -446,3 +456,104 @@ async def delete_stamp_template(
     """Delete a stamp template."""
     await _authorize_stamp_mutation(template_id, str(user_id), session, service)
     await service.delete_stamp(template_id)
+
+
+# ── Markup Comments (threaded) ───────────────────────────────────────────────
+
+
+def _comment_to_response(item: object) -> MarkupCommentResponse:
+    """Build a MarkupCommentResponse from a MarkupComment ORM object."""
+    return MarkupCommentResponse(
+        id=item.id,  # type: ignore[attr-defined]
+        markup_id=item.markup_id,  # type: ignore[attr-defined]
+        user_id=item.user_id,  # type: ignore[attr-defined]
+        body=item.body,  # type: ignore[attr-defined]
+        created_at=item.created_at,  # type: ignore[attr-defined]
+        updated_at=item.updated_at,  # type: ignore[attr-defined]
+    )
+
+
+@router.get("/{markup_id}/comments/", response_model=list[MarkupCommentResponse])
+async def list_markup_comments(
+    markup_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    service: MarkupsService = Depends(_get_service),
+) -> list[MarkupCommentResponse]:
+    """List threaded comments on a markup (project members only)."""
+    parent = await service.get_markup(markup_id)
+    await verify_project_access(parent.project_id, str(user_id), session)
+    items = await service.list_comments(markup_id)
+    return [_comment_to_response(c) for c in items]
+
+
+@router.post("/{markup_id}/comments/", response_model=MarkupCommentResponse, status_code=201)
+async def create_markup_comment(
+    markup_id: uuid.UUID,
+    data: MarkupCommentCreate,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    service: MarkupsService = Depends(_get_service),
+) -> MarkupCommentResponse:
+    """Append a threaded comment to a markup.
+
+    Any project member (including viewers) can comment — comment authoring
+    is intentionally not gated behind ``markups.create`` because reviewers
+    must be able to leave feedback without write access to drawings.
+    """
+    parent = await service.get_markup(markup_id)
+    await verify_project_access(parent.project_id, str(user_id), session)
+    try:
+        item = await service.create_comment(markup_id, data, str(user_id))
+        return _comment_to_response(item)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Unable to create markup comment")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to create comment — please try again",
+        )
+
+
+@router.delete("/{markup_id}/comments/{comment_id}/", status_code=204)
+async def delete_markup_comment(
+    markup_id: uuid.UUID,
+    comment_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    service: MarkupsService = Depends(_get_service),
+) -> None:
+    """Delete a comment.
+
+    Only the comment author OR the parent project's owner may delete. A
+    non-author viewer hits 403 here even though they can post — symmetric
+    with how comment threads work elsewhere in the app.
+    """
+    parent = await service.get_markup(markup_id)
+    await verify_project_access(parent.project_id, str(user_id), session)
+    comment = await service.get_comment(comment_id)
+    if comment.markup_id != markup_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Comment not found",
+        )
+
+    # Permission gate: author OR project owner.
+    if comment.user_id == str(user_id):
+        await service.delete_comment(comment_id)
+        return
+
+    # Re-fetch project to compare owner_id.
+    from app.modules.projects.repository import ProjectRepository
+
+    proj_repo = ProjectRepository(session)
+    project = await proj_repo.get_by_id(parent.project_id)
+    if project is not None and str(project.owner_id) == str(user_id):
+        await service.delete_comment(comment_id)
+        return
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Only the comment author or project owner can delete this comment",
+    )

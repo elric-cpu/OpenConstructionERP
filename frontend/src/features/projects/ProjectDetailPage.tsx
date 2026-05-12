@@ -45,6 +45,7 @@ import { apiGet, apiPatch, ApiError } from '@/shared/lib/api';
 import clsx from 'clsx';
 import { projectsApi, type Project } from './api';
 import { PhotosTab } from './PhotosTab';
+import { CompliancePage } from '@/features/compliance-docs/CompliancePage';
 import { TeamStrip } from './components/TeamStrip';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useRecentStore } from '@/stores/useRecentStore';
@@ -100,7 +101,7 @@ interface ImportResult {
 // Tab types
 // ---------------------------------------------------------------------------
 
-type ProjectTab = 'dashboard' | 'overview' | 'schedule' | 'budget' | 'tendering' | 'photos';
+type ProjectTab = 'dashboard' | 'overview' | 'schedule' | 'budget' | 'tendering' | 'photos' | 'compliance';
 
 interface ScheduleItem {
   id: string;
@@ -817,7 +818,7 @@ function ImportDialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-fade-in"
+        className="absolute inset-0 bg-black/70 backdrop-blur-lg animate-fade-in"
         onClick={onClose}
       />
 
@@ -1586,6 +1587,7 @@ export function ProjectDetailPage() {
           { key: 'budget' as ProjectTab, label: t('projects.5d_budget'), icon: <Wallet size={15} /> },
           { key: 'tendering' as ProjectTab, label: t('projects.tendering'), icon: <Gavel size={15} /> },
           { key: 'photos' as ProjectTab, label: t('projects.photos.tab_label', { defaultValue: 'Photos' }), icon: <ImageIcon size={15} /> },
+          { key: 'compliance' as ProjectTab, label: t('compliance.tab_label', { defaultValue: 'Compliance' }), icon: <ShieldCheck size={15} /> },
         ]).map((tab) => (
           <button
             key={tab.key}
@@ -2462,6 +2464,13 @@ export function ProjectDetailPage() {
       {activeTab === 'photos' && (
         <TabErrorBoundary fallbackTitle="Photos failed to load">
           <PhotosTab projectId={projectId ?? null} />
+        </TabErrorBoundary>
+      )}
+
+      {/* Compliance Tab — insurance / permits / bonds / certifications tracker */}
+      {activeTab === 'compliance' && (
+        <TabErrorBoundary fallbackTitle="Compliance failed to load">
+          <CompliancePage projectId={projectId ?? null} />
         </TabErrorBoundary>
       )}
 

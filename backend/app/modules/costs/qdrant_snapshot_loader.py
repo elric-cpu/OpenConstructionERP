@@ -137,13 +137,113 @@ class SnapshotLoadSummary:
         return bool(self.loaded) and not self.errors
 
 
+def restore_snapshot_from_url(
+    *,
+    qdrant_url: str,
+    collection_name: str,
+    snapshot_url: str,
+    api_key: str | None = None,
+    timeout_s: int = 1800,
+) -> bool:
+    """Tell Qdrant to fetch a snapshot from ``snapshot_url`` directly.
+
+    Uses ``PUT /collections/{name}/snapshots/recover`` which makes Qdrant
+    issue its own HTTP GET for the URL — no multipart upload, no
+    ``max_request_size_mb`` ceiling. This is the only working path for
+    snapshots over Qdrant's default 32 MB upload limit (BGE-M3 v3 CWICR
+    snapshots are 400–800 MB).
+
+    The caller is responsible for ensuring ``snapshot_url`` is reachable
+    *from inside the Qdrant process* — for dockerised Qdrant on Windows
+    the host's localhost is exposed as ``host.docker.internal``. For
+    cloud-hosted snapshots (HuggingFace, GitHub raw) the URL is reached
+    over the public internet.
+
+    Returns ``True`` on ``{"result": true, "status": "ok"}``, ``False``
+    on any failure (with an ERROR log). Does not raise.
+    """
+
+    if not qdrant_url:
+        raise RuntimeError(
+            "restore_snapshot_from_url requires a server-mode Qdrant URL"
+        )
+
+    try:
+        import httpx
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError("httpx is required for snapshot recover") from exc
+
+    recover_url = (
+        qdrant_url.rstrip("/") + f"/collections/{collection_name}/snapshots/recover"
+    )
+    headers: dict[str, str] = {"Content-Type": "application/json"}
+    if api_key:
+        headers["api-key"] = api_key
+
+    payload = {"location": snapshot_url, "priority": "snapshot"}
+    # The Qdrant download + restore can take 5–15 min for 400 MB on a
+    # slow link. httpx.Timeout splits connect/read/write/pool so the
+    # read budget is what gets exhausted while we wait for the recover
+    # response — bump it to the full timeout, leave connect/pool short
+    # so a dead Qdrant URL fails fast.
+    timeout = httpx.Timeout(connect=10.0, read=timeout_s, write=timeout_s, pool=10.0)
+
+    logger.info(
+        "Recovering snapshot for %s from %s via Qdrant recover-from-URL",
+        collection_name,
+        snapshot_url,
+    )
+
+    try:
+        resp = httpx.put(recover_url, json=payload, headers=headers, timeout=timeout)
+    except httpx.HTTPError as exc:
+        logger.error(
+            "Snapshot recover-from-URL network error for %s -> %s: %s",
+            snapshot_url,
+            collection_name,
+            exc,
+        )
+        return False
+
+    try:
+        body = resp.json()
+    except ValueError:
+        body = None
+
+    if resp.is_success and isinstance(body, dict) and body.get("result") is True:
+        logger.info(
+            "Snapshot recovered into %s from %s (took %.1fs)",
+            collection_name,
+            snapshot_url,
+            (body.get("time") or 0.0),
+        )
+        return True
+
+    # Surface Qdrant's own error message verbatim — it's the most useful
+    # diagnostic ("Failed to download snapshot from <url>: status - 404
+    # Not Found", "Wrong input: <…>", etc).
+    err = ""
+    if isinstance(body, dict):
+        status_obj = body.get("status")
+        if isinstance(status_obj, dict):
+            err = str(status_obj.get("error") or "")
+    logger.error(
+        "Snapshot recover-from-URL failed for %s -> %s: HTTP %s -- %s",
+        snapshot_url,
+        collection_name,
+        resp.status_code,
+        err or resp.text[:200],
+    )
+    return False
+
+
 def restore_snapshot_file(
     *,
     qdrant_url: str,
     collection_name: str,
     snapshot_path: Path,
     api_key: str | None = None,
-    timeout_s: int = 600,
+    timeout_s: int = 1800,
 ) -> bool:
     """Upload a local ``.snapshot`` file via Qdrant's REST upload endpoint.
 
@@ -153,6 +253,13 @@ def restore_snapshot_file(
     the operator's laptop or in CI workspace, we instead POST to
     ``/collections/{name}/snapshots/upload`` which streams the bytes
     multipart and creates the collection inline.
+
+    Note: Qdrant's default ``service.max_request_size_mb`` is **32 MB**.
+    Snapshots over that size (i.e. every BGE-M3 v3 CWICR snapshot,
+    typically 400–800 MB) will be rejected with ``HTTP 500 — An error
+    occurred processing field: snapshot``. Use
+    :func:`restore_snapshot_from_url` for those instead, which sidesteps
+    the multipart endpoint entirely.
 
     Returns ``True`` on a 2xx response, ``False`` (with an ERROR log) on
     any failure. Does not raise — the caller wants to continue with the
@@ -199,6 +306,16 @@ def restore_snapshot_file(
     if api_key:
         headers["api-key"] = api_key
 
+    # httpx.Timeout(...) splits connect/read/write/pool — without this a
+    # single int applies the same value to read, which quietly clamps the
+    # whole upload to 5s on httpx>=0.25 if `timeout_s` is treated as a
+    # connect-only hint. For a 400 MB+ snapshot Qdrant needs minutes to
+    # ingest after the bytes land, and the previous 600 s read budget
+    # turned out too tight on a slow Windows host (Issue: install timed
+    # out at 603 s for USA_USD on localhost Qdrant). 30 min upper bound
+    # is generous enough to cover the 800 MB GAEB-flavoured snapshots
+    # that DDC plans to ship in v4 without surprise truncation.
+    timeout = httpx.Timeout(connect=30.0, read=timeout_s, write=timeout_s, pool=30.0)
     try:
         with snapshot_path.open("rb") as fh:
             files = {
@@ -212,7 +329,7 @@ def restore_snapshot_file(
                 upload_url,
                 files=files,
                 headers=headers,
-                timeout=timeout_s,
+                timeout=timeout,
             )
     except httpx.HTTPError as exc:
         logger.error(
@@ -223,6 +340,26 @@ def restore_snapshot_file(
         return False
 
     if resp.is_success:
+        # Qdrant returns 2xx the moment it accepts the upload, but the
+        # body carries the actual restore outcome as ``{"result": true,
+        # "status": "ok", "time": ...}``. A 200 with ``result: false``
+        # (or a malformed body) means the bytes landed but the recover
+        # step rejected them — historically this looked like a successful
+        # install in the UI while the collection never appeared. Treat
+        # it as a hard failure and let the caller raise.
+        try:
+            body = resp.json()
+        except ValueError:
+            body = None
+        if isinstance(body, dict) and body.get("result") is False:
+            logger.error(
+                "Qdrant accepted the upload but recover_snapshot returned "
+                "result=false for %s -> %s: %s",
+                snapshot_path.name,
+                collection_name,
+                resp.text[:200],
+            )
+            return False
         logger.info(
             "Snapshot %s restored into %s (status=%s)",
             snapshot_path.name,
@@ -437,5 +574,6 @@ __all__ = [
     "enumerate_qdrant_v3_collections",
     "load_ddc_snapshot_dir",
     "restore_snapshot_file",
+    "restore_snapshot_from_url",
     "server_collections",
 ]

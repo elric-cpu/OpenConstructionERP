@@ -877,52 +877,63 @@ function SidebarItem({
         }}
       >
         <Icon size={16} strokeWidth={isActive ? 2 : 1.75} className="shrink-0" />
-        <span className="truncate">{label}</span>
-        {/* Right-side trailing area: numeric badge / item badge / kbd
-            hint / pin button — only one occupies the `ms-auto` slot at
-            a time so the row never wraps. */}
-        {numericBadge != null && numericBadge > 0 ? (
+        {/* Hover-tooltip via title falls back to the full label even when
+            CSS truncates with an ellipsis. The visible width is now
+            264px (was 232) so most labels render in full at default
+            zoom; this is the safety net for narrow sidebars / dense
+            translations / large-text accessibility settings. */}
+        <span className="truncate" title={label}>
+          {label}
+        </span>
+        {/* Right-edge cluster — kbd hint first, badges last, so the
+            BETA / NEW chips always sit at the absolute right margin
+            (flush against the row edge) instead of being pushed inward
+            by the fixed-width keyboard hint column. Reserve the 26px
+            kbd column ONLY when this row actually has a shortcut —
+            empty rows previously paid the same 26px tax for nothing,
+            squeezing the label width and triggering avoidable
+            ellipsis truncation. */}
+        <span className="ms-auto flex items-center gap-1.5 shrink-0 ps-1.5">
           <span
             className={clsx(
-              'ms-auto flex h-4 min-w-[1.25rem] items-center justify-center rounded-full text-2xs font-bold px-1 transition-colors',
-              isActive
-                ? 'bg-oe-blue text-white'
-                : 'bg-surface-tertiary text-content-secondary',
-            )}
-          >
-            {numericBadge > 99 ? '99+' : numericBadge}
-          </span>
-        ) : item.badge ? (
-          <span
-            className={clsx(
-              item.badge === 'BETA'
-                ? 'ms-auto text-[9px] font-medium uppercase tracking-wide px-1.5 py-px rounded text-content-quaternary bg-surface-tertiary/60 dark:bg-surface-tertiary/40'
-                : item.highlight
-                  ? 'ms-auto text-2xs font-semibold px-1.5 py-0.5 rounded-full bg-gradient-to-r from-[#7c3aed] to-[#0ea5e9] text-white'
-                  : 'ms-auto text-2xs font-semibold px-1.5 py-0.5 rounded-full text-content-tertiary',
-            )}
-          >
-            {item.badge === 'BETA' ? 'beta' : item.badge}
-          </span>
-        ) : kbdHint ? (
-          // Two-key shortcut hint — Linear-style. Letter-spaced caps,
-          // tabular numerals, very low contrast so it doesn't compete
-          // with the label. Hidden on the active item to reduce noise.
-          <span
-            className={clsx(
-              'ms-auto hidden lg:inline-flex items-center gap-0.5 text-[9px] font-medium tracking-wide tabular-nums',
+              'hidden lg:inline-flex justify-end items-center gap-0.5 text-[9px] font-medium tracking-wide tabular-nums',
+              kbdHint ? 'min-w-[26px]' : 'min-w-0',
               isActive ? 'text-oe-blue/60' : 'text-content-quaternary',
             )}
           >
-            {kbdHint}
+            {kbdHint ?? (
+              <ChevronRight
+                size={12}
+                className="oe-hover-arrow text-content-tertiary"
+              />
+            )}
           </span>
-        ) : (
-          // Hover-only arrow, fades in via CSS rule on the parent.
-          <ChevronRight
-            size={12}
-            className="oe-hover-arrow ms-auto shrink-0 text-content-tertiary"
-          />
-        )}
+          {numericBadge != null && numericBadge > 0 && (
+            <span
+              className={clsx(
+                'flex h-4 min-w-[1.25rem] items-center justify-center rounded-full text-2xs font-bold px-1 transition-colors',
+                isActive
+                  ? 'bg-oe-blue text-white'
+                  : 'bg-surface-tertiary text-content-secondary',
+              )}
+            >
+              {numericBadge > 99 ? '99+' : numericBadge}
+            </span>
+          )}
+          {item.badge && (
+            <span
+              className={clsx(
+                item.badge === 'BETA'
+                  ? 'text-[9px] font-medium uppercase tracking-wide px-1.5 py-px rounded text-content-quaternary bg-surface-tertiary/60 dark:bg-surface-tertiary/40'
+                  : item.highlight
+                    ? 'text-2xs font-semibold px-1.5 py-0.5 rounded-full bg-gradient-to-r from-[#7c3aed] to-[#0ea5e9] text-white'
+                    : 'text-2xs font-semibold px-1.5 py-0.5 rounded-full text-content-tertiary',
+              )}
+            >
+              {item.badge === 'BETA' ? 'beta' : item.badge}
+            </span>
+          )}
+        </span>
         {/* Pin / unpin button — only shown when the item supports it
             (any item with an onTogglePin handler). Visible on hover or
             persistently when pinned. Click does not navigate. */}

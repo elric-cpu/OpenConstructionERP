@@ -16,7 +16,8 @@
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCatalogueInstallStore } from '@/stores/useCatalogueInstallStore';
 import {
   Database,
   ChevronDown,
@@ -71,28 +72,6 @@ async function fetchCatalogues(): Promise<CataloguesResponse> {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!res.ok) throw new Error(`catalogues-v3 ${res.status}`);
-  return res.json();
-}
-
-async function installCatalogue(region: string): Promise<unknown> {
-  const token = useAuthStore.getState().accessToken;
-  const res = await fetch(
-    `/api/v1/costs/catalogues-v3/${encodeURIComponent(region)}/install`,
-    {
-      method: 'POST',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    },
-  );
-  if (!res.ok) {
-    let detail = res.statusText;
-    try {
-      const body = await res.json();
-      detail = body?.detail ?? detail;
-    } catch {
-      // ignore
-    }
-    throw new Error(detail);
-  }
   return res.json();
 }
 
@@ -216,37 +195,57 @@ export function CataloguesPanelCard({ preferredRegion }: Props) {
     refetchInterval: 60_000,
   });
 
-  const installMut = useMutation({
-    mutationFn: (region: string) => installCatalogue(region),
-    onSuccess: async (_data, region) => {
-      addToast({
-        type: 'success',
-        title: t('catalogues.install_success_title', 'Catalogue installed'),
-        message: t(
-          'catalogues.install_success_body',
-          'Region {{region}} is now ready. Re-bind the project to use it.',
-          { region },
-        ),
-      });
-      // Refresh the list and any consumers of vector readiness so the
-      // "RU only" workaround disappears immediately.
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['catalogues-v3'] }),
-        queryClient.invalidateQueries({ queryKey: ['match-vector-readiness'] }),
-      ]);
+  // Install jobs live in a global Zustand store so the download survives
+  // route changes — the user can kick off an install on /match-elements,
+  // navigate to another page, and a floating dock pill keeps them
+  // informed. The local component still subscribes to the store to
+  // surface per-row spinner state.
+  const installJobs = useCatalogueInstallStore((s) => s.jobs);
+  const startInstall = useCatalogueInstallStore((s) => s.startInstall);
+
+  const handleInstall = useCallback(
+    (cat: Catalogue) => {
+      startInstall(
+        {
+          region: cat.region,
+          label: `${cat.country_iso} · ${cat.city}`,
+          language: cat.language,
+          sizeMb: cat.size_mb,
+        },
+        {
+          onSuccess: async (region) => {
+            addToast({
+              type: 'success',
+              title: t('catalogues.install_success_title', 'Catalogue installed'),
+              message: t(
+                'catalogues.install_success_body',
+                'Region {{region}} is now ready. Re-bind the project to use it.',
+                { region },
+              ),
+            });
+            await Promise.all([
+              queryClient.invalidateQueries({ queryKey: ['catalogues-v3'] }),
+              queryClient.invalidateQueries({
+                queryKey: ['match-vector-readiness'],
+              }),
+            ]);
+          },
+          onError: (region, error) => {
+            addToast({
+              type: 'error',
+              title: t('catalogues.install_failed_title', 'Install failed'),
+              message: t(
+                'catalogues.install_failed_body',
+                'Could not install {{region}}: {{error}}',
+                { region, error },
+              ),
+            });
+          },
+        },
+      );
     },
-    onError: (err: Error, region) => {
-      addToast({
-        type: 'error',
-        title: t('catalogues.install_failed_title', 'Install failed'),
-        message: t(
-          'catalogues.install_failed_body',
-          'Could not install {{region}}: {{error}}',
-          { region, error: err.message },
-        ),
-      });
-    },
-  });
+    [startInstall, addToast, t, queryClient],
+  );
 
   // Sort with preferred region first, then by status order, then alpha.
   // Server already pre-sorts by status — we only re-pin the project's
@@ -342,7 +341,33 @@ export function CataloguesPanelCard({ preferredRegion }: Props) {
       </button>
 
       {open && (
-        <div className="border-t border-border px-4 py-3">
+        <div className="relative border-t border-border px-4 py-3">
+          {/* Top-of-card progress strip — visible while React Query is
+              fetching (initial load OR an install-triggered refetch) and
+              while ANY install is mid-flight (the floating dock shows the
+              detailed view, this is the in-card hint). Without this the
+              long-running install (30–120 s) gives no feedback past the
+              tiny spinner inside the row's button. */}
+          {(cataloguesQ.isFetching ||
+            Array.from(installJobs.values()).some(
+              (j) => j.status === 'downloading',
+            )) && (
+            <div
+              role="progressbar"
+              aria-busy="true"
+              aria-label={
+                Array.from(installJobs.values()).some(
+                  (j) => j.status === 'downloading',
+                )
+                  ? t('catalogues.install_progress', 'Installing catalogue…')
+                  : t('catalogues.refresh_progress', 'Refreshing catalogues…')
+              }
+              className="pointer-events-none absolute top-0 left-0 right-0 h-0.5 overflow-hidden bg-indigo-500/15"
+            >
+              <div className="h-full w-1/3 bg-indigo-500 dark:bg-indigo-400 animate-[catalogues-progress_1.2s_ease-in-out_infinite]" />
+              <style>{`@keyframes catalogues-progress { 0% { transform: translateX(-100%); } 100% { transform: translateX(400%); } }`}</style>
+            </div>
+          )}
           {cataloguesQ.data?.server && !cataloguesQ.data.server.reachable && (
             <div className="mb-3 flex items-start gap-2 rounded-md border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-[11px] text-amber-900 dark:text-amber-200">
               <AlertCircle size={13} className="shrink-0 mt-0.5" />
@@ -402,8 +427,8 @@ export function CataloguesPanelCard({ preferredRegion }: Props) {
               </thead>
               <tbody>
                 {sorted.map((c) => {
-                  const isPending =
-                    installMut.isPending && installMut.variables === c.region;
+                  const installJob = installJobs.get(c.region);
+                  const isPending = installJob?.status === 'downloading';
                   const isPreferred = preferredRegion === c.region;
                   return (
                     <tr
@@ -449,25 +474,64 @@ export function CataloguesPanelCard({ preferredRegion }: Props) {
                           region={c.region}
                           status={isPending ? 'installing' : c.install_status}
                           isPending={isPending}
-                          onInstall={() => installMut.mutate(c.region)}
+                          onInstall={() => handleInstall(c)}
                         />
                       </td>
                     </tr>
                   );
                 })}
-                {sorted.length === 0 && !cataloguesQ.isLoading && (
-                  <tr>
-                    <td
-                      colSpan={6}
-                      className="py-4 text-center text-content-tertiary"
+                {/* Skeleton rows on initial load — without these the table
+                    pops in empty for ~200–800 ms which the user reads as a
+                    broken state. We render 6 placeholder rows that match
+                    the real row layout so the height doesn't jump on swap. */}
+                {sorted.length === 0 && cataloguesQ.isFetching && (
+                  Array.from({ length: 6 }).map((_, i) => (
+                    <tr
+                      key={`sk-${i}`}
+                      className="border-b border-border/50 last:border-b-0"
                     >
-                      {t(
-                        'catalogues.empty',
-                        'No catalogues registered. Check backend/app/modules/costs/cwicr_v3_catalogue.py.',
-                      )}
-                    </td>
-                  </tr>
+                      <td className="py-2 pr-2">
+                        <div className="h-3 w-32 rounded bg-content-tertiary/15 animate-pulse" />
+                      </td>
+                      <td className="py-2 pr-2 hidden sm:table-cell">
+                        <div className="h-3 w-6 rounded bg-content-tertiary/15 animate-pulse" />
+                      </td>
+                      <td className="py-2 pr-2 hidden sm:table-cell">
+                        <div className="h-3 w-8 rounded bg-content-tertiary/15 animate-pulse" />
+                      </td>
+                      <td className="py-2 pr-2 hidden md:table-cell">
+                        <div className="h-3 w-12 rounded bg-content-tertiary/15 animate-pulse" />
+                      </td>
+                      <td className="py-2 pr-2">
+                        <div className="h-4 w-16 rounded bg-content-tertiary/15 animate-pulse" />
+                      </td>
+                      <td className="py-2">
+                        <div className="h-5 w-16 rounded bg-content-tertiary/15 animate-pulse" />
+                      </td>
+                    </tr>
+                  ))
                 )}
+                {/* Empty-state — only when the query has actually settled
+                    (no in-flight fetch) AND returned zero rows. The previous
+                    `!isLoading` check fired during invalidation refetches
+                    after install (isLoading flips false the moment we have
+                    *any* data ever) and flashed the alarming "registry
+                    missing" copy on every successful install. */}
+                {sorted.length === 0 &&
+                  !cataloguesQ.isFetching &&
+                  cataloguesQ.isFetched && (
+                    <tr>
+                      <td
+                        colSpan={6}
+                        className="py-4 text-center text-content-tertiary"
+                      >
+                        {t(
+                          'catalogues.empty',
+                          'No catalogues registered. Check backend/app/modules/costs/cwicr_v3_catalogue.py.',
+                        )}
+                      </td>
+                    </tr>
+                  )}
               </tbody>
             </table>
           </div>

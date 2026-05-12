@@ -1,18 +1,60 @@
 import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/lib/api';
 
+/**
+ * Six standard resource types — promoted to a first-class column in
+ * v2940 so the M/L/E breakdown can be filtered and rolled up without
+ * description-text inference.
+ */
+export type ResourceType =
+  | 'material'
+  | 'labor'
+  | 'equipment'
+  | 'operator'
+  | 'subcontractor'
+  | 'overhead';
+
+/**
+ * Optional, type-specific metadata fields the editor can attach to a
+ * component. The server reads them when computing the typed total
+ * (waste/burden uplift, fuel add-on); the FE persists them as-is in
+ * the JSON `metadata` blob so adding new vocabulary doesn't require
+ * a migration.
+ */
+export interface ComponentMetadata {
+  // Material
+  waste_pct?: number;
+  vendor?: string;
+  // Labor
+  crew_size?: number;
+  hours?: number;
+  productivity?: number;
+  base_wage?: number;
+  burden_pct?: number;
+  skill_level?: string;
+  // Equipment
+  rental_days?: number;
+  hourly_rate?: number;
+  fuel_cost?: number;
+  // Generic
+  notes?: string;
+  resource_type?: ResourceType;
+  [k: string]: unknown;
+}
+
 export interface AssemblyComponent {
   id: string;
   assembly_id: string;
   cost_item_id: string | null;
   catalog_resource_id: string | null;
   description: string;
+  resource_type: ResourceType | null;
   factor: number;
   quantity: number;
   unit: string;
   unit_cost: number;
   total: number;
   sort_order: number;
-  metadata: Record<string, unknown>;
+  metadata: ComponentMetadata;
 }
 
 export interface Assembly {
@@ -66,6 +108,12 @@ export interface AssemblySearchResponse {
   offset: number;
 }
 
+export interface AssemblyStats {
+  total: number;
+  most_used: Array<{ name: string; usage_count: number }>;
+  by_category: Record<string, number>;
+}
+
 export interface AssemblyWithComponents extends Assembly {
   components: AssemblyComponent[];
 }
@@ -83,11 +131,14 @@ export interface CreateAssemblyData {
 
 export interface CreateComponentData {
   cost_item_id?: string;
+  catalog_resource_id?: string;
   description: string;
+  resource_type?: ResourceType;
   factor: number;
   quantity: number;
   unit: string;
   unit_cost: number;
+  metadata?: ComponentMetadata;
 }
 
 export interface AIGenerateRequest {
@@ -147,4 +198,5 @@ export const assembliesApi = {
     apiPost<Assembly>('/v1/assemblies/import/', { assembly: data }),
   updateTags: (assemblyId: string, tags: string[]) =>
     apiPatch<Assembly>(`/v1/assemblies/${assemblyId}/tags/`, { tags }),
+  getStats: () => apiGet<AssemblyStats>(`/v1/assemblies/stats/`),
 };

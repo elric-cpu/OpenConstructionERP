@@ -217,7 +217,7 @@ function CreateTransmittalModal({
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in" role="dialog" aria-modal="true" aria-label={t('transmittals.new_transmittal', { defaultValue: 'New Transmittal‌⁠‍' })}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-lg animate-fade-in" role="dialog" aria-modal="true" aria-label={t('transmittals.new_transmittal', { defaultValue: 'New Transmittal‌⁠‍' })}>
       <div className="w-full max-w-2xl bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border-light">

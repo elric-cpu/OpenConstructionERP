@@ -91,6 +91,13 @@ class Component(Base):
         doc="Link to catalog resource (material, equipment, labor)",
     )
     description: Mapped[str] = mapped_column(String(500), nullable=False)
+    # First-class resource_type ("material" / "labor" / "equipment" /
+    # "operator" / "subcontractor" / "overhead"). Promoted from metadata
+    # in v2940 — see migration for back-fill rules. Nullable because
+    # legacy rows may still be untyped until a user revisits them.
+    resource_type: Mapped[str | None] = mapped_column(
+        String(20), nullable=True, index=True
+    )
     factor: Mapped[str] = mapped_column(String(50), nullable=False, default="1.0")
     quantity: Mapped[str] = mapped_column(String(50), nullable=False, default="1.0")
     unit: Mapped[str] = mapped_column(String(20), nullable=False)

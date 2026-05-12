@@ -183,3 +183,45 @@ export async function exportMarkupsCSV(projectId: string): Promise<Blob> {
   if (!res.ok) throw new Error(`Export failed: ${res.statusText}`);
   return res.blob();
 }
+
+/* ── Markup Comments (threaded) ────────────────────────────────────────── */
+
+export interface MarkupComment {
+  id: string;
+  markup_id: string;
+  user_id: string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchMarkupComments(markupId: string): Promise<MarkupComment[]> {
+  return apiGet<MarkupComment[]>(`/v1/markups/${markupId}/comments/`);
+}
+
+export async function createMarkupComment(
+  markupId: string,
+  body: string,
+): Promise<MarkupComment> {
+  return apiPost<MarkupComment>(`/v1/markups/${markupId}/comments/`, { body });
+}
+
+export async function deleteMarkupComment(
+  markupId: string,
+  commentId: string,
+): Promise<void> {
+  return apiDelete(`/v1/markups/${markupId}/comments/${commentId}/`);
+}
+
+/* ── Per-page list helper for the takeoff overlay ──────────────────────── */
+
+/** Fetches markups for a (document, page) pair. Thin wrapper around
+ *  ``fetchMarkups`` used by the DWG/PDF takeoff overlays so they don't
+ *  need to construct the filter object themselves. */
+export async function fetchMarkupsByPage(
+  projectId: string,
+  documentId: string,
+  page: number,
+): Promise<Markup[]> {
+  return fetchMarkups(projectId, { document_id: documentId, page });
+}

@@ -365,3 +365,46 @@ class ShareLinkAccessResponse(BaseModel):
 
     download_url: str
     filename: str
+
+
+# ── Folder permissions ───────────────────────────────────────────────────
+
+
+class FolderPermissionCreate(BaseModel):
+    """Owner-supplied grant payload.
+
+    ``scope_path`` is optional — when omitted the grant applies to
+    every file of ``scope_kind`` in the project (a "kind-wide"
+    grant).  Empty-string and explicit ``null`` are treated the same.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    user_id: UUID
+    scope_kind: str = Field(min_length=1, max_length=50)
+    scope_path: str | None = Field(default=None, max_length=500)
+    role: str = Field(
+        default="viewer",
+        pattern=r"^(viewer|editor|owner)$",
+    )
+
+
+class FolderPermissionResponse(BaseModel):
+    """Single grant row returned by the management endpoints."""
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    project_id: UUID
+    user_id: UUID
+    scope_kind: str
+    scope_path: str | None = None
+    role: str
+    granted_by: UUID
+    granted_at: datetime | None = None
+    revoked: bool = False
+    created_at: datetime
+    updated_at: datetime
+    # Pre-joined for the modal so it doesn't have to make N member lookups.
+    user_email: str | None = None
+    user_full_name: str | None = None

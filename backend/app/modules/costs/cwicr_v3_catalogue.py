@@ -41,6 +41,7 @@ don't want every alias to surface as a downloadable card on /setup.
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 
 
@@ -547,6 +548,103 @@ CWICR_V3_CATALOGUES: tuple[CwicrV3Catalogue, ...] = (
 )
 
 
+# ── HuggingFace overrides ─────────────────────────────────────────────────
+#
+# DDC publishes the production v3 BGE-M3 snapshots on HF dataset
+# `DataDrivenConstruction/cwicr-vector-db-bgem3-v3`. Folder layout uses
+# 2-letter language/locale codes; some filenames use legacy region IDs that
+# differ from our internal ``region`` keys (e.g. our CA_TORONTO maps to
+# the legacy ENG_TORONTO file). Where DDC publishes only one snapshot per
+# language, every region in that language family reuses it — same pattern
+# as PT_LISBON sharing PT_SAOPAULO. Cross-locale BGE-M3 embeddings make
+# the lexical drift (e.g. "vidrio templado" vs "cristal") tolerable; pricing
+# differences are folded in by the FX layer at match time.
+HF_CWICR_DATASET = "DataDrivenConstruction/cwicr-vector-db-bgem3-v3"
+HF_CWICR_BASE_URL = (
+    f"https://huggingface.co/datasets/{HF_CWICR_DATASET}/resolve/main"
+)
+
+_HF_PUBLISHED: dict[str, tuple[str, str]] = {
+    # internal region id -> (hf_folder, hf_filename_stem)
+    "AE_DUBAI": ("AR", "AR_DUBAI"),
+    "MA_CASABLANCA": ("AR", "AR_DUBAI"),
+    "EG_CAIRO": ("AR", "AR_DUBAI"),
+    "TN_TUNIS": ("AR", "AR_DUBAI"),
+    "AU_SYDNEY": ("AU", "AU_SYDNEY"),
+    "CZ_PRAGUE": ("CS", "CS_PRAGUE"),
+    "DE_BERLIN": ("DE", "DE_BERLIN"),
+    "DE_MUNICH": ("DE", "DE_BERLIN"),
+    "AT_VIENNA": ("DE", "DE_BERLIN"),
+    "CH_ZURICH": ("DE", "DE_BERLIN"),
+    "CA_TORONTO": ("EN", "ENG_TORONTO"),
+    "KE_NAIROBI": ("EN", "ENG_TORONTO"),
+    "GH_ACCRA": ("EN", "ENG_TORONTO"),
+    "UG_KAMPALA": ("EN", "ENG_TORONTO"),
+    "TZ_DARESSALAAM": ("EN", "ENG_TORONTO"),
+    "ES_MADRID": ("ES", "SP_BARCELONA"),
+    "AR_BUENOSAIRES": ("ES", "SP_BARCELONA"),
+    "FR_PARIS": ("FR", "FR_PARIS"),
+    "SN_DAKAR": ("FR", "FR_PARIS"),
+    "CI_ABIDJAN": ("FR", "FR_PARIS"),
+    "CM_DOUALA": ("FR", "FR_PARIS"),
+    "IN_MUMBAI": ("HI", "HI_MUMBAI"),
+    "ID_JAKARTA": ("ID", "ID_JAKARTA"),
+    "IT_ROME": ("IT", "IT_ROME"),
+    "JP_TOKYO": ("JA", "JA_TOKYO"),
+    "KR_SEOUL": ("KO", "KO_SEOUL"),
+    "MX_MEXICO": ("MX", "MX_MEXICOCITY"),
+    "NG_LAGOS": ("NG", "NG_LAGOS"),
+    "NL_AMSTERDAM": ("NL", "NL_AMSTERDAM"),
+    "PL_WARSAW": ("PL", "PL_WARSAW"),
+    "BR_SAOPAULO": ("PT", "PT_SAOPAULO"),
+    "PT_LISBON": ("PT", "PT_SAOPAULO"),
+    "AO_LUANDA": ("PT", "PT_SAOPAULO"),
+    "RO_BUCHAREST": ("RO", "RO_BUCHAREST"),
+    "RU_STPETERSBURG": ("RU", "RU_STPETERSBURG"),
+    "RU_MOSCOW": ("RU", "RU_STPETERSBURG"),
+    "SV_STOCKHOLM": ("SV", "SV_STOCKHOLM"),
+    "TR_ISTANBUL": ("TR", "TR_ISTANBUL"),
+    "GB_LONDON": ("UK", "UK_GBP"),
+    "USA_USD": ("US", "USA_USD"),
+    "ZA_JOHANNESBURG": ("ZA", "ZA_JOHANNESBURG"),
+    "CN_SHANGHAI": ("ZH", "ZH_SHANGHAI"),
+}
+
+
+def _apply_hf_overrides(
+    entries: tuple[CwicrV3Catalogue, ...],
+) -> tuple[CwicrV3Catalogue, ...]:
+    """Rewrite ddc_path + available=True for catalogues HF actually hosts.
+
+    Frozen dataclass means a new tuple of replaced rows is built; entries
+    not in ``_HF_PUBLISHED`` pass through unchanged (still ``available=False``,
+    still pointing at their legacy GitHub path).
+    """
+
+    out: list[CwicrV3Catalogue] = []
+    for cat in entries:
+        hf = _HF_PUBLISHED.get(cat.region)
+        if hf is None:
+            out.append(cat)
+            continue
+        folder, stem = hf
+        out.append(
+            dataclasses.replace(
+                cat,
+                ddc_path=(
+                    f"{folder}/{stem}"
+                    "_workitems_costs_resources_EMBEDDINGS_BGEM3_V3_DDC_CWICR.snapshot"
+                ),
+                available=True,
+                size_mb=415,
+            )
+        )
+    return tuple(out)
+
+
+CWICR_V3_CATALOGUES = _apply_hf_overrides(CWICR_V3_CATALOGUES)
+
+
 def get_catalogue(region: str) -> CwicrV3Catalogue | None:
     """Return the registry entry for ``region`` or ``None`` if unknown.
 
@@ -567,4 +665,10 @@ def get_catalogue(region: str) -> CwicrV3Catalogue | None:
     return None
 
 
-__all__ = ["CWICR_V3_CATALOGUES", "CwicrV3Catalogue", "get_catalogue"]
+__all__ = [
+    "CWICR_V3_CATALOGUES",
+    "CwicrV3Catalogue",
+    "HF_CWICR_BASE_URL",
+    "HF_CWICR_DATASET",
+    "get_catalogue",
+]

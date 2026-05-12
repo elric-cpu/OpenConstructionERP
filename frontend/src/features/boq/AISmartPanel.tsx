@@ -31,6 +31,7 @@ import {
 
 import { Button } from '@/shared/ui';
 import { apiGet } from '@/shared/lib/api';
+import { useIsRTL } from '@/shared/hooks/useIsRTL';
 import { fmtWithCurrency } from './boqHelpers';
 import {
   boqApi,
@@ -78,6 +79,7 @@ export function AISmartPanel({
   projectRegion,
 }: AISmartPanelProps) {
   const { t, i18n } = useTranslation();
+  const isRTL = useIsRTL();
 
   /* ── AI configuration check ─────────────────────────────────────── */
   const [aiConfigured, setAiConfigured] = useState<boolean | null>(null);
@@ -254,10 +256,17 @@ export function AISmartPanel({
   /* ── Render ──────────────────────────────────────────────────────── */
   // Bug 13: offset by app header height (52px = --oe-header-height) so the panel
   // does not cover the top app header / toolbar.
+  //
+  // RTL fix: under `dir="rtl"`, our index.css flips `right-0` to `left: 0`, but
+  // `translate-x-full` still translates by +100% (rightward in screen space),
+  // which would slide the closed panel into view instead of off-screen. Flip
+  // the slide-off direction to `-translate-x-full` in RTL so the panel slides
+  // off the LEFT edge (its anchored side) when closed.
+  const offTranslate = isRTL ? '-translate-x-full' : 'translate-x-full';
   return (
     <div
       className={`fixed right-0 top-[52px] z-50 h-[calc(100%-52px)] w-[400px] bg-surface-elevated border-l border-border-light shadow-xl flex flex-col transition-transform duration-300 ease-in-out ${
-        isOpen ? 'translate-x-0' : 'translate-x-full'
+        isOpen ? 'translate-x-0' : offTranslate
       }`}
     >
       {/* Header */}

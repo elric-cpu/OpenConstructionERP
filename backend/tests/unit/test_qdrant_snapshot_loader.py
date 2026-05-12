@@ -25,6 +25,7 @@ from app.modules.costs.qdrant_snapshot_loader import (
     cwicr_snapshot_target_for,
     load_ddc_snapshot_dir,
     restore_snapshot_file,
+    restore_snapshot_from_url,
 )
 
 
@@ -146,6 +147,78 @@ def test_restore_raises_when_snapshot_missing(tmp_path: Path) -> None:
             collection_name="cwicr_de_v3",
             snapshot_path=tmp_path / "does-not-exist.snapshot",
         )
+
+
+def test_restore_from_url_rejects_empty_qdrant_url() -> None:
+    """recover-from-URL path requires a server URL, same as the upload path."""
+    with pytest.raises(RuntimeError, match="server-mode"):
+        restore_snapshot_from_url(
+            qdrant_url="",
+            collection_name="cwicr_en_v3",
+            snapshot_url="https://example.invalid/x.snapshot",
+        )
+
+
+def test_restore_from_url_returns_false_on_non_2xx(monkeypatch) -> None:
+    """recover-from-URL surfaces Qdrant's error verbatim and returns False.
+
+    The fix for the install hang relies on this path returning False so the
+    install endpoint raises HTTP 502 — not the silent ``result: false``
+    masquerading as success that the old upload path produced.
+    """
+    import httpx
+
+    captured: dict[str, object] = {}
+
+    class _StubResp:
+        status_code = 400
+        text = '{"status":{"error":"Wrong input: bad url"}}'
+        is_success = False
+
+        def json(self) -> dict:
+            return {"status": {"error": "Wrong input: bad url"}}
+
+    def _stub_put(url, *, json=None, headers=None, timeout=None):  # noqa: ARG001
+        captured["url"] = url
+        captured["json"] = json
+        return _StubResp()
+
+    monkeypatch.setattr(httpx, "put", _stub_put)
+
+    ok = restore_snapshot_from_url(
+        qdrant_url="http://localhost:6333",
+        collection_name="cwicr_en_v3",
+        snapshot_url="https://hf.co/x.snapshot",
+    )
+    assert ok is False
+    assert captured["url"] == (
+        "http://localhost:6333/collections/cwicr_en_v3/snapshots/recover"
+    )
+    assert captured["json"] == {
+        "location": "https://hf.co/x.snapshot",
+        "priority": "snapshot",
+    }
+
+
+def test_restore_from_url_returns_true_on_result_true(monkeypatch) -> None:
+    """Happy path: Qdrant 200 with ``result: true`` returns True."""
+    import httpx
+
+    class _StubResp:
+        status_code = 200
+        text = '{"result":true,"status":"ok","time":123.4}'
+        is_success = True
+
+        def json(self) -> dict:
+            return {"result": True, "status": "ok", "time": 123.4}
+
+    monkeypatch.setattr(httpx, "put", lambda *a, **kw: _StubResp())
+
+    assert restore_snapshot_from_url(
+        qdrant_url="http://localhost:6333",
+        collection_name="cwicr_en_v3",
+        snapshot_url="https://hf.co/x.snapshot",
+    ) is True
 
 
 # ── Dry-run directory walk ───────────────────────────────────────────────

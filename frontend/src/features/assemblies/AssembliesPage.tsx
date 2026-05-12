@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { triggerDownload } from '@/shared/lib/api';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
@@ -6,7 +6,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Search, Plus, Layers, ChevronDown, ChevronLeft, ChevronRight, MoreHorizontal,
   Copy, Trash2, Download, ExternalLink, FileSpreadsheet, X, Sparkles, Loader2,
-  Upload, Tag, Eye, Share2,
+  Upload, Tag, Eye, Share2, LayoutGrid, Table2, ArrowUpDown, BarChart3, AlertCircle,
+  CheckSquare, Square as SquareIcon,
 } from 'lucide-react';
 import { Button, Card, Badge, EmptyState, InfoHint, SkeletonGrid } from '@/shared/ui';
 import { apiGet, apiPost, apiDelete } from '@/shared/lib/api';
@@ -19,7 +20,12 @@ import {
   type AIGeneratedAssembly,
 } from './api';
 import { CreateAssemblyModal } from './CreateAssemblyPage';
-import { DashboardBackdrop } from '../dashboard/components/DashboardBackdrop';
+
+/* -- Sort + view types --------------------------------------------------- */
+
+type SortKey = 'updated_at' | 'name' | 'code' | 'total_rate' | 'usage_count' | 'component_count';
+type SortDir = 'asc' | 'desc';
+type ViewMode = 'grid' | 'table';
 
 /* -- Constants ------------------------------------------------------------ */
 
@@ -98,6 +104,21 @@ export function AssembliesPage() {
   const [tagFilter, setTagFilter] = useState('');
   const [showHelp, setShowHelp] = useState(false);
 
+  // Sort, view, multi-select state
+  const [sortKey, setSortKey] = useState<SortKey>('updated_at');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    try { return (localStorage.getItem('oe_assemblies_view') as ViewMode) || 'grid'; }
+    catch { return 'grid'; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('oe_assemblies_view', viewMode); } catch { /* ignore */ }
+  }, [viewMode]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [onlyUnused, setOnlyUnused] = useState(false);
+  const [showBulkTag, setShowBulkTag] = useState(false);
+  const [showBulkConfirmDelete, setShowBulkConfirmDelete] = useState(false);
+
   // Debounce search query (300ms)
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -131,16 +152,144 @@ export function AssembliesPage() {
 
   const total = data?.total ?? 0;
 
-  // Sort: assemblies with valid names and rates first, garbage/test data last
+  // Stats banner — backend /stats/ returns total, by_category, most_used.
+  // For avg-rate / total-components / unused-count we need the full set,
+  // which is small enough (<500) to fetch in one shot.
+  const { data: statsData } = useQuery({
+    queryKey: ['assemblies-stats'],
+    queryFn: () => assembliesApi.getStats(),
+    staleTime: 60_000,
+  });
+  const { data: allForBanner } = useQuery({
+    queryKey: ['assemblies-all-for-banner'],
+    queryFn: () => assembliesApi.list({ limit: '500', offset: '0' }),
+    staleTime: 60_000,
+  });
+
+  const banner = useMemo(() => {
+    const all = allForBanner?.items ?? [];
+    const totalCount = statsData?.total ?? all.length ?? 0;
+    const totalComponents = all.reduce((sum, a) => sum + (a.component_count ?? 0), 0);
+    const ratedItems = all.filter((a) => a.total_rate > 0);
+    const avgRate = ratedItems.length
+      ? ratedItems.reduce((s, a) => s + a.total_rate, 0) / ratedItems.length
+      : 0;
+    const unusedCount = all.filter((a) => (a.usage_count ?? 0) === 0).length;
+    const byCategory = statsData?.by_category ?? {};
+    const topCategories = Object.entries(byCategory)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3);
+    // Tag chips: all distinct tags across the full set with counts.
+    const tagCounts = new Map<string, number>();
+    for (const a of all) {
+      for (const t of a.tags ?? []) tagCounts.set(t, (tagCounts.get(t) ?? 0) + 1);
+    }
+    const topTags = [...tagCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8);
+    return { totalCount, totalComponents, avgRate, unusedCount, topCategories, topTags };
+  }, [statsData, allForBanner]);
+
+  // Sort + unused filter (FE-side over the current page slice).
   const items = useMemo(() => {
-    const raw = data?.items ?? [];
-    return [...raw].sort((a, b) => {
-      const aValid = a.total_rate > 0 && /[a-zA-Z0-9]/.test(a.name);
-      const bValid = b.total_rate > 0 && /[a-zA-Z0-9]/.test(b.name);
-      if (aValid === bValid) return 0;
-      return aValid ? -1 : 1;
+    let raw = data?.items ?? [];
+    if (onlyUnused) raw = raw.filter((a) => (a.usage_count ?? 0) === 0);
+    const dir = sortDir === 'asc' ? 1 : -1;
+    const cmp = (a: Assembly, b: Assembly) => {
+      switch (sortKey) {
+        case 'name': return a.name.localeCompare(b.name) * dir;
+        case 'code': return a.code.localeCompare(b.code) * dir;
+        case 'total_rate': return ((a.total_rate ?? 0) - (b.total_rate ?? 0)) * dir;
+        case 'usage_count': return ((a.usage_count ?? 0) - (b.usage_count ?? 0)) * dir;
+        case 'component_count': return ((a.component_count ?? 0) - (b.component_count ?? 0)) * dir;
+        case 'updated_at':
+        default:
+          return (new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime()) * dir;
+      }
+    };
+    return [...raw].sort(cmp);
+  }, [data, sortKey, sortDir, onlyUnused]);
+
+  // Multi-select helpers — selection survives filtering/paging (set of ids).
+  const allOnPageSelected = items.length > 0 && items.every((a) => selected.has(a.id));
+  const someOnPageSelected = items.some((a) => selected.has(a.id));
+  const toggleSelectAll = useCallback(() => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allOnPageSelected) {
+        for (const a of items) next.delete(a.id);
+      } else {
+        for (const a of items) next.add(a.id);
+      }
+      return next;
     });
-  }, [data]);
+  }, [items, allOnPageSelected]);
+  const toggleSelect = useCallback((id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+  const clearSelection = useCallback(() => setSelected(new Set()), []);
+
+  // Bulk actions
+  const handleBulkDelete = useCallback(async () => {
+    const ids = Array.from(selected);
+    let ok = 0; let fail = 0;
+    for (const id of ids) {
+      try { await apiDelete(`/v1/assemblies/${id}`); ok += 1; }
+      catch { fail += 1; }
+    }
+    setShowBulkConfirmDelete(false);
+    clearSelection();
+    queryClient.invalidateQueries({ queryKey: ['assemblies'] });
+    queryClient.invalidateQueries({ queryKey: ['assemblies-stats'] });
+    queryClient.invalidateQueries({ queryKey: ['assemblies-all-for-banner'] });
+    addToast({
+      type: fail === 0 ? 'success' : 'error',
+      title: t('assemblies.bulk_deleted', { defaultValue: `${ok} deleted${fail ? `, ${fail} failed` : ''}` }),
+    });
+  }, [selected, addToast, queryClient, clearSelection, t]);
+
+  const handleBulkExport = useCallback(async () => {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    try {
+      const exports = await Promise.all(ids.map((id) => assembliesApi.exportAssembly(id)));
+      const payload = { exported_at: new Date().toISOString(), count: exports.length, assemblies: exports };
+      downloadFile(
+        JSON.stringify(payload, null, 2),
+        `assemblies_bulk_${new Date().toISOString().slice(0, 10)}.json`,
+        'application/json',
+      );
+      addToast({ type: 'success', title: t('assemblies.bulk_exported', { defaultValue: `${exports.length} exported` }) });
+    } catch {
+      addToast({ type: 'error', title: t('common.export_failed', { defaultValue: 'Export failed' }) });
+    }
+  }, [selected, addToast, t]);
+
+  const handleBulkTag = useCallback(async (tagsToAdd: string[]) => {
+    const ids = Array.from(selected);
+    let ok = 0; let fail = 0;
+    for (const id of ids) {
+      try {
+        const asm = (data?.items ?? []).find((a) => a.id === id)
+          ?? (allForBanner?.items ?? []).find((a) => a.id === id);
+        const existing = new Set(asm?.tags ?? []);
+        for (const t2 of tagsToAdd) existing.add(t2);
+        await assembliesApi.updateTags(id, [...existing]);
+        ok += 1;
+      } catch { fail += 1; }
+    }
+    setShowBulkTag(false);
+    queryClient.invalidateQueries({ queryKey: ['assemblies'] });
+    queryClient.invalidateQueries({ queryKey: ['assemblies-all-for-banner'] });
+    addToast({
+      type: fail === 0 ? 'success' : 'error',
+      title: t('assemblies.bulk_tagged', { defaultValue: `${ok} tagged${fail ? `, ${fail} failed` : ''}` }),
+    });
+  }, [selected, addToast, queryClient, data, allForBanner, t]);
 
   const handleSearch = useCallback((value: string) => {
     setQuery(value);
@@ -149,6 +298,17 @@ export function AssembliesPage() {
   const handleCategoryChange = useCallback((value: string) => {
     setCategory(value);
     setOffset(0);
+  }, []);
+
+  const cycleSortDir = useCallback((nextKey: SortKey) => {
+    setSortKey((prevKey) => {
+      if (prevKey === nextKey) {
+        setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+      } else {
+        setSortDir(nextKey === 'name' || nextKey === 'code' ? 'asc' : 'desc');
+      }
+      return nextKey;
+    });
   }, []);
 
   // Templates removed — use New / AI Generate / Clone instead
@@ -160,8 +320,7 @@ export function AssembliesPage() {
     }).format(n);
 
   return (
-    <div className="relative isolate w-full animate-fade-in">
-      <DashboardBackdrop />
+    <div className="w-full animate-fade-in">
       {/* Header — compact single-row: title + counter chip + action stack
           on the right. The previous header burned ~80px on a 2xl headline +
           paragraph subtitle that just restated what the page is. */}
@@ -259,6 +418,116 @@ export function AssembliesPage() {
         </div>
       </div>
 
+      {/* Stats banner — surfaces aggregated insight from /stats/ + the
+          full-set fetch so the list feels like an estimating tool, not a
+          plain table. Five tiles: total, total components, avg rate, top
+          categories (clickable as filter), unused (clickable as filter).
+          Hidden when there are zero assemblies; renders skeleton rows
+          while banner data is loading. */}
+      {(banner.totalCount > 0 || allForBanner) && (
+        <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-5">
+          <StatTile
+            icon={<Layers size={14} />}
+            label={t('assemblies.stat_total', { defaultValue: 'Assemblies' })}
+            value={String(banner.totalCount)}
+          />
+          <StatTile
+            icon={<BarChart3 size={14} />}
+            label={t('assemblies.stat_components', { defaultValue: 'Total components' })}
+            value={String(banner.totalComponents)}
+          />
+          <StatTile
+            icon={<BarChart3 size={14} />}
+            label={t('assemblies.stat_avg_rate', { defaultValue: 'Avg. rate' })}
+            value={banner.avgRate > 0 ? fmt(banner.avgRate) : '—'}
+          />
+          <StatTile
+            icon={<Tag size={14} />}
+            label={t('assemblies.stat_top_categories', { defaultValue: 'Top categories' })}
+            value={
+              banner.topCategories.length > 0
+                ? banner.topCategories.map(([c, n]) => `${c} (${n})`).join(', ')
+                : '—'
+            }
+            valueClassName="text-xs leading-snug"
+          />
+          <StatTile
+            icon={<AlertCircle size={14} />}
+            label={t('assemblies.stat_unused', { defaultValue: 'Unused (cleanup)' })}
+            value={String(banner.unusedCount)}
+            interactive
+            active={onlyUnused}
+            onClick={() => { setOnlyUnused((v) => !v); setOffset(0); }}
+            highlightTone={banner.unusedCount > 0 ? 'amber' : 'neutral'}
+          />
+        </div>
+      )}
+
+      {/* Category quick-chips — clickable badges with counts pulled from
+          /stats/. Acts as a faster category picker than the dropdown and
+          telegraphs distribution at a glance. */}
+      {Object.keys(statsData?.by_category ?? {}).length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => handleCategoryChange('')}
+            className={`h-7 px-2.5 rounded-full text-xs font-medium border transition-colors ${
+              category === ''
+                ? 'border-oe-blue bg-oe-blue text-white'
+                : 'border-border-light text-content-secondary hover:bg-surface-secondary'
+            }`}
+          >
+            {t('assemblies.category_all', { defaultValue: 'All' })} ({banner.totalCount})
+          </button>
+          {Object.entries(statsData?.by_category ?? {})
+            .sort((a, b) => b[1] - a[1])
+            .map(([cat, count]) => {
+              const active = category === cat;
+              return (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => handleCategoryChange(active ? '' : cat)}
+                  className={`h-7 px-2.5 rounded-full text-xs font-medium border transition-colors inline-flex items-center gap-1 ${
+                    active
+                      ? 'border-oe-blue bg-oe-blue text-white'
+                      : 'border-border-light text-content-secondary hover:bg-surface-secondary'
+                  }`}
+                  title={t('assemblies.filter_by_category', { defaultValue: 'Filter by category' })}
+                >
+                  <span className="capitalize">{cat}</span>
+                  <span className={active ? 'text-white/80' : 'text-content-tertiary'}>({count})</span>
+                </button>
+              );
+            })}
+          {banner.topTags.length > 0 && (
+            <>
+              <span className="mx-1 h-4 w-px bg-border-light" aria-hidden />
+              {banner.topTags.map(([tag, count]) => {
+                const active = tagFilter === tag;
+                return (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => { setTagFilter(active ? '' : tag); setOffset(0); }}
+                    className={`h-7 px-2.5 rounded-full text-xs font-medium border transition-colors inline-flex items-center gap-1 ${
+                      active
+                        ? 'border-violet-500 bg-violet-500 text-white'
+                        : 'border-violet-200/60 text-violet-600 bg-violet-50/60 hover:bg-violet-100 dark:bg-violet-900/20 dark:text-violet-300 dark:border-violet-700/40'
+                    }`}
+                    title={t('assemblies.filter_by_tag', { defaultValue: 'Filter by tag' })}
+                  >
+                    <Tag size={11} />
+                    {tag}
+                    <span className={active ? 'text-white/80' : 'text-violet-400'}>({count})</span>
+                  </button>
+                );
+              })}
+            </>
+          )}
+        </div>
+      )}
+
       {/* Explanation — collapsible. The full assemblies recipe metaphor
           is helpful on first visit but turns into chrome on every return;
           gated behind a tiny "What are assemblies?" toggle so it doesn't
@@ -339,6 +608,72 @@ export function AssembliesPage() {
             />
           </div>
 
+          {/* Sort control */}
+          <div className="relative">
+            <label htmlFor="assemblies-sort" className="sr-only">
+              {t('assemblies.sort_label', { defaultValue: 'Sort' })}
+            </label>
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-content-tertiary">
+              <ArrowUpDown size={13} />
+            </div>
+            <select
+              id="assemblies-sort"
+              value={`${sortKey}:${sortDir}`}
+              onChange={(e) => {
+                const [k, d] = e.target.value.split(':') as [SortKey, SortDir];
+                setSortKey(k);
+                setSortDir(d);
+              }}
+              aria-label={t('assemblies.sort_label', { defaultValue: 'Sort' })}
+              className="h-10 appearance-none rounded-lg border border-border bg-surface-primary pl-8 pr-7 text-sm text-content-primary transition-all duration-fast ease-oe focus:outline-none focus:ring-2 focus:ring-oe-blue focus:border-transparent hover:border-content-tertiary"
+            >
+              <option value="updated_at:desc">{t('assemblies.sort_recent', { defaultValue: 'Recently updated' })}</option>
+              <option value="updated_at:asc">{t('assemblies.sort_oldest', { defaultValue: 'Oldest updated' })}</option>
+              <option value="name:asc">{t('assemblies.sort_name_az', { defaultValue: 'Name A→Z' })}</option>
+              <option value="name:desc">{t('assemblies.sort_name_za', { defaultValue: 'Name Z→A' })}</option>
+              <option value="code:asc">{t('assemblies.sort_code_az', { defaultValue: 'Code A→Z' })}</option>
+              <option value="code:desc">{t('assemblies.sort_code_za', { defaultValue: 'Code Z→A' })}</option>
+              <option value="total_rate:desc">{t('assemblies.sort_rate_hi', { defaultValue: 'Rate high→low' })}</option>
+              <option value="total_rate:asc">{t('assemblies.sort_rate_lo', { defaultValue: 'Rate low→high' })}</option>
+              <option value="usage_count:desc">{t('assemblies.sort_usage_hi', { defaultValue: 'Most used' })}</option>
+              <option value="component_count:desc">{t('assemblies.sort_comp_hi', { defaultValue: 'Most components' })}</option>
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2 text-content-tertiary">
+              <ChevronDown size={13} />
+            </div>
+          </div>
+
+          {/* Grid / table view toggle — segmented control. Persisted to
+              localStorage so power users get their preference back. */}
+          <div className="inline-flex h-10 rounded-lg border border-border bg-surface-primary p-0.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => setViewMode('grid')}
+              aria-pressed={viewMode === 'grid'}
+              title={t('assemblies.view_grid', { defaultValue: 'Card grid' })}
+              className={`flex items-center justify-center px-2.5 rounded-md transition-colors ${
+                viewMode === 'grid'
+                  ? 'bg-oe-blue text-white shadow-sm'
+                  : 'text-content-tertiary hover:text-content-primary'
+              }`}
+            >
+              <LayoutGrid size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              aria-pressed={viewMode === 'table'}
+              title={t('assemblies.view_table', { defaultValue: 'Compact table' })}
+              className={`flex items-center justify-center px-2.5 rounded-md transition-colors ${
+                viewMode === 'table'
+                  ? 'bg-oe-blue text-white shadow-sm'
+                  : 'text-content-tertiary hover:text-content-primary'
+              }`}
+            >
+              <Table2 size={14} />
+            </button>
+          </div>
+
           {/* "What are assemblies?" toggle — sits inline with the filter
               row so the help banner is one click away without taking
               up vertical space by default. */}
@@ -353,6 +688,41 @@ export function AssembliesPage() {
               : t('assemblies.what_are_assemblies_toggle', { defaultValue: 'What are assemblies?' })}
           </button>
       </div>
+
+      {/* Bulk-action bar — slides in when 1+ items selected. Sticky-ish
+          banner that reuses the same multi-select Set across both grid
+          and table views. */}
+      {selected.size > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-oe-blue/30 bg-oe-blue-subtle px-3 py-2">
+          <span className="text-sm font-medium text-oe-blue">
+            {t('assemblies.selected_count', { defaultValue: `${selected.size} selected`, count: selected.size })}
+          </span>
+          <button
+            type="button"
+            onClick={clearSelection}
+            className="text-xs text-content-tertiary hover:text-content-primary underline-offset-2 hover:underline"
+          >
+            {t('common.clear', { defaultValue: 'Clear' })}
+          </button>
+          <span className="ml-auto flex flex-wrap items-center gap-1.5">
+            <Button variant="secondary" size="sm" icon={<Download size={13} />} onClick={handleBulkExport}>
+              {t('assemblies.bulk_export', { defaultValue: 'Export selected' })}
+            </Button>
+            <Button variant="secondary" size="sm" icon={<Tag size={13} />} onClick={() => setShowBulkTag(true)}>
+              {t('assemblies.bulk_tag', { defaultValue: 'Add tag' })}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<Trash2 size={13} />}
+              onClick={() => setShowBulkConfirmDelete(true)}
+              className="text-red-600 border-red-200 hover:bg-red-50 dark:text-red-400 dark:border-red-800/40 dark:hover:bg-red-900/20"
+            >
+              {t('assemblies.bulk_delete', { defaultValue: 'Delete' })}
+            </Button>
+          </span>
+        </div>
+      )}
 
       {/* Results */}
       {isLoading ? (
@@ -383,45 +753,63 @@ export function AssembliesPage() {
         />
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {items.map((assembly) => (
-              <AssemblyCard
-                key={assembly.id}
-                assembly={assembly}
-                fmt={fmt}
-                onClick={() => navigate(`/assemblies/${assembly.id}`)}
-                onDuplicate={async () => {
-                  try {
-                    const cloned = await apiPost<Assembly>(`/v1/assemblies/${assembly.id}/clone/`, {});
-                    queryClient.invalidateQueries({ queryKey: ['assemblies'] });
-                    addToast({ type: 'success', title: t('toasts.assembly_duplicated', { defaultValue: 'Assembly duplicated' }), message: cloned.name });
-                  } catch {
-                    addToast({ type: 'error', title: t('toasts.duplicate_failed', { defaultValue: 'Duplicate failed' }) });
-                  }
-                }}
-                onDelete={async () => {
-                  try {
-                    await apiDelete(`/v1/assemblies/${assembly.id}`);
-                    queryClient.invalidateQueries({ queryKey: ['assemblies'] });
-                    addToast({ type: 'success', title: t('toasts.assembly_deleted', { defaultValue: 'Assembly deleted' }) });
-                  } catch {
-                    addToast({ type: 'error', title: t('toasts.delete_failed', { defaultValue: 'Delete failed' }) });
-                  }
-                }}
-                onExport={async () => {
-                  try {
-                    const exported = await assembliesApi.exportAssembly(assembly.id);
-                    const json = JSON.stringify(exported, null, 2);
-                    const blob = new Blob([json], { type: 'application/json' });
-                    triggerDownload(blob, `${assembly.code}.json`);
-                    addToast({ type: 'success', title: t('assemblies.exported_json', { defaultValue: 'JSON exported' }) });
-                  } catch {
-                    addToast({ type: 'error', title: t('common.export_failed', { defaultValue: 'Export failed' }) });
-                  }
-                }}
-              />
-            ))}
-          </div>
+          {viewMode === 'grid' ? (
+            <div data-testid="assemblies-grid" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {items.map((assembly) => (
+                <AssemblyCard
+                  key={assembly.id}
+                  assembly={assembly}
+                  fmt={fmt}
+                  selected={selected.has(assembly.id)}
+                  onToggleSelect={() => toggleSelect(assembly.id)}
+                  onClick={() => navigate(`/assemblies/${assembly.id}`)}
+                  onDuplicate={async () => {
+                    try {
+                      const cloned = await apiPost<Assembly>(`/v1/assemblies/${assembly.id}/clone/`, {});
+                      queryClient.invalidateQueries({ queryKey: ['assemblies'] });
+                      addToast({ type: 'success', title: t('toasts.assembly_duplicated', { defaultValue: 'Assembly duplicated' }), message: cloned.name });
+                    } catch {
+                      addToast({ type: 'error', title: t('toasts.duplicate_failed', { defaultValue: 'Duplicate failed' }) });
+                    }
+                  }}
+                  onDelete={async () => {
+                    try {
+                      await apiDelete(`/v1/assemblies/${assembly.id}`);
+                      queryClient.invalidateQueries({ queryKey: ['assemblies'] });
+                      addToast({ type: 'success', title: t('toasts.assembly_deleted', { defaultValue: 'Assembly deleted' }) });
+                    } catch {
+                      addToast({ type: 'error', title: t('toasts.delete_failed', { defaultValue: 'Delete failed' }) });
+                    }
+                  }}
+                  onExport={async () => {
+                    try {
+                      const exported = await assembliesApi.exportAssembly(assembly.id);
+                      const json = JSON.stringify(exported, null, 2);
+                      const blob = new Blob([json], { type: 'application/json' });
+                      triggerDownload(blob, `${assembly.code}.json`);
+                      addToast({ type: 'success', title: t('assemblies.exported_json', { defaultValue: 'JSON exported' }) });
+                    } catch {
+                      addToast({ type: 'error', title: t('common.export_failed', { defaultValue: 'Export failed' }) });
+                    }
+                  }}
+                />
+              ))}
+            </div>
+          ) : (
+            <AssemblyTable
+              items={items}
+              fmt={fmt}
+              selected={selected}
+              onToggleSelect={toggleSelect}
+              onToggleAll={toggleSelectAll}
+              allSelected={allOnPageSelected}
+              someSelected={someOnPageSelected && !allOnPageSelected}
+              sortKey={sortKey}
+              sortDir={sortDir}
+              onSort={cycleSortDir}
+              onOpen={(id) => navigate(`/assemblies/${id}`)}
+            />
+          )}
 
           {/* Pagination */}
           {(() => {
@@ -519,6 +907,344 @@ export function AssembliesPage() {
           }}
         />
       )}
+
+      {/* Bulk tag modal */}
+      {showBulkTag && (
+        <BulkTagModal
+          count={selected.size}
+          onClose={() => setShowBulkTag(false)}
+          onApply={handleBulkTag}
+        />
+      )}
+
+      {/* Bulk delete confirm */}
+      {showBulkConfirmDelete && (
+        <BulkDeleteConfirm
+          count={selected.size}
+          onCancel={() => setShowBulkConfirmDelete(false)}
+          onConfirm={handleBulkDelete}
+        />
+      )}
+    </div>
+  );
+}
+
+/* -- StatTile ------------------------------------------------------------- */
+
+function StatTile({
+  icon,
+  label,
+  value,
+  valueClassName,
+  interactive,
+  active,
+  onClick,
+  highlightTone = 'neutral',
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  valueClassName?: string;
+  interactive?: boolean;
+  active?: boolean;
+  onClick?: () => void;
+  highlightTone?: 'neutral' | 'amber';
+}) {
+  const base =
+    'flex flex-col gap-1 rounded-lg border px-3 py-2.5 text-left transition-colors';
+  const tone =
+    active
+      ? 'border-oe-blue bg-oe-blue-subtle'
+      : highlightTone === 'amber'
+        ? 'border-amber-200/60 bg-amber-50/60 dark:border-amber-700/30 dark:bg-amber-900/15'
+        : 'border-border-light bg-surface-secondary';
+  const cursor = interactive ? 'cursor-pointer hover:border-content-tertiary' : '';
+  const Tag = interactive ? 'button' : 'div';
+  return (
+    <Tag
+      type={interactive ? 'button' : undefined}
+      onClick={interactive ? onClick : undefined}
+      className={`${base} ${tone} ${cursor}`}
+    >
+      <span className="inline-flex items-center gap-1.5 text-xs text-content-tertiary">
+        <span
+          className={
+            highlightTone === 'amber'
+              ? 'text-amber-600 dark:text-amber-400'
+              : 'text-content-tertiary'
+          }
+        >
+          {icon}
+        </span>
+        {label}
+      </span>
+      <span
+        className={`font-semibold text-content-primary tabular-nums truncate ${
+          valueClassName ?? 'text-lg'
+        }`}
+        title={value}
+      >
+        {value}
+      </span>
+    </Tag>
+  );
+}
+
+/* -- AssemblyTable -------------------------------------------------------- */
+
+function AssemblyTable({
+  items,
+  fmt,
+  selected,
+  onToggleSelect,
+  onToggleAll,
+  allSelected,
+  someSelected,
+  sortKey,
+  sortDir,
+  onSort,
+  onOpen,
+}: {
+  items: Assembly[];
+  fmt: (n: number) => string;
+  selected: Set<string>;
+  onToggleSelect: (id: string) => void;
+  onToggleAll: () => void;
+  allSelected: boolean;
+  someSelected: boolean;
+  sortKey: SortKey;
+  sortDir: SortDir;
+  onSort: (k: SortKey) => void;
+  onOpen: (id: string) => void;
+}) {
+  const { t } = useTranslation();
+  const headerCellBase =
+    'px-3 py-2 text-left text-xs font-medium text-content-secondary select-none';
+  const sortBtn = (key: SortKey, label: string, align: 'left' | 'right' | 'center' = 'left') => (
+    <button
+      type="button"
+      onClick={() => onSort(key)}
+      className={`inline-flex items-center gap-1 hover:text-content-primary transition-colors ${
+        align === 'right' ? 'justify-end' : align === 'center' ? 'justify-center' : ''
+      }`}
+    >
+      {label}
+      {sortKey === key && (
+        <span className="text-oe-blue">{sortDir === 'asc' ? '↑' : '↓'}</span>
+      )}
+    </button>
+  );
+  return (
+    <div data-testid="assemblies-table" className="overflow-hidden rounded-xl border border-border-light bg-surface-primary">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-surface-secondary border-b border-border-light">
+            <tr>
+              <th className={`${headerCellBase} w-10`}>
+                <BulkCheckbox checked={allSelected} indeterminate={someSelected} onChange={onToggleAll} />
+              </th>
+              <th className={headerCellBase}>{sortBtn('name', t('assemblies.col_name', { defaultValue: 'Name' }))}</th>
+              <th className={headerCellBase}>{sortBtn('code', t('assemblies.col_code', { defaultValue: 'Code' }))}</th>
+              <th className={headerCellBase}>{t('assemblies.col_category', { defaultValue: 'Category' })}</th>
+              <th className={headerCellBase}>{t('assemblies.col_unit', { defaultValue: 'Unit' })}</th>
+              <th className={`${headerCellBase} text-right`}>{sortBtn('total_rate', t('assemblies.col_rate', { defaultValue: 'Rate' }), 'right')}</th>
+              <th className={headerCellBase}>{t('assemblies.col_currency', { defaultValue: 'Currency' })}</th>
+              <th className={`${headerCellBase} text-right`}>{sortBtn('component_count', t('assemblies.col_components', { defaultValue: 'Components' }), 'right')}</th>
+              <th className={`${headerCellBase} text-right`}>{sortBtn('usage_count', t('assemblies.col_usage', { defaultValue: 'Used in BOQ' }), 'right')}</th>
+              <th className={headerCellBase}>{sortBtn('updated_at', t('assemblies.col_updated', { defaultValue: 'Updated' }))}</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border-light">
+            {items.map((a) => {
+              const isSel = selected.has(a.id);
+              return (
+                <tr
+                  key={a.id}
+                  data-selected={isSel ? 'true' : 'false'}
+                  className={`group cursor-pointer transition-colors ${
+                    isSel ? 'bg-oe-blue-subtle/50' : 'hover:bg-surface-secondary'
+                  }`}
+                  onClick={() => onOpen(a.id)}
+                >
+                  <td className="px-3 py-2 align-middle" onClick={(e) => e.stopPropagation()}>
+                    <BulkCheckbox
+                      checked={isSel}
+                      indeterminate={false}
+                      onChange={() => onToggleSelect(a.id)}
+                    />
+                  </td>
+                  <td className="px-3 py-2 align-middle">
+                    <span className="font-medium text-content-primary group-hover:text-oe-blue transition-colors">
+                      {a.name}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 align-middle font-mono text-xs text-content-tertiary">{a.code}</td>
+                  <td className="px-3 py-2 align-middle">
+                    {a.category ? (
+                      <Badge variant={CATEGORY_COLORS[a.category] ?? 'neutral'} size="sm">{a.category}</Badge>
+                    ) : (
+                      <span className="text-content-quaternary">—</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 align-middle text-content-secondary uppercase text-xs">{a.unit}</td>
+                  <td className="px-3 py-2 align-middle text-right tabular-nums font-semibold text-content-primary">
+                    {a.total_rate > 0 ? fmt(a.total_rate) : <span className="text-content-quaternary font-normal">—</span>}
+                  </td>
+                  <td className="px-3 py-2 align-middle text-xs text-content-tertiary">{a.currency || 'EUR'}</td>
+                  <td className="px-3 py-2 align-middle text-right tabular-nums text-content-secondary">{a.component_count ?? 0}</td>
+                  <td className="px-3 py-2 align-middle text-right tabular-nums">
+                    {(a.usage_count ?? 0) > 0 ? (
+                      <span className="text-oe-blue font-medium">{a.usage_count}</span>
+                    ) : (
+                      <span className="text-content-quaternary">0</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 align-middle text-xs text-content-tertiary whitespace-nowrap">
+                    {new Date(a.updated_at).toLocaleDateString(getIntlLocale())}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function BulkCheckbox({
+  checked,
+  indeterminate,
+  onChange,
+}: {
+  checked: boolean;
+  indeterminate: boolean;
+  onChange: () => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = indeterminate;
+  }, [indeterminate]);
+  return (
+    <label className="inline-flex items-center justify-center cursor-pointer">
+      <input
+        ref={ref}
+        type="checkbox"
+        checked={checked}
+        onChange={onChange}
+        className="h-4 w-4 rounded border-border text-oe-blue focus:ring-oe-blue cursor-pointer"
+      />
+    </label>
+  );
+}
+
+/* -- Bulk Tag Modal ------------------------------------------------------- */
+
+function BulkTagModal({
+  count,
+  onClose,
+  onApply,
+}: {
+  count: number;
+  onClose: () => void;
+  onApply: (tags: string[]) => void;
+}) {
+  const { t } = useTranslation();
+  const [input, setInput] = useState('');
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 animate-fade-in" onClick={onClose}>
+      <div
+        className="bg-surface-elevated rounded-2xl border border-border shadow-2xl w-full max-w-md mx-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-3 border-b border-border-light">
+          <div className="flex items-center gap-2">
+            <Tag size={16} className="text-violet-500" />
+            <h2 className="text-sm font-semibold text-content-primary">
+              {t('assemblies.bulk_tag_title', { defaultValue: `Add tag to ${count} assemblies`, count })}
+            </h2>
+          </div>
+          <button onClick={onClose} className="text-content-tertiary hover:text-content-primary">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          <p className="text-xs text-content-tertiary">
+            {t('assemblies.bulk_tag_desc', {
+              defaultValue: 'Enter one or more tags, separated by commas. Existing tags are preserved.',
+            })}
+          </p>
+          <input
+            type="text"
+            autoFocus
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder={t('assemblies.bulk_tag_placeholder', { defaultValue: 'e.g. reviewed, q2-2026' })}
+            className="w-full h-10 px-3 rounded-lg border border-border-light bg-surface-primary text-sm text-content-primary placeholder:text-content-quaternary focus:outline-none focus:ring-2 focus:ring-oe-blue focus:border-transparent"
+          />
+        </div>
+        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-border-light">
+          <Button variant="secondary" size="sm" onClick={onClose}>
+            {t('common.cancel', { defaultValue: 'Cancel' })}
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={!input.trim()}
+            onClick={() => {
+              const tags = input.split(',').map((s) => s.trim()).filter(Boolean);
+              if (tags.length > 0) onApply(tags);
+            }}
+          >
+            {t('assemblies.bulk_tag_apply', { defaultValue: 'Apply' })}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* -- Bulk Delete Confirm -------------------------------------------------- */
+
+function BulkDeleteConfirm({
+  count,
+  onCancel,
+  onConfirm,
+}: {
+  count: number;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 animate-fade-in" onClick={onCancel}>
+      <div
+        className="bg-surface-elevated rounded-2xl border border-border shadow-2xl w-full max-w-md mx-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 py-4">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-50 dark:bg-red-900/20 mb-3">
+            <Trash2 size={18} className="text-red-500" />
+          </div>
+          <h2 className="text-sm font-semibold text-content-primary mb-1">
+            {t('assemblies.bulk_delete_title', { defaultValue: `Delete ${count} assemblies?`, count })}
+          </h2>
+          <p className="text-xs text-content-tertiary">
+            {t('assemblies.bulk_delete_desc', {
+              defaultValue:
+                'This permanently removes the selected assemblies and all their components. Assemblies referenced by BOQ positions are not auto-unlinked.',
+            })}
+          </p>
+        </div>
+        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-border-light">
+          <Button variant="secondary" size="sm" onClick={onCancel}>
+            {t('common.cancel', { defaultValue: 'Cancel' })}
+          </Button>
+          <Button variant="danger" size="sm" onClick={onConfirm}>
+            {t('common.delete', { defaultValue: 'Delete' })}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -825,6 +1551,8 @@ function AssemblyCard({
   onDuplicate,
   onDelete,
   onExport,
+  selected,
+  onToggleSelect,
 }: {
   assembly: Assembly;
   fmt: (n: number) => string;
@@ -832,19 +1560,38 @@ function AssemblyCard({
   onDuplicate: () => void;
   onDelete: () => void;
   onExport: () => void;
+  selected: boolean;
+  onToggleSelect: () => void;
 }) {
   const { t } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  // Hover preview — fires after a 400 ms hover-intent so it never
+  // flickers during fast cursor sweeps across the grid.
+  const [hoverPreview, setHoverPreview] = useState(false);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelHover = useCallback(() => {
+    if (hoverTimer.current) { clearTimeout(hoverTimer.current); hoverTimer.current = null; }
+    setHoverPreview(false);
+  }, []);
+  const scheduleHover = useCallback(() => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    hoverTimer.current = setTimeout(() => setHoverPreview(true), 400);
+  }, []);
+  useEffect(() => () => { if (hoverTimer.current) clearTimeout(hoverTimer.current); }, []);
   const badgeVariant = CATEGORY_COLORS[assembly.category] ?? 'neutral';
 
   return (
     <Card
       padding="none"
       hoverable
-      className="cursor-pointer group relative"
+      className={`cursor-pointer group relative ${
+        selected ? 'ring-2 ring-oe-blue ring-offset-1 ring-offset-surface-primary' : ''
+      }`}
       onClick={onClick}
+      onMouseEnter={scheduleHover}
+      onMouseLeave={cancelHover}
     >
       {/* Delete confirmation overlay */}
       {confirmDelete && (
@@ -880,9 +1627,24 @@ function AssemblyCard({
       )}
 
       <div className="p-4">
-        {/* Top row: code + menu */}
+        {/* Top row: select checkbox + code + menu */}
         <div className="flex items-start justify-between mb-1">
-          <p className="text-xs font-mono text-content-tertiary">{assembly.code}</p>
+          <div className="flex items-center gap-2 min-w-0">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onToggleSelect(); }}
+              className={`shrink-0 flex h-5 w-5 items-center justify-center rounded-md transition-all ${
+                selected
+                  ? 'bg-oe-blue text-white'
+                  : 'border border-border bg-surface-primary text-transparent opacity-0 group-hover:opacity-100 hover:border-content-tertiary'
+              }`}
+              aria-label={t('assemblies.toggle_select', { defaultValue: 'Toggle selection' })}
+              aria-pressed={selected}
+            >
+              {selected ? <CheckSquare size={12} /> : <SquareIcon size={12} />}
+            </button>
+            <p className="text-xs font-mono text-content-tertiary truncate">{assembly.code}</p>
+          </div>
           <div className="flex items-center gap-1">
             <button
               onClick={(e) => { e.stopPropagation(); setPreviewOpen(true); }}
@@ -899,6 +1661,13 @@ function AssemblyCard({
             </button>
           </div>
         </div>
+
+        {/* Hover popover — first 3 components with their rates. Only
+            fetched after the 400ms hover-intent fires, so we don't
+            slam the backend on a hover sweep. */}
+        {hoverPreview && !previewOpen && !confirmDelete && !menuOpen && (
+          <HoverComponentsPopover assemblyId={assembly.id} fmt={fmt} />
+        )}
 
         {/* Context menu */}
         {menuOpen && (
@@ -1082,6 +1851,58 @@ function QuickPreview({
                 {fmt(data.total_rate)} / {data.unit}
               </span>
             </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* -- Hover Components Popover -------------------------------------------- */
+
+function HoverComponentsPopover({
+  assemblyId,
+  fmt,
+}: {
+  assemblyId: string;
+  fmt: (n: number) => string;
+}) {
+  const { t } = useTranslation();
+  // Fetch only when this mounts — cached for 60s so re-hovering the
+  // same card doesn't re-fire the request.
+  const { data, isLoading } = useQuery({
+    queryKey: ['assembly-preview', assemblyId],
+    queryFn: () => assembliesApi.get(assemblyId),
+    staleTime: 60_000,
+  });
+  const top = (data?.components ?? []).slice(0, 3);
+  const remaining = Math.max(0, (data?.components?.length ?? 0) - top.length);
+  return (
+    <div className="absolute left-2 right-2 top-12 z-20 rounded-lg border border-border bg-surface-elevated shadow-xl px-3 py-2 animate-fade-in pointer-events-none">
+      <p className="text-2xs uppercase tracking-wide text-content-tertiary mb-1.5">
+        {t('assemblies.preview_components', { defaultValue: 'Top components' })}
+      </p>
+      {isLoading ? (
+        <div className="flex items-center gap-2 py-1 text-xs text-content-tertiary">
+          <Loader2 size={11} className="animate-spin" />
+          {t('common.loading', { defaultValue: 'Loading...' })}
+        </div>
+      ) : top.length === 0 ? (
+        <p className="text-xs text-content-tertiary">
+          {t('assemblies.no_components_hint', { defaultValue: 'No components yet' })}
+        </p>
+      ) : (
+        <div className="space-y-1">
+          {top.map((c) => (
+            <div key={c.id} className="flex items-center justify-between gap-2 text-xs">
+              <span className="text-content-primary truncate flex-1">{c.description}</span>
+              <span className="text-content-secondary tabular-nums shrink-0">{fmt(c.total)}</span>
+            </div>
+          ))}
+          {remaining > 0 && (
+            <p className="text-2xs text-content-quaternary pt-0.5">
+              +{remaining} {t('assemblies.more_components', { defaultValue: 'more' })}…
+            </p>
           )}
         </div>
       )}

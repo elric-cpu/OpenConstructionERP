@@ -2497,7 +2497,7 @@ export function BIMViewer({
 
       {/* Keyboard shortcut overlay — toggled by pressing ? */}
       {showShortcuts && (
-        <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/70 backdrop-blur-lg">
           <div className="bg-surface-primary rounded-xl shadow-2xl border border-border-light p-6 w-80">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-bold text-content-primary">

@@ -72,25 +72,37 @@ def test_language_field_matches_region_language():
 
 
 def test_ddc_path_starts_with_lang_directory():
-    """DDC repo layout: ``<LANG>___DDC_CWICR/<region>_workitems_…``.
+    """ddc_path must use one of the two supported layouts.
 
-    A path that doesn't start with the right language prefix would
-    404 on download; this catches typos early.
+    Legacy GitHub: ``<LANG>___DDC_CWICR/<region>_workitems_…``
+    HuggingFace v1+: ``<XX>/<region-or-legacy-id>_workitems_…``
     """
     for cat in CWICR_V3_CATALOGUES:
         first_segment = cat.ddc_path.split("/", 1)[0]
-        assert first_segment.endswith("___DDC_CWICR"), (
+        legacy_github = first_segment.endswith("___DDC_CWICR")
+        # HF folders are 2-letter language/locale codes (AR, EN, ZH, …).
+        hf_layout = len(first_segment) == 2 and first_segment.isalpha()
+        assert legacy_github or hf_layout, (
             f"{cat.region}: ddc_path first segment {first_segment!r} "
-            "must end with ___DDC_CWICR"
+            "must be either '<XX>___DDC_CWICR' (GitHub) or '<XX>' (HF)"
         )
 
 
-def test_ddc_path_filename_starts_with_region():
-    """Filename inside the DDC dir must start with the region id."""
+def test_ddc_path_filename_starts_with_region_or_alias():
+    """Filename inside the DDC dir must start with the region id OR its
+    HF-published alias (e.g. CA_TORONTO → ENG_TORONTO, GB_LONDON → UK_GBP).
+    """
+    from app.modules.costs.cwicr_v3_catalogue import _HF_PUBLISHED
+
     for cat in CWICR_V3_CATALOGUES:
         filename = cat.ddc_path.rsplit("/", 1)[-1]
-        assert filename.startswith(cat.region + "_"), (
-            f"{cat.region}: filename {filename!r} should start with {cat.region}_"
+        ok = filename.startswith(cat.region + "_")
+        if not ok:
+            alias = _HF_PUBLISHED.get(cat.region)
+            ok = bool(alias and filename.startswith(alias[1] + "_"))
+        assert ok, (
+            f"{cat.region}: filename {filename!r} should start with the "
+            "region id or a registered HF-published alias"
         )
 
 

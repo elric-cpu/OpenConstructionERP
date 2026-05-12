@@ -50,6 +50,9 @@ const CadDataExplorerPage = lazy(() =>
 const MatchElementsPage = lazy(() =>
   import('@/features/match-elements/MatchElementsPage').then((m) => ({ default: m.MatchElementsPage }))
 );
+const NotificationsPage = lazy(() =>
+  import('@/features/notifications/NotificationsPage').then((m) => ({ default: m.NotificationsPage }))
+);
 const TenderingPage = lazy(() =>
   import('@/features/tendering/TenderingPage').then((m) => ({ default: m.TenderingPage }))
 );
@@ -524,7 +527,7 @@ export default function App() {
         <Route path="/variations" element={<Navigate to="/changeorders" replace />} />
         <Route path="/estimates" element={<Navigate to="/boq" replace />} />
         <Route path="/profile" element={<Navigate to="/settings" replace />} />
-        <Route path="/notifications" element={<Navigate to="/settings" replace />} />
+        <Route path="/notifications" element={<P title="Notifications"><NotificationsPage /></P>} />
 
         {/* Plugin module routes — lazy-loaded */}
         {moduleRoutes}

@@ -2894,7 +2894,7 @@ export function BIMQuantityRulesPage() {
   /* ── Render ────────────────────────────────────────────────────────── */
 
   return (
-    <div className="flex min-h-full flex-col bg-surface-secondary">
+    <div className="flex min-h-full flex-col">
       {/* Header */}
       <div className="border-b border-border-light bg-surface-primary px-6 py-4">
         <div className="flex items-start justify-between gap-4">

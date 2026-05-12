@@ -11,6 +11,7 @@ import {
   type CreatePositionData,
 } from './api';
 import { ApiError } from '@/shared/lib/api';
+import { useIsRTL } from '@/shared/hooks/useIsRTL';
 import { getIntlLocale } from '@/shared/lib/formatters';
 
 /* ── Types ──────────────────────────────────────────────────────────── */
@@ -40,6 +41,7 @@ export function AIChatPanel({
   onAddPositions,
 }: AIChatPanelProps) {
   const { t, i18n } = useTranslation();
+  const isRTL = useIsRTL();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
@@ -201,10 +203,13 @@ export function AIChatPanel({
     (m) => m.role === 'error' && m.text.includes('No AI API key configured'),
   );
 
+  // RTL fix: see AISmartPanel for full explanation — flip slide-off direction
+  // so the closed panel hides off-screen on its anchored edge.
+  const offTranslate = isRTL ? '-translate-x-full' : 'translate-x-full';
   return (
     <div
       className={`fixed right-0 top-12 z-40 h-[calc(100%-3rem)] w-[320px] bg-surface-elevated border-l border-border-light shadow-xl flex flex-col transition-transform duration-300 ease-in-out ${
-        isOpen ? 'translate-x-0' : 'translate-x-full'
+        isOpen ? 'translate-x-0' : offTranslate
       }`}
     >
       {/* ── Header ────────────────────────────────────────────────── */}

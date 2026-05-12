@@ -57,6 +57,69 @@ def _compute_component_total(factor: float, quantity: float, unit_cost: float) -
         return "0"
 
 
+def _compute_typed_total(
+    *,
+    resource_type: str | None,
+    factor: float,
+    quantity: float,
+    unit_cost: float,
+    metadata: dict | None,
+) -> str:
+    """Compute a component total using a type-aware formula.
+
+    The default (unknown / overhead / subcontractor / cost-item rows)
+    stays the simple ``factor * quantity * unit_cost`` triple — the
+    behaviour every existing assembly already relies on.
+
+    Resource-typed rows take the same triple as a base, then layer the
+    industry-standard adjustments on top so a professional estimator
+    can express things HeavyBid / Sage / iTWO let them express:
+
+    * **material**  base × (1 + waste_pct/100)
+    * **labor**     ``crew_size`` is a quantity multiplier (already
+                    captured in ``quantity``); ``hours`` overrides the
+                    quantity if given (kept here for clarity but the FE
+                    is encouraged to put hours in ``quantity``); the
+                    final cost gets a burden uplift via
+                    base × (1 + burden_pct/100).
+    * **equipment** base + (rental_days * fuel_cost_per_day) — fuel is
+                    additive because it's a separate line on most
+                    rental contracts; if both ``rental_days`` and a
+                    per-day ``fuel_cost`` are set we add their product.
+
+    Returns a string for SQLite-safe storage. Negative or zero results
+    fall through to the unmodified triple — never punish the user with
+    a smaller total than the raw inputs imply.
+    """
+    base_str = _compute_component_total(factor, quantity, unit_cost)
+    if not resource_type or not metadata:
+        return base_str
+    try:
+        base = Decimal(base_str)
+    except (InvalidOperation, ValueError):
+        return base_str
+
+    rt = (resource_type or "").lower()
+    try:
+        if rt == "material":
+            waste = Decimal(str(metadata.get("waste_pct", 0) or 0))
+            if waste > 0:
+                return str(base * (Decimal("1") + waste / Decimal("100")))
+        elif rt == "labor":
+            burden = Decimal(str(metadata.get("burden_pct", 0) or 0))
+            if burden > 0:
+                return str(base * (Decimal("1") + burden / Decimal("100")))
+        elif rt == "equipment":
+            days = Decimal(str(metadata.get("rental_days", 0) or 0))
+            fuel = Decimal(str(metadata.get("fuel_cost", 0) or 0))
+            if days > 0 and fuel > 0:
+                return str(base + days * fuel)
+    except (InvalidOperation, ValueError):
+        return base_str
+
+    return base_str
+
+
 def _str_to_float(value: str | None) -> float:
     """‌⁠‍Convert a string-stored numeric value to float, defaulting to 0.0."""
     if value is None:
@@ -270,19 +333,33 @@ class AssemblyService:
         description = data.get_description()
         unit_cost = data.get_unit_cost()
 
-        total = _compute_component_total(data.factor, data.quantity, unit_cost)
-        max_order = await self.component_repo.get_max_sort_order(assembly_id)
-
-        # Store resource_type in component metadata if provided
-        comp_metadata: dict = {}
+        # Merge any FE-supplied metadata (waste_pct / burden_pct / crew /
+        # rental_days / fuel_cost / vendor / productivity) before total
+        # computation — the typed formula reads these fields to apply
+        # type-specific adjustments (waste uplift on material, burden on
+        # labor, fuel add-on on equipment).
+        comp_metadata: dict = dict(data.metadata or {})
+        # Mirror the column into metadata too so the legacy reader path
+        # (BOQ apply, AI generate previews, exports) keeps working
+        # without conditionals.
         if data.resource_type:
-            comp_metadata["resource_type"] = data.resource_type
+            comp_metadata.setdefault("resource_type", data.resource_type)
+
+        total = _compute_typed_total(
+            resource_type=data.resource_type,
+            factor=data.factor,
+            quantity=data.quantity,
+            unit_cost=unit_cost,
+            metadata=comp_metadata,
+        )
+        max_order = await self.component_repo.get_max_sort_order(assembly_id)
 
         component = Component(
             assembly_id=assembly_id,
             cost_item_id=data.cost_item_id,
             catalog_resource_id=data.catalog_resource_id,
             description=description,
+            resource_type=data.resource_type,
             factor=str(data.factor),
             quantity=str(data.quantity),
             unit=data.unit,
@@ -350,14 +427,21 @@ class AssemblyService:
         if "metadata" in fields:
             fields["metadata_"] = fields.pop("metadata")
 
-        # Recalculate component total if any numeric field changed
+        # Recalculate component total using the typed formula so that
+        # changes to waste_pct / burden_pct / fuel_cost / resource_type
+        # immediately reflect in the rolled-up assembly total without a
+        # separate save round-trip.
         new_factor = fields.get("factor", component.factor)
         new_quantity = fields.get("quantity", component.quantity)
         new_unit_cost = fields.get("unit_cost", component.unit_cost)
-        fields["total"] = _compute_component_total(
-            _str_to_float(new_factor),
-            _str_to_float(new_quantity),
-            _str_to_float(new_unit_cost),
+        new_resource_type = fields.get("resource_type", component.resource_type)
+        new_metadata = fields.get("metadata_", component.metadata_) or {}
+        fields["total"] = _compute_typed_total(
+            resource_type=new_resource_type,
+            factor=_str_to_float(new_factor),
+            quantity=_str_to_float(new_quantity),
+            unit_cost=_str_to_float(new_unit_cost),
+            metadata=new_metadata if isinstance(new_metadata, dict) else {},
         )
 
         if fields:
@@ -438,13 +522,14 @@ class AssemblyService:
                     cost_item_id=comp.cost_item_id,
                     catalog_resource_id=comp.catalog_resource_id,
                     description=comp.description,
+                    resource_type=comp.resource_type,
                     factor=_str_to_float(comp.factor),
                     quantity=_str_to_float(comp.quantity),
                     unit=comp.unit,
                     unit_cost=_str_to_float(comp.unit_cost),
                     total=_str_to_float(comp.total),
                     sort_order=comp.sort_order,
-                    metadata_=comp.metadata_,
+                    metadata=comp.metadata_ or {},
                     created_at=comp.created_at,
                     updated_at=comp.updated_at,
                 )
@@ -471,7 +556,7 @@ class AssemblyService:
             owner_id=assembly.owner_id,
             is_active=assembly.is_active,
             tags=tags,
-            metadata_=metadata,
+            metadata=metadata,
             created_at=assembly.created_at,
             updated_at=assembly.updated_at,
             components=component_responses,
@@ -534,17 +619,34 @@ class AssemblyService:
         # Fetch components separately to avoid MissingGreenlet (noload on get_assembly)
         components = await self.component_repo.list_for_assembly(assembly_id)
 
-        # Build resource list from assembly components
+        # Build resource list from assembly components.
+        # Trust the new ``resource_type`` column; only fall back to
+        # description heuristics for legacy rows that the v2940
+        # back-fill couldn't classify.
+        def _infer_legacy(desc: str) -> str:
+            d = (desc or "").lower()
+            if any(w in d for w in ("labor", "worker", "crew", "работ", "труд")):
+                return "labor"
+            if any(w in d for w in ("equip", "machine", "crane", "техник", "механ")):
+                return "equipment"
+            if any(w in d for w in ("operator", "оператор", "машинист")):
+                return "operator"
+            return "material"
+
         resources = []
+        # Roll the component totals up by type so the BOQ position can
+        # carry a structured M/L/E split (and a UI on /boq can render
+        # "60% Mat · 30% Lab · 10% Eq" without re-walking the components).
+        breakdown_totals: dict[str, Decimal] = {}
         for comp in components:
-            res_type = "material"  # default
-            desc_lower = (comp.description or "").lower()
-            if any(w in desc_lower for w in ("labor", "worker", "crew", "работ", "труд")):
-                res_type = "labor"
-            elif any(w in desc_lower for w in ("equip", "machine", "crane", "техник", "механ")):
-                res_type = "equipment"
-            elif any(w in desc_lower for w in ("operator", "оператор", "машинист")):
-                res_type = "operator"
+            res_type = comp.resource_type or _infer_legacy(comp.description or "")
+            comp_total = _str_to_float(comp.total)
+            try:
+                breakdown_totals[res_type] = breakdown_totals.get(
+                    res_type, Decimal("0")
+                ) + Decimal(str(comp_total))
+            except (InvalidOperation, ValueError):
+                pass
 
             resources.append(
                 {
@@ -554,9 +656,25 @@ class AssemblyService:
                     "unit": comp.unit or "",
                     "quantity": _str_to_float(comp.quantity),
                     "unit_rate": _str_to_float(comp.unit_cost),
-                    "total": _str_to_float(comp.total),
+                    "total": comp_total,
+                    # Pass through useful metadata (vendor, waste_pct,
+                    # crew_size, …) so downstream consumers can inspect
+                    # the cost driver detail without joining back to
+                    # the source assembly.
+                    "metadata": dict(comp.metadata_) if comp.metadata_ else {},
                 }
             )
+
+        # Compute the breakdown payload — totals per type plus
+        # percentages of the rolled subtotal.
+        subtotal = sum(breakdown_totals.values(), Decimal("0"))
+        resource_breakdown: dict[str, dict[str, float]] = {}
+        if subtotal > 0:
+            for rtype, ttl in breakdown_totals.items():
+                resource_breakdown[rtype] = {
+                    "total": float(ttl),
+                    "pct": float((ttl / subtotal) * Decimal("100")),
+                }
 
         position_data = PositionCreate(
             boq_id=data.boq_id,
@@ -574,6 +692,10 @@ class AssemblyService:
                 "region": data.region,
                 "currency": assembly.currency,
                 "resources": resources,
+                # Standard key the BOQ UI reads to render the M/L/E
+                # mini-badge — see ``backend/app/modules/boq/models.py``
+                # docstring for the metadata vocabulary.
+                "resource_breakdown": resource_breakdown,
             },
         )
 
@@ -657,6 +779,7 @@ class AssemblyService:
                 cost_item_id=comp.cost_item_id,
                 catalog_resource_id=comp.catalog_resource_id,
                 description=comp.description,
+                resource_type=comp.resource_type,
                 factor=comp.factor,
                 quantity=comp.quantity,
                 unit=comp.unit,
@@ -788,11 +911,13 @@ class AssemblyService:
         for comp in components:
             export_components.append({
                 "description": comp.description,
+                "resource_type": comp.resource_type,
                 "factor": _str_to_float(comp.factor),
                 "quantity": _str_to_float(comp.quantity),
                 "unit": comp.unit,
                 "unit_cost": _str_to_float(comp.unit_cost),
                 "sort_order": comp.sort_order,
+                "metadata": dict(comp.metadata_) if comp.metadata_ else {},
             })
 
         return {
@@ -862,20 +987,34 @@ class AssemblyService:
             factor = str(comp_data.get("factor", 1.0))
             quantity = str(comp_data.get("quantity", 1.0))
             unit_cost = str(comp_data.get("unit_cost", 0.0))
-            total = _compute_component_total(
-                float(factor), float(quantity), float(unit_cost),
+            res_type_raw = comp_data.get("resource_type")
+            res_type = (
+                str(res_type_raw).lower()
+                if isinstance(res_type_raw, str) and res_type_raw
+                else None
+            )
+            comp_meta = comp_data.get("metadata") if isinstance(
+                comp_data.get("metadata"), dict
+            ) else {}
+            total = _compute_typed_total(
+                resource_type=res_type,
+                factor=float(factor),
+                quantity=float(quantity),
+                unit_cost=float(unit_cost),
+                metadata=comp_meta,
             )
             components_to_create.append(
                 Component(
                     assembly_id=assembly.id,
                     description=desc,
+                    resource_type=res_type,
                     factor=factor,
                     quantity=quantity,
                     unit=comp_data.get("unit", data.unit),
                     unit_cost=unit_cost,
                     total=total,
                     sort_order=comp_data.get("sort_order", idx),
-                    metadata_={},
+                    metadata_=comp_meta,
                 )
             )
 

@@ -5,6 +5,77 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.42] — 2026-05-12
+
+### Added
+
+- Markups: threaded comments per drawing markup (`oe_markups_comment` table, v2941 migration, 3 endpoints, MarkupCommentsDrawer).
+- File-manager: per-folder ACL (viewer / editor / owner) with FolderPermissionsModal + lock badge; v2942 migration.
+- File-manager: per-file ActivityDrawer slide-over with Today / Yesterday / Earlier bucketing.
+- File-manager: bulk-delete for all 8 file kinds (`groupByKind` dispatcher; new `DELETE /v1/reporting/reports/{id}` and `DELETE /v1/documents/sheets/{id}`).
+- Compliance Docs tracker (`oe_compliance_docs` module, v2943 migration): insurance / permits / bonds with expiry status, dashboard widget, /projects/{id} compliance tab.
+- `/files` first-load overlay (`InitialLoadProgress`) with Storage → Tree → Ready stepper + animated progress bar.
+- `/files` landing KPI strip (`FilesStatsStrip`) with storage-by-kind breakdown segments.
+- Notifications inbox page (`/notifications`) with paginated list, date grouping, per-row delete; bell rewritten with loading / error / empty states.
+- 16 fallback `notification.<event>_(title|body)` templates server-side so freshly-generated events never leak raw i18n keys.
+
+### Changed
+
+- Dashboard backdrop hoisted from per-page wrappers into `AppLayout`, route-aware variant: `/boq`, `/match-elements`, `/costs`, `/assemblies`, `/catalog`, `/bim/rules`, `/files` → estimation amber; `/schedule`, `/tasks`, `/5d`, `/risks` → planning red; everything else → dashboard blue.
+- Removed `relative isolate` from 14 page wrappers so full-screen modals (z-50) sit above the sticky header (z-30) in the root stacking context instead of being trapped behind it.
+- Modal backdrops bumped to `bg-black/70 backdrop-blur-lg` across ~82 dialogs so page chrome behind the modal is unreadable.
+- `AppLayout` root no longer paints `bg-surface-secondary` (was hiding the `fixed -z-10` backdrop in the root stacking context).
+- `/projects` stats: 4 unified cards (Total Projects, Total BOQs, Total Value, Avg Project Size); removed secondary Regions / Currencies / With BIM row.
+
+### Fixed
+
+- `GET /v1/notifications/` 404 — bell now hits `/v1/notifications` (no trailing slash) and backend registers both forms defensively.
+- IDOR on `GET /v1/markups/?project_id=` — now scoped to caller's project membership.
+
+### Migrations
+
+- `v2941_markup_comments` ← `v2940_assemblies_resource_type`
+- `v2942_folder_permissions` ← `v2941_markup_comments`
+- `v2943_compliance_docs` ← `v2942_folder_permissions`
+
+## [2.9.41] — 2026-05-12
+
+### Added
+
+- Projects: PhotosTab on `ProjectDetailPage` — filter bar (search + sort) + responsive grid + keyboard-navigable lightbox; reuses `useFileList` with `category='photo'` filter (no API duplication). 21 `projects.photos.*` i18n keys.
+- Projects: TeamStrip on `ProjectDetailPage` — up to 6 overlapping avatars + "+N more" chip + Add modal with user search and role selector (owner / estimator / viewer / project_manager). Backed by 3 new project-scoped member endpoints (list / add / remove) delegating to the auto-created Default Team — no new table or migration. 14 `projects.team.*` i18n keys.
+- Documents: password-protected share links — 6 endpoints (3 public `probe`/`access`/`download`, 3 owner `create`/`list`/`revoke`), bcrypt(12) password hashing, 32-char URL-safe tokens via `secrets.token_urlsafe`; revoked/expired/unknown all return 404 (no enumeration). `ShareLinkModal` in `FilePreviewPane` + public `/share/:token` page outside `RequireAuth`. 45 `files.share.*` / `share.page.*` i18n keys.
+
+### Changed
+
+- `/match-elements` compaction: single-row hero (28px h1 + 36px icon + paragraph subtitle, decorative blur removed), status cards (Catalogues / Embedder / Analytics) stacked → 3-col grid at `lg+`, steps 1 + 2 (BIM model / Session) stacked → 2-col grid at `lg+`. Step cards `mt-3 p-4 → mt-2 p-3`, number bubbles `5x5 → 4x4`. Reclaims ~330–390px of empty space above the matching table.
+- `AddMemberRequest.role` regex widened to accept project roles (owner / estimator / viewer / project_manager) alongside existing team roles.
+
+### Migrations
+
+- `v2939_document_share_links` ← `v2938_documents_activity`
+
+## [2.9.40] — 2026-05-12
+
+### Added
+
+- Projects: `POST /v1/projects/{id}/duplicate/` deep-clone — copies WBS tree, milestones, and `MatchProjectSettings`. Collapses a 34-line client-side workaround in `ProjectsPage`.
+- RFI: `priority` + `discipline` + `linked_drawing_ids` + `attachments` fields on `oe_rfi`; pickers, deep-link rows, attachment upload, and linked-drawings picker on `RFIPage`. New `RFIDetailPage` (hero + question/answer + classification card).
+- Documents: OCR-text search across `name` + `description` + `metadata.ocr_text` + sheet title / number.
+- Documents: per-file activity log (`GET /v1/documents/{id}/activity/`) with 1s UTC-safe dedupe; rendered as `ActivityLogSection` in `FilePreviewPane`.
+- File-manager: `SheetsIndexPage` and `FileContextMenu` components; inline PDF iframe preview in `FilePreviewPane`.
+- `/costs`: `CostCategoryTree` skeleton-loading state + Toronto catalogue (`ENG_TORONTO` alias).
+
+### Changed
+
+- `/projects` and project Files: Apple-style dashboard backdrop (aurora + dot-grid + spotlight).
+- `/match-elements`: tolerate both array and `{catalogues:[]}` envelope shapes from the catalogues endpoint.
+
+### Migrations
+
+- `v2937_rfi_priority_discipline` (RFI priority / discipline / linked_drawing_ids / attachments)
+- `v2938_documents_activity` ← `v2937_rfi_priority_discipline`
+
 ## [2.9.39] — 2026-05-11
 
 ### Added

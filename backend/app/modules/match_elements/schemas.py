@@ -67,7 +67,14 @@ class SessionCreate(BaseModel):
         default=DEFAULT_AUTO_CONFIRM_THRESHOLD, ge=0.0, le=1.0
     )
     use_net_quantities: bool = True
-    catalogue_id: uuid.UUID | None = None
+    # Accepts either a CWICR v3 region id ("DE_BERLIN", "US_BOSTON", ...
+    # from ``CWICR_V3_CATALOGUES``) or a legacy ``CostDatabase`` UUID.
+    # The wizard sends the region string from /api/v1/costs/catalogues-v3/
+    # while older callers (and tests) pass UUIDs — accept both and let
+    # the service layer decide where to persist it. Previously this was
+    # ``uuid.UUID | None``, which 422'd every wizard submission because
+    # region ids contain underscores.
+    catalogue_id: str | None = None
     construction_stage: ConstructionStage | None = None
     # MAPPING_PROCESS.md §4.1.6 — free-form text inputs for the "text"
     # source. List of strings (simple) or per-line dicts
@@ -101,7 +108,8 @@ class SessionUpdate(BaseModel):
     excluded_categories: list[str] | None = None
     auto_confirm_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
     use_net_quantities: bool | None = None
-    catalogue_id: uuid.UUID | None = None
+    # See ``SessionCreate.catalogue_id`` — region string OR legacy UUID.
+    catalogue_id: str | None = None
     is_archived: bool | None = None
     construction_stage: ConstructionStage | None = None
 
@@ -120,7 +128,8 @@ class SessionRead(BaseModel):
     # Returned as a float so the UI never has to parse a string back.
     auto_confirm_threshold: float
     use_net_quantities: bool
-    catalogue_id: uuid.UUID | None
+    # See ``SessionCreate.catalogue_id`` — region string OR legacy UUID.
+    catalogue_id: str | None = None
     is_archived: bool = False
     construction_stage: ConstructionStage | None = None
     last_active_at: datetime | None = None

@@ -170,7 +170,7 @@ function CompareModal({ boqIdA, boqIdB, currencyA, currencyB, onClose }: Compare
   const currency = currencyA || currencyB || 'EUR';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-lg animate-fade-in" onClick={onClose}>
       <div
         className="relative mx-4 max-h-[85vh] w-full max-w-4xl overflow-hidden rounded-2xl bg-surface-primary border border-border-light shadow-2xl flex flex-col"
         onClick={(e) => e.stopPropagation()}

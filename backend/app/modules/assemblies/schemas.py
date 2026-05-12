@@ -15,13 +15,31 @@ from pydantic import BaseModel, ConfigDict, Field
 # ── Component schemas ────────────────────────────────────────────────────────
 
 
+# Allowed resource_type values. Kept as a Literal-ish string so the DB
+# storage stays a simple varchar (FE/BE share a string contract; we don't
+# want a Postgres ENUM that needs a migration every time we add a kind).
+RESOURCE_TYPES: tuple[str, ...] = (
+    "material",
+    "labor",
+    "equipment",
+    "operator",
+    "subcontractor",
+    "overhead",
+)
+
+
 class ComponentCreate(BaseModel):
     """‌⁠‍Create a new assembly component.
 
     Accepts ``name`` as an alias for ``description`` and ``unit_rate`` as an
     alias for ``unit_cost`` so that the AI-generate preview payload can be
     forwarded directly without field remapping on the frontend.
-    ``resource_type`` is stored in the component metadata.
+
+    ``resource_type`` is now a first-class column (v2940). Free-form
+    extended fields (waste_pct for materials, crew_size/hours/burden_pct
+    for labor, fuel_cost/rental_days for equipment) live in ``metadata``
+    so we don't lock the schema to one industry's vocabulary, but the
+    service layer reads them when computing the typed total.
     """
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -35,7 +53,8 @@ class ComponentCreate(BaseModel):
     unit: str = Field(..., min_length=1, max_length=20)
     unit_cost: float = Field(default=0.0, ge=0.0)
     unit_rate: float | None = Field(default=None, ge=0.0, exclude=True)
-    resource_type: str | None = Field(default=None, max_length=50, exclude=True)
+    resource_type: str | None = Field(default=None, max_length=20)
+    metadata: dict[str, Any] | None = None
 
     def get_description(self) -> str:
         """‌⁠‍Return description, falling back to name if description is empty."""
@@ -60,6 +79,7 @@ class ComponentUpdate(BaseModel):
     quantity: float | None = None
     unit: str | None = Field(default=None, min_length=1, max_length=20)
     unit_cost: float | None = Field(default=None, ge=0.0)
+    resource_type: str | None = Field(default=None, max_length=20)
     sort_order: int | None = None
     metadata: dict[str, Any] | None = None
 
@@ -74,13 +94,19 @@ class ComponentResponse(BaseModel):
     cost_item_id: UUID | None
     catalog_resource_id: UUID | None = None
     description: str
+    resource_type: str | None = None
     factor: float
     quantity: float
     unit: str
     unit_cost: float
     total: float
     sort_order: int
-    metadata: dict[str, Any] = Field(default_factory=dict, alias="metadata_")
+    # FastAPI defaults `response_model_by_alias=True`, so if we aliased
+    # this to "metadata_" the wire payload would carry the trailing
+    # underscore — which we don't want. The ORM column is `metadata_`
+    # (Python keyword conflict on Base), but it's renamed at the
+    # response builder.
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
 
@@ -150,7 +176,7 @@ class AssemblyResponse(BaseModel):
     component_count: int = 0
     usage_count: int = 0
     tags: list[str] = Field(default_factory=list)
-    metadata: dict[str, Any] = Field(default_factory=dict, alias="metadata_")
+    metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
 

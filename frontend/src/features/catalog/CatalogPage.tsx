@@ -1598,6 +1598,81 @@ export function CatalogPage() {
         </div>
       </Card>
 
+      <div className="lg:grid lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-5">
+
+      {/* Category sidebar (desktop) — flat list because /catalog categories
+          live in `stats.by_category` (no parent/child hierarchy, unlike
+          /costs which has a real classification tree). Click → applies the
+          same `category` filter the toolbar dropdown uses, so the two
+          stay in sync. Hidden below `lg:` so mobile keeps the dropdown. */}
+      <aside className="hidden lg:block lg:sticky lg:top-4 lg:self-start">
+        <Card padding="none" className="overflow-hidden">
+          <div className="px-3 py-2.5 border-b border-border-light bg-surface-secondary/40 flex items-center justify-between">
+            <span className="text-xs font-semibold text-content-secondary">
+              {t('catalog.sidebar_categories', { defaultValue: 'Categories' })}
+            </span>
+            {category && (
+              <button
+                type="button"
+                onClick={() => handleCategoryChange('')}
+                aria-label={t('common.clear', { defaultValue: 'Clear' })}
+                className="text-2xs text-content-tertiary hover:text-content-primary transition-colors"
+              >
+                {t('catalog.clear_filter', { defaultValue: 'Clear' })}
+              </button>
+            )}
+          </div>
+          <div className="max-h-[calc(100vh-12rem)] overflow-auto py-1">
+            <button
+              type="button"
+              onClick={() => handleCategoryChange('')}
+              className={`w-full flex items-center justify-between px-3 py-1.5 text-xs text-left transition-colors ${
+                category === ''
+                  ? 'bg-oe-blue-subtle text-content-primary font-semibold'
+                  : 'text-content-secondary hover:bg-surface-secondary'
+              }`}
+            >
+              <span className="truncate">
+                {t('catalog.all_categories', { defaultValue: 'All categories' })}
+              </span>
+              <span className="text-2xs text-content-tertiary tabular-nums shrink-0 ml-2">
+                {totalCount.toLocaleString()}
+              </span>
+            </button>
+            {(stats?.by_category ?? []).map((c) => {
+              const isActive = category === c.category;
+              return (
+                <button
+                  key={c.category}
+                  type="button"
+                  onClick={() => handleCategoryChange(c.category)}
+                  className={`w-full flex items-center justify-between px-3 py-1.5 text-xs text-left transition-colors ${
+                    isActive
+                      ? 'bg-oe-blue-subtle text-content-primary font-semibold'
+                      : 'text-content-secondary hover:bg-surface-secondary'
+                  }`}
+                  title={c.category}
+                >
+                  <span className="truncate">
+                    {t(`catalog.category_${c.category.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`, { defaultValue: c.category })}
+                  </span>
+                  <span className={`text-2xs tabular-nums shrink-0 ml-2 ${isActive ? 'text-content-secondary' : 'text-content-tertiary'}`}>
+                    {c.count.toLocaleString()}
+                  </span>
+                </button>
+              );
+            })}
+            {(stats?.by_category ?? []).length === 0 && (
+              <div className="px-3 py-3 text-2xs text-content-tertiary">
+                {t('catalog.no_categories', { defaultValue: 'No categories yet — import a region to populate.' })}
+              </div>
+            )}
+          </div>
+        </Card>
+      </aside>
+
+      <div className="min-w-0">
+
       {/* Results Table */}
       {isLoading ? (
         <Card padding="none" className="overflow-hidden">
@@ -1830,6 +1905,9 @@ export function CatalogPage() {
           })()}
         </>
       )}
+
+      </div>{/* /min-w-0 main column */}
+      </div>{/* /2-column grid wrapper */}
 
       {/* Floating Selection Bar */}
       {selectedIds.size > 0 && (

@@ -35,7 +35,17 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
-        timeout: 300000,
+        // 30 minutes. Catalogue v3 installs (`/costs/catalogues-v3/{id}/install`)
+        // download a 200–500 MB snapshot from Hugging Face, stream it
+        // multipart into Qdrant, then poll Qdrant for collection
+        // registration. The full round-trip routinely runs 5–15 min on a
+        // typical home link; the previous 5-min ceiling killed the
+        // connection mid-install and the browser surfaced it as
+        // "Failed to fetch", with no useful diagnostic. proxyTimeout
+        // covers the upstream-response wait specifically; timeout covers
+        // the socket as a whole — both need to be generous.
+        timeout: 30 * 60 * 1000,
+        proxyTimeout: 30 * 60 * 1000,
       },
     },
   },
