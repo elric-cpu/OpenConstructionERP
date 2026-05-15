@@ -281,6 +281,25 @@ class ProgressClaimLineRepository(_CRUDBase):
         await self.session.flush()
         return lines
 
+    async def lines_with_status_for_contract(
+        self, contract_id: uuid.UUID,
+    ) -> list[tuple[ProgressClaimLine, str]]:
+        """All claim lines for a contract + their parent claim status.
+
+        Single JOIN query — replaces an N+1 (one claim-line query per
+        progress claim) in the SoV-status rollup.
+        """
+        stmt = (
+            select(ProgressClaimLine, ProgressClaim.status)
+            .join(
+                ProgressClaim,
+                ProgressClaim.id == ProgressClaimLine.progress_claim_id,
+            )
+            .where(ProgressClaim.contract_id == contract_id)
+        )
+        result = await self.session.execute(stmt)
+        return [(row[0], row[1]) for row in result.all()]
+
 
 class FinalAccountRepository(_CRUDBase):
     model = FinalAccount

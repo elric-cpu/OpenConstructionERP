@@ -10,7 +10,6 @@ import {
   Warehouse as WarehouseIcon,
   Search,
   Plus,
-  X,
   Loader2,
   Star,
   AlertOctagon,
@@ -88,10 +87,16 @@ export function SupplierCatalogsPage() {
     queryFn: () => listWarehouses(),
     enabled: tab === 'warehouses',
   });
+  // The select visually defaults to the first warehouse, so balances must
+  // fetch for it even before the user explicitly picks one (otherwise the
+  // first warehouse looks selected but its stock never loads).
+  const effectiveWarehouseId =
+    selectedWarehouseId ||
+    (Array.isArray(warehousesQ.data) ? (warehousesQ.data[0]?.id ?? '') : '');
   const balancesQ = useQuery({
-    queryKey: ['sc', 'balances', selectedWarehouseId],
-    queryFn: () => listWarehouseBalances(selectedWarehouseId),
-    enabled: tab === 'warehouses' && !!selectedWarehouseId,
+    queryKey: ['sc', 'balances', effectiveWarehouseId],
+    queryFn: () => listWarehouseBalances(effectiveWarehouseId),
+    enabled: tab === 'warehouses' && !!effectiveWarehouseId,
   });
 
   // PRs / POs / invoices: backend lacks list endpoints today.  We compute
@@ -114,6 +119,25 @@ export function SupplierCatalogsPage() {
     (tab === 'vendors' && vendorsQ.isLoading) ||
     (tab === 'catalog' && itemsQ.isLoading) ||
     (tab === 'warehouses' && (warehousesQ.isLoading || balancesQ.isLoading));
+
+  // Surface fetch failures explicitly — a failed query must NOT render as
+  // an empty success ("No vendors yet"), which silently hides outages.
+  const activeError =
+    tab === 'vendors'
+      ? vendorsQ.error
+      : tab === 'catalog'
+        ? itemsQ.error
+        : tab === 'warehouses'
+          ? (warehousesQ.error ?? balancesQ.error)
+          : null;
+  const refetchActive = () => {
+    if (tab === 'vendors') void vendorsQ.refetch();
+    else if (tab === 'catalog') void itemsQ.refetch();
+    else if (tab === 'warehouses') {
+      void warehousesQ.refetch();
+      if (effectiveWarehouseId) void balancesQ.refetch();
+    }
+  };
 
   return (
     <div className="space-y-5">
@@ -190,7 +214,7 @@ export function SupplierCatalogsPage() {
         )}
         {tab === 'warehouses' && warehousesArr.length > 0 && (
           <select
-            value={selectedWarehouseId || warehousesArr[0]?.id || ''}
+            value={effectiveWarehouseId}
             onChange={(e) => setSelectedWarehouseId(e.target.value)}
             className={clsx(inputCls, 'max-w-[280px]')}
           >
@@ -204,7 +228,19 @@ export function SupplierCatalogsPage() {
       </div>
 
       <Card padding="none">
-        {isLoading ? (
+        {activeError ? (
+          <EmptyState
+            icon={<AlertOctagon size={22} />}
+            title={t('supplier_catalogs.load_failed', {
+              defaultValue: 'Could not load data',
+            })}
+            description={getErrorMessage(activeError)}
+            action={{
+              label: t('common.retry', { defaultValue: 'Retry' }),
+              onClick: refetchActive,
+            }}
+          />
+        ) : isLoading ? (
           <div className="p-4">
             <SkeletonTable rows={8} columns={5} />
           </div>
@@ -220,8 +256,8 @@ export function SupplierCatalogsPage() {
           <MatchEmptyState />
         ) : (
           <WarehousePanel
-            warehouses={warehousesQ.data ?? []}
-            selectedId={selectedWarehouseId || warehousesArr[0]?.id || ''}
+            warehouses={warehousesArr}
+            selectedId={effectiveWarehouseId}
             balances={balancesArr}
             onAction={() => setCreateOpen(true)}
           />
@@ -567,31 +603,29 @@ function PriceComparisonModal({
   }, [rows]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/40" />
-      <div
-        className="relative w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-xl bg-surface-elevated p-5 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between mb-1">
-          <div>
-            <h2 className="text-lg font-semibold">
-              {t('supplier_catalogs.price_comparison', { defaultValue: 'Price Comparison' })}
-            </h2>
-            <p className="mt-0.5 text-xs text-content-secondary">
-              <span className="font-mono">{item.sku}</span> · {item.name} · {item.unit_of_measure}
-            </p>
-          </div>
-          <button type="button" onClick={onClose} className="rounded p-1 hover:bg-surface-secondary">
-            <X size={16} />
-          </button>
-        </div>
-
+    <WideModal
+      open
+      onClose={onClose}
+      title={t('supplier_catalogs.price_comparison', { defaultValue: 'Price Comparison' })}
+      subtitle={`${item.sku} · ${item.name} · ${item.unit_of_measure}`}
+      size="xl"
+    >
+      <div>
         {q.isLoading ? (
           <div className="py-8 text-center text-sm text-content-tertiary">
             <Loader2 className="inline animate-spin mr-2" size={14} />
             {t('common.loading', { defaultValue: 'Loading…' })}
           </div>
+        ) : q.isError ? (
+          <EmptyState
+            icon={<AlertOctagon size={20} />}
+            title={t('supplier_catalogs.load_failed', { defaultValue: 'Could not load data' })}
+            description={getErrorMessage(q.error)}
+            action={{
+              label: t('common.retry', { defaultValue: 'Retry' }),
+              onClick: () => void q.refetch(),
+            }}
+          />
         ) : rows.length === 0 ? (
           <EmptyState
             icon={<Boxes size={20} />}
@@ -601,7 +635,7 @@ function PriceComparisonModal({
             })}
           />
         ) : (
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          <div className="mt-1 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {rows.map((r) => {
               const vendor = vendors.find((v) => v.id === r.vendor_id);
               const isCheapest = cheapest && cheapest.vendor_id === r.vendor_id && rows.length > 1;
@@ -660,7 +694,7 @@ function PriceComparisonModal({
           </div>
         )}
       </div>
-    </div>
+    </WideModal>
   );
 }
 

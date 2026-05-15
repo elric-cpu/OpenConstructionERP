@@ -17,6 +17,7 @@ import {
   CheckCircle2,
   Send,
   DollarSign,
+  ShieldAlert,
 } from 'lucide-react';
 import {
   Button,
@@ -230,6 +231,21 @@ export function ContractsPage() {
     (tab === 'contracts' && contractsQ.isLoading) ||
     (tab !== 'contracts' && (contractsQ.isLoading || claimsQ.isLoading));
 
+  // A failed query must NOT look like an empty success — surface it with a
+  // retry, matching the established sibling error-state pattern.
+  const loadError =
+    tab === 'claims'
+      ? contractsQ.error ?? claimsQ.error
+      : contractsQ.error;
+  const isError =
+    tab === 'claims'
+      ? contractsQ.isError || claimsQ.isError
+      : contractsQ.isError;
+  const retryLoad = () => {
+    void contractsQ.refetch();
+    if (tab === 'claims') void claimsQ.refetch();
+  };
+
   return (
     <div className="space-y-5">
       <Breadcrumb
@@ -419,6 +435,18 @@ export function ContractsPage() {
           <div className="p-4">
             <SkeletonTable rows={8} columns={6} />
           </div>
+        ) : isError ? (
+          <EmptyState
+            icon={<ShieldAlert size={22} />}
+            title={t('contracts.load_error', {
+              defaultValue: 'Could not load contracts',
+            })}
+            description={getErrorMessage(loadError)}
+            action={{
+              label: t('common.retry', { defaultValue: 'Retry' }),
+              onClick: retryLoad,
+            }}
+          />
         ) : tab === 'contracts' ? (
           <ContractTable
             rows={filteredContracts}
@@ -550,7 +578,7 @@ function ContractTable({
               <td className="px-4 py-2 text-right">
                 <MoneyDisplay
                   amount={toNum(r.total_value)}
-                  currency={r.currency || 'EUR'}
+                  currency={r.currency || undefined}
                 />
               </td>
             </tr>
@@ -672,19 +700,19 @@ function ClaimRow({ claim }: { claim: ProgressClaimItem }) {
       <td className="px-4 py-2 text-right">
         <MoneyDisplay
           amount={toNum(claim.gross_amount)}
-          currency={claim.currency || 'EUR'}
+          currency={claim.currency || undefined}
         />
       </td>
       <td className="px-4 py-2 text-right text-content-secondary">
         <MoneyDisplay
           amount={toNum(claim.retention_amount)}
-          currency={claim.currency || 'EUR'}
+          currency={claim.currency || undefined}
         />
       </td>
       <td className="px-4 py-2 text-right font-medium">
         <MoneyDisplay
           amount={toNum(claim.net_due)}
-          currency={claim.currency || 'EUR'}
+          currency={claim.currency || undefined}
         />
       </td>
       <td className="px-4 py-2">
@@ -822,7 +850,7 @@ function FinalAccountsView({
               <td className="px-4 py-2 text-right">
                 <MoneyDisplay
                   amount={toNum(c.total_value)}
-                  currency={c.currency || 'EUR'}
+                  currency={c.currency || undefined}
                 />
               </td>
             </tr>
@@ -935,6 +963,14 @@ function ContractDetailDrawer({
     onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),
   });
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   if (!contract) return null;
 
   const lineTotal = (linesQ.data ?? []).reduce(
@@ -946,12 +982,15 @@ function ContractDetailDrawer({
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30" />
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="contract-drawer-title"
         className="relative h-full w-full max-w-2xl overflow-y-auto bg-surface-elevated shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border-light bg-surface-elevated px-5 py-3">
           <div>
-            <h2 className="text-base font-semibold">
+            <h2 id="contract-drawer-title" className="text-base font-semibold">
               {contract.code} — {contract.title || 'Untitled'}
             </h2>
             <div className="mt-1 flex items-center gap-2">
@@ -979,7 +1018,7 @@ function ContractDetailDrawer({
               value={
                 <MoneyDisplay
                   amount={toNum(contract.total_value)}
-                  currency={contract.currency || 'EUR'}
+                  currency={contract.currency || undefined}
                 />
               }
             />
@@ -988,7 +1027,7 @@ function ContractDetailDrawer({
               value={
                 <MoneyDisplay
                   amount={toNum(dashQ.data?.paid_to_date)}
-                  currency={contract.currency || 'EUR'}
+                  currency={contract.currency || undefined}
                 />
               }
             />
@@ -997,7 +1036,7 @@ function ContractDetailDrawer({
               value={
                 <MoneyDisplay
                   amount={toNum(dashQ.data?.retention_held)}
-                  currency={contract.currency || 'EUR'}
+                  currency={contract.currency || undefined}
                 />
               }
             />
@@ -1006,7 +1045,7 @@ function ContractDetailDrawer({
               value={
                 <MoneyDisplay
                   amount={toNum(dashQ.data?.outstanding)}
-                  currency={contract.currency || 'EUR'}
+                  currency={contract.currency || undefined}
                 />
               }
             />
@@ -1128,7 +1167,7 @@ function ContractDetailDrawer({
                 {t('contracts.lines', { defaultValue: 'lines' })} ·{' '}
                 <MoneyDisplay
                   amount={lineTotal}
-                  currency={contract.currency || 'EUR'}
+                  currency={contract.currency || undefined}
                 />
                 )
               </span>
@@ -1178,13 +1217,13 @@ function ContractDetailDrawer({
                         <td className="py-1 text-right text-content-secondary">
                           <MoneyDisplay
                             amount={toNum(l.unit_rate)}
-                            currency={contract.currency || 'EUR'}
+                            currency={contract.currency || undefined}
                           />
                         </td>
                         <td className="py-1 text-right font-medium">
                           <MoneyDisplay
                             amount={toNum(l.total_value)}
-                            currency={contract.currency || 'EUR'}
+                            currency={contract.currency || undefined}
                           />
                         </td>
                       </tr>
@@ -1206,7 +1245,7 @@ function ContractDetailDrawer({
                 value={
                   <MoneyDisplay
                     amount={toNum(dashQ.data?.retention_held)}
-                    currency={contract.currency || 'EUR'}
+                    currency={contract.currency || undefined}
                   />
                 }
               />
@@ -1249,7 +1288,7 @@ function ContractDetailDrawer({
                     <span className="text-right">
                       <MoneyDisplay
                         amount={toNum(c.net_due)}
-                        currency={c.currency || 'EUR'}
+                        currency={c.currency || undefined}
                       />
                     </span>
                   </li>
@@ -1280,7 +1319,7 @@ function ContractDetailDrawer({
                     <strong>
                       <MoneyDisplay
                         amount={toNum(dashQ.data.gainshare_estimate)}
-                        currency={contract.currency || 'EUR'}
+                        currency={contract.currency || undefined}
                       />
                     </strong>
                   </p>
@@ -1360,7 +1399,7 @@ function CreateContractModal({
         contract_type: form.contract_type,
         counterparty_type: form.counterparty_type,
         total_value: Number(form.total_value) || 0,
-        currency: form.currency || 'EUR',
+        currency: form.currency.trim().toUpperCase() || undefined,
         retention_percent: Number(form.retention_percent) || 0,
         start_date: form.start_date || null,
         end_date: form.end_date || null,
@@ -1574,7 +1613,7 @@ function NewClaimModal({
         claim_number: form.claim_number || null,
         period_start: form.period_start || null,
         period_end: form.period_end || null,
-        currency: form.currency || 'EUR',
+        currency: form.currency.trim().toUpperCase() || undefined,
       });
       addToast({
         type: 'success',

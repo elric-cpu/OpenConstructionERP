@@ -578,6 +578,114 @@ async def test_complete_handover_emits_event_and_flips_plot() -> None:
     assert pub.call_args[0][0] == "property_dev.handover.completed"
 
 
+@pytest.mark.asyncio
+async def test_complete_handover_advances_contracted_buyer_to_completed() -> None:
+    """A contracted buyer on the plot must reach ``completed`` once keys
+    are handed over — otherwise revenue_completed / buyers_by_status /
+    the buyer-stage UI never reflect a finished sale."""
+    svc = _make_service()
+    plot = _plot(status="sold")
+    svc.plots.rows[plot.id] = plot
+    buyer = _buyer(status="contracted", plot_id=plot.id)
+    svc.buyers.rows[buyer.id] = buyer
+    h = SimpleNamespace(
+        id=uuid.uuid4(),
+        plot_id=plot.id,
+        scheduled_at="2026-04-10",
+        completed_at=None,
+        snag_count_at_handover=0,
+        final_check_passed=False,
+        keys_handed_over_at=None,
+        customer_signature_ref=None,
+        notes=None,
+    )
+    svc.handovers.rows[h.id] = h
+    req = HandoverCompleteRequest(
+        completed_at="2026-04-15",
+        customer_signature_ref="sig::xyz",
+    )
+    with patch("app.modules.property_dev.service.event_bus.publish_detached"):
+        await svc.complete_handover(h.id, req)
+    assert buyer.status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_complete_handover_leaves_non_contracted_buyer_untouched() -> None:
+    """Only ``contracted`` buyers advance — a still-reserved buyer is not
+    illegally jumped to ``completed`` (skips the contract hand-off)."""
+    svc = _make_service()
+    plot = _plot(status="sold")
+    svc.plots.rows[plot.id] = plot
+    buyer = _buyer(status="reserved", plot_id=plot.id)
+    svc.buyers.rows[buyer.id] = buyer
+    h = SimpleNamespace(
+        id=uuid.uuid4(),
+        plot_id=plot.id,
+        scheduled_at="2026-04-10",
+        completed_at=None,
+        snag_count_at_handover=0,
+        final_check_passed=False,
+        keys_handed_over_at=None,
+        customer_signature_ref=None,
+        notes=None,
+    )
+    svc.handovers.rows[h.id] = h
+    req = HandoverCompleteRequest(
+        completed_at="2026-04-15",
+        customer_signature_ref="sig::xyz",
+    )
+    with patch("app.modules.property_dev.service.event_bus.publish_detached"):
+        await svc.complete_handover(h.id, req)
+    assert buyer.status == "reserved"
+
+
+# ── Workflow: reserve_plot integrity guards ─────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_reserve_plot_rejects_cross_development_buyer() -> None:
+    svc = _make_service()
+    plot = _plot(status="planned")
+    svc.plots.rows[plot.id] = plot
+    other_dev = uuid.uuid4()
+    buyer = _buyer(status="lead", development_id=other_dev)
+    svc.buyers.rows[buyer.id] = buyer
+    req = PlotReserveRequest(buyer_id=buyer.id)
+    with pytest.raises(HTTPException) as exc:
+        await svc.reserve_plot(plot.id, req)
+    assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_reserve_plot_rejects_when_plot_already_has_buyer() -> None:
+    svc = _make_service()
+    plot = _plot(status="planned")
+    svc.plots.rows[plot.id] = plot
+    existing = _buyer(status="reserved", plot_id=plot.id)
+    svc.buyers.rows[existing.id] = existing
+    req = PlotReserveRequest(full_name="New", email="n@ex.com")
+    with pytest.raises(HTTPException) as exc:
+        await svc.reserve_plot(plot.id, req)
+    assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_reserve_plot_releases_buyers_old_plot() -> None:
+    svc = _make_service()
+    old_plot = _plot(status="reserved", plot_number="P-OLD")
+    new_plot = _plot(status="planned", plot_number="P-NEW")
+    svc.plots.rows[old_plot.id] = old_plot
+    svc.plots.rows[new_plot.id] = new_plot
+    buyer = _buyer(status="reserved", plot_id=old_plot.id)
+    svc.buyers.rows[buyer.id] = buyer
+    req = PlotReserveRequest(buyer_id=buyer.id)
+    out_plot, out_buyer = await svc.reserve_plot(new_plot.id, req)
+    assert out_plot.status == "reserved"
+    assert out_buyer.plot_id == new_plot.id
+    # The previously-held plot must be freed, not orphaned in 'reserved'.
+    assert old_plot.status == "planned"
+
+
 # ── Workflow: raise_warranty_claim ──────────────────────────────────────
 
 

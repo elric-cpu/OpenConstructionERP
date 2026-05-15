@@ -1186,7 +1186,7 @@ async def release_retention(
     payload: dict,
     session: SessionDep,
     user_id: CurrentUserId,
-    _perm: None = Depends(RequirePermission("contracts.write")),
+    _perm: None = Depends(RequirePermission("contracts.update")),
 ) -> dict:
     """Release retention for a contract for the given event.
 
@@ -1223,9 +1223,12 @@ async def attach_lien_waiver(
     payload: dict,
     session: SessionDep,
     user_id: CurrentUserId,
-    _perm: None = Depends(RequirePermission("contracts.write")),
+    _perm: None = Depends(RequirePermission("contracts.update")),
 ) -> dict:
     """Attach a lien waiver record (conditional/unconditional × partial/final)."""
+    # Object-level scoping: a lien waiver carries dollar value and legal
+    # weight — only someone with access to the owning project may attach it.
+    await _verify_claim_access(session, claim_id, user_id)
     service = ContractsService(session)
     return await service.attach_lien_waiver(claim_id, payload, actor_id=user_id)
 
@@ -1237,6 +1240,7 @@ async def list_lien_waivers(
     user_id: CurrentUserId,
     _perm: None = Depends(RequirePermission("contracts.read")),
 ) -> list[dict]:
+    await _verify_claim_access(session, claim_id, user_id)
     service = ContractsService(session)
     return await service.list_lien_waivers(claim_id)
 

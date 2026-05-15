@@ -891,6 +891,9 @@ class BIDashboardsService:
         code: str,
         *,
         project_id: uuid.UUID | None = None,
+        period_start: _date | None = None,
+        period_end: _date | None = None,
+        filters: dict[str, Any] | None = None,
         depth: int = 1,
         limit: int = 100,
     ) -> dict[str, Any]:
@@ -900,9 +903,20 @@ class BIDashboardsService:
         falls back to the breakdown dict + history if no provider is
         registered for the KPI. The aggregate value is also included so
         the UI can show the tile total alongside the row list.
+
+        ``period_start`` / ``period_end`` / ``filters`` are forwarded to
+        the KPI formula so the headline aggregate reflects the same scope
+        the caller requested — previously these request fields were
+        silently dropped, so a period-filtered drill-down returned the
+        all-time aggregate, contradicting its own row list.
         """
         result = await _kpis.compute(
-            code, self.session, project_id=project_id,
+            code,
+            self.session,
+            project_id=project_id,
+            period_start=period_start,
+            period_end=period_end,
+            filters=filters,
         )
         # Real records from the registered provider
         records: list[dict[str, Any]] = await _kpis.drilldown(

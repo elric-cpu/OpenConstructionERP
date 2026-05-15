@@ -17,6 +17,7 @@ import {
   Minus,
   Download,
   FileText,
+  AlertTriangle,
 } from 'lucide-react';
 import { Button, Card, Badge, EmptyState, Skeleton, InfoHint, SkeletonTable, Breadcrumb, ConfirmDialog } from '@/shared/ui';
 import {
@@ -718,24 +719,36 @@ function PackageDetail({
   const [showAddBid, setShowAddBid] = useState(false);
 
   // Fetch package with bids
-  const { data: pkg, isLoading: pkgLoading } = useQuery({
+  const { data: pkg, isLoading: pkgLoading, isError: pkgError } = useQuery({
     queryKey: ['tendering-package', packageId],
     queryFn: () => apiGet<PackageWithBids>(`/v1/tendering/packages/${packageId}`),
   });
 
   // Fetch comparison
-  const { data: comparison, isLoading: comparisonLoading } = useQuery({
+  const {
+    data: comparison,
+    isLoading: comparisonLoading,
+    isError: comparisonError,
+  } = useQuery({
     queryKey: ['tendering-comparison', packageId],
     queryFn: () => apiGet<BidComparison>(`/v1/tendering/packages/${packageId}/comparison/`),
   });
 
-  // Award mutation
+  // Award mutation — routes through the dedicated apply-winner endpoint so
+  // the server performs the full transactional award (BOQ rate write-back,
+  // package → awarded, winning bid → accepted, competing bids → rejected).
+  // Previously this only PATCHed the bid status, leaving the package and
+  // losing bids in a stale state and never writing rates back to the BOQ.
   const awardMutation = useMutation({
     mutationFn: (bidId: string) =>
-      apiPatch<BidData>(`/v1/tendering/bids/${bidId}`, { status: 'accepted' }),
+      apiPost<{ positions_updated: number }>(
+        `/v1/tendering/packages/${packageId}/apply-winner/?bid_id=${bidId}`,
+        {},
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tendering-package', packageId] });
       queryClient.invalidateQueries({ queryKey: ['tendering-comparison', packageId] });
+      queryClient.invalidateQueries({ queryKey: ['tendering-packages'] });
       addToast({ type: 'success', title: t('toasts.bid_awarded', { defaultValue: 'Bid awarded‌⁠‍' }) });
     },
     onError: (error: Error) => {
@@ -795,7 +808,7 @@ function PackageDetail({
     return min;
   }, [comparison]);
 
-  if (pkgLoading) {
+  if (pkgLoading || (!pkg && !pkgError)) {
     return (
       <div className="mt-4">
         <SkeletonTable rows={4} columns={5} />
@@ -803,7 +816,23 @@ function PackageDetail({
     );
   }
 
-  if (!pkg) return null;
+  if (pkgError || !pkg) {
+    return (
+      <div className="mt-4">
+        <Card className="py-12">
+          <EmptyState
+            icon={<AlertTriangle size={28} strokeWidth={1.5} />}
+            title={t('common.error', { defaultValue: 'Error' })}
+            description={t('tendering.package_load_error', {
+              defaultValue: 'Failed to load this tender package. Please try again.',
+            })}
+          />
+        </Card>
+      </div>
+    );
+  }
+
+  const awardablePackage = pkg.status === 'collecting' || pkg.status === 'evaluating';
 
   return (
     <div className="mt-4 space-y-4 animate-fade-in">
@@ -924,7 +953,7 @@ function PackageDetail({
                 <Badge variant={STATUS_COLORS[bid.status] || 'neutral'} size="sm">
                   {translateStatus(bid.status, t)}
                 </Badge>
-                {bid.status !== 'accepted' && (
+                {bid.status !== 'accepted' && bid.status !== 'rejected' && awardablePackage && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -933,7 +962,7 @@ function PackageDetail({
                     onClick={async () => {
                       const ok = await confirm({
                         title: t('tendering.award_confirm_title', { defaultValue: 'Award contract?' }),
-                        message: t('tendering.award_confirm', { defaultValue: 'Award this contract to {{company}}? This action cannot be undone.', company: bid.company_name }),
+                        message: t('tendering.award_confirm', { defaultValue: 'Award this contract to {{company}}? Winning rates are written back to the BOQ and other bids are rejected. This action cannot be undone.', company: bid.company_name }),
                         variant: 'warning',
                       });
                       if (ok) awardMutation.mutate(bid.id);
@@ -962,6 +991,14 @@ function PackageDetail({
         </div>
         {comparisonLoading ? (
           <SkeletonTable rows={4} columns={4} />
+        ) : comparisonError ? (
+          <EmptyState
+            icon={<AlertTriangle size={28} strokeWidth={1.5} />}
+            title={t('common.error', { defaultValue: 'Error' })}
+            description={t('tendering.comparison_load_error', {
+              defaultValue: 'Failed to load the bid comparison. Please try again.',
+            })}
+          />
         ) : comparison ? (
           <>
             <BidComparisonChart
@@ -1036,7 +1073,11 @@ export function TenderingPage() {
   });
 
   // Fetch packages for selected project
-  const { data: packages, isLoading: packagesLoading } = useQuery({
+  const {
+    data: packages,
+    isLoading: packagesLoading,
+    isError: packagesError,
+  } = useQuery({
     queryKey: ['tendering-packages', selectedProjectId],
     queryFn: () =>
       apiGet<TenderPackage[]>(
@@ -1146,8 +1187,21 @@ export function TenderingPage() {
         <SkeletonTable rows={2} columns={4} />
       )}
 
+      {/* Failed to load packages */}
+      {selectedProjectId && !packagesLoading && packagesError && (
+        <Card className="py-12">
+          <EmptyState
+            icon={<AlertTriangle size={28} strokeWidth={1.5} />}
+            title={t('common.error', { defaultValue: 'Error' })}
+            description={t('tendering.packages_load_error', {
+              defaultValue: 'Failed to load tender packages. Please try again.',
+            })}
+          />
+        </Card>
+      )}
+
       {/* No packages */}
-      {selectedProjectId && !packagesLoading && packages && packages.length === 0 && (
+      {selectedProjectId && !packagesLoading && !packagesError && packages && packages.length === 0 && (
         <EmptyState
           icon={<FileText size={28} strokeWidth={1.5} />}
           title={t('tendering.no_packages', { defaultValue: 'No tenders yet' })}

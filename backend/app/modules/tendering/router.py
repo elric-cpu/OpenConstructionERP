@@ -387,7 +387,7 @@ async def apply_tender_winner(
     the project budget reflects the actual contracted price.
     """
     await _verify_package_owner(service, session, package_id, user_id, payload)
-    return await service.apply_winner(package_id, bid_id)
+    return await service.apply_winner(package_id, bid_id, awarded_by=user_id)
 
 
 # ── Export Endpoints ──────────────────────────────────────────────────────────

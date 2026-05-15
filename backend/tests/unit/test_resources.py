@@ -602,6 +602,70 @@ def test_detect_conflicts_invalid_window() -> None:
     assert conflicts[0].reason == "invalid_window"
 
 
+def test_detect_conflicts_cumulative_overallocation() -> None:
+    """Two existing 40% bookings + a new 40% = 120% must be flagged even
+    though no single existing/new pair on its own exceeds 100%."""
+    rid = uuid.uuid4()
+    a1 = SimpleNamespace(
+        id=uuid.uuid4(),
+        resource_id=rid,
+        start_at=datetime(2026, 5, 10, 8, 0, tzinfo=UTC),
+        end_at=datetime(2026, 5, 10, 17, 0, tzinfo=UTC),
+        allocation_percent=40,
+        status="confirmed",
+    )
+    a2 = SimpleNamespace(
+        id=uuid.uuid4(),
+        resource_id=rid,
+        start_at=datetime(2026, 5, 10, 8, 0, tzinfo=UTC),
+        end_at=datetime(2026, 5, 10, 17, 0, tzinfo=UTC),
+        allocation_percent=40,
+        status="confirmed",
+    )
+    conflicts = detect_conflicts(
+        rid,
+        datetime(2026, 5, 10, 9, 0, tzinfo=UTC),
+        datetime(2026, 5, 10, 12, 0, tzinfo=UTC),
+        40,
+        [a1, a2],
+    )
+    # Both overlapping rows are reported, each carrying the cumulative total.
+    assert len(conflicts) == 2
+    assert all(c.reason == "overallocation" for c in conflicts)
+    assert all(c.total_allocation_percent == 120 for c in conflicts)
+    reported = {c.conflicting_assignment_id for c in conflicts}
+    assert reported == {a1.id, a2.id}
+
+
+def test_detect_conflicts_cumulative_within_budget_passes() -> None:
+    """Two existing 30% + new 40% = 100% is exactly at budget — no conflict."""
+    rid = uuid.uuid4()
+    a1 = SimpleNamespace(
+        id=uuid.uuid4(),
+        resource_id=rid,
+        start_at=datetime(2026, 5, 10, 8, 0, tzinfo=UTC),
+        end_at=datetime(2026, 5, 10, 17, 0, tzinfo=UTC),
+        allocation_percent=30,
+        status="confirmed",
+    )
+    a2 = SimpleNamespace(
+        id=uuid.uuid4(),
+        resource_id=rid,
+        start_at=datetime(2026, 5, 10, 8, 0, tzinfo=UTC),
+        end_at=datetime(2026, 5, 10, 17, 0, tzinfo=UTC),
+        allocation_percent=30,
+        status="confirmed",
+    )
+    conflicts = detect_conflicts(
+        rid,
+        datetime(2026, 5, 10, 9, 0, tzinfo=UTC),
+        datetime(2026, 5, 10, 12, 0, tzinfo=UTC),
+        40,
+        [a1, a2],
+    )
+    assert conflicts == []
+
+
 # ── Pure: is_resource_available ──────────────────────────────────────────
 
 
@@ -1075,6 +1139,129 @@ async def test_cancel_assignment_completed_rejected() -> None:
 
     with pytest.raises(HTTPException):
         await svc.cancel_assignment(a.id)
+
+
+@pytest.mark.asyncio
+async def test_cancel_assignment_already_cancelled_is_idempotent() -> None:
+    """Re-cancelling does not append a second CANCELLED line to notes."""
+    svc = _make_service()
+    r = _make_resource(svc)
+    a = SimpleNamespace(
+        id=uuid.uuid4(),
+        resource_id=r.id,
+        start_at=datetime(2026, 5, 10, 8, 0, tzinfo=UTC),
+        end_at=datetime(2026, 5, 10, 17, 0, tzinfo=UTC),
+        allocation_percent=100,
+        status="cancelled",
+        project_id=PROJECT_ID,
+        task_id=None,
+        work_order_id=None,
+        cost_rate=Decimal("0"),
+        currency="EUR",
+        notes="initial\nCANCELLED: weather",
+        created_by=None,
+        metadata_={},
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    svc.assignment_repo.rows[a.id] = a
+    out = await svc.cancel_assignment(a.id, reason="weather again")
+    assert out.status == "cancelled"
+    # Notes untouched — no second CANCELLED line appended.
+    assert out.notes.count("CANCELLED:") == 1
+    assert "weather again" not in out.notes
+
+
+@pytest.mark.asyncio
+async def test_complete_assignment_rejects_actual_end_before_start() -> None:
+    svc = _make_service()
+    r = _make_resource(svc)
+    a = SimpleNamespace(
+        id=uuid.uuid4(),
+        resource_id=r.id,
+        start_at=datetime(2026, 5, 10, 8, 0, tzinfo=UTC),
+        end_at=datetime(2026, 5, 10, 17, 0, tzinfo=UTC),
+        allocation_percent=100,
+        status="confirmed",
+        project_id=PROJECT_ID,
+        task_id=None,
+        work_order_id=None,
+        cost_rate=Decimal("0"),
+        currency="EUR",
+        notes="",
+        created_by=None,
+        metadata_={},
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    svc.assignment_repo.rows[a.id] = a
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc_info:
+        await svc.complete_assignment(
+            a.id, actual_end=datetime(2026, 5, 10, 6, 0, tzinfo=UTC)
+        )
+    assert exc_info.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_update_assignment_to_cancelled_skips_conflict_check() -> None:
+    """Cancelling via PATCH (status+dates sent together by the edit modal)
+    must not be blocked by an over-allocation conflict against siblings."""
+    svc = _make_service()
+    r = _make_resource(svc)
+    from app.modules.resources.schemas import AssignmentUpdate
+
+    start = datetime(2026, 5, 10, 8, 0, tzinfo=UTC)
+    end = datetime(2026, 5, 10, 17, 0, tzinfo=UTC)
+    target = SimpleNamespace(
+        id=uuid.uuid4(),
+        resource_id=r.id,
+        start_at=start,
+        end_at=end,
+        allocation_percent=100,
+        status="confirmed",
+        project_id=PROJECT_ID,
+        task_id=None,
+        work_order_id=None,
+        cost_rate=Decimal("0"),
+        currency="EUR",
+        notes="",
+        created_by=None,
+        metadata_={},
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    sibling = SimpleNamespace(
+        id=uuid.uuid4(),
+        resource_id=r.id,
+        start_at=start,
+        end_at=end,
+        allocation_percent=100,
+        status="confirmed",
+        project_id=PROJECT_ID,
+        task_id=None,
+        work_order_id=None,
+        cost_rate=Decimal("0"),
+        currency="EUR",
+        notes="",
+        created_by=None,
+        metadata_={},
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    svc.assignment_repo.rows[target.id] = target
+    svc.assignment_repo.rows[sibling.id] = sibling
+    updated = await svc.update_assignment(
+        target.id,
+        AssignmentUpdate(
+            status="cancelled",
+            start_at=start,
+            end_at=end,
+            allocation_percent=100,
+        ),
+    )
+    assert updated.status == "cancelled"
 
 
 # ── Service: skill / cert attach ─────────────────────────────────────────

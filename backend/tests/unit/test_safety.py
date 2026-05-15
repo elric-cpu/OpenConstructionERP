@@ -352,3 +352,154 @@ async def test_delete_observation() -> None:
 
     with pytest.raises(HTTPException):
         await svc.get_observation(obs.id)
+
+
+# ── Tests: incident-date robustness (safety-reporting integrity) ──────────
+
+
+def test_parse_incident_date_iso_and_fallbacks() -> None:
+    from datetime import date
+
+    from app.modules.safety._dateutil import parse_incident_date
+
+    assert parse_incident_date("2026-04-10") == date(2026, 4, 10)
+    assert parse_incident_date("2026-04-10T08:15:00+00:00") == date(2026, 4, 10)
+    assert parse_incident_date("10.04.2026") == date(2026, 4, 10)  # DACH dotted
+    assert parse_incident_date("2026/04/10") == date(2026, 4, 10)
+    assert parse_incident_date("20260410") == date(2026, 4, 10)
+    # Empty / unparseable / ambiguous → None (cannot confirm, never guessed)
+    assert parse_incident_date("") is None
+    assert parse_incident_date(None) is None
+    assert parse_incident_date("not-a-date") is None
+    assert parse_incident_date("9999-99-99") is None
+
+
+def test_canonicalize_incident_date_normalises_and_preserves_bad() -> None:
+    from app.modules.safety._dateutil import canonicalize_incident_date
+
+    assert canonicalize_incident_date("10.04.2026") == "2026-04-10"
+    assert canonicalize_incident_date("2026-04-10") == "2026-04-10"
+    # Unparseable is preserved (trimmed), NOT silently erased — the
+    # integrity failure must remain visible downstream.
+    assert canonicalize_incident_date("  garbage  ") == "garbage"
+
+
+@pytest.mark.asyncio
+async def test_create_incident_canonicalizes_date() -> None:
+    """Write path must store a clean ISO YYYY-MM-DD string.
+
+    The API schema enforces the pattern, but a direct service caller may
+    pass a non-canonical (yet parseable) form; it must be normalised so the
+    downstream "days without incident / LTI" billboard never has to guess.
+    """
+    svc = _make_service()
+    with patch("app.modules.safety.service.event_bus.publish", new_callable=AsyncMock):
+        # IncidentCreate enforces the pattern, so build the model then mutate
+        # the field to simulate a non-canonical direct-service input.
+        data = _incident_data()
+        data.incident_date = "10.04.2026"
+        incident = await svc.create_incident(data, user_id="u1")
+    assert incident.incident_date == "2026-04-10"
+
+
+class _StatsSession:
+    """Session stub whose .execute returns preloaded incidents/observations.
+
+    get_stats issues two ``select`` statements (incidents, then
+    observations); this returns them in order.
+    """
+
+    def __init__(self, incidents: list, observations: list) -> None:
+        self._payloads = [incidents, observations]
+        self._i = 0
+
+    async def execute(self, _stmt: Any) -> Any:
+        payload = self._payloads[self._i] if self._i < len(self._payloads) else []
+        self._i += 1
+        return SimpleNamespace(scalars=lambda p=payload: SimpleNamespace(all=lambda: p))
+
+
+def _incident_row(incident_date: str, *, days_lost: int = 5) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=uuid.uuid4(),
+        incident_number="INC-0001",
+        incident_date=incident_date,
+        incident_type="injury",
+        status="reported",
+        treatment_type="hospital",
+        days_lost=days_lost,
+        corrective_actions=[],
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_stats_lti_with_valid_date_reduces_days_without() -> None:
+    """A valid recent LTI date yields a small, correct 'days without' value."""
+    from datetime import UTC, datetime
+
+    svc = _make_service()
+    today = datetime.now(UTC).date()
+    iso = f"{today.year:04d}-{today.month:02d}-{today.day:02d}"
+    svc.session = _StatsSession([_incident_row(iso)], [])
+
+    stats = await svc.get_stats(PROJECT_ID)
+
+    assert stats.total_incidents == 1
+    assert stats.days_without_incident_status == "ok"
+    assert stats.days_without_incident is not None
+    # Same-day incident → 0; never a large reassuring number.
+    assert 0 <= stats.days_without_incident <= 1
+    assert stats.unparseable_incident_dates == 0
+
+
+@pytest.mark.asyncio
+async def test_get_stats_malformed_date_not_falsely_safe() -> None:
+    """A malformed stored date for a real incident must NOT yield a
+    falsely-reassuring large/blank 'all good' number.
+
+    Regression pin for the HSE-Advanced finding: a non-ISO incident_date
+    must be reported as 'unconfirmed', not silently dropped to look clean.
+    """
+    svc = _make_service()
+    svc.session = _StatsSession([_incident_row("9999-99-99")], [])
+
+    stats = await svc.get_stats(PROJECT_ID)
+
+    assert stats.total_incidents == 1
+    # NOT "none" (that would mean genuinely clean) and NOT a number.
+    assert stats.days_without_incident_status == "unconfirmed"
+    assert stats.days_without_incident is None
+    assert stats.unparseable_incident_dates == 1
+
+
+@pytest.mark.asyncio
+async def test_get_stats_no_incidents_is_genuinely_clean() -> None:
+    svc = _make_service()
+    svc.session = _StatsSession([], [])
+
+    stats = await svc.get_stats(PROJECT_ID)
+
+    assert stats.total_incidents == 0
+    assert stats.days_without_incident_status == "none"
+    assert stats.days_without_incident is None
+
+
+@pytest.mark.asyncio
+async def test_get_stats_malformed_does_not_mask_valid_recent() -> None:
+    """A garbage string must not win the 'latest' comparison and mask a
+    real recent incident (raw string-max bug regression)."""
+    from datetime import UTC, datetime
+
+    svc = _make_service()
+    today = datetime.now(UTC).date()
+    iso = f"{today.year:04d}-{today.month:02d}-{today.day:02d}"
+    svc.session = _StatsSession(
+        [_incident_row("zzzz-bad"), _incident_row(iso)], []
+    )
+
+    stats = await svc.get_stats(PROJECT_ID)
+
+    # Valid recent date drives the metric; status is "ok" despite the bad row.
+    assert stats.days_without_incident_status == "ok"
+    assert stats.days_without_incident == 0
+    assert stats.unparseable_incident_dates == 1

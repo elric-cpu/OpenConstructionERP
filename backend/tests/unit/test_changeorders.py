@@ -202,6 +202,53 @@ async def test_create_order_retries_on_integrity_error() -> None:
     assert order.code == "CO-003"  # count=0, attempts 0,1,2 → ordinal 3
 
 
+# ── task #217: no silent EUR default on create ──────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_create_order_without_currency_does_not_become_eur() -> None:
+    """A change order created without an explicit currency on a project
+    that has no currency must NOT silently become 'EUR' (task #217 /
+    the architecture guide ban on model-/schema-level hardcoded currency)."""
+    service, session, repo = _make_service()
+    pid = uuid.uuid4()
+    # Project exists but carries no currency (honest-unknown project).
+    session.projects[pid] = SimpleNamespace(id=pid, currency="")
+
+    data = ChangeOrderCreate(project_id=pid, title="Scope change")
+    # Schema must not inject a literal EUR either.
+    assert data.currency == ""
+
+    order = await service.create_order(data)
+    assert order.currency != "EUR"
+    assert order.currency == ""
+
+
+@pytest.mark.asyncio
+async def test_create_order_inherits_project_currency() -> None:
+    """When the caller omits currency, the CO inherits the project's
+    currency — a BRL project's change order is priced in BRL, not EUR."""
+    service, session, repo = _make_service()
+    pid = uuid.uuid4()
+    session.projects[pid] = SimpleNamespace(id=pid, currency="BRL")
+
+    data = ChangeOrderCreate(project_id=pid, title="Vila Madalena extra")
+    order = await service.create_order(data)
+    assert order.currency == "BRL"
+
+
+@pytest.mark.asyncio
+async def test_create_order_explicit_currency_is_preserved() -> None:
+    """An explicit currency on the request overrides the project default."""
+    service, session, repo = _make_service()
+    pid = uuid.uuid4()
+    session.projects[pid] = SimpleNamespace(id=pid, currency="BRL")
+
+    data = ChangeOrderCreate(project_id=pid, title="USD-priced", currency="USD")
+    order = await service.create_order(data)
+    assert order.currency == "USD"
+
+
 @pytest.mark.asyncio
 async def test_create_order_gives_up_after_max_retries() -> None:
     service, _, repo = _make_service()

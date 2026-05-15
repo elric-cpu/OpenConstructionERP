@@ -48,6 +48,7 @@ import { useToastStore } from '@/stores/useToastStore';
 import { getErrorMessage } from '@/shared/lib/api';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { usePreferencesStore } from '@/stores/usePreferencesStore';
 import {
   listResources,
   getResourceDashboard,
@@ -327,6 +328,18 @@ export function ResourcesPage() {
               <div className="p-4">
                 <SkeletonTable rows={8} columns={5} />
               </div>
+            ) : resourcesQ.isError ? (
+              <EmptyState
+                icon={<AlertTriangle size={22} />}
+                title={t('resources.load_failed_title', {
+                  defaultValue: 'Could not load resources',
+                })}
+                description={getErrorMessage(resourcesQ.error)}
+                action={{
+                  label: t('common.retry', { defaultValue: 'Retry' }),
+                  onClick: () => resourcesQ.refetch(),
+                }}
+              />
             ) : (
               <ResourceTable
                 rows={filteredResources}
@@ -460,7 +473,7 @@ function ResourceTable({
               <td className="px-4 py-2 text-right">
                 <MoneyDisplay
                   amount={Number(r.default_cost_rate) || 0}
-                  currency={r.currency || 'EUR'}
+                  currency={r.currency || undefined}
                 />
               </td>
             </tr>
@@ -868,6 +881,20 @@ function RequestsTab({
       ) : requestsQ.isLoading ? (
         <Card padding="md">
           <SkeletonTable rows={6} columns={6} />
+        </Card>
+      ) : requestsQ.isError ? (
+        <Card padding="md">
+          <EmptyState
+            icon={<AlertTriangle size={22} />}
+            title={t('resources.requests_load_failed_title', {
+              defaultValue: 'Could not load requests',
+            })}
+            description={getErrorMessage(requestsQ.error)}
+            action={{
+              label: t('common.retry', { defaultValue: 'Retry' }),
+              onClick: () => requestsQ.refetch(),
+            }}
+          />
         </Card>
       ) : filtered.length === 0 ? (
         <Card padding="md">
@@ -1638,6 +1665,7 @@ function FulfillRequestModal({
 }: FulfillRequestModalProps) {
   const { t } = useTranslation();
   const addToast = useToastStore((s) => s.addToast);
+  const prefCurrency = usePreferencesStore((s) => s.currency);
   const [busy, setBusy] = useState(false);
 
   // Suggest the first active resource as a default; user can change it.
@@ -1649,7 +1677,9 @@ function FulfillRequestModal({
   const [form, setForm] = useState({
     resource_id: defaultResource?.id ?? '',
     cost_rate: defaultResource ? String(defaultResource.default_cost_rate ?? '0') : '0',
-    currency: defaultResource?.currency || 'EUR',
+    // Fall back to the user's currency preference (never a hardcoded
+    // 'EUR') when the picked resource has no currency of its own.
+    currency: defaultResource?.currency || prefCurrency,
     allocation_percent: 100,
     notes: '',
   });
@@ -2563,15 +2593,32 @@ function ResourceDrawer({
     onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),
   });
 
+  // Close on Escape — consistent with every other dialog/drawer in the app
+  // (WideModal, ConfirmDialog). Without this the slide-over could only be
+  // dismissed by mouse, which is an a11y/keyboard-trap regression.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   const data = dashQ.data;
   const timeOff = (timeOffQ.data ?? []).filter(
     (w) => w.window_type !== 'available',
   );
+  const loadError = dashQ.isError ? dashQ.error : null;
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30" />
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('resources.resource_detail', {
+          defaultValue: 'Resource detail',
+        })}
         className="relative h-full w-full max-w-xl overflow-y-auto bg-surface-elevated shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
@@ -2598,6 +2645,25 @@ function ResourceDrawer({
 
         <div className="space-y-4 p-5">
           {dashQ.isLoading && <SkeletonTable rows={5} columns={2} />}
+          {loadError && !dashQ.isLoading && (
+            <div
+              role="alert"
+              className="flex items-start gap-2 rounded-lg border border-semantic-error/30 bg-semantic-error/10 px-3 py-2.5 text-sm text-semantic-error"
+              data-testid="resource-drawer-error"
+            >
+              <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+              <div className="space-y-1.5">
+                <p>{getErrorMessage(loadError)}</p>
+                <button
+                  type="button"
+                  onClick={() => dashQ.refetch()}
+                  className="font-medium underline hover:no-underline"
+                >
+                  {t('common.retry', { defaultValue: 'Retry' })}
+                </button>
+              </div>
+            </div>
+          )}
           {data && (
             <>
               <div className="grid grid-cols-2 gap-3 text-sm">
@@ -2626,7 +2692,7 @@ function ResourceDrawer({
                   value={
                     <MoneyDisplay
                       amount={Number(data.resource.default_cost_rate) || 0}
-                      currency={data.resource.currency || 'EUR'}
+                      currency={data.resource.currency || undefined}
                     />
                   }
                 />
@@ -2871,13 +2937,15 @@ function CreateResourceModal({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const addToast = useToastStore((s) => s.addToast);
+  const prefCurrency = usePreferencesStore((s) => s.currency);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({
     code: '',
     name: '',
     resource_type: 'person' as ResourceType,
     default_cost_rate: '0',
-    currency: 'EUR',
+    // Seed with the user's currency preference, not a hardcoded 'EUR'.
+    currency: prefCurrency,
   });
 
   async function submit() {

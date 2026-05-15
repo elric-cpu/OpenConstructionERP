@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
@@ -147,6 +147,17 @@ export function PortalPage() {
     (tab === 'users' && usersQ.isLoading) ||
     (tab === 'audit_log' && auditQ.isLoading);
 
+  // Surface fetch failures explicitly. Without this, a failed users/audit
+  // request falls through to the "No portal users yet" empty state, which
+  // misleads the operator into thinking the portal is empty rather than
+  // that the request failed.
+  const activeError =
+    tab === 'users'
+      ? usersQ.error
+      : tab === 'audit_log'
+        ? auditQ.error
+        : null;
+
   return (
     <div className="space-y-5">
       <Breadcrumb
@@ -276,6 +287,21 @@ export function PortalPage() {
           <div className="p-4">
             <SkeletonTable rows={8} columns={5} />
           </div>
+        ) : activeError ? (
+          <EmptyState
+            icon={<X size={22} />}
+            title={t('portal.load_failed', {
+              defaultValue: 'Could not load portal data',
+            })}
+            description={getErrorMessage(activeError)}
+            action={{
+              label: t('common.retry', { defaultValue: 'Retry' }),
+              onClick: () => {
+                if (tab === 'users') void usersQ.refetch();
+                else if (tab === 'audit_log') void auditQ.refetch();
+              },
+            }}
+          />
         ) : tab === 'users' ? (
           <UserTable
             rows={filteredUsers}
@@ -695,6 +721,16 @@ function UserDrawer({
   const qc = useQueryClient();
   const addToast = useToastStore((s) => s.addToast);
 
+  // Escape closes the drawer — matches the dialog/drawer a11y pattern used
+  // elsewhere in the app (CommentDrawer, AssetDetailDrawer).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   const resendMut = useMutation({
     mutationFn: () => resendInvite(user.id),
     onSuccess: (data) => {
@@ -741,6 +777,11 @@ function UserDrawer({
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30" />
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('portal.user_detail', {
+          defaultValue: 'Portal user details',
+        })}
         className="relative h-full w-full max-w-lg overflow-y-auto bg-surface-elevated shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >

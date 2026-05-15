@@ -36,6 +36,7 @@ import { useToastStore } from '@/stores/useToastStore';
 import { getErrorMessage } from '@/shared/lib/api';
 import {
   listSubcontractors,
+  getSubcontractor,
   createSubcontractor,
   updateSubcontractor,
   deleteSubcontractor,
@@ -227,6 +228,20 @@ export function SubcontractorsPage() {
           <div className="p-4">
             <SkeletonTable rows={8} columns={5} />
           </div>
+        ) : subsQ.isError ? (
+          <EmptyState
+            icon={<ShieldAlert size={22} />}
+            title={t('subcontractors.load_error', {
+              defaultValue: 'Could not load subcontractors',
+            })}
+            description={getErrorMessage(subsQ.error)}
+            action={{
+              label: t('common.retry', { defaultValue: 'Retry' }),
+              onClick: () => {
+                void subsQ.refetch();
+              },
+            }}
+          />
         ) : filtered.length === 0 ? (
           <EmptyState
             icon={<HardHat size={22} />}
@@ -361,10 +376,8 @@ function DetailDrawer({ id, onClose }: { id: string; onClose: () => void }) {
 
   const subQ = useQuery({
     queryKey: ['subcontractors', 'detail', id],
-    queryFn: () =>
-      listSubcontractors({ limit: 200 }).then(
-        (rows) => rows.find((r) => r.id === id) ?? null,
-      ),
+    queryFn: () => getSubcontractor(id),
+    enabled: !!id,
   });
   const sub = subQ.data;
 
@@ -518,6 +531,30 @@ function DetailDrawer({ id, onClose }: { id: string; onClose: () => void }) {
           </div>
         )}
 
+        {subQ.isLoading && !sub && (
+          <div className="p-5">
+            <SkeletonTable rows={4} columns={4} />
+          </div>
+        )}
+
+        {subQ.isError && !sub && (
+          <div className="p-5">
+            <EmptyState
+              icon={<ShieldAlert size={20} />}
+              title={t('subcontractors.detail_error', {
+                defaultValue: 'Could not load this subcontractor',
+              })}
+              description={getErrorMessage(subQ.error)}
+              action={{
+                label: t('common.retry', { defaultValue: 'Retry' }),
+                onClick: () => {
+                  void subQ.refetch();
+                },
+              }}
+            />
+          </div>
+        )}
+
         {sub && (
           <>
             <div className="grid grid-cols-2 gap-3 p-5 text-sm border-b border-border-light sm:grid-cols-4">
@@ -629,21 +666,32 @@ function DetailDrawer({ id, onClose }: { id: string; onClose: () => void }) {
                   })}
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  {(certsQ.data ?? []).map((c) => (
-                    <Badge
-                      key={c.id}
-                      variant={
-                        c.revoked
-                          ? 'error'
-                          : c.valid_until && c.valid_until < new Date().toISOString().slice(0, 10)
-                            ? 'warning'
-                            : 'success'
-                      }
-                    >
-                      {c.cert_type}
-                      {c.valid_until ? ` · ${c.valid_until}` : ''}
-                    </Badge>
-                  ))}
+                  {(certsQ.data ?? []).map((c) => {
+                    const today = new Date().toISOString().slice(0, 10);
+                    const isExpired = !!c.valid_until && c.valid_until < today;
+                    const expiresSoon =
+                      !!c.valid_until &&
+                      !isExpired &&
+                      c.valid_until <=
+                        new Date(Date.now() + 60 * 86_400_000)
+                          .toISOString()
+                          .slice(0, 10);
+                    return (
+                      <Badge
+                        key={c.id}
+                        variant={
+                          c.revoked || isExpired
+                            ? 'error'
+                            : expiresSoon
+                              ? 'warning'
+                              : 'success'
+                        }
+                      >
+                        {c.cert_type}
+                        {c.valid_until ? ` · ${c.valid_until}` : ''}
+                      </Badge>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -749,7 +797,7 @@ function AgreementRow({ agreement }: { agreement: Agreement }) {
         <span className="font-medium text-content-primary">
           <MoneyDisplay
             amount={toNum(agreement.total_value)}
-            currency={agreement.currency || 'EUR'}
+            currency={agreement.currency || undefined}
           />
         </span>
       </div>
@@ -814,6 +862,11 @@ function PaymentsTab({
         ))}
       </select>
       {paymentsQ.isLoading && <SkeletonTable rows={3} columns={3} />}
+      {paymentsQ.isError && (
+        <p className="text-sm text-semantic-error">
+          {getErrorMessage(paymentsQ.error)}
+        </p>
+      )}
       {paymentsQ.data && paymentsQ.data.length === 0 && (
         <p className="text-sm text-content-tertiary">
           {t('subcontractors.no_payment_apps', {
@@ -862,13 +915,13 @@ function PaymentList({ rows }: { rows: PaymentApplication[] }) {
               <td className="px-3 py-2 text-right">
                 <MoneyDisplay
                   amount={toNum(p.gross_amount)}
-                  currency={p.currency || 'EUR'}
+                  currency={p.currency || undefined}
                 />
               </td>
               <td className="px-3 py-2 text-right font-medium">
                 <MoneyDisplay
                   amount={toNum(p.net_amount)}
-                  currency={p.currency || 'EUR'}
+                  currency={p.currency || undefined}
                 />
               </td>
               <td className="px-3 py-2">
@@ -985,7 +1038,10 @@ function RetentionTab({
   const accrued = entries.reduce((s, e) => s + toNum(e.accrued_amount), 0);
   const released = entries.reduce((s, e) => s + toNum(e.released_amount), 0);
   const balance = accrued - released;
-  const currency = agreements.find((a) => a.id === effectiveId)?.currency || 'EUR';
+  // Empty currency → undefined so MoneyDisplay falls back to the user's
+  // preferred currency rather than a hardcoded EUR.
+  const currency =
+    agreements.find((a) => a.id === effectiveId)?.currency || undefined;
 
   return (
     <div className="space-y-3">
@@ -1027,7 +1083,12 @@ function RetentionTab({
         </Card>
       </div>
       {ledgerQ.isLoading && <SkeletonTable rows={3} columns={3} />}
-      {entries.length === 0 && !ledgerQ.isLoading && (
+      {ledgerQ.isError && (
+        <p className="text-xs text-semantic-error">
+          {getErrorMessage(ledgerQ.error)}
+        </p>
+      )}
+      {entries.length === 0 && !ledgerQ.isLoading && !ledgerQ.isError && (
         <p className="text-xs text-content-tertiary">
           {t('subcontractors.no_retention_entries', {
             defaultValue: 'No retention ledger entries yet.',

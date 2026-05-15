@@ -121,17 +121,26 @@ function translateStatus(status: string, t: (key: string, opts?: Record<string, 
   return map[status] || status;
 }
 
-function formatCurrency(amount: number, currency: string = 'EUR'): string {
-  const safe = /^[A-Z]{3}$/.test(currency) ? currency : 'EUR';
+function formatCurrency(amount: number, currency?: string): string {
+  // NEVER hard-fallback to 'EUR' (task #217): a project priced in BRL/USD
+  // must not render its change-order amounts with a Euro sign. When the
+  // currency is unknown, show a plain decimal number with no symbol.
+  const code = (currency || '').trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(code)) {
+    return new Intl.NumberFormat(getIntlLocale(), {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(amount);
+  }
   try {
     return new Intl.NumberFormat(getIntlLocale(), {
       style: 'currency',
-      currency: safe,
+      currency: code,
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     }).format(amount);
   } catch {
-    return `${amount.toFixed(0)} ${safe}`;
+    return `${amount.toFixed(0)} ${code}`;
   }
 }
 
@@ -988,7 +997,10 @@ export function ChangeOrdersPage() {
     );
   }
 
-  const currency = project?.currency || summary?.currency || 'EUR';
+  // Empty when the project carries no currency — the backend resolves the
+  // project's currency on create, and formatCurrency renders a symbol-less
+  // number rather than mis-labelling amounts as EUR (task #217).
+  const currency = project?.currency || summary?.currency || '';
 
   return (
     <div className="w-full animate-fade-in">

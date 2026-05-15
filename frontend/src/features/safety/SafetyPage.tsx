@@ -325,6 +325,9 @@ async function downloadExcelExport(url: string, fallbackFilename: string): Promi
 interface SafetyStats {
   total_incidents: number;
   incidents_by_status?: Record<string, number>;
+  days_without_incident?: number | null;
+  days_without_incident_status?: 'none' | 'ok' | 'unconfirmed' | string;
+  unparseable_incident_dates?: number;
 }
 
 interface PunchSummaryData {
@@ -335,7 +338,7 @@ interface PunchSummaryData {
 function QualityDashboardSummary({ projectId }: { projectId: string }) {
   const { t } = useTranslation();
 
-  const { data: safetyStats } = useQuery({
+  const { data: safetyStats, isError: safetyStatsError } = useQuery({
     queryKey: ['safety-stats', projectId],
     queryFn: () => apiGet<SafetyStats>(`/v1/safety/stats/?project_id=${projectId}`),
     enabled: !!projectId,
@@ -368,6 +371,14 @@ function QualityDashboardSummary({ projectId }: { projectId: string }) {
       (safetyStats.incidents_by_status?.['investigating'] ?? 0)
     : 0;
 
+  // A safety widget must never silently show a reassuring "0": flag a failed
+  // query, and flag incidents whose stored dates could not be parsed (the
+  // "days without incident" metric is then NOT safe to trust).
+  const safetyDataUnreliable =
+    safetyStatsError ||
+    (safetyStats?.unparseable_incident_dates ?? 0) > 0 ||
+    safetyStats?.days_without_incident_status === 'unconfirmed';
+
   const pendingInspections = inspections
     ? inspections.filter((i) => i.status === 'scheduled' || i.status === 'in_progress').length
     : 0;
@@ -388,7 +399,33 @@ function QualityDashboardSummary({ projectId }: { projectId: string }) {
           <div className="text-2xs text-content-tertiary uppercase">
             {t('safety.dash_open_incidents', { defaultValue: 'Open Incidents' })}
           </div>
-          <div className="text-xl font-bold text-content-primary">{openIncidents}</div>
+          {safetyStatsError ? (
+            <div
+              className="flex items-center gap-1 text-sm font-semibold text-semantic-error"
+              title={t('safety.stats_load_error', {
+                defaultValue: 'Could not load safety data — figure not confirmed',
+              })}
+            >
+              <AlertTriangle size={14} />
+              {t('common.error', { defaultValue: 'Error' })}
+            </div>
+          ) : (
+            <>
+              <div className="text-xl font-bold text-content-primary">{openIncidents}</div>
+              {safetyDataUnreliable && (
+                <div
+                  className="mt-0.5 flex items-center gap-1 text-2xs text-semantic-error"
+                  title={t('safety.dates_unparseable_hint', {
+                    defaultValue:
+                      'Some incidents have unreadable dates — "days without incident" cannot be confirmed.',
+                  })}
+                >
+                  <AlertTriangle size={11} />
+                  {t('safety.data_unreliable', { defaultValue: 'Check date integrity' })}
+                </div>
+              )}
+            </>
+          )}
         </div>
       </Card>
       <Card padding="none">

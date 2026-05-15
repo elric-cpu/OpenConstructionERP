@@ -396,6 +396,22 @@ async def record_subcontractor_scorecard(
 # ── Lines ─────────────────────────────────────────────────────────────────
 
 
+@router.get(
+    "/bid-package-line-items/",
+    response_model=list[BidPackageLineItemResponse],
+)
+async def list_line_items(
+    session: SessionDep,
+    user_id: CurrentUserId,
+    package_id: uuid.UUID = Query(...),
+    _perm: None = Depends(RequirePermission("bid_management.read")),
+) -> list[BidPackageLineItemResponse]:
+    await _verify_package_access(session, package_id, user_id)
+    svc = BidManagementService(session)
+    rows = await svc.line_repo.list_for_package(package_id)
+    return [BidPackageLineItemResponse.model_validate(r) for r in rows]
+
+
 @router.post(
     "/bid-package-line-items/",
     response_model=BidPackageLineItemResponse,
@@ -467,6 +483,19 @@ async def delete_line_item(
 # ── Bidders ───────────────────────────────────────────────────────────────
 
 
+@router.get("/bidders/", response_model=list[BidderResponse])
+async def list_bidders(
+    session: SessionDep,
+    user_id: CurrentUserId,
+    package_id: uuid.UUID = Query(...),
+    _perm: None = Depends(RequirePermission("bid_management.read")),
+) -> list[BidderResponse]:
+    await _verify_package_access(session, package_id, user_id)
+    svc = BidManagementService(session)
+    rows = await svc.bidder_repo.list_for_package(package_id)
+    return [BidderResponse.model_validate(r) for r in rows]
+
+
 @router.post("/bidders/", response_model=BidderResponse, status_code=201)
 async def create_bidder(
     data: BidderCreate,
@@ -530,6 +559,22 @@ async def disqualify_bidder(
 
 
 # ── Invitations ───────────────────────────────────────────────────────────
+
+
+@router.get("/invitations/", response_model=list[BidInvitationResponse])
+async def list_invitations(
+    session: SessionDep,
+    user_id: CurrentUserId,
+    package_id: uuid.UUID = Query(...),
+    status_filter: str | None = Query(default=None, alias="status"),
+    _perm: None = Depends(RequirePermission("bid_management.read")),
+) -> list[BidInvitationResponse]:
+    await _verify_package_access(session, package_id, user_id)
+    svc = BidManagementService(session)
+    rows = await svc.invitation_repo.list_for_package(
+        package_id, status=status_filter
+    )
+    return [BidInvitationResponse.model_validate(r) for r in rows]
 
 
 @router.post("/invitations/", response_model=BidInvitationResponse, status_code=201)
@@ -616,6 +661,19 @@ async def decline_invitation(
 # ── Submissions ───────────────────────────────────────────────────────────
 
 
+@router.get("/submissions/", response_model=list[BidSubmissionResponse])
+async def list_submissions(
+    session: SessionDep,
+    user_id: CurrentUserId,
+    package_id: uuid.UUID = Query(...),
+    _perm: None = Depends(RequirePermission("bid_management.read")),
+) -> list[BidSubmissionResponse]:
+    await _verify_package_access(session, package_id, user_id)
+    svc = BidManagementService(session)
+    rows = await svc.submission_repo.submissions_for_package(package_id)
+    return [BidSubmissionResponse.model_validate(r) for r in rows]
+
+
 @router.post("/submissions/", response_model=BidSubmissionResponse, status_code=201)
 async def create_submission(
     data: BidSubmissionCreate,
@@ -671,6 +729,21 @@ async def withdraw_submission(
 
 
 # ── Submission lines ──────────────────────────────────────────────────────
+
+
+@router.get(
+    "/submission-lines/", response_model=list[BidSubmissionLineResponse]
+)
+async def list_submission_lines(
+    session: SessionDep,
+    user_id: CurrentUserId,
+    submission_id: uuid.UUID = Query(...),
+    _perm: None = Depends(RequirePermission("bid_management.read")),
+) -> list[BidSubmissionLineResponse]:
+    await _verify_submission_access(session, submission_id, user_id)
+    svc = BidManagementService(session)
+    rows = await svc.submission_line_repo.list_for_submission(submission_id)
+    return [BidSubmissionLineResponse.model_validate(r) for r in rows]
 
 
 @router.post(
@@ -740,6 +813,19 @@ async def delete_submission_line(
 
 
 # ── Q & A ─────────────────────────────────────────────────────────────────
+
+
+@router.get("/q-and-a/", response_model=list[BidQAResponse])
+async def list_qa(
+    session: SessionDep,
+    user_id: CurrentUserId,
+    package_id: uuid.UUID = Query(...),
+    _perm: None = Depends(RequirePermission("bid_management.read")),
+) -> list[BidQAResponse]:
+    await _verify_package_access(session, package_id, user_id)
+    svc = BidManagementService(session)
+    rows = await svc.qa_repo.q_and_a_for_package(package_id)
+    return [BidQAResponse.model_validate(r) for r in rows]
 
 
 @router.post("/q-and-a/", response_model=BidQAResponse, status_code=201)

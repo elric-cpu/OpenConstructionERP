@@ -183,6 +183,40 @@ async def test_suspend_blacklist_reactivate(session, captured_events):
 
 
 @pytest.mark.asyncio
+async def test_blacklisted_vendor_cannot_be_suspended(session):
+    """Blacklist is terminal — re-suspending it is an illegal transition."""
+    svc = SupplierCatalogsService(session)
+    vendor = await _seed_vendor(svc)
+    vendor = await svc.blacklist_vendor(vendor.id, reason="fraud")
+    assert vendor.status == "blacklisted"
+    with pytest.raises(HTTPException) as exc:
+        await svc.suspend_vendor(vendor.id, reason="x")
+    assert exc.value.status_code == 400
+    assert "Illegal vendor status transition" in (exc.value.detail or "")
+
+
+@pytest.mark.asyncio
+async def test_vendor_status_noop_rejected(session):
+    """Setting a vendor to a status it already holds is a 400, not a no-op."""
+    svc = SupplierCatalogsService(session)
+    vendor = await _seed_vendor(svc)  # born active
+    with pytest.raises(HTTPException) as exc:
+        await svc.reactivate_vendor(vendor.id)
+    assert exc.value.status_code == 400
+    assert "already" in (exc.value.detail or "")
+
+
+@pytest.mark.asyncio
+async def test_blacklisted_vendor_can_be_reactivated(session):
+    """Reactivation is the one legal exit from blacklist (deliberate action)."""
+    svc = SupplierCatalogsService(session)
+    vendor = await _seed_vendor(svc)
+    await svc.blacklist_vendor(vendor.id, reason="fraud")
+    reactivated = await svc.reactivate_vendor(vendor.id)
+    assert reactivated.status == "active"
+
+
+@pytest.mark.asyncio
 async def test_rate_vendor(session, captured_events):
     svc = SupplierCatalogsService(session)
     vendor = await _seed_vendor(svc)
@@ -1413,6 +1447,43 @@ async def test_peppol_ingest_creates_invoice_and_matches(session, captured_event
     assert result.matched_status in ("auto_matched", "exception")
     names = [n for n, _ in captured_events]
     assert "supplier_catalogs.invoice.peppol_ingested" in names
+
+
+@pytest.mark.asyncio
+async def test_peppol_parser_rejects_xxe_payload():
+    """An external-entity (XXE) payload must be rejected, not resolved."""
+    from app.modules.supplier_catalogs.peppol import (
+        PeppolParseError,
+        parse_peppol_invoice,
+    )
+
+    xxe = (
+        '<?xml version="1.0"?>'
+        '<!DOCTYPE Invoice [<!ENTITY xxe SYSTEM "file:///etc/passwd">]>'
+        '<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:'
+        'Invoice-2"><cbc:ID xmlns:cbc="urn:oasis:names:specification:ubl:'
+        'schema:xsd:CommonBasicComponents-2">&xxe;</cbc:ID></Invoice>'
+    )
+    with pytest.raises(PeppolParseError):
+        parse_peppol_invoice(xxe)
+
+
+@pytest.mark.asyncio
+async def test_peppol_parser_handles_whitespace_amounts():
+    """Pretty-printed XML wraps amounts in whitespace — must not zero out."""
+    from app.modules.supplier_catalogs.peppol import parse_peppol_invoice
+
+    xml = _PEPPOL_XML_TEMPLATE.format(
+        invoice_id="INV-WS",
+        po_number="PO-1",
+        supplier_name="Acme",
+        supplier_vat="DE1",
+    ).replace(
+        '<cbc:PayableAmount currencyID="EUR">1190.00</cbc:PayableAmount>',
+        '<cbc:PayableAmount currencyID="EUR">\n      1190.00\n    </cbc:PayableAmount>',
+    )
+    parsed = parse_peppol_invoice(xml)
+    assert parsed.payable_amount == Decimal("1190.00")
 
 
 @pytest.mark.asyncio

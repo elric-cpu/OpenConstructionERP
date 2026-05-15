@@ -126,10 +126,13 @@ async def create_diary(
 @router.get("/diaries/{diary_id}", response_model=DailyDiaryResponse)
 async def get_diary(
     diary_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.read")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> DailyDiaryResponse:
     diary = await service.get_diary(diary_id)
+    await verify_project_access(diary.project_id, user_id, session)
     return DailyDiaryResponse.model_validate(diary)
 
 
@@ -137,9 +140,13 @@ async def get_diary(
 async def update_diary(
     diary_id: uuid.UUID,
     data: DailyDiaryUpdate,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.update")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> DailyDiaryResponse:
+    existing = await service.get_diary(diary_id)
+    await verify_project_access(existing.project_id, user_id, session)
     diary = await service.update_diary(diary_id, data)
     return DailyDiaryResponse.model_validate(diary)
 
@@ -147,19 +154,26 @@ async def update_diary(
 @router.delete("/diaries/{diary_id}", status_code=204)
 async def delete_diary(
     diary_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.delete")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> None:
+    existing = await service.get_diary(diary_id)
+    await verify_project_access(existing.project_id, user_id, session)
     await service.delete_diary(diary_id)
 
 
 @router.post("/diaries/{diary_id}/close", response_model=DailyDiaryResponse)
 async def close_diary(
     diary_id: uuid.UUID,
+    session: SessionDep,
     user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.close")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> DailyDiaryResponse:
+    existing = await service.get_diary(diary_id)
+    await verify_project_access(existing.project_id, user_id, session)
     diary = await service.close_diary(diary_id, user_id=user_id)
     return DailyDiaryResponse.model_validate(diary)
 
@@ -171,10 +185,13 @@ async def close_diary(
 async def sign_diary(
     diary_id: uuid.UUID,
     payload: DiarySignRequest,
+    session: SessionDep,
     user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.sign")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> DiaryArchiveSignatureResponse:
+    existing = await service.get_diary(diary_id)
+    await verify_project_access(existing.project_id, user_id, session)
     signature = await service.sign_diary(
         diary_id,
         signer_role=payload.signer_role,
@@ -189,10 +206,13 @@ async def sign_diary(
 @router.post("/diaries/{diary_id}/archive", response_model=DailyDiaryResponse)
 async def archive_diary(
     diary_id: uuid.UUID,
+    session: SessionDep,
     user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.archive")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> DailyDiaryResponse:
+    existing = await service.get_diary(diary_id)
+    await verify_project_access(existing.project_id, user_id, session)
     diary = await service.archive_diary(diary_id, user_id=user_id)
     return DailyDiaryResponse.model_validate(diary)
 
@@ -203,9 +223,13 @@ async def archive_diary(
 )
 async def diary_completeness(
     diary_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.read")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> DiaryCompletenessResponse:
+    diary = await service.get_diary(diary_id)
+    await verify_project_access(diary.project_id, user_id, session)
     data = await service.completeness_for(diary_id)
     return DiaryCompletenessResponse(**data)
 
@@ -216,9 +240,13 @@ async def diary_completeness(
 )
 async def immutable_payload_hash(
     diary_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.read")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> DiaryImmutablePayloadHashResponse:
+    diary = await service.get_diary(diary_id)
+    await verify_project_access(diary.project_id, user_id, session)
     data = await service.immutable_payload_hash(diary_id)
     return DiaryImmutablePayloadHashResponse(**data)
 
@@ -229,10 +257,14 @@ async def immutable_payload_hash(
 )
 async def diary_pdf_stub(
     diary_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.read")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> DiaryPdfStubResponse:
     """Placeholder hook for the future PDF renderer."""
+    diary = await service.get_diary(diary_id)
+    await verify_project_access(diary.project_id, user_id, session)
     data = await service.generate_pdf_stub(diary_id)
     return DiaryPdfStubResponse(**data)
 
@@ -276,10 +308,13 @@ async def create_weather_record(
 )
 async def get_weather_record(
     weather_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.read")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> WeatherRecordResponse:
     record = await service.get_weather(weather_id)
+    await verify_project_access(record.project_id, user_id, session)
     return WeatherRecordResponse.model_validate(record)
 
 
@@ -290,9 +325,13 @@ async def get_weather_record(
 async def update_weather_record(
     weather_id: uuid.UUID,
     data: WeatherRecordUpdate,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.update")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> WeatherRecordResponse:
+    existing = await service.get_weather(weather_id)
+    await verify_project_access(existing.project_id, user_id, session)
     record = await service.update_weather(weather_id, data)
     return WeatherRecordResponse.model_validate(record)
 
@@ -300,9 +339,13 @@ async def update_weather_record(
 @router.delete("/weather-records/{weather_id}", status_code=204)
 async def delete_weather_record(
     weather_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.delete")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> None:
+    existing = await service.get_weather(weather_id)
+    await verify_project_access(existing.project_id, user_id, session)
     await service.delete_weather(weather_id)
 
 
@@ -316,9 +359,13 @@ async def delete_weather_record(
 )
 async def create_entry(
     data: DiaryEntryCreate,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.create")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> DiaryEntryResponse:
+    diary = await service.get_diary(data.diary_id)
+    await verify_project_access(diary.project_id, user_id, session)
     entry = await service.create_entry(data)
     return DiaryEntryResponse.model_validate(entry)
 
@@ -331,9 +378,13 @@ async def create_entry(
 async def bulk_create_entries(
     diary_id: uuid.UUID,
     payloads: list[DiaryEntryBulkCreate],
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.create")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> list[DiaryEntryResponse]:
+    diary = await service.get_diary(diary_id)
+    await verify_project_access(diary.project_id, user_id, session)
     raw = [p.model_dump() for p in payloads]
     entries = await service.bulk_create_entries(diary_id, raw)
     return [DiaryEntryResponse.model_validate(e) for e in entries]
@@ -345,10 +396,14 @@ async def bulk_create_entries(
 )
 async def get_entry(
     entry_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.read")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> DiaryEntryResponse:
     entry = await service.get_entry(entry_id)
+    diary = await service.get_diary(entry.diary_id)
+    await verify_project_access(diary.project_id, user_id, session)
     return DiaryEntryResponse.model_validate(entry)
 
 
@@ -359,23 +414,31 @@ async def get_entry(
 async def update_entry(
     entry_id: uuid.UUID,
     data: DiaryEntryUpdate,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.update")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> DiaryEntryResponse:
-    await service.get_entry(entry_id)
-    fields = data.model_dump(exclude_unset=True)
-    if fields:
-        await service.entry_repo.update_fields(entry_id, **fields)
-    entry = await service.get_entry(entry_id)
+    existing = await service.get_entry(entry_id)
+    diary = await service.get_diary(existing.diary_id)
+    await verify_project_access(diary.project_id, user_id, session)
+    entry = await service.update_entry(
+        entry_id, data.model_dump(exclude_unset=True)
+    )
     return DiaryEntryResponse.model_validate(entry)
 
 
 @router.delete("/diary-entries/{entry_id}", status_code=204)
 async def delete_entry(
     entry_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.delete")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> None:
+    entry = await service.get_entry(entry_id)
+    diary = await service.get_diary(entry.diary_id)
+    await verify_project_access(diary.project_id, user_id, session)
     await service.delete_entry(entry_id)
 
 
@@ -477,6 +540,8 @@ async def upload_photo(
 )
 async def get_photo(
     photo_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.read")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> DiaryPhotoResponse:
@@ -484,6 +549,7 @@ async def get_photo(
     if photo is None:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Diary photo not found")
+    await verify_project_access(photo.project_id, user_id, session)
     return DiaryPhotoResponse.model_validate(photo)
 
 
@@ -494,9 +560,16 @@ async def get_photo(
 async def update_photo(
     photo_id: uuid.UUID,
     data: DiaryPhotoUpdate,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.update")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> DiaryPhotoResponse:
+    existing = await service.photo_repo.get_by_id(photo_id)
+    if existing is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Diary photo not found")
+    await verify_project_access(existing.project_id, user_id, session)
     photo = await service.update_photo(photo_id, data)
     return DiaryPhotoResponse.model_validate(photo)
 
@@ -504,9 +577,16 @@ async def update_photo(
 @router.delete("/diary-photos/{photo_id}", status_code=204)
 async def delete_photo(
     photo_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.delete")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> None:
+    existing = await service.photo_repo.get_by_id(photo_id)
+    if existing is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Diary photo not found")
+    await verify_project_access(existing.project_id, user_id, session)
     await service.delete_photo(photo_id)
 
 
@@ -553,6 +633,8 @@ async def create_video(
 )
 async def get_video(
     video_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.read")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> DiaryVideoResponse:
@@ -560,6 +642,7 @@ async def get_video(
     if video is None:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Diary video not found")
+    await verify_project_access(video.project_id, user_id, session)
     return DiaryVideoResponse.model_validate(video)
 
 
@@ -570,9 +653,16 @@ async def get_video(
 async def update_video(
     video_id: uuid.UUID,
     data: DiaryVideoUpdate,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.update")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> DiaryVideoResponse:
+    existing = await service.video_repo.get_by_id(video_id)
+    if existing is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Diary video not found")
+    await verify_project_access(existing.project_id, user_id, session)
     video = await service.update_video(video_id, data)
     return DiaryVideoResponse.model_validate(video)
 
@@ -580,9 +670,16 @@ async def update_video(
 @router.delete("/diary-videos/{video_id}", status_code=204)
 async def delete_video(
     video_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.delete")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> None:
+    existing = await service.video_repo.get_by_id(video_id)
+    if existing is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Diary video not found")
+    await verify_project_access(existing.project_id, user_id, session)
     await service.delete_video(video_id)
 
 
@@ -629,6 +726,8 @@ async def create_drone_survey(
 )
 async def get_drone_survey(
     survey_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.read")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> DroneSurveyResponse:
@@ -636,6 +735,7 @@ async def get_drone_survey(
     if survey is None:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Drone survey not found")
+    await verify_project_access(survey.project_id, user_id, session)
     return DroneSurveyResponse.model_validate(survey)
 
 
@@ -646,9 +746,16 @@ async def get_drone_survey(
 async def update_drone_survey(
     survey_id: uuid.UUID,
     data: DroneSurveyUpdate,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.update")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> DroneSurveyResponse:
+    existing = await service.drone_repo.get_by_id(survey_id)
+    if existing is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Drone survey not found")
+    await verify_project_access(existing.project_id, user_id, session)
     survey = await service.update_drone_survey(survey_id, data)
     return DroneSurveyResponse.model_validate(survey)
 
@@ -656,9 +763,16 @@ async def update_drone_survey(
 @router.delete("/drone-surveys/{survey_id}", status_code=204)
 async def delete_drone_survey(
     survey_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.delete")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> None:
+    existing = await service.drone_repo.get_by_id(survey_id)
+    if existing is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Drone survey not found")
+    await verify_project_access(existing.project_id, user_id, session)
     await service.delete_drone_survey(survey_id)
 
 
@@ -708,6 +822,8 @@ async def create_reality_capture(
 )
 async def get_reality_capture(
     ds_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.read")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> RealityCaptureResponse:
@@ -715,6 +831,7 @@ async def get_reality_capture(
     if ds is None:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Reality capture not found")
+    await verify_project_access(ds.project_id, user_id, session)
     return RealityCaptureResponse.model_validate(ds)
 
 
@@ -725,9 +842,16 @@ async def get_reality_capture(
 async def update_reality_capture(
     ds_id: uuid.UUID,
     data: RealityCaptureUpdate,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.update")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> RealityCaptureResponse:
+    existing = await service.reality_repo.get_by_id(ds_id)
+    if existing is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Reality capture not found")
+    await verify_project_access(existing.project_id, user_id, session)
     ds = await service.update_reality_capture(ds_id, data)
     return RealityCaptureResponse.model_validate(ds)
 
@@ -735,9 +859,16 @@ async def update_reality_capture(
 @router.delete("/reality-captures/{ds_id}", status_code=204)
 async def delete_reality_capture(
     ds_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.delete")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> None:
+    existing = await service.reality_repo.get_by_id(ds_id)
+    if existing is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Reality capture not found")
+    await verify_project_access(existing.project_id, user_id, session)
     await service.delete_reality_capture(ds_id)
 
 
@@ -749,10 +880,14 @@ async def delete_reality_capture(
     response_model=list[DiaryArchiveSignatureResponse],
 )
 async def list_archive_signatures(
+    session: SessionDep,
     diary_id: uuid.UUID = Query(...),
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.read")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> list[DiaryArchiveSignatureResponse]:
+    diary = await service.get_diary(diary_id)
+    await verify_project_access(diary.project_id, user_id, session)
     items = await service.signature_repo.signatures_for_diary(diary_id)
     return [DiaryArchiveSignatureResponse.model_validate(i) for i in items]
 
@@ -763,6 +898,8 @@ async def list_archive_signatures(
 )
 async def get_archive_signature(
     signature_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.read")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> DiaryArchiveSignatureResponse:
@@ -770,6 +907,8 @@ async def get_archive_signature(
     if sig is None:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Archive signature not found")
+    diary = await service.get_diary(sig.diary_id)
+    await verify_project_access(diary.project_id, user_id, session)
     return DiaryArchiveSignatureResponse.model_validate(sig)
 
 
@@ -872,10 +1011,14 @@ async def extract_photo_gps(
 )
 async def diary_workforce_summary(
     diary_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.read")),
     service: DailyDiaryService = Depends(_get_service),
 ) -> WorkforceSummary:
     """Aggregated labour + equipment counts for a single diary."""
+    diary = await service.get_diary(diary_id)
+    await verify_project_access(diary.project_id, user_id, session)
     data = await service.workforce_summary_for_diary(diary_id)
     return WorkforceSummary(**data)
 

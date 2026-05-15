@@ -420,15 +420,25 @@ class BIDashboardsRepository:
         project_id: uuid.UUID | None = None,
         limit: int = 12,
     ) -> list[KPIValue]:
-        stmt = (
-            select(KPIValue)
-            .where(KPIValue.kpi_code == kpi_code)
-            .order_by(KPIValue.period_start.desc())
-            .limit(limit)
-        )
+        """Return the *most recent* ``limit`` KPI values, oldest → newest.
+
+        The selection picks the newest ``limit`` rows (``period_start``
+        descending, ``computed_at`` descending as a deterministic
+        tie-breaker for same-day persists), then reverses them so callers
+        — trend lists, sparklines, ``changed_by_more_than`` deltas —
+        receive points in chronological order. Returning them newest-first
+        previously flipped every trend chart and inverted the
+        period-over-period delta in the UI.
+        """
+        stmt = select(KPIValue).where(KPIValue.kpi_code == kpi_code)
         if project_id is not None:
             stmt = stmt.where(KPIValue.project_id == project_id)
-        return list((await self.session.execute(stmt)).scalars().all())
+        stmt = stmt.order_by(
+            KPIValue.period_start.desc(), KPIValue.computed_at.desc(),
+        ).limit(limit)
+        rows = list((await self.session.execute(stmt)).scalars().all())
+        rows.reverse()
+        return rows
 
     async def create_kpi_value(self, kv: KPIValue) -> KPIValue:
         self.session.add(kv)

@@ -279,6 +279,17 @@ class RetentionLedgerRepository(_BaseRepo):
         )
         return list((await self.session.execute(stmt)).scalars().all())
 
+    async def list_for_payment_application(
+        self, payment_application_id: uuid.UUID,
+    ) -> list[RetentionLedger]:
+        """Return ledger entries tied to a single payment application."""
+        stmt = (
+            select(RetentionLedger)
+            .where(RetentionLedger.payment_application_id == payment_application_id)
+            .order_by(RetentionLedger.created_at.asc())
+        )
+        return list((await self.session.execute(stmt)).scalars().all())
+
 
 class RatingRepository(_BaseRepo):
     """CRUD for SubcontractorRating."""

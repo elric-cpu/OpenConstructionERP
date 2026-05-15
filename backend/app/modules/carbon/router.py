@@ -697,7 +697,7 @@ async def project_dashboard(
 @router.post("/epd/ingest")
 async def ingest_epd_by_identifier(
     payload: dict,
-    _perm: None = Depends(RequirePermission("carbon.write")),
+    _perm: None = Depends(RequirePermission("carbon.import_epd")),
     service: CarbonService = Depends(_get_service),
 ) -> dict:
     """Ingest an EPD record by parsing a public-database identifier or URL.
@@ -774,7 +774,7 @@ async def lookup_grid_factor(
 async def assign_boq_position(
     inventory_id: uuid.UUID,
     payload: dict,
-    _perm: None = Depends(RequirePermission("carbon.write")),
+    _perm: None = Depends(RequirePermission("carbon.create")),
     service: CarbonService = Depends(_get_service),
 ) -> dict:
     """Create an embodied-carbon entry tied to a BOQ position.
@@ -830,7 +830,7 @@ async def generate_tcfd_report(
     payload: dict,
     user_id: CurrentUserId,
     session: SessionDep,
-    _perm: None = Depends(RequirePermission("carbon.write")),
+    _perm: None = Depends(RequirePermission("carbon.generate_report")),
     service: CarbonService = Depends(_get_service),
 ) -> dict:
     """Generate a TCFD / ISSB-aligned sustainability report.

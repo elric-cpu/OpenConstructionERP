@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
@@ -329,6 +329,18 @@ export function BidManagementPage() {
           <div className="p-4">
             <SkeletonTable rows={8} columns={5} />
           </div>
+        ) : packagesQ.isError ? (
+          <EmptyState
+            icon={<XCircle size={22} />}
+            title={t('bid_management.load_failed', {
+              defaultValue: 'Could not load bid packages',
+            })}
+            description={getErrorMessage(packagesQ.error)}
+            action={{
+              label: t('common.retry', { defaultValue: 'Retry' }),
+              onClick: () => packagesQ.refetch(),
+            }}
+          />
         ) : tab === 'packages' ? (
           <PackageTable
             rows={filteredPackages}
@@ -1081,15 +1093,28 @@ function PackageDrawer({
 
   const pkg = pkgQ.data;
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30" />
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="bid-package-drawer-title"
         className="relative h-full w-full max-w-2xl overflow-y-auto bg-surface-elevated shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border-light bg-surface-elevated px-5 py-3">
-          <h2 className="text-base font-semibold">{pkg ? pkg.code : '…'}</h2>
+          <h2 id="bid-package-drawer-title" className="text-base font-semibold">
+            {pkg ? pkg.code : '…'}
+          </h2>
           <button
             type="button"
             onClick={onClose}
@@ -1101,7 +1126,19 @@ function PackageDrawer({
         </div>
 
         <div className="space-y-4 p-5">
-          {pkgQ.isLoading || !pkg ? (
+          {pkgQ.isError ? (
+            <EmptyState
+              icon={<XCircle size={22} />}
+              title={t('bid_management.package_load_failed', {
+                defaultValue: 'Could not load this package',
+              })}
+              description={getErrorMessage(pkgQ.error)}
+              action={{
+                label: t('common.retry', { defaultValue: 'Retry' }),
+                onClick: () => pkgQ.refetch(),
+              }}
+            />
+          ) : pkgQ.isLoading || !pkg ? (
             <SkeletonTable rows={4} columns={2} />
           ) : (
             <>

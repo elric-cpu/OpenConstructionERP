@@ -124,6 +124,13 @@ def detect_conflicts(
         )
         return conflicts
 
+    # Collect every active assignment that overlaps the candidate window.
+    # Over-allocation is *cumulative*: three concurrent 40% bookings is
+    # 120% and must be flagged even though no single pair exceeds 100%.
+    # (The previous implementation summed the candidate with each existing
+    # row independently, so N small overlaps that together blew the budget
+    # slipped through silently — a real over-booking integrity hole.)
+    overlapping: list[Assignment] = []
     for existing in existing_for_resource:
         if exclude_id is not None and existing.id == exclude_id:
             continue
@@ -131,8 +138,12 @@ def detect_conflicts(
             continue
         if not _intervals_overlap(start_at, end_at, existing.start_at, existing.end_at):
             continue
-        total = (existing.allocation_percent or 0) + (allocation_percent or 0)
-        if total > 100:
+        overlapping.append(existing)
+
+    existing_total = sum((e.allocation_percent or 0) for e in overlapping)
+    cumulative = existing_total + (allocation_percent or 0)
+    if cumulative > 100:
+        for existing in overlapping:
             conflicts.append(
                 ConflictDetail(
                     resource_id=assignment_resource_id,
@@ -140,7 +151,7 @@ def detect_conflicts(
                     reason="overallocation",
                     overlap_start=max(start_at, existing.start_at),
                     overlap_end=min(end_at, existing.end_at),
-                    total_allocation_percent=total,
+                    total_allocation_percent=cumulative,
                 )
             )
     return conflicts
@@ -678,7 +689,17 @@ class ResourcesService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="end_at must be after start_at",
             )
-        if any(k in fields for k in ("start_at", "end_at", "allocation_percent")):
+        # A cancelled/completed assignment consumes no allocation, so a PATCH
+        # that lands the row in one of those terminal states must NOT be
+        # conflict-checked — otherwise cancelling an (already over-allocated)
+        # assignment via the edit modal, which sends status+dates together,
+        # is spuriously blocked with a 409.
+        new_status = fields.get("status", assignment.status)
+        skip_conflict_check = new_status in ("cancelled", "completed")
+        if (
+            not skip_conflict_check
+            and any(k in fields for k in ("start_at", "end_at", "allocation_percent"))
+        ):
             existing = await self.assignment_repo.assignments_for_resource_in_window(
                 assignment.resource_id,
                 new_start,
@@ -833,6 +854,14 @@ class ResourcesService:
             )
         fields: dict[str, Any] = {"status": "completed"}
         if actual_end is not None:
+            # A caller-supplied actual end before the assignment start would
+            # produce a negative-length window that corrupts utilization and
+            # availability math downstream — reject it at the boundary.
+            if actual_end <= assignment.start_at:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="actual_end must be after the assignment start",
+                )
             fields["end_at"] = actual_end
         await self.assignment_repo.update_fields(assignment_id, **fields)
         await self.session.refresh(assignment)
@@ -849,6 +878,11 @@ class ResourcesService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Cannot cancel a completed assignment",
             )
+        # Idempotent: re-cancelling an already-cancelled assignment is a
+        # no-op rather than appending a second "CANCELLED:" line to notes
+        # every time (which polluted the audit trail on retries).
+        if assignment.status == "cancelled":
+            return assignment
         notes = assignment.notes or ""
         if reason:
             notes = (notes + f"\nCANCELLED: {reason}").strip()
@@ -1242,18 +1276,19 @@ class ResourcesService:
             free_fraction = max(0.0, min(1.0, (100 - total_alloc) / 100.0))
 
             # Blocking availability windows (holiday/sick/unavailable).
+            # No defensive try/except here: a failing window query is a real
+            # fault and must surface, not be silently downgraded to "fully
+            # available" — that would rank an out-of-office resource top of
+            # the list and let a dispatcher book someone who is on leave.
             blocking = False
-            try:
-                windows = await self.window_repo.list_for_resource(
-                    res.id, start_at=start, end_at=end
-                )
-                for w in windows:
-                    if w.window_type in ("unavailable", "holiday", "sick"):
-                        if _intervals_overlap(start, end, w.start_at, w.end_at):
-                            blocking = True
-                            break
-            except Exception:  # noqa: BLE001
-                blocking = False
+            windows = await self.window_repo.list_for_resource(
+                res.id, start_at=start, end_at=end
+            )
+            for w in windows:
+                if w.window_type in ("unavailable", "holiday", "sick"):
+                    if _intervals_overlap(start, end, w.start_at, w.end_at):
+                        blocking = True
+                        break
             if blocking:
                 free_fraction = 0.0
 

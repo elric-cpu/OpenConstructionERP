@@ -456,11 +456,75 @@ async def test_ncr_illegal_status_transition(svc: QMSService) -> None:
             title="t", description="d", severity="minor",
         ),
     )
-    # open → closed is illegal (must walk through action_pending, verifying)
     from app.modules.qms.schemas import NCRUpdate
 
+    # open → verifying is illegal (must walk through action_pending)
     with pytest.raises(ValueError, match="Illegal NCR"):
+        await svc.update_ncr(ncr.id, NCRUpdate(status="verifying"))
+
+
+@pytest.mark.asyncio
+async def test_ncr_patch_cannot_bypass_close_action(svc: QMSService) -> None:
+    """PATCH must not close an NCR — that bypasses the corrective-action
+    completeness invariant enforced by ``close_ncr``."""
+    from app.modules.qms.schemas import NCRUpdate
+
+    ncr = await svc.raise_ncr(
+        NCRCreate(
+            project_id=PROJECT_ID,
+            title="t", description="d", severity="minor",
+        ),
+    )
+    # Directly from open
+    with pytest.raises(ValueError, match="close.* action"):
         await svc.update_ncr(ncr.id, NCRUpdate(status="closed"))
+
+    # And from verifying (the real integrity hole: verifying → closed is
+    # in the transition table, so only the explicit guard blocks it).
+    a1 = await svc.assign_ncr_action(ncr.id, NCRActionCreate(description="Fix"))
+    await svc.verify_action(a1.id)
+    ncr_v = await svc.repo.get_ncr(ncr.id)
+    assert ncr_v is not None
+    assert ncr_v.status == "verifying"
+    with pytest.raises(ValueError, match="close.* action"):
+        await svc.update_ncr(ncr.id, NCRUpdate(status="closed"))
+    # The dedicated close action still works.
+    closed = await svc.close_ncr(ncr.id)
+    assert closed.status == "closed"
+
+
+@pytest.mark.asyncio
+async def test_inspection_patch_cannot_bypass_complete_action(
+    svc: QMSService,
+) -> None:
+    """PATCH must not set a terminal result — that bypasses the ITP
+    signatory-count invariant enforced by ``complete_inspection``."""
+    from app.modules.qms.schemas import InspectionUpdate
+
+    plan = await svc.create_itp_plan(
+        ITPPlanCreate(project_id=PROJECT_ID, name="P", work_type="concrete"),
+    )
+    item = await svc.add_itp_item(
+        plan.id,
+        ITPItemCreate(
+            control_point_name="CP",
+            hold_witness_point="hold",
+            signatories_required=2,
+        ),
+    )
+    insp = await svc.schedule_inspection(
+        InspectionCreate(project_id=PROJECT_ID, itp_item_id=item.id),
+    )
+    # No signatures collected — a raw PATCH must not be able to pass it.
+    with pytest.raises(ValueError, match="complete.* action"):
+        await svc.update_inspection(
+            insp.id, InspectionUpdate(status="passed"),
+        )
+    # Non-terminal PATCH transitions still work.
+    insp = await svc.update_inspection(
+        insp.id, InspectionUpdate(status="in_progress"),
+    )
+    assert insp.status == "in_progress"
 
 
 @pytest.mark.asyncio
@@ -482,6 +546,44 @@ async def test_cannot_edit_closed_ncr(svc: QMSService) -> None:
 
     with pytest.raises(ValueError, match="closed"):
         await svc.update_ncr(ncr.id, NCRUpdate(title="Edit-attempt"))
+
+
+@pytest.mark.asyncio
+async def test_cannot_verify_action_on_closed_ncr(svc: QMSService) -> None:
+    """Once an NCR is closed, lingering actions cannot be re-verified."""
+    ncr = await svc.raise_ncr(
+        NCRCreate(
+            project_id=PROJECT_ID,
+            title="t", description="d", severity="minor",
+        ),
+    )
+    a1 = await svc.assign_ncr_action(ncr.id, NCRActionCreate(description="Fix"))
+    await svc.verify_action(a1.id)
+    await svc.close_ncr(ncr.id)
+    # Add a stray second action directly (bypassing service guard) then
+    # confirm verify_action refuses because the parent NCR is terminal.
+    a2 = QMSNCRAction(ncr_id=ncr.id, description="late", status="assigned")
+    svc.session.add(a2)
+    await svc.session.flush()
+    with pytest.raises(ValueError, match="status 'closed'"):
+        await svc.verify_action(a2.id)
+
+
+@pytest.mark.asyncio
+async def test_cannot_escalate_closed_ncr(svc: QMSService) -> None:
+    ncr = await svc.raise_ncr(
+        NCRCreate(
+            project_id=PROJECT_ID,
+            title="t", description="d", severity="critical",
+            cost_impact_currency="EUR",
+            cost_impact_amount=Decimal("5000.00"),
+        ),
+    )
+    a1 = await svc.assign_ncr_action(ncr.id, NCRActionCreate(description="Fix"))
+    await svc.verify_action(a1.id)
+    await svc.close_ncr(ncr.id)
+    with pytest.raises(ValueError, match="terminal status 'closed'"):
+        await svc.escalate_ncr_to_variation(ncr.id)
 
 
 # ── Punch list ────────────────────────────────────────────────────────────

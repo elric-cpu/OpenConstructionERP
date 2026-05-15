@@ -211,6 +211,19 @@ class WorkOrderRepository(_BaseRepository):
         )
         return (await self.session.execute(stmt)).scalar_one()
 
+    async def count_open_fleet(self) -> int:
+        """Total open (scheduled / in_progress) work orders across the fleet.
+
+        Single aggregate query — replaces a per-equipment N+1 loop in the
+        fleet dashboard.
+        """
+        stmt = (
+            select(func.count())
+            .select_from(MaintenanceWorkOrder)
+            .where(MaintenanceWorkOrder.status.in_(("scheduled", "in_progress")))
+        )
+        return (await self.session.execute(stmt)).scalar_one()
+
 
 class InspectionRepository(_BaseRepository):
     """Data access for Inspection."""
@@ -418,7 +431,20 @@ async def utilization_for_equipment(
     )
     rentals = list(result.scalars().all())
 
-    busy_days = 0
+    busy_days = _busy_days_in_window(rentals, start, end)
+    return round(min(100.0, 100.0 * busy_days / total_days), 2)
+
+
+def _busy_days_in_window(rentals: list[Any], start: Any, end: Any) -> int:
+    """Distinct days within [start, end] covered by any of ``rentals``.
+
+    Overlapping rentals are merged so a day rented by two concurrent
+    rentals is not double-counted (which previously let utilization
+    exceed 100% before the min() clamp masked it).
+    """
+    from datetime import date, timedelta
+
+    intervals: list[tuple[Any, Any]] = []
     for r in rentals:
         try:
             r_start = date.fromisoformat(r.start_date)
@@ -428,10 +454,64 @@ async def utilization_for_equipment(
             r_end = date.fromisoformat(r.end_date) if r.end_date else end
         except (ValueError, TypeError):
             r_end = end
-        # Clip to window
         clip_start = max(r_start, start)
         clip_end = min(r_end, end)
         if clip_end >= clip_start:
-            busy_days += (clip_end - clip_start).days + 1
+            intervals.append((clip_start, clip_end))
 
-    return round(min(100.0, 100.0 * busy_days / total_days), 2)
+    if not intervals:
+        return 0
+
+    intervals.sort()
+    busy_days = 0
+    cur_start, cur_end = intervals[0]
+    for nxt_start, nxt_end in intervals[1:]:
+        if nxt_start <= cur_end + timedelta(days=1):
+            cur_end = max(cur_end, nxt_end)
+        else:
+            busy_days += (cur_end - cur_start).days + 1
+            cur_start, cur_end = nxt_start, nxt_end
+    busy_days += (cur_end - cur_start).days + 1
+    return busy_days
+
+
+async def fleet_utilization_avg(
+    session: AsyncSession,
+    equipment_ids: list[uuid.UUID],
+    period_start: str,
+    period_end: str,
+) -> float:
+    """Mean utilization across ``equipment_ids`` over the window.
+
+    Loads every rental for the requested units in a single query (instead
+    of one query per unit) and computes per-unit overlap in Python. The
+    denominator is the number of units actually averaged, so the result is
+    consistent even when the caller worked from a paginated unit list.
+    """
+    from datetime import date
+
+    if not equipment_ids:
+        return 0.0
+    try:
+        start = date.fromisoformat(period_start)
+        end = date.fromisoformat(period_end)
+    except (ValueError, TypeError):
+        return 0.0
+    total_days = max(1, (end - start).days + 1)
+
+    result = await session.execute(
+        select(EquipmentRental).where(
+            EquipmentRental.equipment_id.in_(equipment_ids)
+        )
+    )
+    rentals = list(result.scalars().all())
+
+    by_equipment: dict[uuid.UUID, list[Any]] = {}
+    for r in rentals:
+        by_equipment.setdefault(r.equipment_id, []).append(r)
+
+    util_sum = 0.0
+    for eid in equipment_ids:
+        busy = _busy_days_in_window(by_equipment.get(eid, []), start, end)
+        util_sum += min(100.0, 100.0 * busy / total_days)
+    return round(util_sum / len(equipment_ids), 2)

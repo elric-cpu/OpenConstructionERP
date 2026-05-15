@@ -5,6 +5,38 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] — 2026-05-15 · Deep logic + correctness sweep (23 modules, 10 waves)
+
+A 10-wave root-cause pass across the operational/commercial modules. Full unit
+tier 5269 passing, frontend type-check clean, zero regressions.
+
+### Security / authorization
+
+- **Daily Diary: cross-project IDOR closed** on ~25 endpoints — another project's site diary could be read/edited/signed/archived.
+- **Reporting: module was admin-only** — missing permission registration meant every editor/manager got 403 on all mutating endpoints; permissions now register on startup.
+- **Tendering: module was admin-only** — same missing-registration cause; fixed.
+- **Customer Portal: cross-project change-order leak** — a per-CO grant let a caller read all approved COs of an unrelated project.
+- **CRM / Contracts / Carbon: unregistered permission strings** (`crm.write`, `contracts.write`, `carbon.write`) silently 403'd editors; aligned to registered permissions.
+- **Variations / Contracts / Bid Management: object-level scoping** added to mutating + sub-resource endpoints lacking it.
+- **Schedule XML import: hostile payloads now return 400, not 500** — `defusedxml` XXE/billion-laughs rejections are no longer mis-handled as uncaught errors.
+- **Supplier Catalogs / PEPPOL: XXE hardening** — hard-refuse parsing when `defusedxml` is unavailable; boundary exceptions return a clean 400.
+
+### Correctness (money / data integrity)
+
+- **Change Orders: no more hardcoded `EUR`** — model, schema and service default removed; currency now resolves from the owning project.
+- **Variations / Bid Management: voided/withdrawn items no longer inflate rollups**; Decimal-exact money math (was float).
+- **Contracts: certified claims now emit the finance event** (were silently never invoiced); financial terms locked once signed.
+- **Carbon: granular EN 15978 stages no longer dropped from totals** (was under-reporting embodied carbon).
+- **HSE Advanced: TRIR recordable undercount fixed** (a lost-time case with no medical treatment was excluded — impossible per OSHA).
+- **Safety: "days without LTI" date-integrity fixed** — robust date parsing + canonical ISO write path; malformed dates fail safe to "unconfirmed" instead of a falsely-reassuring number.
+- **BI Dashboards: KPI trend charts were reversed** (newest-first ordering); drill-down period filters were dropped.
+- **Service / Subcontractors / Equipment / Resources / Property Dev:** lifecycle-state guards, idempotent transitions (no duplicate events on retry), N+1 dashboard queries replaced with SQL aggregates, mixed-currency sums guarded.
+
+### Wizards
+
+- **Project setup wizard:** reachable duplicate-name confirm, no literal `__custom__` in review, required custom region/currency, string-backed regional factor clamped on blur, idempotent submit (no double-create), submit-time full validation, focus trap + return-focus, `role="dialog"`/`aria-modal`, clickable visited stepper, richer review.
+- **Match pipeline:** honest "runs the deterministic heuristic today" note, read-only seeded prompt with Fork-to-edit, the displayed prompt is the one that runs (was silently `null`), stage errors surfaced (no silent close), per-stage knob state no longer leaks across stages, group-by seeds from effective keys, slide-over `role="dialog"` + focus.
+
 ## [3.0.9] — 2026-05-15 · Project setup wizard UI + converter binary-integrity gate
 
 ### Added

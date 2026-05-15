@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
@@ -15,6 +15,7 @@ import {
   CheckCircle2,
   DollarSign,
   Trash2,
+  ShieldAlert,
 } from 'lucide-react';
 import {
   Button,
@@ -48,8 +49,10 @@ import {
   dispatchTicket,
   resolveTicket,
   closeTicket,
+  updateTicket,
   billWorkOrder,
   completeWorkOrder,
+  updateWorkOrder,
   type ServiceContract,
   type ServiceAsset,
   type ServiceTicket,
@@ -109,7 +112,12 @@ const inputCls =
 function todayIso(offsetDays = 0): string {
   const d = new Date();
   d.setDate(d.getDate() + offsetDays);
-  return d.toISOString().slice(0, 10);
+  // Use the *local* calendar date — toISOString() would shift to UTC and can
+  // land on the wrong day for users far from UTC near midnight.
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 /* ─── Page ─── */
@@ -122,20 +130,25 @@ export function ServicePage() {
   const [selected, setSelected] = useState<{ kind: Tab; id: string } | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
+  // The tickets list is needed both on its own tab and as the parent picker
+  // when creating a work order — keep it enabled on the WO tab too, otherwise
+  // the "New Work Order" modal renders an empty ticket dropdown.
   const ticketsQ = useQuery({
     queryKey: ['service', 'tickets'],
     queryFn: () => listTickets({ limit: 100 }),
-    enabled: tab === 'tickets',
+    enabled: tab === 'tickets' || tab === 'work_orders',
   });
   const workOrdersQ = useQuery({
     queryKey: ['service', 'workOrders'],
     queryFn: () => listWorkOrders({ limit: 100 }),
     enabled: tab === 'work_orders',
   });
+  // Contracts back the picker in the ticket/asset create modals, so they must
+  // be loaded on every tab whose "New …" action needs to choose a contract.
   const contractsQ = useQuery({
     queryKey: ['service', 'contracts'],
     queryFn: () => listContracts({ limit: 100 }),
-    enabled: tab === 'contracts' || tab === 'assets',
+    enabled: true,
   });
   const contracts = contractsQ.data ?? [];
   const [selectedContractId, setSelectedContractId] = useState<string>('');
@@ -205,6 +218,20 @@ export function ServicePage() {
     (tab === 'work_orders' && workOrdersQ.isLoading) ||
     (tab === 'contracts' && contractsQ.isLoading) ||
     (tab === 'assets' && (contractsQ.isLoading || assetsQ.isLoading));
+
+  // Surface load failures honestly instead of rendering the "no data yet"
+  // empty state over a server/network error.
+  const activeQuery =
+    tab === 'tickets'
+      ? ticketsQ
+      : tab === 'work_orders'
+        ? workOrdersQ
+        : tab === 'contracts'
+          ? contractsQ
+          : assetsQ.isError || !effectiveContractId
+            ? contractsQ
+            : assetsQ;
+  const isError = !isLoading && activeQuery.isError;
 
   return (
     <div className="space-y-5">
@@ -329,6 +356,20 @@ export function ServicePage() {
       <Card padding="none">
         {isLoading ? (
           <div className="p-4"><SkeletonTable rows={8} columns={5} /></div>
+        ) : isError ? (
+          <EmptyState
+            icon={<ShieldAlert size={22} />}
+            title={t('service.load_error', {
+              defaultValue: 'Could not load service data',
+            })}
+            description={getErrorMessage(activeQuery.error)}
+            action={{
+              label: t('common.retry', { defaultValue: 'Retry' }),
+              onClick: () => {
+                void activeQuery.refetch();
+              },
+            }}
+          />
         ) : tab === 'tickets' ? (
           <TicketTable
             rows={filteredTickets}
@@ -502,7 +543,7 @@ function WorkOrderTable({
                 <Badge variant={WO_STATUS_VARIANT[r.status]} dot>{r.status}</Badge>
               </td>
               <td className="px-4 py-2 text-right">
-                <MoneyDisplay amount={Number(r.billed_amount) || 0} currency={r.currency || 'EUR'} />
+                <MoneyDisplay amount={Number(r.billed_amount) || 0} currency={r.currency || undefined} />
               </td>
             </tr>
           ))}
@@ -567,7 +608,7 @@ function ContractTable({
                 <Badge variant={CONTRACT_STATUS_VARIANT[r.status]} dot>{r.status}</Badge>
               </td>
               <td className="px-4 py-2 text-right">
-                <MoneyDisplay amount={Number(r.value) || 0} currency={r.currency || 'EUR'} />
+                <MoneyDisplay amount={Number(r.value) || 0} currency={r.currency || undefined} />
               </td>
             </tr>
           ))}
@@ -689,6 +730,18 @@ function DetailDrawer({
     onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),
   });
 
+  const startTicketMut = useMutation({
+    mutationFn: () => updateTicket(id, { status: 'in_progress' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['service', 'tickets'] });
+      addToast({
+        type: 'success',
+        title: t('service.ticket_started', { defaultValue: 'Work started' }),
+      });
+    },
+    onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),
+  });
+
   const resolveMut = useMutation({
     mutationFn: () => resolveTicket(id),
     onSuccess: () => {
@@ -726,6 +779,18 @@ function DetailDrawer({
     onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),
   });
 
+  const advanceWoMut = useMutation({
+    mutationFn: (next: WorkOrderStatus) => updateWorkOrder(id, { status: next }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['service', 'workOrders'] });
+      addToast({
+        type: 'success',
+        title: t('service.wo_advanced', { defaultValue: 'Work order updated' }),
+      });
+    },
+    onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),
+  });
+
   const [tech, setTech] = useState('');
   const [debrief, setDebrief] = useState({ problem: '', cause: '', solution: '' });
   // Destructive action gate. WOs intentionally have no delete here — they
@@ -733,6 +798,18 @@ function DetailDrawer({
   // history. WO cancellation should flow through the ticket's "cancel".
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // Escape closes the drawer — but not while the delete confirm is open
+  // (ConfirmDialog owns Escape then) or a destructive op is in flight.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !deleteOpen && !deleting) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [deleteOpen, deleting, onClose]);
 
   // Resolve the human label + delete function for the open entity.
   const deletable =
@@ -801,13 +878,19 @@ function DetailDrawer({
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/30" />
+      <div className="absolute inset-0 bg-black/30" aria-hidden="true" />
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="service-detail-drawer-title"
         className="relative h-full w-full max-w-lg overflow-y-auto bg-surface-elevated shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border-light bg-surface-elevated px-5 py-3 gap-3">
-          <h2 className="text-base font-semibold truncate min-w-0 flex-1">
+          <h2
+            id="service-detail-drawer-title"
+            className="text-base font-semibold truncate min-w-0 flex-1"
+          >
             {kind === 'tickets' && ticket?.ticket_number}
             {kind === 'work_orders' && wo?.work_order_number}
             {kind === 'contracts' && contract?.contract_number}
@@ -878,6 +961,16 @@ function DetailDrawer({
               )}
 
               <div className="flex flex-wrap gap-2 pt-2">
+                {ticket.status === 'assigned' && (
+                  <Button
+                    variant="secondary"
+                    icon={<Wrench size={14} />}
+                    onClick={() => startTicketMut.mutate()}
+                    loading={startTicketMut.isPending}
+                  >
+                    {t('service.start_ticket', { defaultValue: 'Start Work' })}
+                  </Button>
+                )}
                 {ticket.status === 'in_progress' && (
                   <Button
                     variant="secondary"
@@ -907,7 +1000,7 @@ function DetailDrawer({
                 <Field label={t('service.status')} value={<Badge variant={WO_STATUS_VARIANT[wo.status]} dot>{wo.status}</Badge>} />
                 <Field label={t('service.scheduled_for')} value={wo.scheduled_for ? <DateDisplay value={wo.scheduled_for} /> : '—'} />
                 <Field label={t('service.technician')} value={wo.technician_id || '—'} />
-                <Field label={t('service.billed')} value={<MoneyDisplay amount={Number(wo.billed_amount) || 0} currency={wo.currency || 'EUR'} />} />
+                <Field label={t('service.billed')} value={<MoneyDisplay amount={Number(wo.billed_amount) || 0} currency={wo.currency || undefined} />} />
               </div>
               {wo.debrief_summary && (
                 <Card padding="sm">
@@ -916,6 +1009,28 @@ function DetailDrawer({
                   </p>
                   <p className="text-sm whitespace-pre-wrap">{wo.debrief_summary}</p>
                 </Card>
+              )}
+
+              {wo.status === 'scheduled' && (
+                <Button
+                  variant="secondary"
+                  icon={<Send size={14} />}
+                  onClick={() => advanceWoMut.mutate('dispatched')}
+                  loading={advanceWoMut.isPending}
+                >
+                  {t('service.dispatch_wo', { defaultValue: 'Dispatch Work Order' })}
+                </Button>
+              )}
+
+              {wo.status === 'dispatched' && (
+                <Button
+                  variant="secondary"
+                  icon={<CheckCircle2 size={14} />}
+                  onClick={() => advanceWoMut.mutate('in_progress')}
+                  loading={advanceWoMut.isPending}
+                >
+                  {t('service.start_wo', { defaultValue: 'Start Work' })}
+                </Button>
               )}
 
               {wo.status === 'in_progress' && (
@@ -978,7 +1093,7 @@ function DetailDrawer({
               <Field label={t('service.period_start', { defaultValue: 'Start' })} value={contract.period_start} />
               <Field label={t('service.period_end', { defaultValue: 'End' })} value={contract.period_end} />
               <Field label={t('service.sla_tier')} value={contract.sla_tier} />
-              <Field label={t('service.value')} value={<MoneyDisplay amount={Number(contract.value) || 0} currency={contract.currency || 'EUR'} />} />
+              <Field label={t('service.value')} value={<MoneyDisplay amount={Number(contract.value) || 0} currency={contract.currency || undefined} />} />
               <Field label={t('service.auto_renew', { defaultValue: 'Auto renew' })} value={contract.auto_renew ? '✓' : '—'} />
             </div>
           )}
@@ -995,6 +1110,23 @@ function DetailDrawer({
               <Field label={t('service.warranty_until', { defaultValue: 'Warranty until' })} value={asset.warranty_until || '—'} />
               <Field label={t('service.status')} value={<Badge variant={asset.status === 'active' ? 'success' : 'warning'} dot>{asset.status}</Badge>} />
             </div>
+          )}
+
+          {!ticket && !wo && !contract && !asset && (
+            <EmptyState
+              icon={<ShieldAlert size={20} />}
+              title={t('service.detail_not_found', {
+                defaultValue: 'This record is no longer available',
+              })}
+              description={t('service.detail_not_found_desc', {
+                defaultValue:
+                  'It may have been deleted, or it is outside the current filter or page. Close this panel and refresh the list.',
+              })}
+              action={{
+                label: t('common.close', { defaultValue: 'Close' }),
+                onClick: onClose,
+              }}
+            />
           )}
         </div>
       </div>
@@ -1102,21 +1234,62 @@ function CreateModal({
     location: '',
   });
 
+  const validate = (): string | null => {
+    if (kind === 'tickets') {
+      if (!ticketForm.contract_id) {
+        return t('service.validation_contract_required', {
+          defaultValue: 'Select a contract for this ticket.',
+        });
+      }
+      if (!ticketForm.title.trim()) {
+        return t('service.validation_title_required', {
+          defaultValue: 'Enter a short title for this ticket.',
+        });
+      }
+    } else if (kind === 'work_orders') {
+      if (!woForm.ticket_id) {
+        return t('service.validation_ticket_required', {
+          defaultValue: 'Select the ticket this work order delivers on.',
+        });
+      }
+    } else if (kind === 'contracts') {
+      if (!contractForm.customer_id) {
+        return t('service.validation_customer_required', {
+          defaultValue: 'Pick the customer this contract is for.',
+        });
+      }
+      if (contractForm.period_end < contractForm.period_start) {
+        return t('service.validation_period_order', {
+          defaultValue: 'The contract end date must be on or after the start date.',
+        });
+      }
+    } else if (kind === 'assets') {
+      if (!assetForm.contract_id) {
+        return t('service.validation_contract_required_asset', {
+          defaultValue: 'Select the contract this asset belongs to.',
+        });
+      }
+    }
+    return null;
+  };
+
   const submit = async () => {
+    const validationError = validate();
+    if (validationError) {
+      addToast({ type: 'error', title: validationError });
+      return;
+    }
     setBusy(true);
     try {
       if (kind === 'tickets') {
-        if (!ticketForm.contract_id) throw new Error('Contract required');
         await createTicket(ticketForm);
         addToast({ type: 'success', title: t('service.ticket_created', { defaultValue: 'Ticket created' }) });
         qc.invalidateQueries({ queryKey: ['service', 'tickets'] });
       } else if (kind === 'work_orders') {
-        if (!woForm.ticket_id) throw new Error('Ticket required');
         await createWorkOrder(woForm);
         addToast({ type: 'success', title: t('service.wo_created', { defaultValue: 'Work order created' }) });
         qc.invalidateQueries({ queryKey: ['service', 'workOrders'] });
       } else if (kind === 'contracts') {
-        if (!contractForm.customer_id) throw new Error('Customer ID required');
         await createContract({
           ...contractForm,
           value: Number(contractForm.value) || 0,
@@ -1124,7 +1297,6 @@ function CreateModal({
         addToast({ type: 'success', title: t('service.contract_created', { defaultValue: 'Contract created' }) });
         qc.invalidateQueries({ queryKey: ['service', 'contracts'] });
       } else if (kind === 'assets') {
-        if (!assetForm.contract_id) throw new Error('Contract required');
         await createAsset(assetForm);
         addToast({ type: 'success', title: t('service.asset_created', { defaultValue: 'Asset created' }) });
         qc.invalidateQueries({ queryKey: ['service', 'assets'] });

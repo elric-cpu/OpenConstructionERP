@@ -447,6 +447,182 @@ async def test_assign_to_project_succeeds_and_emits_event() -> None:
     assert "equipment.assigned" in captured
 
 
+@pytest.mark.asyncio
+async def test_assign_to_project_rejects_inverted_dates() -> None:
+    """end_date before start_date is a corrupt billing window — rejected.
+
+    Without the guard the rental persists but compute_rental_billing
+    silently returns 0 and the unit never counts as utilized.
+    """
+    svc = _make_service()
+    e = _make_equipment(status="active")
+    svc.equipment_repo.get_by_id = AsyncMock(return_value=e)
+    svc.inspection_repo.list_for_equipment = AsyncMock(return_value=[])
+
+    with pytest.raises(ValueError):
+        await svc.assign_to_project(
+            e.id,
+            PROJECT_ID,
+            start_date="2026-05-12",
+            daily_rate=Decimal("200"),
+            hourly_rate=Decimal("30"),
+            end_date="2026-05-01",
+        )
+
+
+# ── complete_work_order state guard ──────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_complete_work_order_rejects_double_completion() -> None:
+    """Re-completing a completed WO must 409, not re-roll the schedule.
+
+    The bug it guards: a second /complete call would bump
+    last_completed_meter and push next_due_meter further out, so the
+    unit would silently skip its next service interval.
+    """
+    from fastapi import HTTPException
+
+    svc = _make_service()
+    wo = SimpleNamespace(
+        id=uuid.uuid4(),
+        equipment_id=uuid.uuid4(),
+        schedule_id=None,
+        status="completed",
+    )
+    svc.workorder_repo.get_by_id = AsyncMock(return_value=wo)
+
+    with pytest.raises(HTTPException) as exc:
+        await svc.complete_work_order(wo.id)
+    assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_complete_work_order_rejects_cancelled() -> None:
+    """A cancelled WO cannot be silently resurrected to completed."""
+    from fastapi import HTTPException
+
+    svc = _make_service()
+    wo = SimpleNamespace(
+        id=uuid.uuid4(),
+        equipment_id=uuid.uuid4(),
+        schedule_id=None,
+        status="cancelled",
+    )
+    svc.workorder_repo.get_by_id = AsyncMock(return_value=wo)
+
+    with pytest.raises(HTTPException) as exc:
+        await svc.complete_work_order(wo.id)
+    assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_complete_work_order_happy_path_scheduled() -> None:
+    """A scheduled WO with no parent schedule completes cleanly."""
+    svc = _make_service()
+    wo = SimpleNamespace(
+        id=uuid.uuid4(),
+        equipment_id=uuid.uuid4(),
+        schedule_id=None,
+        status="scheduled",
+    )
+    svc.workorder_repo.get_by_id = AsyncMock(return_value=wo)
+    captured: dict[str, Any] = {}
+
+    async def _capture(_id: Any, **fields: Any) -> None:
+        captured.update(fields)
+
+    svc.workorder_repo.update_fields = AsyncMock(side_effect=_capture)
+
+    result = await svc.complete_work_order(wo.id, completed_at="2026-05-15")
+    assert result is wo
+    assert captured["status"] == "completed"
+    assert captured["completed_at"] == "2026-05-15"
+
+
+# ── return_rental state guard ────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_return_rental_rejects_double_return() -> None:
+    """Returning an already-returned rental must not overwrite end_date."""
+    from fastapi import HTTPException
+
+    svc = _make_service()
+    rental = SimpleNamespace(
+        id=uuid.uuid4(),
+        start_date="2026-01-01",
+        end_date="2026-03-01",
+        status="returned",
+    )
+    svc.rental_repo.get_by_id = AsyncMock(return_value=rental)
+
+    with pytest.raises(HTTPException) as exc:
+        await svc.return_rental(rental.id)
+    assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_return_rental_rejects_end_before_start() -> None:
+    """A return date earlier than start_date is rejected (409)."""
+    from fastapi import HTTPException
+
+    svc = _make_service()
+    rental = SimpleNamespace(
+        id=uuid.uuid4(),
+        start_date="2026-05-01",
+        end_date=None,
+        status="active",
+    )
+    svc.rental_repo.get_by_id = AsyncMock(return_value=rental)
+
+    with pytest.raises(HTTPException) as exc:
+        await svc.return_rental(rental.id, end_date="2026-04-01")
+    assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_return_rental_happy_path() -> None:
+    """An active rental returns cleanly and stamps the end date."""
+    svc = _make_service()
+    rental = SimpleNamespace(
+        id=uuid.uuid4(),
+        start_date="2026-01-01",
+        end_date=None,
+        status="active",
+    )
+    svc.rental_repo.get_by_id = AsyncMock(return_value=rental)
+    captured: dict[str, Any] = {}
+
+    async def _capture(_id: Any, **fields: Any) -> None:
+        captured.update(fields)
+
+    svc.rental_repo.update_fields = AsyncMock(side_effect=_capture)
+
+    await svc.return_rental(rental.id, end_date="2026-06-01")
+    assert captured["status"] == "returned"
+    assert captured["end_date"] == "2026-06-01"
+
+
+# ── fleet utilization (overlap merge + N+1 removal) ──────────────────────
+
+
+def test_busy_days_merges_overlapping_rentals() -> None:
+    """Concurrent rentals must not double-count a shared day.
+
+    Two rentals fully covering Jan 1–10 should yield 10 busy days, not
+    20 (which would push utilization over 100% before the clamp).
+    """
+    from app.modules.equipment.repository import _busy_days_in_window
+
+    r1 = SimpleNamespace(start_date="2026-01-01", end_date="2026-01-10")
+    r2 = SimpleNamespace(start_date="2026-01-05", end_date="2026-01-10")
+    busy = _busy_days_in_window(
+        [r1, r2], date(2026, 1, 1), date(2026, 1, 31)
+    )
+    assert busy == 10
+
+
 # ── record_damage ────────────────────────────────────────────────────────
 
 

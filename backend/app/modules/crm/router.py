@@ -95,6 +95,21 @@ async def create_account(
     return AccountResponse.model_validate(account)
 
 
+# NOTE: static sub-paths (``/accounts/tree``) MUST be declared before the
+# parameterised ``/accounts/{account_id}`` route — Starlette matches routes
+# in registration order, so a later ``/accounts/tree`` would otherwise be
+# captured by ``{account_id}`` and 422 on UUID coercion of the literal
+# "tree".
+@router.get("/accounts/tree")
+async def account_tree(
+    root_id: uuid.UUID | None = Query(default=None),
+    _perm: None = Depends(RequirePermission("crm.read")),
+    service: CrmService = Depends(_get_service),
+) -> list[dict]:
+    """Full account hierarchy (owner / GC / sub) as a nested tree."""
+    return await service.account_tree(root_id=root_id)
+
+
 @router.get("/accounts/{account_id}", response_model=AccountResponse)
 async def get_account(
     account_id: uuid.UUID,
@@ -434,6 +449,26 @@ async def create_activity(
     return ActivityResponse.model_validate(activity)
 
 
+# NOTE: declared before ``/activities/{activity_id}`` so the literal
+# "timeline" is not captured by the UUID path param (route order matters).
+@router.get("/activities/timeline")
+async def activity_timeline(
+    account_id: uuid.UUID | None = Query(default=None),
+    opportunity_id: uuid.UUID | None = Query(default=None),
+    lead_id: uuid.UUID | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    _perm: None = Depends(RequirePermission("crm.read")),
+    service: CrmService = Depends(_get_service),
+) -> list[dict]:
+    """Unified chronological feed (activities + stage history)."""
+    return await service.activity_timeline(
+        account_id=account_id,
+        opportunity_id=opportunity_id,
+        lead_id=lead_id,
+        limit=limit,
+    )
+
+
 @router.get("/activities/{activity_id}", response_model=ActivityResponse)
 async def get_activity(
     activity_id: uuid.UUID,
@@ -662,21 +697,11 @@ async def crm_dashboard(
 # ── Account hierarchy ────────────────────────────────────────────────────
 
 
-@router.get("/accounts/tree")
-async def account_tree(
-    root_id: uuid.UUID | None = Query(default=None),
-    _perm: None = Depends(RequirePermission("crm.read")),
-    service: CrmService = Depends(_get_service),
-) -> list[dict]:
-    """Full account hierarchy (owner / GC / sub) as a nested tree."""
-    return await service.account_tree(root_id=root_id)
-
-
 @router.put("/accounts/{account_id}/parent")
 async def set_account_parent(
     account_id: uuid.UUID,
     payload: dict,
-    _perm: None = Depends(RequirePermission("crm.write")),
+    _perm: None = Depends(RequirePermission("crm.update")),
     service: CrmService = Depends(_get_service),
 ) -> dict:
     """Set / clear an account's parent. Detects cycles."""
@@ -708,7 +733,7 @@ async def score_opportunity(
     opportunity_id: uuid.UUID,
     payload: dict,
     user_id: CurrentUserId,
-    _perm: None = Depends(RequirePermission("crm.write")),
+    _perm: None = Depends(RequirePermission("crm.update")),
     service: CrmService = Depends(_get_service),
 ) -> dict:
     """Compute and persist a BANT score for an opportunity.
@@ -744,27 +769,6 @@ async def score_opportunity(
         timeline=timeline,
         weights=weights,
         user_id=user_id,
-    )
-
-
-# ── Unified activity timeline ────────────────────────────────────────────
-
-
-@router.get("/activities/timeline")
-async def activity_timeline(
-    account_id: uuid.UUID | None = Query(default=None),
-    opportunity_id: uuid.UUID | None = Query(default=None),
-    lead_id: uuid.UUID | None = Query(default=None),
-    limit: int = Query(default=100, ge=1, le=500),
-    _perm: None = Depends(RequirePermission("crm.read")),
-    service: CrmService = Depends(_get_service),
-) -> list[dict]:
-    """Unified chronological feed (activities + stage history)."""
-    return await service.activity_timeline(
-        account_id=account_id,
-        opportunity_id=opportunity_id,
-        lead_id=lead_id,
-        limit=limit,
     )
 
 

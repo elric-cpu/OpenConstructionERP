@@ -188,7 +188,24 @@ class SafetyStatsResponse(BaseModel):
     total_observations: int = 0
     days_without_incident: int | None = Field(
         default=None,
-        description="Calendar days since the last incident (None if no incidents)",
+        description=(
+            "Calendar days since the last incident. None when there are no "
+            "incidents, OR when incidents exist but none had a usable date "
+            "(see days_without_incident_status to disambiguate)."
+        ),
+    )
+    days_without_incident_status: str = Field(
+        default="none",
+        description=(
+            "'none' = no incidents (genuinely clean); 'ok' = computed from a "
+            "valid latest incident date; 'unconfirmed' = incidents exist but "
+            "no parseable date, so the metric is NOT safe to display as a "
+            "reassuring number."
+        ),
+    )
+    unparseable_incident_dates: int = Field(
+        default=0,
+        description="Count of incidents whose stored date could not be parsed",
     )
     total_days_lost: int = 0
     recordable_incidents: int = Field(

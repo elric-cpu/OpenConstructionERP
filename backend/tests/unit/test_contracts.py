@@ -481,14 +481,9 @@ def test_permissions_registered() -> None:
         "contracts.submit_claim", "contracts.approve_claim",
         "contracts.certify_claim", "contracts.mark_paid", "contracts.close",
     }
-    registered = set(
-        permission_registry.list_module_permissions("contracts"),
-    ) if hasattr(permission_registry, "list_module_permissions") else None
-    if registered is None:
-        # Fall back to internal API exposure.
-        registered = {p for p in expected if permission_registry.role_has_permission(
-            "admin", p,
-        )}
+    # Use the real registry contract (list_modules → {module: [perms]}),
+    # not a hasattr fallback that silently weakens the assertion.
+    registered = set(permission_registry.list_modules().get("contracts", []))
     assert expected.issubset(registered)
 
 
@@ -718,3 +713,126 @@ def test_get_contract_template_unknown_raises_key_error() -> None:
 
     with pytest.raises(KeyError):
         get_contract_template("does_not_exist")
+
+
+# ── Claim certify emits event + stamps certifier (cross-module money) ────
+
+
+class _StubClaimRepo:
+    def __init__(self) -> None:
+        self.rows: dict[uuid.UUID, Any] = {}
+
+    async def get_by_id(self, claim_id: uuid.UUID) -> Any:
+        return self.rows.get(claim_id)
+
+    async def update_fields(self, claim_id: uuid.UUID, **fields: Any) -> None:
+        obj = self.rows.get(claim_id)
+        if obj:
+            for k, v in fields.items():
+                setattr(obj, k, v)
+
+
+def _stub_claim_service() -> ContractsService:
+    svc = ContractsService.__new__(ContractsService)
+    svc.session = _StubSession()
+    svc.claim_repo = _StubClaimRepo()
+    return svc
+
+
+@pytest.mark.asyncio
+async def test_transition_claim_certified_emits_event_and_stamps_certifier() -> None:
+    svc = _stub_claim_service()
+    claim_id = uuid.uuid4()
+    svc.claim_repo.rows[claim_id] = SimpleNamespace(
+        id=claim_id,
+        contract_id=uuid.uuid4(),
+        claim_number="PC-0001",
+        net_due=Decimal("9500"),
+        status="approved",
+        metadata_={},
+    )
+    mock_publish = MagicMock()
+    with patch.object(contracts_service.event_bus, "publish_detached", mock_publish):
+        await svc.transition_claim(claim_id, "certified", actor_id="qs-7")
+    row = svc.claim_repo.rows[claim_id]
+    assert row.status == "certified"
+    assert row.metadata_["certified_by"] == "qs-7"
+    assert row.metadata_["certified_at"]
+    event_names = [c.args[0] for c in mock_publish.call_args_list]
+    assert "contracts.claim.certified" in event_names
+
+
+# ── update_contract: financial-terms lock + status guard ────────────────
+
+
+class _StubContractRepoRows(_StubContractRepo):
+    pass
+
+
+def _stub_update_service() -> ContractsService:
+    svc = ContractsService.__new__(ContractsService)
+    svc.session = _StubSession()
+    svc.contract_repo = _StubContractRepoRows()
+    return svc
+
+
+def _contract_update(**kwargs: Any) -> Any:
+    from app.modules.contracts.schemas import ContractUpdate
+
+    return ContractUpdate(**kwargs)
+
+
+@pytest.mark.asyncio
+async def test_update_contract_locks_financial_terms_when_active() -> None:
+    from fastapi import HTTPException
+
+    svc = _stub_update_service()
+    cid = uuid.uuid4()
+    svc.contract_repo.rows[cid] = SimpleNamespace(
+        id=cid, status="active", contract_type="lump_sum",
+        terms={}, total_value=Decimal("100000"),
+    )
+    with pytest.raises(HTTPException) as exc:
+        await svc.update_contract(cid, _contract_update(total_value=Decimal("250000")))
+    assert exc.value.status_code == 409
+    assert exc.value.detail["error"] == "financial_terms_locked"
+
+
+@pytest.mark.asyncio
+async def test_update_contract_allows_title_when_active() -> None:
+    svc = _stub_update_service()
+    cid = uuid.uuid4()
+    svc.contract_repo.rows[cid] = SimpleNamespace(
+        id=cid, status="active", contract_type="lump_sum",
+        terms={}, total_value=Decimal("100000"), title="Old",
+    )
+    await svc.update_contract(cid, _contract_update(title="New title"))
+    assert svc.contract_repo.rows[cid].title == "New title"
+
+
+@pytest.mark.asyncio
+async def test_update_contract_allows_financial_edit_while_draft() -> None:
+    svc = _stub_update_service()
+    cid = uuid.uuid4()
+    svc.contract_repo.rows[cid] = SimpleNamespace(
+        id=cid, status="draft", contract_type="lump_sum",
+        terms={}, total_value=Decimal("0"),
+    )
+    await svc.update_contract(cid, _contract_update(total_value=Decimal("500000")))
+    assert svc.contract_repo.rows[cid].total_value == Decimal("500000")
+
+
+@pytest.mark.asyncio
+async def test_update_contract_rejects_direct_status_change() -> None:
+    from fastapi import HTTPException
+
+    svc = _stub_update_service()
+    cid = uuid.uuid4()
+    svc.contract_repo.rows[cid] = SimpleNamespace(
+        id=cid, status="draft", contract_type="lump_sum",
+        terms={}, total_value=Decimal("0"),
+    )
+    with pytest.raises(HTTPException) as exc:
+        await svc.update_contract(cid, _contract_update(status="active"))
+    assert exc.value.status_code == 400
+    assert exc.value.detail["error"] == "status_not_directly_editable"

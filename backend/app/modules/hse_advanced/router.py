@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query
@@ -942,9 +942,18 @@ async def project_kpi(
     inc_stmt = select(SafetyIncident).where(SafetyIncident.project_id == project_id)
     incs = list((await session.execute(inc_stmt)).scalars().all())
 
+    # OSHA 29 CFR 1904.7: a case is recordable if it involves medical
+    # treatment beyond first aid, hospitalisation or fatality — OR any
+    # days away from work / restricted duty. Counting only the treatment
+    # types would undercount (a lost-time case logged with no/“first_aid”
+    # treatment_type is still recordable), which is mathematically
+    # impossible (recordable >= lti must always hold) and corrupts TRIR.
     recordable_treatments = {"medical", "hospital", "fatality"}
     recordable = sum(
-        1 for i in incs if (i.treatment_type or "") in recordable_treatments
+        1
+        for i in incs
+        if (i.treatment_type or "") in recordable_treatments
+        or (i.days_lost or 0) > 0
     )
     lti = sum(1 for i in incs if (i.days_lost or 0) > 0)
 
@@ -1042,14 +1051,21 @@ async def permit_dashboard(
         project_id, status="requested", limit=100
     )
 
-    today = datetime.utcnow().date()
+    today = datetime.now(UTC).date()
     closed_rows, _ = await service.permit_repo.list_for_project(
         project_id, status="closed", limit=100
     )
+
+    def _utc_date(dt: datetime | None) -> date | None:
+        """Normalise a possibly-naive stored timestamp to a UTC date."""
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        return dt.astimezone(UTC).date()
+
     closed_today = [
-        p
-        for p in closed_rows
-        if p.updated_at and p.updated_at.date() == today
+        p for p in closed_rows if _utc_date(p.updated_at) == today
     ]
 
     def _to_entry(p: object) -> PermitDashboardEntry:

@@ -10,6 +10,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
+from app.modules.safety._dateutil import canonicalize_incident_date, parse_incident_date
 from app.modules.safety.models import SafetyIncident, SafetyObservation
 from app.modules.safety.repository import IncidentRepository, ObservationRepository
 from app.modules.safety.schemas import (
@@ -62,7 +63,9 @@ class SafetyService:
             project_id=data.project_id,
             incident_number=incident_number,
             title=data.title,
-            incident_date=data.incident_date,
+            # Store a canonical ISO YYYY-MM-DD string so the "days without
+            # incident / LTI" billboard never has to guess on read.
+            incident_date=canonicalize_incident_date(data.incident_date),
             location=data.location,
             incident_type=data.incident_type,
             severity=data.severity,
@@ -168,6 +171,8 @@ class SafetyService:
         fields: dict[str, Any] = data.model_dump(exclude_unset=True)
         if "metadata" in fields:
             fields["metadata_"] = fields.pop("metadata")
+        if fields.get("incident_date") is not None:
+            fields["incident_date"] = canonicalize_incident_date(fields["incident_date"])
         if "corrective_actions" in fields and fields["corrective_actions"] is not None:
             fields["corrective_actions"] = [
                 entry.model_dump() if hasattr(entry, "model_dump") else entry
@@ -359,7 +364,7 @@ class SafetyService:
         LTIFR, TRIR, and breakdowns by type/status/risk tier.
         """
         from collections import defaultdict
-        from datetime import UTC, datetime
+        from datetime import UTC, date, datetime
 
         from sqlalchemy import select
 
@@ -383,7 +388,11 @@ class SafetyService:
         incidents_by_type: dict[str, int] = defaultdict(int)
         incidents_by_status: dict[str, int] = defaultdict(int)
         open_corrective_actions = 0
-        latest_incident_date: str | None = None
+        # Compare incidents by *parsed* date, not by raw string max: a
+        # malformed string like "9999-99-99" must never win the comparison
+        # and then mask a real recent incident.
+        latest_incident_dt: date | None = None
+        unparseable_incident_dates = 0
 
         recordable_treatments = {"medical", "hospital", "fatality"}
 
@@ -397,27 +406,45 @@ class SafetyService:
             if inc.days_lost and inc.days_lost > 0:
                 lost_time_incidents += 1
 
-            # Track latest incident date
+            # Track latest incident date robustly. An unparseable date is
+            # NOT silently dropped — it is counted so the metric can fail
+            # safe toward "cannot confirm" instead of a reassuring blank.
             if inc.incident_date:
-                if latest_incident_date is None or inc.incident_date > latest_incident_date:
-                    latest_incident_date = inc.incident_date
+                parsed = parse_incident_date(inc.incident_date)
+                if parsed is None:
+                    unparseable_incident_dates += 1
+                    logger.warning(
+                        "Safety incident %s has an unparseable incident_date %r; "
+                        "excluded from days-without-incident computation",
+                        getattr(inc, "incident_number", inc.id),
+                        inc.incident_date,
+                    )
+                elif latest_incident_dt is None or parsed > latest_incident_dt:
+                    latest_incident_dt = parsed
 
             # Count open corrective actions
             for ca in inc.corrective_actions or []:
                 if isinstance(ca, dict) and ca.get("status") in ("open", "in_progress"):
                     open_corrective_actions += 1
 
-        # Days without incident
+        # Days without incident.
+        #   - "none": no incidents at all → field is None (genuinely clean).
+        #   - "ok": computed from a parseable latest incident date.
+        #   - "unconfirmed": incidents exist but no usable date → field stays
+        #     None *and* status flags it, so the UI shows "cannot confirm"
+        #     rather than a falsely-reassuring blank/large number.
         days_without_incident: int | None = None
-        if latest_incident_date:
-            try:
-                last_inc = datetime.fromisoformat(latest_incident_date)
-                if last_inc.tzinfo is None:
-                    last_inc = last_inc.replace(tzinfo=UTC)
-                now = datetime.now(UTC)
-                days_without_incident = max(0, (now - last_inc).days)
-            except (ValueError, TypeError):
-                pass
+        if total_incidents == 0:
+            days_without_incident_status = "none"
+        elif latest_incident_dt is not None:
+            now_date = datetime.now(UTC).date()
+            # Inclusive of "today": an incident dated today → 0 days since.
+            days_without_incident = max(0, (now_date - latest_incident_dt).days)
+            days_without_incident_status = "ok"
+        else:
+            # Incidents exist but none had a usable date — do NOT report a
+            # reassuring number.
+            days_without_incident_status = "unconfirmed"
 
         # Observations by risk tier
         observations_by_risk_tier: dict[str, int] = defaultdict(int)
@@ -435,6 +462,8 @@ class SafetyService:
             total_incidents=total_incidents,
             total_observations=total_observations,
             days_without_incident=days_without_incident,
+            days_without_incident_status=days_without_incident_status,
+            unparseable_incident_dates=unparseable_incident_dates,
             total_days_lost=total_days_lost,
             recordable_incidents=recordable_incidents,
             ltifr=ltifr,
@@ -481,21 +510,21 @@ class SafetyService:
             lambda: {"incident_count": 0, "observation_count": 0, "days_lost": 0}
         )
 
-        def _bucket_key(date_str: str) -> str:
-            """Derive period key from an ISO date string."""
-            if period == "weekly":
-                try:
-                    from datetime import date as dt_date
+        def _bucket_key(date_str: str | None) -> str:
+            """Derive a period key from a (possibly non-canonical) date string.
 
-                    d = dt_date.fromisoformat(date_str[:10])
-                    # ISO week: YYYY-Wnn
-                    iso_year, iso_week, _ = d.isocalendar()
-                    return f"{iso_year}-W{iso_week:02d}"
-                except (ValueError, TypeError):
-                    return "unknown"
-            else:
-                # monthly: YYYY-MM
-                return date_str[:7] if date_str and len(date_str) >= 7 else "unknown"
+            Uses the same robust parser as the stats path so a malformed
+            string yields a single honest "unknown" bucket instead of a
+            nonsense key like "99/99/9" that fragments the chart.
+            """
+            d = parse_incident_date(date_str)
+            if d is None:
+                return "unknown"
+            if period == "weekly":
+                iso_year, iso_week, _ = d.isocalendar()
+                return f"{iso_year}-W{iso_week:02d}"
+            # monthly: YYYY-MM
+            return f"{d.year:04d}-{d.month:02d}"
 
         for inc in incidents:
             key = _bucket_key(inc.incident_date)

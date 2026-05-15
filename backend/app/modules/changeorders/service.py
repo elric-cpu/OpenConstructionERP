@@ -10,7 +10,7 @@ Stateless service layer. Handles:
 import logging
 import uuid
 from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +26,27 @@ from app.modules.changeorders.schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+_CENTS = Decimal("0.01")
+
+
+def _dec(value: object) -> Decimal:
+    """Coerce an API number (float/int/str) to an exact ``Decimal``.
+
+    Always routes through ``str()`` so a binary float such as ``0.1`` does
+    not poison money math with ``0.1000000000000000055…``. Bad input
+    degrades to ``Decimal("0")`` rather than raising — the schema layer
+    already validates ranges/NaN.
+    """
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return Decimal("0")
+
+
+def _round2(value: Decimal) -> Decimal:
+    """Round a money ``Decimal`` to 2 dp (HALF_UP) at the persist boundary."""
+    return value.quantize(_CENTS, rounding=ROUND_HALF_UP)
 
 
 async def _safe_publish(name: str, data: dict, source_module: str = "") -> None:
@@ -85,6 +106,13 @@ class ChangeOrderService:
         except (InvalidOperation, ValueError, TypeError):
             initial_cost_impact = Decimal("0")
 
+        # Resolve currency: caller-supplied → project default → "" (honest
+        # unknown). Task #217 / the architecture guide forbid a literal "EUR" here — a
+        # change order on a BRL/USD/etc. project must inherit that project's
+        # currency, never silently become Euro. Resolved once, before the
+        # retry loop, so a code-collision retry doesn't re-query the project.
+        currency = await self._resolve_currency(data.project_id, data.currency)
+
         last_exc: Exception | None = None
         for attempt in range(_MAX_RETRIES):
             count = await self.repo.count_for_project(data.project_id)
@@ -97,7 +125,7 @@ class ChangeOrderService:
                 description=data.description,
                 reason_category=data.reason_category,
                 schedule_impact_days=data.schedule_impact_days,
-                currency=data.currency,
+                currency=currency,
                 cost_impact=initial_cost_impact,
                 metadata_=data.metadata,
             )
@@ -124,6 +152,41 @@ class ChangeOrderService:
                 f"{_MAX_RETRIES} attempts (concurrent contention). Please retry."
             ),
         ) from last_exc
+
+    async def _resolve_currency(
+        self,
+        project_id: uuid.UUID,
+        requested: str | None,
+    ) -> str:
+        """Resolve the currency to stamp on a new change order.
+
+        Precedence: explicit caller value → owning project's currency →
+        empty string. NEVER returns a literal "EUR": a change order must
+        inherit the project's currency so a non-Eurozone project's scope
+        changes are not silently mis-stamped as Euro (task #217).
+        """
+        explicit = (requested or "").strip()
+        if explicit:
+            return explicit
+
+        from sqlalchemy import select
+
+        from app.modules.projects.models import Project
+
+        try:
+            project = (
+                await self.session.execute(
+                    select(Project).where(Project.id == project_id)
+                )
+            ).scalar_one_or_none()
+        except Exception:
+            # No real session (unit-test stub) or transient lookup error —
+            # fall back to empty rather than guessing a currency.
+            logger.debug("Project currency lookup skipped for %s", project_id)
+            return ""
+        if project is not None and getattr(project, "currency", None):
+            return str(project.currency)
+        return ""
 
     # ── Read ──────────────────────────────────────────────────────────────
 
@@ -738,7 +801,15 @@ class ChangeOrderService:
         # trigger a lazy load and crash with MissingGreenlet in async context.
         order_code = order.code
 
-        cost_delta = (data.new_quantity * data.new_rate) - (data.original_quantity * data.original_rate)
+        # Decimal money math — go through ``str()`` so a float like 0.1
+        # doesn't enter the calculation as 0.1000000000000000055…; round
+        # only at the persisted boundary (presentation rounds again in the
+        # response builder / UI).
+        cost_delta = (
+            _dec(data.new_quantity) * _dec(data.new_rate)
+        ) - (
+            _dec(data.original_quantity) * _dec(data.original_rate)
+        )
 
         item = ChangeOrderItem(
             change_order_id=order_id,
@@ -748,7 +819,7 @@ class ChangeOrderService:
             new_quantity=str(data.new_quantity),
             original_rate=str(data.original_rate),
             new_rate=str(data.new_rate),
-            cost_delta=str(round(cost_delta, 2)),
+            cost_delta=str(_round2(cost_delta)),
             unit=data.unit,
             sort_order=data.sort_order,
             metadata_=data.metadata,
@@ -796,15 +867,17 @@ class ChangeOrderService:
         if "metadata" in fields:
             fields["metadata_"] = fields.pop("metadata")
 
-        # Recalculate cost_delta if quantities or rates changed
-        orig_qty = fields.get("original_quantity", float(item.original_quantity))
-        new_qty = fields.get("new_quantity", float(item.new_quantity))
-        orig_rate = fields.get("original_rate", float(item.original_rate))
-        new_rate = fields.get("new_rate", float(item.new_rate))
+        # Recalculate cost_delta if quantities or rates changed. Decimal
+        # throughout — mixing the stored string column with an incoming
+        # float and rounding once keeps the persisted delta exact.
+        orig_qty = _dec(fields.get("original_quantity", item.original_quantity))
+        new_qty = _dec(fields.get("new_quantity", item.new_quantity))
+        orig_rate = _dec(fields.get("original_rate", item.original_rate))
+        new_rate = _dec(fields.get("new_rate", item.new_rate))
 
         if any(k in fields for k in ("original_quantity", "new_quantity", "original_rate", "new_rate")):
             cost_delta = (new_qty * new_rate) - (orig_qty * orig_rate)
-            fields["cost_delta"] = str(round(cost_delta, 2))
+            fields["cost_delta"] = str(_round2(cost_delta))
 
         # Convert float fields to strings for storage
         for key in ("original_quantity", "new_quantity", "original_rate", "new_rate"):
@@ -851,5 +924,5 @@ class ChangeOrderService:
     async def _recalculate_cost_impact(self, order_id: uuid.UUID) -> None:
         """Recalculate the total cost impact from all items."""
         items = await self.repo.list_items_for_order(order_id)
-        total = sum(float(item.cost_delta) for item in items)
-        await self.repo.update_fields(order_id, cost_impact=str(round(total, 2)))
+        total = sum((_dec(item.cost_delta) for item in items), Decimal("0"))
+        await self.repo.update_fields(order_id, cost_impact=str(_round2(total)))

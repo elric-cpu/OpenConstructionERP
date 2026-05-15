@@ -12,7 +12,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -644,24 +644,26 @@ async def test_notify_creates_notification() -> None:
 @pytest.mark.asyncio
 async def test_notify_emits_event() -> None:
     svc = _make_service()
-    publisher = AsyncMock()
+    # ``event_bus.publish_detached`` is a SYNCHRONOUS method (it returns an
+    # ``asyncio.Task`` from ``asyncio.create_task`` and is intentionally
+    # called WITHOUT ``await`` in production code). The test double must
+    # honour that contract — mocking it with ``AsyncMock`` would create a
+    # coroutine that production code never awaits, raising a spurious
+    # "coroutine was never awaited" RuntimeWarning instead of testing
+    # anything real.
+    publisher = MagicMock()
     with patch(
         "app.modules.portal.service.event_bus.publish_detached",
         new=publisher,
     ):
-        with patch(
-            # invite_portal_user also publishes; want to confirm notify's call.
-            "app.modules.portal.service.event_bus.publish",
-            new_callable=AsyncMock,
-        ):
-            user_repo = svc.user_repo
-            # Bypass full invite to avoid extra event noise.
-            from app.modules.portal.models import PortalUser
-            u = PortalUser(
-                email="sam@example.com", full_name="", portal_role="client",
-            )
-            await user_repo.create(u)
-            await svc.notify(u.id, kind="general", title="hi")
+        user_repo = svc.user_repo
+        # Bypass full invite to avoid extra event noise.
+        from app.modules.portal.models import PortalUser
+        u = PortalUser(
+            email="sam@example.com", full_name="", portal_role="client",
+        )
+        await user_repo.create(u)
+        await svc.notify(u.id, kind="general", title="hi")
 
     event_names = [c.args[0] for c in publisher.call_args_list]
     assert "portal.notification.created" in event_names

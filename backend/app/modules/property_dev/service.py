@@ -470,7 +470,10 @@ def compute_residual_appraisal(
     Residual Land Value = GDV − (construction + fees + contingency +
     finance + sales costs + developer profit).
 
-    Profit on Cost = developer_profit / total_costs.
+    Profit on Cost = developer_profit / total development cost, where
+    "total development cost" is construction + fees + contingency +
+    finance + sales costs (i.e. excluding the residual land value and
+    excluding the profit line itself — the standard RICS denominator).
     Profit on GDV  = developer_profit / GDV.
 
     All inputs are coerced through ``Decimal`` so callers may pass floats
@@ -515,7 +518,7 @@ def compute_residual_appraisal(
         "construction_cost": cc.quantize(q),
         "professional_fees": professional_fees.quantize(q),
         "contingency": contingency.quantize(q),
-        "finance_cost": Decimal(str(fin)).quantize(q),
+        "finance_cost": fin.quantize(q),
         "sales_costs": sales_costs.quantize(q),
         "developer_profit": developer_profit.quantize(q),
         "total_costs_excl_land": total_costs_excl_land.quantize(q),
@@ -756,11 +759,50 @@ class PropertyDevService:
                 detail=f"Plot in status '{plot.status}' cannot be reserved",
             )
 
+        # The plot must not already be bound to a *different* buyer — the
+        # ``Buyer.plot_id`` UNIQUE constraint would otherwise raise an
+        # opaque IntegrityError at flush. Surface a clean 409 instead.
+        existing_buyer = await self.buyers.get_for_plot(plot_id)
+        if (
+            existing_buyer is not None
+            and data.buyer_id is not None
+            and existing_buyer.id != data.buyer_id
+        ) or (existing_buyer is not None and data.buyer_id is None):
+            raise HTTPException(
+                status_code=409,
+                detail="Plot is already assigned to a buyer",
+            )
+
         # Bind / create buyer.
         if data.buyer_id is not None:
             buyer = await self.buyers.get_by_id(data.buyer_id)
             if buyer is None:
                 raise HTTPException(status_code=404, detail="Buyer not found")
+            # No cross-development binding: a buyer can only be placed on a
+            # plot inside their own development (IDOR / data-integrity).
+            if buyer.development_id != plot.development_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Buyer belongs to a different development",
+                )
+            # Terminal/contracted buyers must not be silently re-pointed at
+            # a new plot — only leads/reserved buyers may be (re)reserved.
+            if buyer.status not in {"lead", "reserved"}:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"Buyer in status '{buyer.status}' cannot reserve a plot"
+                    ),
+                )
+            # If the buyer was reserved against another plot, release that
+            # plot back to ``planned`` so it does not stay orphaned in
+            # ``reserved`` with no buyer attached.
+            if buyer.plot_id is not None and buyer.plot_id != plot_id:
+                old_plot = await self.plots.get_by_id(buyer.plot_id)
+                if old_plot is not None and old_plot.status == "reserved":
+                    await self.plots.update_fields(
+                        buyer.plot_id, status="planned", reservation_deadline=None
+                    )
             await self.buyers.update_fields(
                 buyer.id, plot_id=plot_id, status="reserved"
             )
@@ -985,11 +1027,21 @@ class PropertyDevService:
             deposit_forfeited=forfeiture["forfeited_amount"],
             deposit_refunded=forfeiture["refundable_amount"],
         )
-        # Free up the plot if it was reserved by this buyer.
+        # Free up the plot if it was held by this buyer. A merely
+        # ``reserved`` plot goes back to ``planned`` (re-marketable, no
+        # construction state to preserve). A ``sold`` plot has typically
+        # been (part-)built, so it is released to ``ready`` rather than
+        # regressed all the way to ``planned`` — that keeps the legal
+        # plot state machine intact (``sold`` -> ``planned`` is NOT an
+        # allowed transition) and does not throw away build progress.
         if buyer.plot_id:
             plot = await self.plots.get_by_id(buyer.plot_id)
-            if plot is not None and plot.status in {"reserved", "sold"}:
-                await self.plots.update_fields(buyer.plot_id, status="planned")
+            if plot is not None and plot.status == "reserved":
+                await self.plots.update_fields(
+                    buyer.plot_id, status="planned", reservation_deadline=None
+                )
+            elif plot is not None and plot.status == "sold":
+                await self.plots.update_fields(buyer.plot_id, status="ready")
 
         cancelled = await self.get_buyer(buyer_id)
         event_bus.publish_detached(
@@ -1047,11 +1099,17 @@ class PropertyDevService:
         self, selection_id: uuid.UUID, data: BuyerSelectionItemCreate
     ) -> BuyerSelectionItem:
         sel = await self.get_selection(selection_id)
-        if sel.status == "locked":
+        if sel.status in {"locked", "cancelled"}:
             raise HTTPException(
-                status_code=409, detail="Selection is locked"
+                status_code=409,
+                detail=f"Selection is {sel.status}",
             )
         option = await self.get_option(data.option_id)
+        if not option.is_active:
+            raise HTTPException(
+                status_code=409,
+                detail="Option is no longer available",
+            )
         unit_price = (
             data.unit_price_snapshot
             if data.unit_price_snapshot is not None
@@ -1075,8 +1133,11 @@ class PropertyDevService:
         if item is None:
             raise HTTPException(status_code=404, detail="Selection item not found")
         sel = await self.get_selection(item.selection_id)
-        if sel.status == "locked":
-            raise HTTPException(status_code=409, detail="Selection is locked")
+        if sel.status in {"locked", "cancelled"}:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Selection is {sel.status}",
+            )
         await self.selection_items.delete(item_id)
         await self._recompute_selection_total(item.selection_id)
 
@@ -1210,6 +1271,18 @@ class PropertyDevService:
         # Flip plot to handed_over.
         await self.plots.update_fields(handover.plot_id, status="handed_over")
 
+        # Advance the linked buyer to ``completed``. Without this the buyer
+        # is stuck at ``contracted`` forever even after the keys are handed
+        # over, so ``buyers_by_status`` / ``revenue_completed`` and the
+        # buyer-stage UI never reflect a finished sale. The transition is
+        # only legal from ``contracted`` (per ``_BUYER_TRANSITIONS``); any
+        # other state (lead/reserved/cancelled) is left untouched.
+        buyer_completed = False
+        buyer = await self.buyers.get_for_plot(handover.plot_id)
+        if buyer is not None and buyer.status == "contracted":
+            await self.buyers.update_fields(buyer.id, status="completed")
+            buyer_completed = True
+
         completed = await self.get_handover(h_id)
         event_bus.publish_detached(
             "property_dev.handover.completed",
@@ -1219,6 +1292,8 @@ class PropertyDevService:
                 "completed_at": completed.completed_at,
                 "snag_count": completed.snag_count_at_handover,
                 "final_check_passed": completed.final_check_passed,
+                "buyer_id": str(buyer.id) if buyer is not None else None,
+                "buyer_completed": buyer_completed,
             },
             source_module="property_dev",
         )
@@ -1366,10 +1441,8 @@ class PropertyDevService:
         )
         open_snags = await self.snags.count_open_for_development(dev_id)
         open_warranty = await self.warranty.count_open_for_development(dev_id)
-        handovers = await self.handovers.list_for_development(dev_id)
-        completed_handovers = sum(1 for h in handovers if h.completed_at)
-        scheduled_handovers = sum(
-            1 for h in handovers if h.scheduled_at and not h.completed_at
+        completed_handovers, scheduled_handovers = (
+            await self.handovers.count_progress_for_development(dev_id)
         )
         total_plots = sum(plots_by_status.values()) or 0
         sold = plots_by_status.get("sold", 0) + plots_by_status.get(
@@ -1524,44 +1597,72 @@ class PropertyDevService:
 
         Cost data comes from finance via cross-module events; here we
         report the developer-visible revenue + deposit + after-care
-        metrics. Currency is taken from the first contracted buyer.
+        metrics.
+
+        Currency: a development is single-currency by convention. We pick
+        the currency of the first buyer that has one and only aggregate
+        buyers in that currency — silently summing mixed-currency contract
+        values into one number is meaningless. ``mixed_currency`` flags
+        when at least one buyer used a different currency so the UI can
+        warn instead of showing a wrong total.
         """
         dev = await self.get_development(dev_id)
         rows = await self.pipeline.kanban_for_development(dev_id)
         currency = ""
+        for buyer, _plot in rows:
+            if buyer.currency:
+                currency = buyer.currency
+                break
+        mixed_currency = False
         revenue_contracted = Decimal("0")
         revenue_completed = Decimal("0")
         deposits_held = Decimal("0")
         deposits_forfeited = Decimal("0")
         plot_count_sold = 0
         plot_count_handed_over = 0
+        contract_revenue_total = Decimal("0")
+        contract_buyer_count = 0
         for buyer, plot in rows:
-            if buyer.currency and not currency:
-                currency = buyer.currency
+            b_ccy = buyer.currency or ""
+            # Only aggregate money for buyers in the development currency.
+            # A buyer with no currency set carries no monetary signal so
+            # it is treated as in-currency (its value is 0 anyway).
+            in_currency = (not b_ccy) or (not currency) or (b_ccy == currency)
+            if b_ccy and currency and b_ccy != currency:
+                mixed_currency = True
             value = Decimal(str(buyer.contract_value or 0))
-            if buyer.status == "contracted":
-                revenue_contracted += value
-            if buyer.status == "completed":
-                revenue_completed += value
-            if buyer.status in {"reserved", "contracted"}:
-                deposits_held += Decimal(str(buyer.deposit_amount or 0))
-                deposits_held -= Decimal(str(buyer.deposit_forfeited or 0))
-            deposits_forfeited += Decimal(str(buyer.deposit_forfeited or 0))
+            if in_currency:
+                if buyer.status == "contracted":
+                    revenue_contracted += value
+                if buyer.status == "completed":
+                    revenue_completed += value
+                if buyer.status in {"contracted", "completed"} and value > 0:
+                    contract_revenue_total += value
+                    contract_buyer_count += 1
+                if buyer.status in {"reserved", "contracted"}:
+                    deposits_held += Decimal(str(buyer.deposit_amount or 0))
+                deposits_forfeited += Decimal(
+                    str(buyer.deposit_forfeited or 0)
+                )
             if plot is not None and plot.status == "sold":
                 plot_count_sold += 1
             if plot is not None and plot.status == "handed_over":
                 plot_count_handed_over += 1
-        total_sold = plot_count_sold + plot_count_handed_over
+        # Average sale price = mean contract value across buyers that
+        # actually hold a contract — NOT contracted revenue divided by
+        # the count of *sold plots* (mismatched populations: a contracted
+        # buyer's plot is usually still under construction, not "sold").
         avg_sale = (
-            ((revenue_contracted + revenue_completed) / Decimal(total_sold))
+            (contract_revenue_total / Decimal(contract_buyer_count))
             .quantize(Decimal("0.01"))
-            if total_sold else Decimal("0")
+            if contract_buyer_count else Decimal("0")
         )
         open_warranty = await self.warranty.count_open_for_development(dev_id)
         open_snags = await self.snags.count_open_for_development(dev_id)
         return {
             "development_id": dev.id,
             "currency": currency,
+            "mixed_currency": mixed_currency,
             "revenue_contracted": revenue_contracted.quantize(Decimal("0.01")),
             "revenue_completed": revenue_completed.quantize(Decimal("0.01")),
             "deposits_held": deposits_held.quantize(Decimal("0.01")),

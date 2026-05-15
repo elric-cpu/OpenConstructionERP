@@ -227,6 +227,18 @@ class _StubWorkOrderItemRepo:
     async def list_for_work_order(self, wid: uuid.UUID) -> list[Any]:
         return [r for r in self.rows if r.work_order_id == wid]
 
+    async def get_by_id(self, item_id: uuid.UUID) -> Any:
+        return next((r for r in self.rows if r.id == item_id), None)
+
+    async def update_fields(self, item_id: uuid.UUID, **fields: Any) -> None:
+        # Mirrors _BaseRepo.update_fields (repository.py) so the double
+        # honours the real repository contract the service relies on.
+        obj = next((r for r in self.rows if r.id == item_id), None)
+        if obj is None:
+            return
+        for key, value in fields.items():
+            setattr(obj, key, value)
+
 
 class _StubDebriefRepo:
     def __init__(self) -> None:

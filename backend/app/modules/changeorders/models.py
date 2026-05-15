@@ -52,7 +52,13 @@ class ChangeOrder(Base):
         MoneyType(), nullable=False, default=Decimal("0")
     )
     schedule_impact_days: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    currency: Mapped[str] = mapped_column(String(10), nullable=False, default="EUR")
+    # Platform rule (task #217, the architecture guide): NO model-/DB-level hardcoded
+    # currency. The column defaults to empty string; the service layer is
+    # responsible for resolving and stamping the project's currency on
+    # create so a non-Eurozone project never silently inherits "EUR".
+    currency: Mapped[str] = mapped_column(
+        String(10), nullable=False, server_default="", default=""
+    )
 
     # Variation fields (Phase 16 enhancement)
     variation_type: Mapped[str | None] = mapped_column(String(50), nullable=True)

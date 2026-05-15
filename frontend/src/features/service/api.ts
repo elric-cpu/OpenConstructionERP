@@ -303,6 +303,13 @@ export function createWorkOrder(data: CreateWorkOrderPayload): Promise<WorkOrder
   return apiPost<WorkOrder>('/v1/service/work-orders/', data);
 }
 
+export function updateWorkOrder(
+  id: string,
+  data: { status?: WorkOrderStatus; technician_id?: string; scheduled_for?: string },
+): Promise<WorkOrder> {
+  return apiPatch<WorkOrder>(`/v1/service/work-orders/${id}`, data);
+}
+
 export function billWorkOrder(id: string): Promise<WorkOrder> {
   return apiPost<WorkOrder>(`/v1/service/work-orders/${id}/bill`, {});
 }

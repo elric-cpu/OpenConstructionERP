@@ -68,6 +68,15 @@ export function PromptEditor({ promptKey, selectedId, onSelect }: Props) {
     }
   }, [active?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Lift the resolved default selection up to the stage so a run uses
+  // exactly the template the user is looking at. Without this the
+  // editor shows template X while the stage still carries
+  // ``prompt_template_id: null`` and silently runs the server default —
+  // "what I see" ≠ "what runs".
+  useEffect(() => {
+    if (!selectedId && active) onSelect(active.id);
+  }, [selectedId, active, onSelect]);
+
   const vars = useMemo(() => extractVars(usr), [usr]);
 
   const forkMut = useMutation({
@@ -88,11 +97,22 @@ export function PromptEditor({ promptKey, selectedId, onSelect }: Props) {
   });
 
   const saveMut = useMutation({
-    mutationFn: () =>
-      matchElementsApi.updatePromptTemplate(active!.id, {
+    mutationFn: () => {
+      if (!active) {
+        return Promise.reject(
+          new Error(
+            t(
+              'match_elements.pipeline.no_prompt_selected',
+              'No editable prompt selected.',
+            ),
+          ),
+        );
+      }
+      return matchElementsApi.updatePromptTemplate(active.id, {
         system_prompt: sys,
         user_template: usr,
-      }),
+      });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['match-prompt-templates', promptKey] });
       setDirty(false);
@@ -108,7 +128,43 @@ export function PromptEditor({ promptKey, selectedId, onSelect }: Props) {
     );
   }
 
+  if (listQ.isError) {
+    return (
+      <div className="text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/20 border border-rose-200/60 dark:border-rose-800/40 rounded-lg px-3 py-2 flex items-center justify-between gap-2">
+        <span className="break-words">
+          {(listQ.error as Error)?.message ??
+            t(
+              'match_elements.pipeline.prompts_load_failed',
+              'Could not load prompt templates.',
+            )}
+        </span>
+        <button
+          type="button"
+          onClick={() => listQ.refetch()}
+          className="shrink-0 underline hover:no-underline"
+        >
+          {t('common.retry', 'Retry')}
+        </button>
+      </div>
+    );
+  }
+
+  if (templates.length === 0) {
+    return (
+      <div className="text-xs text-content-tertiary bg-surface-secondary border border-border rounded-lg px-3 py-2">
+        {t(
+          'match_elements.pipeline.no_prompts',
+          'No prompt templates for this stage yet.',
+        )}
+      </div>
+    );
+  }
+
   const isSystem = !!active?.is_system;
+  const mutError =
+    (forkMut.error as Error | null)?.message ??
+    (saveMut.error as Error | null)?.message ??
+    null;
 
   return (
     <div className="space-y-2.5">
@@ -152,12 +208,18 @@ export function PromptEditor({ promptKey, selectedId, onSelect }: Props) {
         <textarea
           value={sys}
           readOnly={isSystem}
+          aria-readonly={isSystem}
           onChange={(e) => {
             setSys(e.target.value);
             setDirty(true);
           }}
           rows={3}
-          className="w-full text-xs font-mono px-2.5 py-2 rounded-lg border border-border bg-surface-secondary text-content-primary resize-y disabled:opacity-60"
+          className={
+            'w-full text-xs font-mono px-2.5 py-2 rounded-lg border border-border text-content-primary resize-y ' +
+            (isSystem
+              ? 'bg-surface-secondary/60 opacity-70 cursor-not-allowed'
+              : 'bg-surface-secondary')
+          }
         />
       </div>
 
@@ -169,12 +231,18 @@ export function PromptEditor({ promptKey, selectedId, onSelect }: Props) {
         <textarea
           value={usr}
           readOnly={isSystem}
+          aria-readonly={isSystem}
           onChange={(e) => {
             setUsr(e.target.value);
             setDirty(true);
           }}
           rows={8}
-          className="w-full text-xs font-mono px-2.5 py-2 rounded-lg border border-border bg-surface-secondary text-content-primary resize-y disabled:opacity-60"
+          className={
+            'w-full text-xs font-mono px-2.5 py-2 rounded-lg border border-border text-content-primary resize-y ' +
+            (isSystem
+              ? 'bg-surface-secondary/60 opacity-70 cursor-not-allowed'
+              : 'bg-surface-secondary')
+          }
         />
       </div>
 
@@ -250,6 +318,16 @@ export function PromptEditor({ promptKey, selectedId, onSelect }: Props) {
           </>
         )}
       </div>
+
+      {/* Save / fork failures must not be silent. */}
+      {mutError && (
+        <div
+          role="alert"
+          className="text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/20 border border-rose-200/60 dark:border-rose-800/40 rounded-lg px-2.5 py-1.5 break-words"
+        >
+          {mutError}
+        </div>
+      )}
     </div>
   );
 }

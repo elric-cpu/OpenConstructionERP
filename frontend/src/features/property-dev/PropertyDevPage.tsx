@@ -15,6 +15,7 @@ import {
   Loader2,
   Check,
   Clock,
+  AlertOctagon,
 } from 'lucide-react';
 import {
   Button,
@@ -32,6 +33,7 @@ import {
 import { MoneyDisplay } from '@/shared/ui/MoneyDisplay';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { useToastStore } from '@/stores/useToastStore';
+import { usePreferencesStore } from '@/stores/usePreferencesStore';
 import { getErrorMessage } from '@/shared/lib/api';
 import {
   listDevelopments,
@@ -190,6 +192,24 @@ export function PropertyDevPage() {
     (tab === 'house_types' && houseTypesQ.isLoading) ||
     (tab === 'buyers' && buyersQ.isLoading);
 
+  // A failed list query must NOT fall through to the "nothing here yet"
+  // empty state — that hides real backend/permission failures behind a
+  // success-looking screen. Surface it with a retry instead.
+  const activeQuery =
+    tab === 'plots'
+      ? plotsQ
+      : tab === 'house_types'
+        ? houseTypesQ
+        : tab === 'buyers' || tab === 'handovers' || tab === 'warranty'
+          ? buyersQ
+          : developmentsQ;
+  const loadError =
+    developmentsQ.isError
+      ? developmentsQ.error
+      : activeQuery.isError
+        ? activeQuery.error
+        : null;
+
   return (
     <div className="space-y-5">
       <Breadcrumb
@@ -299,6 +319,23 @@ export function PropertyDevPage() {
       {/* Body */}
       {isLoading ? (
         <Card padding="md"><SkeletonTable rows={6} columns={4} /></Card>
+      ) : loadError ? (
+        <Card padding="md">
+          <EmptyState
+            icon={<AlertOctagon size={22} />}
+            title={t('propdev.load_error', {
+              defaultValue: 'Could not load property data',
+            })}
+            description={getErrorMessage(loadError)}
+            action={{
+              label: t('common.retry', { defaultValue: 'Retry' }),
+              onClick: () => {
+                developmentsQ.refetch();
+                activeQuery.refetch();
+              },
+            }}
+          />
+        </Card>
       ) : tab === 'developments' ? (
         <DevelopmentsGrid
           rows={developments}
@@ -461,7 +498,7 @@ function DevelopmentCard({
             <div>
               <p className="text-content-tertiary">{t('propdev.contracted', { defaultValue: 'Contracted' })}</p>
               <p className="font-medium">
-                <MoneyDisplay amount={toNumber(dash.contracted_value)} currency="EUR" />
+                <MoneyDisplay amount={toNumber(dash.contracted_value)} currency={undefined} />
               </p>
             </div>
             <div>
@@ -607,7 +644,7 @@ function HouseTypeCard({ ht }: { ht: HouseType }) {
         <div>
           <p className="text-content-tertiary">{t('propdev.base_price', { defaultValue: 'Base price' })}</p>
           <p className="font-medium">
-            <MoneyDisplay amount={toNumber(ht.base_price)} currency={ht.currency || 'EUR'} />
+            <MoneyDisplay amount={toNumber(ht.base_price)} currency={ht.currency || undefined} />
           </p>
         </div>
       </div>
@@ -687,7 +724,7 @@ function BuyersTab({
                     <Badge variant={BUYER_VARIANT[b.status]} dot>{b.status}</Badge>
                   </td>
                   <td className="px-4 py-2 text-right">
-                    <MoneyDisplay amount={toNumber(b.contract_value)} currency={b.currency || 'EUR'} />
+                    <MoneyDisplay amount={toNumber(b.contract_value)} currency={b.currency || undefined} />
                   </td>
                   <td className="px-4 py-2 text-xs">
                     {b.freeze_deadline ? (
@@ -936,6 +973,15 @@ function PlotDetailDrawer({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
+  // Esc-to-close — registered before the early return so the hook order
+  // is stable regardless of whether the plot is resolved yet.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
   const plot = plots.find((p) => p.id === plotId);
   const ht = plot?.house_type_id ? houseTypes.find((h) => h.id === plot.house_type_id) : null;
   if (!plot) return null;
@@ -943,11 +989,14 @@ function PlotDetailDrawer({
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30" />
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="propdev-plot-drawer-title"
         className="relative h-full w-full max-w-lg overflow-y-auto bg-surface-elevated shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border-light bg-surface-elevated px-5 py-3">
-          <h2 className="text-base font-semibold">
+          <h2 id="propdev-plot-drawer-title" className="text-base font-semibold">
             {t('propdev.plot_n', { defaultValue: 'Plot {{n}}', n: plot.plot_number })}
           </h2>
           <button
@@ -976,7 +1025,7 @@ function PlotDetailDrawer({
             />
             <Field
               label={t('propdev.base_price', { defaultValue: 'Base price' })}
-              value={<MoneyDisplay amount={toNumber(plot.price_base)} currency={plot.currency || 'EUR'} />}
+              value={<MoneyDisplay amount={toNumber(plot.price_base)} currency={plot.currency || undefined} />}
             />
             <Field
               label={t('propdev.reserved_until', { defaultValue: 'Reserved until' })}
@@ -1073,17 +1122,27 @@ function BuyerDetailDrawer({
   });
   const items = selectionsQ.data ?? [];
   const freezeDays = daysUntil(buyer?.freeze_deadline);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
   if (!buyer) return null;
   return (
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30" />
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="propdev-buyer-drawer-title"
         className="relative h-full w-full max-w-xl overflow-y-auto bg-surface-elevated shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border-light bg-surface-elevated px-5 py-3">
           <div>
-            <h2 className="text-base font-semibold">{buyer.full_name || buyer.email}</h2>
+            <h2 id="propdev-buyer-drawer-title" className="text-base font-semibold">{buyer.full_name || buyer.email}</h2>
             <p className="text-xs text-content-tertiary">{buyer.email}</p>
           </div>
           <button
@@ -1108,7 +1167,7 @@ function BuyerDetailDrawer({
               value={
                 <MoneyDisplay
                   amount={toNumber(buyer.contract_value)}
-                  currency={buyer.currency || 'EUR'}
+                  currency={buyer.currency || undefined}
                 />
               }
             />
@@ -1175,7 +1234,7 @@ function BuyerDetailDrawer({
                       </span>
                     </span>
                     <span className="font-medium">
-                      <MoneyDisplay amount={toNumber(s.total_options_value)} currency={buyer.currency || 'EUR'} />
+                      <MoneyDisplay amount={toNumber(s.total_options_value)} currency={buyer.currency || undefined} />
                     </span>
                   </li>
                 ))}
@@ -1249,9 +1308,10 @@ function ContractBuyerBlock({ buyer }: { buyer: Buyer }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const addToast = useToastStore((s) => s.addToast);
+  const prefCurrency = usePreferencesStore((s) => s.currency);
   const [form, setForm] = useState({
     contract_value: String(toNumber(buyer.contract_value)),
-    currency: buyer.currency || 'EUR',
+    currency: buyer.currency || prefCurrency,
     contract_signed_at: todayIso(),
     freeze_deadline: todayIso(60),
   });
@@ -1286,7 +1346,7 @@ function ContractBuyerBlock({ buyer }: { buyer: Buyer }) {
           <input
             value={form.currency}
             onChange={(e) => setForm({ ...form, currency: e.target.value.toUpperCase() })}
-            placeholder="EUR"
+            placeholder={prefCurrency}
             className={inputCls}
             maxLength={3}
           />
@@ -1351,6 +1411,7 @@ function CreateModal({
   const { t } = useTranslation();
   const qc = useQueryClient();
   const addToast = useToastStore((s) => s.addToast);
+  const prefCurrency = usePreferencesStore((s) => s.currency);
   const [busy, setBusy] = useState(false);
 
   const [devForm, setDevForm] = useState({
@@ -1365,7 +1426,7 @@ function CreateModal({
     house_type_id: '',
     area_m2: '0',
     price_base: '0',
-    currency: 'EUR',
+    currency: prefCurrency,
   });
   const [htForm, setHtForm] = useState({
     development_id: developmentId,
@@ -1374,7 +1435,7 @@ function CreateModal({
     bedrooms: 3,
     total_area_m2: '120',
     base_price: '0',
-    currency: 'EUR',
+    currency: prefCurrency,
   });
   const [buyerForm, setBuyerForm] = useState({
     development_id: developmentId,

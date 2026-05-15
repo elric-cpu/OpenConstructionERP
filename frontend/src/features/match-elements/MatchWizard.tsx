@@ -144,7 +144,13 @@ function Stepper({
                 !reachable && 'cursor-not-allowed',
               )}
               aria-current={isCurrent ? 'step' : undefined}
-              aria-label={`${labels[n]}${isDone ? ' (done)' : isCurrent ? ' (current)' : ''}`}
+              aria-label={`${labels[n]}${
+                isDone
+                  ? ` — ${t('common.done', 'done')}`
+                  : isCurrent
+                    ? ` — ${t('common.current', 'current')}`
+                    : ''
+              }`}
             >
               <span
                 className={clsx(

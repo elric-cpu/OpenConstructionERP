@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
@@ -195,6 +195,18 @@ export function QMSPage() {
     (tab === 'punch' && punchQ.isLoading) ||
     (tab === 'audits' && auditQ.isLoading);
 
+  const activeQuery =
+    tab === 'itp'
+      ? itpQ
+      : tab === 'inspections'
+        ? inspQ
+        : tab === 'ncrs'
+          ? ncrQ
+          : tab === 'punch'
+            ? punchQ
+            : auditQ;
+  const loadError = activeQuery.isError ? activeQuery.error : null;
+
   return (
     <div className="space-y-5">
       <Breadcrumb items={[{ label: t('qms.title', { defaultValue: 'Quality Management' }) }]} />
@@ -344,6 +356,16 @@ export function QMSPage() {
           <div className="p-4">
             <SkeletonTable rows={8} columns={5} />
           </div>
+        ) : loadError ? (
+          <EmptyState
+            icon={<AlertOctagon size={22} />}
+            title={t('qms.load_error', { defaultValue: 'Could not load QMS data' })}
+            description={getErrorMessage(loadError)}
+            action={{
+              label: t('common.retry', { defaultValue: 'Retry' }),
+              onClick: () => activeQuery.refetch(),
+            }}
+          />
         ) : tab === 'itp' ? (
           <ITPTable rows={filteredItp} onAction={() => setCreateOpen(true)} />
         ) : tab === 'inspections' ? (
@@ -795,6 +817,17 @@ function AuditTable({ rows, onAction }: { rows: Audit[]; onAction: () => void })
   );
 }
 
+/** Close a drawer when the user presses Escape (matches WideModal UX). */
+function useEscapeToClose(onClose: () => void) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+}
+
 /* ── NCR Drawer ────────────────────────────────────────────────────────── */
 
 function NCRDrawer({
@@ -848,17 +881,24 @@ function NCRDrawer({
     onError: (e) => addToast({ type: 'error', title: getErrorMessage(e) }),
   });
 
+  useEscapeToClose(onClose);
+
   if (!ncr) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30" />
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="qms-ncr-drawer-title"
         className="relative h-full w-full max-w-lg overflow-y-auto bg-surface-elevated shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border-light bg-surface-elevated px-5 py-3">
-          <h2 className="text-base font-semibold truncate">{ncr.title}</h2>
+          <h2 id="qms-ncr-drawer-title" className="text-base font-semibold truncate">
+            {ncr.title}
+          </h2>
           <button
             type="button"
             onClick={onClose}
@@ -984,6 +1024,8 @@ function InspectionDrawer({
     onError: (e) => addToast({ type: 'error', title: getErrorMessage(e) }),
   });
 
+  useEscapeToClose(onClose);
+
   if (!insp) return null;
 
   const photos = insp.photos_json ?? [];
@@ -992,11 +1034,16 @@ function InspectionDrawer({
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30" />
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="qms-insp-drawer-title"
         className="relative h-full w-full max-w-lg overflow-y-auto bg-surface-elevated shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border-light bg-surface-elevated px-5 py-3">
-          <h2 className="text-base font-semibold">{insp.location_ref || t('qms.inspection', { defaultValue: 'Inspection' })}</h2>
+          <h2 id="qms-insp-drawer-title" className="text-base font-semibold">
+            {insp.location_ref || t('qms.inspection', { defaultValue: 'Inspection' })}
+          </h2>
           <button
             type="button"
             onClick={onClose}

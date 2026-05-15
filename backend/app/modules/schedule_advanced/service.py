@@ -852,8 +852,17 @@ class ScheduleAdvancedService:
         await self.phase_repo.delete(phase_id)
 
     async def pull_phase(self, phase_id: uuid.UUID, user_id: str | None = None) -> PhasePlan:
-        """Move a phase plan from ``in_planning`` to ``pulled``."""
+        """Move a phase plan from ``in_planning`` to ``pulled``.
+
+        Idempotent: a phase already in ``pulled`` is returned unchanged
+        without re-stamping ``pull_session_at`` or re-emitting the
+        ``phase.pulled`` event. Without this guard a double-click (or a
+        retried request) would re-fire the event and downstream
+        subscribers would double-process the pull session.
+        """
         p = await self.get_phase_plan(phase_id)
+        if p.pulled_status == "pulled":
+            return p
         if "pulled" not in allowed_phase_transitions(p.pulled_status):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -972,8 +981,16 @@ class ScheduleAdvancedService:
         await self.constraint_repo.delete(cid)
 
     async def clear_constraint(self, cid: uuid.UUID, user_id: str | None = None) -> Constraint:
-        """Flip a constraint to ``cleared`` and emit the event."""
+        """Flip a constraint to ``cleared`` and emit the event.
+
+        Idempotent: an already-``cleared`` constraint is returned
+        unchanged. Re-running would otherwise overwrite the original
+        ``cleared_at`` / ``cleared_by`` audit trail and re-emit the
+        ``constraint.cleared`` event.
+        """
         c = await self.get_constraint(cid)
+        if c.status == "cleared":
+            return c
         if "cleared" not in allowed_constraint_transitions(c.status):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -1057,8 +1074,14 @@ class ScheduleAdvancedService:
         await self.weekly_repo.delete(wp_id)
 
     async def commit_weekly_plan(self, wp_id: uuid.UUID) -> WeeklyWorkPlan:
-        """Flip a weekly plan from ``draft`` to ``committed``."""
+        """Flip a weekly plan from ``draft`` to ``committed``.
+
+        Idempotent: an already-``committed`` plan is returned unchanged
+        so a retried commit does not reset ``generated_at``.
+        """
         w = await self.get_weekly_plan(wp_id)
+        if w.status == "committed":
+            return w
         if "committed" not in allowed_weekly_transitions(w.status):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -1073,9 +1096,16 @@ class ScheduleAdvancedService:
     async def close_weekly_plan(
         self, wp_id: uuid.UUID, today: date | None = None,
     ) -> WeeklyWorkPlan:
-        """Close a weekly plan, compute PPC, and emit the closed event."""
+        """Close a weekly plan, compute PPC, and emit the closed event.
+
+        Idempotent: an already-``closed`` plan is returned unchanged so
+        a retried close does not re-emit ``weekly_plan.closed`` (which
+        would double-trigger downstream PPC-trend / notification work).
+        """
         _ = today  # reserved for date-window enforcement; not enforced here
         w = await self.get_weekly_plan(wp_id)
+        if w.status == "closed":
+            return w
         if "closed" not in allowed_weekly_transitions(w.status):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -1140,8 +1170,15 @@ class ScheduleAdvancedService:
     async def commit_to_week(
         self, cid: uuid.UUID, user_id: str | None = None,
     ) -> Commitment:
-        """Flip Commitment.status planned → committed; emit the event."""
+        """Flip Commitment.status planned → committed; emit the event.
+
+        Idempotent: an already-``committed`` commitment is returned
+        unchanged (no re-stamp of ``made_at`` / ``made_by_user_id``,
+        no duplicate ``commitment.made`` event on a retried request).
+        """
         c = await self.get_commitment(cid)
+        if c.status == "committed":
+            return c
         if "committed" not in allowed_commitment_transitions(c.status):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -1499,12 +1536,11 @@ class ScheduleAdvancedService:
 
         baselines = await self.baseline_repo.list_for_project(project_id, status="active")
 
-        current_week_count = 0
-        for m in active_masters:
-            wp = await self.weekly_repo.current_week_plan(m.id, today)
-            if wp is not None:
-                commits = await self.commitment_repo.commitments_for_week(wp.id)
-                current_week_count += len(commits)
+        # Single aggregate query (was an N+1: one current_week_plan +
+        # one commitments_for_week round trip per active master).
+        current_week_count = await self.weekly_repo.current_week_commitment_count(
+            project_id, today,
+        )
 
         return {
             "project_id": project_id,

@@ -92,6 +92,16 @@ logger = logging.getLogger(__name__)
 _logger_ev = logging.getLogger(__name__ + ".events")
 
 VALID_VENDOR_STATUSES = {"active", "suspended", "blacklisted"}
+# Allowed vendor status transitions. ``blacklisted`` is a terminal
+# compliance state — a vendor can only leave it via an explicit
+# reactivation (which is itself a deliberate compliance decision), never
+# be re-suspended or silently flipped. ``active`` ⇄ ``suspended`` is the
+# normal operational toggle.
+VENDOR_STATUS_TRANSITIONS: dict[str, set[str]] = {
+    "active": {"suspended", "blacklisted"},
+    "suspended": {"active", "blacklisted"},
+    "blacklisted": {"active"},
+}
 VALID_PR_STATUSES = {
     "draft",
     "approval_pending",
@@ -228,6 +238,20 @@ class SupplierCatalogsService:
             raise HTTPException(
                 status_code=400,
                 detail=f"Invalid vendor status: {new_status}",
+            )
+        if new_status == vendor.status:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Vendor is already '{new_status}'",
+            )
+        allowed = VENDOR_STATUS_TRANSITIONS.get(vendor.status, set())
+        if new_status not in allowed:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Illegal vendor status transition "
+                    f"'{vendor.status}' → '{new_status}'"
+                ),
             )
         await self.vendors.update(vendor_id, status=new_status)
         await _safe_publish(
@@ -1891,41 +1915,57 @@ class SupplierCatalogsService:
         )
 
         # 2. Price score — vendor avg unit_price vs cheapest competing vendor
-        # Sample over our catalog_entries for this vendor; for each catalog
-        # item compute the ratio cheapest/this; average over the basket.
+        # For each catalog item the vendor prices, compute the ratio
+        # cheapest/this; average over the basket. Two grouped aggregate
+        # queries (NOT a per-item N+1): one for this vendor's lowest price
+        # per item, one for the market-wide cheapest per item.
+        from sqlalchemy import func as _func
+
         from app.modules.supplier_catalogs.models import (
             CatalogEntry as _CE,
         )
 
-        entries_stmt = (
-            _select(_CE, PriceList)
+        vendor_min_stmt = (
+            _select(
+                _CE.catalog_item_id,
+                _func.min(_CE.unit_price).label("vendor_min"),
+            )
             .join(PriceList, PriceList.id == _CE.price_list_id)
             .where(PriceList.vendor_id == vendor_id)
             .where(PriceList.status == "active")
+            .where(_CE.unit_price > 0)
+            .group_by(_CE.catalog_item_id)
         )
-        items_seen: set[uuid.UUID] = set()
+        vendor_min: dict[uuid.UUID, Decimal] = {
+            row[0]: row[1]
+            for row in (await self.session.execute(vendor_min_stmt)).all()
+        }
+
+        market_min: dict[uuid.UUID, Decimal] = {}
+        if vendor_min:
+            market_min_stmt = (
+                _select(
+                    _CE.catalog_item_id,
+                    _func.min(_CE.unit_price).label("market_min"),
+                )
+                .join(PriceList, PriceList.id == _CE.price_list_id)
+                .where(PriceList.status == "active")
+                .where(_CE.unit_price > 0)
+                .where(_CE.catalog_item_id.in_(list(vendor_min.keys())))
+                .group_by(_CE.catalog_item_id)
+            )
+            market_min = {
+                row[0]: row[1]
+                for row in (await self.session.execute(market_min_stmt)).all()
+            }
+
         sample_count = 0
         ratio_sum = Decimal("0")
-        for entry, _pl in (await self.session.execute(entries_stmt)).all():
-            if entry.catalog_item_id in items_seen:
+        for item_id, this_price in vendor_min.items():
+            cheapest = market_min.get(item_id)
+            if cheapest is None or this_price <= 0:
                 continue
-            items_seen.add(entry.catalog_item_id)
-            # Find the cheapest vendor for this catalog_item across active PLs
-            cheap_stmt = (
-                _select(_CE, PriceList)
-                .join(PriceList, PriceList.id == _CE.price_list_id)
-                .where(_CE.catalog_item_id == entry.catalog_item_id)
-                .where(PriceList.status == "active")
-            )
-            prices = [
-                row[0].unit_price
-                for row in (await self.session.execute(cheap_stmt)).all()
-                if row[0].unit_price > 0
-            ]
-            if not prices or entry.unit_price <= 0:
-                continue
-            cheapest = min(prices)
-            ratio = cheapest / entry.unit_price  # 1.0 if cheapest, <1 otherwise
+            ratio = Decimal(cheapest) / Decimal(this_price)  # 1.0 if cheapest
             ratio_sum += ratio
             sample_count += 1
         price_score = (

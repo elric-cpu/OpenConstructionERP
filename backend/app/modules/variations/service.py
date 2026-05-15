@@ -808,6 +808,18 @@ class VariationsService:
         data: VariationRequestUpdate,
     ) -> VariationRequest:
         vr = await self.get_request(vr_id)
+        # A decided / converted VR is a frozen commercial record — editing
+        # its scope or cost after approval/rejection destroys the audit
+        # trail (and silently moves money once it is a VO). Lifecycle
+        # changes go through ``transition_variation_request``, not here.
+        if vr.status in {"approved", "rejected", "converted_to_vo"}:
+            raise HTTPException(
+                status_code=http_status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Variation request is {vr.status} and can no longer be "
+                    "edited; create a new request instead"
+                ),
+            )
         fields = data.model_dump(exclude_unset=True)
         if "metadata" in fields:
             fields["metadata_"] = fields.pop("metadata")
@@ -929,6 +941,19 @@ class VariationsService:
         data: VariationOrderUpdate,
     ) -> VariationOrder:
         vo = await self.get_order(vo_id)
+        # A completed VO has already adjusted the contract sum / final
+        # account; a voided VO is a closed record. Either way its money
+        # must not be silently rewritten — that would desync the final
+        # account on the next recompute. Status moves via
+        # ``transition_variation_order`` only.
+        if vo.status in {"completed", "voided"}:
+            raise HTTPException(
+                status_code=http_status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Variation order is {vo.status} and is no longer "
+                    "editable"
+                ),
+            )
         fields = data.model_dump(exclude_unset=True)
         if "metadata" in fields:
             fields["metadata_"] = fields.pop("metadata")
@@ -1173,6 +1198,12 @@ class VariationsService:
             },
         )
         return sm
+
+    async def get_site_measurement(self, sm_id: uuid.UUID) -> SiteMeasurement:
+        row = await self.site_measurement_repo.get_by_id(sm_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Site measurement not found")
+        return row
 
     async def update_site_measurement(
         self,
@@ -1716,6 +1747,11 @@ class VariationsService:
     ) -> FinalAccount:
         """Add the VO total to ``variations_total`` and recompute ``final_value``."""
         vo = await self.get_order(vo_id)
+        if vo.status == "voided":
+            raise HTTPException(
+                status_code=http_status.HTTP_409_CONFLICT,
+                detail="A voided variation order cannot be added to the final account",
+            )
         fa = await self.get_final_account(final_account_id)
         new_variations = _to_decimal(fa.variations_total) + _to_decimal(vo.final_cost_impact)
         new_final = (
@@ -1740,7 +1776,9 @@ class VariationsService:
         if fa is None:
             return None
 
-        vos = await self.vo_repo.list_all_for_project(project_id)
+        # Voided VOs carry no commercial value — exclude them so the
+        # revised contract sum is not overstated.
+        vos = await self.vo_repo.list_valued_for_project(project_id)
         variations_total = sum(
             (_to_decimal(v.final_cost_impact) for v in vos), Decimal("0"),
         )
@@ -1783,39 +1821,80 @@ class VariationsService:
         await self.session.refresh(fa)
         return fa
 
+    # ── Project-scope resolvers (object-level authorization) ──────────────
+
+    async def cost_impact_project_id(self, line_id: uuid.UUID) -> uuid.UUID:
+        """Resolve the owning project for a cost-impact line (IDOR guard)."""
+        row = await self.cost_impact_repo.get_by_id(line_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Cost-impact line not found")
+        vo = await self.get_order(row.variation_order_id)
+        return vo.project_id
+
+    async def schedule_impact_project_id(self, line_id: uuid.UUID) -> uuid.UUID:
+        """Resolve the owning project for a schedule-impact line (IDOR guard)."""
+        row = await self.schedule_impact_repo.get_by_id(line_id)
+        if row is None:
+            raise HTTPException(
+                status_code=404, detail="Schedule-impact line not found",
+            )
+        vo = await self.get_order(row.variation_order_id)
+        return vo.project_id
+
+    async def daywork_line_project_id(self, line_id: uuid.UUID) -> uuid.UUID:
+        """Resolve the owning project for a daywork line (IDOR guard)."""
+        row = await self.daywork_line_repo.get_by_id(line_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Daywork line not found")
+        sheet = await self.get_daywork_sheet(row.sheet_id)
+        return sheet.project_id
+
     # ── Dashboard ────────────────────────────────────────────────────────
 
     async def get_dashboard(self, project_id: uuid.UUID) -> dict[str, Any]:
-        notices, n_total = await self.notice_repo.list_for_project(project_id, limit=1000)
-        notices_open = sum(1 for n in notices if n.status in {"issued", "acknowledged", "responded"})
+        # Status histograms via GROUP BY (no row materialisation / N+1).
+        notice_counts = await self.notice_repo.status_counts(project_id)
+        n_total = sum(notice_counts.values())
+        notices_open = sum(
+            c for s, c in notice_counts.items()
+            if s in {"issued", "acknowledged", "responded"}
+        )
 
-        vrs, vr_total = await self.vr_repo.list_for_project(project_id, limit=1000)
+        vr_counts = await self.vr_repo.status_counts(project_id)
+        vr_total = sum(vr_counts.values())
         vr_pending = sum(
-            1 for r in vrs if r.status in {"draft", "submitted", "under_review"}
+            c for s, c in vr_counts.items()
+            if s in {"draft", "submitted", "under_review"}
         )
-        vr_approved = sum(1 for r in vrs if r.status == "approved")
-        vr_rejected = sum(1 for r in vrs if r.status == "rejected")
+        vr_approved = vr_counts.get("approved", 0)
+        vr_rejected = vr_counts.get("rejected", 0)
 
-        vos, vo_total = await self.vo_repo.list_for_project(project_id, limit=1000)
-        vo_active = sum(1 for o in vos if o.status in {"issued", "in_progress"})
-        vo_completed = sum(1 for o in vos if o.status == "completed")
-        cost_total = sum((_to_decimal(o.final_cost_impact) for o in vos), Decimal("0"))
-        schedule_total = sum(int(o.final_schedule_days or 0) for o in vos)
-
-        dws, dw_total = await self.daywork_repo.list_for_project(project_id, limit=1000)
-        dw_signed = sum(1 for d in dws if d.status in {"signed", "billed"})
-        dw_value = sum(
-            (_to_decimal(d.total_amount) for d in dws if d.status in {"signed", "billed"}),
-            Decimal("0"),
+        vo_counts = await self.vo_repo.status_counts(project_id)
+        vo_total = sum(vo_counts.values())
+        vo_active = sum(
+            c for s, c in vo_counts.items() if s in {"issued", "in_progress"}
         )
+        vo_completed = vo_counts.get("completed", 0)
+        # Money / schedule roll-ups exclude voided VOs (no commercial value).
+        cost_total = await self.vo_repo.cost_impact_sum(project_id)
+        schedule_total = await self.vo_repo.schedule_days_sum(project_id)
+
+        dw_counts = await self.daywork_repo.status_counts(project_id)
+        dw_total = sum(dw_counts.values())
+        dw_signed = sum(
+            c for s, c in dw_counts.items() if s in {"signed", "billed"}
+        )
+        dw_value = await self.daywork_repo.signed_value(project_id)
 
         pending_disruption = await self.disruption_repo.pending_claims(project_id)
         pending_eot = await self.eot_repo.pending_claims(project_id)
 
         fa = await self.final_account_repo.for_project(project_id)
         fa_status = fa.status if fa is not None else "none"
-        currency = (vos[0].currency if vos else (dws[0].currency if dws else "")) or (
-            fa.currency if fa else ""
+        currency = (
+            await self.vo_repo.first_currency(project_id)
+            or await self.daywork_repo.first_currency(project_id)
+            or (fa.currency if fa else "")
         )
 
         return {

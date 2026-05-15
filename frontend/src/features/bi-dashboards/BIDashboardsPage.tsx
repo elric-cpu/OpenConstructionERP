@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
@@ -11,11 +11,11 @@ import {
   Plus,
   X,
   Play,
-  Power,
   TrendingUp,
   TrendingDown,
   Minus,
   Loader2,
+  AlertOctagon,
 } from 'lucide-react';
 import {
   Button,
@@ -40,8 +40,6 @@ import {
   listReports,
   runReport,
   createReport,
-  runScheduleNow,
-  updateSchedule,
   listAlerts,
   toggleAlert,
   createAlert,
@@ -125,12 +123,19 @@ export function BIDashboardsPage() {
     enabled: tab === 'alerts',
   });
 
-  const isLoading =
-    (tab === 'dashboards' && dashboardsQ.isLoading) ||
-    (tab === 'kpis' && kpisQ.isLoading) ||
-    (tab === 'reports' && reportsQ.isLoading) ||
-    (tab === 'schedules' && reportsQ.isLoading) ||
-    (tab === 'alerts' && alertsQ.isLoading);
+  const activeQuery =
+    tab === 'dashboards'
+      ? dashboardsQ
+      : tab === 'kpis'
+        ? kpisQ
+        : tab === 'reports' || tab === 'schedules'
+          ? reportsQ
+          : alertsQ;
+  const isLoading = activeQuery.isLoading;
+  // A failed list query must NOT fall through to the "nothing here yet"
+  // empty state — that hides real backend/permission failures behind a
+  // success-looking screen. Surface it with a retry instead.
+  const loadError = activeQuery.isError ? activeQuery.error : null;
 
   return (
     <div className="space-y-5">
@@ -204,6 +209,18 @@ export function BIDashboardsPage() {
       {isLoading ? (
         <Card padding="md">
           <SkeletonTable rows={6} columns={4} />
+        </Card>
+      ) : loadError ? (
+        <Card padding="md">
+          <EmptyState
+            icon={<AlertOctagon size={22} />}
+            title={t('bi.load_error', { defaultValue: 'Could not load BI data' })}
+            description={getErrorMessage(loadError)}
+            action={{
+              label: t('common.retry', { defaultValue: 'Retry' }),
+              onClick: () => activeQuery.refetch(),
+            }}
+          />
         </Card>
       ) : tab === 'dashboards' ? (
         <DashboardsGrid
@@ -540,28 +557,14 @@ function ReportList({
 
 function SchedulesList({ reports }: { reports: ReportDefinition[] }) {
   const { t } = useTranslation();
-  const qc = useQueryClient();
-  const addToast = useToastStore((s) => s.addToast);
 
-  // The backend stores schedules per report; we surface them as a flat list.
-  // For v1 the simplest contract is: each report → 0..1 schedule, indexed by id.
-  // We hydrate schedules lazily via reportsQ result and a derived list.
-  // (No bulk endpoint exists — keep the panel honest.)
-  const runMut = useMutation({
-    mutationFn: (id: string) => runScheduleNow(id),
-    onSuccess: () =>
-      addToast({ type: 'success', title: t('bi.schedule_ran', { defaultValue: 'Schedule executed' }) }),
-    onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),
-  });
-  const toggleMut = useMutation({
-    mutationFn: (args: { id: string; enabled: boolean }) =>
-      updateSchedule(args.id, { enabled: args.enabled }),
-    onSuccess: () => {
-      addToast({ type: 'success', title: t('bi.schedule_updated', { defaultValue: 'Schedule updated' }) });
-      qc.invalidateQueries({ queryKey: ['bi', 'reports'] });
-    },
-    onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),
-  });
+  // There is no list-schedules endpoint, so the client cannot resolve a
+  // report → its schedule id. Previously the row actions passed the
+  // *report* id straight into runScheduleNow()/updateSchedule(), which
+  // require a *schedule* id — every click was a guaranteed wrong-object
+  // call. Until a GET /report-schedules endpoint exists this panel is an
+  // honest read-only summary; running is done from the Reports tab
+  // (which correctly calls runReport with the report id).
 
   if (reports.length === 0) {
     return (
@@ -588,7 +591,6 @@ function SchedulesList({ reports }: { reports: ReportDefinition[] }) {
               <th className="px-4 py-2.5 text-left">{t('bi.frequency', { defaultValue: 'Frequency' })}</th>
               <th className="px-4 py-2.5 text-left">{t('bi.next_run', { defaultValue: 'Next run' })}</th>
               <th className="px-4 py-2.5 text-left">{t('bi.recipients', { defaultValue: 'Recipients' })}</th>
-              <th className="px-4 py-2.5 text-right">{t('common.actions', { defaultValue: 'Actions' })}</th>
             </tr>
           </thead>
           <tbody>
@@ -600,28 +602,16 @@ function SchedulesList({ reports }: { reports: ReportDefinition[] }) {
                 </td>
                 <td className="px-4 py-2 text-xs text-content-secondary">—</td>
                 <td className="px-4 py-2 text-xs text-content-secondary">—</td>
-                <td className="px-4 py-2 text-right">
-                  <div className="inline-flex gap-2">
-                    <Button
-                      variant="ghost"
-                      icon={<Power size={12} />}
-                      onClick={() => toggleMut.mutate({ id: r.id, enabled: true })}
-                    >
-                      {t('bi.toggle', { defaultValue: 'Toggle' })}
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      icon={<Play size={12} />}
-                      onClick={() => runMut.mutate(r.id)}
-                    >
-                      {t('bi.run_now', { defaultValue: 'Run now' })}
-                    </Button>
-                  </div>
-                </td>
               </tr>
             ))}
           </tbody>
         </table>
+      </div>
+      <div className="border-t border-border-light px-4 py-2.5 text-xs text-content-tertiary">
+        {t('bi.schedules_run_hint', {
+          defaultValue:
+            'Run a report on demand from the Reports tab. Recurring delivery is configured server-side.',
+        })}
       </div>
     </Card>
   );
@@ -718,6 +708,17 @@ function AlertsList({
 
 /* ─── Dashboard render panel ─── */
 
+/** Close a drawer when the user presses Escape (matches WideModal UX). */
+function useEscapeToClose(onClose: () => void) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+}
+
 function DashboardRenderPanel({
   dashboardId,
   onClose,
@@ -726,6 +727,7 @@ function DashboardRenderPanel({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
+  useEscapeToClose(onClose);
   const renderQ = useQuery({
     queryKey: ['bi', 'dashboard-render', dashboardId],
     queryFn: () => renderDashboard(dashboardId),
@@ -735,12 +737,15 @@ function DashboardRenderPanel({
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30" />
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="bi-dashboard-drawer-title"
         className="relative h-full w-full max-w-3xl overflow-y-auto bg-surface-elevated shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border-light bg-surface-elevated px-5 py-3">
           <div>
-            <h2 className="text-base font-semibold">
+            <h2 id="bi-dashboard-drawer-title" className="text-base font-semibold">
               {data?.dashboard.name ?? t('bi.dashboard', { defaultValue: 'Dashboard' })}
             </h2>
             {data?.rendered_at && (

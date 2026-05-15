@@ -946,6 +946,7 @@ class DevelopmentPnLResponse(BaseModel):
 
     development_id: UUID
     currency: str = ""
+    mixed_currency: bool = False
     revenue_contracted: Decimal = Decimal("0")
     revenue_completed: Decimal = Decimal("0")
     deposits_held: Decimal = Decimal("0")

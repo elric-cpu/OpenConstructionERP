@@ -9,10 +9,10 @@
 // "Re-run from here" CTA. Running a stage marks every downstream
 // done-stage stale so the user always sees what still needs a re-run.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Play, X } from 'lucide-react';
+import { Loader2, Play, Sparkles, X } from 'lucide-react';
 
 import {
   matchElementsApi,
@@ -42,11 +42,21 @@ export function StageAdjustSheet({
   const qc = useQueryClient();
 
   // ── Per-stage knobs ───────────────────────────────────────────────
-  const [groupBy, setGroupBy] = useState<string>(
-    Array.isArray((stage.inputs as { group_by?: string[] }).group_by)
-      ? ((stage.inputs as { group_by?: string[] }).group_by ?? []).join(', ')
-      : '',
-  );
+  // Seed group-by from the stage's own override if it has one, else
+  // from what the Group stage actually used (its recorded output) so
+  // the field shows the *current effective* keys instead of looking
+  // empty and silently re-running with no change.
+  const [groupBy, setGroupBy] = useState<string>(() => {
+    const fromInputs = (stage.inputs as { group_by?: unknown }).group_by;
+    if (Array.isArray(fromInputs) && fromInputs.length > 0) {
+      return fromInputs.map(String).join(', ');
+    }
+    const fromOutput = (stage.output as { group_by?: unknown }).group_by;
+    if (Array.isArray(fromOutput) && fromOutput.length > 0) {
+      return fromOutput.map(String).join(', ');
+    }
+    return '';
+  });
   const [method, setMethod] = useState<string>(
     String((stage.inputs as { method?: string }).method ?? 'vector'),
   );
@@ -64,10 +74,61 @@ export function StageAdjustSheet({
     stage.llm_provider ?? LLM_PROVIDERS[0]?.id ?? 'anthropic/claude-sonnet-4-6',
   );
 
+  const panelRef = useRef<HTMLDivElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+
   useEffect(() => {
-    const onEsc = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onEsc);
-    return () => window.removeEventListener('keydown', onEsc);
+    // Remember what had focus (the stage card's Adjust button) so we
+    // can hand it back when the slide-over closes.
+    returnFocusRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        // A focused native <select> uses Escape for its own dropdown —
+        // don't also tear down the sheet in that case.
+        if ((e.target as HTMLElement)?.tagName === 'SELECT') return;
+        onClose();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const root = panelRef.current;
+      if (!root) return;
+      const f = Array.from(
+        root.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+        // ``offsetParent`` is null for descendants of a position:fixed
+        // panel (this one), so use rect presence as the visibility test.
+      ).filter(
+        (el) => el.getClientRects().length > 0 || el === document.activeElement,
+      );
+      if (f.length === 0) return;
+      const first = f[0]!;
+      const last = f[f.length - 1]!;
+      const act = document.activeElement as HTMLElement | null;
+      if (e.shiftKey) {
+        if (act === first || !root.contains(act)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else if (act === last || !root.contains(act)) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    // Move focus into the slide-over so keyboard / SR users are not
+    // stranded on the page behind it.
+    panelRef.current?.focus();
+    const returnTo = returnFocusRef.current;
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      if (returnTo && typeof returnTo.focus === 'function') {
+        requestAnimationFrame(() => returnTo.focus());
+      }
+    };
   }, [onClose]);
 
   const runMut = useMutation({
@@ -90,13 +151,26 @@ export function StageAdjustSheet({
         llm_provider: stage.uses_llm ? provider : null,
       });
     },
-    onSuccess: () => {
+    onSuccess: (res) => {
+      // The endpoint returns HTTP 200 even when the stage itself failed
+      // (``status: "error"`` in the body). Refresh the pipeline either
+      // way, but only auto-close on a real success — on a stage error
+      // keep the sheet open and surface the message so the user can fix
+      // the knobs and retry instead of the sheet vanishing silently.
       qc.invalidateQueries({ queryKey: ['match-stages', sessionId] });
       qc.invalidateQueries({ queryKey: ['match-groups', sessionId] });
       qc.invalidateQueries({ queryKey: ['match-session', sessionId] });
-      onRan();
+      if (res.status !== 'error') onRan();
     },
   });
+
+  // Stage-level failure surfaced from a 200 response (vs. a transport
+  // error, handled by ``runMut.isError`` below).
+  const stageError =
+    runMut.data?.status === 'error'
+      ? runMut.data.error ??
+        t('match_elements.pipeline.run_failed', 'Stage run failed')
+      : null;
 
   return (
     <>
@@ -105,14 +179,24 @@ export function StageAdjustSheet({
         onClick={onClose}
         aria-hidden
       />
-      <div className="fixed right-0 top-0 bottom-0 w-full max-w-md z-50 bg-surface-primary border-l border-border shadow-2xl flex flex-col">
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="stage-adjust-title"
+        tabIndex={-1}
+        className="fixed right-0 top-0 bottom-0 w-full max-w-md z-50 bg-surface-primary border-l border-border shadow-2xl flex flex-col outline-none"
+      >
         {/* Header */}
         <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-border">
           <div className="min-w-0">
             <div className="text-[10px] uppercase tracking-wider text-content-tertiary font-semibold">
               {t('match_elements.pipeline.adjust_stage', 'Adjust stage')}
             </div>
-            <h2 className="text-base font-bold text-content-primary truncate">
+            <h2
+              id="stage-adjust-title"
+              className="text-base font-bold text-content-primary truncate"
+            >
               {stage.title}
             </h2>
             <p className="text-xs text-content-secondary">{stage.subtitle}</p>
@@ -120,7 +204,7 @@ export function StageAdjustSheet({
           <button
             onClick={onClose}
             className="shrink-0 p-1.5 rounded-lg hover:bg-surface-secondary text-content-tertiary"
-            aria-label="Close"
+            aria-label={t('common.close', 'Close')}
           >
             <X className="w-4 h-4" />
           </button>
@@ -214,6 +298,15 @@ export function StageAdjustSheet({
           {/* LLM prompt + provider */}
           {stage.uses_llm && stage.prompt_key && (
             <div className="space-y-3 border-t border-border pt-3">
+              <div className="flex items-start gap-1.5 text-[11px] text-content-tertiary bg-surface-secondary border border-border rounded-lg px-2.5 py-2">
+                <Sparkles className="w-3 h-3 mt-0.5 shrink-0 text-indigo-500" />
+                <span>
+                  {t(
+                    'match_elements.pipeline.llm_pending_note',
+                    'This stage runs the deterministic heuristic today. Your prompt and provider are saved and versioned per session — they take effect automatically once LLM execution is enabled for this step. Tuning them now means you are ready the moment it is.',
+                  )}
+                </span>
+              </div>
               <PromptEditor
                 promptKey={stage.prompt_key}
                 selectedId={promptId}
@@ -252,10 +345,15 @@ export function StageAdjustSheet({
             </div>
           )}
 
-          {runMut.isError && (
-            <div className="text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/20 border border-rose-200/60 dark:border-rose-800/40 rounded-lg px-3 py-2">
-              {(runMut.error as Error)?.message ??
-                t('match_elements.pipeline.run_failed', 'Stage run failed')}
+          {(runMut.isError || stageError) && (
+            <div
+              role="alert"
+              className="text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/20 border border-rose-200/60 dark:border-rose-800/40 rounded-lg px-3 py-2 break-words"
+            >
+              {runMut.isError
+                ? ((runMut.error as Error)?.message ??
+                  t('match_elements.pipeline.run_failed', 'Stage run failed'))
+                : stageError}
             </div>
           )}
         </div>

@@ -25,7 +25,9 @@ from app.modules.variations.schemas import (
     NoticeCreate,
     SiteMeasurementCreate,
     VariationOrderCreate,
+    VariationOrderUpdate,
     VariationRequestCreate,
+    VariationRequestUpdate,
 )
 from app.modules.variations.service import (
     VariationsService,
@@ -124,6 +126,60 @@ class _Repo:
 
     async def list_all_for_project(self, project_id: uuid.UUID) -> list[Any]:
         return [r for r in self.rows.values() if getattr(r, "project_id", None) == project_id]
+
+    async def list_valued_for_project(self, project_id: uuid.UUID) -> list[Any]:
+        return [
+            r for r in self.rows.values()
+            if getattr(r, "project_id", None) == project_id
+            and getattr(r, "status", None) != "voided"
+        ]
+
+    def _valued(self, project_id: uuid.UUID) -> list[Any]:
+        return [
+            r for r in self.rows.values()
+            if getattr(r, "project_id", None) == project_id
+            and getattr(r, "status", None) != "voided"
+        ]
+
+    async def status_counts(self, project_id: uuid.UUID) -> dict[str, int]:
+        out: dict[str, int] = {}
+        for r in self.rows.values():
+            if getattr(r, "project_id", None) != project_id:
+                continue
+            st = str(getattr(r, "status", "") or "")
+            out[st] = out.get(st, 0) + 1
+        return out
+
+    async def cost_impact_sum(self, project_id: uuid.UUID) -> Decimal:
+        return sum(
+            (Decimal(str(getattr(r, "final_cost_impact", 0) or 0)) for r in self._valued(project_id)),
+            Decimal("0"),
+        )
+
+    async def schedule_days_sum(self, project_id: uuid.UUID) -> int:
+        return sum(
+            int(getattr(r, "final_schedule_days", 0) or 0) for r in self._valued(project_id)
+        )
+
+    async def signed_value(self, project_id: uuid.UUID) -> Decimal:
+        return sum(
+            (
+                Decimal(str(getattr(r, "total_amount", 0) or 0))
+                for r in self.rows.values()
+                if getattr(r, "project_id", None) == project_id
+                and getattr(r, "status", None) in {"signed", "billed"}
+            ),
+            Decimal("0"),
+        )
+
+    async def first_currency(self, project_id: uuid.UUID) -> str:
+        for r in self.rows.values():
+            if (
+                getattr(r, "project_id", None) == project_id
+                and getattr(r, "currency", "")
+            ):
+                return str(r.currency)
+        return ""
 
     async def pending_claims(self, project_id: uuid.UUID) -> list[Any]:
         return [
@@ -699,6 +755,146 @@ async def test_recompute_final_account_aggregates_vos_and_daywork() -> None:
     assert fa.claims_total == Decimal("2000")
     # final = 1_000_000 + 35_000 + 3_000 + 2_000 - 50_000 + 0 = 990_000
     assert fa.final_value == Decimal("990000")
+
+
+@pytest.mark.asyncio
+async def test_recompute_final_account_excludes_voided_vos() -> None:
+    """A voided VO must NOT inflate the revised contract sum."""
+    svc = _make_service()
+    with patch("app.modules.variations.service.event_bus.publish_detached"):
+        await svc.create_final_account(
+            FinalAccountCreate(
+                project_id=PROJECT_ID,
+                original_contract_value=Decimal("100000"),
+                currency="EUR",
+            ),
+        )
+        live = await svc.create_order(
+            VariationOrderCreate(
+                project_id=PROJECT_ID,
+                title="Live VO",
+                final_cost_impact=Decimal("10000"),
+                currency="EUR",
+            ),
+        )
+        dead = await svc.create_order(
+            VariationOrderCreate(
+                project_id=PROJECT_ID,
+                title="Voided VO",
+                final_cost_impact=Decimal("99999"),
+                currency="EUR",
+            ),
+        )
+        # Drive the dead VO to voided through its real state machine.
+        await svc.transition_variation_order(dead.id, "voided")
+
+    fa = await svc.recompute_final_account(PROJECT_ID)
+    assert fa is not None
+    # Only the live VO counts — not the 99999 voided one.
+    assert fa.variations_total == Decimal("10000")
+    assert fa.final_value == Decimal("110000")
+    assert live.status == "issued"
+
+
+@pytest.mark.asyncio
+async def test_update_order_blocked_after_completion() -> None:
+    """A completed VO's money is frozen — editing it must 409."""
+    from fastapi import HTTPException
+
+    svc = _make_service()
+    with patch("app.modules.variations.service.event_bus.publish_detached"):
+        vo = await svc.create_order(
+            VariationOrderCreate(
+                project_id=PROJECT_ID,
+                title="VO",
+                final_cost_impact=Decimal("5000"),
+                currency="EUR",
+            ),
+        )
+        await svc.transition_variation_order(vo.id, "in_progress")
+        await svc.transition_variation_order(vo.id, "completed")
+    with pytest.raises(HTTPException) as exc:
+        await svc.update_order(
+            vo.id, VariationOrderUpdate(final_cost_impact=Decimal("999999")),
+        )
+    assert exc.value.status_code == 409
+    # Money unchanged.
+    refreshed = await svc.vo_repo.get_by_id(vo.id)
+    assert refreshed.final_cost_impact == Decimal("5000")
+
+
+@pytest.mark.asyncio
+async def test_update_request_blocked_after_approval() -> None:
+    """An approved VR is a frozen commercial record — editing must 409."""
+    from fastapi import HTTPException
+
+    svc = _make_service()
+    with patch("app.modules.variations.service.event_bus.publish_detached"):
+        vr = await svc.create_request(
+            VariationRequestCreate(
+                project_id=PROJECT_ID,
+                title="Door swap",
+                classification="scope_change",
+            ),
+            user_id="u1",
+        )
+        await svc.transition_variation_request(vr.id, "submitted", user_id="u1")
+        await svc.transition_variation_request(vr.id, "approved", user_id="u1")
+    with pytest.raises(HTTPException) as exc:
+        await svc.update_request(
+            vr.id, VariationRequestUpdate(estimated_cost_impact=Decimal("123456")),
+        )
+    assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_update_request_allowed_while_draft() -> None:
+    """Pre-decision VRs remain freely editable (no over-restriction)."""
+    svc = _make_service()
+    with patch("app.modules.variations.service.event_bus.publish_detached"):
+        vr = await svc.create_request(
+            VariationRequestCreate(
+                project_id=PROJECT_ID,
+                title="Draft VR",
+                classification="scope_change",
+            ),
+            user_id="u1",
+        )
+    updated = await svc.update_request(
+        vr.id, VariationRequestUpdate(title="Edited while draft"),
+    )
+    assert updated.title == "Edited while draft"
+
+
+@pytest.mark.asyncio
+async def test_dashboard_excludes_voided_vo_cost() -> None:
+    """Dashboard cost roll-up must skip voided VOs."""
+    svc = _make_service()
+    with patch("app.modules.variations.service.event_bus.publish_detached"):
+        await svc.create_order(
+            VariationOrderCreate(
+                project_id=PROJECT_ID,
+                title="Live",
+                final_cost_impact=Decimal("8000"),
+                final_schedule_days=4,
+                currency="EUR",
+            ),
+        )
+        dead = await svc.create_order(
+            VariationOrderCreate(
+                project_id=PROJECT_ID,
+                title="Dead",
+                final_cost_impact=Decimal("50000"),
+                final_schedule_days=30,
+                currency="EUR",
+            ),
+        )
+        await svc.transition_variation_order(dead.id, "voided")
+    summary = await svc.get_dashboard(PROJECT_ID)
+    assert summary["cost_impact_total"] == Decimal("8000")
+    assert summary["schedule_impact_days"] == 4
+    assert summary["variation_orders_total"] == 2
+    assert summary["currency"] == "EUR"
 
 
 @pytest.mark.asyncio

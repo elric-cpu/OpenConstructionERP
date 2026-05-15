@@ -182,7 +182,9 @@ export function ReportingPage() {
 
   const [tab, setTab] = useState<DashboardTab>('executive');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [recalculating, setRecalculating] = useState(false);
+  const [recalcError, setRecalcError] = useState(false);
 
   // Data
   const [projects, setProjects] = useState<Project[]>([]);
@@ -230,6 +232,7 @@ export function ReportingPage() {
   // Load everything
   const loadData = useCallback(async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const projs = await projectsApi.list();
       setProjects(projs);
@@ -256,7 +259,14 @@ export function ReportingPage() {
         await loadProjectStats(pid);
       }
     } catch {
-      // swallow — individual sections degrade gracefully
+      // The per-project KPI and per-section fetches above already
+      // degrade gracefully (Promise.allSettled). Reaching this catch
+      // means the *fatal* projects.list() call failed — without a
+      // surfaced error the user would see an empty dashboard that is
+      // indistinguishable from "no projects yet". Flag it so the
+      // retry banner renders instead.
+      setProjects([]);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -275,11 +285,14 @@ export function ReportingPage() {
 
   const handleRecalculate = async () => {
     setRecalculating(true);
+    setRecalcError(false);
     try {
       await apiPost('/v1/reporting/kpi/recalculate-all/', {});
       await loadData();
     } catch {
-      // handled by error boundary
+      // No error boundary wraps this page — a swallowed failure left
+      // the button looking like it succeeded. Surface it inline.
+      setRecalcError(true);
     } finally {
       setRecalculating(false);
     }
@@ -332,6 +345,20 @@ export function ReportingPage() {
           {t('reporting.recalculate', { defaultValue: 'Recalculate KPIs‌⁠‍' })}
         </button>
       </div>
+
+      {recalcError && (
+        <div
+          role="alert"
+          className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-900/20 dark:text-red-400"
+        >
+          <AlertTriangle size={16} className="shrink-0" />
+          <span>
+            {t('reporting.recalculate_failed', {
+              defaultValue: 'KPI recalculation failed. Please try again.',
+            })}
+          </span>
+        </div>
+      )}
 
       {/* Tab bar */}
       <div className="flex flex-wrap gap-1 rounded-xl border border-border-light bg-surface-secondary p-1">
@@ -386,8 +413,34 @@ export function ReportingPage() {
         </div>
       )}
 
+      {/* Fatal load failure — distinct from "no projects yet" */}
+      {!loading && loadError && (
+        <Card>
+          <CardContent>
+            <div
+              role="alert"
+              className="flex flex-col items-center justify-center gap-3 py-12 text-center"
+            >
+              <AlertTriangle size={40} className="text-red-500" />
+              <p className="text-sm text-content-secondary">
+                {t('reporting.load_error', {
+                  defaultValue: 'Could not load reporting data. Check your connection and try again.',
+                })}
+              </p>
+              <button
+                onClick={loadData}
+                className="inline-flex items-center gap-2 rounded-lg border border-border-light bg-surface-primary px-4 py-2 text-sm font-medium text-content-primary transition-colors hover:bg-surface-secondary"
+              >
+                <RefreshCw size={16} />
+                {t('common.retry', { defaultValue: 'Retry' })}
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Tab content */}
-      {!loading && tab === 'executive' && (
+      {!loading && !loadError && tab === 'executive' && (
         <ExecutiveDashboard
           projects={projects}
           activeProjects={activeProjects}
@@ -395,7 +448,7 @@ export function ReportingPage() {
           kpiMap={kpiMap}
         />
       )}
-      {!loading && tab === 'pm' && (
+      {!loading && !loadError && tab === 'pm' && (
         <PMDashboard
           project={selectedProject}
           kpi={selectedKpi}
@@ -404,20 +457,20 @@ export function ReportingPage() {
           scheduleStats={scheduleStats}
         />
       )}
-      {!loading && tab === 'estimator' && (
+      {!loading && !loadError && tab === 'estimator' && (
         <EstimatorDashboard
           project={selectedProject}
           kpi={selectedKpi}
         />
       )}
-      {!loading && tab === 'site' && (
+      {!loading && !loadError && tab === 'site' && (
         <SiteDashboard
           project={selectedProject}
           safetyStats={safetyStats}
           scheduleStats={scheduleStats}
         />
       )}
-      {!loading && tab === 'finance' && (
+      {!loading && !loadError && tab === 'finance' && (
         <FinanceDashboardView
           project={selectedProject}
           financeDash={financeDash}

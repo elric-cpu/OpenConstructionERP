@@ -603,11 +603,61 @@ class ContractsService:
             )
         return contract
 
+    #: Commercial terms that must not change once a contract is no longer a
+    #: draft. Mutating contract value / retention / currency / type on a
+    #: signed contract silently rewrites the agreed deal and breaks the
+    #: audit trail — value changes must go through change orders, status
+    #: through the transition endpoints.
+    _LOCKED_FINANCIAL_FIELDS = (
+        "total_value",
+        "retention_percent",
+        "currency",
+        "contract_type",
+        "retention_release_event",
+        # Type-specific terms (gmp_cap, target_cost, tm_nte_cap, ld_per_day…)
+        # are commercial terms too — freezing total_value but letting the
+        # GMP cap be rewritten on a live contract would defeat the lock.
+        "terms",
+    )
+
     async def update_contract(self, contract_id: uuid.UUID, data: Any) -> Contract:
         contract = await self.get_contract(contract_id)
         fields: dict[str, Any] = data.model_dump(exclude_unset=True)
         if "metadata" in fields:
             fields["metadata_"] = fields.pop("metadata")
+        # Status changes must go through the lifecycle transition endpoints
+        # (state-machine validation + signed_at stamping + event emission).
+        # A raw PATCH would skip all of that and corrupt the lifecycle.
+        if "status" in fields and fields["status"] != contract.status:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": "status_not_directly_editable",
+                    "message": (
+                        "Use the sign / suspend / resume / terminate "
+                        "endpoints to change contract status"
+                    ),
+                },
+            )
+        fields.pop("status", None)
+        # Once the contract leaves `draft`, its financial terms are frozen.
+        if contract.status != "draft":
+            locked = sorted(
+                f for f in self._LOCKED_FINANCIAL_FIELDS if f in fields
+            )
+            if locked:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "error": "financial_terms_locked",
+                        "message": (
+                            "Financial terms cannot be edited on a contract "
+                            f"in status {contract.status!r}; use a change "
+                            "order to adjust the contract value"
+                        ),
+                        "locked_fields": locked,
+                    },
+                )
         # re-validate terms if changed
         if "terms" in fields or "contract_type" in fields:
             contract_type = fields.get("contract_type", contract.contract_type)
@@ -792,6 +842,27 @@ class ContractsService:
                 data={
                     "claim_id": str(claim.id),
                     "contract_id": str(claim.contract_id),
+                    "net_due": str(claim.net_due),
+                    "actor": actor_id,
+                },
+                source_module="contracts",
+            )
+        elif target_status == "certified":
+            # Stamp certifier identity + timestamp onto metadata (no dedicated
+            # column on the model) so the certification is auditable, then
+            # emit the event finance / BI dashboards subscribe to. Without
+            # this event a certified claim never spawns its AR invoice and
+            # never reaches the dashboards (real cross-module money defect).
+            cert_meta = dict(claim.metadata_ or {})
+            cert_meta["certified_at"] = now
+            cert_meta["certified_by"] = actor_id
+            fields["metadata_"] = cert_meta
+            event_bus.publish_detached(
+                "contracts.claim.certified",
+                data={
+                    "claim_id": str(claim.id),
+                    "contract_id": str(claim.contract_id),
+                    "claim_number": claim.claim_number,
                     "net_due": str(claim.net_due),
                     "actor": actor_id,
                 },
@@ -1026,19 +1097,18 @@ class ContractsService:
         """Build the Schedule-of-Values status: scheduled vs earned vs paid per line."""
         contract = await self.get_contract(contract_id)
         lines = await self.line_repo.list_for_contract(contract.id)
-        claims, _ = await self.claim_repo.claims_for_contract(
-            contract.id, offset=0, limit=10000,
-        )
-        # Pull claim lines and tag them with parent claim status.
+        # Single JOIN instead of N+1 (one claim-line query per claim).
         tagged_claim_lines: list[Any] = []
-        for c in claims:
-            ls = await self.claim_line_repo.list_for_claim(c.id)
-            for cl in ls:
-                try:
-                    cl._claim_status = c.status
-                except AttributeError:
-                    pass
-                tagged_claim_lines.append(cl)
+        for cl, claim_status in (
+            await self.claim_line_repo.lines_with_status_for_contract(
+                contract.id,
+            )
+        ):
+            try:
+                cl._claim_status = claim_status
+            except AttributeError:
+                pass
+            tagged_claim_lines.append(cl)
         return compute_sov_status(
             lines, tagged_claim_lines,
             retention_percent=contract.retention_percent,

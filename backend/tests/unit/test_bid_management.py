@@ -701,10 +701,21 @@ async def test_award_package_emits_and_auto_rejects_others() -> None:
 
         from app.modules.bid_management.models import Bidder
 
-        winner = Bidder(package_id=pkg.id, company_name="Winner")
-        loser1 = Bidder(package_id=pkg.id, company_name="Loser 1")
-        loser2 = Bidder(package_id=pkg.id, company_name="Loser 2")
-        for b in (winner, loser1, loser2):
+        winner = Bidder(
+            package_id=pkg.id, company_name="Winner", status="active"
+        )
+        loser1 = Bidder(
+            package_id=pkg.id, company_name="Loser 1", status="active"
+        )
+        loser2 = Bidder(
+            package_id=pkg.id, company_name="Loser 2", status="active"
+        )
+        # A disqualified bidder must NOT receive an auto-rejection.
+        disq = Bidder(
+            package_id=pkg.id, company_name="Disqualified Co",
+            status="disqualified",
+        )
+        for b in (winner, loser1, loser2, disq):
             await svc.bidder_repo.create(b)
 
         award_data = BidAwardCreate(
@@ -719,11 +730,14 @@ async def test_award_package_emits_and_auto_rejects_others() -> None:
     assert award.awarded_bidder_id == winner.id
     assert pkg.status == "awarded"
     assert pkg.awarded_at is not None
-    # Auto-rejections were created for the two losers (but NOT the winner)
+    # Auto-rejections were created for the two active losers only — NOT
+    # the winner and NOT the already-disqualified bidder.
     rejections = await svc.rejection_repo.list_for_package(pkg.id)
     assert len(rejections) == 2
     bidder_ids_rejected = {r.bidder_id for r in rejections}
     assert winner.id not in bidder_ids_rejected
+    assert disq.id not in bidder_ids_rejected
+    assert bidder_ids_rejected == {loser1.id, loser2.id}
     # Event emitted
     assert any(
         call.args[0] == "bid_management.package.awarded"
@@ -752,6 +766,117 @@ async def test_award_package_requires_closed_status() -> None:
         with pytest.raises(HTTPException) as exc:
             await svc.award_package(pkg.id, award_data, user_id="u1")
         assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_award_rejects_bidder_from_other_package() -> None:
+    svc = _make_service()
+    from fastapi import HTTPException
+
+    from app.modules.bid_management.models import Bidder
+
+    with patch("app.modules.bid_management.service.event_bus.publish_detached"):
+        pkg = await svc.create_package(_pkg_data(code="BP-X1"), user_id="u1")
+        pkg.status = "closed"
+        # Bidder belongs to a *different* package.
+        stray = Bidder(
+            package_id=uuid.uuid4(), company_name="Stray", status="active"
+        )
+        await svc.bidder_repo.create(stray)
+        award_data = BidAwardCreate(
+            package_id=pkg.id,
+            awarded_bidder_id=stray.id,
+            awarded_amount=Decimal("100"),
+        )
+        with pytest.raises(HTTPException) as exc:
+            await svc.award_package(pkg.id, award_data, user_id="u1")
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_award_rejects_disqualified_bidder() -> None:
+    svc = _make_service()
+    from fastapi import HTTPException
+
+    from app.modules.bid_management.models import Bidder
+
+    with patch("app.modules.bid_management.service.event_bus.publish_detached"):
+        pkg = await svc.create_package(_pkg_data(code="BP-X2"), user_id="u1")
+        pkg.status = "closed"
+        b = Bidder(
+            package_id=pkg.id, company_name="DQ", status="disqualified"
+        )
+        await svc.bidder_repo.create(b)
+        award_data = BidAwardCreate(
+            package_id=pkg.id,
+            awarded_bidder_id=b.id,
+            awarded_amount=Decimal("100"),
+        )
+        with pytest.raises(HTTPException) as exc:
+            await svc.award_package(pkg.id, award_data, user_id="u1")
+    assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_update_package_cannot_change_status() -> None:
+    """A generic PATCH must not bypass the lifecycle state machine."""
+    svc = _make_service()
+    from fastapi import HTTPException
+
+    from app.modules.bid_management.schemas import BidPackageUpdate
+
+    with patch("app.modules.bid_management.service.event_bus.publish_detached"):
+        pkg = await svc.create_package(_pkg_data(code="BP-PS"), user_id="u1")
+        with pytest.raises(HTTPException) as exc:
+            await svc.update_package(
+                pkg.id, BidPackageUpdate(status="awarded")
+            )
+    assert exc.value.status_code == 409
+    # Non-status fields still update fine.
+    updated = await svc.update_package(
+        pkg.id, BidPackageUpdate(title="Renamed")
+    )
+    assert updated.title == "Renamed"
+    assert updated.status == "draft"
+
+
+@pytest.mark.asyncio
+async def test_submission_locked_after_award() -> None:
+    """Submission figures must not be editable once package is awarded."""
+    svc = _make_service()
+    from fastapi import HTTPException
+
+    from app.modules.bid_management.models import BidInvitation
+    from app.modules.bid_management.schemas import (
+        BidSubmissionCreate,
+        BidSubmissionUpdate,
+    )
+
+    with patch("app.modules.bid_management.service.event_bus.publish_detached"):
+        pkg = await svc.create_package(_pkg_data(code="BP-LK"), user_id="u1")
+        inv = BidInvitation(
+            package_id=pkg.id, invitee_email="a@b.com", status="opened"
+        )
+        await svc.invitation_repo.create(inv)
+        sub = await svc.record_submission(
+            BidSubmissionCreate(
+                invitation_id=inv.id,
+                bidder_id=uuid.uuid4(),
+                total_amount=Decimal("1000"),
+                currency="EUR",
+            )
+        )
+        # Editable while draft.
+        await svc.update_submission(
+            sub.id, BidSubmissionUpdate(total_amount=Decimal("1100"))
+        )
+        # Lock once package is awarded.
+        pkg.status = "awarded"
+        with pytest.raises(HTTPException) as exc:
+            await svc.update_submission(
+                sub.id, BidSubmissionUpdate(total_amount=Decimal("9999"))
+            )
+    assert exc.value.status_code == 409
 
 
 # ── Service: cancel from various states ───────────────────────────────────

@@ -248,9 +248,22 @@ class QMSService:
         inspection = await self.repo.get_inspection(inspection_id)
         if inspection is None:
             raise ValueError(f"Inspection {inspection_id} not found")
+        if inspection.status in ("passed", "failed"):
+            raise ValueError(
+                f"Cannot edit an inspection in terminal status "
+                f"'{inspection.status}'",
+            )
         fields: dict[str, Any] = data.model_dump(exclude_unset=True)
         new_status = fields.get("status")
-        if new_status is not None:
+        if new_status is not None and new_status != inspection.status:
+            # Completion (→ passed/failed/conditional) must go through
+            # ``complete_inspection`` so the ITP signatory-count invariant
+            # is enforced. A plain PATCH must not be able to skip it.
+            if new_status in ("passed", "failed", "conditional"):
+                raise ValueError(
+                    "Use the inspection 'complete' action to set a "
+                    "result; it enforces the required sign-offs",
+                )
             _guard_transition(
                 _INSPECTION_STATUS_TRANSITIONS,
                 current=inspection.status, new=new_status, entity="inspection",
@@ -421,6 +434,14 @@ class QMSService:
         fields: dict[str, Any] = data.model_dump(exclude_unset=True)
         new_status = fields.get("status")
         if new_status is not None and new_status != ncr.status:
+            # Closing must go through ``close_ncr`` so the
+            # "every corrective action verified" invariant and the
+            # ``qms.ncr.closed`` event are not bypassed by a raw PATCH.
+            if new_status == "closed":
+                raise ValueError(
+                    "Use the NCR 'close' action to close an NCR; it "
+                    "enforces corrective-action completion",
+                )
             _guard_transition(
                 _NCR_STATUS_TRANSITIONS,
                 current=ncr.status, new=new_status, entity="NCR",
@@ -465,6 +486,12 @@ class QMSService:
             raise ValueError(f"NCR action {action_id} not found")
         if action.status == "done":
             raise ValueError("Action already verified")
+        parent = await self.repo.get_ncr(action.ncr_id)
+        if parent is not None and parent.status in ("closed", "cancelled"):
+            raise ValueError(
+                f"Cannot verify an action on an NCR in status "
+                f"'{parent.status}'",
+            )
         now = _utc_now_iso()
         await self.repo.update_ncr_action_fields(
             action_id,
@@ -527,8 +554,15 @@ class QMSService:
             raise ValueError(
                 "Cannot escalate NCR without a non-zero cost_impact_amount",
             )
-        if ncr.status == "cancelled":
-            raise ValueError("Cannot escalate a cancelled NCR")
+        if ncr.status in ("cancelled", "closed"):
+            raise ValueError(
+                f"Cannot escalate an NCR in terminal status '{ncr.status}'",
+            )
+        if ncr.linked_variation_id is not None and variation_id is None:
+            raise ValueError(
+                "NCR is already linked to a variation; pass an explicit "
+                "variation_id to re-link",
+            )
         # Generate a UUID if caller did not supply one — production glue
         # code would replace this with a real ChangeOrder lookup.
         var_id = variation_id or uuid.uuid4()
@@ -927,13 +961,18 @@ class QMSService:
 
         buckets: list[dict[str, Any]] = []
         for i in range(periods - 1, -1, -1):
+            # ``window_end`` is the INCLUSIVE last day of the bucket; the
+            # most-recent bucket (i == 0) therefore includes ``today``.
+            # The SQL upper bound is exclusive at the next day's midnight
+            # so an inspection performed any time today is counted.
             window_end = today - timedelta(days=i * period_days)
-            window_start = window_end - timedelta(days=period_days)
+            window_start = window_end - timedelta(days=period_days - 1)
             start_iso = datetime.combine(
                 window_start, datetime.min.time(), tzinfo=UTC,
             ).isoformat()
             end_iso = datetime.combine(
-                window_end, datetime.min.time(), tzinfo=UTC,
+                window_end + timedelta(days=1),
+                datetime.min.time(), tzinfo=UTC,
             ).isoformat()
             inspections = await self.repo.list_inspections_in_period(
                 project_id,

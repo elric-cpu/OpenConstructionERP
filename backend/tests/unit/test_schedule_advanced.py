@@ -163,6 +163,23 @@ class _StubWeeklyRepo(_StubRepo):
                 return r
         return None
 
+    async def current_week_commitment_count(
+        self, project_id: uuid.UUID, today: date,  # noqa: ARG002
+    ) -> int:
+        # Mirrors the real aggregate: commitments in current-week plans
+        # of active masters. The stub weekly rows don't carry master
+        # status, so count commitments whose week plan brackets today.
+        commit_repo = getattr(self, "_commit_repo", None)
+        if commit_repo is None:
+            return 0
+        total = 0
+        for w in self.rows.values():
+            if w.week_start_date <= today <= w.week_end_date:
+                total += len(
+                    [c for c in commit_repo.rows.values() if c.week_plan_id == w.id]
+                )
+        return total
+
     async def last_n_weeks_ppc(self, project_id: uuid.UUID, n: int = 12) -> list[Any]:  # noqa: ARG002
         return [r for r in self.rows.values() if r.status == "closed"][:n]
 
@@ -221,6 +238,9 @@ def _make_service() -> ScheduleAdvancedService:
     svc.constraint_repo = _StubConstraintRepo()
     svc.weekly_repo = _StubWeeklyRepo()
     svc.commitment_repo = _StubCommitmentRepo()
+    # Let the weekly stub resolve commitments for the aggregate count,
+    # mirroring the real cross-table join.
+    svc.weekly_repo._commit_repo = svc.commitment_repo  # noqa: SLF001
     svc.rnc_repo = _StubRNCRepo()
     svc.baseline_repo = _StubBaselineRepo()
     svc.baseline_delta_repo = _StubBaselineDeltaRepo()
@@ -768,6 +788,128 @@ async def test_rnc_pareto_aggregation() -> None:
     )
     assert out["manpower"] == 1
     assert out["material"] == 1
+
+
+# ── Idempotency: actions must not double-promote / double-emit ────────────
+
+
+@pytest.mark.asyncio
+async def test_pull_phase_idempotent_no_double_event() -> None:
+    """Pulling an already-pulled phase is a no-op (no re-stamp, no re-emit)."""
+    svc = _make_service()
+    m = await svc.create_master_schedule(
+        MasterScheduleCreate(project_id=PROJECT_ID, name="MS"), user_id="u",
+    )
+    p = await svc.create_phase_plan(PhasePlanCreate(master_schedule_id=m.id, name="P"))
+    with _patch_event_bus() as mock_bus:
+        await svc.pull_phase(p.id, user_id="u")
+        first_pulled_at = p.pull_session_at
+        again = await svc.pull_phase(p.id, user_id="u")
+    assert again.pulled_status == "pulled"
+    assert again.pull_session_at == first_pulled_at  # not re-stamped
+    mock_bus.publish_detached.assert_called_once()  # not re-emitted
+
+
+@pytest.mark.asyncio
+async def test_commit_to_week_idempotent_no_double_event() -> None:
+    svc = _make_service()
+    m = await svc.create_master_schedule(
+        MasterScheduleCreate(project_id=PROJECT_ID, name="MS"), user_id="u",
+    )
+    w = await svc.create_weekly_plan(
+        WeeklyWorkPlanCreate(
+            master_schedule_id=m.id,
+            week_start_date=date(2026, 5, 11),
+            week_end_date=date(2026, 5, 15),
+        )
+    )
+    c = await svc.create_commitment(
+        CommitmentCreate(week_plan_id=w.id, task_ref=uuid.uuid4())
+    )
+    with _patch_event_bus() as mock_bus:
+        await svc.commit_to_week(c.id, user_id="u")
+        made_at_1 = c.made_at
+        again = await svc.commit_to_week(c.id, user_id="u")
+    assert again.status == "committed"
+    assert again.made_at == made_at_1  # not re-stamped
+    mock_bus.publish_detached.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_clear_constraint_idempotent_preserves_audit() -> None:
+    svc = _make_service()
+    c = await svc.create_constraint(
+        ConstraintCreate(task_ref=uuid.uuid4(), constraint_type="material")
+    )
+    u1 = str(uuid.uuid4())
+    u2 = str(uuid.uuid4())
+    with _patch_event_bus() as mock_bus:
+        cleared = await svc.clear_constraint(c.id, user_id=u1)
+        first_cleared_at = cleared.cleared_at
+        first_cleared_by = cleared.cleared_by
+        again = await svc.clear_constraint(c.id, user_id=u2)
+    assert again.status == "cleared"
+    # Original audit trail must survive a re-clear with a different user.
+    assert again.cleared_at == first_cleared_at
+    assert again.cleared_by == first_cleared_by
+    mock_bus.publish_detached.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_close_weekly_plan_idempotent_no_double_event() -> None:
+    svc = _make_service()
+    m = await svc.create_master_schedule(
+        MasterScheduleCreate(project_id=PROJECT_ID, name="MS"), user_id="u",
+    )
+    w = await svc.create_weekly_plan(
+        WeeklyWorkPlanCreate(
+            master_schedule_id=m.id,
+            week_start_date=date(2026, 5, 11),
+            week_end_date=date(2026, 5, 15),
+            status="in_progress",
+        )
+    )
+    await svc.create_commitment(
+        CommitmentCreate(week_plan_id=w.id, task_ref=uuid.uuid4(), status="completed")
+    )
+    with _patch_event_bus() as mock_bus:
+        await svc.close_weekly_plan(w.id)
+        again = await svc.close_weekly_plan(w.id)
+    assert again.status == "closed"
+    mock_bus.publish_detached.assert_called_once()
+
+
+# ── Dashboard aggregate (N+1 → single query) ──────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_lps_dashboard_counts_current_week_commitments() -> None:
+    """Dashboard rolls up commitments of the current week via the aggregate.
+
+    Regression guard for the N+1 → single-query refactor: the count must
+    come out of ``current_week_commitment_count`` and equal the number of
+    commitments whose week plan brackets ``today``.
+    """
+    svc = _make_service()
+    m = await svc.create_master_schedule(
+        MasterScheduleCreate(project_id=PROJECT_ID, name="MS"), user_id="u",
+    )
+    today = date(2026, 5, 13)  # Wednesday
+    w = await svc.create_weekly_plan(
+        WeeklyWorkPlanCreate(
+            master_schedule_id=m.id,
+            week_start_date=date(2026, 5, 11),
+            week_end_date=date(2026, 5, 17),
+            status="in_progress",
+        )
+    )
+    for _ in range(3):
+        await svc.create_commitment(
+            CommitmentCreate(week_plan_id=w.id, task_ref=uuid.uuid4())
+        )
+    payload = await svc.lps_dashboard_for_project(PROJECT_ID, today=today)
+    assert payload["current_week_commitments"] == 3
+    assert payload["active_master_schedules"] == 1
 
 
 # ── Permission constants ──────────────────────────────────────────────────

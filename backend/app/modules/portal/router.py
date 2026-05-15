@@ -485,6 +485,7 @@ async def portal_list_tickets(
     contract — i.e. tickets stay visible to the buyer who filed them as
     long as their contract access has not been revoked.
     """
+    from sqlalchemy import func as _func
     from sqlalchemy import select as _select
 
     from app.modules.service.models import ServiceTicket as _ST
@@ -496,23 +497,20 @@ async def portal_list_tickets(
         return PortalTicketList(items=[], total=0)
 
     portal_tag = f"portal:{user.id}"
-    stmt = (
+    base = (
         _select(_ST)
         .where(_ST.contract_id.in_(accessible_contracts))
         .where(_ST.reported_by == portal_tag)
-        .order_by(_ST.created_at.desc())
-        .offset(offset)
-        .limit(limit)
+    )
+
+    # Total via SQL aggregate — do not materialise every row just to count.
+    count_stmt = _select(_func.count()).select_from(base.subquery())
+    total = int((await session.execute(count_stmt)).scalar_one())
+
+    stmt = (
+        base.order_by(_ST.created_at.desc()).offset(offset).limit(limit)
     )
     rows = list((await session.execute(stmt)).scalars().all())
-
-    # Total: re-run without offset/limit for the count.
-    count_stmt = (
-        _select(_ST)
-        .where(_ST.contract_id.in_(accessible_contracts))
-        .where(_ST.reported_by == portal_tag)
-    )
-    total = len(list((await session.execute(count_stmt)).scalars().all()))
 
     return PortalTicketList(
         items=[PortalTicketResponse.model_validate(r) for r in rows],
@@ -549,6 +547,8 @@ async def portal_list_change_orders(
     in-flight workflow rows stay invisible. Output is the buyer-facing
     redacted projection (no internal notes, no markup, no submission trail).
     """
+    from sqlalchemy import func as _func
+    from sqlalchemy import or_
     from sqlalchemy import select as _select
 
     from app.modules.changeorders.models import ChangeOrder as _CO
@@ -563,29 +563,38 @@ async def portal_list_change_orders(
         return PortalChangeOrderList(items=[], total=0)
 
     visible_statuses = ("approved", "executed", "rejected", "closed")
-    stmt = _select(_CO).where(_CO.status.in_(visible_statuses))
+
+    # The caller may see a CO iff it is under a project they were granted
+    # OR it is one of the specific COs granted to them. This predicate is
+    # ALWAYS applied — even when ``project_id`` is supplied — so that a
+    # per-CO grant on project B cannot be used to read every CO of an
+    # unrelated project A. (Previously, holding any per-CO grant disabled
+    # the project-scope check entirely → cross-project data leak.)
+    scope_ors = []
+    if accessible_projects:
+        scope_ors.append(_CO.project_id.in_(accessible_projects))
+    if accessible_cos:
+        scope_ors.append(_CO.id.in_(accessible_cos))
+    # scope_ors is non-empty here (guarded by the early return above).
+    scope_predicate = or_(*scope_ors)
+
+    base = (
+        _select(_CO)
+        .where(_CO.status.in_(visible_statuses))
+        .where(scope_predicate)
+    )
     if project_id is not None:
-        # Restrict to the requested project AND verify project access.
-        if project_id not in accessible_projects and not accessible_cos:
-            return PortalChangeOrderList(items=[], total=0)
-        stmt = stmt.where(_CO.project_id == project_id)
-    else:
-        # Build the (project_id IN ...) OR (id IN ...) filter.
-        from sqlalchemy import or_
+        base = base.where(_CO.project_id == project_id)
 
-        ors = []
-        if accessible_projects:
-            ors.append(_CO.project_id.in_(accessible_projects))
-        if accessible_cos:
-            ors.append(_CO.id.in_(accessible_cos))
-        if ors:
-            stmt = stmt.where(or_(*ors))
+    # Total via SQL aggregate (matches the repository pattern; no Python
+    # row materialisation just to count).
+    count_stmt = _select(_func.count()).select_from(base.subquery())
+    total = int((await session.execute(count_stmt)).scalar_one())
 
-    stmt = stmt.order_by(_CO.created_at.desc()).offset(offset).limit(limit)
+    stmt = (
+        base.order_by(_CO.created_at.desc()).offset(offset).limit(limit)
+    )
     rows = list((await session.execute(stmt)).scalars().all())
-
-    # Compute total (cheap re-run).
-    total = len(rows) + offset  # over-estimate is fine for paged UI
 
     items: list[PortalChangeOrderEntry] = []
     for co in rows:

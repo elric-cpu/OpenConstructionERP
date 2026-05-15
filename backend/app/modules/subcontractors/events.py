@@ -28,14 +28,20 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_sub_id(data: dict[str, object]) -> uuid.UUID | None:
-    """Pull a subcontractor_id out of an event payload (string or UUID)."""
-    candidate = (
-        data.get("subcontractor_id")
-        or data.get("sub_id")
-        or (data.get("metadata") or {}).get("subcontractor_id")  # type: ignore[union-attr]
-        if isinstance(data.get("metadata"), dict)
-        else None
-    )
+    """Pull a subcontractor_id out of an event payload (string or UUID).
+
+    Looks at the top-level ``subcontractor_id`` / ``sub_id`` keys first, then
+    falls back to a nested ``metadata`` dict. The previous one-liner had an
+    operator-precedence bug — the ``if isinstance(...) else None`` ternary
+    bound the *entire* ``or`` chain, so every payload without a dict
+    ``metadata`` key resolved to ``None`` and the rating bump was silently
+    dropped.
+    """
+    candidate: object | None = data.get("subcontractor_id") or data.get("sub_id")
+    if candidate is None:
+        meta = data.get("metadata")
+        if isinstance(meta, dict):
+            candidate = meta.get("subcontractor_id")
     if candidate is None:
         return None
     if isinstance(candidate, uuid.UUID):

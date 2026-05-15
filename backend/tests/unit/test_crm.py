@@ -843,6 +843,76 @@ async def test_update_opportunity_invalid_status_transition() -> None:
 
 
 @pytest.mark.asyncio
+async def test_update_opportunity_direct_won_blocked() -> None:
+    """Generic PATCH must NOT flip an open opp to 'won' — the dedicated
+    win endpoint stamps won_at + emits the project-creation event; a raw
+    status change would silently skip all of that."""
+    svc = _make_service()
+    stage = await svc.create_stage(PipelineStageCreate(code="lead", name="Lead"))
+    account = await svc.create_account(AccountCreate(name="Acme"))
+    opp = await svc.create_opportunity(
+        OpportunityCreate(account_id=account.id, title="X", stage_id=stage.id)
+    )
+    for terminal in ("won", "lost"):
+        with pytest.raises(HTTPException) as exc_info:
+            await svc.update_opportunity(
+                opp.id, OpportunityUpdate(status=terminal)  # type: ignore[arg-type]
+            )
+        assert exc_info.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_update_opportunity_abandon_still_allowed() -> None:
+    """``abandoned`` has no dedicated endpoint and no mandatory side
+    effects — it must remain reachable via the generic update path."""
+    svc = _make_service()
+    stage = await svc.create_stage(PipelineStageCreate(code="lead", name="Lead"))
+    account = await svc.create_account(AccountCreate(name="Acme"))
+    opp = await svc.create_opportunity(
+        OpportunityCreate(account_id=account.id, title="X", stage_id=stage.id)
+    )
+    out = await svc.update_opportunity(opp.id, OpportunityUpdate(status="abandoned"))
+    assert out.status == "abandoned"
+
+
+@pytest.mark.asyncio
+async def test_create_opportunity_invalid_account_fails() -> None:
+    svc = _make_service()
+    stage = await svc.create_stage(PipelineStageCreate(code="lead", name="Lead"))
+    with pytest.raises(HTTPException) as exc_info:
+        await svc.create_opportunity(
+            OpportunityCreate(
+                account_id=uuid.uuid4(),  # not created
+                title="X",
+                stage_id=stage.id,
+            )
+        )
+    assert exc_info.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_convert_lead_invalid_account_fails() -> None:
+    svc = _make_service()
+    stage = await svc.create_stage(
+        PipelineStageCreate(code="qualified", name="Qualified")
+    )
+    lead = await svc.create_lead(LeadCreate(contact_name="Jane"))
+    with patch("app.modules.crm.service.event_bus.publish_detached"):
+        await svc.qualify_lead(lead.id, "step 1")
+        await svc.qualify_lead(lead.id, "step 2")  # → qualified
+        with pytest.raises(HTTPException) as exc_info:
+            await svc.convert_lead(
+                lead.id,
+                LeadConvertRequest(
+                    account_id=uuid.uuid4(),  # not created
+                    title="Big build",
+                    stage_id=stage.id,
+                ),
+            )
+    assert exc_info.value.status_code == 400
+
+
+@pytest.mark.asyncio
 async def test_update_opportunity_recomputes_weighted_value() -> None:
     svc = _make_service()
     stage = await svc.create_stage(PipelineStageCreate(code="lead", name="Lead"))

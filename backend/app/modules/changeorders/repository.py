@@ -163,7 +163,16 @@ class ChangeOrderRepository:
                 except (ValueError, TypeError):
                     pass
                 total_schedule_impact_days += order.schedule_impact_days or 0
-                total_time_impact_days += order.schedule_impact_days or 0
+                # ``time_impact_days`` is the dedicated variation column;
+                # it was previously (incorrectly) summing
+                # ``schedule_impact_days`` into the time total. Prefer the
+                # variation field, falling back to the schedule impact when
+                # the variation workflow isn't used so the figure is never
+                # silently zero for plain change orders.
+                time_days = getattr(order, "time_impact_days", None)
+                if time_days is None:
+                    time_days = order.schedule_impact_days
+                total_time_impact_days += time_days or 0
             elif order.status == "rejected":
                 rejected_count += 1
 

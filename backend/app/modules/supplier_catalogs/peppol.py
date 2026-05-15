@@ -28,11 +28,18 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Try defusedxml first (XXE-safe) then fall back to stdlib
+# Inbound PEPPOL XML arrives from an external Access Point — it is
+# untrusted. defusedxml neutralises XXE / billion-laughs / external-DTD
+# attacks. If it is unavailable we MUST refuse to parse rather than fall
+# back to the unsafe stdlib parser (which resolves external entities).
 try:  # pragma: no cover — single-line import preference
     from defusedxml import ElementTree as ET  # type: ignore
+
+    _XML_HARDENED = True
 except ImportError:  # pragma: no cover
     from xml.etree import ElementTree as ET  # noqa: N817
+
+    _XML_HARDENED = False
 
 # UBL namespace map
 UBL_NS = {
@@ -96,7 +103,10 @@ def _find_text(parent: Any, path: str) -> str | None:
 
 
 def _to_decimal(s: str | None) -> Decimal:
-    if s is None or s == "":
+    if s is None:
+        return Decimal("0")
+    s = s.strip()
+    if not s:
         return Decimal("0")
     try:
         return Decimal(s)
@@ -135,13 +145,26 @@ def parse_peppol_invoice(xml_source: bytes | str) -> PeppolInvoiceParsed:
         PeppolParseError: when the input is not a UBL Invoice or required
             fields are missing.
     """
+    if not _XML_HARDENED:
+        # Hard refusal: parsing untrusted PEPPOL XML without defusedxml
+        # would expose the platform to XXE / entity-expansion attacks.
+        raise PeppolParseError(
+            "Secure XML parser (defusedxml) is not installed; refusing to "
+            "parse untrusted PEPPOL document.",
+        )
+    raw = xml_source if isinstance(xml_source, bytes) else xml_source.encode("utf-8")
     try:
-        if isinstance(xml_source, bytes):
-            root = ET.fromstring(xml_source)
-        else:
-            root = ET.fromstring(xml_source.encode("utf-8"))
+        root = ET.fromstring(raw)
     except ET.ParseError as exc:  # type: ignore[attr-defined]
         raise PeppolParseError(f"XML parse error: {exc}") from exc
+    except PeppolParseError:
+        raise
+    except Exception as exc:  # noqa: BLE001 — defusedxml raises EntitiesForbidden,
+        # DTDForbidden, ExternalReferenceForbidden — none subclass ParseError.
+        # Treat any boundary failure as a bad document (HTTP 400), never 500.
+        raise PeppolParseError(
+            f"Rejected unsafe or malformed XML: {type(exc).__name__}",
+        ) from exc
 
     # Verify this is an Invoice (vs CreditNote / other document)
     root_tag = _strip_ns(root.tag)

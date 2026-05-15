@@ -28,6 +28,7 @@ import uuid
 import xml.etree.ElementTree as ET  # noqa: S405 — types + output tree building only; parsing routed through defusedxml below
 
 import defusedxml.ElementTree as safe_ET
+from defusedxml.common import DefusedXmlException
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 
@@ -1569,6 +1570,13 @@ async def import_msp_xml(
 
     try:
         root = safe_ET.fromstring(content)
+    except DefusedXmlException as e:
+        # Hostile payload (XXE / billion-laughs / external DTD): defusedxml
+        # raises EntitiesForbidden/DTDForbidden/ExternalReferenceForbidden,
+        # which are NOT ET.ParseError — reject cleanly instead of 500.
+        raise HTTPException(
+            status_code=400, detail="XML rejected for security reasons",
+        ) from e
     except ET.ParseError as e:
         raise HTTPException(status_code=400, detail=f"Invalid XML: {e}") from e
 

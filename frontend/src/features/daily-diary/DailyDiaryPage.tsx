@@ -8,7 +8,6 @@ import {
   Archive,
   Plus,
   Lock,
-  X,
   Cloud,
   Camera,
   Plane,
@@ -16,6 +15,7 @@ import {
   FileSignature,
   ChevronLeft,
   ChevronRight,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   Button,
@@ -65,12 +65,20 @@ const STATUS_VARIANT: Record<DiaryStatus, 'neutral' | 'blue' | 'success' | 'warn
 const inputCls =
   'h-9 w-full rounded-lg border border-border bg-surface-primary px-3 text-sm focus:outline-none focus:ring-2 focus:ring-oe-blue/30 focus:border-oe-blue';
 
-const labelCls = 'block text-xs font-medium text-content-secondary mb-1';
-
 /* ── helpers ─────────────────────────────────────────────────────────── */
 
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  // Local calendar date — NOT the UTC slice of toISOString(). A site
+  // diary "for today" must track the viewer's local day; using UTC would
+  // drift the highlighted day and the "Today" query by ±1 near midnight
+  // for any user away from UTC. This also keeps todayIso() consistent
+  // with the calendar grid, which is built from local getFullYear()/
+  // getMonth()/date values.
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 function monthBounds(year: number, month: number): { from: string; to: string } {
@@ -252,7 +260,21 @@ export function DailyDiaryPage() {
         </nav>
       </div>
 
-      {!projectId ? (
+      {projectsQ.isError ? (
+        <Card className="py-12">
+          <EmptyState
+            icon={<AlertTriangle size={22} />}
+            title={t('common.error', { defaultValue: 'Error' })}
+            description={t('daily_diary.projects_load_error', {
+              defaultValue: 'Failed to load projects. Please try again.',
+            })}
+            action={{
+              label: t('common.retry', { defaultValue: 'Retry' }),
+              onClick: () => void projectsQ.refetch(),
+            }}
+          />
+        </Card>
+      ) : !projectId ? (
         <Card>
           {projectsQ.isLoading ? (
             <SkeletonTable rows={6} columns={3} />
@@ -267,28 +289,74 @@ export function DailyDiaryPage() {
           )}
         </Card>
       ) : tab === 'diaries' ? (
-        <DiariesCalendar
-          diaries={diariesQ.data ?? []}
-          loading={diariesQ.isLoading}
-          year={year}
-          month={month}
-          locale={i18n.language || 'en'}
-          onYearChange={setYear}
-          onMonthChange={setMonth}
-          onDayClick={(diary) => {
-            setActiveDiaryId(diary.id);
-            setTab('today');
-          }}
-        />
+        diariesQ.isError ? (
+          <Card className="py-12">
+            <EmptyState
+              icon={<AlertTriangle size={22} />}
+              title={t('common.error', { defaultValue: 'Error' })}
+              description={t('daily_diary.diaries_load_error', {
+                defaultValue: 'Failed to load diaries. Please try again.',
+              })}
+              action={{
+                label: t('common.retry', { defaultValue: 'Retry' }),
+                onClick: () => void diariesQ.refetch(),
+              }}
+            />
+          </Card>
+        ) : (
+          <DiariesCalendar
+            diaries={diariesQ.data ?? []}
+            loading={diariesQ.isLoading}
+            year={year}
+            month={month}
+            locale={i18n.language || 'en'}
+            onYearChange={setYear}
+            onMonthChange={setMonth}
+            onDayClick={(diary) => {
+              setActiveDiaryId(diary.id);
+              setTab('today');
+            }}
+          />
+        )
       ) : tab === 'today' ? (
-        <TodayTab
-          projectId={projectId}
-          diary={todayDiariesQ.data?.[0]}
-          loading={todayDiariesQ.isLoading}
-          onCreate={() => setCreateOpen(true)}
-          activeDiaryId={activeDiaryId}
-          onSign={() => setSignOpen(true)}
-        />
+        todayDiariesQ.isError ? (
+          <Card className="py-12">
+            <EmptyState
+              icon={<AlertTriangle size={22} />}
+              title={t('common.error', { defaultValue: 'Error' })}
+              description={t('daily_diary.today_load_error', {
+                defaultValue: 'Failed to load today’s diary. Please try again.',
+              })}
+              action={{
+                label: t('common.retry', { defaultValue: 'Retry' }),
+                onClick: () => void todayDiariesQ.refetch(),
+              }}
+            />
+          </Card>
+        ) : (
+          <TodayTab
+            projectId={projectId}
+            diary={todayDiariesQ.data?.[0]}
+            loading={todayDiariesQ.isLoading}
+            onCreate={() => setCreateOpen(true)}
+            activeDiaryId={activeDiaryId}
+            onSign={() => setSignOpen(true)}
+          />
+        )
+      ) : archiveQ.isError ? (
+        <Card className="py-12">
+          <EmptyState
+            icon={<AlertTriangle size={22} />}
+            title={t('common.error', { defaultValue: 'Error' })}
+            description={t('daily_diary.archive_load_error', {
+              defaultValue: 'Failed to load the archive. Please try again.',
+            })}
+            action={{
+              label: t('common.retry', { defaultValue: 'Retry' }),
+              onClick: () => void archiveQ.refetch(),
+            }}
+          />
+        </Card>
       ) : (
         <ArchiveTab
           diaries={archiveQ.data ?? []}
@@ -1172,57 +1240,19 @@ function SignDiaryModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/40" />
-      <div
-        className="relative w-full max-w-md rounded-xl bg-surface-elevated p-5 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">
-            {t('daily_diary.sign_diary', { defaultValue: 'Sign Diary' })}
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded p-1 hover:bg-surface-secondary"
-            aria-label={t('common.close', { defaultValue: 'Close' })}
-          >
-            <X size={16} />
-          </button>
-        </div>
-        <p className="text-sm text-content-secondary mb-4">
-          {t('daily_diary.sign_intro', {
-            defaultValue:
-              'Signing seals the diary with a sha256 fingerprint. All fields become read-only.',
-          })}
-        </p>
-        <div className="space-y-3">
-          <div>
-            <label className={labelCls}>{t('daily_diary.signer_role', { defaultValue: 'Signer role' })}</label>
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value as SignerRole)}
-              className={inputCls}
-            >
-              {(['owner', 'supervisor', 'inspector', 'client'] as SignerRole[]).map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className={labelCls}>{t('daily_diary.signer_name', { defaultValue: 'Signer name' })}</label>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className={inputCls}
-            />
-          </div>
-        </div>
-        <div className="mt-5 flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose}>
+    <WideModal
+      open
+      onClose={onClose}
+      busy={busy}
+      size="md"
+      title={t('daily_diary.sign_diary', { defaultValue: 'Sign Diary' })}
+      subtitle={t('daily_diary.sign_intro', {
+        defaultValue:
+          'Signing seals the diary with a sha256 fingerprint. All fields become read-only.',
+      })}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
             {t('common.cancel', { defaultValue: 'Cancel' })}
           </Button>
           <Button
@@ -1233,8 +1263,36 @@ function SignDiaryModal({
           >
             {t('daily_diary.sign', { defaultValue: 'Sign' })}
           </Button>
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    >
+      <WideModalSection columns={1}>
+        <WideModalField
+          label={t('daily_diary.signer_role', { defaultValue: 'Signer role' })}
+          required
+        >
+          <select
+            value={role}
+            onChange={(e) => setRole(e.target.value as SignerRole)}
+            className={inputCls}
+          >
+            {(['owner', 'supervisor', 'inspector', 'client'] as SignerRole[]).map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+        </WideModalField>
+        <WideModalField
+          label={t('daily_diary.signer_name', { defaultValue: 'Signer name' })}
+        >
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className={inputCls}
+          />
+        </WideModalField>
+      </WideModalSection>
+    </WideModal>
   );
 }

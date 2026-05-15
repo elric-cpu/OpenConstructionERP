@@ -349,6 +349,27 @@ class HandoverRepository(_BaseRepo):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def count_progress_for_development(
+        self, development_id: uuid.UUID
+    ) -> tuple[int, int]:
+        """Return ``(completed, scheduled_not_completed)`` handover counts.
+
+        SQL aggregate — avoids materialising every handover row just to
+        derive two dashboard tallies (was an N-rows-in-Python scan).
+        """
+        completed_expr = func.count().filter(Handover.completed_at.isnot(None))
+        scheduled_expr = func.count().filter(
+            Handover.scheduled_at.isnot(None), Handover.completed_at.is_(None)
+        )
+        stmt = (
+            select(completed_expr, scheduled_expr)
+            .select_from(Handover)
+            .join(Plot, Plot.id == Handover.plot_id)
+            .where(Plot.development_id == development_id)
+        )
+        row = (await self.session.execute(stmt)).one()
+        return int(row[0] or 0), int(row[1] or 0)
+
 
 # ── Snag ────────────────────────────────────────────────────────────────
 

@@ -51,6 +51,11 @@ export function MatchPipeline({ sessionId }: Props) {
   const [adjust, setAdjust] = useState<StageState | null>(null);
   const [runningStage, setRunningStage] = useState<StageName | null>(null);
   const [runAll, setRunAll] = useState(false);
+  // Surfaces a transport failure (network / 5xx) or a "run all stopped
+  // at stage X" notice. A per-stage *stage* error already paints on its
+  // card from the refetch; this covers the cases that otherwise fail
+  // silently (a thrown fetch leaves every card's status untouched).
+  const [pipelineError, setPipelineError] = useState<string | null>(null);
 
   const stagesQ = useQuery<StageListResponse>({
     queryKey: ['match-stages', sessionId],
@@ -69,10 +74,24 @@ export function MatchPipeline({ sessionId }: Props) {
     return ORDER.map((n) => byName.get(n)).filter(Boolean) as StageState[];
   }, [stagesQ.data]);
 
+  const titleOf = (name: StageName) =>
+    stages.find((s) => s.stage_name === name)?.title ?? name;
+
   const runOne = useMutation({
     mutationFn: (name: StageName) =>
       matchElementsApi.runStage(sessionId, name),
-    onMutate: (name) => setRunningStage(name),
+    onMutate: (name) => {
+      setPipelineError(null);
+      setRunningStage(name);
+    },
+    onError: (err: Error) => {
+      // Transport failure — the stage card status never changed, so
+      // without this the click would look like it did nothing.
+      setPipelineError(
+        err?.message ??
+          t('match_elements.pipeline.run_failed', 'Stage run failed'),
+      );
+    },
     onSettled: () => {
       setRunningStage(null);
       qc.invalidateQueries({ queryKey: ['match-stages', sessionId] });
@@ -85,13 +104,28 @@ export function MatchPipeline({ sessionId }: Props) {
   // the user can inspect + fix that stage rather than cascading garbage.
   const runEntirePipeline = async () => {
     setRunAll(true);
+    setPipelineError(null);
     try {
       for (const name of ORDER) {
         setRunningStage(name);
         const res = await matchElementsApi.runStage(sessionId, name);
         qc.invalidateQueries({ queryKey: ['match-stages', sessionId] });
-        if (res.status === 'error') break;
+        if (res.status === 'error') {
+          setPipelineError(
+            t('match_elements.pipeline.run_all_stopped', {
+              defaultValue: 'Stopped at “{{stage}}” — fix that step, then run again.',
+              stage: titleOf(name),
+            }),
+          );
+          break;
+        }
       }
+    } catch (err) {
+      setPipelineError(
+        err instanceof Error
+          ? err.message
+          : t('match_elements.pipeline.run_failed', 'Stage run failed'),
+      );
     } finally {
       setRunningStage(null);
       setRunAll(false);
@@ -189,6 +223,21 @@ export function MatchPipeline({ sessionId }: Props) {
             </div>
           ) : (
             <div>
+              {pipelineError && (
+                <div
+                  role="alert"
+                  className="mb-3 flex items-start justify-between gap-2 text-xs text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/20 border border-rose-200/60 dark:border-rose-800/40 rounded-lg px-3 py-2"
+                >
+                  <span className="break-words">{pipelineError}</span>
+                  <button
+                    type="button"
+                    onClick={() => setPipelineError(null)}
+                    className="shrink-0 underline hover:no-underline"
+                  >
+                    {t('common.dismiss', 'Dismiss')}
+                  </button>
+                </div>
+              )}
               {stages.map((s, i) => (
                 <StageCard
                   key={s.stage_name}
@@ -208,6 +257,10 @@ export function MatchPipeline({ sessionId }: Props) {
 
       {adjust && (
         <StageAdjustSheet
+          // Key by stage so switching the Adjust target gives a fresh
+          // instance — otherwise the per-stage knob state (seeded once
+          // via useState initialisers) leaks across stages.
+          key={adjust.stage_name}
           sessionId={sessionId}
           stage={adjust}
           busy={busy}

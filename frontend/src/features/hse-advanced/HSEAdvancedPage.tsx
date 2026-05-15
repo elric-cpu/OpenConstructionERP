@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -301,19 +301,34 @@ function ModalShell({
   footer: React.ReactNode;
   size?: string;
 }) {
+  const { t } = useTranslation();
+
+  // Escape-to-close — standard accessible-dialog behaviour.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-lg animate-fade-in">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-lg animate-fade-in"
+      onClick={onClose}
+    >
       <div
         className={`w-full ${size} bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[90vh] overflow-y-auto`}
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-border-light">
           <h2 className="text-lg font-semibold text-content-primary">{title}</h2>
           <button
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t('common.close', { defaultValue: 'Close' })}
             className="flex h-8 w-8 items-center justify-center rounded-lg text-content-tertiary hover:bg-surface-secondary hover:text-content-primary transition-colors"
           >
             <X size={18} />
@@ -343,7 +358,7 @@ function IncidentsTab({ projectId }: { projectId: string }) {
     severity: 'minor' as IncidentSeverity,
   });
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['hse-investigations', projectId],
     queryFn: () => fetchInvestigations(projectId),
     select: (d) => normalizeListResponse<IncidentInvestigation>(d),
@@ -388,6 +403,20 @@ function IncidentsTab({ projectId }: { projectId: string }) {
   }, [data, search]);
 
   if (isLoading) return <SkeletonTable rows={5} columns={6} />;
+
+  if (isError) {
+    return (
+      <Card className="py-12">
+        <EmptyState
+          icon={<AlertTriangle size={28} strokeWidth={1.5} />}
+          title={t('common.error', { defaultValue: 'Error' })}
+          description={t('hse_advanced.load_error', {
+            defaultValue: 'Failed to load HSE records. Please try again.',
+          })}
+        />
+      </Card>
+    );
+  }
 
   if (!data || data.length === 0) {
     return (
@@ -711,7 +740,7 @@ function JSATab({ projectId }: { projectId: string }) {
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ title: '', task_description: '', location: '' });
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['hse-jsas', projectId],
     queryFn: () => fetchJSAs(projectId),
     select: (d) => normalizeListResponse<JobSafetyAnalysis>(d),
@@ -746,6 +775,19 @@ function JSATab({ projectId }: { projectId: string }) {
   }, [data, search]);
 
   if (isLoading) return <SkeletonTable rows={5} columns={5} />;
+  if (isError) {
+    return (
+      <Card className="py-12">
+        <EmptyState
+          icon={<AlertTriangle size={28} strokeWidth={1.5} />}
+          title={t('common.error', { defaultValue: 'Error' })}
+          description={t('hse_advanced.load_error', {
+            defaultValue: 'Failed to load HSE records. Please try again.',
+          })}
+        />
+      </Card>
+    );
+  }
   if (!data || data.length === 0) {
     return (
       <EmptyState
@@ -893,7 +935,7 @@ function PermitsTab({ projectId }: { projectId: string }) {
     expires_at: '',
   });
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['hse-permits', projectId],
     queryFn: () => fetchPermits(projectId),
     select: (d) => normalizeListResponse<PermitToWork>(d),
@@ -948,6 +990,19 @@ function PermitsTab({ projectId }: { projectId: string }) {
   }, [data, search, filter]);
 
   if (isLoading) return <SkeletonTable rows={5} columns={6} />;
+  if (isError) {
+    return (
+      <Card className="py-12">
+        <EmptyState
+          icon={<AlertTriangle size={28} strokeWidth={1.5} />}
+          title={t('common.error', { defaultValue: 'Error' })}
+          description={t('hse_advanced.load_error', {
+            defaultValue: 'Failed to load HSE records. Please try again.',
+          })}
+        />
+      </Card>
+    );
+  }
   if (!data || data.length === 0) {
     return (
       <EmptyState
@@ -1331,7 +1386,7 @@ function ToolboxTab({ projectId }: { projectId: string }) {
     summary: '',
   });
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['hse-toolbox', projectId],
     queryFn: () => fetchToolboxTalks(projectId),
     select: (d) => normalizeListResponse<ToolboxTalk>(d),
@@ -1369,6 +1424,19 @@ function ToolboxTab({ projectId }: { projectId: string }) {
   }, [data, search]);
 
   if (isLoading) return <SkeletonTable rows={5} columns={5} />;
+  if (isError) {
+    return (
+      <Card className="py-12">
+        <EmptyState
+          icon={<AlertTriangle size={28} strokeWidth={1.5} />}
+          title={t('common.error', { defaultValue: 'Error' })}
+          description={t('hse_advanced.load_error', {
+            defaultValue: 'Failed to load HSE records. Please try again.',
+          })}
+        />
+      </Card>
+    );
+  }
   if (!data || data.length === 0) {
     return (
       <EmptyState
@@ -1535,7 +1603,7 @@ function PPETab({ projectId }: { projectId: string }) {
     quantity: 1,
   });
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['hse-ppe', projectId],
     queryFn: () => fetchPPEIssues(projectId),
     select: (d) => normalizeListResponse<PPEIssue>(d),
@@ -1607,6 +1675,19 @@ function PPETab({ projectId }: { projectId: string }) {
   }, [data, search, filter]);
 
   if (isLoading) return <SkeletonTable rows={5} columns={6} />;
+  if (isError) {
+    return (
+      <Card className="py-12">
+        <EmptyState
+          icon={<AlertTriangle size={28} strokeWidth={1.5} />}
+          title={t('common.error', { defaultValue: 'Error' })}
+          description={t('hse_advanced.load_error', {
+            defaultValue: 'Failed to load HSE records. Please try again.',
+          })}
+        />
+      </Card>
+    );
+  }
   if (!data || data.length === 0) {
     return (
       <EmptyState
@@ -1965,7 +2046,7 @@ function AuditsTab({ projectId }: { projectId: string }) {
     scope: '',
   });
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['hse-audits', projectId],
     queryFn: () => fetchAudits(projectId),
     select: (d) => normalizeListResponse<SafetyAudit>(d),
@@ -2003,6 +2084,19 @@ function AuditsTab({ projectId }: { projectId: string }) {
   }, [data, search]);
 
   if (isLoading) return <SkeletonTable rows={5} columns={6} />;
+  if (isError) {
+    return (
+      <Card className="py-12">
+        <EmptyState
+          icon={<AlertTriangle size={28} strokeWidth={1.5} />}
+          title={t('common.error', { defaultValue: 'Error' })}
+          description={t('hse_advanced.load_error', {
+            defaultValue: 'Failed to load HSE records. Please try again.',
+          })}
+        />
+      </Card>
+    );
+  }
   if (!data || data.length === 0) {
     return (
       <EmptyState
@@ -2175,7 +2269,7 @@ function CAPATab({ projectId }: { projectId: string }) {
     due_date: '',
   });
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['hse-capa', projectId],
     queryFn: () => fetchCAPAs(projectId),
     select: (d) => normalizeListResponse<CorrectiveAction>(d),
@@ -2237,6 +2331,19 @@ function CAPATab({ projectId }: { projectId: string }) {
   }, [data, search, filter]);
 
   if (isLoading) return <SkeletonTable rows={5} columns={6} />;
+  if (isError) {
+    return (
+      <Card className="py-12">
+        <EmptyState
+          icon={<AlertTriangle size={28} strokeWidth={1.5} />}
+          title={t('common.error', { defaultValue: 'Error' })}
+          description={t('hse_advanced.load_error', {
+            defaultValue: 'Failed to load HSE records. Please try again.',
+          })}
+        />
+      </Card>
+    );
+  }
   if (!data || data.length === 0) {
     return (
       <EmptyState

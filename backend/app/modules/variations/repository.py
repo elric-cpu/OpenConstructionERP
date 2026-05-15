@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from decimal import Decimal
 from typing import Any, TypeVar
 
 from sqlalchemy import func, select, update
@@ -73,6 +74,22 @@ class _BaseRepo:
         result = await self.session.execute(stmt)
         return list(result.scalars().all()), total
 
+    async def status_counts(self, project_id: uuid.UUID) -> dict[str, int]:
+        """``{status: count}`` for the project — one ``GROUP BY`` query.
+
+        Used by the dashboard so it does not pull every row into Python
+        just to bucket by status (N+1 / O(rows) memory).
+        """
+        if self.project_field is None:  # pragma: no cover -- defensive
+            return {}
+        stmt = (
+            select(self.model.status, func.count())
+            .where(self.project_field == project_id)
+            .group_by(self.model.status)
+        )
+        rows = (await self.session.execute(stmt)).all()
+        return {str(s): int(c) for s, c in rows}
+
 
 class NoticeRepository(_BaseRepo):
     model = Notice
@@ -136,6 +153,54 @@ class VariationOrderRepository(_BaseRepo):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def list_valued_for_project(
+        self, project_id: uuid.UUID,
+    ) -> list[VariationOrder]:
+        """VOs that count toward the contract sum (everything but voided).
+
+        A voided VO carries no commercial value — including it in the
+        final-account / dashboard roll-up overstates the revised contract
+        sum.
+        """
+        stmt = select(VariationOrder).where(
+            VariationOrder.project_id == project_id,
+            VariationOrder.status != "voided",
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def first_currency(self, project_id: uuid.UUID) -> str:
+        """First non-empty VO currency for the project (dashboard label)."""
+        stmt = (
+            select(VariationOrder.currency)
+            .where(
+                VariationOrder.project_id == project_id,
+                VariationOrder.currency != "",
+            )
+            .order_by(VariationOrder.created_at.asc())
+            .limit(1)
+        )
+        return (await self.session.execute(stmt)).scalars().first() or ""
+
+    async def cost_impact_sum(self, project_id: uuid.UUID) -> Decimal:
+        """SQL ``SUM(final_cost_impact)`` over non-voided VOs (no N+1)."""
+        stmt = select(func.coalesce(func.sum(VariationOrder.final_cost_impact), 0)).where(
+            VariationOrder.project_id == project_id,
+            VariationOrder.status != "voided",
+        )
+        val = (await self.session.execute(stmt)).scalar_one()
+        return Decimal(str(val or 0))
+
+    async def schedule_days_sum(self, project_id: uuid.UUID) -> int:
+        """SQL ``SUM(final_schedule_days)`` over non-voided VOs (no N+1)."""
+        stmt = select(
+            func.coalesce(func.sum(VariationOrder.final_schedule_days), 0)
+        ).where(
+            VariationOrder.project_id == project_id,
+            VariationOrder.status != "voided",
+        )
+        return int((await self.session.execute(stmt)).scalar_one() or 0)
+
 
 class VariationCostImpactRepository(_BaseRepo):
     model = VariationCostImpact
@@ -184,6 +249,28 @@ class DayworkSheetRepository(_BaseRepo):
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def signed_value(self, project_id: uuid.UUID) -> Decimal:
+        """SQL ``SUM(total_amount)`` over signed/billed sheets (no N+1)."""
+        stmt = select(func.coalesce(func.sum(DayworkSheet.total_amount), 0)).where(
+            DayworkSheet.project_id == project_id,
+            DayworkSheet.status.in_(["signed", "billed"]),
+        )
+        val = (await self.session.execute(stmt)).scalar_one()
+        return Decimal(str(val or 0))
+
+    async def first_currency(self, project_id: uuid.UUID) -> str:
+        """First non-empty daywork currency for the project."""
+        stmt = (
+            select(DayworkSheet.currency)
+            .where(
+                DayworkSheet.project_id == project_id,
+                DayworkSheet.currency != "",
+            )
+            .order_by(DayworkSheet.created_at.asc())
+            .limit(1)
+        )
+        return (await self.session.execute(stmt)).scalars().first() or ""
 
 
 class DayworkSheetLineRepository(_BaseRepo):

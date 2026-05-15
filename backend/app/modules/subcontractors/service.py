@@ -16,7 +16,7 @@ import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -225,7 +225,26 @@ def compute_rating(
     """
     w = weights or DEFAULT_RATING_WEIGHTS
 
-    direct: dict[str, Any] = events.get("direct_scores") or {}
+    raw_direct = events.get("direct_scores")
+    direct: dict[str, Any] = raw_direct if isinstance(raw_direct, dict) else {}
+
+    def _safe_int(value: Any) -> int:
+        """Coerce free-form event input to int; non-numeric → 0 (never raises)."""
+        if value is None or value == "":
+            return 0
+        try:
+            return int(Decimal(str(value)))
+        except (InvalidOperation, ValueError, TypeError):
+            return 0
+
+    def _safe_decimal(value: Any) -> Decimal:
+        """Coerce free-form event input to Decimal; non-numeric → 0."""
+        if value is None or value == "":
+            return Decimal("0")
+        try:
+            return Decimal(str(value))
+        except (InvalidOperation, ValueError, TypeError):
+            return Decimal("0")
 
     def _from_count(count: int | None, *, penalty: int = 10, base: int = 100) -> Decimal:
         if count is None:
@@ -233,26 +252,26 @@ def compute_rating(
         return _clamp(Decimal(str(base)) - Decimal(str(penalty * max(0, count))))
 
     quality = (
-        Decimal(str(direct["quality"]))
+        _safe_decimal(direct["quality"])
         if "quality" in direct
-        else _from_count(int(events.get("ncr_count") or 0), penalty=15)
+        else _from_count(_safe_int(events.get("ncr_count")), penalty=15)
     )
     hse = (
-        Decimal(str(direct["hse"]))
+        _safe_decimal(direct["hse"])
         if "hse" in direct
-        else _from_count(int(events.get("hse_incidents") or 0), penalty=20)
+        else _from_count(_safe_int(events.get("hse_incidents")), penalty=20)
     )
 
     if "schedule" in direct:
-        schedule = Decimal(str(direct["schedule"]))
+        schedule = _safe_decimal(direct["schedule"])
     else:
-        deviation_days = int(events.get("schedule_deviations_days") or 0)
+        deviation_days = _safe_int(events.get("schedule_deviations_days"))
         schedule = _clamp(Decimal("100") - Decimal(str(max(0, deviation_days))) * Decimal("2"))
 
     if "cost" in direct:
-        cost = Decimal(str(direct["cost"]))
+        cost = _safe_decimal(direct["cost"])
     else:
-        cost_variance = Decimal(str(events.get("cost_variance_percent") or 0))
+        cost_variance = _safe_decimal(events.get("cost_variance_percent"))
         # Penalise variance in either direction (over- and under-runs both hurt).
         cost = _clamp(Decimal("100") - abs(cost_variance) * Decimal("3"))
 
@@ -715,6 +734,10 @@ class SubcontractorService:
             retention_percent=data.retention_percent,
             retention_release_event=data.retention_release_event,
             notes=data.notes,
+            # Born unsigned. Set explicitly rather than leaning on the column
+            # default so the state machine has a deterministic origin
+            # regardless of the persistence layer's flush-time defaulting.
+            status="draft",
             created_by=user_id,
         )
         await self.agreements.create(entity)
@@ -784,6 +807,22 @@ class SubcontractorService:
         if agreement is None:
             raise HTTPException(status_code=404, detail="Agreement not found")
 
+        gross = Decimal(str(data.gross_amount))
+        if gross <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Payment application gross amount must be greater than zero",
+            )
+        # Can only claim against an agreement that has been signed off.
+        if agreement.status not in ("active", "completed"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Cannot submit a payment application against an agreement "
+                    f"in status {agreement.status!r}; agreement must be active"
+                ),
+            )
+
         # Block submission if required certs are missing / expired.
         certs = await self.certs.list_by_subcontractor(agreement.subcontractor_id)
         block = next_payment_blocked(certs, today=today)
@@ -796,7 +835,6 @@ class SubcontractorService:
                 },
             )
 
-        gross = Decimal(str(data.gross_amount))
         retention_pct = Decimal(str(agreement.retention_percent))
         retention_amount = (gross * retention_pct / Decimal("100")).quantize(
             Decimal("0.01"), rounding=ROUND_HALF_UP,
@@ -872,14 +910,27 @@ class SubcontractorService:
         fields = data.model_dump(exclude_unset=True)
         # Recompute retention if gross changes.
         if "gross_amount" in fields and fields["gross_amount"] is not None:
-            agreement = await self.agreements.get_by_id(entity.agreement_id)
-            assert agreement is not None
             gross = Decimal(str(fields["gross_amount"]))
+            if gross <= 0:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Payment application gross amount must be greater than zero",
+                )
+            agreement = await self.agreements.get_by_id(entity.agreement_id)
+            if agreement is None:
+                raise HTTPException(status_code=404, detail="Agreement not found")
             retention_amount = (
                 gross * Decimal(str(agreement.retention_percent)) / Decimal("100")
             ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             fields["retention_amount"] = retention_amount
             fields["net_amount"] = gross - retention_amount
+            # Keep the linked accrual ledger entry in lock-step — otherwise the
+            # retention balance drifts away from the recomputed PA retention.
+            for ledger in await self.retention.list_for_payment_application(payment_id):
+                if ledger.released_amount == 0:
+                    await self.retention.update_fields(
+                        ledger.id, accrued_amount=retention_amount,
+                    )
         if fields:
             await self.payments.update_fields(payment_id, **fields)
             await self.session.refresh(entity)
@@ -921,6 +972,17 @@ class SubcontractorService:
         await self.payments.update_fields(
             payment_id, status="rejected", rejection_reason=reason,
         )
+        # Reverse the retention accrual booked at submission — a rejected
+        # payment application must not keep inflating the pending-retention
+        # balance for the agreement.
+        for ledger in await self.retention.list_for_payment_application(payment_id):
+            if ledger.released_amount == 0 and ledger.accrued_amount != 0:
+                await self.retention.update_fields(
+                    ledger.id,
+                    accrued_amount=Decimal("0"),
+                    notes=(ledger.notes or "")
+                    + f" [reversed: payment {entity.application_number} rejected]",
+                )
         await self.session.refresh(entity)
         return entity
 
@@ -979,6 +1041,21 @@ class SubcontractorService:
         amount: Decimal,
         reason: str,
     ) -> RetentionLedger:
+        agreement = await self.agreements.get_by_id(agreement_id)
+        if agreement is None:
+            raise HTTPException(status_code=404, detail="Agreement not found")
+        # Never release more than the outstanding accrued balance — releasing
+        # phantom retention would push the agreement's balance negative and
+        # over-pay the subcontractor.
+        balance = await self.retention_balance(agreement_id)
+        if amount > balance:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Cannot release {amount}: exceeds the outstanding "
+                    f"retention balance of {balance}"
+                ),
+            )
         entry = RetentionLedger(
             agreement_id=agreement_id,
             payment_application_id=None,
@@ -1227,12 +1304,26 @@ class SubcontractorService:
         period_str = period or date.today().strftime("%Y-%m")
         existing = await self.ratings.get_for_period(subcontractor_id, period_str)
 
-        # Pull prior basis or seed an empty one.
+        # Pull prior basis or seed an empty one. ``basis`` is a JSON column
+        # that can carry user-supplied values (via `update_rating`), so coerce
+        # defensively — a poisoned counter must not 500 the event subscriber.
+        def _basis_int(value: Any) -> int:
+            try:
+                return int(Decimal(str(value))) if value not in (None, "") else 0
+            except (InvalidOperation, ValueError, TypeError):
+                return 0
+
+        def _basis_decimal(value: Any) -> Decimal:
+            try:
+                return Decimal(str(value)) if value not in (None, "") else Decimal("0")
+            except (InvalidOperation, ValueError, TypeError):
+                return Decimal("0")
+
         basis = dict(existing.basis or {}) if existing is not None else {}
-        ncr_count = int(basis.get("ncr_count") or 0)
-        hse_incidents = int(basis.get("hse_incidents") or 0)
-        schedule_dev = int(basis.get("schedule_deviations_days") or 0)
-        cost_var = Decimal(str(basis.get("cost_variance_percent") or "0"))
+        ncr_count = _basis_int(basis.get("ncr_count"))
+        hse_incidents = _basis_int(basis.get("hse_incidents"))
+        schedule_dev = _basis_int(basis.get("schedule_deviations_days"))
+        cost_var = _basis_decimal(basis.get("cost_variance_percent"))
 
         if kind == "ncr":
             ncr_count += 1

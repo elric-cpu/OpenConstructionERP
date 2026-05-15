@@ -581,6 +581,13 @@ class HSEAdvancedService:
         self, item_id: uuid.UUID
     ) -> HSEIncidentInvestigation:
         obj = await self.get_investigation(item_id)
+        # `completed` and `abandoned` are terminal — re-completing would
+        # silently reset `completed_at` and resurrect an abandoned probe.
+        if obj.status != "in_progress":
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"Cannot complete an investigation in status '{obj.status}'",
+            )
         await self.investigation_repo.update_fields(
             item_id, status="completed", completed_at=datetime.now(UTC)
         )
@@ -591,7 +598,17 @@ class HSEAdvancedService:
         self, item_id: uuid.UUID
     ) -> HSEIncidentInvestigation:
         obj = await self.get_investigation(item_id)
-        await self.investigation_repo.update_fields(item_id, status="abandoned")
+        # A completed investigation is a closed record; an already-abandoned
+        # one is terminal. Only an in-progress probe may be abandoned, and
+        # we stamp `completed_at` so the closure time is auditable.
+        if obj.status != "in_progress":
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"Cannot abandon an investigation in status '{obj.status}'",
+            )
+        await self.investigation_repo.update_fields(
+            item_id, status="abandoned", completed_at=datetime.now(UTC)
+        )
         await self.session.refresh(obj)
         return obj
 
@@ -628,6 +645,18 @@ class HSEAdvancedService:
     ) -> JobSafetyAnalysis:
         obj = await self.get_jsa(item_id)
         fields = data.model_dump(exclude_unset=True)
+        # A JSA's hazard analysis / work_date is the artifact that was
+        # signed off. Editing it after approval would silently invalidate
+        # the approval (approved_by / approved_at would still point at the
+        # old content). Only draft / under_review JSAs are content-editable;
+        # a pure status transition uses the dedicated workflow methods.
+        content_keys = fields.keys() - {"status"}
+        if content_keys and obj.status not in ("draft", "under_review"):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"Cannot edit a JSA in status '{obj.status}' — "
+                "revert it to draft before changing content",
+            )
         if "hazards" in fields and fields["hazards"] is not None:
             fields["hazards"] = [
                 h.model_dump() if hasattr(h, "model_dump") else h
@@ -740,7 +769,21 @@ class HSEAdvancedService:
         self, item_id: uuid.UUID, data: PermitUpdate
     ) -> PermitToWork:
         obj = await self.get_permit(item_id)
+        # Editing the scope / window of a live, closed or cancelled permit
+        # would falsify the work-authorisation record. Mirror the
+        # prerequisite-edit guard: only pre-active permits are editable.
+        if obj.status not in ("requested", "approved", "suspended"):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"Cannot edit a permit in status '{obj.status}'",
+            )
         fields = data.model_dump(exclude_unset=True)
+        # If a caller adjusts the window, keep the work_end > work_start
+        # invariant that request_permit enforces at creation time.
+        new_start = fields.get("work_start", obj.work_start)
+        new_end = fields.get("work_end", obj.work_end)
+        if new_start is not None and new_end is not None and new_end <= new_start:
+            raise HTTPException(422, "work_end must be after work_start")
         if fields:
             await self.permit_repo.update_fields(item_id, **fields)
             await self.session.refresh(obj)

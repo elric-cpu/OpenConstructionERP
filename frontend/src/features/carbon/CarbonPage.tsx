@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
@@ -13,6 +13,7 @@ import {
   TrendingDown,
   CheckCircle2,
   AlertTriangle,
+  AlertOctagon,
 } from 'lucide-react';
 import {
   Button,
@@ -76,6 +77,17 @@ function todayIso(offsetDays = 0): string {
   const d = new Date();
   d.setDate(d.getDate() + offsetDays);
   return d.toISOString().slice(0, 10);
+}
+
+/** Close a drawer/modal when the user presses Escape (matches WideModal UX). */
+function useEscapeToClose(onClose: () => void) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
 }
 
 /* ─── Page ─── */
@@ -296,6 +308,16 @@ function InventoryTab({
           <div className="p-4">
             <SkeletonTable rows={5} columns={5} />
           </div>
+        ) : q.isError ? (
+          <EmptyState
+            icon={<AlertOctagon size={22} />}
+            title={t('carbon.load_error', { defaultValue: 'Could not load carbon data' })}
+            description={getErrorMessage(q.error)}
+            action={{
+              label: t('common.retry', { defaultValue: 'Retry' }),
+              onClick: () => void q.refetch(),
+            }}
+          />
         ) : list.length === 0 ? (
           <EmptyState
             icon={<Leaf size={22} />}
@@ -443,6 +465,16 @@ function EPDsTab() {
           <div className="p-4">
             <SkeletonTable rows={8} columns={5} />
           </div>
+        ) : q.isError ? (
+          <EmptyState
+            icon={<AlertOctagon size={22} />}
+            title={t('carbon.load_error', { defaultValue: 'Could not load carbon data' })}
+            description={getErrorMessage(q.error)}
+            action={{
+              label: t('common.retry', { defaultValue: 'Retry' }),
+              onClick: () => void q.refetch(),
+            }}
+          />
         ) : list.length === 0 ? (
           <EmptyState
             icon={<Database size={22} />}
@@ -528,6 +560,16 @@ function TargetsTab({ projectId }: { projectId: string }) {
         <div className="p-4">
           <SkeletonTable rows={4} columns={4} />
         </div>
+      ) : q.isError ? (
+        <EmptyState
+          icon={<AlertOctagon size={22} />}
+          title={t('carbon.load_error', { defaultValue: 'Could not load carbon data' })}
+          description={getErrorMessage(q.error)}
+          action={{
+            label: t('common.retry', { defaultValue: 'Retry' }),
+            onClick: () => void q.refetch(),
+          }}
+        />
       ) : list.length === 0 ? (
         <EmptyState
           icon={<Target size={22} />}
@@ -651,6 +693,16 @@ function ReportsTab({ projectId }: { projectId: string }) {
         <div className="p-4">
           <SkeletonTable rows={5} columns={4} />
         </div>
+      ) : q.isError ? (
+        <EmptyState
+          icon={<AlertOctagon size={22} />}
+          title={t('carbon.load_error', { defaultValue: 'Could not load carbon data' })}
+          description={getErrorMessage(q.error)}
+          action={{
+            label: t('common.retry', { defaultValue: 'Retry' }),
+            onClick: () => void q.refetch(),
+          }}
+        />
       ) : list.length === 0 ? (
         <EmptyState
           icon={<FileText size={22} />}
@@ -732,6 +784,7 @@ function InventoryDrawer({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
+  useEscapeToClose(onClose);
 
   const totalsQ = useQuery({
     queryKey: ['carbon', 'totals', inventoryId],
@@ -772,11 +825,14 @@ function InventoryDrawer({
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30" />
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="carbon-inv-drawer-title"
         className="relative h-full w-full max-w-2xl overflow-y-auto bg-surface-elevated shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border-light bg-surface-elevated px-5 py-3">
-          <h2 className="text-base font-semibold">
+          <h2 id="carbon-inv-drawer-title" className="text-base font-semibold">
             {t('carbon.inventory_detail', { defaultValue: 'Inventory detail' })}
           </h2>
           <button
@@ -792,6 +848,18 @@ function InventoryDrawer({
         <div className="space-y-5 p-5">
           {totalsQ.isLoading ? (
             <SkeletonTable rows={3} columns={2} />
+          ) : totalsQ.isError ? (
+            <EmptyState
+              icon={<AlertOctagon size={22} />}
+              title={t('carbon.load_error', {
+                defaultValue: 'Could not load carbon data',
+              })}
+              description={getErrorMessage(totalsQ.error)}
+              action={{
+                label: t('common.retry', { defaultValue: 'Retry' }),
+                onClick: () => void totalsQ.refetch(),
+              }}
+            />
           ) : (
             totals && (
               <>
@@ -1396,19 +1464,27 @@ function ModalShell({
   children: React.ReactNode;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
+  useEscapeToClose(onClose);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
       <div className="absolute inset-0 bg-black/40" />
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="carbon-modal-title"
         className="relative w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl bg-surface-elevated p-5 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">{title}</h2>
+          <h2 id="carbon-modal-title" className="text-lg font-semibold">
+            {title}
+          </h2>
           <button
             type="button"
             onClick={onClose}
             className="rounded p-1 hover:bg-surface-secondary"
+            aria-label={t('common.close', { defaultValue: 'Close' })}
           >
             <X size={16} />
           </button>

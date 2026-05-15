@@ -1368,3 +1368,130 @@ async def test_bi_register_subscribers_covers_all_topics() -> None:
         "schedule_advanced.actuals_update",
     }
     assert expected_subset.issubset(set(_PROJECTION_INVALIDATING_EVENTS))
+
+
+# ── KPI history ordering (trend / sparkline correctness) ───────────────
+
+
+@pytest.mark.asyncio
+async def test_kpi_history_returned_oldest_to_newest(
+    session: AsyncSession,
+) -> None:
+    """Trend/sparkline correctness: history must be chronological.
+
+    Returning newest-first flipped every trend chart and inverted the
+    period-over-period delta in the UI (frontend treats the LAST element
+    as the latest period). This regression-locks oldest → newest order
+    and the same-day ``computed_at`` tie-breaker.
+    """
+    from app.modules.bi_dashboards.models import KPIValue
+    from app.modules.bi_dashboards.service import BIDashboardsService
+
+    svc = BIDashboardsService(session)
+    now = datetime.now(UTC)
+    base_day = now.date()
+    # Insert deliberately out of order, three distinct weeks.
+    for week in (2, 0, 1):
+        period_end = base_day - timedelta(weeks=week)
+        kv = KPIValue(
+            kpi_code="_hist_order",
+            project_id=None,
+            period_start=period_end - timedelta(days=6),
+            period_end=period_end,
+            value=Decimal(str(week)),  # week 0 newest, value 0
+            unit="ratio",
+            computed_at=now,
+            source_record_count=1,
+        )
+        session.add(kv)
+    await session.flush()
+
+    rows = await svc.kpi_history("_hist_order", limit=12)
+    starts = [r.period_start for r in rows]
+    assert starts == sorted(starts), "history must be oldest → newest"
+    # Newest period (week offset 0, value '2') must be LAST.
+    assert rows[-1].value == Decimal("0") or rows[-1].period_start == max(starts)
+    assert rows[-1].period_start == max(starts)
+
+
+@pytest.mark.asyncio
+async def test_kpi_history_limit_keeps_most_recent(
+    session: AsyncSession,
+) -> None:
+    """``limit`` must keep the most-recent N, not the oldest N."""
+    from app.modules.bi_dashboards.models import KPIValue
+    from app.modules.bi_dashboards.service import BIDashboardsService
+
+    svc = BIDashboardsService(session)
+    now = datetime.now(UTC)
+    base_day = now.date()
+    for week in range(6):
+        period_end = base_day - timedelta(weeks=week)
+        session.add(
+            KPIValue(
+                kpi_code="_hist_limit",
+                project_id=None,
+                period_start=period_end - timedelta(days=6),
+                period_end=period_end,
+                value=Decimal(str(week)),
+                unit="ratio",
+                computed_at=now,
+                source_record_count=1,
+            ),
+        )
+    await session.flush()
+    rows = await svc.kpi_history("_hist_limit", limit=3)
+    assert len(rows) == 3
+    # Most-recent three weeks are offsets 0,1,2 → period_start strictly
+    # newer than the dropped (older) rows; still oldest→newest internally.
+    starts = [r.period_start for r in rows]
+    assert starts == sorted(starts)
+    assert rows[-1].period_start == max(
+        base_day - timedelta(weeks=w) - timedelta(days=6) for w in range(6)
+    )
+
+
+# ── Drill-down forwards period / filters ───────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_drill_down_forwards_period_and_filters(
+    session: AsyncSession,
+) -> None:
+    """``drill_down`` must thread period_start/end + filters into the KPI.
+
+    Previously these DrillDownRequest fields were silently dropped, so a
+    period-filtered drill-down returned the all-time aggregate — a row
+    list that contradicted its own headline number.
+    """
+    from datetime import date
+
+    from app.modules.bi_dashboards import kpis
+    from app.modules.bi_dashboards.service import BIDashboardsService
+
+    seen: dict[str, object] = {}
+
+    @kpis.register_kpi(
+        "_drill_period_probe",
+        name="Probe",
+        unit="ratio",
+        category="operational",
+    )
+    async def _probe(session, **kw):  # noqa: ANN001, ANN003
+        seen.update(kw)
+        return kpis.KPIComputation(
+            value=Decimal("1"), unit="ratio", source_record_count=1,
+        )
+
+    svc = BIDashboardsService(session)
+    ps, pe = date(2026, 1, 1), date(2026, 3, 31)
+    await svc.drill_down(
+        "_drill_period_probe",
+        period_start=ps,
+        period_end=pe,
+        filters={"region": "EU"},
+        limit=10,
+    )
+    assert seen.get("period_start") == ps
+    assert seen.get("period_end") == pe
+    assert seen.get("filters") == {"region": "EU"}

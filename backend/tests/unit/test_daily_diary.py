@@ -608,6 +608,110 @@ async def test_update_signed_diary_rejected() -> None:
     assert exc.value.status_code == 409
 
 
+@pytest.mark.asyncio
+async def test_create_future_dated_diary_rejected() -> None:
+    """A contemporaneous record cannot be opened ahead of the site date."""
+    svc = _make_service()
+    from fastapi import HTTPException
+    future = (datetime.now(UTC) + timedelta(days=10)).date().isoformat()
+    with pytest.raises(HTTPException) as exc:
+        await svc.create_diary(_diary_payload(diary_date=future), user_id="u")
+    assert exc.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_backdated_diary_allowed() -> None:
+    """Retroactive (back-dated) entry is a legitimate site-diary flow."""
+    svc = _make_service()
+    past = (datetime.now(UTC) - timedelta(days=45)).date().isoformat()
+    diary = await svc.create_diary(_diary_payload(diary_date=past), user_id="u")
+    assert diary.diary_date == past
+
+
+@pytest.mark.asyncio
+async def test_create_today_diary_allowed() -> None:
+    svc = _make_service()
+    today = datetime.now(UTC).date().isoformat()
+    diary = await svc.create_diary(_diary_payload(diary_date=today), user_id="u")
+    assert diary.diary_date == today
+
+
+@pytest.mark.asyncio
+async def test_archive_unsigned_diary_rejected() -> None:
+    """Archiving must require a signed diary so the snapshot is sealed."""
+    svc = _make_service()
+    diary = await svc.create_diary(_diary_payload(), user_id="u")
+    from fastapi import HTTPException
+    with patch("app.modules.daily_diary.service.event_bus.publish_detached"):
+        await svc.close_diary(diary.id, user_id="u")
+        with pytest.raises(HTTPException) as exc:
+            await svc.archive_diary(diary.id, user_id="u")
+    assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_update_entry_blocked_when_diary_sealed() -> None:
+    """Editing an entry of a signed diary invalidates the snapshot → 409."""
+    svc = _make_service()
+    diary = await svc.create_diary(_diary_payload(), user_id="u")
+    entry = await svc.create_entry(
+        DiaryEntryCreate(
+            diary_id=diary.id,
+            entry_type="visitor",
+            entry_time=datetime(2026, 4, 10, 9, tzinfo=UTC),
+            title="Inspector",
+        )
+    )
+    with patch("app.modules.daily_diary.service.event_bus.publish_detached"):
+        await svc.close_diary(diary.id, user_id="u")
+        await svc.sign_diary(
+            diary.id, signer_role="owner", signer_name="O", user_id="u",
+        )
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as exc:
+        await svc.update_entry(entry.id, {"title": "tampered"})
+    assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_update_entry_allowed_when_diary_open() -> None:
+    svc = _make_service()
+    diary = await svc.create_diary(_diary_payload(), user_id="u")
+    entry = await svc.create_entry(
+        DiaryEntryCreate(
+            diary_id=diary.id,
+            entry_type="visitor",
+            entry_time=datetime(2026, 4, 10, 9, tzinfo=UTC),
+            title="Inspector",
+        )
+    )
+    updated = await svc.update_entry(entry.id, {"title": "Revised"})
+    assert updated.title == "Revised"
+
+
+@pytest.mark.asyncio
+async def test_delete_entry_blocked_when_diary_sealed() -> None:
+    svc = _make_service()
+    diary = await svc.create_diary(_diary_payload(), user_id="u")
+    entry = await svc.create_entry(
+        DiaryEntryCreate(
+            diary_id=diary.id,
+            entry_type="visitor",
+            entry_time=datetime(2026, 4, 10, 9, tzinfo=UTC),
+            title="Inspector",
+        )
+    )
+    with patch("app.modules.daily_diary.service.event_bus.publish_detached"):
+        await svc.close_diary(diary.id, user_id="u")
+        await svc.sign_diary(
+            diary.id, signer_role="owner", signer_name="O", user_id="u",
+        )
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as exc:
+        await svc.delete_entry(entry.id)
+    assert exc.value.status_code == 409
+
+
 # ── Service: photo / drone / reality capture emit events ────────────────
 
 

@@ -500,6 +500,30 @@ class BidManagementService:
     ) -> BidPackage:
         package = await self.get_package(package_id)
         fields: dict[str, Any] = data.model_dump(exclude_unset=True)
+        # Lifecycle status is owned by the state machine. A generic PATCH
+        # must not be able to jump (e.g. draft → awarded) bypassing the
+        # transition guards, timestamp stamping, auto-rejections and
+        # events. Status changes go through the dedicated endpoints
+        # (publish / open-bids / close / cancel / award).
+        new_status = fields.pop("status", None)
+        if new_status is not None and new_status != package.status:
+            if new_status not in allowed_package_transitions(package.status):
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"Illegal transition: {package.status} -> "
+                        f"{new_status}. Use the lifecycle endpoints "
+                        f"(publish/open-bids/close/cancel/award)."
+                    ),
+                )
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Package status cannot be changed via PATCH — use "
+                    "the lifecycle endpoints "
+                    "(publish/open-bids/close/cancel/award)."
+                ),
+            )
         if "metadata" in fields:
             fields["metadata_"] = fields.pop("metadata")
         if "total_budget_estimate" in fields and fields["total_budget_estimate"] is not None:
@@ -635,6 +659,24 @@ class BidManagementService:
                 detail=f"Package must be 'closed' before award (got '{package.status}')",
             )
 
+        # The awarded bidder must belong to this package and still be
+        # active — you cannot award a disqualified/withdrawn bidder, nor a
+        # bidder record from a different package.
+        winner = await self.bidder_repo.get_by_id(data.awarded_bidder_id)
+        if winner is None or winner.package_id != package_id:
+            raise HTTPException(
+                status_code=404,
+                detail="Awarded bidder not found for this package",
+            )
+        if winner.status != "active":
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Cannot award a '{winner.status}' bidder "
+                    f"(must be 'active')"
+                ),
+            )
+
         # Award row (upsert)
         existing = await self.award_repo.get_for_package(package_id)
         if existing is not None:
@@ -658,10 +700,14 @@ class BidManagementService:
         await self._transition_package(package, "awarded")
         package.awarded_at = _now_iso()
 
-        # Auto-reject every other bidder.
+        # Auto-reject every other *active* bidder. Bidders already
+        # disqualified or withdrawn are out for a recorded reason and must
+        # not receive a duplicate "not selected" rejection.
         bidders = await self.bidder_repo.list_for_package(package_id)
         for bidder in bidders:
             if bidder.id == data.awarded_bidder_id:
+                continue
+            if bidder.status != "active":
                 continue
             rejection = BidRejection(
                 package_id=package_id,
@@ -933,12 +979,40 @@ class BidManagementService:
         )
         return created
 
+    async def _package_for_submission(
+        self, submission_id: uuid.UUID
+    ) -> BidPackage | None:
+        """Resolve the owning package for a submission (sub → inv → pkg)."""
+        sub = await self.submission_repo.get_by_id(submission_id)
+        if sub is None:
+            return None
+        inv = await self.invitation_repo.get_by_id(sub.invitation_id)
+        if inv is None:
+            return None
+        return await self.package_repo.get_by_id(inv.package_id)
+
+    async def _assert_submission_mutable(self, submission_id: uuid.UUID) -> None:
+        """Forbid editing a submission once its package is in a terminal
+        commercial state. Rewriting a bid's figures after the package has
+        been awarded or cancelled breaks the audit trail / award integrity.
+        """
+        package = await self._package_for_submission(submission_id)
+        if package is not None and package.status in ("awarded", "cancelled"):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Submission is locked — package is "
+                    f"'{package.status}'"
+                ),
+            )
+
     async def update_submission(
         self, submission_id: uuid.UUID, data: BidSubmissionUpdate
     ) -> BidSubmission:
         sub = await self.submission_repo.get_by_id(submission_id)
         if sub is None:
             raise HTTPException(status_code=404, detail="Submission not found")
+        await self._assert_submission_mutable(submission_id)
         fields = data.model_dump(exclude_unset=True)
         if "total_amount" in fields and fields["total_amount"] is not None:
             fields["total_amount"] = str(fields["total_amount"])
@@ -968,6 +1042,7 @@ class BidManagementService:
     async def create_submission_line(
         self, data: BidSubmissionLineCreate
     ) -> BidSubmissionLine:
+        await self._assert_submission_mutable(data.submission_id)
         total_price = (_to_decimal(data.unit_price) * _to_decimal(data.quantity_priced))
         line = BidSubmissionLine(
             submission_id=data.submission_id,
@@ -988,6 +1063,7 @@ class BidManagementService:
     async def bulk_create_submission_lines(
         self, submission_id: uuid.UUID, items: list[BidSubmissionLineCreate]
     ) -> list[BidSubmissionLine]:
+        await self._assert_submission_mutable(submission_id)
         rows = []
         for item in items:
             total = (_to_decimal(item.unit_price) * _to_decimal(item.quantity_priced))
@@ -1001,6 +1077,11 @@ class BidManagementService:
                     alternative_offered=item.alternative_offered,
                     alternative_description=item.alternative_description,
                     comment=item.comment,
+                    # Carry the bid-leveling taxonomy + prevailing-wage flag
+                    # through bulk import — without these the leveling
+                    # matrix (which keys off inclusion_status) is corrupt.
+                    inclusion_status=item.inclusion_status,
+                    prevailing_wage_applicable=item.prevailing_wage_applicable,
                 )
             )
         return await self.submission_line_repo.bulk_create(rows)
@@ -1011,6 +1092,7 @@ class BidManagementService:
         line = await self.submission_line_repo.get_by_id(line_id)
         if line is None:
             raise HTTPException(status_code=404, detail="Submission line not found")
+        await self._assert_submission_mutable(line.submission_id)
         fields = data.model_dump(exclude_unset=True)
         if "unit_price" in fields and fields["unit_price"] is not None:
             fields["unit_price"] = str(fields["unit_price"])
@@ -1563,7 +1645,7 @@ class BidManagementService:
         previews: list[dict[str, Any]] = []
         sent_count = 0
         skipped = 0
-        deadline = package.bid_due_at or ""
+        deadline = package.submission_deadline or ""
         action_url = f"/bid-management/packages/{package.id}"
 
         for inv in invitations:

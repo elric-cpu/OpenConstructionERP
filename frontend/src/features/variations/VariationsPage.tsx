@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
@@ -17,6 +17,7 @@ import {
   Loader2,
   ChevronRight,
   ArrowRight,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   Button,
@@ -36,6 +37,7 @@ import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { apiGet, getErrorMessage } from '@/shared/lib/api';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
+import { usePreferencesStore } from '@/stores/usePreferencesStore';
 import {
   listNotices,
   listVariationRequests,
@@ -143,7 +145,10 @@ export function VariationsPage() {
     () => projects.find((p) => p.id === projectId),
     [projects, projectId],
   );
-  const currency = currentProject?.currency || 'EUR';
+  // Fall back to the user's configured currency — never a hardcoded
+  // literal (the architecture guide: NEVER assume EUR).
+  const prefsCurrency = usePreferencesStore((s) => s.currency);
+  const currency = currentProject?.currency || prefsCurrency;
 
   const [tab, setTab] = useState<Tab>('notices');
   const [search, setSearch] = useState('');
@@ -275,12 +280,18 @@ export function VariationsPage() {
     );
   }
 
-  const isLoading =
-    (tab === 'notices' && noticesQ.isLoading) ||
-    (tab === 'requests' && requestsQ.isLoading) ||
-    (tab === 'orders' && ordersQ.isLoading) ||
-    (tab === 'daywork' && dayworkQ.isLoading) ||
-    (tab === 'eot' && eotQ.isLoading);
+  const activeQuery =
+    tab === 'notices'
+      ? noticesQ
+      : tab === 'requests'
+        ? requestsQ
+        : tab === 'orders'
+          ? ordersQ
+          : tab === 'daywork'
+            ? dayworkQ
+            : eotQ;
+  const isLoading = activeQuery.isLoading;
+  const isError = activeQuery.isError;
 
   const statusOptions: Record<Tab, string[]> = {
     notices: ['issued', 'acknowledged', 'responded', 'closed'],
@@ -427,6 +438,22 @@ export function VariationsPage() {
         {isLoading ? (
           <div className="p-4">
             <SkeletonTable rows={8} columns={5} />
+          </div>
+        ) : isError ? (
+          <div className="p-4">
+            <EmptyState
+              icon={<AlertTriangle size={22} />}
+              title={t('common.error', { defaultValue: 'Error' })}
+              description={t('variations.load_error', {
+                defaultValue: 'Failed to load data. Please try again.',
+              })}
+              action={{
+                label: t('common.retry', { defaultValue: 'Retry' }),
+                onClick: () => {
+                  void activeQuery.refetch();
+                },
+              }}
+            />
           </div>
         ) : tab === 'notices' ? (
           <NoticeTable
@@ -1134,10 +1161,23 @@ function DetailDrawer({
     sheet?.sheet_number ||
     (claim ? `EoT ${claim.id.slice(0, 8)}` : '');
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30" />
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={
+          heading || t('variations.detail', { defaultValue: 'Variation detail' })
+        }
         className="relative h-full w-full max-w-xl overflow-y-auto bg-surface-elevated shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >

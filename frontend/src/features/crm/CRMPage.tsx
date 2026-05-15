@@ -16,6 +16,7 @@ import {
   ArrowRight,
   Trophy,
   Frown,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   Button,
@@ -237,6 +238,19 @@ export function CRMPage() {
       (accountsQ.isLoading || oppsQ.isLoading || stagesQ.isLoading)) ||
     (tab === 'activities' && activitiesQ.isLoading);
 
+  // Surface real query failures (5xx / network) instead of silently
+  // showing an empty table. safeGetList already absorbs 404/501 (module
+  // not installed) into [], so anything reaching isError is genuine.
+  const activeError =
+    tab === 'accounts'
+      ? accountsQ.error
+      : tab === 'leads'
+        ? (accountsQ.error ?? leadsQ.error)
+        : tab === 'opportunities'
+          ? (accountsQ.error ?? oppsQ.error ?? stagesQ.error)
+          : activitiesQ.error;
+  const isError = !isLoading && Boolean(activeError);
+
   return (
     <div className="space-y-5">
       <Breadcrumb
@@ -379,6 +393,14 @@ export function CRMPage() {
           <div className="p-4">
             <SkeletonTable rows={8} columns={5} />
           </div>
+        ) : isError ? (
+          <EmptyState
+            icon={<AlertTriangle size={22} />}
+            title={t('crm.load_failed', {
+              defaultValue: 'Could not load CRM data',
+            })}
+            description={getErrorMessage(activeError)}
+          />
         ) : tab === 'accounts' ? (
           <AccountsTable rows={filteredAccounts} onCreate={() => setCreateOpen(true)} />
         ) : tab === 'leads' ? (
@@ -672,13 +694,13 @@ function OpportunitiesTable({
                 <td className="px-4 py-2 text-right">
                   <MoneyDisplay
                     amount={toNum(r.estimated_value)}
-                    currency={r.currency || 'EUR'}
+                    currency={r.currency || undefined}
                   />
                 </td>
                 <td className="px-4 py-2 text-right text-content-secondary">
                   <MoneyDisplay
                     amount={toNum(r.weighted_value)}
-                    currency={r.currency || 'EUR'}
+                    currency={r.currency || undefined}
                   />
                 </td>
               </tr>
@@ -811,6 +833,14 @@ function LeadDetailDrawer({
     setNotes(lead?.qualification_notes ?? '');
   }, [lead?.id, lead?.qualification_notes]);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   const qualifyMut = useMutation({
     mutationFn: () => qualifyLead(leadId, { qualification_notes: notes }),
     onSuccess: () => {
@@ -841,6 +871,12 @@ function LeadDetailDrawer({
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30" />
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('crm.lead_detail', {
+          defaultValue: 'Lead detail: {{name}}',
+          name: lead.contact_name,
+        })}
         className="relative h-full w-full max-w-lg overflow-y-auto bg-surface-elevated shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
@@ -854,6 +890,7 @@ function LeadDetailDrawer({
           <button
             type="button"
             onClick={onClose}
+            aria-label={t('common.close', { defaultValue: 'Close' })}
             className="rounded p-1 hover:bg-surface-secondary"
           >
             <X size={16} />
@@ -973,6 +1010,14 @@ function OpportunityDetailDrawer({
     queryFn: () => listActivities({ opportunity_id: opportunityId, limit: 50 }),
   });
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   const [loseReason, setLoseReason] = useState('');
 
   const moveMut = useMutation({
@@ -1003,7 +1048,7 @@ function OpportunityDetailDrawer({
   const loseMut = useMutation({
     mutationFn: () =>
       loseOpportunity(opportunityId, {
-        lost_reason_code: loseReason || 'unspecified',
+        lost_reason_code: loseReason.trim(),
         lost_at: todayIso(),
       }),
     onSuccess: () => {
@@ -1025,6 +1070,12 @@ function OpportunityDetailDrawer({
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30" />
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('crm.opportunity_detail', {
+          defaultValue: 'Opportunity detail: {{title}}',
+          title: opp.title,
+        })}
         className="relative h-full w-full max-w-2xl overflow-y-auto bg-surface-elevated shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
@@ -1043,6 +1094,7 @@ function OpportunityDetailDrawer({
           <button
             type="button"
             onClick={onClose}
+            aria-label={t('common.close', { defaultValue: 'Close' })}
             className="rounded p-1 hover:bg-surface-secondary"
           >
             <X size={16} />
@@ -1057,7 +1109,7 @@ function OpportunityDetailDrawer({
               value={
                 <MoneyDisplay
                   amount={toNum(opp.estimated_value)}
-                  currency={opp.currency || 'EUR'}
+                  currency={opp.currency || undefined}
                 />
               }
             />
@@ -1066,7 +1118,7 @@ function OpportunityDetailDrawer({
               value={
                 <MoneyDisplay
                   amount={toNum(opp.weighted_value)}
-                  currency={opp.currency || 'EUR'}
+                  currency={opp.currency || undefined}
                 />
               }
             />
@@ -1145,6 +1197,9 @@ function OpportunityDetailDrawer({
                   <input
                     value={loseReason}
                     onChange={(e) => setLoseReason(e.target.value)}
+                    aria-label={t('crm.lose_reason', {
+                      defaultValue: 'Loss reason code',
+                    })}
                     placeholder={t('crm.lose_reason', {
                       defaultValue: 'Loss reason code',
                     })}
@@ -1155,6 +1210,7 @@ function OpportunityDetailDrawer({
                     icon={<Frown size={14} />}
                     onClick={() => loseMut.mutate()}
                     loading={loseMut.isPending}
+                    disabled={!loseReason.trim()}
                   >
                     {t('crm.lose', { defaultValue: 'Lose' })}
                   </Button>

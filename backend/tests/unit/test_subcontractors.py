@@ -452,6 +452,7 @@ async def test_prequalification_invalid_transition_raises() -> None:
 async def test_payment_application_workflow_happy_path() -> None:
     from app.modules.subcontractors.schemas import (
         AgreementCreate,
+        AgreementUpdate,
         CertificateCreate,
         PaymentApplicationCreate,
         SubcontractorCreate,
@@ -485,6 +486,12 @@ async def test_payment_application_workflow_happy_path() -> None:
                 retention_percent=Decimal("5"),
             ),
         )
+        # An agreement is born "draft"; it must be signed off (activated)
+        # before any payment can be claimed against it.
+        agreement = await svc.update_agreement(
+            agreement.id, AgreementUpdate(status="active"),
+        )
+        assert agreement.status == "active"
         pa = await svc.submit_payment_application(
             PaymentApplicationCreate(
                 agreement_id=agreement.id,
@@ -516,6 +523,7 @@ async def test_payment_application_blocked_when_certs_missing() -> None:
 
     from app.modules.subcontractors.schemas import (
         AgreementCreate,
+        AgreementUpdate,
         PaymentApplicationCreate,
         SubcontractorCreate,
     )
@@ -532,6 +540,9 @@ async def test_payment_application_blocked_when_certs_missing() -> None:
                 currency="EUR",
             ),
         )
+        # Activate so the flow reaches the cert-missing block under test
+        # rather than short-circuiting on the agreement-status guard.
+        await svc.update_agreement(agreement.id, AgreementUpdate(status="active"))
         with pytest.raises(HTTPException) as exc:
             await svc.submit_payment_application(
                 PaymentApplicationCreate(
@@ -547,6 +558,7 @@ async def test_payment_application_blocked_when_certs_missing() -> None:
 async def test_retention_accrue_and_release() -> None:
     from app.modules.subcontractors.schemas import (
         AgreementCreate,
+        AgreementUpdate,
         CertificateCreate,
         PaymentApplicationCreate,
         SubcontractorCreate,
@@ -572,6 +584,7 @@ async def test_retention_accrue_and_release() -> None:
                 currency="EUR",
             ),
         )
+        await svc.update_agreement(agreement.id, AgreementUpdate(status="active"))
         # Submit two payments, each gross=20000 => retention 1000 each => balance 2000
         for _ in range(2):
             await svc.submit_payment_application(

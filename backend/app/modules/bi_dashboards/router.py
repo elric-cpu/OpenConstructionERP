@@ -28,6 +28,7 @@ from fastapi.responses import FileResponse
 
 from app.dependencies import CurrentUserId, RequirePermission, SessionDep, verify_project_access
 from app.modules.bi_dashboards.models import (
+    AlertRule,
     Dashboard,
     DashboardWidget,
     ReportDefinition,
@@ -168,6 +169,29 @@ async def _ensure_schedule_owner(
     return schedule
 
 
+async def _ensure_alert_access(
+    alert_id: uuid.UUID,
+    user_id: str,
+    session: SessionDep,
+) -> AlertRule:
+    """Load an alert and gate project-scoped ones to the project owner.
+
+    Mirrors the ``create_alert`` guard: an alert carrying a
+    ``scope_project_id`` is data about one project, so mutating it
+    (toggle) must be restricted to a caller who can access that project
+    (``verify_project_access`` — which 404s on miss/denied to avoid
+    leaking UUIDs across tenants). Tenant-wide alerts
+    (``scope_project_id is None``) stay gated by the route-level
+    ``bi.alert.write`` permission only, matching the documented model.
+    """
+    alert = await session.get(AlertRule, alert_id)
+    if alert is None:
+        raise _not_found("Alert not found")
+    if alert.scope_project_id is not None:
+        await verify_project_access(alert.scope_project_id, user_id, session)
+    return alert
+
+
 # ── KPI ────────────────────────────────────────────────────────────────
 
 
@@ -249,6 +273,9 @@ async def drill_down(
     result = await service.drill_down(
         code,
         project_id=payload.project_id,
+        period_start=payload.period_start,
+        period_end=payload.period_end,
+        filters=payload.filters,
         depth=payload.depth,
         limit=payload.limit,
     )
@@ -559,10 +586,14 @@ async def create_alert(
 )
 async def toggle_alert(
     alert_id: uuid.UUID,
-    user_id: CurrentUserId,  # noqa: ARG001
+    user_id: CurrentUserId,
+    session: SessionDep,
     enabled: bool = Query(...),
     service: BIDashboardsService = Depends(_service),
 ) -> AlertRuleRead:
+    # IDOR guard: a project-scoped alert is data about one project — only
+    # a caller with access to that project may flip it on/off.
+    await _ensure_alert_access(alert_id, user_id, session)
     row = await service.toggle_alert(alert_id, enabled=enabled)
     if row is None:
         raise _not_found("Alert not found")

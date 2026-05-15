@@ -8,6 +8,8 @@ Stateless service layer. Handles:
 
 import logging
 import uuid
+from datetime import UTC, datetime
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +17,50 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.events import event_bus
 
 _logger_ev = __import__("logging").getLogger(__name__ + ".events")
+
+# ── Lifecycle state machine ──────────────────────────────────────────────────
+# Package status transitions. ``closed`` is terminal; ``awarded`` may still be
+# closed for archival but never re-opened. Anything not listed is rejected.
+_PACKAGE_TRANSITIONS: dict[str, set[str]] = {
+    "draft": {"draft", "issued", "closed"},
+    "issued": {"issued", "collecting", "closed"},
+    "collecting": {"collecting", "evaluating", "closed"},
+    "evaluating": {"evaluating", "awarded", "closed"},
+    "awarded": {"awarded", "closed"},
+    "closed": {"closed"},
+}
+
+# Package states from which a winner may legitimately be applied. Awarding a
+# draft/issued package, or re-awarding an already-awarded/closed one, is invalid.
+_AWARDABLE_PACKAGE_STATES: set[str] = {"collecting", "evaluating"}
+
+# Bid statuses that disqualify a bid from being awarded.
+_NON_AWARDABLE_BID_STATES: set[str] = {"rejected"}
+
+_CENTS = Decimal("0.01")
+
+
+def _to_decimal(value: object, default: str = "0") -> Decimal:
+    """Parse an arbitrary value into Decimal, never raising.
+
+    Money is parsed exactly (no float intermediary) so bid-comparison sums and
+    deviations are not subject to binary-float drift.
+    """
+    try:
+        if value is None or value == "":
+            return Decimal(default)
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return Decimal(default)
+
+
+def _round2(value: Decimal) -> float:
+    """Round a Decimal to 2 dp at the presentation boundary and emit float.
+
+    The response schemas type these fields as ``float``; rounding happens
+    only here so all intermediate arithmetic stays in Decimal.
+    """
+    return float(value.quantize(_CENTS, rounding=ROUND_HALF_UP))
 
 
 async def _safe_publish(name: str, data: dict, source_module: str = "") -> None:
@@ -95,14 +141,50 @@ class TenderingService:
         return await self.repo.list_packages(project_id=project_id, offset=offset, limit=limit)
 
     async def update_package(self, package_id: uuid.UUID, data: PackageUpdate) -> TenderPackage:
-        """Update package fields. Raises 404 if not found."""
-        await self.get_package(package_id)
+        """Update package fields. Raises 404 if not found.
+
+        Status changes are validated against the lifecycle state machine so
+        illegal transitions (re-issuing a closed package, reverting an
+        ``awarded`` package to ``draft``, skipping evaluation, etc.) are
+        rejected with 409 instead of being silently persisted. ``boq_id`` is
+        already immutable post-creation (absent from ``PackageUpdate``), so
+        bids can never be re-pointed at a different BOQ underneath them.
+        """
+        package = await self.get_package(package_id)
 
         fields = data.model_dump(exclude_unset=True)
 
         # Map schema field 'metadata' to model column 'metadata_'
         if "metadata" in fields:
             fields["metadata_"] = fields.pop("metadata")
+
+        # Validate status transition before persisting anything.
+        new_status = fields.get("status")
+        if new_status is not None and new_status != package.status:
+            allowed = _PACKAGE_TRANSITIONS.get(package.status, set())
+            if new_status not in allowed:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Illegal package transition: "
+                        f"{package.status!r} → {new_status!r}"
+                    ),
+                )
+            # Stamp lifecycle timestamps into metadata (no schema column
+            # exists; metadata_ is the extensible store per the data model).
+            meta = dict(package.metadata_ or {})
+            stamp_key = {
+                "issued": "issued_at",
+                "closed": "closed_at",
+                "awarded": "awarded_at",
+            }.get(new_status)
+            if stamp_key and stamp_key not in meta:
+                meta[stamp_key] = datetime.now(UTC).isoformat()
+                fields["metadata_"] = {**meta, **fields.get("metadata_", {})}
+        elif new_status is not None and new_status == package.status:
+            # No-op status write — drop it so we don't emit a misleading
+            # "status changed" update event for an unchanged value.
+            fields.pop("status")
 
         if not fields:
             return await self.get_package(package_id)
@@ -231,14 +313,14 @@ class TenderingService:
         except HTTPException:
             budget_positions = []
 
-        # Build position map from BOQ
+        # Build position map from BOQ (exact Decimal arithmetic).
         position_map: dict[str, dict] = {}
-        budget_total = 0.0
+        budget_total = Decimal("0")
         for pos in budget_positions:
             pid = str(pos.id)
-            qty = float(pos.quantity) if pos.quantity else 0.0
-            rate = float(pos.unit_rate) if pos.unit_rate else 0.0
-            total = float(pos.total) if pos.total else qty * rate
+            qty = _to_decimal(pos.quantity)
+            rate = _to_decimal(pos.unit_rate)
+            total = _to_decimal(pos.total) if pos.total else qty * rate
             position_map[pid] = {
                 "position_id": pid,
                 "description": pos.description or "",
@@ -250,29 +332,72 @@ class TenderingService:
             }
             budget_total += total
 
+        # Index each bid's line items by position_id once → comparison is
+        # O(positions·bids + bids·line_items) instead of the previous
+        # O(positions·bids·line_items) triple nested scan.
+        bid_line_index: dict[str, dict[str, dict]] = {}
+        for bid in bids:
+            idx: dict[str, dict] = {}
+            for item in bid.line_items or []:
+                key = item.get("position_id")
+                if key and key not in idx:
+                    idx[key] = item
+            bid_line_index[str(bid.id)] = idx
+
+        # Best-effort cross-currency guard. The BOQ/Position ORM carries no
+        # single authoritative budget currency (currency is tracked per
+        # position payload), so we can only suppress a deviation when the
+        # budget currency is actually discoverable. When it is not, we do not
+        # invent one — we simply do not suppress (degrades safely, never
+        # emits a *wrong* percentage). Where bidders disagree among
+        # themselves, the dominant bid currency is treated as the comparison
+        # baseline so a single odd-currency bid cannot poison every row.
+        bid_ccy_counts: dict[str, int] = {}
+        for b in bids:
+            c = (b.currency or "").strip().upper()
+            if c:
+                bid_ccy_counts[c] = bid_ccy_counts.get(c, 0) + 1
+        baseline_currency = ""
+        if budget_positions:
+            baseline_currency = (
+                getattr(budget_positions[0], "currency", "") or ""
+            ).strip().upper()
+        if not baseline_currency and bid_ccy_counts:
+            baseline_currency = max(
+                bid_ccy_counts.items(), key=lambda kv: (kv[1], kv[0])
+            )[0]
+
+        def _bid_currency(bid: TenderBid) -> str:
+            return (bid.currency or "").strip().upper()
+
+        def _same_currency(bid: TenderBid) -> bool:
+            bc = _bid_currency(bid)
+            return not baseline_currency or not bc or bc == baseline_currency
+
         # Build comparison rows
         rows: list[BidComparisonRow] = []
         for pid, pdata in position_map.items():
             bid_entries = []
+            budget_rate: Decimal = pdata["unit_rate"]
             for bid in bids:
-                # Find matching line item in bid
-                matching = None
-                for item in bid.line_items or []:
-                    if item.get("position_id") == pid:
-                        matching = item
-                        break
+                matching = bid_line_index.get(str(bid.id), {}).get(pid)
                 if matching:
-                    bid_rate = float(matching.get("unit_rate", 0))
-                    bid_total = float(matching.get("total", 0))
-                    budget_rate = pdata["unit_rate"]
-                    deviation = ((bid_rate - budget_rate) / budget_rate * 100) if budget_rate > 0 else 0.0
+                    bid_rate = _to_decimal(matching.get("unit_rate", 0))
+                    bid_total = _to_decimal(matching.get("total", 0))
+                    if budget_rate > 0 and _same_currency(bid):
+                        deviation = (
+                            (bid_rate - budget_rate) / budget_rate * Decimal("100")
+                        )
+                        dev_val = round(float(deviation), 1)
+                    else:
+                        dev_val = 0.0
                     bid_entries.append(
                         {
                             "company_name": bid.company_name,
                             "bid_id": str(bid.id),
-                            "unit_rate": bid_rate,
-                            "total": bid_total,
-                            "deviation_pct": round(deviation, 1),
+                            "unit_rate": _round2(bid_rate),
+                            "total": _round2(bid_total),
+                            "deviation_pct": dev_val,
                         }
                     )
                 else:
@@ -291,25 +416,33 @@ class TenderingService:
                     position_id=pid,
                     description=pdata["description"],
                     unit=pdata["unit"],
-                    budget_quantity=pdata["quantity"],
-                    budget_rate=pdata["unit_rate"],
-                    budget_total=pdata["total"],
+                    budget_quantity=_round2(pdata["quantity"]),
+                    budget_rate=_round2(budget_rate),
+                    budget_total=_round2(pdata["total"]),
                     bids=bid_entries,
                 )
             )
 
-        # Build bid totals
+        # Build bid totals — never compute a deviation against the budget for
+        # a bid quoted in a different currency (mixed-currency comparison is a
+        # data error, not a 0% match).
         bid_totals = []
         for bid in bids:
-            total = float(bid.total_amount) if bid.total_amount else 0.0
-            deviation = ((total - budget_total) / budget_total * 100) if budget_total > 0 else 0.0
+            total = _to_decimal(bid.total_amount)
+            if budget_total > 0 and _same_currency(bid):
+                deviation = (
+                    (total - budget_total) / budget_total * Decimal("100")
+                )
+                dev_val = round(float(deviation), 1)
+            else:
+                dev_val = 0.0
             bid_totals.append(
                 {
                     "bid_id": str(bid.id),
                     "company_name": bid.company_name,
-                    "total": total,
+                    "total": _round2(total),
                     "currency": bid.currency,
-                    "deviation_pct": round(deviation, 1),
+                    "deviation_pct": dev_val,
                     "status": bid.status,
                 }
             )
@@ -319,7 +452,7 @@ class TenderingService:
             package_name=package.name,
             bid_count=len(bids),
             bid_companies=[b.company_name for b in bids],
-            budget_total=budget_total,
+            budget_total=_round2(budget_total),
             rows=rows,
             bid_totals=bid_totals,
         )
@@ -328,13 +461,24 @@ class TenderingService:
         self,
         package_id: uuid.UUID,
         bid_id: uuid.UUID,
+        awarded_by: str | None = None,
     ) -> dict:
         """Apply a winning bid's unit rates back to the BOQ.
 
         Iterates the bid's ``line_items`` and updates the matching BOQ
         position ``unit_rate`` (recomputing ``total`` via quantity * new rate).
-        The package is transitioned to ``awarded`` and the bid to ``awarded``
-        status. An event is published for downstream budget / EVM modules.
+        The package is transitioned to ``awarded``, the winning bid to
+        ``accepted`` and every other bid to ``rejected``. An event is
+        published for downstream budget / EVM modules.
+
+        Lifecycle is enforced at the root:
+        - the package must be in an awardable state (``collecting`` /
+          ``evaluating``) — you cannot award a ``draft``/``issued`` package;
+        - an already ``awarded``/``closed`` package cannot be re-awarded
+          (no double-award);
+        - a ``rejected``/disqualified bid cannot win.
+        The decision-maker identity and timestamp are stamped into the
+        package metadata (no dedicated column exists in the schema).
         """
         package = await self.get_package(package_id)
         bid = await self.get_bid(bid_id)
@@ -349,8 +493,24 @@ class TenderingService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Package has no linked BOQ to write back to",
             )
-
-        from decimal import Decimal, InvalidOperation
+        if package.status not in _AWARDABLE_PACKAGE_STATES:
+            # Covers double-award (already 'awarded'), awarding a 'draft'
+            # or 'issued' package, and re-awarding a 'closed' one.
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Package in status {package.status!r} cannot be awarded; "
+                    f"it must be one of {sorted(_AWARDABLE_PACKAGE_STATES)}"
+                ),
+            )
+        if bid.status in _NON_AWARDABLE_BID_STATES:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Bid is {bid.status!r} and cannot be awarded "
+                    f"(disqualified bids are not eligible)"
+                ),
+            )
 
         from sqlalchemy import update
 
@@ -361,17 +521,17 @@ class TenderingService:
             pos_id = item.get("position_id")
             if not pos_id:
                 continue
-            try:
-                rate = Decimal(str(item.get("unit_rate", "0")))
-            except (InvalidOperation, ValueError):
+            if "unit_rate" not in item:
                 continue
-            pos = await self.session.get(Position, uuid.UUID(str(pos_id)))
+            rate = _to_decimal(item.get("unit_rate"))
+            try:
+                pos_uuid = uuid.UUID(str(pos_id))
+            except (ValueError, AttributeError):
+                continue
+            pos = await self.session.get(Position, pos_uuid)
             if pos is None:
                 continue
-            try:
-                qty = Decimal(str(pos.quantity or "0"))
-            except (InvalidOperation, ValueError):
-                qty = Decimal("0")
+            qty = _to_decimal(pos.quantity)
             new_total = qty * rate
             await self.session.execute(
                 update(Position)
@@ -380,9 +540,26 @@ class TenderingService:
             )
             updated += 1
 
-        # Flip statuses — package: awarded, bid: awarded
-        await self.repo.update_package_fields(package_id, status="awarded")
-        await self.repo.update_bid_fields(bid_id, status="awarded")
+        # Stamp decision-maker identity + timestamp into package metadata
+        # (the data model keeps lifecycle audit trail in metadata_).
+        meta = dict(package.metadata_ or {})
+        meta.setdefault("awarded_at", datetime.now(UTC).isoformat())
+        if awarded_by:
+            meta["awarded_by"] = str(awarded_by)
+        meta["awarded_bid_id"] = str(bid_id)
+
+        # Flip statuses — package: awarded, winning bid: accepted,
+        # every competing bid: rejected (a closed tender has one winner).
+        await self.repo.update_package_fields(
+            package_id, status="awarded", metadata_=meta
+        )
+        all_bids = await self.repo.list_bids_for_package(package_id)
+        for other in all_bids:
+            if other.id == bid_id:
+                if other.status != "accepted":
+                    await self.repo.update_bid_fields(bid_id, status="accepted")
+            elif other.status not in ("rejected",):
+                await self.repo.update_bid_fields(other.id, status="rejected")
 
         await _safe_publish(
             "tendering.package.awarded",
@@ -392,15 +569,17 @@ class TenderingService:
                 "company_name": bid.company_name,
                 "positions_updated": updated,
                 "boq_id": str(package.boq_id),
+                "awarded_by": str(awarded_by) if awarded_by else None,
             },
             source_module="oe_tendering",
         )
 
         logger.info(
-            "Tender winner applied: package=%s bid=%s positions_updated=%s",
+            "Tender winner applied: package=%s bid=%s positions_updated=%s by=%s",
             package_id,
             bid_id,
             updated,
+            awarded_by,
         )
         return {
             "package_id": str(package_id),
@@ -433,35 +612,50 @@ class TenderingService:
         if not bids:
             return BidAnalysisResponse()
 
-        def _to_float(value: str | None) -> float:
-            try:
-                return float(value) if value not in (None, "") else 0.0
-            except (TypeError, ValueError):
-                return 0.0
+        def _norm_ccy(value: str | None) -> str:
+            return (value or "").strip().upper()
 
-        totals: list[float] = [_to_float(b.total_amount) for b in bids]
+        # Statistical aggregates (spread / outliers) are only meaningful
+        # within a single currency — summing or comparing totals across
+        # currencies produces nonsense. Scope numeric stats to the dominant
+        # currency cohort (the currency carried by the most bids).
+        ccy_counts: dict[str, int] = {}
+        for b in bids:
+            ccy_counts[_norm_ccy(b.currency)] = (
+                ccy_counts.get(_norm_ccy(b.currency), 0) + 1
+            )
+        dominant_ccy = max(ccy_counts.items(), key=lambda kv: (kv[1], kv[0]))[0]
 
-        # Vendor rollup
-        vendor_map: dict[str, dict[str, float | int | str]] = {}
-        for bid, total in zip(bids, totals, strict=True):
+        # Vendor rollup — Decimal sums, and a vendor that bid in more than
+        # one currency is reported with a blank currency rather than a
+        # silently-mixed total.
+        vendor_map: dict[str, dict] = {}
+        for bid in bids:
             company = (bid.company_name or "").strip() or "(unnamed)"
+            amount = _to_decimal(bid.total_amount)
+            ccy = _norm_ccy(bid.currency)
             entry = vendor_map.setdefault(
                 company,
                 {
                     "company_name": company,
-                    "total": 0.0,
-                    "currency": bid.currency or "",
+                    "total": Decimal("0"),
+                    "currencies": set(),
                     "bid_count": 0,
                 },
             )
-            entry["total"] = float(entry["total"]) + total
-            entry["bid_count"] = int(entry["bid_count"]) + 1
+            entry["total"] += amount
+            entry["currencies"].add(ccy)
+            entry["bid_count"] += 1
 
         vendors = [
             BidVendorEntry(
                 company_name=str(v["company_name"]),
-                total=round(float(v["total"]), 2),
-                currency=str(v["currency"]),
+                total=_round2(v["total"]),
+                currency=(
+                    next(iter(v["currencies"]))
+                    if len(v["currencies"]) == 1
+                    else ""
+                ),
                 bid_count=int(v["bid_count"]),
             )
             for v in sorted(
@@ -470,47 +664,56 @@ class TenderingService:
             )
         ]
 
-        # Spread
+        # Cohort restricted to the dominant currency for spread/outliers.
+        cohort = [
+            (b, _to_decimal(b.total_amount))
+            for b in bids
+            if _norm_ccy(b.currency) == dominant_ccy
+        ]
+        totals: list[Decimal] = [t for _, t in cohort]
         sorted_totals = sorted(totals)
 
-        def _pct(values: list[float], p: float) -> float:
+        def _pct(values: list[Decimal], p: float) -> Decimal:
             if not values:
-                return 0.0
+                return Decimal("0")
             idx = max(0, min(len(values) - 1, int(round((len(values) - 1) * p))))
             return values[idx]
 
         p25 = _pct(sorted_totals, 0.25)
         p50 = _pct(sorted_totals, 0.50)
         p75 = _pct(sorted_totals, 0.75)
-        mean = sum(totals) / len(totals)
-        variance = sum((t - mean) ** 2 for t in totals) / len(totals)
-        std = variance**0.5
+        n = len(totals)
+        mean = sum(totals, Decimal("0")) / Decimal(n)
+        variance = sum(
+            ((t - mean) ** 2 for t in totals), Decimal("0")
+        ) / Decimal(n)
+        std = variance.sqrt()
 
         spread = BidSpread(
-            min=round(sorted_totals[0], 2),
-            max=round(sorted_totals[-1], 2),
-            p25=round(p25, 2),
-            p50=round(p50, 2),
-            p75=round(p75, 2),
-            mean=round(mean, 2),
-            std=round(std, 2),
-            sample_size=len(totals),
+            min=_round2(sorted_totals[0]),
+            max=_round2(sorted_totals[-1]),
+            p25=_round2(p25),
+            p50=_round2(p50),
+            p75=_round2(p75),
+            mean=_round2(mean),
+            std=_round2(std),
+            sample_size=n,
         )
 
-        # Outliers (IQR rule)
+        # Outliers (IQR rule) — also confined to the dominant-currency cohort.
         iqr = p75 - p25
-        low_bound = p25 - 1.5 * iqr
-        high_bound = p75 + 1.5 * iqr
+        low_bound = p25 - Decimal("1.5") * iqr
+        high_bound = p75 + Decimal("1.5") * iqr
         outliers: list[BidOutlierEntry] = []
-        if len(totals) >= 4 and iqr > 0:
-            for bid, total in zip(bids, totals, strict=True):
+        if n >= 4 and iqr > 0:
+            for bid, total in cohort:
                 if total < low_bound or total > high_bound:
                     reason = "too_low" if total < low_bound else "too_high"
                     outliers.append(
                         BidOutlierEntry(
                             bid_id=bid.id,
                             company_name=(bid.company_name or "").strip() or "(unnamed)",
-                            total=round(total, 2),
+                            total=_round2(total),
                             reason=reason,
                         )
                     )

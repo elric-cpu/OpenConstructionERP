@@ -31,7 +31,10 @@ class ChangeOrderCreate(BaseModel):
         pattern=r"^(client_request|design_change|unforeseen|regulatory|error)$",
     )
     schedule_impact_days: int = Field(default=0, ge=0, le=_INT32_MAX)
-    currency: str = Field(default="EUR", max_length=10)
+    # Empty when the caller does not specify one — the service resolves it
+    # from the project's currency. NEVER default to a literal "EUR" here
+    # (task #217): that silently mis-stamps non-Eurozone projects.
+    currency: str = Field(default="", max_length=10)
     # BUG-385: cost_impact was silently dropped at create time because
     # it wasn't on the schema. Accept it here for the common manual-entry
     # case; when line items are added ``add_item`` will still recompute.
@@ -192,4 +195,6 @@ class ChangeOrderSummary(BaseModel):
     total_cost_impact: float = 0.0
     total_time_impact_days: int = 0
     total_schedule_impact_days: int = 0
-    currency: str = "EUR"
+    # Resolved by the repository from the project / CO rows. Empty only
+    # when neither carries a currency — never a literal "EUR" (task #217).
+    currency: str = ""

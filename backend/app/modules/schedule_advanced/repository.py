@@ -208,6 +208,33 @@ class WeeklyWorkPlanRepository(_BaseRepo):
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
+    async def current_week_commitment_count(
+        self, project_id: uuid.UUID, today: date,
+    ) -> int:
+        """Total commitments in the *current* week plan across a project.
+
+        Single aggregate query replacing the previous per-master N+1
+        (one ``current_week_plan`` + one ``commitments_for_week`` round
+        trip per active master schedule). A "current" week plan is one
+        whose [week_start_date, week_end_date] inclusive range contains
+        ``today``; only active master schedules contribute.
+        """
+        stmt = (
+            select(func.count(Commitment.id))
+            .select_from(Commitment)
+            .join(WeeklyWorkPlan, WeeklyWorkPlan.id == Commitment.week_plan_id)
+            .join(
+                MasterSchedule,
+                MasterSchedule.id == WeeklyWorkPlan.master_schedule_id,
+            )
+            .where(MasterSchedule.project_id == project_id)
+            .where(MasterSchedule.status == "active")
+            .where(WeeklyWorkPlan.week_start_date <= today)
+            .where(WeeklyWorkPlan.week_end_date >= today)
+        )
+        result = await self.session.execute(stmt)
+        return int(result.scalar_one() or 0)
+
     async def last_n_weeks_ppc(
         self, project_id: uuid.UUID, n: int = 12,
     ) -> list[WeeklyWorkPlan]:

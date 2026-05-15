@@ -20,9 +20,15 @@ from __future__ import annotations
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.dependencies import CurrentUserId, RequirePermission, SessionDep, verify_project_access
+from app.dependencies import (
+    CurrentUserId,
+    CurrentUserPayload,
+    RequirePermission,
+    SessionDep,
+    verify_project_access,
+)
 from app.modules.service.schemas import (
     AssetChecklistCreate,
     AssetChecklistResponse,
@@ -60,6 +66,23 @@ logger = logging.getLogger(__name__)
 
 def _get_service(session: SessionDep) -> ServiceService:
     return ServiceService(session)
+
+
+def _payload_has_permission(payload: dict, permission: str) -> bool:
+    """Mirror :class:`RequirePermission` semantics for an ad-hoc check.
+
+    Used where a single endpoint needs *different* permission levels depending
+    on a request flag (read-only vs. side-effecting). Honours the admin bypass
+    and the live-registry fallback for stale JWTs, exactly like the dependency.
+    """
+    role: str = payload.get("role", "")
+    if role == "admin":
+        return True
+    if permission in payload.get("permissions", []):
+        return True
+    from app.core.permissions import permission_registry as _reg
+
+    return _reg.role_has_permission(role, permission)
 
 
 async def _verify_contract_project(
@@ -625,6 +648,7 @@ async def request_purchase(
 async def scan_sla_breaches(
     session: SessionDep,
     user_id: CurrentUserId,
+    payload: CurrentUserPayload,
     _perm: None = Depends(RequirePermission("service.read")),
     contract_id: uuid.UUID | None = Query(default=None),
     notify: bool = Query(
@@ -638,7 +662,17 @@ async def scan_sla_breaches(
     Intended to be called by a periodic worker (or, in dev, from the
     dispatcher's dashboard refresh). Each newly-overdue ticket gets a
     ``service.sla.breached`` event exactly once.
+
+    Read-only polling (``notify=false``) only needs ``service.read``. Actually
+    notifying — which stamps the ticket and emits ``service.sla.breached`` —
+    is a side-effecting dispatcher action and requires ``service.dispatch``;
+    a viewer cannot trigger event fan-out or mutate ticket state.
     """
+    if notify and not _payload_has_permission(payload, "service.dispatch"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Missing permission: service.dispatch (required to notify on SLA breach)",
+        )
     if contract_id is not None:
         await _verify_contract_project(contract_id, user_id, session, service)
     return await service.scan_sla_breaches(contract_id=contract_id, notify=notify)

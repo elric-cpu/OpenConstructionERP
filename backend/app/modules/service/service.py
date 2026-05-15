@@ -210,6 +210,22 @@ class ServiceService:
         data: ServiceContractCreate,
         user_id: str | None = None,
     ) -> ServiceContract:
+        # A contract is only ever born draft or active; expired/terminated are
+        # outcomes reached via the state machine, never an initial value.
+        allowed_initial = {"draft", "active"}
+        if data.status not in allowed_initial:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"A contract cannot be created in '{data.status}' state. "
+                    f"Allowed initial states: {sorted(allowed_initial)}."
+                ),
+            )
+        if data.period_end < data.period_start:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="period_end must be on or after period_start.",
+            )
         contract_number = await self.contract_repo.next_contract_number()
         contract = ServiceContract(
             customer_id=data.customer_id,
@@ -263,6 +279,16 @@ class ServiceService:
 
         if "status" in fields:
             assert_transition(contract.status, fields["status"], machine="contract")
+
+        # Re-check period ordering against the *merged* state so a PATCH that
+        # touches only one bound can't invert the period.
+        new_start = fields.get("period_start", contract.period_start)
+        new_end = fields.get("period_end", contract.period_end)
+        if ("period_start" in fields or "period_end" in fields) and new_end < new_start:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="period_end must be on or after period_start.",
+            )
 
         if not fields:
             return contract
@@ -405,6 +431,20 @@ class ServiceService:
             },
             source_module="service",
         )
+        # A ticket born with an assignee is effectively dispatched on create;
+        # emit the same event the explicit /dispatch endpoint does so
+        # technician-assignment subscribers don't miss born-assigned tickets.
+        if ticket.status == "assigned" and ticket.assigned_to:
+            event_bus.publish_detached(
+                "service.ticket.dispatched",
+                {
+                    "ticket_id": str(ticket.id),
+                    "ticket_number": ticket_number,
+                    "technician_id": ticket.assigned_to,
+                    "scheduled_for": None,
+                },
+                source_module="service",
+            )
         return ticket
 
     async def get_ticket(self, ticket_id: uuid.UUID) -> ServiceTicket:
@@ -427,7 +467,23 @@ class ServiceService:
             fields["metadata_"] = fields.pop("metadata")
 
         if "status" in fields:
-            assert_transition(ticket.status, fields["status"], machine="ticket")
+            new_status = fields["status"]
+            assert_transition(ticket.status, new_status, machine="ticket")
+            # Keep lifecycle timestamps consistent with the dedicated
+            # resolve/close endpoints when an admin corrects status via PATCH —
+            # otherwise a 'closed' ticket can end up with closed_at = NULL.
+            if (
+                new_status == "resolved"
+                and ticket.status != "resolved"
+                and ticket.resolved_at is None
+            ):
+                fields["resolved_at"] = _utcnow_iso()
+            if (
+                new_status == "closed"
+                and ticket.status != "closed"
+                and ticket.closed_at is None
+            ):
+                fields["closed_at"] = _utcnow_iso()
 
         if not fields:
             return ticket
@@ -524,6 +580,22 @@ class ServiceService:
     async def create_work_order(self, data: WorkOrderCreate) -> ServiceWorkOrder:
         ticket = await self.get_ticket(data.ticket_id)
 
+        # The schema permits any WO label, but a WO must not be *born* in a
+        # state that bypasses the finance hand-off. ``billed`` skips the
+        # ``bill_work_order`` finance event + roll-up, and ``cancelled`` is a
+        # terminal no-op. A direct ``completed`` is legitimate (retroactive
+        # entry of work already done) — we just back-fill the billed_amount
+        # roll-up below so that path never loses its total.
+        allowed_initial = {"scheduled", "dispatched", "in_progress", "completed"}
+        if data.status not in allowed_initial:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"A work order cannot be created in '{data.status}' state. "
+                    f"Allowed initial states: {sorted(allowed_initial)}."
+                ),
+            )
+
         wo_number = await self.work_order_repo.next_work_order_number()
         wo = ServiceWorkOrder(
             ticket_id=data.ticket_id,
@@ -539,6 +611,17 @@ class ServiceService:
         # Persist items (with computed totals if caller didn't supply them).
         for item_data in data.items:
             await self._create_work_order_item(wo.id, item_data)
+
+        # A WO born straight into ``completed`` never passes through
+        # complete_work_order(), so back-fill the billed_amount roll-up here
+        # to preserve the "billed_amount == sum(items.total)" invariant.
+        if data.status == "completed":
+            items = await self.work_order_item_repo.list_for_work_order(wo.id)
+            await self.work_order_repo.update_fields(
+                wo.id,
+                billed_amount=compute_work_order_total(items),
+                completed_at=_utcnow_iso(),
+            )
 
         await self.session.refresh(wo)
         logger.info(
@@ -829,7 +912,7 @@ class ServiceService:
         contract_id: uuid.UUID,
     ) -> ContractDashboardResponse:
         """Aggregate KPIs for one contract's dashboard widget."""
-        from sqlalchemy import select  # local import to keep top tidy
+        from sqlalchemy import func, select  # local import to keep top tidy
 
         contract = await self.get_contract(contract_id)
 
@@ -837,9 +920,12 @@ class ServiceService:
         in_progress_tickets = await self.ticket_repo.count_in_progress_for_contract(contract_id)
 
         # SLA breaches: tickets past sla_due_at, not yet resolved/closed/cancelled.
+        # Count at the DB level — materialising rows here would also trigger the
+        # ServiceTicket.work_orders selectin load for every breached ticket.
         now_iso = _utcnow_iso()
         sla_breach_stmt = (
-            select(ServiceTicket)
+            select(func.count())
+            .select_from(ServiceTicket)
             .where(
                 ServiceTicket.contract_id == contract_id,
                 ServiceTicket.sla_due_at.isnot(None),
@@ -847,23 +933,25 @@ class ServiceService:
                 ServiceTicket.status.in_(("new", "assigned", "in_progress")),
             )
         )
-        sla_breaches = len(
-            (await self.session.execute(sla_breach_stmt)).scalars().all()
-        )
+        sla_breaches = int((await self.session.execute(sla_breach_stmt)).scalar_one())
 
         # WO counts: scheduled vs completed-in-last-30d.
         scheduled_wo_stmt = (
-            select(ServiceWorkOrder)
+            select(func.count())
+            .select_from(ServiceWorkOrder)
             .join(ServiceTicket, ServiceTicket.id == ServiceWorkOrder.ticket_id)
             .where(
                 ServiceTicket.contract_id == contract_id,
                 ServiceWorkOrder.status.in_(("scheduled", "dispatched", "in_progress")),
             )
         )
-        scheduled_work_orders = len(
-            (await self.session.execute(scheduled_wo_stmt)).scalars().all()
+        scheduled_work_orders = int(
+            (await self.session.execute(scheduled_wo_stmt)).scalar_one()
         )
 
+        # completed_at is stored full-ISO ("…T…+00:00"); compare against a
+        # matching full-ISO bound (not a bare date) so the string ordering is
+        # well-defined.
         thirty_days_ago = (datetime.now(UTC) - timedelta(days=30)).isoformat()
         completed_wo_stmt = (
             select(ServiceWorkOrder)
@@ -940,7 +1028,7 @@ class ServiceService:
             (regardless of prior notification) plus a count of how many were
             newly notified by this call.
         """
-        from sqlalchemy import select
+        from sqlalchemy import func, select
 
         now_dt = datetime.now(UTC)
         now_iso = now_dt.isoformat()
@@ -956,14 +1044,16 @@ class ServiceService:
         tickets = list((await self.session.execute(stmt)).scalars().all())
 
         # Also count *all* open tickets in scope for context on the response.
-        open_stmt = select(ServiceTicket).where(
-            ServiceTicket.status.in_(("new", "assigned", "in_progress")),
+        # Count at the DB level to avoid materialising rows (and their
+        # work_orders selectin load) only to call len().
+        open_stmt = (
+            select(func.count())
+            .select_from(ServiceTicket)
+            .where(ServiceTicket.status.in_(("new", "assigned", "in_progress")))
         )
         if contract_id is not None:
             open_stmt = open_stmt.where(ServiceTicket.contract_id == contract_id)
-        total_open = len(
-            list((await self.session.execute(open_stmt)).scalars().all()),
-        )
+        total_open = int((await self.session.execute(open_stmt)).scalar_one())
 
         breaches: list[SLABreachEntry] = []
         newly_notified = 0
@@ -1148,6 +1238,5 @@ class ServiceService:
         item_meta = dict(item.metadata_ or {})
         item_meta["procurement_requested_at"] = _utcnow_iso()
         item_meta["procurement_requested_by"] = user_id
-        if hasattr(self.work_order_item_repo, "update_fields"):
-            await self.work_order_item_repo.update_fields(item_id, metadata_=item_meta)
+        await self.work_order_item_repo.update_fields(item_id, metadata_=item_meta)
         return item_id

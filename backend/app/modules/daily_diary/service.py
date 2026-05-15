@@ -20,7 +20,7 @@ import json
 import logging
 import math
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Mapping
 
@@ -460,6 +460,27 @@ class DailyDiaryService:
         data: DailyDiaryCreate,
         user_id: str | None = None,
     ) -> DailyDiary:
+        # A site diary is a contemporaneous record: back-dating (a
+        # retroactive entry for a past day) is legitimate, but a
+        # *future*-dated diary is not. Allow one day of slack so a site
+        # ahead of UTC can still open "its" current day.
+        try:
+            entry_day = datetime.strptime(data.diary_date, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid diary_date: {exc}",
+            ) from exc
+        max_allowed = datetime.now(UTC).date() + timedelta(days=1)
+        if entry_day > max_allowed:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"diary_date {data.diary_date} is in the future; a daily "
+                    "site diary is a contemporaneous record and cannot be "
+                    "opened ahead of the site date."
+                ),
+            )
         existing = await self.diary_repo.get_by_date_and_project(
             data.project_id, data.diary_date
         )
@@ -700,9 +721,23 @@ class DailyDiaryService:
         *,
         user_id: str | None = None,
     ) -> DailyDiary:
-        """Transition diary to archived. Cannot transition back."""
+        """Transition diary signed→archived. Cannot transition back.
+
+        Archiving is only meaningful for a *signed* diary — the archive's
+        legal value is the sealed SHA-256 snapshot taken at sign time.
+        Archiving an unsigned diary would produce a terminal record with
+        no contemporaneous integrity proof, so it is rejected.
+        """
         diary = await self.get_diary(diary_id)
         _ensure_can_transition(diary.status, "archived")
+        if diary.status != "signed":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Cannot archive a '{diary.status}' diary — it must be "
+                    "signed first so the archive carries a sealed snapshot."
+                ),
+            )
 
         await self.diary_repo.update_fields(diary_id, status="archived")
         await self.session.refresh(diary)
@@ -819,8 +854,33 @@ class DailyDiaryService:
             raise HTTPException(status_code=404, detail="Diary entry not found")
         return entry  # type: ignore[return-value]
 
+    async def _assert_entry_diary_mutable(self, entry: DiaryEntry) -> DailyDiary:
+        """Raise 409 if the entry's parent diary is sealed (signed/archived)."""
+        diary = await self.get_diary(entry.diary_id)
+        if diary.status in ("signed", "archived"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Cannot modify entries of a {diary.status} diary — the "
+                    "signed snapshot would be invalidated."
+                ),
+            )
+        return diary
+
+    async def update_entry(
+        self, entry_id: uuid.UUID, fields: dict[str, Any]
+    ) -> DiaryEntry:
+        entry = await self.get_entry(entry_id)
+        await self._assert_entry_diary_mutable(entry)
+        if "metadata" in fields:
+            fields["metadata_"] = fields.pop("metadata")
+        if fields:
+            await self.entry_repo.update_fields(entry_id, **fields)
+        return await self.get_entry(entry_id)
+
     async def delete_entry(self, entry_id: uuid.UUID) -> None:
-        await self.get_entry(entry_id)
+        entry = await self.get_entry(entry_id)
+        await self._assert_entry_diary_mutable(entry)
         await self.entry_repo.delete(entry_id)
 
     # ── Photos ───────────────────────────────────────────────────────────
@@ -1225,11 +1285,11 @@ class DailyDiaryService:
             dt = datetime.fromisoformat(date_to + "T23:59:59")
         except ValueError:
             dt = None
-        photos, photo_total = await self.photo_repo.photos_for_project_in_range(
+        photos, _ = await self.photo_repo.photos_for_project_in_range(
             project_id, date_from=df, date_to=dt, limit=10_000,
         )
         # Drones in range
-        drones, drone_total = await self.drone_repo.list_for_project(
+        drones, _ = await self.drone_repo.list_for_project(
             project_id, limit=10_000,
         )
         if df is not None or dt is not None:
@@ -1251,23 +1311,23 @@ class DailyDiaryService:
                     continue
                 kept.append(d)
             drones = kept
-            drone_total = len(kept)
 
-        # Weather records in range
-        weathers = []
-        for d in diaries:
-            from sqlalchemy import select  # noqa: PLC0415 (local import)
+        # Weather records in range — a single ranged query (no N+1, and no
+        # fragile LIKE against a typed DateTime column which breaks on
+        # PostgreSQL). The range mirrors the photo/drone window so the
+        # sealed bundle is internally consistent.
+        from sqlalchemy import select  # noqa: PLC0415 (local import)
 
-            from app.modules.daily_diary.models import (  # noqa: PLC0415
-                WeatherRecord as _WR,
-            )
-
-            stmt = select(_WR).where(
-                _WR.project_id == project_id,
-                _WR.captured_at.like(f"{d.diary_date}%"),
-            )
-            rs = (await self.session.execute(stmt)).scalars().all()
-            weathers.extend(rs)
+        weather_stmt = select(WeatherRecord).where(
+            WeatherRecord.project_id == project_id
+        )
+        if df is not None:
+            weather_stmt = weather_stmt.where(WeatherRecord.captured_at >= df)
+        if dt is not None:
+            weather_stmt = weather_stmt.where(WeatherRecord.captured_at <= dt)
+        weathers = list(
+            (await self.session.execute(weather_stmt)).scalars().all()
+        )
 
         # Build deterministic manifest contents
         contents: list[dict[str, Any]] = []
@@ -1315,8 +1375,12 @@ class DailyDiaryService:
             "date_to": date_to,
             "diary_count": len(diaries),
             "weather_record_count": len(weathers),
-            "photo_count": photo_total,
-            "drone_survey_count": drone_total,
+            # Counts MUST match what is actually sealed into ``contents``
+            # (and therefore the hash). ``photo_total`` is the repository's
+            # pre-truncation total and can exceed the number of rows
+            # actually folded into the bundle.
+            "photo_count": len(photos),
+            "drone_survey_count": len(drones),
             "bundle_sha256": bundle_hash,
             "contents": contents,
         }

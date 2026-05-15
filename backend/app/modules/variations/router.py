@@ -122,11 +122,13 @@ async def create_notice(
 @router.get("/notices/{notice_id}", response_model=NoticeResponse)
 async def get_notice(
     notice_id: uuid.UUID,
+    session: SessionDep,
     user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.read")),
     service: VariationsService = Depends(_get_service),
 ) -> NoticeResponse:
     notice = await service.get_notice(notice_id)
+    await verify_project_access(notice.project_id, str(user_id), session)
     return NoticeResponse.model_validate(notice)
 
 
@@ -134,9 +136,13 @@ async def get_notice(
 async def update_notice(
     notice_id: uuid.UUID,
     data: NoticeUpdate,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.update")),
     service: VariationsService = Depends(_get_service),
 ) -> NoticeResponse:
+    existing = await service.get_notice(notice_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     notice = await service.update_notice(notice_id, data)
     return NoticeResponse.model_validate(notice)
 
@@ -144,19 +150,26 @@ async def update_notice(
 @router.delete("/notices/{notice_id}", status_code=204)
 async def delete_notice(
     notice_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.delete")),
     service: VariationsService = Depends(_get_service),
 ) -> None:
+    existing = await service.get_notice(notice_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     await service.notice_repo.delete(notice_id)
 
 
 @router.post("/notices/{notice_id}/acknowledge", response_model=NoticeResponse)
 async def acknowledge_notice(
     notice_id: uuid.UUID,
+    session: SessionDep,
     user_id: CurrentUserId,
     _perm: None = Depends(RequirePermission("variations.update")),
     service: VariationsService = Depends(_get_service),
 ) -> NoticeResponse:
+    existing = await service.get_notice(notice_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     notice = await service.transition_notice(notice_id, "acknowledged", user_id=user_id)
     return NoticeResponse.model_validate(notice)
 
@@ -164,11 +177,14 @@ async def acknowledge_notice(
 @router.post("/notices/{notice_id}/respond", response_model=NoticeResponse)
 async def respond_notice(
     notice_id: uuid.UUID,
+    session: SessionDep,
     user_id: CurrentUserId,
     body: _ResponseBody = Body(default=_ResponseBody()),
     _perm: None = Depends(RequirePermission("variations.update")),
     service: VariationsService = Depends(_get_service),
 ) -> NoticeResponse:
+    existing = await service.get_notice(notice_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     notice = await service.transition_notice(
         notice_id, "responded", user_id=user_id, response_summary=body.response_summary,
     )
@@ -178,10 +194,13 @@ async def respond_notice(
 @router.post("/notices/{notice_id}/close", response_model=NoticeResponse)
 async def close_notice(
     notice_id: uuid.UUID,
+    session: SessionDep,
     user_id: CurrentUserId,
     _perm: None = Depends(RequirePermission("variations.update")),
     service: VariationsService = Depends(_get_service),
 ) -> NoticeResponse:
+    existing = await service.get_notice(notice_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     notice = await service.transition_notice(notice_id, "closed", user_id=user_id)
     return NoticeResponse.model_validate(notice)
 
@@ -223,10 +242,13 @@ async def create_variation_request(
 @router.get("/variation-requests/{vr_id}", response_model=VariationRequestResponse)
 async def get_variation_request(
     vr_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.read")),
     service: VariationsService = Depends(_get_service),
 ) -> VariationRequestResponse:
     vr = await service.get_request(vr_id)
+    await verify_project_access(vr.project_id, str(user_id), session)
     return VariationRequestResponse.model_validate(vr)
 
 
@@ -234,9 +256,13 @@ async def get_variation_request(
 async def update_variation_request(
     vr_id: uuid.UUID,
     data: VariationRequestUpdate,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.update")),
     service: VariationsService = Depends(_get_service),
 ) -> VariationRequestResponse:
+    existing = await service.get_request(vr_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     vr = await service.update_request(vr_id, data)
     return VariationRequestResponse.model_validate(vr)
 
@@ -244,19 +270,26 @@ async def update_variation_request(
 @router.delete("/variation-requests/{vr_id}", status_code=204)
 async def delete_variation_request(
     vr_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.delete")),
     service: VariationsService = Depends(_get_service),
 ) -> None:
+    existing = await service.get_request(vr_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     await service.delete_request(vr_id)
 
 
 @router.post("/variation-requests/{vr_id}/submit", response_model=VariationRequestResponse)
 async def submit_variation_request(
     vr_id: uuid.UUID,
+    session: SessionDep,
     user_id: CurrentUserId,
     _perm: None = Depends(RequirePermission("variations.submit_request")),
     service: VariationsService = Depends(_get_service),
 ) -> VariationRequestResponse:
+    existing = await service.get_request(vr_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     vr = await service.transition_variation_request(vr_id, "submitted", user_id=user_id)
     return VariationRequestResponse.model_validate(vr)
 
@@ -264,11 +297,14 @@ async def submit_variation_request(
 @router.post("/variation-requests/{vr_id}/approve", response_model=VariationRequestResponse)
 async def approve_variation_request(
     vr_id: uuid.UUID,
+    session: SessionDep,
     user_id: CurrentUserId,
     body: _DecisionBody = Body(default=_DecisionBody()),
     _perm: None = Depends(RequirePermission("variations.approve_request")),
     service: VariationsService = Depends(_get_service),
 ) -> VariationRequestResponse:
+    existing = await service.get_request(vr_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     vr = await service.transition_variation_request(
         vr_id, "approved", user_id=user_id, decision_notes=body.decision_notes,
     )
@@ -278,11 +314,14 @@ async def approve_variation_request(
 @router.post("/variation-requests/{vr_id}/reject", response_model=VariationRequestResponse)
 async def reject_variation_request(
     vr_id: uuid.UUID,
+    session: SessionDep,
     user_id: CurrentUserId,
     body: _DecisionBody = Body(default=_DecisionBody()),
     _perm: None = Depends(RequirePermission("variations.approve_request")),
     service: VariationsService = Depends(_get_service),
 ) -> VariationRequestResponse:
+    existing = await service.get_request(vr_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     vr = await service.transition_variation_request(
         vr_id, "rejected", user_id=user_id, decision_notes=body.decision_notes,
     )
@@ -292,12 +331,14 @@ async def reject_variation_request(
 @router.post("/variation-requests/{vr_id}/convert-to-vo", response_model=VariationOrderResponse)
 async def convert_vr_to_vo(
     vr_id: uuid.UUID,
+    session: SessionDep,
     user_id: CurrentUserId,
     body: _ConvertVOBody = Body(default=_ConvertVOBody()),
     _perm: None = Depends(RequirePermission("variations.convert_to_vo")),
     service: VariationsService = Depends(_get_service),
 ) -> VariationOrderResponse:
     vr = await service.get_request(vr_id)
+    await verify_project_access(vr.project_id, str(user_id), session)
     payload = VariationOrderCreate(
         project_id=vr.project_id,
         variation_request_id=vr_id,
@@ -349,10 +390,13 @@ async def create_variation_order(
 @router.get("/variation-orders/{vo_id}", response_model=VariationOrderResponse)
 async def get_variation_order(
     vo_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.read")),
     service: VariationsService = Depends(_get_service),
 ) -> VariationOrderResponse:
     vo = await service.get_order(vo_id)
+    await verify_project_access(vo.project_id, str(user_id), session)
     return VariationOrderResponse.model_validate(vo)
 
 
@@ -360,9 +404,13 @@ async def get_variation_order(
 async def update_variation_order(
     vo_id: uuid.UUID,
     data: VariationOrderUpdate,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.update")),
     service: VariationsService = Depends(_get_service),
 ) -> VariationOrderResponse:
+    existing = await service.get_order(vo_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     vo = await service.update_order(vo_id, data)
     return VariationOrderResponse.model_validate(vo)
 
@@ -370,19 +418,26 @@ async def update_variation_order(
 @router.delete("/variation-orders/{vo_id}", status_code=204)
 async def delete_variation_order(
     vo_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.delete")),
     service: VariationsService = Depends(_get_service),
 ) -> None:
+    existing = await service.get_order(vo_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     await service.delete_order(vo_id)
 
 
 @router.post("/variation-orders/{vo_id}/start", response_model=VariationOrderResponse)
 async def start_variation_order(
     vo_id: uuid.UUID,
+    session: SessionDep,
     user_id: CurrentUserId,
     _perm: None = Depends(RequirePermission("variations.update")),
     service: VariationsService = Depends(_get_service),
 ) -> VariationOrderResponse:
+    existing = await service.get_order(vo_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     vo = await service.transition_variation_order(vo_id, "in_progress", user_id=user_id)
     return VariationOrderResponse.model_validate(vo)
 
@@ -390,10 +445,13 @@ async def start_variation_order(
 @router.post("/variation-orders/{vo_id}/complete", response_model=VariationOrderResponse)
 async def complete_variation_order(
     vo_id: uuid.UUID,
+    session: SessionDep,
     user_id: CurrentUserId,
     _perm: None = Depends(RequirePermission("variations.complete_vo")),
     service: VariationsService = Depends(_get_service),
 ) -> VariationOrderResponse:
+    existing = await service.get_order(vo_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     vo = await service.transition_variation_order(vo_id, "completed", user_id=user_id)
     return VariationOrderResponse.model_validate(vo)
 
@@ -401,10 +459,13 @@ async def complete_variation_order(
 @router.post("/variation-orders/{vo_id}/void", response_model=VariationOrderResponse)
 async def void_variation_order(
     vo_id: uuid.UUID,
+    session: SessionDep,
     user_id: CurrentUserId,
     _perm: None = Depends(RequirePermission("variations.delete")),
     service: VariationsService = Depends(_get_service),
 ) -> VariationOrderResponse:
+    existing = await service.get_order(vo_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     vo = await service.transition_variation_order(vo_id, "voided", user_id=user_id)
     return VariationOrderResponse.model_validate(vo)
 
@@ -419,9 +480,13 @@ async def void_variation_order(
 )
 async def create_cost_impact(
     data: VariationCostImpactCreate,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.update")),
     service: VariationsService = Depends(_get_service),
 ) -> VariationCostImpactResponse:
+    vo = await service.get_order(data.variation_order_id)
+    await verify_project_access(vo.project_id, str(user_id), session)
     row = await service.add_cost_impact(data)
     return VariationCostImpactResponse.model_validate(row)
 
@@ -433,9 +498,13 @@ async def create_cost_impact(
 async def update_cost_impact(
     line_id: uuid.UUID,
     data: VariationCostImpactUpdate,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.update")),
     service: VariationsService = Depends(_get_service),
 ) -> VariationCostImpactResponse:
+    project_id = await service.cost_impact_project_id(line_id)
+    await verify_project_access(project_id, str(user_id), session)
     row = await service.update_cost_impact(line_id, data)
     return VariationCostImpactResponse.model_validate(row)
 
@@ -443,9 +512,13 @@ async def update_cost_impact(
 @router.delete("/variation-cost-impacts/{line_id}", status_code=204)
 async def delete_cost_impact(
     line_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.update")),
     service: VariationsService = Depends(_get_service),
 ) -> None:
+    project_id = await service.cost_impact_project_id(line_id)
+    await verify_project_access(project_id, str(user_id), session)
     await service.delete_cost_impact(line_id)
 
 
@@ -457,9 +530,13 @@ async def delete_cost_impact(
 async def bulk_cost_impacts(
     vo_id: uuid.UUID,
     lines: list[VariationCostImpactCreate],
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.update")),
     service: VariationsService = Depends(_get_service),
 ) -> list[VariationCostImpactResponse]:
+    vo = await service.get_order(vo_id)
+    await verify_project_access(vo.project_id, str(user_id), session)
     rows = await service.bulk_cost_impacts(vo_id, lines)
     return [VariationCostImpactResponse.model_validate(r) for r in rows]
 
@@ -474,9 +551,13 @@ async def bulk_cost_impacts(
 )
 async def create_schedule_impact(
     data: VariationScheduleImpactCreate,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.update")),
     service: VariationsService = Depends(_get_service),
 ) -> VariationScheduleImpactResponse:
+    vo = await service.get_order(data.variation_order_id)
+    await verify_project_access(vo.project_id, str(user_id), session)
     row = await service.add_schedule_impact(data)
     return VariationScheduleImpactResponse.model_validate(row)
 
@@ -488,9 +569,13 @@ async def create_schedule_impact(
 async def update_schedule_impact(
     line_id: uuid.UUID,
     data: VariationScheduleImpactUpdate,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.update")),
     service: VariationsService = Depends(_get_service),
 ) -> VariationScheduleImpactResponse:
+    project_id = await service.schedule_impact_project_id(line_id)
+    await verify_project_access(project_id, str(user_id), session)
     row = await service.update_schedule_impact(line_id, data)
     return VariationScheduleImpactResponse.model_validate(row)
 
@@ -498,9 +583,13 @@ async def update_schedule_impact(
 @router.delete("/variation-schedule-impacts/{line_id}", status_code=204)
 async def delete_schedule_impact(
     line_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.update")),
     service: VariationsService = Depends(_get_service),
 ) -> None:
+    project_id = await service.schedule_impact_project_id(line_id)
+    await verify_project_access(project_id, str(user_id), session)
     await service.delete_schedule_impact(line_id)
 
 
@@ -545,9 +634,13 @@ async def create_site_measurement(
 async def update_site_measurement(
     sm_id: uuid.UUID,
     data: SiteMeasurementUpdate,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.update")),
     service: VariationsService = Depends(_get_service),
 ) -> SiteMeasurementResponse:
+    existing = await service.get_site_measurement(sm_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     sm = await service.update_site_measurement(sm_id, data)
     return SiteMeasurementResponse.model_validate(sm)
 
@@ -555,9 +648,13 @@ async def update_site_measurement(
 @router.delete("/site-measurements/{sm_id}", status_code=204)
 async def delete_site_measurement(
     sm_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.delete")),
     service: VariationsService = Depends(_get_service),
 ) -> None:
+    existing = await service.get_site_measurement(sm_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     await service.delete_site_measurement(sm_id)
 
 
@@ -566,9 +663,13 @@ async def delete_site_measurement(
 )
 async def agree_site_measurement(
     sm_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.update")),
     service: VariationsService = Depends(_get_service),
 ) -> SiteMeasurementResponse:
+    existing = await service.get_site_measurement(sm_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     sm = await service.agree_site_measurement(sm_id)
     return SiteMeasurementResponse.model_validate(sm)
 
@@ -611,9 +712,13 @@ async def create_daywork_sheet(
 async def update_daywork_sheet(
     sheet_id: uuid.UUID,
     data: DayworkSheetUpdate,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.update")),
     service: VariationsService = Depends(_get_service),
 ) -> DayworkSheetResponse:
+    existing = await service.get_daywork_sheet(sheet_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     ds = await service.update_daywork_sheet(sheet_id, data)
     return DayworkSheetResponse.model_validate(ds)
 
@@ -621,19 +726,26 @@ async def update_daywork_sheet(
 @router.delete("/daywork-sheets/{sheet_id}", status_code=204)
 async def delete_daywork_sheet(
     sheet_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.delete")),
     service: VariationsService = Depends(_get_service),
 ) -> None:
+    existing = await service.get_daywork_sheet(sheet_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     await service.delete_daywork_sheet(sheet_id)
 
 
 @router.post("/daywork-sheets/{sheet_id}/sign", response_model=DayworkSheetResponse)
 async def sign_daywork_sheet(
     sheet_id: uuid.UUID,
+    session: SessionDep,
     user_id: CurrentUserId,
     _perm: None = Depends(RequirePermission("variations.sign_daywork")),
     service: VariationsService = Depends(_get_service),
 ) -> DayworkSheetResponse:
+    existing = await service.get_daywork_sheet(sheet_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     ds = await service.sign_daywork_sheet(sheet_id, signer_id=user_id)
     return DayworkSheetResponse.model_validate(ds)
 
@@ -641,9 +753,13 @@ async def sign_daywork_sheet(
 @router.post("/daywork-sheets/{sheet_id}/dispute", response_model=DayworkSheetResponse)
 async def dispute_daywork_sheet(
     sheet_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.update")),
     service: VariationsService = Depends(_get_service),
 ) -> DayworkSheetResponse:
+    existing = await service.get_daywork_sheet(sheet_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     ds = await service.transition_daywork(sheet_id, "disputed")
     return DayworkSheetResponse.model_validate(ds)
 
@@ -651,9 +767,13 @@ async def dispute_daywork_sheet(
 @router.post("/daywork-sheets/{sheet_id}/bill", response_model=DayworkSheetResponse)
 async def bill_daywork_sheet(
     sheet_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.update")),
     service: VariationsService = Depends(_get_service),
 ) -> DayworkSheetResponse:
+    existing = await service.get_daywork_sheet(sheet_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     ds = await service.transition_daywork(sheet_id, "billed")
     return DayworkSheetResponse.model_validate(ds)
 
@@ -665,9 +785,13 @@ async def bill_daywork_sheet(
 )
 async def create_daywork_line(
     data: DayworkSheetLineCreate,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.update")),
     service: VariationsService = Depends(_get_service),
 ) -> DayworkSheetLineResponse:
+    sheet = await service.get_daywork_sheet(data.sheet_id)
+    await verify_project_access(sheet.project_id, str(user_id), session)
     row = await service.add_daywork_line(data)
     return DayworkSheetLineResponse.model_validate(row)
 
@@ -678,9 +802,13 @@ async def create_daywork_line(
 async def update_daywork_line(
     line_id: uuid.UUID,
     data: DayworkSheetLineUpdate,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.update")),
     service: VariationsService = Depends(_get_service),
 ) -> DayworkSheetLineResponse:
+    project_id = await service.daywork_line_project_id(line_id)
+    await verify_project_access(project_id, str(user_id), session)
     row = await service.update_daywork_line(line_id, data)
     return DayworkSheetLineResponse.model_validate(row)
 
@@ -688,9 +816,13 @@ async def update_daywork_line(
 @router.delete("/daywork-sheet-lines/{line_id}", status_code=204)
 async def delete_daywork_line(
     line_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.update")),
     service: VariationsService = Depends(_get_service),
 ) -> None:
+    project_id = await service.daywork_line_project_id(line_id)
+    await verify_project_access(project_id, str(user_id), session)
     await service.delete_daywork_line(line_id)
 
 
@@ -702,9 +834,13 @@ async def delete_daywork_line(
 async def bulk_daywork_lines(
     sheet_id: uuid.UUID,
     lines: list[DayworkSheetLineCreate],
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.update")),
     service: VariationsService = Depends(_get_service),
 ) -> list[DayworkSheetLineResponse]:
+    sheet = await service.get_daywork_sheet(sheet_id)
+    await verify_project_access(sheet.project_id, str(user_id), session)
     rows = await service.bulk_daywork_lines(sheet_id, lines)
     return [DayworkSheetLineResponse.model_validate(r) for r in rows]
 
@@ -751,9 +887,13 @@ async def create_disruption_claim(
 async def update_disruption_claim(
     claim_id: uuid.UUID,
     data: DisruptionClaimUpdate,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.update")),
     service: VariationsService = Depends(_get_service),
 ) -> DisruptionClaimResponse:
+    existing = await service.get_disruption_claim(claim_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     claim = await service.update_disruption_claim(claim_id, data)
     return DisruptionClaimResponse.model_validate(claim)
 
@@ -761,9 +901,13 @@ async def update_disruption_claim(
 @router.delete("/disruption-claims/{claim_id}", status_code=204)
 async def delete_disruption_claim(
     claim_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.delete")),
     service: VariationsService = Depends(_get_service),
 ) -> None:
+    existing = await service.get_disruption_claim(claim_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     await service.delete_disruption_claim(claim_id)
 
 
@@ -772,9 +916,13 @@ async def delete_disruption_claim(
 )
 async def submit_disruption_claim(
     claim_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.submit_request")),
     service: VariationsService = Depends(_get_service),
 ) -> DisruptionClaimResponse:
+    existing = await service.get_disruption_claim(claim_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     claim = await service.transition_disruption(claim_id, "submitted")
     return DisruptionClaimResponse.model_validate(claim)
 
@@ -784,9 +932,13 @@ async def submit_disruption_claim(
 )
 async def review_disruption_claim(
     claim_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.decide_claim")),
     service: VariationsService = Depends(_get_service),
 ) -> DisruptionClaimResponse:
+    existing = await service.get_disruption_claim(claim_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     claim = await service.transition_disruption(claim_id, "under_review")
     return DisruptionClaimResponse.model_validate(claim)
 
@@ -796,11 +948,15 @@ async def review_disruption_claim(
 )
 async def decide_disruption_claim(
     claim_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     body: _DecisionBody = Body(default=_DecisionBody()),
     decision: str = Query(default="agreed", pattern=r"^(agreed|rejected)$"),
     _perm: None = Depends(RequirePermission("variations.decide_claim")),
     service: VariationsService = Depends(_get_service),
 ) -> DisruptionClaimResponse:
+    existing = await service.get_disruption_claim(claim_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     claim = await service.transition_disruption(
         claim_id, decision, decided_amount=body.decided_amount,
     )
@@ -849,9 +1005,13 @@ async def create_eot_claim(
 async def update_eot_claim(
     claim_id: uuid.UUID,
     data: ExtensionOfTimeClaimUpdate,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.update")),
     service: VariationsService = Depends(_get_service),
 ) -> ExtensionOfTimeClaimResponse:
+    existing = await service.get_eot_claim(claim_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     claim = await service.update_eot_claim(claim_id, data)
     return ExtensionOfTimeClaimResponse.model_validate(claim)
 
@@ -859,9 +1019,13 @@ async def update_eot_claim(
 @router.delete("/eot-claims/{claim_id}", status_code=204)
 async def delete_eot_claim(
     claim_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.delete")),
     service: VariationsService = Depends(_get_service),
 ) -> None:
+    existing = await service.get_eot_claim(claim_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     await service.delete_eot_claim(claim_id)
 
 
@@ -870,9 +1034,13 @@ async def delete_eot_claim(
 )
 async def submit_eot_claim(
     claim_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.submit_request")),
     service: VariationsService = Depends(_get_service),
 ) -> ExtensionOfTimeClaimResponse:
+    existing = await service.get_eot_claim(claim_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     claim = await service.transition_eot(claim_id, "submitted")
     return ExtensionOfTimeClaimResponse.model_validate(claim)
 
@@ -882,9 +1050,13 @@ async def submit_eot_claim(
 )
 async def review_eot_claim(
     claim_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.decide_claim")),
     service: VariationsService = Depends(_get_service),
 ) -> ExtensionOfTimeClaimResponse:
+    existing = await service.get_eot_claim(claim_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     claim = await service.transition_eot(claim_id, "under_review")
     return ExtensionOfTimeClaimResponse.model_validate(claim)
 
@@ -894,10 +1066,14 @@ async def review_eot_claim(
 )
 async def grant_eot_claim(
     claim_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     body: _DecisionBody = Body(default=_DecisionBody()),
     _perm: None = Depends(RequirePermission("variations.decide_claim")),
     service: VariationsService = Depends(_get_service),
 ) -> ExtensionOfTimeClaimResponse:
+    existing = await service.get_eot_claim(claim_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     claim = await service.transition_eot(
         claim_id,
         "granted",
@@ -912,10 +1088,14 @@ async def grant_eot_claim(
 )
 async def reject_eot_claim(
     claim_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     body: _DecisionBody = Body(default=_DecisionBody()),
     _perm: None = Depends(RequirePermission("variations.decide_claim")),
     service: VariationsService = Depends(_get_service),
 ) -> ExtensionOfTimeClaimResponse:
+    existing = await service.get_eot_claim(claim_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     claim = await service.transition_eot(
         claim_id, "rejected", decision_notes=body.decision_notes,
     )
@@ -956,10 +1136,13 @@ async def create_final_account(
 @router.get("/final-accounts/{fa_id}", response_model=FinalAccountResponse)
 async def get_final_account(
     fa_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.read")),
     service: VariationsService = Depends(_get_service),
 ) -> FinalAccountResponse:
     fa = await service.get_final_account(fa_id)
+    await verify_project_access(fa.project_id, str(user_id), session)
     return FinalAccountResponse.model_validate(fa)
 
 
@@ -967,9 +1150,13 @@ async def get_final_account(
 async def update_final_account(
     fa_id: uuid.UUID,
     data: FinalAccountUpdate,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.update")),
     service: VariationsService = Depends(_get_service),
 ) -> FinalAccountResponse:
+    existing = await service.get_final_account(fa_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     fa = await service.update_final_account(fa_id, data)
     return FinalAccountResponse.model_validate(fa)
 
@@ -977,10 +1164,13 @@ async def update_final_account(
 @router.delete("/final-accounts/{fa_id}", status_code=204)
 async def delete_final_account(
     fa_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("variations.delete")),
     service: VariationsService = Depends(_get_service),
 ) -> None:
     fa = await service.get_final_account(fa_id)
+    await verify_project_access(fa.project_id, str(user_id), session)
     await service.final_account_repo.delete(fa.id)
 
 
@@ -989,10 +1179,13 @@ async def delete_final_account(
 )
 async def close_final_account(
     fa_id: uuid.UUID,
+    session: SessionDep,
     user_id: CurrentUserId,
     _perm: None = Depends(RequirePermission("variations.close_final_account")),
     service: VariationsService = Depends(_get_service),
 ) -> FinalAccountResponse:
+    existing = await service.get_final_account(fa_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     fa = await service.close_final_account(fa_id, signer_id=user_id)
     return FinalAccountResponse.model_validate(fa)
 

@@ -46,6 +46,7 @@ from app.modules.equipment.repository import (
     RentalRepository,
     TelemetryRepository,
     WorkOrderRepository,
+    fleet_utilization_avg,
     utilization_for_equipment,
 )
 from app.modules.equipment.schemas import (
@@ -545,6 +546,21 @@ class EquipmentService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Work order not found",
             )
+        # Guard the state transition. Re-completing an already-completed WO
+        # would roll the parent schedule forward a second time (corrupting
+        # last_completed_meter / next_due_meter), and "completing" a
+        # cancelled WO would silently resurrect it. Only scheduled /
+        # in_progress orders may transition to completed.
+        if wo.status == "completed":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Work order is already completed",
+            )
+        if wo.status not in ("scheduled", "in_progress"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Cannot complete a work order in '{wo.status}' state",
+            )
         completed_iso = completed_at or date.today().isoformat()
         await self.workorder_repo.update_fields(
             work_order_id,
@@ -660,6 +676,15 @@ class EquipmentService:
                 "(status != active or inspection expired)"
             )
 
+        # A rental whose end precedes its start has a negative billing
+        # window: compute_rental_billing silently returns 0 and the unit
+        # never registers as utilized. Reject it at the boundary instead
+        # of persisting a corrupt record.
+        if end_date is not None and end_date < start_date:
+            raise ValueError(
+                f"Rental end_date {end_date} is before start_date {start_date}"
+            )
+
         rental = EquipmentRental(
             equipment_id=equipment_id,
             project_id=project_id,
@@ -708,7 +733,25 @@ class EquipmentService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Rental not found",
             )
+        # Returning an already-returned rental would overwrite its real
+        # end_date (and therefore its billing window) with today's date.
+        if rental.status == "returned":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Rental has already been returned",
+            )
         end_iso = end_date or date.today().isoformat()
+        # The rental cannot end before it started — guard against a caller
+        # passing an end_date earlier than start_date, which would make
+        # compute_rental_billing silently return 0 for the whole period.
+        if rental.start_date and end_iso < rental.start_date:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Return date {end_iso} is before the rental start "
+                    f"date {rental.start_date}"
+                ),
+            )
         await self.rental_repo.update_fields(
             rental_id,
             status="returned",
@@ -908,22 +951,23 @@ class EquipmentService:
 
         fuel_cost_mtd = await self.fuel_repo.cost_in_range(month_start, today_iso)
 
-        # Sum open WOs across fleet
-        open_wo_total = 0
-        for e in rows:
-            open_wo_total += await self.workorder_repo.count_open_for_equipment(e.id)
+        # Single aggregate query instead of one per equipment unit.
+        open_wo_total = await self.workorder_repo.count_open_fleet()
 
         expiring = await self.inspection_repo.expiring_within(today_iso, 30)
         blocked_units = len(await self.equipment_repo.list_blocked(today_iso))
         active_rentals = await self.rental_repo.count_active()
 
-        # Naive fleet utilization: mean across the units this month.
-        util_total = 0.0
-        for e in rows:
-            util_total += await utilization_for_equipment(
-                self.session, e.id, month_start, today_iso
-            )
-        util_avg = round(util_total / total, 2) if total else 0.0
+        # Fleet utilization: mean across the units this month. Computed with
+        # a single rentals query and averaged over the units actually
+        # loaded (not the unbounded total count, which would understate
+        # utilization when the unit list is paginated).
+        util_avg = await fleet_utilization_avg(
+            self.session,
+            [e.id for e in rows],
+            month_start,
+            today_iso,
+        )
 
         return FleetDashboardResponse(
             total_units=total,

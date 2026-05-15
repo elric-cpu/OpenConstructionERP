@@ -137,8 +137,11 @@ function pctNumber(value: string | number | null | undefined): number {
   if (value == null) return 0;
   const n = typeof value === 'string' ? Number(value) : value;
   if (Number.isNaN(n)) return 0;
-  // Backend returns 0-1 or 0-100 depending on impl — normalize to 0-100
-  return n > 1 ? n : n * 100;
+  // Backend ppc_percent is always a 0-100 percentage (Numeric(5,2) from
+  // compute_ppc, which already multiplies by 100). The old `n > 1 ? n
+  // : n * 100` heuristic corrupted legitimate sub-1% values (a true
+  // 1.00% PPC rendered as 100%). Just clamp into range.
+  return Math.min(100, Math.max(0, n));
 }
 
 /* ── Page ────────────────────────────────────────────────────────────── */
@@ -336,6 +339,18 @@ export function ScheduleAdvancedPage() {
         <Card>
           {projectsQ.isLoading ? (
             <SkeletonTable rows={6} columns={3} />
+          ) : projectsQ.isError ? (
+            <EmptyState
+              icon={<AlertCircle size={22} strokeWidth={1.5} />}
+              title={t('common.error', { defaultValue: 'Error' })}
+              description={t('schedule_advanced.projects_load_error', {
+                defaultValue: 'Failed to load projects. Please try again.',
+              })}
+              action={{
+                label: t('common.retry', { defaultValue: 'Retry' }),
+                onClick: () => projectsQ.refetch(),
+              }}
+            />
           ) : (
             <EmptyState
               icon={<Calendar size={22} />}
@@ -350,6 +365,8 @@ export function ScheduleAdvancedPage() {
         <MasterTab
           masters={masterQ.data ?? []}
           loading={masterQ.isLoading}
+          isError={masterQ.isError}
+          onRetry={() => masterQ.refetch()}
           masterId={masterId}
           onSelect={setMasterId}
           onCreate={() => setCreateMaster(true)}
@@ -376,12 +393,16 @@ export function ScheduleAdvancedPage() {
         <PhasesTab
           phases={phasesQ.data ?? []}
           loading={phasesQ.isLoading}
+          isError={phasesQ.isError}
+          onRetry={() => phasesQ.refetch()}
           masterId={masterId}
         />
       ) : tab === 'look_ahead' ? (
         <LookAheadTab
           lookAheads={lookAheadsQ.data ?? []}
           loading={lookAheadsQ.isLoading}
+          isError={lookAheadsQ.isError}
+          onRetry={() => lookAheadsQ.refetch()}
           lookAheadId={lookAheadId}
           onSelect={setLookAheadId}
           onCreate={() => setCreateLA(true)}
@@ -390,10 +411,14 @@ export function ScheduleAdvancedPage() {
         <WeeklyTab
           plans={weeklyQ.data ?? []}
           loading={weeklyQ.isLoading}
+          isError={weeklyQ.isError}
+          onRetry={() => weeklyQ.refetch()}
           weekPlanId={weekPlanId}
           onSelect={setWeekPlanId}
           commitments={commitmentsQ.data ?? []}
           commitmentsLoading={commitmentsQ.isLoading}
+          commitmentsError={commitmentsQ.isError}
+          onRetryCommitments={() => commitmentsQ.refetch()}
           currentWeek={currentWeek}
           onCreate={() => setCreateWeek(true)}
         />
@@ -404,6 +429,8 @@ export function ScheduleAdvancedPage() {
           onSelectLA={setLookAheadId}
           constraints={filteredConstraints}
           loading={constraintsQ.isLoading}
+          isError={constraintsQ.isError}
+          onRetry={() => constraintsQ.refetch()}
           filter={constraintFilter}
           onFilter={setConstraintFilter}
         />
@@ -411,6 +438,8 @@ export function ScheduleAdvancedPage() {
         <BaselinesTab
           baselines={baselinesQ.data ?? []}
           loading={baselinesQ.isLoading}
+          isError={baselinesQ.isError}
+          onRetry={() => baselinesQ.refetch()}
           onCapture={() => setCreateBaselineOpen(true)}
         />
       )}
@@ -449,6 +478,8 @@ export function ScheduleAdvancedPage() {
 function MasterTab({
   masters,
   loading,
+  isError,
+  onRetry,
   masterId,
   onSelect,
   onCreate,
@@ -456,6 +487,8 @@ function MasterTab({
 }: {
   masters: MasterSchedule[];
   loading: boolean;
+  isError?: boolean;
+  onRetry?: () => void;
   masterId: string;
   onSelect: (id: string) => void;
   onCreate: () => void;
@@ -468,6 +501,9 @@ function MasterTab({
         <SkeletonTable rows={4} columns={3} />
       </Card>
     );
+  }
+  if (isError) {
+    return <ErrorCard onRetry={onRetry} />;
   }
   if (masters.length === 0) {
     return (
@@ -584,6 +620,32 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+/* Shared failed-query surface — a failed fetch must NOT masquerade as an
+ * empty success. Mirrors the isError + retry pattern used across sibling
+ * feature pages (e.g. HSEAdvancedPage). */
+function ErrorCard({ onRetry }: { onRetry?: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <Card className="py-12">
+      <EmptyState
+        icon={<AlertCircle size={28} strokeWidth={1.5} />}
+        title={t('common.error', { defaultValue: 'Error' })}
+        description={t('schedule_advanced.load_error', {
+          defaultValue: 'Failed to load schedule data. Please try again.',
+        })}
+        action={
+          onRetry
+            ? {
+                label: t('common.retry', { defaultValue: 'Retry' }),
+                onClick: onRetry,
+              }
+            : undefined
+        }
+      />
+    </Card>
+  );
+}
+
 /* ── Phase plans tab (fully built out — replaces v3.0.x placeholder) ──── */
 
 type PhasesView = 'cards' | 'table' | 'timeline';
@@ -618,10 +680,14 @@ function isPhaseDelayed(p: PhasePlan): boolean {
 function PhasesTab({
   phases,
   loading,
+  isError,
+  onRetry,
   masterId,
 }: {
   phases: PhasePlan[];
   loading: boolean;
+  isError?: boolean;
+  onRetry?: () => void;
   masterId: string;
 }) {
   const { t } = useTranslation();
@@ -686,6 +752,10 @@ function PhasesTab({
         <SkeletonTable rows={4} columns={5} />
       </Card>
     );
+  }
+
+  if (isError) {
+    return <ErrorCard onRetry={onRetry} />;
   }
 
   if (phases.length === 0) {
@@ -1484,12 +1554,16 @@ function slug(s: string): string {
 function LookAheadTab({
   lookAheads,
   loading,
+  isError,
+  onRetry,
   lookAheadId,
   onSelect,
   onCreate,
 }: {
   lookAheads: LookAheadPlan[];
   loading: boolean;
+  isError?: boolean;
+  onRetry?: () => void;
   lookAheadId: string;
   onSelect: (id: string) => void;
   onCreate: () => void;
@@ -1512,6 +1586,10 @@ function LookAheadTab({
         <SkeletonTable rows={4} columns={5} />
       </Card>
     );
+  }
+
+  if (isError) {
+    return <ErrorCard onRetry={onRetry} />;
   }
 
   if (lookAheads.length === 0) {
@@ -1618,19 +1696,27 @@ function LookAheadTab({
 function WeeklyTab({
   plans,
   loading,
+  isError,
+  onRetry,
   weekPlanId,
   onSelect,
   commitments,
   commitmentsLoading,
+  commitmentsError,
+  onRetryCommitments,
   currentWeek,
   onCreate,
 }: {
   plans: WeeklyWorkPlan[];
   loading: boolean;
+  isError?: boolean;
+  onRetry?: () => void;
   weekPlanId: string;
   onSelect: (id: string) => void;
   commitments: Commitment[];
   commitmentsLoading: boolean;
+  commitmentsError?: boolean;
+  onRetryCommitments?: () => void;
   currentWeek: WeeklyWorkPlan | undefined;
   onCreate: () => void;
 }) {
@@ -1661,6 +1747,10 @@ function WeeklyTab({
         <SkeletonTable rows={4} columns={5} />
       </Card>
     );
+  }
+
+  if (isError) {
+    return <ErrorCard onRetry={onRetry} />;
   }
 
   if (plans.length === 0) {
@@ -1779,6 +1869,22 @@ function WeeklyTab({
               <div className="p-4">
                 <SkeletonTable rows={4} columns={4} />
               </div>
+            ) : commitmentsError ? (
+              <EmptyState
+                icon={<AlertCircle size={20} strokeWidth={1.5} />}
+                title={t('common.error', { defaultValue: 'Error' })}
+                description={t('schedule_advanced.commitments_load_error', {
+                  defaultValue: 'Failed to load commitments. Please try again.',
+                })}
+                action={
+                  onRetryCommitments
+                    ? {
+                        label: t('common.retry', { defaultValue: 'Retry' }),
+                        onClick: onRetryCommitments,
+                      }
+                    : undefined
+                }
+              />
             ) : commitments.length === 0 ? (
               <EmptyState
                 icon={<ClipboardCheck size={20} />}
@@ -1876,6 +1982,8 @@ function ConstraintsTab({
   onSelectLA,
   constraints,
   loading,
+  isError,
+  onRetry,
   filter,
   onFilter,
 }: {
@@ -1884,6 +1992,8 @@ function ConstraintsTab({
   onSelectLA: (id: string) => void;
   constraints: Constraint[];
   loading: boolean;
+  isError?: boolean;
+  onRetry?: () => void;
   filter: string;
   onFilter: (s: string) => void;
 }) {
@@ -1975,6 +2085,22 @@ function ConstraintsTab({
           <div className="p-4">
             <SkeletonTable rows={6} columns={5} />
           </div>
+        ) : isError ? (
+          <EmptyState
+            icon={<AlertCircle size={22} strokeWidth={1.5} />}
+            title={t('common.error', { defaultValue: 'Error' })}
+            description={t('schedule_advanced.load_error', {
+              defaultValue: 'Failed to load schedule data. Please try again.',
+            })}
+            action={
+              onRetry
+                ? {
+                    label: t('common.retry', { defaultValue: 'Retry' }),
+                    onClick: onRetry,
+                  }
+                : undefined
+            }
+          />
         ) : constraints.length === 0 ? (
           <EmptyState
             icon={<AlertCircle size={22} />}
@@ -2059,10 +2185,14 @@ function ConstraintsTab({
 function BaselinesTab({
   baselines,
   loading,
+  isError,
+  onRetry,
   onCapture,
 }: {
   baselines: Baseline[];
   loading: boolean;
+  isError?: boolean;
+  onRetry?: () => void;
   onCapture: () => void;
 }) {
   const { t } = useTranslation();
@@ -2094,6 +2224,10 @@ function BaselinesTab({
         <SkeletonTable rows={4} columns={4} />
       </Card>
     );
+  }
+
+  if (isError) {
+    return <ErrorCard onRetry={onRetry} />;
   }
 
   if (baselines.length === 0) {

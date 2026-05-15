@@ -224,6 +224,20 @@ export function EquipmentPage() {
           <div className="p-4">
             <SkeletonTable rows={8} columns={5} />
           </div>
+        ) : eqQ.isError ? (
+          <EmptyState
+            icon={<AlertTriangle size={22} />}
+            title={t('equipment.load_error', {
+              defaultValue: 'Could not load equipment',
+            })}
+            description={getErrorMessage(eqQ.error)}
+            action={{
+              label: t('common.retry', { defaultValue: 'Retry' }),
+              onClick: () => {
+                void eqQ.refetch();
+              },
+            }}
+          />
         ) : filtered.length === 0 ? (
           <EmptyState
             icon={<Truck size={22} />}
@@ -365,6 +379,27 @@ function DetailDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   });
   const eq = eqQ.data;
 
+  // Close on Escape — symmetric with EquipmentFormModal so keyboard
+  // users get a predictable dismissal. Skipped while a destructive
+  // confirm/delete is in flight so we don't tear the drawer out from
+  // under an in-progress request, and while a child modal is open
+  // (that modal handles its own Escape).
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (
+        e.key === 'Escape' &&
+        !deleting &&
+        !editOpen &&
+        !deleteOpen
+      ) {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [deleting, editOpen, deleteOpen, onClose]);
+
   const handleDelete = async () => {
     if (!eq) return;
     setDeleting(true);
@@ -415,7 +450,13 @@ function DetailDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex justify-end"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="equipment-drawer-title"
+    >
       <div className="absolute inset-0 bg-black/30" />
       <div
         className="relative h-full w-full max-w-2xl overflow-y-auto bg-surface-elevated shadow-xl"
@@ -423,7 +464,10 @@ function DetailDrawer({ id, onClose }: { id: string; onClose: () => void }) {
       >
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border-light bg-surface-elevated px-5 py-3 gap-3">
           <div className="min-w-0 flex-1">
-            <h2 className="text-base font-semibold truncate">
+            <h2
+              id="equipment-drawer-title"
+              className="text-base font-semibold truncate"
+            >
               {eq ? `${eq.code} · ${eq.name}` : t('common.loading', { defaultValue: 'Loading…' })}
             </h2>
             {eq?.serial && (
@@ -472,6 +516,45 @@ function DetailDrawer({ id, onClose }: { id: string; onClose: () => void }) {
             </button>
           </div>
         </div>
+
+        {!eq && eqQ.isLoading && (
+          <div className="p-5">
+            <SkeletonTable rows={6} columns={3} />
+          </div>
+        )}
+
+        {!eq && !eqQ.isLoading && (
+          <div className="p-5">
+            <EmptyState
+              icon={<AlertTriangle size={20} />}
+              title={
+                eqQ.isError
+                  ? t('equipment.detail_error', {
+                      defaultValue: 'Could not load this asset',
+                    })
+                  : t('equipment.detail_not_found', {
+                      defaultValue: 'This asset no longer exists',
+                    })
+              }
+              description={
+                eqQ.isError ? getErrorMessage(eqQ.error) : undefined
+              }
+              action={
+                eqQ.isError
+                  ? {
+                      label: t('common.retry', { defaultValue: 'Retry' }),
+                      onClick: () => {
+                        void eqQ.refetch();
+                      },
+                    }
+                  : {
+                      label: t('common.close', { defaultValue: 'Close' }),
+                      onClick: onClose,
+                    }
+              }
+            />
+          </div>
+        )}
 
         {eq && (
           <>
@@ -786,7 +869,7 @@ function MaintenanceTab({
               <td className="px-3 py-2 text-right">
                 <MoneyDisplay
                   amount={toNum(r.cost)}
-                  currency={r.currency || 'EUR'}
+                  currency={r.currency || undefined}
                 />
               </td>
               <td className="px-3 py-2">
@@ -927,7 +1010,7 @@ function DamageTab({
                 :{' '}
                 <MoneyDisplay
                   amount={toNum(r.repair_cost_estimate)}
-                  currency={r.currency || 'EUR'}
+                  currency={r.currency || undefined}
                 />
               </p>
             )}

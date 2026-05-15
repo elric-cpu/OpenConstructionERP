@@ -1,4 +1,7 @@
-import { useState, useEffect, type ChangeEvent } from 'react';
+import {
+  useState, useEffect, useRef,
+  type ChangeEvent, type KeyboardEvent,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -314,6 +317,19 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
   const addToast = useToastStore((s) => s.addToast);
 
   const [step, setStep] = useState(1);
+  // Furthest step the user has reached — gates which stepper dots are
+  // clickable (you can jump back to a visited step, never skip forward).
+  const [maxStep, setMaxStep] = useState(1);
+  // Inline "discard changes?" confirm shown when closing a dirty wizard.
+  const [confirmingClose, setConfirmingClose] = useState(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Element that had focus before the wizard opened — focus is returned
+  // here on close so keyboard / screen-reader users are not stranded.
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  // The safe default ("Keep editing") in the discard confirm — focused
+  // when the confirm opens so Enter never lands on "Discard".
+  const keepEditingRef = useRef<HTMLButtonElement>(null);
 
   const [form, setForm] = useState<CreateProjectData>({
     name: '',
@@ -327,7 +343,9 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
   const [customRegion, setCustomRegion] = useState('');
   const [customStandard, setCustomStandard] = useState('');
   const [customCurrency, setCustomCurrency] = useState('');
-  const [regionalFactor, setRegionalFactor] = useState<number>(1.0);
+  // String-backed so the user can clear / type freely; parsed + clamped
+  // to [0.5, 2.0] on blur and at submit (0 / empty no longer snap to 1).
+  const [regionalFactorStr, setRegionalFactorStr] = useState('1.00');
   const [duplicateConfirmed, setDuplicateConfirmed] = useState(false);
 
   // Profile (Slice 1) answers
@@ -349,15 +367,33 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
   const toggleMap = useWidgetSettingsStore((s) => s.toggleProjectMap);
   const toggleWeather = useWidgetSettingsStore((s) => s.toggleProjectWeather);
 
+  // Restore focus to the trigger element (the page's "New project"
+  // button) whenever the wizard actually closes — wraps every close
+  // path so success, cancel and discard all return focus correctly.
+  const close = () => {
+    onClose();
+    const el = returnFocusRef.current;
+    if (el && typeof el.focus === 'function') {
+      // Defer so the trigger is back in the DOM/tab order first.
+      requestAnimationFrame(() => el.focus());
+    }
+  };
+
   // Reset everything when the modal opens
   useEffect(() => {
     if (open) {
+      returnFocusRef.current =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
       setStep(1);
+      setMaxStep(1);
+      setConfirmingClose(false);
       setForm({ name: '', description: '', region: '', classification_standard: '', currency: '', locale: 'en' });
       setCustomRegion('');
       setCustomStandard('');
       setCustomCurrency('');
-      setRegionalFactor(1.0);
+      setRegionalFactorStr('1.00');
       setDuplicateConfirmed(false);
       setPreset('full_construction_lifecycle');
       setSize('medium');
@@ -404,6 +440,9 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
   // When the preset changes, re-seed the activity/phase multi-selects with
   // that preset's sensible defaults (the user can still tweak them).
   const choosePreset = (id: string) => {
+    // Re-clicking the already-selected card must not wipe scope edits
+    // the user may have made on the next step.
+    if (id === preset) return;
     setPreset(id);
     const d = PRESET_DEFAULTS[id];
     if (d) {
@@ -413,6 +452,84 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
   };
 
   const selectedPreset = presets.find((p) => p.id === preset);
+
+  // Resolved values (the typed text wins when "Custom…" is picked) —
+  // used for the gate, the submit payload, and the review summary so
+  // none of them ever shows or stores the literal "__custom__".
+  const effectiveRegion =
+    form.region === '__custom__' ? customRegion.trim() : (form.region ?? '');
+  const effectiveStandard =
+    form.classification_standard === '__custom__'
+      ? customStandard.trim()
+      : (form.classification_standard ?? '');
+  const effectiveCurrency =
+    form.currency === '__custom__' ? customCurrency.trim() : (form.currency ?? '');
+
+  // Any meaningful input → closing should confirm before discarding.
+  const dirty =
+    step > 1 ||
+    trimmedName.length > 0 ||
+    !!form.description ||
+    !!form.region ||
+    !!form.currency ||
+    !!form.classification_standard ||
+    addressStreet !== '' || addressCity !== '' ||
+    addressCountry !== '' || addressPostal !== '';
+
+  // Move focus into the step body when the step changes so keyboard /
+  // screen-reader users land on the new content (step 1 keeps the
+  // name field's autoFocus).
+  useEffect(() => {
+    if (step > 1) bodyRef.current?.focus();
+  }, [step]);
+
+  // When the discard confirm opens, move focus onto the safe action so
+  // a reflexive Enter keeps the work instead of destroying it.
+  useEffect(() => {
+    if (confirmingClose) keepEditingRef.current?.focus();
+  }, [confirmingClose]);
+
+  // Focus trap — Tab / Shift+Tab cycle within the dialog so keyboard
+  // and screen-reader users can't fall behind the modal onto the page.
+  useEffect(() => {
+    if (!open) return;
+    const onTab = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      // While the discard confirm is up it is itself a modal layer —
+      // trap inside it so Tab can't reach the step controls behind it.
+      const root =
+        (dialogRef.current?.querySelector<HTMLElement>(
+          '[role="alertdialog"]',
+        ) ?? dialogRef.current) || null;
+      if (!root) return;
+      const focusable = Array.from(
+        root.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+        // The dialog sits inside a position:fixed overlay, so
+        // ``offsetParent`` is null for every node here — use rect
+        // presence (works regardless of positioning) for the
+        // is-visible test.
+      ).filter(
+        (el) => el.getClientRects().length > 0 || el === document.activeElement,
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      const active = document.activeElement as HTMLElement | null;
+      if (e.shiftKey) {
+        if (active === first || !root.contains(active)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else if (active === last || !root.contains(active)) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onTab, true);
+    return () => document.removeEventListener('keydown', onTab, true);
+  }, [open]);
 
   const buildSpec = (): ProfileSpec => ({
     preset,
@@ -446,7 +563,7 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
             ? customStandard
             : form.classification_standard,
         currency: form.currency === '__custom__' ? customCurrency : form.currency,
-        regional_factor: regionalFactor,
+        regional_factor: clampFactor(regionalFactorStr),
         address: hasAnyAddress ? addressParts : null,
       };
 
@@ -468,6 +585,7 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
     onSuccess: (project) => {
       queryClient.invalidateQueries({ queryKey: ['projects'] });
       addToast({ type: 'success', title: t('toasts.project_created', { defaultValue: 'Project created successfully' }) });
+      // Navigate away — no focus return here (we're leaving the page).
       onClose();
       navigate(`/projects/${project.id}`);
     },
@@ -475,6 +593,15 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
       addToast({ type: 'error', title: t('toasts.project_create_failed', { defaultValue: 'Failed to create project' }), message: error.message });
     },
   });
+
+  const requestClose = () => {
+    if (mutation.isPending) return;
+    if (dirty) {
+      setConfirmingClose(true);
+      return;
+    }
+    close();
+  };
 
   const set = (field: keyof CreateProjectData, value: string) =>
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -487,27 +614,100 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
 
   if (!open) return null;
 
-  // Per-step gate for the Next button.
+  // Per-step gate for the Next button. The duplicate-name case is NOT
+  // a gate here — Next stays enabled so the two-click "proceed anyway"
+  // confirm in next() is actually reachable (it wasn't before: a
+  // disabled button can't fire the confirm).
   const canAdvance = (() => {
-    if (step === 1) {
-      if (!trimmedName) return false;
-      if (duplicateExists && !duplicateConfirmed) return false;
+    if (step === 1) return !!trimmedName;
+    if (step === 2) {
+      // Region + currency are fundamental (cost DB, VAT, BOQ pricing).
+      // A "Custom…" pick with an empty text box is an empty value, so
+      // effectiveX being blank already blocks it. Standard stays
+      // optional unless the user explicitly chose "Custom…".
+      if (!effectiveRegion || !effectiveCurrency) return false;
+      if (form.classification_standard === '__custom__' && !effectiveStandard)
+        return false;
       return true;
     }
     if (step === 3) return !!preset;
     return true;
   })();
 
+  // Full-form gate for the final Create button. Step 2's per-step gate
+  // can be bypassed by jumping back via a visited stepper dot and
+  // clearing a required field, so the submit re-checks the same
+  // invariants here and names the first missing one for the user.
+  const submitBlockReason = (() => {
+    if (!trimmedName)
+      return t('project_wizard.need_name', {
+        defaultValue: 'Enter a project name (step 1).',
+      });
+    if (!effectiveRegion)
+      return t('project_wizard.need_region', {
+        defaultValue: 'Pick a region (step 2).',
+      });
+    if (!effectiveCurrency)
+      return t('project_wizard.need_currency', {
+        defaultValue: 'Pick a currency (step 2).',
+      });
+    if (form.classification_standard === '__custom__' && !effectiveStandard)
+      return t('project_wizard.need_standard', {
+        defaultValue: 'Enter the custom classification standard (step 2).',
+      });
+    return null;
+  })();
+  const canSubmit = submitBlockReason === null;
+
   const isLast = step === STEP_COUNT;
 
+  const goTo = (s: number) => {
+    const clamped = Math.min(STEP_COUNT, Math.max(1, s));
+    setStep(clamped);
+    setMaxStep((m) => Math.max(m, clamped));
+  };
+
   const next = () => {
+    // First Next on a duplicate name arms the confirm; the warning
+    // text flips to "Click Next again to proceed anyway".
     if (step === 1 && duplicateExists && !duplicateConfirmed) {
       setDuplicateConfirmed(true);
       return;
     }
-    if (!isLast) setStep((s) => Math.min(STEP_COUNT, s + 1));
+    if (!isLast && canAdvance) goTo(step + 1);
   };
-  const back = () => setStep((s) => Math.max(1, s - 1));
+  const back = () => goTo(step - 1);
+
+  // Enter advances (or creates on the last step); never hijack Enter
+  // inside a textarea (newlines) or when a button/select is focused
+  // (those have their own Enter semantics). Escape requests close.
+  const onKeyDownModal = (e: KeyboardEvent<HTMLDivElement>) => {
+    const tag = (e.target as HTMLElement).tagName;
+    if (e.key === 'Escape') {
+      // A focused native <select> uses Escape to close its own
+      // dropdown — don't also tear down the wizard in that case.
+      if (tag === 'SELECT') return;
+      e.stopPropagation();
+      // When the discard confirm is up, Escape takes the safe,
+      // non-destructive path: dismiss the confirm and keep editing
+      // (it must never silently throw the work away).
+      if (confirmingClose) {
+        setConfirmingClose(false);
+        return;
+      }
+      requestClose();
+      return;
+    }
+    if (e.key !== 'Enter') return;
+    if (tag === 'TEXTAREA' || tag === 'BUTTON' || tag === 'SELECT') return;
+    if (confirmingClose) return;
+    e.preventDefault();
+    if (isLast) {
+      if (canSubmit && !mutation.isPending) mutation.mutate();
+    } else {
+      next();
+    }
+  };
 
   const STEP_TITLES = [
     t('project_wizard.step_basics', { defaultValue: 'Basics' }),
@@ -518,13 +718,23 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      onKeyDown={onKeyDownModal}
+    >
       <div
         className="absolute inset-0 bg-black/70 backdrop-blur-lg animate-fade-in"
-        onClick={onClose}
+        onClick={requestClose}
+        aria-hidden
       />
 
-      <div className="relative w-full max-w-2xl mx-4 max-h-[90vh] rounded-2xl bg-surface-elevated border border-border-light shadow-2xl animate-fade-in flex flex-col">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="cpw-title"
+        className="relative w-full max-w-2xl mx-4 max-h-[90vh] rounded-2xl bg-surface-elevated border border-border-light shadow-2xl animate-fade-in flex flex-col"
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
           <div className="flex items-center gap-3">
@@ -532,7 +742,7 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
               <FolderPlus size={20} className="text-oe-blue" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-content-primary">
+              <h2 id="cpw-title" className="text-lg font-semibold text-content-primary">
                 {t('projects.new_project', { defaultValue: 'New Project' })}
               </h2>
               <p className="text-xs text-content-tertiary">
@@ -544,7 +754,8 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={requestClose}
+            aria-label={t('common.close', { defaultValue: 'Close' })}
             className="flex h-8 w-8 items-center justify-center rounded-lg text-content-tertiary hover:text-content-primary hover:bg-surface-hover transition-colors"
           >
             <X size={18} />
@@ -552,38 +763,68 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
         </div>
 
         {/* Stepper — grid-cols-N guarantees equal, non-collapsing
-            columns (a nested flex-1 circle + flex-1 connector layout
-            shrinks the completed circles to ~0 on a narrow modal). */}
+            columns. Visited dots are buttons (jump back); the current +
+            future dots are not navigable forward (no step skipping). */}
         <div className="px-6 pb-4 shrink-0">
           <div className="relative">
             {/* neutral track behind the dots — the dots themselves carry
                 all progress state, so no same-colour camouflage. */}
-            <div className="absolute left-3 right-3 top-1/2 -translate-y-1/2 h-px bg-border-light" />
+            <div className="absolute left-3 right-3 top-3 h-px bg-border-light" />
             <div
               className="relative grid"
               style={{ gridTemplateColumns: `repeat(${STEP_COUNT}, minmax(0, 1fr))` }}
             >
-              {Array.from({ length: STEP_COUNT }, (_, i) => i + 1).map((s) => (
-                <div key={s} className="flex justify-center">
-                  <div
-                    className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold ring-4 ring-surface-elevated transition-colors ${
-                      s < step
-                        ? 'bg-oe-blue text-white'
-                        : s === step
-                          ? 'bg-oe-blue text-white ring-oe-blue/25'
-                          : 'bg-surface-secondary text-content-tertiary border border-border-light'
-                    }`}
-                  >
-                    {s < step ? <Check size={13} /> : s}
+              {Array.from({ length: STEP_COUNT }, (_, i) => i + 1).map((s) => {
+                const navigable = s <= maxStep && s !== step;
+                const dotCls = `flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold ring-4 ring-surface-elevated transition-colors ${
+                  s < step
+                    ? 'bg-oe-blue text-white'
+                    : s === step
+                      ? 'bg-oe-blue text-white ring-oe-blue/25'
+                      : 'bg-surface-secondary text-content-tertiary border border-border-light'
+                }`;
+                return (
+                  <div key={s} className="flex flex-col items-center gap-1.5 min-w-0">
+                    {navigable ? (
+                      <button
+                        type="button"
+                        onClick={() => setStep(s)}
+                        aria-label={STEP_TITLES[s - 1]}
+                        className={dotCls + ' cursor-pointer hover:opacity-90'}
+                      >
+                        {s < step ? <Check size={13} /> : s}
+                      </button>
+                    ) : (
+                      <div
+                        className={dotCls}
+                        aria-current={s === step ? 'step' : undefined}
+                      >
+                        {s < step ? <Check size={13} /> : s}
+                      </div>
+                    )}
+                    <span
+                      className={`hidden sm:block text-[10px] leading-tight text-center truncate max-w-[88px] ${
+                        s === step
+                          ? 'text-content-secondary font-medium'
+                          : 'text-content-quaternary'
+                      }`}
+                    >
+                      {STEP_TITLES[s - 1]}
+                    </span>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
 
         {/* Body — scrollable */}
-        <div className="overflow-y-auto px-6 pb-6 flex-1">
+        <div
+          ref={bodyRef}
+          tabIndex={-1}
+          aria-label={STEP_TITLES[step - 1]}
+          className="overflow-y-auto px-6 pb-6 flex-1 outline-none"
+        >
           {/* Step 1 — Basics */}
           {step === 1 && (
             <div className="space-y-4">
@@ -640,12 +881,11 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
                     onChange={(v) => set('region', v)}
                   />
                   {form.region === '__custom__' && (
-                    <input
-                      type="text"
+                    <CustomValueInput
                       value={customRegion}
-                      onChange={(e: ChangeEvent<HTMLInputElement>) => setCustomRegion(e.target.value)}
+                      onChange={setCustomRegion}
                       placeholder={t('projects.enter_custom_region', { defaultValue: 'Enter custom region...' })}
-                      className="mt-2 h-10 w-full rounded-lg border border-border bg-surface-primary px-3 text-sm text-content-primary placeholder:text-content-tertiary focus:outline-none focus:ring-2 focus:ring-oe-blue focus:border-transparent"
+                      emptyHint={t('project_wizard.custom_region_required', { defaultValue: 'Type your region to continue.' })}
                     />
                   )}
                 </div>
@@ -658,12 +898,11 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
                     onChange={(v) => set('classification_standard', v)}
                   />
                   {form.classification_standard === '__custom__' && (
-                    <input
-                      type="text"
+                    <CustomValueInput
                       value={customStandard}
-                      onChange={(e: ChangeEvent<HTMLInputElement>) => setCustomStandard(e.target.value)}
+                      onChange={setCustomStandard}
                       placeholder={t('projects.enter_custom_standard', { defaultValue: 'Enter custom standard...' })}
-                      className="mt-2 h-10 w-full rounded-lg border border-border bg-surface-primary px-3 text-sm text-content-primary placeholder:text-content-tertiary focus:outline-none focus:ring-2 focus:ring-oe-blue focus:border-transparent"
+                      emptyHint={t('project_wizard.custom_standard_required', { defaultValue: 'Type the standard name to continue.' })}
                     />
                   )}
                 </div>
@@ -678,13 +917,12 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
                     onChange={(v) => set('currency', v)}
                   />
                   {form.currency === '__custom__' && (
-                    <input
-                      type="text"
+                    <CustomValueInput
                       value={customCurrency}
-                      onChange={(e: ChangeEvent<HTMLInputElement>) => setCustomCurrency(e.target.value)}
+                      onChange={setCustomCurrency}
                       placeholder={t('projects.enter_custom_currency', { defaultValue: 'e.g. XAF' })}
+                      emptyHint={t('project_wizard.custom_currency_required', { defaultValue: 'Type the ISO currency code to continue.' })}
                       maxLength={10}
-                      className="mt-2 h-10 w-full rounded-lg border border-border bg-surface-primary px-3 text-sm text-content-primary placeholder:text-content-tertiary focus:outline-none focus:ring-2 focus:ring-oe-blue focus:border-transparent"
                     />
                   )}
                 </div>
@@ -704,8 +942,12 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
                   min="0.5"
                   max="2.0"
                   step="0.01"
-                  value={regionalFactor}
-                  onChange={(e) => setRegionalFactor(parseFloat(e.target.value) || 1.0)}
+                  inputMode="decimal"
+                  value={regionalFactorStr}
+                  onChange={(e) => setRegionalFactorStr(e.target.value)}
+                  onBlur={() =>
+                    setRegionalFactorStr(clampFactor(regionalFactorStr).toFixed(2))
+                  }
                   placeholder="1.00"
                   className="h-10 w-full max-w-[200px] rounded-lg border border-border bg-surface-primary px-3 text-sm text-content-primary tabular-nums placeholder:text-content-tertiary focus:outline-none focus:ring-2 focus:ring-oe-blue focus:border-transparent"
                 />
@@ -767,7 +1009,9 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
                         {selected && <Check size={15} className="text-oe-blue shrink-0" />}
                       </div>
                       <p className="text-xs text-content-tertiary mt-1 leading-snug">
-                        {p.blurb_en}
+                        {t(`project_wizard.preset_blurb.${p.id}`, {
+                          defaultValue: p.blurb_en,
+                        })}
                       </p>
                       <p className="text-[11px] text-content-quaternary mt-1.5 flex items-center gap-1">
                         <Layers size={11} />
@@ -899,11 +1143,60 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
                 </p>
                 <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
                   <SummaryRow label={t('projects.project_name')} value={trimmedName || '—'} />
-                  <SummaryRow label={t('projects.region', { defaultValue: 'Region' })} value={form.region || '—'} />
-                  <SummaryRow label={t('projects.currency', { defaultValue: 'Currency' })} value={form.currency || '—'} />
+                  <SummaryRow
+                    label={t('projects.region', { defaultValue: 'Region' })}
+                    value={
+                      form.region === '__custom__'
+                        ? (customRegion.trim() || '—')
+                        : (labelFor(REGION_GROUPS, form.region ?? '') || '—')
+                    }
+                  />
+                  <SummaryRow
+                    label={t('projects.currency', { defaultValue: 'Currency' })}
+                    value={
+                      form.currency === '__custom__'
+                        ? (customCurrency.trim() || '—')
+                        : (labelFor(CURRENCY_GROUPS, form.currency ?? '') || '—')
+                    }
+                  />
+                  <SummaryRow
+                    label={t('projects.classification_standard', { defaultValue: 'Classification Standard' })}
+                    value={
+                      form.classification_standard === '__custom__'
+                        ? (customStandard.trim() || '—')
+                        : (labelFor(STANDARD_GROUPS, form.classification_standard ?? '') || '—')
+                    }
+                  />
+                  <SummaryRow
+                    label={t('projects.language', { defaultValue: 'Language' })}
+                    value={
+                      LANGUAGES.find((l) => l.value === form.locale)?.label ??
+                      (form.locale || '—')
+                    }
+                  />
+                  <SummaryRow
+                    label={t('projects.regional_factor', { defaultValue: 'Regional Factor' })}
+                    value={clampFactor(regionalFactorStr).toFixed(2)}
+                  />
                   <SummaryRow
                     label={t('project_wizard.step_type', { defaultValue: 'Project type' })}
-                    value={selectedPreset ? t(selectedPreset.label_key, { defaultValue: selectedPreset.label_en }) : preset}
+                    value={selectedPreset ? t(selectedPreset.label_key, { defaultValue: selectedPreset.label_en }) : humanize(preset)}
+                  />
+                  <SummaryRow
+                    label={t('project_wizard.role', { defaultValue: 'Your role' })}
+                    value={t(`project_wizard.role_opt.${role}`, { defaultValue: humanize(role) })}
+                  />
+                  <SummaryRow
+                    label={t('project_wizard.size', { defaultValue: 'Project size' })}
+                    value={t(`project_wizard.size_opt.${size}`, { defaultValue: cap(size) })}
+                  />
+                  <SummaryRow
+                    label={t('project_wizard.activities', { defaultValue: 'Activities' })}
+                    value={String(activity.length)}
+                  />
+                  <SummaryRow
+                    label={t('project_wizard.phases', { defaultValue: 'Phases' })}
+                    value={String(phases.length)}
                   />
                   <SummaryRow
                     label={t('project_wizard.modules', { defaultValue: 'Modules' })}
@@ -924,7 +1217,7 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
           <Button
             variant="secondary"
             type="button"
-            onClick={step === 1 ? onClose : back}
+            onClick={step === 1 ? requestClose : back}
             disabled={mutation.isPending}
           >
             {step === 1
@@ -932,15 +1225,29 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
               : <span className="flex items-center gap-1"><ChevronLeft size={15} />{t('common.back', { defaultValue: 'Back' })}</span>}
           </Button>
           {isLast ? (
-            <Button
-              variant="primary"
-              type="button"
-              onClick={() => mutation.mutate()}
-              loading={mutation.isPending}
-              disabled={!trimmedName}
-            >
-              {t('common.create')}
-            </Button>
+            <div className="flex items-center gap-3 min-w-0">
+              {!canSubmit && submitBlockReason && (
+                <span className="hidden sm:flex items-center gap-1 text-xs text-amber-700 dark:text-amber-300 min-w-0">
+                  <AlertTriangle size={13} className="shrink-0" />
+                  <span className="truncate">{submitBlockReason}</span>
+                </span>
+              )}
+              <Button
+                variant="primary"
+                type="button"
+                onClick={() => {
+                  // Idempotent: a double-click / Enter-then-click must
+                  // never fire two create requests.
+                  if (!canSubmit || mutation.isPending) return;
+                  mutation.mutate();
+                }}
+                loading={mutation.isPending}
+                disabled={!canSubmit || mutation.isPending}
+                title={!canSubmit ? (submitBlockReason ?? undefined) : undefined}
+              >
+                {t('common.create')}
+              </Button>
+            </div>
           ) : (
             <Button
               variant="primary"
@@ -955,6 +1262,53 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
             </Button>
           )}
         </div>
+
+        {/* Discard-confirmation overlay — a multi-step wizard must not
+            silently throw away everything on a stray backdrop click /
+            Escape. */}
+        {confirmingClose && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-surface-elevated/85 backdrop-blur-sm">
+            <div
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="cpw-discard-title"
+              className="mx-6 max-w-sm rounded-xl border border-border-light bg-surface-elevated p-5 shadow-xl text-center"
+            >
+              <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
+                <AlertTriangle size={18} className="text-amber-600 dark:text-amber-400" />
+              </div>
+              <p
+                id="cpw-discard-title"
+                className="text-sm font-semibold text-content-primary"
+              >
+                {t('project_wizard.discard_title', { defaultValue: 'Discard this project setup?' })}
+              </p>
+              <p className="mt-1 text-xs text-content-tertiary">
+                {t('project_wizard.discard_body', { defaultValue: 'Your answers on every step will be lost. This cannot be undone.' })}
+              </p>
+              <div className="mt-4 flex items-center justify-center gap-2">
+                <Button
+                  ref={keepEditingRef}
+                  variant="secondary"
+                  type="button"
+                  onClick={() => setConfirmingClose(false)}
+                >
+                  {t('project_wizard.keep_editing', { defaultValue: 'Keep editing' })}
+                </Button>
+                <Button
+                  variant="danger"
+                  type="button"
+                  onClick={() => {
+                    setConfirmingClose(false);
+                    close();
+                  }}
+                >
+                  {t('project_wizard.discard', { defaultValue: 'Discard' })}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -978,6 +1332,65 @@ function humanize(s: string): string {
   return s.split('_').map(cap).join(' ');
 }
 
+/** Resolve a select value to its human label by scanning the option
+ *  groups. Falls back to the raw value (custom entries, unknown keys). */
+function labelFor(groups: OptionGroup[], value: string): string {
+  if (!value) return '';
+  for (const g of groups) {
+    const o = g.options.find((x) => x.value === value);
+    if (o) return o.label;
+  }
+  return value;
+}
+
+function clampFactor(raw: string): number {
+  const n = Number.parseFloat(raw);
+  if (!Number.isFinite(n)) return 1.0;
+  return Math.min(2.0, Math.max(0.5, n));
+}
+
+/** Free-text input shown when "Custom…" is picked. When the user has
+ *  chosen Custom but left it blank it is the thing blocking Next, so it
+ *  marks itself aria-invalid and explains why instead of the user
+ *  staring at a silently-disabled button. */
+function CustomValueInput({
+  value,
+  onChange,
+  placeholder,
+  emptyHint,
+  maxLength,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  emptyHint: string;
+  maxLength?: number;
+}) {
+  const invalid = value.trim().length === 0;
+  return (
+    <>
+      <input
+        type="text"
+        value={value}
+        onChange={(e: ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
+        placeholder={placeholder}
+        maxLength={maxLength}
+        aria-invalid={invalid}
+        className={`mt-2 h-10 w-full rounded-lg border bg-surface-primary px-3 text-sm text-content-primary placeholder:text-content-tertiary focus:outline-none focus:ring-2 focus:border-transparent ${
+          invalid
+            ? 'border-amber-400 focus:ring-amber-400'
+            : 'border-border focus:ring-oe-blue'
+        }`}
+      />
+      {invalid && (
+        <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
+          {emptyHint}
+        </p>
+      )}
+    </>
+  );
+}
+
 function Chip({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
   return (
     <button
@@ -998,7 +1411,12 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
     <>
       <dt className="text-content-tertiary">{label}</dt>
-      <dd className="text-content-primary font-medium text-right truncate">{value}</dd>
+      <dd
+        className="text-content-primary font-medium text-right truncate"
+        title={value}
+      >
+        {value}
+      </dd>
     </>
   );
 }

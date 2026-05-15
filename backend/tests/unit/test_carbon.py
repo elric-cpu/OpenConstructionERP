@@ -242,6 +242,31 @@ def test_compute_inventory_totals_a1_to_a5_split() -> None:
     assert totals["embodied_d"] == "-2"
 
 
+def test_compute_inventory_totals_granular_stages_not_dropped() -> None:
+    """Granular EN 15978 codes (a1/b6/c2) must roll into their parent bucket.
+
+    assign_boq_position_carbon validates via validate_en15978_stage which
+    accepts granular codes, and the /assign-boq-position endpoint takes a
+    raw dict (bypassing the a1a3|a4|a5|b|c|d schema pattern). Such entries
+    must NOT silently vanish from the inventory total.
+    """
+    inv_id = uuid.uuid4()
+    embodied = [
+        _ns(stage="a1", carbon_kg=Decimal("40")),
+        _ns(stage="a3", carbon_kg=Decimal("60")),
+        _ns(stage="b6", carbon_kg=Decimal("25")),
+        _ns(stage="c2", carbon_kg=Decimal("15")),
+        _ns(stage="d", carbon_kg=Decimal("-5")),
+    ]
+    totals = compute_inventory_totals(inv_id, embodied)
+    assert totals["embodied_a1a3"] == "100"  # a1 + a3 folded
+    assert totals["embodied_b"] == "25"  # b6 -> b
+    assert totals["embodied_c"] == "15"  # c2 -> c
+    assert totals["embodied_d"] == "-5"
+    # total = a1a5(100) + b(25) + c(15) + operational(0) + s3(0) + d? (d excluded)
+    assert totals["total"] == "140"
+
+
 def test_compute_inventory_totals_scope_split() -> None:
     inv_id = uuid.uuid4()
     s1 = [_ns(total_co2e_kg=Decimal("200")), _ns(total_co2e_kg=Decimal("50"))]
@@ -468,6 +493,56 @@ async def test_target_and_report_repo_crud(in_memory_session: AsyncSession) -> N
     await report_repo.create(report)
     rows = await report_repo.reports_for_project(project.id)
     assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_finalize_archived_inventory_is_rejected(
+    in_memory_session: AsyncSession,
+) -> None:
+    """An archived inventory is terminal — finalize must 409, not resurrect it."""
+    from fastapi import HTTPException
+
+    from app.modules.carbon.schemas import CarbonInventoryCreate
+    from app.modules.projects.models import Project
+
+    owner_id = await _make_owner(in_memory_session)
+    project = Project(id=uuid.uuid4(), name="Test", owner_id=owner_id)
+    in_memory_session.add(project)
+    await in_memory_session.flush()
+
+    service = CarbonService(in_memory_session)
+    inv = await service.create_inventory(
+        CarbonInventoryCreate(
+            project_id=project.id, name="Old", status="archived",
+        ),
+        user_id=None,
+    )
+    with pytest.raises(HTTPException) as exc:
+        await service.finalize_inventory(inv.id, status_value="baseline")
+    assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_finalize_draft_inventory_succeeds(
+    in_memory_session: AsyncSession,
+) -> None:
+    """The legitimate draft -> baseline finalize flow still works."""
+    from app.modules.carbon.schemas import CarbonInventoryCreate
+    from app.modules.projects.models import Project
+
+    owner_id = await _make_owner(in_memory_session)
+    project = Project(id=uuid.uuid4(), name="Test", owner_id=owner_id)
+    in_memory_session.add(project)
+    await in_memory_session.flush()
+
+    service = CarbonService(in_memory_session)
+    inv = await service.create_inventory(
+        CarbonInventoryCreate(project_id=project.id, name="Draft inv"),
+        user_id=None,
+    )
+    with patch("app.modules.carbon.service.event_bus.publish_detached"):
+        finalized = await service.finalize_inventory(inv.id, status_value="baseline")
+    assert finalized.status == "baseline"
 
 
 # ── Tests: service-level orchestration (generate_report) ────────────────

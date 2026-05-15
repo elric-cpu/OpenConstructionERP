@@ -267,6 +267,39 @@ def match_cost_item_to_epd(
     return None
 
 
+def _stage_bucket(stage: str) -> str:
+    """Map a (possibly granular) EN 15978 stage to a rollup bucket.
+
+    The rollup keeps six buckets: ``a1a3 / a4 / a5 / b / c / d``. Granular
+    codes are folded into their parent module so emissions are NEVER
+    silently dropped from the inventory total:
+
+        a1 / a2 / a3 / a1a3  -> a1a3   (product stage)
+        a4                   -> a4     (transport to site)
+        a5                   -> a5     (construction / installation)
+        b, b1..b7            -> b      (use stage)
+        c, c1..c4            -> c      (end of life)
+        d                    -> d      (beyond system boundary)
+
+    Unknown codes return the input unchanged so they fall through the
+    ``if bucket in stage_totals`` guard (no accidental mis-bucketing).
+    """
+    s = (stage or "").strip().lower().replace(" ", "")
+    if s in ("a1", "a2", "a3", "a1a3"):
+        return "a1a3"
+    if s == "a4":
+        return "a4"
+    if s == "a5":
+        return "a5"
+    if s == "b" or (len(s) == 2 and s[0] == "b" and s[1].isdigit()):
+        return "b"
+    if s == "c" or (len(s) == 2 and s[0] == "c" and s[1].isdigit()):
+        return "c"
+    if s == "d":
+        return "d"
+    return s
+
+
 def compute_inventory_totals(
     inventory_id: uuid.UUID,
     embodied_entries: Iterable[Any],
@@ -287,10 +320,11 @@ def compute_inventory_totals(
         "d": Decimal("0"),
     }
     for entry in embodied_entries:
-        stage = (getattr(entry, "stage", None) or "a1a3").lower()
+        raw_stage = (getattr(entry, "stage", None) or "a1a3").strip().lower()
         carbon = Decimal(str(getattr(entry, "carbon_kg", 0) or 0))
-        if stage in stage_totals:
-            stage_totals[stage] += carbon
+        bucket = _stage_bucket(raw_stage)
+        if bucket in stage_totals:
+            stage_totals[bucket] += carbon
 
     a1a5 = stage_totals["a1a3"] + stage_totals["a4"] + stage_totals["a5"]
 
@@ -892,6 +926,19 @@ class CarbonService:
                 detail="status must be 'baseline' or 'current'",
             )
         inv = await self.get_inventory(inventory_id)
+        # 'archived' is a terminal state — refuse to silently resurrect an
+        # archived inventory by re-finalising it. Callers must explicitly
+        # PATCH it back to a non-archived status first.
+        if inv.status == "archived":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot finalize an archived inventory",
+            )
+        # Capture project_id BEFORE update_fields() — that call runs
+        # session.expire_all(), which expires every attribute on ``inv``;
+        # reading inv.project_id afterwards would trigger a lazy DB reload
+        # outside the async context (MissingGreenlet).
+        project_id = inv.project_id
         totals = await self.compute_inventory_totals_fresh(inventory_id)
         await self.inventory_repo.update_fields(
             inventory_id, status=status_value, totals=totals,
@@ -899,7 +946,7 @@ class CarbonService:
         event_bus.publish_detached(
             "carbon.inventory.finalized",
             {
-                "project_id": str(inv.project_id),
+                "project_id": str(project_id),
                 "inventory_id": str(inventory_id),
                 "status": status_value,
                 "totals": totals,

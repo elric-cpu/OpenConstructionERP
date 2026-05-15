@@ -549,6 +549,11 @@ class CrmService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid stage_id for new opportunity",
             )
+        if await self.account_repo.get_by_id(payload.account_id) is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid account_id for new opportunity",
+            )
 
         opp = Opportunity(
             account_id=payload.account_id,
@@ -611,6 +616,11 @@ class CrmService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid stage_id",
             )
+        if await self.account_repo.get_by_id(data.account_id) is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid account_id for new opportunity",
+            )
 
         opp = Opportunity(
             account_id=data.account_id,
@@ -660,12 +670,28 @@ class CrmService:
         fields = data.model_dump(exclude_unset=True)
 
         if "status" in fields and fields["status"] != opp.status:
-            if fields["status"] not in allowed_opportunity_transitions(opp.status):
+            target_status = fields["status"]
+            if target_status not in allowed_opportunity_transitions(opp.status):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=(
                         f"Invalid opportunity status transition: "
-                        f"{opp.status} → {fields['status']}"
+                        f"{opp.status} → {target_status}"
+                    ),
+                )
+            # ``won``/``lost`` carry mandatory side-effects (won_at/lost_at
+            # stamping, probability + weighted recompute, loss-reason
+            # validation, and the crm.opportunity.won/lost events that drive
+            # downstream Project creation and analytics). A generic PATCH
+            # would silently skip all of them, leaving a "won" deal with
+            # won_at=None — which corrupts sales-cycle, win-rate and forecast
+            # math. Force callers through the dedicated endpoints.
+            if target_status in ("won", "lost"):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Cannot set status '{target_status}' via update — "
+                        f"use the dedicated win/lose endpoint instead"
                     ),
                 )
 

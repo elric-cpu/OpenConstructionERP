@@ -842,7 +842,7 @@ async def cert_expiry_scan(
 async def import_timecards(
     payload: dict,
     user_id: CurrentUserId,
-    _perm: None = Depends(RequirePermission("resources.write")),
+    _perm: None = Depends(RequirePermission("resources.assign")),
     service: ResourcesService = Depends(_get_service),
 ) -> dict:
     """Import a batch of time-card rows as completed Assignments.
