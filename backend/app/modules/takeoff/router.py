@@ -34,6 +34,7 @@ Routes:
 
 import logging
 import random as _random
+import threading
 import time as _time
 import uuid as _uuid
 from datetime import UTC, datetime, timedelta
@@ -309,6 +310,34 @@ _CONVERTER_INSTALL_DIR = Path.home() / ".openestimator" / "converters"
 
 _META_BY_ID: dict[str, dict[str, Any]] = {m["id"]: m for m in _CONVERTER_META}
 
+# ── Live install progress (in-memory, per-process) ───────────────────────────
+# The Windows installer downloads ~30-175 files (RVT alone is 598 MB) inside
+# a thread pool. Without a progress feed the UI shows only a spinner for
+# 30-90 s and users think it hung. We publish per-file progress into this
+# dict from the worker thread; the frontend polls /install-progress/ every
+# 500 ms. Lock is required because the ThreadPoolExecutor workers write
+# concurrently while the FastAPI handler may read at any moment.
+_INSTALL_PROGRESS: dict[str, dict[str, Any]] = {}
+_INSTALL_PROGRESS_LOCK = threading.Lock()
+
+
+def _set_install_progress(converter_id: str, **fields: Any) -> None:
+    """Threadsafe merge of progress fields for a converter install."""
+    with _INSTALL_PROGRESS_LOCK:
+        slot = _INSTALL_PROGRESS.setdefault(converter_id, {})
+        slot.update(fields)
+
+
+def _clear_install_progress(converter_id: str) -> None:
+    with _INSTALL_PROGRESS_LOCK:
+        _INSTALL_PROGRESS.pop(converter_id, None)
+
+
+def _get_install_progress(converter_id: str) -> dict[str, Any] | None:
+    with _INSTALL_PROGRESS_LOCK:
+        slot = _INSTALL_PROGRESS.get(converter_id)
+        return dict(slot) if slot else None
+
 # ── Audit A2 / A11: converter download hardening ─────────────────────────────
 
 # Allowed hosts for converter file downloads. We hard-code this against
@@ -501,6 +530,12 @@ def _download_one_file(download_url: str, target: Path) -> int:
     # + the unlink-first pass already covers the common case there
     # (Windows requires elevated rights to create symlinks).
     open_flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    # Windows: the MS C runtime defaults an os.open() fd to *text* mode,
+    # so os.write() would translate every 0x0A into 0x0D 0x0A and shred
+    # the binary (shifted PE header → WinError 216 on launch). O_BINARY
+    # only exists on Windows; this is a no-op on POSIX.
+    if hasattr(os, "O_BINARY"):
+        open_flags |= os.O_BINARY  # type: ignore[attr-defined]
     if hasattr(os, "O_NOFOLLOW"):
         open_flags |= os.O_NOFOLLOW  # type: ignore[attr-defined]
     try:
@@ -569,9 +604,19 @@ def _download_converter_files_windows(converter_id: str) -> Path:
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
+    _set_install_progress(
+        converter_id,
+        stage="listing",
+        current=0,
+        total=0,
+        bytes_done=0,
+        file=None,
+        started_at=_time.time(),
+    )
     src_dir = _WINDOWS_CONVERTER_DIRS[converter_id]
     files = _github_list_directory(src_dir)
     if not files:
+        _clear_install_progress(converter_id)
         raise RuntimeError(
             f"GitHub directory {src_dir!r} contains no files — "
             f"the DDC converter repo layout may have changed."
@@ -598,6 +643,7 @@ def _download_converter_files_windows(converter_id: str) -> Path:
         download_jobs.append((download_url, target))
 
     if not download_jobs:
+        _clear_install_progress(converter_id)
         raise RuntimeError(
             f"GitHub listing for {src_dir} contained no downloadable files."
         )
@@ -605,6 +651,13 @@ def _download_converter_files_windows(converter_id: str) -> Path:
     total_bytes = 0
     file_count = 0
     failures: list[str] = []
+    _set_install_progress(
+        converter_id,
+        stage="downloading",
+        current=0,
+        total=len(download_jobs),
+        bytes_done=0,
+    )
 
     # Eight workers is a sweet spot — enough parallelism to saturate
     # most home links without triggering GitHub's anti-abuse limiter
@@ -629,6 +682,12 @@ def _download_converter_files_windows(converter_id: str) -> Path:
                 continue
             total_bytes += size
             file_count += 1
+            _set_install_progress(
+                converter_id,
+                current=file_count,
+                bytes_done=total_bytes,
+                file=Path(target).name,
+            )
             if total_bytes > _MAX_INSTALL_BYTES:
                 failures.append(
                     f"cumulative install size {total_bytes} bytes exceeded "
@@ -652,6 +711,7 @@ def _download_converter_files_windows(converter_id: str) -> Path:
         # discover and try to use.
         import shutil as _shutil
         _shutil.rmtree(dest_root, ignore_errors=True)
+        _clear_install_progress(converter_id)
         raise RuntimeError(
             f"{len(failures)} of {len(download_jobs)} downloads failed; "
             f"first error: {failures[0]}"
@@ -660,16 +720,60 @@ def _download_converter_files_windows(converter_id: str) -> Path:
     exe_name: str = _META_BY_ID[converter_id]["exe"]
     exe_path = dest_root / exe_name
     if not exe_path.exists():
+        _clear_install_progress(converter_id)
         raise RuntimeError(
             f"Installed {file_count} files ({total_bytes} bytes) for "
             f"{converter_id} but {exe_name} is missing at {exe_path}"
         )
 
+    _set_install_progress(
+        converter_id,
+        stage="verifying",
+        current=len(download_jobs),
+        bytes_done=total_bytes,
+        file=None,
+    )
     logger.info(
         "Installed %s converter: %d files, %.1f MB -> %s",
         converter_id, file_count, total_bytes / 1024 / 1024, exe_path,
     )
     return exe_path
+
+
+@router.get(
+    "/converters/{converter_id}/install-progress/",
+    include_in_schema=True,
+)
+async def get_install_progress(converter_id: str) -> dict[str, Any]:
+    """Lightweight progress poll for an in-flight converter install.
+
+    The Windows installer downloads 30-175 files (~600 MB for RVT) inside
+    a thread pool. ``install_converter`` doesn't return until the smoke
+    test has finished — without this endpoint the frontend can only show
+    a spinner for the full 30-90 s. We poll every 500 ms while the install
+    mutation is pending and render `<progress>` + microcopy.
+
+    Response shape:
+      * ``{"active": False}`` — no install currently in flight (default,
+        and what every fresh page-load returns)
+      * ``{"active": True, "stage": "downloading", "current": 12,
+            "total": 175, "bytes_done": 41943040, "file": "Qt6Core.dll",
+            "started_at": 1715814723.49}`` — install in progress
+
+    The dict is in-memory only — restarting the backend wipes it. That's
+    fine because the install mutation will fail with a connection error
+    on restart and the frontend will surface the error toast as the
+    progress poll falls silent.
+    """
+    if converter_id not in _META_BY_ID:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown converter: '{converter_id}'",
+        )
+    progress = _get_install_progress(converter_id)
+    if progress is None:
+        return {"active": False}
+    return {"active": True, **progress}
 
 
 @router.post(
@@ -855,6 +959,7 @@ async def install_converter(
             except AttributeError:
                 pass
 
+            _clear_install_progress(converter_id)
             return {
                 "converter_id": converter_id,
                 "installed": smoke_ok,
@@ -956,6 +1061,7 @@ async def install_converter(
         # 502 with the real error class + message so the install banner
         # shows something useful — Hans's DWG/DGN failure case (Linux
         # VPS hitting an edge case in find_converter / urlretrieve).
+        _clear_install_progress(converter_id)
         logger.exception(
             "Unhandled exception in install_converter for %s: %s",
             converter_id, exc,

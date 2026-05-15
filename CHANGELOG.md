@@ -5,6 +5,18 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.8] — 2026-05-15 · Converter download fix + project setup wizard (backend) + visible match pipeline
+
+### Fixed
+
+- **Windows converter downloads no longer corrupt binaries.** `_download_one_file` opened the destination with `os.open()` without `os.O_BINARY`, so the MS C runtime used text mode and `os.write()` rewrote every `0x0A` as `0x0D 0x0A` — shifting the PE header and making `RvtExporter.exe` / `IfcExporter.exe` / `DgnExporter.exe` fail to launch with `WinError 216`. Now opens binary on Windows; no-op on POSIX.
+
+### Added
+
+- **Project setup-wizard backend (Slice 1).** 8-preset library + multi-axis scoring engine (activity · role · phase · size · region) → per-project module tiers (must / recommended / optional / hidden) with a numbered route line. New tables `oe_project_profile` / `oe_project_module` / `oe_project_wizard_draft` (migration `v3035`). Endpoints: `GET /projects/wizard/presets`, `GET|POST /projects/{id}/profile`, `POST /projects/{id}/profile/recompute`, `PATCH /projects/{id}/profile/focus-mode`, `GET /projects/{id}/modules`. Presentation-only gating — never unloads a module or blocks an API.
+- **Visible 7-stage match pipeline on `/match-elements`.** Convert → Load → Schema → Filter → Group → Match → Rollup, each with status, output preview, an Adjust panel, and editable LLM prompt templates (migration `v3034`).
+- **BIM converter banner** now shows live install progress in a two-column layout.
+
 ## [3.0.7] — 2026-05-14 · Resource-based cost DB import — docs, templates, downloads
 
 ### Added
