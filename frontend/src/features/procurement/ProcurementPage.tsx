@@ -14,6 +14,7 @@ import {
   X,
   Loader2,
   Trash2,
+  Pencil,
 } from 'lucide-react';
 import {
   Button,
@@ -26,7 +27,7 @@ import {
 import { MoneyDisplay } from '@/shared/ui/MoneyDisplay';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { ContactSearchInput } from '@/shared/ui/ContactSearchInput';
-import { apiGet, apiPost } from '@/shared/lib/api';
+import { apiGet, apiPost, apiPatch } from '@/shared/lib/api';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -47,6 +48,36 @@ interface PurchaseOrder {
   line_items_count: number;
   created_at: string;
   updated_at: string;
+}
+
+interface POItemResponse {
+  id: string;
+  description: string;
+  quantity: string | number;
+  unit: string | null;
+  unit_rate: string | number;
+  amount: string | number;
+  sort_order: number;
+}
+
+/** Full PO detail returned by GET /v1/procurement/{po_id} (includes line items
+ *  the list endpoint omits) — used to prefill the Edit form. */
+interface POResponse {
+  id: string;
+  vendor_contact_id: string | null;
+  vendor_name: string | null;
+  po_number: string;
+  po_type: string | null;
+  issue_date: string;
+  delivery_date: string | null;
+  currency_code: string;
+  amount_subtotal: string | number;
+  tax_amount: string | number;
+  amount_total: string | number;
+  status: string;
+  payment_terms: string | null;
+  notes: string | null;
+  items: POItemResponse[];
 }
 
 interface GoodsReceipt {
@@ -226,8 +257,12 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
   const userRole = useAuthStore((s) => s.userRole);
   const isManager = userRole === 'admin' || userRole === 'manager';
 
-  /* ── PO create modal state ── */
+  /* ── PO create / edit modal state ──
+     The same modal serves both flows. When `editingPO` holds a PO id the
+     form was prefilled from GET /{po_id} and the submit button PATCHes that
+     order; otherwise it POSTs a new one. */
   const [showCreate, setShowCreate] = useState(false);
+  const [editingPO, setEditingPO] = useState<string | null>(null);
   const todayStr = new Date().toISOString().split('T')[0];
   const emptyLine: POLineItemForm = { description: '', quantity: '1', unit: '', unit_rate: '', amount: '' };
 
@@ -242,16 +277,32 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
     items: [{ ...emptyLine }] as POLineItemForm[],
   });
   const [poErrors, setPoErrors] = useState<Record<string, string>>({});
+  const [poTaxInput, setPoTaxInput] = useState('0');
   const firstFieldRef = useRef<HTMLDivElement>(null);
+
+  const emptyPoForm = {
+    vendor_contact_id: '', vendor_display: '', po_type: 'standard' as 'standard' | 'blanket' | 'service',
+    delivery_date: '', currency: 'EUR', payment_terms: '30',
+    notes: '', items: [{ ...emptyLine }] as POLineItemForm[],
+  };
+
+  const closeModal = () => {
+    setShowCreate(false);
+    setEditingPO(null);
+    setPoForm({ ...emptyPoForm, items: [{ ...emptyLine }] });
+    setPoTaxInput('0');
+    setPoErrors({});
+  };
 
   // Escape key handler
   useEffect(() => {
     if (!showCreate) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setShowCreate(false);
+      if (e.key === 'Escape') closeModal();
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showCreate]);
 
   // Auto-calc line amounts
@@ -281,7 +332,6 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
 
   // Computed totals
   const poSubtotal = poForm.items.reduce((s, li) => s + parseFloat(li.amount || '0'), 0);
-  const [poTaxInput, setPoTaxInput] = useState('0');
   const poTotal = poSubtotal + parseFloat(poTaxInput || '0');
 
   const canSubmitPO = poForm.items.some((li) => li.description.trim().length > 0);
@@ -322,14 +372,82 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['procurement-po', projectId] });
-      setShowCreate(false);
-      setPoForm({
-        vendor_contact_id: '', vendor_display: '', po_type: 'standard',
-        delivery_date: '', currency: 'EUR', payment_terms: '30',
-        notes: '', items: [{ ...emptyLine }],
-      });
-      setPoTaxInput('0');
+      closeModal();
       addToast({ type: 'success', title: t('procurement.po_created', { defaultValue: 'Purchase order created' }) });
+    },
+    onError: (e: Error) =>
+      addToast({ type: 'error', title: t('common.error', { defaultValue: 'Error' }), message: e.message }),
+  });
+
+  /* ── PO edit ──
+     Backend `update_po` blocks only the `status` field from PATCH; every
+     other field is freely editable. Status transitions go through the
+     dedicated workflow actions (issue / create-invoice), so we deliberately
+     omit `status` from this body. There is no DELETE endpoint for a PO, so
+     no delete control is offered (a 405 button would be worse UX). */
+  const editPOMut = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: typeof poForm }) =>
+      apiPatch(`/v1/procurement/${id}`, {
+        vendor_contact_id: data.vendor_contact_id || undefined,
+        po_type: data.po_type,
+        delivery_date: data.delivery_date || undefined,
+        currency_code: data.currency,
+        amount_subtotal: String(poSubtotal.toFixed(2)),
+        tax_amount: poTaxInput || '0',
+        amount_total: String(poTotal.toFixed(2)),
+        payment_terms: `Net ${data.payment_terms}`,
+        notes: data.notes || undefined,
+        items: data.items
+          .filter((li) => li.description.trim())
+          .map((li, idx) => ({
+            description: li.description,
+            quantity: li.quantity || '1',
+            unit: li.unit || undefined,
+            unit_rate: li.unit_rate || '0',
+            amount: li.amount || '0',
+            sort_order: idx,
+          })),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['procurement-po', projectId] });
+      closeModal();
+      addToast({ type: 'success', title: t('procurement.po_updated', { defaultValue: 'Purchase order updated' }) });
+    },
+    onError: (e: Error) =>
+      addToast({ type: 'error', title: t('common.error', { defaultValue: 'Error' }), message: e.message }),
+  });
+
+  /* Fetch full PO (incl. line items the list omits) then prefill the shared
+     create form and switch the modal into edit mode. */
+  const openEditMut = useMutation({
+    mutationFn: (poId: string) => apiGet<POResponse>(`/v1/procurement/${poId}`),
+    onSuccess: (po) => {
+      const payTermMatch = (po.payment_terms ?? '').match(/(\d+)/);
+      const poType: 'standard' | 'blanket' | 'service' =
+        po.po_type === 'blanket' || po.po_type === 'service' ? po.po_type : 'standard';
+      setPoForm({
+        vendor_contact_id: po.vendor_contact_id ?? '',
+        vendor_display: po.vendor_name ?? '',
+        po_type: poType,
+        delivery_date: po.delivery_date ?? '',
+        currency: po.currency_code || 'EUR',
+        payment_terms: payTermMatch?.[1] ?? '30',
+        notes: po.notes ?? '',
+        items:
+          po.items && po.items.length > 0
+            ? po.items.map((it) => ({
+                description: it.description ?? '',
+                quantity: it.quantity != null ? String(it.quantity) : '1',
+                unit: it.unit ?? '',
+                unit_rate: it.unit_rate != null ? String(it.unit_rate) : '',
+                amount: it.amount != null ? String(it.amount) : '',
+              }))
+            : [{ ...emptyLine }],
+      });
+      setPoTaxInput(po.tax_amount != null ? String(po.tax_amount) : '0');
+      setPoErrors({});
+      setEditingPO(po.id);
+      setShowCreate(true);
     },
     onError: (e: Error) =>
       addToast({ type: 'error', title: t('common.error', { defaultValue: 'Error' }), message: e.message }),
@@ -403,17 +521,21 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
     );
   }
 
-  /* ── Render PO create modal ── */
+  /* ── Render PO create / edit modal ── */
   function renderPOModal() {
+    const isEdit = editingPO !== null;
+    const modalTitle = isEdit
+      ? t('procurement.edit_po', { defaultValue: 'Edit purchase order' })
+      : t('procurement.new_po', { defaultValue: 'New Purchase Order' });
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-lg animate-fade-in">
-        <div className="w-full max-w-5xl bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[88vh] flex flex-col" role="dialog" aria-label={t('procurement.new_po', { defaultValue: 'New Purchase Order' })}>
+        <div className="w-full max-w-5xl bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[88vh] flex flex-col" role="dialog" aria-label={modalTitle}>
           <div className="flex items-center justify-between px-6 py-4 border-b border-border-light sticky top-0 z-10 bg-surface-elevated rounded-t-xl">
             <h2 className="text-lg font-semibold text-content-primary">
-              {t('procurement.new_po', { defaultValue: 'New Purchase Order' })}
+              {modalTitle}
             </h2>
             <button
-              onClick={() => setShowCreate(false)}
+              onClick={closeModal}
               aria-label={t('common.close', { defaultValue: 'Close' })}
               className="flex h-8 w-8 items-center justify-center rounded-lg text-content-tertiary hover:bg-surface-secondary hover:text-content-primary transition-colors"
             >
@@ -652,23 +774,33 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
             </div>
           </div>
           <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border-light sticky bottom-0 z-10 bg-surface-elevated rounded-b-xl">
-            <Button variant="ghost" onClick={() => setShowCreate(false)} disabled={createPOMut.isPending}>
+            <Button variant="ghost" onClick={closeModal} disabled={createPOMut.isPending || editPOMut.isPending}>
               {t('common.cancel', { defaultValue: 'Cancel' })}
             </Button>
             <Button
               variant="primary"
               onClick={() => {
                 if (!validatePO()) return;
-                createPOMut.mutate(poForm);
+                if (isEdit && editingPO) {
+                  editPOMut.mutate({ id: editingPO, data: poForm });
+                } else {
+                  createPOMut.mutate(poForm);
+                }
               }}
-              disabled={createPOMut.isPending || !canSubmitPO}
+              disabled={createPOMut.isPending || editPOMut.isPending || !canSubmitPO}
             >
-              {createPOMut.isPending ? (
+              {createPOMut.isPending || editPOMut.isPending ? (
                 <Loader2 size={16} className="animate-spin mr-1.5" />
+              ) : isEdit ? (
+                <Pencil size={16} className="mr-1.5" />
               ) : (
                 <Plus size={16} className="mr-1.5" />
               )}
-              <span>{t('common.create', { defaultValue: 'Create' })}</span>
+              <span>
+                {isEdit
+                  ? t('common.save', { defaultValue: 'Save' })
+                  : t('common.create', { defaultValue: 'Create' })}
+              </span>
             </Button>
           </div>
         </div>
@@ -774,16 +906,32 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
                 </td>
                 <td className="px-4 py-3 text-right">
                   {isManager && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => createInvoiceMut.mutate(po.id)}
-                    disabled={createInvoiceMut.isPending}
-                    title={t('procurement.create_invoice', { defaultValue: 'Create Invoice from PO' })}
-                  >
-                    <FileText size={14} className="mr-1" />
-                    {t('procurement.create_invoice_short', { defaultValue: 'Invoice' })}
-                  </Button>
+                  <div className="flex items-center justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => openEditMut.mutate(po.id)}
+                      disabled={openEditMut.isPending || editPOMut.isPending}
+                      title={t('procurement.edit_po', { defaultValue: 'Edit purchase order' })}
+                      className="!p-1.5 text-content-tertiary hover:text-oe-blue"
+                    >
+                      {openEditMut.isPending && openEditMut.variables === po.id ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <Pencil size={14} />
+                      )}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => createInvoiceMut.mutate(po.id)}
+                      disabled={createInvoiceMut.isPending}
+                      title={t('procurement.create_invoice', { defaultValue: 'Create Invoice from PO' })}
+                    >
+                      <FileText size={14} className="mr-1" />
+                      {t('procurement.create_invoice_short', { defaultValue: 'Invoice' })}
+                    </Button>
+                  </div>
                   )}
                 </td>
               </tr>

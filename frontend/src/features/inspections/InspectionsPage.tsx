@@ -24,6 +24,8 @@ import {
   Eye,
   MapPin,
   Calendar,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, SkeletonTable } from '@/shared/ui';
 import { useConfirm } from '@/shared/hooks/useConfirm';
@@ -36,11 +38,14 @@ import {
   fetchInspections,
   createInspection,
   completeInspection,
+  updateInspection,
+  deleteInspection,
   type Inspection,
   type InspectionType,
   type InspectionResult,
   type InspectionStatus,
   type CreateInspectionPayload,
+  type UpdateInspectionPayload,
 } from './api';
 
 /* -- Constants ------------------------------------------------------------- */
@@ -148,14 +153,17 @@ function CreateInspectionModal({
   onSubmit,
   isPending,
   projectName,
+  initialData,
 }: {
   onClose: () => void;
   onSubmit: (data: InspectionFormData) => void;
   isPending: boolean;
   projectName?: string;
+  initialData?: InspectionFormData | null;
 }) {
   const { t } = useTranslation();
-  const [form, setForm] = useState<InspectionFormData>(EMPTY_FORM);
+  const isEdit = !!initialData;
+  const [form, setForm] = useState<InspectionFormData>(initialData ?? EMPTY_FORM);
   const [touched, setTouched] = useState(false);
 
   const set = <K extends keyof InspectionFormData>(key: K, value: InspectionFormData[K]) =>
@@ -180,12 +188,23 @@ function CreateInspectionModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-lg animate-fade-in">
-      <div className="w-full max-w-2xl bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[90vh] overflow-y-auto" role="dialog" aria-modal="true" aria-label={t('inspections.new_inspection', { defaultValue: 'New Inspection‌⁠‍' })}>
+      <div
+        className="w-full max-w-2xl bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4 max-h-[90vh] overflow-y-auto"
+        role="dialog"
+        aria-modal="true"
+        aria-label={
+          isEdit
+            ? t('inspections.edit_inspection', { defaultValue: 'Edit Inspection‌⁠‍' })
+            : t('inspections.new_inspection', { defaultValue: 'New Inspection‌⁠‍' })
+        }
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border-light">
           <div>
             <h2 className="text-lg font-semibold text-content-primary">
-              {t('inspections.new_inspection', { defaultValue: 'New Inspection‌⁠‍' })}
+              {isEdit
+                ? t('inspections.edit_inspection', { defaultValue: 'Edit Inspection‌⁠‍' })
+                : t('inspections.new_inspection', { defaultValue: 'New Inspection‌⁠‍' })}
             </h2>
             {projectName && (
               <p className="text-xs text-content-tertiary mt-0.5">
@@ -365,11 +384,15 @@ function CreateInspectionModal({
           <Button variant="primary" onClick={handleSubmit} disabled={isPending || !canSubmit}>
             {isPending ? (
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent mr-2 shrink-0" />
+            ) : isEdit ? (
+              <Pencil size={16} className="mr-1.5 shrink-0" />
             ) : (
               <Plus size={16} className="mr-1.5 shrink-0" />
             )}
             <span>
-              {t('inspections.create_inspection', { defaultValue: 'Create Inspection' })}
+              {isEdit
+                ? t('inspections.save_changes', { defaultValue: 'Save Changes' })
+                : t('inspections.create_inspection', { defaultValue: 'Create Inspection' })}
             </span>
           </Button>
         </div>
@@ -384,10 +407,14 @@ const InspectionRow = React.memo(function InspectionRow({
   inspection,
   onComplete,
   onCreateDefect,
+  onEdit,
+  onDelete,
 }: {
   inspection: Inspection;
   onComplete: (id: string) => void;
   onCreateDefect: (id: string) => void;
+  onEdit: (inspection: Inspection) => void;
+  onDelete: (id: string) => void;
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -395,6 +422,11 @@ const InspectionRow = React.memo(function InspectionRow({
   const statusCfg = STATUS_CONFIG[inspection.status] ?? STATUS_CONFIG.scheduled;
   const typeCfg = INSPECTION_TYPE_COLORS[inspection.inspection_type] ?? 'neutral';
   const resultCfg = inspection.result ? RESULT_CONFIG[inspection.result] : null;
+  // Backend edit guard rejects (HTTP 400) when an inspection has reached a
+  // terminal state. Disable the Edit button with an explanatory tooltip so we
+  // never ship a control that returns an error.
+  const editDisabled =
+    inspection.status === 'completed' || (inspection.status as string) === 'failed';
 
   return (
     <div className="border-b border-border-light last:border-b-0">
@@ -569,6 +601,41 @@ const InspectionRow = React.memo(function InspectionRow({
                 </Button>
               </div>
             )}
+
+            {/* Edit / Delete — always available (Delete is unguarded). */}
+            <div className="ml-auto flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={editDisabled}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!editDisabled) onEdit(inspection);
+                }}
+                className="!p-1.5 text-content-quaternary hover:text-oe-blue h-auto"
+                title={
+                  editDisabled
+                    ? t('inspections.edit_locked', {
+                        defaultValue: 'Completed or failed inspections cannot be edited',
+                      })
+                    : t('common.edit', { defaultValue: 'Edit' })
+                }
+              >
+                <Pencil size={14} />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(inspection.id);
+                }}
+                className="!p-1.5 text-content-quaternary hover:text-red-500 h-auto"
+                title={t('common.delete', { defaultValue: 'Delete' })}
+              >
+                <Trash2 size={14} />
+              </Button>
+            </div>
           </div>
         </div>
       )}
@@ -614,6 +681,7 @@ export function InspectionsPage() {
 
   // State
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingInspection, setEditingInspection] = useState<Inspection | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<InspectionStatus | ''>('');
 
@@ -730,6 +798,63 @@ export function InspectionsPage() {
     [createMut, projectId, addToast, t],
   );
 
+  const editMut = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdateInspectionPayload }) =>
+      updateInspection(id, data),
+    onSuccess: () => {
+      invalidateAll();
+      setEditingInspection(null);
+      addToast({
+        type: 'success',
+        title: t('inspections.updated', { defaultValue: 'Inspection updated' }),
+      });
+    },
+    onError: (e: Error) =>
+      addToast({
+        type: 'error',
+        title: t('common.error', { defaultValue: 'Error' }),
+        message: e.message,
+      }),
+  });
+
+  const handleEditSubmit = useCallback(
+    (formData: InspectionFormData) => {
+      if (!editingInspection) return;
+      editMut.mutate({
+        id: editingInspection.id,
+        data: {
+          title: formData.title,
+          inspection_type: formData.inspection_type,
+          inspection_date: formData.date || null,
+          inspector_id: formData.inspector || null,
+          location: formData.location || null,
+        },
+      });
+    },
+    [editMut, editingInspection],
+  );
+
+  const handleEditInspection = useCallback((inspection: Inspection) => {
+    setEditingInspection(inspection);
+  }, []);
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => deleteInspection(id),
+    onSuccess: () => {
+      invalidateAll();
+      addToast({
+        type: 'success',
+        title: t('inspections.deleted', { defaultValue: 'Inspection deleted' }),
+      });
+    },
+    onError: (e: Error) =>
+      addToast({
+        type: 'error',
+        title: t('common.error', { defaultValue: 'Error' }),
+        message: e.message,
+      }),
+  });
+
   const exportMut = useMutation({
     mutationFn: () =>
       downloadExcelExport(
@@ -762,6 +887,21 @@ export function InspectionsPage() {
       if (ok) completeMut.mutate(id);
     },
     [completeMut, confirm, t],
+  );
+
+  const handleDeleteInspection = useCallback(
+    async (id: string) => {
+      const ok = await confirm({
+        title: t('inspections.confirm_delete_title', { defaultValue: 'Delete inspection?' }),
+        message: t('inspections.confirm_delete_msg', {
+          defaultValue: 'This inspection will be permanently deleted.',
+        }),
+        confirmLabel: t('common.delete', { defaultValue: 'Delete' }),
+        variant: 'danger',
+      });
+      if (ok) deleteMut.mutate(id);
+    },
+    [deleteMut, confirm, t],
   );
 
   const createDefectMut = useMutation({
@@ -1027,6 +1167,8 @@ export function InspectionsPage() {
                   inspection={inspection}
                   onComplete={handleComplete}
                   onCreateDefect={handleCreateDefect}
+                  onEdit={handleEditInspection}
+                  onDelete={handleDeleteInspection}
                 />
               ))}
             </Card>
@@ -1042,13 +1184,27 @@ export function InspectionsPage() {
         />
       )}
 
-      {/* Create Modal */}
-      {showCreateModal && (
+      {/* Create / Edit Modal — same form, prefilled in edit mode */}
+      {(showCreateModal || editingInspection) && (
         <CreateInspectionModal
-          onClose={() => setShowCreateModal(false)}
-          onSubmit={handleCreateSubmit}
-          isPending={createMut.isPending}
+          onClose={() => {
+            setShowCreateModal(false);
+            setEditingInspection(null);
+          }}
+          onSubmit={editingInspection ? handleEditSubmit : handleCreateSubmit}
+          isPending={editingInspection ? editMut.isPending : createMut.isPending}
           projectName={projectName}
+          initialData={
+            editingInspection
+              ? {
+                  title: editingInspection.title,
+                  inspection_type: editingInspection.inspection_type,
+                  date: editingInspection.date || todayStr(),
+                  inspector: editingInspection.inspector || '',
+                  location: editingInspection.location || '',
+                }
+              : null
+          }
         />
       )}
 

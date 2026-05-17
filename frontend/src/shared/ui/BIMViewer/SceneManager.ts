@@ -36,6 +36,15 @@ export class SceneManager {
       canvas,
       antialias: true,
       alpha: false,
+      // Real IFC/RVT models carry many near-coplanar faces (multilayer
+      // walls, slab finishes, IfcCovering over IfcWall, doubled
+      // geometry from the converter). With a normal depth buffer and a
+      // wide near/far range these faces get the same depth value and
+      // the GPU flips which one wins every frame → "jumping"/flickering
+      // triangles (z-fighting). A logarithmic depth buffer distributes
+      // precision evenly across the whole range and removes the
+      // artefact regardless of the model's unit/scale.
+      logarithmicDepthBuffer: true,
     });
     // Pixel ratio capped at 1 — high-DPI rendering on a 5 000-mesh BIM
     // scene quadruples the per-frame fragment cost for marginal visual
@@ -259,6 +268,19 @@ export class SceneManager {
     // ~40% empty margin around it. The orbit controls let users zoom
     // out anyway if they want a wider view.
     const dist = (maxDim / (2 * Math.tan(fov / 2))) * 1.05;
+
+    // Tighten the depth range to the actual loaded model. The fixed
+    // 0.01 / 1_000_000 default is a 1e8 ratio that wrecks depth
+    // precision even before z-fighting; clamping `far` to the model
+    // footprint (while keeping `near` ≥ 0.01 so close zoom never
+    // clips) gives the depth buffer real precision. Combined with the
+    // logarithmic depth buffer this fully removes the flicker.
+    this.camera.near = Math.max(maxDim / 50_000, 0.01);
+    this.camera.far = Math.max(dist * 12, maxDim * 50);
+    this.camera.updateProjectionMatrix();
+    // Keep orbit dolly-out within the visible depth range so the model
+    // can't be pushed past the far plane and vanish.
+    this.controls.maxDistance = this.camera.far * 0.5;
 
     // Place camera at a natural architectural viewing angle.
     // Slightly elevated (0.35 * dist up) and offset diagonally so the

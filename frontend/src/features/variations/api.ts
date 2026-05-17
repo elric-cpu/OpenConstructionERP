@@ -5,7 +5,7 @@
  * backend/app/modules/variations/router.py
  */
 
-import { apiGet, apiPost, apiDelete } from '@/shared/lib/api';
+import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/lib/api';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -222,6 +222,47 @@ export interface CreateEoTPayload {
   claim_period_end?: string;
 }
 
+/* ── Update payloads ────────────────────────────────────────────────────── */
+// Mirror the backend *Update Pydantic schemas (all fields optional/PATCH).
+
+export interface UpdateNoticePayload {
+  title?: string;
+  description?: string;
+  recipient_type?: NoticeRecipient;
+  recipient_name?: string;
+  target_response_date?: string | null;
+}
+
+export interface UpdateVRPayload {
+  title?: string;
+  description?: string;
+  classification?: VRClassification;
+  urgency?: VRUrgency;
+  estimated_cost_impact?: number | string;
+  estimated_schedule_days?: number;
+  currency?: string;
+}
+
+export interface UpdateVOPayload {
+  title?: string;
+  final_cost_impact?: number | string;
+  final_schedule_days?: number;
+  currency?: string;
+}
+
+export interface UpdateDayworkPayload {
+  work_date?: string | null;
+  description?: string;
+  currency?: string;
+}
+
+export interface UpdateEoTPayload {
+  description?: string;
+  root_cause_category?: EotCause;
+  requested_days?: number;
+  critical_path_impact?: boolean;
+}
+
 /* ── Notices ───────────────────────────────────────────────────────────── */
 
 export function listNotices(params: {
@@ -252,6 +293,13 @@ export function respondNotice(id: string, response_summary?: string): Promise<No
 
 export function closeNotice(id: string): Promise<Notice> {
   return apiPost<Notice>(`/v1/variations/notices/${id}/close`, {});
+}
+
+export function updateNotice(
+  id: string,
+  data: UpdateNoticePayload,
+): Promise<Notice> {
+  return apiPatch<Notice>(`/v1/variations/notices/${id}`, data);
 }
 
 export function deleteNotice(id: string): Promise<void> {
@@ -313,6 +361,16 @@ export function convertVRToVO(
   );
 }
 
+export function updateVR(
+  id: string,
+  data: UpdateVRPayload,
+): Promise<VariationRequest> {
+  return apiPatch<VariationRequest>(
+    `/v1/variations/variation-requests/${id}`,
+    data,
+  );
+}
+
 export function deleteVR(id: string): Promise<void> {
   return apiDelete(`/v1/variations/variation-requests/${id}`);
 }
@@ -347,6 +405,16 @@ export function voidVO(id: string): Promise<VariationOrder> {
   return apiPost<VariationOrder>(`/v1/variations/variation-orders/${id}/void`, {});
 }
 
+export function updateVO(
+  id: string,
+  data: UpdateVOPayload,
+): Promise<VariationOrder> {
+  return apiPatch<VariationOrder>(
+    `/v1/variations/variation-orders/${id}`,
+    data,
+  );
+}
+
 export function deleteVO(id: string): Promise<void> {
   return apiDelete(`/v1/variations/variation-orders/${id}`);
 }
@@ -379,6 +447,13 @@ export function disputeDaywork(id: string): Promise<DayworkSheet> {
 
 export function billDaywork(id: string): Promise<DayworkSheet> {
   return apiPost<DayworkSheet>(`/v1/variations/daywork-sheets/${id}/bill`, {});
+}
+
+export function updateDaywork(
+  id: string,
+  data: UpdateDayworkPayload,
+): Promise<DayworkSheet> {
+  return apiPatch<DayworkSheet>(`/v1/variations/daywork-sheets/${id}`, data);
 }
 
 export function deleteDaywork(id: string): Promise<void> {
@@ -425,6 +500,16 @@ export function rejectEoT(
   return apiPost<ExtensionOfTimeClaim>(`/v1/variations/eot-claims/${id}/reject`, {
     decision_notes,
   });
+}
+
+export function updateEoT(
+  id: string,
+  data: UpdateEoTPayload,
+): Promise<ExtensionOfTimeClaim> {
+  return apiPatch<ExtensionOfTimeClaim>(
+    `/v1/variations/eot-claims/${id}`,
+    data,
+  );
 }
 
 export function deleteEoT(id: string): Promise<void> {

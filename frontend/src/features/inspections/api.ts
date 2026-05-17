@@ -4,7 +4,7 @@
  * All endpoints are prefixed with /v1/inspections/.
  */
 
-import { apiGet, apiPost } from '@/shared/lib/api';
+import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/lib/api';
 
 /* -- Types ----------------------------------------------------------------- */
 
@@ -64,6 +64,14 @@ export interface CreateInspectionPayload {
   inspection_date?: string;
   inspector_id?: string;
   location?: string;
+}
+
+export interface UpdateInspectionPayload {
+  title?: string;
+  inspection_type?: InspectionType;
+  inspection_date?: string | null;
+  inspector_id?: string | null;
+  location?: string | null;
 }
 
 /* -- Wire <-> UI normaliser ----------------------------------------------- */
@@ -134,4 +142,16 @@ export async function createInspection(data: CreateInspectionPayload): Promise<I
 export async function completeInspection(id: string): Promise<Inspection> {
   const row = await apiPost<InspectionWire>(`/v1/inspections/${id}/complete/`);
   return normaliseInspection(row);
+}
+
+export async function updateInspection(
+  id: string,
+  data: UpdateInspectionPayload,
+): Promise<Inspection> {
+  const row = await apiPatch<InspectionWire>(`/v1/inspections/${id}`, data);
+  return normaliseInspection(row);
+}
+
+export async function deleteInspection(id: string): Promise<void> {
+  return apiDelete(`/v1/inspections/${id}`);
 }

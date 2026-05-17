@@ -25,6 +25,7 @@ import {
   DollarSign,
   Receipt,
   PiggyBank,
+  Pencil,
 } from 'lucide-react';
 import clsx from 'clsx';
 import {
@@ -44,7 +45,7 @@ import {
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { MoneyDisplay } from '@/shared/ui/MoneyDisplay';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
-import { apiGet, apiPost, triggerDownload, extractErrorMessageFromBody } from '@/shared/lib/api';
+import { apiGet, apiPost, apiPatch, triggerDownload, extractErrorMessageFromBody } from '@/shared/lib/api';
 import { ContactSearchInput } from '@/shared/ui/ContactSearchInput';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
@@ -67,6 +68,7 @@ interface BudgetLine {
   variance: number;
   currency_code?: string;
   currency?: string;
+  metadata?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }
@@ -95,6 +97,18 @@ interface Invoice {
   status: string;
   description: string;
   line_items?: InvoiceLineItem[];
+  // Raw wire fields from InvoiceResponse — the API uses these names
+  // (invoice_date / currency_code / amount_total / amount_subtotal /
+  // tax_amount / notes / contact_id) rather than the legacy display
+  // aliases above. Used to prefill the edit form so it round-trips the
+  // same fields the create form exposes.
+  amount_subtotal?: string | null;
+  tax_amount?: string | null;
+  amount_total?: string | null;
+  contact_id?: string | null;
+  invoice_date?: string | null;
+  currency_code?: string | null;
+  notes?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -102,6 +116,7 @@ interface Invoice {
 type InvoiceWire = Omit<Invoice, 'counterparty_name'> & {
   counterparty_name?: string | null;
   contact_id?: string | null;
+  amount_total?: string | null;
 };
 
 function normaliseInvoice(i: InvoiceWire): Invoice {
@@ -598,16 +613,44 @@ function BudgetsTab({ projectId }: { projectId: string }) {
   const [importResult, setImportResult] = useState<BudgetImportResult | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  // When set, the budget modal is in edit mode for this existing line.
+  const [editing, setEditing] = useState<BudgetLine | null>(null);
   const [budgetForm, setBudgetForm] = useState(INITIAL_BUDGET_FORM);
   const [budgetErrors, setBudgetErrors] = useState<Record<string, string>>({});
   const budgetFirstRef = useRef<HTMLInputElement>(null);
+  const isEditingBudget = editing !== null;
 
-  // Auto-focus budget WBS input when modal opens
+  // Auto-focus budget WBS input when modal opens (create or edit)
   useEffect(() => {
-    if (showCreate && budgetFirstRef.current) {
+    if ((showCreate || isEditingBudget) && budgetFirstRef.current) {
       setTimeout(() => budgetFirstRef.current?.focus(), 100);
     }
-  }, [showCreate]);
+  }, [showCreate, isEditingBudget]);
+
+  // Prefill the form when entering edit mode — mirrors every field the
+  // create form exposes (WBS, category, original budget, notes).
+  const openEditBudget = (b: BudgetLine) => {
+    const notes =
+      b.metadata && typeof b.metadata === 'object' && b.metadata !== null
+        ? String((b.metadata as Record<string, unknown>).notes ?? '')
+        : '';
+    setBudgetForm({
+      wbs_code: b.wbs_id ?? '',
+      category: b.category ?? '',
+      original_budget:
+        b.original_budget != null ? String(b.original_budget) : '',
+      notes,
+    });
+    setBudgetErrors({});
+    setEditing(b);
+  };
+
+  const closeBudgetModal = () => {
+    setShowCreate(false);
+    setEditing(null);
+    setBudgetForm(INITIAL_BUDGET_FORM);
+    setBudgetErrors({});
+  };
 
   const canSubmitBudget = budgetForm.category.trim().length > 0 && budgetForm.original_budget.trim().length > 0 && parseFloat(budgetForm.original_budget) > 0;
 
@@ -622,16 +665,17 @@ function BudgetsTab({ projectId }: { projectId: string }) {
 
   // Escape key handler for inline modals
   useEffect(() => {
-    if (!showCreate && !showImport) return;
+    if (!showCreate && !showImport && !isEditingBudget) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (showCreate) setShowCreate(false);
+        if (showCreate || isEditingBudget) closeBudgetModal();
         if (showImport) setShowImport(false);
       }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [showCreate, showImport]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showCreate, showImport, isEditingBudget]);
 
   const createBudgetMut = useMutation({
     mutationFn: (data: { wbs_id: string | null; category: string | null; original_budget: string; notes: string | null }) =>
@@ -650,6 +694,37 @@ function BudgetsTab({ projectId }: { projectId: string }) {
     },
     onError: (e: Error) =>
       addToast({ type: 'error', title: t('finance.budget_create_failed', { defaultValue: 'Failed to create budget line' }), message: e.message }),
+  });
+
+  // PATCH /v1/finance/budgets/{id} — the only mutating endpoint the budget
+  // API exposes for an existing line (there is no DELETE). Status is not a
+  // budget concept here, so we only send the create-form fields back.
+  const updateBudgetMut = useMutation({
+    mutationFn: (data: {
+      id: string;
+      wbs_id: string | null;
+      category: string | null;
+      original_budget: string;
+      notes: string | null;
+      existingMetadata: Record<string, unknown> | null;
+    }) =>
+      apiPatch(`/v1/finance/budgets/${data.id}`, {
+        wbs_id: data.wbs_id,
+        category: data.category,
+        original_budget: data.original_budget,
+        metadata: {
+          ...(data.existingMetadata ?? {}),
+          ...(data.notes != null ? { notes: data.notes } : {}),
+        },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['finance-budgets', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['finance', 'dashboard', projectId] });
+      closeBudgetModal();
+      addToast({ type: 'success', title: t('finance.budget_updated', { defaultValue: 'Budget line updated successfully' }) });
+    },
+    onError: (e: Error) =>
+      addToast({ type: 'error', title: t('finance.budget_update_failed', { defaultValue: 'Failed to update budget line' }), message: e.message }),
   });
 
   const exportBudgetsMut = useMutation({
@@ -695,37 +770,67 @@ function BudgetsTab({ projectId }: { projectId: string }) {
     { key: 'Other', label: t('finance.cat_other', { defaultValue: 'Other' }) },
   ];
 
+  const budgetMutPending = isEditingBudget
+    ? updateBudgetMut.isPending
+    : createBudgetMut.isPending;
+
+  const submitBudget = () => {
+    if (!validateBudget()) return;
+    if (isEditingBudget && editing) {
+      updateBudgetMut.mutate({
+        id: editing.id,
+        wbs_id: budgetForm.wbs_code || null,
+        category: budgetForm.category,
+        original_budget: budgetForm.original_budget,
+        notes: budgetForm.notes || null,
+        existingMetadata:
+          editing.metadata && typeof editing.metadata === 'object'
+            ? (editing.metadata as Record<string, unknown>)
+            : null,
+      });
+    } else {
+      createBudgetMut.mutate({
+        wbs_id: budgetForm.wbs_code || null,
+        category: budgetForm.category,
+        original_budget: budgetForm.original_budget,
+        notes: budgetForm.notes || null,
+      });
+    }
+  };
+
   const renderBudgetModal = () => (
     <WideModal
       open
-      onClose={() => setShowCreate(false)}
-      title={t('finance.new_budget', { defaultValue: 'New Budget Line' })}
+      onClose={closeBudgetModal}
+      title={
+        isEditingBudget
+          ? t('finance.edit_budget', { defaultValue: 'Edit Budget Line' })
+          : t('finance.new_budget', { defaultValue: 'New Budget Line' })
+      }
       size="lg"
-      busy={createBudgetMut.isPending}
+      busy={budgetMutPending}
       footer={
         <>
-          <Button variant="ghost" onClick={() => setShowCreate(false)} disabled={createBudgetMut.isPending}>
+          <Button variant="ghost" onClick={closeBudgetModal} disabled={budgetMutPending}>
             {t('common.cancel', { defaultValue: 'Cancel' })}
           </Button>
           <Button
             variant="primary"
-            onClick={() => {
-              if (!validateBudget()) return;
-              createBudgetMut.mutate({
-                wbs_id: budgetForm.wbs_code || null,
-                category: budgetForm.category,
-                original_budget: budgetForm.original_budget,
-                notes: budgetForm.notes || null,
-              });
-            }}
-            disabled={createBudgetMut.isPending || !canSubmitBudget}
+            onClick={submitBudget}
+            disabled={budgetMutPending || !canSubmitBudget}
           >
-            {createBudgetMut.isPending ? (
+            {budgetMutPending ? (
               <Loader2 size={16} className="animate-spin mr-1.5" />
+            ) : isEditingBudget ? (
+              <Pencil size={16} className="mr-1.5" />
             ) : (
               <Plus size={16} className="mr-1.5" />
             )}
-            <span>{t('common.create', { defaultValue: 'Create' })}</span>
+            <span>
+              {isEditingBudget
+                ? t('common.save', { defaultValue: 'Save Changes' })
+                : t('common.create', { defaultValue: 'Create' })}
+            </span>
           </Button>
         </>
       }
@@ -889,7 +994,7 @@ function BudgetsTab({ projectId }: { projectId: string }) {
         />
 
         {/* New Budget Line Modal (also shown from empty state) */}
-        {showCreate && renderBudgetModal()}
+        {(showCreate || isEditingBudget) && renderBudgetModal()}
       </div>
     );
   }
@@ -999,12 +1104,15 @@ function BudgetsTab({ projectId }: { projectId: string }) {
               <th className="px-4 py-3 text-right font-medium text-content-tertiary">
                 {t('finance.variance', { defaultValue: 'Variance' })}
               </th>
+              <th className="px-4 py-3 text-right font-medium text-content-tertiary">
+                {t('common.actions', { defaultValue: 'Actions' })}
+              </th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-sm text-content-tertiary">
+                <td colSpan={9} className="px-4 py-8 text-center text-sm text-content-tertiary">
                   {t('finance.no_budget_match', { defaultValue: 'No matching budget lines' })}
                 </td>
               </tr>
@@ -1050,6 +1158,17 @@ function BudgetsTab({ projectId }: { projectId: string }) {
                       />
                     </span>
                   </td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => openEditBudget(b)}
+                      title={t('finance.edit_budget', { defaultValue: 'Edit Budget Line' })}
+                      aria-label={t('finance.edit_budget', { defaultValue: 'Edit Budget Line' })}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-content-tertiary hover:bg-surface-secondary hover:text-oe-blue transition-colors"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                  </td>
                 </tr>
               );
             })}
@@ -1082,6 +1201,7 @@ function BudgetsTab({ projectId }: { projectId: string }) {
                     colorize
                   />
                 </td>
+                <td />
               </tr>
             </tfoot>
           )}
@@ -1108,9 +1228,20 @@ function BudgetsTab({ projectId }: { projectId: string }) {
                     {b.category}
                   </h4>
                 </div>
-                <span className="text-2xs font-medium text-content-tertiary">
-                  {rowCurrency}
-                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-2xs font-medium text-content-tertiary">
+                    {rowCurrency}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => openEditBudget(b)}
+                    title={t('finance.edit_budget', { defaultValue: 'Edit Budget Line' })}
+                    aria-label={t('finance.edit_budget', { defaultValue: 'Edit Budget Line' })}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-content-tertiary hover:bg-surface-secondary hover:text-oe-blue transition-colors"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
                 <div className="flex justify-between">
@@ -1158,8 +1289,8 @@ function BudgetsTab({ projectId }: { projectId: string }) {
       </div>
     </Card>
 
-    {/* New Budget Line Modal */}
-    {showCreate && renderBudgetModal()}
+    {/* New / Edit Budget Line Modal */}
+    {(showCreate || isEditingBudget) && renderBudgetModal()}
 
     {/* Budget Import Modal */}
     {showImport && (
@@ -1303,13 +1434,60 @@ function InvoicesTab({ projectId }: { projectId: string }) {
   });
   const [invoiceErrors, setInvoiceErrors] = useState<Record<string, string>>({});
   const invoiceDateRef = useRef<HTMLInputElement>(null);
+  // When set, the invoice modal is in edit mode for this existing invoice.
+  const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
+  const isEditingInvoice = editingInvoice !== null;
+  const invoiceModalOpen = showCreate || isEditingInvoice;
 
-  // Auto-focus invoice date when modal opens
+  // Prefill the form when entering edit mode — mirrors every field the
+  // create form exposes (direction, counterparty, dates, amounts, notes).
+  const openEditInvoice = (inv: Invoice) => {
+    // The API serialises invoices with InvoiceResponse field names
+    // (invoice_direction/invoice_date/currency_code/amount_*); fall back
+    // to the legacy display aliases for safety.
+    const wire = inv as unknown as { invoice_direction?: string };
+    const direction: 'payable' | 'receivable' =
+      wire.invoice_direction === 'receivable' || inv.direction === 'receivable'
+        ? 'receivable'
+        : 'payable';
+    const subtotal = inv.amount_subtotal != null ? String(inv.amount_subtotal) : '';
+    const tax = inv.tax_amount != null ? String(inv.tax_amount) : '';
+    const total =
+      inv.amount_total != null
+        ? String(inv.amount_total)
+        : inv.amount != null
+          ? String(inv.amount)
+          : '';
+    const issueDate = (inv.invoice_date ?? inv.issue_date ?? '').split('T')[0] || '';
+    const dueDate = (inv.due_date ?? '').split('T')[0] || '';
+    setInvoiceForm({
+      direction,
+      counterparty: inv.counterparty_name ?? '',
+      contact_id: inv.contact_id ?? '',
+      invoice_date: issueDate,
+      due_date: dueDate,
+      subtotal,
+      tax,
+      amount: total,
+      currency: inv.currency_code || inv.currency || 'EUR',
+      description: inv.notes ?? inv.description ?? '',
+    });
+    setInvoiceErrors({});
+    setEditingInvoice(inv);
+  };
+
+  const closeInvoiceModal = () => {
+    setShowCreate(false);
+    setEditingInvoice(null);
+    setInvoiceErrors({});
+  };
+
+  // Auto-focus invoice date when modal opens (create or edit)
   useEffect(() => {
-    if (showCreate && invoiceDateRef.current) {
+    if (invoiceModalOpen && invoiceDateRef.current) {
       setTimeout(() => invoiceDateRef.current?.focus(), 100);
     }
-  }, [showCreate]);
+  }, [invoiceModalOpen]);
 
   const canSubmitInvoice = !!invoiceForm.invoice_date && (parseFloat(invoiceForm.subtotal || '0') > 0 || parseFloat(invoiceForm.amount || '0') > 0);
 
@@ -1325,15 +1503,16 @@ function InvoicesTab({ projectId }: { projectId: string }) {
     return Object.keys(e).length === 0;
   };
 
-  // Escape key handler for inline modal
+  // Escape key handler for inline modal (create or edit)
   useEffect(() => {
-    if (!showCreate) return;
+    if (!invoiceModalOpen) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setShowCreate(false);
+      if (e.key === 'Escape') closeInvoiceModal();
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [showCreate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoiceModalOpen]);
 
   const createInvoiceMut = useMutation({
     mutationFn: (data: typeof invoiceForm) => {
@@ -1362,6 +1541,38 @@ function InvoicesTab({ projectId }: { projectId: string }) {
     },
     onError: (e: Error) =>
       addToast({ type: 'error', title: t('finance.invoice_create_failed', { defaultValue: 'Failed to create invoice' }), message: e.message }),
+  });
+
+  // PATCH /v1/finance/{id} — the invoice API has no DELETE endpoint, so
+  // editing is the only mutating control we expose on an existing row.
+  // `status` is intentionally NOT sent: status transitions stay in the
+  // Approve / Mark Paid workflow actions (the backend rejects illegal
+  // status changes anyway).
+  const updateInvoiceMut = useMutation({
+    mutationFn: (data: { id: string; form: typeof invoiceForm }) => {
+      const sub = parseFloat(data.form.subtotal || '0');
+      const tax = parseFloat(data.form.tax || '0');
+      const total = data.form.amount ? parseFloat(data.form.amount) : sub + tax;
+      return apiPatch(`/v1/finance/${data.id}`, {
+        contact_id: data.form.contact_id || null,
+        invoice_direction: data.form.direction,
+        invoice_date: data.form.invoice_date,
+        due_date: data.form.due_date || null,
+        amount_subtotal: String(sub),
+        tax_amount: String(tax),
+        amount_total: String(total),
+        currency_code: data.form.currency || 'EUR',
+        notes: data.form.description || null,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['finance-invoices', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['finance', 'dashboard', projectId] });
+      closeInvoiceModal();
+      addToast({ type: 'success', title: t('finance.invoice_updated', { defaultValue: 'Invoice updated successfully' }) });
+    },
+    onError: (e: Error) =>
+      addToast({ type: 'error', title: t('finance.invoice_update_failed', { defaultValue: 'Failed to update invoice' }), message: e.message }),
   });
 
   const exportInvoicesMut = useMutation({
@@ -1677,6 +1888,15 @@ function InvoicesTab({ projectId }: { projectId: string }) {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={() => openEditInvoice(inv)}
+                            title={t('finance.edit_invoice', { defaultValue: 'Edit Invoice' })}
+                            aria-label={t('finance.edit_invoice', { defaultValue: 'Edit Invoice' })}
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-content-tertiary hover:bg-surface-secondary hover:text-oe-blue transition-colors"
+                          >
+                            <Pencil size={14} />
+                          </button>
                           {inv.status === 'pending' && isManager && (
                             <Button
                               variant="secondary"
@@ -1747,9 +1967,20 @@ function InvoicesTab({ projectId }: { projectId: string }) {
                       <span className="text-xs font-mono text-content-tertiary">{inv.invoice_number}</span>
                       <h4 className="text-sm font-semibold text-content-primary truncate">{inv.counterparty_name}</h4>
                     </div>
-                    <Badge variant={INVOICE_STATUS_COLORS[inv.status] ?? 'neutral'} size="sm">
-                      {t(`finance.status_${inv.status}`, { defaultValue: inv.status })}
-                    </Badge>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Badge variant={INVOICE_STATUS_COLORS[inv.status] ?? 'neutral'} size="sm">
+                        {t(`finance.status_${inv.status}`, { defaultValue: inv.status })}
+                      </Badge>
+                      <button
+                        type="button"
+                        onClick={() => openEditInvoice(inv)}
+                        title={t('finance.edit_invoice', { defaultValue: 'Edit Invoice' })}
+                        aria-label={t('finance.edit_invoice', { defaultValue: 'Edit Invoice' })}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-content-tertiary hover:bg-surface-secondary hover:text-oe-blue transition-colors"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                    </div>
                   </div>
                   <div className="flex items-center justify-between text-xs text-content-tertiary">
                     <span><DateDisplay value={inv.issue_date} /></span>
@@ -1769,41 +2000,65 @@ function InvoicesTab({ projectId }: { projectId: string }) {
         )}
       </Card>
 
-      {/* New Invoice Modal */}
-      {showCreate && (
+      {/* New / Edit Invoice Modal — the edit form reuses this exact create
+          form, prefilled via openEditInvoice(). */}
+      {invoiceModalOpen && (
         <WideModal
           open
-          onClose={() => setShowCreate(false)}
-          title={t('finance.new_invoice', { defaultValue: 'New Invoice' })}
+          onClose={closeInvoiceModal}
+          title={
+            isEditingInvoice
+              ? t('finance.edit_invoice', { defaultValue: 'Edit Invoice' })
+              : t('finance.new_invoice', { defaultValue: 'New Invoice' })
+          }
           subtitle={
-            invoiceProjectName
-              ? t('common.creating_in_project', {
-                  defaultValue: 'In {{project}}',
-                  project: invoiceProjectName,
-                })
-              : undefined
+            isEditingInvoice
+              ? editingInvoice?.invoice_number || undefined
+              : invoiceProjectName
+                ? t('common.creating_in_project', {
+                    defaultValue: 'In {{project}}',
+                    project: invoiceProjectName,
+                  })
+                : undefined
           }
           size="xl"
-          busy={createInvoiceMut.isPending}
+          busy={isEditingInvoice ? updateInvoiceMut.isPending : createInvoiceMut.isPending}
           footer={
             <>
-              <Button variant="ghost" onClick={() => setShowCreate(false)} disabled={createInvoiceMut.isPending}>
+              <Button
+                variant="ghost"
+                onClick={closeInvoiceModal}
+                disabled={isEditingInvoice ? updateInvoiceMut.isPending : createInvoiceMut.isPending}
+              >
                 {t('common.cancel', { defaultValue: 'Cancel' })}
               </Button>
               <Button
                 variant="primary"
                 onClick={() => {
                   if (!validateInvoice()) return;
-                  createInvoiceMut.mutate(invoiceForm);
+                  if (isEditingInvoice && editingInvoice) {
+                    updateInvoiceMut.mutate({ id: editingInvoice.id, form: invoiceForm });
+                  } else {
+                    createInvoiceMut.mutate(invoiceForm);
+                  }
                 }}
-                disabled={createInvoiceMut.isPending || !canSubmitInvoice}
+                disabled={
+                  (isEditingInvoice ? updateInvoiceMut.isPending : createInvoiceMut.isPending) ||
+                  !canSubmitInvoice
+                }
               >
-                {createInvoiceMut.isPending ? (
+                {(isEditingInvoice ? updateInvoiceMut.isPending : createInvoiceMut.isPending) ? (
                   <Loader2 size={16} className="animate-spin mr-1.5" />
+                ) : isEditingInvoice ? (
+                  <Pencil size={16} className="mr-1.5" />
                 ) : (
                   <Plus size={16} className="mr-1.5" />
                 )}
-                <span>{t('common.create', { defaultValue: 'Create' })}</span>
+                <span>
+                  {isEditingInvoice
+                    ? t('common.save', { defaultValue: 'Save Changes' })
+                    : t('common.create', { defaultValue: 'Create' })}
+                </span>
               </Button>
             </>
           }

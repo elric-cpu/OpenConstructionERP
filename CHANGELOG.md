@@ -5,6 +5,21 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.0] — 2026-05-17 · Professional showcase BOQ + colored real-IFC BIM + viewer fix
+
+### Added
+
+- Edit + Delete on Finance, Inspections, Procurement and Variations (notices / VR / VO / daywork / EoT) — full prefilled edit modals + guarded delete.
+
+### Changed
+
+- Showcase BOQs rebuilt professionally: 12 WBS divisions × ~49 priced positions per project, each broken into 3–6 real region-catalogue resources at average price, fully localized; reconciliation deterministically recomputed (BAC/EVM/cash-flow stays green, ALL 7 PASS).
+- Showcase BIM now a real 48 MB IFC2X3 model with 380 real parsed elements (walls/slabs/windows/doors/beams + BaseQuantities), every priced position linked, downloadable original, rendered in color (66 materials).
+
+### Fixed
+
+- BIM 3D viewer z-fighting ("jumping triangles") on real IFC/RVT models — logarithmic depth buffer + model-scaled camera near/far instead of a fixed 1e8 range.
+
 ## [3.3.1] — 2026-05-17 · 7-project localized showcase on fresh install
 
 ### Added

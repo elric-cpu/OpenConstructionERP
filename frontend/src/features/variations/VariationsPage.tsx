@@ -18,6 +18,8 @@ import {
   ChevronRight,
   ArrowRight,
   AlertTriangle,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 import {
   Button,
@@ -26,7 +28,9 @@ import {
   EmptyState,
   Breadcrumb,
   SkeletonTable,
+  ConfirmDialog,
 } from '@/shared/ui';
+import { useConfirm } from '@/shared/hooks/useConfirm';
 import {
   WideModal,
   WideModalSection,
@@ -49,6 +53,16 @@ import {
   createVO,
   createDaywork,
   createEoT,
+  updateNotice,
+  updateVR,
+  updateVO,
+  updateDaywork,
+  updateEoT,
+  deleteNotice,
+  deleteVR,
+  deleteVO,
+  deleteDaywork,
+  deleteEoT,
   submitVR,
   approveVR,
   rejectVR,
@@ -77,6 +91,15 @@ import {
 } from './api';
 
 type Tab = 'notices' | 'requests' | 'orders' | 'daywork' | 'eot';
+
+/** A row currently being edited — carries its tab so the modal can prefill
+ *  and PATCH the right sub-entity. */
+type EditTarget =
+  | { kind: 'notices'; row: Notice }
+  | { kind: 'requests'; row: VariationRequest }
+  | { kind: 'orders'; row: VariationOrder }
+  | { kind: 'daywork'; row: DayworkSheet }
+  | { kind: 'eot'; row: ExtensionOfTimeClaim };
 
 const NOTICE_VARIANT: Record<NoticeStatus, 'neutral' | 'blue' | 'success' | 'warning' | 'error'> = {
   issued: 'blue',
@@ -129,6 +152,70 @@ function listProjectsLite(): Promise<ProjectStub[]> {
   return apiGet<ProjectStub[]>('/v1/projects/?limit=200').catch(() => [] as ProjectStub[]);
 }
 
+/**
+ * Statuses for which the backend `update_*` service rejects edits.
+ * Only Variation Orders have a server-side guard (`update_order` blocks
+ * `completed`/`voided`); every other sub-entity's update is unguarded, so
+ * Edit stays enabled there. Delete is unguarded everywhere the endpoint
+ * exists, so it is always offered.
+ */
+const EDIT_BLOCKED_STATUS: Partial<Record<Tab, readonly string[]>> = {
+  orders: ['completed', 'voided'],
+};
+
+function isEditBlocked(kind: Tab, status: string): boolean {
+  return (EDIT_BLOCKED_STATUS[kind] ?? []).includes(status);
+}
+
+/** Shared ghost Edit/Delete icon buttons rendered in the last table cell.
+ *  Mirrors the gold-standard TasksPage row-action pattern. */
+function RowActions({
+  editBlocked,
+  editBlockedReason,
+  onEdit,
+  onDelete,
+}: {
+  editBlocked?: boolean;
+  editBlockedReason?: string;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div
+      className="flex items-center justify-end gap-1"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onEdit}
+        disabled={editBlocked}
+        title={
+          editBlocked
+            ? editBlockedReason ||
+              t('variations.edit_blocked', {
+                defaultValue: 'This record can no longer be edited',
+              })
+            : t('common.edit', { defaultValue: 'Edit' })
+        }
+        className="!p-1 text-content-quaternary hover:text-oe-blue h-auto"
+      >
+        <Pencil size={13} />
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onDelete}
+        title={t('common.delete', { defaultValue: 'Delete' })}
+        className="!p-1 text-content-quaternary hover:text-red-500 h-auto"
+      >
+        <Trash2 size={13} />
+      </Button>
+    </div>
+  );
+}
+
 export function VariationsPage() {
   const { t } = useTranslation();
   const activeProjectId = useProjectContextStore((s) => s.activeProjectId);
@@ -162,6 +249,53 @@ export function VariationsPage() {
     | null
   >(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
+
+  const qc = useQueryClient();
+  const addToast = useToastStore((s) => s.addToast);
+  const { confirm, ...confirmProps } = useConfirm();
+
+  const deleteMut = useMutation({
+    mutationFn: (target: { kind: Tab; id: string }) => {
+      switch (target.kind) {
+        case 'notices':
+          return deleteNotice(target.id);
+        case 'requests':
+          return deleteVR(target.id);
+        case 'orders':
+          return deleteVO(target.id);
+        case 'daywork':
+          return deleteDaywork(target.id);
+        case 'eot':
+          return deleteEoT(target.id);
+        default:
+          return Promise.reject(new Error('unknown kind'));
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['variations'] });
+      setSelected(null);
+      addToast({
+        type: 'success',
+        title: t('variations.deleted', { defaultValue: 'Deleted' }),
+      });
+    },
+    onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),
+  });
+
+  const handleDelete = async (kind: Tab, id: string) => {
+    const ok = await confirm({
+      title: t('variations.confirm_delete_title', {
+        defaultValue: 'Delete this record?',
+      }),
+      message: t('variations.confirm_delete_msg', {
+        defaultValue: 'This record will be permanently deleted. This cannot be undone.',
+      }),
+      confirmLabel: t('common.delete', { defaultValue: 'Delete' }),
+      variant: 'danger',
+    });
+    if (ok) deleteMut.mutate({ kind, id });
+  };
 
   const noticesQ = useQuery({
     queryKey: ['variations', 'notices', projectId, statusFilter],
@@ -459,6 +593,8 @@ export function VariationsPage() {
           <NoticeTable
             rows={filteredNotices}
             onSelect={(id) => setSelected({ kind: 'notices', id })}
+            onEdit={(row) => setEditTarget({ kind: 'notices', row })}
+            onDelete={(id) => void handleDelete('notices', id)}
             emptyAction={() => setCreateOpen(true)}
           />
         ) : tab === 'requests' ? (
@@ -466,6 +602,8 @@ export function VariationsPage() {
             rows={filteredRequests}
             currency={currency}
             onSelect={(id) => setSelected({ kind: 'requests', id })}
+            onEdit={(row) => setEditTarget({ kind: 'requests', row })}
+            onDelete={(id) => void handleDelete('requests', id)}
             emptyAction={() => setCreateOpen(true)}
           />
         ) : tab === 'orders' ? (
@@ -473,6 +611,8 @@ export function VariationsPage() {
             rows={filteredOrders}
             currency={currency}
             onSelect={(id) => setSelected({ kind: 'orders', id })}
+            onEdit={(row) => setEditTarget({ kind: 'orders', row })}
+            onDelete={(id) => void handleDelete('orders', id)}
             emptyAction={() => setCreateOpen(true)}
           />
         ) : tab === 'daywork' ? (
@@ -480,12 +620,16 @@ export function VariationsPage() {
             rows={filteredDaywork}
             currency={currency}
             onSelect={(id) => setSelected({ kind: 'daywork', id })}
+            onEdit={(row) => setEditTarget({ kind: 'daywork', row })}
+            onDelete={(id) => void handleDelete('daywork', id)}
             emptyAction={() => setCreateOpen(true)}
           />
         ) : (
           <EoTTable
             rows={filteredEot}
             onSelect={(id) => setSelected({ kind: 'eot', id })}
+            onEdit={(row) => setEditTarget({ kind: 'eot', row })}
+            onDelete={(id) => void handleDelete('eot', id)}
             emptyAction={() => setCreateOpen(true)}
           />
         )}
@@ -514,6 +658,20 @@ export function VariationsPage() {
           onClose={() => setCreateOpen(false)}
         />
       )}
+
+      {editTarget && (
+        <CreateModal
+          kind={editTarget.kind}
+          projectId={projectId}
+          currency={currency}
+          notices={noticesQ.data ?? []}
+          requests={requestsQ.data ?? []}
+          editTarget={editTarget}
+          onClose={() => setEditTarget(null)}
+        />
+      )}
+
+      <ConfirmDialog {...confirmProps} />
     </div>
   );
 }
@@ -523,10 +681,14 @@ export function VariationsPage() {
 function NoticeTable({
   rows,
   onSelect,
+  onEdit,
+  onDelete,
   emptyAction,
 }: {
   rows: Notice[];
   onSelect: (id: string) => void;
+  onEdit: (row: Notice) => void;
+  onDelete: (id: string) => void;
   emptyAction: () => void;
 }) {
   const { t } = useTranslation();
@@ -563,6 +725,9 @@ function NoticeTable({
             <th className="px-4 py-2.5 text-left">
               {t('variations.status', { defaultValue: 'Status' })}
             </th>
+            <th className="px-4 py-2.5 text-right">
+              {t('common.actions', { defaultValue: 'Actions' })}
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -585,6 +750,12 @@ function NoticeTable({
                   {r.status}
                 </Badge>
               </td>
+              <td className="px-4 py-2">
+                <RowActions
+                  onEdit={() => onEdit(r)}
+                  onDelete={() => onDelete(r.id)}
+                />
+              </td>
             </tr>
           ))}
         </tbody>
@@ -597,11 +768,15 @@ function RequestTable({
   rows,
   currency,
   onSelect,
+  onEdit,
+  onDelete,
   emptyAction,
 }: {
   rows: VariationRequest[];
   currency: string;
   onSelect: (id: string) => void;
+  onEdit: (row: VariationRequest) => void;
+  onDelete: (id: string) => void;
   emptyAction: () => void;
 }) {
   const { t } = useTranslation();
@@ -641,6 +816,9 @@ function RequestTable({
             <th className="px-4 py-2.5 text-left">
               {t('variations.status', { defaultValue: 'Status' })}
             </th>
+            <th className="px-4 py-2.5 text-right">
+              {t('common.actions', { defaultValue: 'Actions' })}
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -665,6 +843,12 @@ function RequestTable({
                   {r.status}
                 </Badge>
               </td>
+              <td className="px-4 py-2">
+                <RowActions
+                  onEdit={() => onEdit(r)}
+                  onDelete={() => onDelete(r.id)}
+                />
+              </td>
             </tr>
           ))}
         </tbody>
@@ -677,11 +861,15 @@ function OrderTable({
   rows,
   currency,
   onSelect,
+  onEdit,
+  onDelete,
   emptyAction,
 }: {
   rows: VariationOrder[];
   currency: string;
   onSelect: (id: string) => void;
+  onEdit: (row: VariationOrder) => void;
+  onDelete: (id: string) => void;
   emptyAction: () => void;
 }) {
   const { t } = useTranslation();
@@ -721,6 +909,9 @@ function OrderTable({
             <th className="px-4 py-2.5 text-left">
               {t('variations.status', { defaultValue: 'Status' })}
             </th>
+            <th className="px-4 py-2.5 text-right">
+              {t('common.actions', { defaultValue: 'Actions' })}
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -747,6 +938,17 @@ function OrderTable({
                   {r.status}
                 </Badge>
               </td>
+              <td className="px-4 py-2">
+                <RowActions
+                  editBlocked={isEditBlocked('orders', r.status)}
+                  editBlockedReason={t('variations.order_edit_blocked', {
+                    defaultValue:
+                      'Completed or voided orders can no longer be edited',
+                  })}
+                  onEdit={() => onEdit(r)}
+                  onDelete={() => onDelete(r.id)}
+                />
+              </td>
             </tr>
           ))}
         </tbody>
@@ -759,11 +961,15 @@ function DayworkTable({
   rows,
   currency,
   onSelect,
+  onEdit,
+  onDelete,
   emptyAction,
 }: {
   rows: DayworkSheet[];
   currency: string;
   onSelect: (id: string) => void;
+  onEdit: (row: DayworkSheet) => void;
+  onDelete: (id: string) => void;
   emptyAction: () => void;
 }) {
   const { t } = useTranslation();
@@ -802,6 +1008,9 @@ function DayworkTable({
             <th className="px-4 py-2.5 text-left">
               {t('variations.status', { defaultValue: 'Status' })}
             </th>
+            <th className="px-4 py-2.5 text-right">
+              {t('common.actions', { defaultValue: 'Actions' })}
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -829,6 +1038,12 @@ function DayworkTable({
                   {r.status}
                 </Badge>
               </td>
+              <td className="px-4 py-2">
+                <RowActions
+                  onEdit={() => onEdit(r)}
+                  onDelete={() => onDelete(r.id)}
+                />
+              </td>
             </tr>
           ))}
         </tbody>
@@ -840,10 +1055,14 @@ function DayworkTable({
 function EoTTable({
   rows,
   onSelect,
+  onEdit,
+  onDelete,
   emptyAction,
 }: {
   rows: ExtensionOfTimeClaim[];
   onSelect: (id: string) => void;
+  onEdit: (row: ExtensionOfTimeClaim) => void;
+  onDelete: (id: string) => void;
   emptyAction: () => void;
 }) {
   const { t } = useTranslation();
@@ -885,6 +1104,9 @@ function EoTTable({
             <th className="px-4 py-2.5 text-left">
               {t('variations.status', { defaultValue: 'Status' })}
             </th>
+            <th className="px-4 py-2.5 text-right">
+              {t('common.actions', { defaultValue: 'Actions' })}
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -911,6 +1133,12 @@ function EoTTable({
                 <Badge variant={EOT_VARIANT[r.status]} dot>
                   {r.status}
                 </Badge>
+              </td>
+              <td className="px-4 py-2">
+                <RowActions
+                  onEdit={() => onEdit(r)}
+                  onDelete={() => onDelete(r.id)}
+                />
               </td>
             </tr>
           ))}
@@ -1663,14 +1891,28 @@ function Field({ label, value }: { label: React.ReactNode; value: React.ReactNod
   );
 }
 
-/* ─── Create modal ─── */
+/* ─── Create / Edit modal ─── */
 
+/** Trim an ISO datetime down to the YYYY-MM-DD a native `<input type="date">`
+ *  expects. Falls back to '' so editing never crashes on a null/empty date. */
+function toDateInput(v: string | null | undefined): string {
+  return v ? v.slice(0, 10) : '';
+}
+
+/**
+ * Dual-purpose modal: with no `editTarget` it creates a new sub-entity
+ * (unchanged behaviour); with an `editTarget` it prefills the SAME form
+ * from the list row and PATCHes via the matching `update*` API. The create
+ * form is the single source of truth for both flows — Edit reuses it
+ * verbatim per the gold-standard TasksPage pattern.
+ */
 function CreateModal({
   kind,
   projectId,
   currency,
   notices,
   requests,
+  editTarget,
   onClose,
 }: {
   kind: Tab;
@@ -1678,124 +1920,214 @@ function CreateModal({
   currency: string;
   notices: Notice[];
   requests: VariationRequest[];
+  editTarget?: EditTarget | null;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const addToast = useToastStore((s) => s.addToast);
   const [busy, setBusy] = useState(false);
+  const isEdit = !!editTarget;
 
-  const [noticeForm, setNoticeForm] = useState({
-    title: '',
-    description: '',
-    recipient_type: 'owner' as Notice['recipient_type'],
-    recipient_name: '',
-    target_response_date: '',
+  const [noticeForm, setNoticeForm] = useState(() => {
+    const n =
+      editTarget?.kind === 'notices' ? editTarget.row : null;
+    return {
+      title: n?.title ?? '',
+      description: n?.description ?? '',
+      recipient_type: (n?.recipient_type ?? 'owner') as Notice['recipient_type'],
+      recipient_name: n?.recipient_name ?? '',
+      target_response_date: toDateInput(n?.target_response_date),
+    };
   });
 
-  const [vrForm, setVrForm] = useState({
-    title: '',
-    description: '',
-    notice_id: '',
-    classification: 'scope_change' as VariationRequest['classification'],
-    urgency: 'med' as VariationRequest['urgency'],
-    estimated_cost_impact: '0',
-    estimated_schedule_days: '0',
-    currency,
+  const [vrForm, setVrForm] = useState(() => {
+    const r =
+      editTarget?.kind === 'requests' ? editTarget.row : null;
+    return {
+      title: r?.title ?? '',
+      description: r?.description ?? '',
+      notice_id: r?.notice_id ?? '',
+      classification: (r?.classification ??
+        'scope_change') as VariationRequest['classification'],
+      urgency: (r?.urgency ?? 'med') as VariationRequest['urgency'],
+      estimated_cost_impact:
+        r != null ? String(r.estimated_cost_impact ?? '0') : '0',
+      estimated_schedule_days:
+        r != null ? String(r.estimated_schedule_days ?? '0') : '0',
+      currency: r?.currency || currency,
+    };
   });
 
-  const [voForm, setVoForm] = useState({
-    title: '',
-    variation_request_id: '',
-    final_cost_impact: '0',
-    final_schedule_days: '0',
-    currency,
+  const [voForm, setVoForm] = useState(() => {
+    const o = editTarget?.kind === 'orders' ? editTarget.row : null;
+    return {
+      title: o?.title ?? '',
+      variation_request_id: o?.variation_request_id ?? '',
+      final_cost_impact:
+        o != null ? String(o.final_cost_impact ?? '0') : '0',
+      final_schedule_days:
+        o != null ? String(o.final_schedule_days ?? '0') : '0',
+      currency: o?.currency || currency,
+    };
   });
 
-  const [dwForm, setDwForm] = useState({
-    work_date: '',
-    description: '',
-    currency,
+  const [dwForm, setDwForm] = useState(() => {
+    const d = editTarget?.kind === 'daywork' ? editTarget.row : null;
+    return {
+      work_date: toDateInput(d?.work_date),
+      description: d?.description ?? '',
+      currency: d?.currency || currency,
+    };
   });
 
-  const [eotForm, setEotForm] = useState({
-    description: '',
-    root_cause_category: 'neutral' as ExtensionOfTimeClaim['root_cause_category'],
-    requested_days: '0',
-    critical_path_impact: false,
-    claim_period_start: '',
-    claim_period_end: '',
+  const [eotForm, setEotForm] = useState(() => {
+    const e = editTarget?.kind === 'eot' ? editTarget.row : null;
+    return {
+      description: e?.description ?? '',
+      root_cause_category: (e?.root_cause_category ??
+        'neutral') as ExtensionOfTimeClaim['root_cause_category'],
+      requested_days: e != null ? String(e.requested_days ?? '0') : '0',
+      critical_path_impact: e?.critical_path_impact ?? false,
+      claim_period_start: toDateInput(e?.claim_period_start),
+      claim_period_end: toDateInput(e?.claim_period_end),
+    };
   });
 
   const submit = async () => {
     setBusy(true);
     try {
+      const editId = editTarget?.row.id ?? '';
       if (kind === 'notices') {
-        await createNotice({
-          project_id: projectId,
-          title: noticeForm.title.trim(),
-          description: noticeForm.description.trim(),
-          recipient_type: noticeForm.recipient_type,
-          recipient_name: noticeForm.recipient_name.trim(),
-          target_response_date: noticeForm.target_response_date || undefined,
-        });
+        if (isEdit && editTarget?.kind === 'notices') {
+          await updateNotice(editId, {
+            title: noticeForm.title.trim(),
+            description: noticeForm.description.trim(),
+            recipient_type: noticeForm.recipient_type,
+            recipient_name: noticeForm.recipient_name.trim(),
+            target_response_date: noticeForm.target_response_date || null,
+          });
+        } else {
+          await createNotice({
+            project_id: projectId,
+            title: noticeForm.title.trim(),
+            description: noticeForm.description.trim(),
+            recipient_type: noticeForm.recipient_type,
+            recipient_name: noticeForm.recipient_name.trim(),
+            target_response_date: noticeForm.target_response_date || undefined,
+          });
+        }
         addToast({
           type: 'success',
-          title: t('variations.notice_created', { defaultValue: 'Notice created' }),
+          title: isEdit
+            ? t('variations.notice_updated', { defaultValue: 'Notice updated' })
+            : t('variations.notice_created', { defaultValue: 'Notice created' }),
         });
       } else if (kind === 'requests') {
-        await createVR({
-          project_id: projectId,
-          notice_id: vrForm.notice_id || null,
-          title: vrForm.title.trim(),
-          description: vrForm.description.trim(),
-          classification: vrForm.classification,
-          urgency: vrForm.urgency,
-          estimated_cost_impact: Number(vrForm.estimated_cost_impact) || 0,
-          estimated_schedule_days: Number(vrForm.estimated_schedule_days) || 0,
-          currency: vrForm.currency,
-        });
+        if (isEdit && editTarget?.kind === 'requests') {
+          await updateVR(editId, {
+            title: vrForm.title.trim(),
+            description: vrForm.description.trim(),
+            classification: vrForm.classification,
+            urgency: vrForm.urgency,
+            estimated_cost_impact: Number(vrForm.estimated_cost_impact) || 0,
+            estimated_schedule_days: Number(vrForm.estimated_schedule_days) || 0,
+            currency: vrForm.currency,
+          });
+        } else {
+          await createVR({
+            project_id: projectId,
+            notice_id: vrForm.notice_id || null,
+            title: vrForm.title.trim(),
+            description: vrForm.description.trim(),
+            classification: vrForm.classification,
+            urgency: vrForm.urgency,
+            estimated_cost_impact: Number(vrForm.estimated_cost_impact) || 0,
+            estimated_schedule_days: Number(vrForm.estimated_schedule_days) || 0,
+            currency: vrForm.currency,
+          });
+        }
         addToast({
           type: 'success',
-          title: t('variations.vr_created', { defaultValue: 'Request created' }),
+          title: isEdit
+            ? t('variations.vr_updated', { defaultValue: 'Request updated' })
+            : t('variations.vr_created', { defaultValue: 'Request created' }),
         });
       } else if (kind === 'orders') {
-        await createVO({
-          project_id: projectId,
-          variation_request_id: voForm.variation_request_id || null,
-          title: voForm.title.trim(),
-          final_cost_impact: Number(voForm.final_cost_impact) || 0,
-          final_schedule_days: Number(voForm.final_schedule_days) || 0,
-          currency: voForm.currency,
-        });
+        if (isEdit && editTarget?.kind === 'orders') {
+          await updateVO(editId, {
+            title: voForm.title.trim(),
+            final_cost_impact: Number(voForm.final_cost_impact) || 0,
+            final_schedule_days: Number(voForm.final_schedule_days) || 0,
+            currency: voForm.currency,
+          });
+        } else {
+          await createVO({
+            project_id: projectId,
+            variation_request_id: voForm.variation_request_id || null,
+            title: voForm.title.trim(),
+            final_cost_impact: Number(voForm.final_cost_impact) || 0,
+            final_schedule_days: Number(voForm.final_schedule_days) || 0,
+            currency: voForm.currency,
+          });
+        }
         addToast({
           type: 'success',
-          title: t('variations.vo_created', { defaultValue: 'Order created' }),
+          title: isEdit
+            ? t('variations.vo_updated', { defaultValue: 'Order updated' })
+            : t('variations.vo_created', { defaultValue: 'Order created' }),
         });
       } else if (kind === 'daywork') {
-        await createDaywork({
-          project_id: projectId,
-          work_date: dwForm.work_date || undefined,
-          description: dwForm.description.trim(),
-          currency: dwForm.currency,
-        });
+        if (isEdit && editTarget?.kind === 'daywork') {
+          await updateDaywork(editId, {
+            work_date: dwForm.work_date || null,
+            description: dwForm.description.trim(),
+            currency: dwForm.currency,
+          });
+        } else {
+          await createDaywork({
+            project_id: projectId,
+            work_date: dwForm.work_date || undefined,
+            description: dwForm.description.trim(),
+            currency: dwForm.currency,
+          });
+        }
         addToast({
           type: 'success',
-          title: t('variations.daywork_created', { defaultValue: 'Daywork sheet created' }),
+          title: isEdit
+            ? t('variations.daywork_updated', {
+                defaultValue: 'Daywork sheet updated',
+              })
+            : t('variations.daywork_created', {
+                defaultValue: 'Daywork sheet created',
+              }),
         });
       } else if (kind === 'eot') {
-        await createEoT({
-          project_id: projectId,
-          description: eotForm.description.trim(),
-          root_cause_category: eotForm.root_cause_category,
-          requested_days: Number(eotForm.requested_days) || 0,
-          critical_path_impact: eotForm.critical_path_impact,
-          claim_period_start: eotForm.claim_period_start || undefined,
-          claim_period_end: eotForm.claim_period_end || undefined,
-        });
+        if (isEdit && editTarget?.kind === 'eot') {
+          await updateEoT(editId, {
+            description: eotForm.description.trim(),
+            root_cause_category: eotForm.root_cause_category,
+            requested_days: Number(eotForm.requested_days) || 0,
+            critical_path_impact: eotForm.critical_path_impact,
+          });
+        } else {
+          await createEoT({
+            project_id: projectId,
+            description: eotForm.description.trim(),
+            root_cause_category: eotForm.root_cause_category,
+            requested_days: Number(eotForm.requested_days) || 0,
+            critical_path_impact: eotForm.critical_path_impact,
+            claim_period_start: eotForm.claim_period_start || undefined,
+            claim_period_end: eotForm.claim_period_end || undefined,
+          });
+        }
         addToast({
           type: 'success',
-          title: t('variations.eot_created', { defaultValue: 'EoT claim created' }),
+          title: isEdit
+            ? t('variations.eot_updated', { defaultValue: 'EoT claim updated' })
+            : t('variations.eot_created', {
+                defaultValue: 'EoT claim created',
+              }),
         });
       }
       qc.invalidateQueries({ queryKey: ['variations'] });
@@ -1807,7 +2139,7 @@ function CreateModal({
     }
   };
 
-  const title =
+  const createTitle =
     kind === 'notices'
       ? t('variations.new_notice', { defaultValue: 'New Notice' })
       : kind === 'requests'
@@ -1817,6 +2149,17 @@ function CreateModal({
           : kind === 'daywork'
             ? t('variations.new_daywork', { defaultValue: 'New Daywork' })
             : t('variations.new_eot', { defaultValue: 'New EoT Claim' });
+  const editTitle =
+    kind === 'notices'
+      ? t('variations.edit_notice', { defaultValue: 'Edit Notice' })
+      : kind === 'requests'
+        ? t('variations.edit_request', { defaultValue: 'Edit Request' })
+        : kind === 'orders'
+          ? t('variations.edit_order', { defaultValue: 'Edit Order' })
+          : kind === 'daywork'
+            ? t('variations.edit_daywork', { defaultValue: 'Edit Daywork' })
+            : t('variations.edit_eot', { defaultValue: 'Edit EoT Claim' });
+  const title = isEdit ? editTitle : createTitle;
 
   // Requests is the densest (7 fields with a cost/days/currency triplet)
   // so it benefits from xl; the rest comfortably fit at lg.
@@ -1838,9 +2181,19 @@ function CreateModal({
             variant="primary"
             onClick={submit}
             loading={busy}
-            icon={busy ? <Loader2 size={14} /> : <Plus size={14} />}
+            icon={
+              busy ? (
+                <Loader2 size={14} />
+              ) : isEdit ? (
+                <Pencil size={14} />
+              ) : (
+                <Plus size={14} />
+              )
+            }
           >
-            {t('common.create', { defaultValue: 'Create' })}
+            {isEdit
+              ? t('common.save', { defaultValue: 'Save' })
+              : t('common.create', { defaultValue: 'Create' })}
           </Button>
         </>
       }
@@ -1944,23 +2297,29 @@ function CreateModal({
                 className={clsx(inputCls, 'h-auto py-2')}
               />
             </WideModalField>
-            <WideModalField
-              label={t('variations.from_notice', { defaultValue: 'From notice (optional)' })}
-              span={2}
-            >
-              <select
-                value={vrForm.notice_id}
-                onChange={(e) => setVrForm({ ...vrForm, notice_id: e.target.value })}
-                className={inputCls}
+            {!isEdit && (
+              <WideModalField
+                label={t('variations.from_notice', {
+                  defaultValue: 'From notice (optional)',
+                })}
+                span={2}
               >
-                <option value="">—</option>
-                {notices.map((n) => (
-                  <option key={n.id} value={n.id}>
-                    {n.code} — {n.title || '—'}
-                  </option>
-                ))}
-              </select>
-            </WideModalField>
+                <select
+                  value={vrForm.notice_id}
+                  onChange={(e) =>
+                    setVrForm({ ...vrForm, notice_id: e.target.value })
+                  }
+                  className={inputCls}
+                >
+                  <option value="">—</option>
+                  {notices.map((n) => (
+                    <option key={n.id} value={n.id}>
+                      {n.code} — {n.title || '—'}
+                    </option>
+                  ))}
+                </select>
+              </WideModalField>
+            )}
             <WideModalField label={t('variations.classification')}>
               <select
                 value={vrForm.classification}
@@ -2056,25 +2415,32 @@ function CreateModal({
                 className={inputCls}
               />
             </WideModalField>
-            <WideModalField
-              label={t('variations.from_request', { defaultValue: 'From request (optional)' })}
-              span={2}
-            >
-              <select
-                value={voForm.variation_request_id}
-                onChange={(e) =>
-                  setVoForm({ ...voForm, variation_request_id: e.target.value })
-                }
-                className={inputCls}
+            {!isEdit && (
+              <WideModalField
+                label={t('variations.from_request', {
+                  defaultValue: 'From request (optional)',
+                })}
+                span={2}
               >
-                <option value="">—</option>
-                {requests.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.code} — {r.title || '—'}
-                  </option>
-                ))}
-              </select>
-            </WideModalField>
+                <select
+                  value={voForm.variation_request_id}
+                  onChange={(e) =>
+                    setVoForm({
+                      ...voForm,
+                      variation_request_id: e.target.value,
+                    })
+                  }
+                  className={inputCls}
+                >
+                  <option value="">—</option>
+                  {requests.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.code} — {r.title || '—'}
+                    </option>
+                  ))}
+                </select>
+              </WideModalField>
+            )}
           </WideModalSection>
           <WideModalSection
             title={t('variations.section_impact', { defaultValue: 'Impact' })}
@@ -2191,30 +2557,41 @@ function CreateModal({
               min={0}
             />
           </WideModalField>
-          <WideModalField
-            label={t('variations.period_start', { defaultValue: 'Period start' })}
-          >
-            <input
-              type="date"
-              value={eotForm.claim_period_start}
-              onChange={(e) =>
-                setEotForm({ ...eotForm, claim_period_start: e.target.value })
-              }
-              className={inputCls}
-            />
-          </WideModalField>
-          <WideModalField
-            label={t('variations.period_end', { defaultValue: 'Period end' })}
-          >
-            <input
-              type="date"
-              value={eotForm.claim_period_end}
-              onChange={(e) =>
-                setEotForm({ ...eotForm, claim_period_end: e.target.value })
-              }
-              className={inputCls}
-            />
-          </WideModalField>
+          {!isEdit && (
+            <>
+              <WideModalField
+                label={t('variations.period_start', {
+                  defaultValue: 'Period start',
+                })}
+              >
+                <input
+                  type="date"
+                  value={eotForm.claim_period_start}
+                  onChange={(e) =>
+                    setEotForm({
+                      ...eotForm,
+                      claim_period_start: e.target.value,
+                    })
+                  }
+                  className={inputCls}
+                />
+              </WideModalField>
+              <WideModalField
+                label={t('variations.period_end', {
+                  defaultValue: 'Period end',
+                })}
+              >
+                <input
+                  type="date"
+                  value={eotForm.claim_period_end}
+                  onChange={(e) =>
+                    setEotForm({ ...eotForm, claim_period_end: e.target.value })
+                  }
+                  className={inputCls}
+                />
+              </WideModalField>
+            </>
+          )}
           <WideModalField label="" span={2}>
             <label className="inline-flex items-center gap-2 text-sm">
               <input
