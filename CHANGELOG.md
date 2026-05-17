@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Idempotent boot loader with demo-owner re-mapping; never breaks boot.
 - `SEED_SHOWCASE=false` opts out; the classic 5 demo projects remain the fallback when the snapshot or SQLite is unavailable.
 
+### Fixed
+
+- Showcase entities were seeded into terminal/locked statuses (meeting `completed`, RFI `closed`, contract `active`, EOT-claim invalid `approved`, field-report `submitted`, CDE `shared`/S0) so API state-machine guards blocked edit/delete; reset to editable create-default states across all 7 projects. Numeric/financial columns untouched — BAC/EVM/cash-flow reconciliation preserved.
+
 ## [3.3.0] — 2026-05-16 · Reusable BOQ codes (linked positions) + deep correctness pass
 
 ### Added
