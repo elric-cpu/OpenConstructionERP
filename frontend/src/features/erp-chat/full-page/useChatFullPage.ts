@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { aiApi, type AISettings } from '@/features/ai/api';
-import type { ChatMessage, ChatStreamChunk, DataPanelEntry, ToolCallInfo } from '../types';
+import type { ChatMessage, DataPanelEntry, ToolCallInfo } from '../types';
 
 const DEFAULT_SUGGESTIONS = [
   'Show all projects',
@@ -155,6 +155,15 @@ export function useChatFullPage(): UseChatFullPageReturn {
 
           const decoder = new TextDecoder();
           let buffer = '';
+          // The backend emits standard SSE frames where the event name is on
+          // an ``event:`` line and the JSON payload on the following
+          // ``data:`` line (see backend _sse()). The previous parser only
+          // read ``data:`` and switched on a non-existent ``chunk.type``
+          // field, so NOTHING ever rendered. Track the current event name
+          // and reset it after each blank-line-delimited frame.
+          let currentEvent = '';
+
+          const lastToolCallId = { id: '' };
 
           while (true) {
             const { done, value } = await reader.read();
@@ -166,34 +175,43 @@ export function useChatFullPage(): UseChatFullPageReturn {
             // Keep the last (possibly incomplete) line in the buffer
             buffer = lines.pop() ?? '';
 
-            for (const line of lines) {
-              const trimmedLine = line.trim();
-              if (!trimmedLine || !trimmedLine.startsWith('data: ')) continue;
+            for (const rawLine of lines) {
+              const line = rawLine.replace(/\r$/, '');
+              // Blank line terminates an SSE frame — reset the event name.
+              if (line.trim() === '') {
+                currentEvent = '';
+                continue;
+              }
+              if (line.startsWith('event:')) {
+                currentEvent = line.slice(6).trim();
+                continue;
+              }
+              if (!line.startsWith('data:')) continue;
 
-              const jsonStr = trimmedLine.slice(6);
-              if (jsonStr === '[DONE]') continue;
+              const jsonStr = line.slice(5).trim();
+              if (!jsonStr || jsonStr === '[DONE]') continue;
 
-              let chunk: ChatStreamChunk;
+              let payload: Record<string, unknown>;
               try {
-                chunk = JSON.parse(jsonStr) as ChatStreamChunk;
+                payload = JSON.parse(jsonStr) as Record<string, unknown>;
               } catch {
                 continue;
               }
 
-              switch (chunk.type) {
-                case 'stream_start': {
-                  if (chunk.session_id) {
-                    setSessionId(chunk.session_id);
-                  }
+              switch (currentEvent) {
+                case 'session_id': {
+                  const sid = payload.session_id as string | undefined;
+                  if (sid) setSessionId(sid);
                   break;
                 }
 
                 case 'text': {
-                  if (chunk.content) {
+                  const content = payload.content as string | undefined;
+                  if (content) {
                     setMessages((prev) =>
                       prev.map((m) =>
                         m.id === aiMsgId
-                          ? { ...m, content: m.content + chunk.content }
+                          ? { ...m, content: m.content + content }
                           : m,
                       ),
                     );
@@ -202,13 +220,15 @@ export function useChatFullPage(): UseChatFullPageReturn {
                 }
 
                 case 'tool_start': {
+                  const toolName = (payload.tool as string | undefined) ?? 'unknown';
                   const toolCall: ToolCallInfo = {
-                    id: chunk.tool_call_id ?? uid(),
-                    name: chunk.tool_name ?? 'unknown',
+                    id: uid(),
+                    name: toolName,
                     status: 'running',
-                    input: chunk.tool_input as Record<string, unknown> | undefined,
+                    input: payload.args as Record<string, unknown> | undefined,
                     startedAt: Date.now(),
                   };
+                  lastToolCallId.id = toolCall.id;
                   setMessages((prev) =>
                     prev.map((m) =>
                       m.id === aiMsgId
@@ -220,45 +240,51 @@ export function useChatFullPage(): UseChatFullPageReturn {
                 }
 
                 case 'tool_result': {
-                  const toolCallId = chunk.tool_call_id;
+                  // Backend payload: { tool, result }. There is no per-call
+                  // id on the wire, so the most-recently-started running
+                  // tool call for this message is the one being resolved.
+                  const result = payload.result as ToolCallInfo['result'] | undefined;
                   setMessages((prev) =>
                     prev.map((m) => {
                       if (m.id !== aiMsgId) return m;
-                      return {
-                        ...m,
-                        toolCalls: (m.toolCalls ?? []).map((tc) =>
-                          tc.id === toolCallId
-                            ? {
-                                ...tc,
-                                status: 'done' as const,
-                                result: chunk.result as ToolCallInfo['result'],
-                                durationMs: Date.now() - tc.startedAt,
-                              }
-                            : tc,
-                        ),
-                      };
+                      let matched = false;
+                      const toolCalls = (m.toolCalls ?? [])
+                        .slice()
+                        .reverse()
+                        .map((tc) => {
+                          if (!matched && tc.status === 'running') {
+                            matched = true;
+                            return {
+                              ...tc,
+                              status: 'done' as const,
+                              result,
+                              durationMs: Date.now() - tc.startedAt,
+                            };
+                          }
+                          return tc;
+                        })
+                        .reverse();
+                      return { ...m, toolCalls };
                     }),
                   );
 
                   // Add to data panel entries
-                  if (chunk.result?.renderer) {
+                  if (result?.renderer) {
                     const entry: DataPanelEntry = {
-                      renderer: chunk.result.renderer as string,
-                      data: chunk.result.data,
-                      toolName: chunk.tool_name ?? 'unknown',
-                      summary: (chunk.result.summary as string) ?? '',
+                      renderer: result.renderer,
+                      data: result.data,
+                      toolName: (payload.tool as string | undefined) ?? 'unknown',
+                      summary: result.summary ?? '',
                       timestamp: Date.now(),
                     };
                     setDataPanelEntries((prev) => [...prev, entry]);
-                    setActivePanelIndex((prev) =>
-                      prev < 0 ? 0 : prev + 1,
-                    );
+                    setActivePanelIndex((prev) => (prev < 0 ? 0 : prev + 1));
                   }
                   break;
                 }
 
                 case 'error': {
-                  const errMsg = chunk.message ?? 'Unknown error';
+                  const errMsg = (payload.message as string | undefined) ?? 'Unknown error';
                   setMessages((prev) =>
                     prev.map((m) =>
                       m.id === aiMsgId

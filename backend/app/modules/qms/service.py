@@ -1,4 +1,4 @@
-"""QMS service — business logic for the unified quality module.
+"""‌⁠‍QMS service — business logic for the unified quality module.
 
 Status transitions are guarded by explicit allow-lists. Illegal moves
 raise :class:`ValueError`; HTTP-layer translation happens in the router.
@@ -106,7 +106,7 @@ _AUDIT_STATUS_TRANSITIONS: dict[str, set[str]] = {
 
 
 def _utc_now_iso() -> str:
-    """Return current UTC time as an ISO-8601 string for the String(32) columns."""
+    """‌⁠‍Return current UTC time as an ISO-8601 string for the String(32) columns."""
     return datetime.now(UTC).isoformat()
 
 
@@ -117,7 +117,7 @@ def _guard_transition(
     new: str,
     entity: str,
 ) -> None:
-    """Raise :class:`ValueError` if ``current → new`` is not in ``table``."""
+    """‌⁠‍Raise :class:`ValueError` if ``current → new`` is not in ``table``."""
     if new == current:
         return
     allowed = table.get(current, set())

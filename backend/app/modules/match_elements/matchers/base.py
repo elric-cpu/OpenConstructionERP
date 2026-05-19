@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Matcher protocol — uniform interface for vector / lexical / LLM."""
+"""‌⁠‍Matcher protocol — uniform interface for vector / lexical / LLM."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ MatcherName = Literal["vector", "lexical", "llm"]
 
 
 class Matcher(Protocol):
-    """Protocol every matcher implements."""
+    """‌⁠‍Protocol every matcher implements."""
 
     name: MatcherName
 
@@ -25,5 +25,5 @@ class Matcher(Protocol):
         catalogue_id: uuid.UUID | None,
         top_k: int = 10,
     ) -> list[MatchCandidate]:
-        """Return top-k CWICR candidates ranked by this matcher's score."""
+        """‌⁠‍Return top-k CWICR candidates ranked by this matcher's score."""
         ...

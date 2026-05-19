@@ -45,6 +45,43 @@ import { DashboardProjectsMap } from './components/DashboardProjectsMap';
 import { ShowAllProjectsCard } from './components/ShowAllProjectsCard';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 
+/* ── Helpers ──────────────────────────────────────────────────────────── */
+
+/**
+ * Run `task` for every item with at most `limit` requests in flight, then
+ * flatten the results. Per-item rejections are swallowed (a project with no
+ * BOQs/schedules 404s and must not abort the whole batch — same semantics as
+ * the old per-iteration try/catch). Replaces the previous strictly-serial
+ * `for (… of …) { await … }` fan-out so the dashboard issues N requests in
+ * ~⌈N/limit⌉ waves instead of N back-to-back round-trips. Result order is
+ * completion-order, which is fine: every consumer either aggregates or sorts
+ * by timestamp.
+ */
+async function fanOutPooled<T, R>(
+  items: readonly T[],
+  limit: number,
+  task: (item: T) => Promise<R[]>,
+): Promise<R[]> {
+  const out: R[] = [];
+  let cursor = 0;
+  const runWorker = async (): Promise<void> => {
+    while (cursor < items.length) {
+      const item = items[cursor++]!;
+      try {
+        out.push(...(await task(item)));
+      } catch {
+        /* skip — item has no rows for this resource */
+      }
+    }
+  };
+  const workers = Array.from(
+    { length: Math.min(limit, items.length) },
+    runWorker,
+  );
+  await Promise.all(workers);
+  return out;
+}
+
 /* ── Types ────────────────────────────────────────────────────────────── */
 
 interface ProjectSummary {
@@ -1726,20 +1763,10 @@ export function DashboardPage() {
   // Fetch all BOQs across projects for KPI ribbon + analytics
   const { data: allBoqs } = useQuery({
     queryKey: ['dashboard-all-boqs', projects?.map((p) => p.id).join(',')],
-    queryFn: async () => {
-      const results: BOQWithTotal[] = [];
-      for (const project of projects ?? []) {
-        try {
-          const boqs = await apiGet<BOQWithTotal[]>(
-            `/v1/boq/boqs/?project_id=${project.id}`,
-          );
-          results.push(...boqs);
-        } catch {
-          // Skip projects with no BOQs
-        }
-      }
-      return results;
-    },
+    queryFn: () =>
+      fanOutPooled(projects ?? [], 8, (project) =>
+        apiGet<BOQWithTotal[]>(`/v1/boq/boqs/?project_id=${project.id}`),
+      ),
     enabled: Boolean(projects && projects.length > 0),
     retry: false,
   });
@@ -1747,20 +1774,12 @@ export function DashboardPage() {
   // Fetch schedules across projects for KPI ribbon
   const { data: allSchedules } = useQuery({
     queryKey: ['dashboard-all-schedules', projects?.map((p) => p.id).join(',')],
-    queryFn: async () => {
-      const results: ScheduleSummary[] = [];
-      for (const project of projects ?? []) {
-        try {
-          const schedules = await apiGet<ScheduleSummary[]>(
-            `/v1/schedule/schedules/?project_id=${project.id}`,
-          );
-          results.push(...schedules);
-        } catch {
-          // Skip
-        }
-      }
-      return results;
-    },
+    queryFn: () =>
+      fanOutPooled(projects ?? [], 8, (project) =>
+        apiGet<ScheduleSummary[]>(
+          `/v1/schedule/schedules/?project_id=${project.id}`,
+        ),
+      ),
     enabled: Boolean(projects && projects.length > 0),
     retry: false,
   });
@@ -2172,20 +2191,10 @@ function AnalyticsSection({ projects }: { projects: ProjectSummary[] }) {
     // Query dedupes when keys match, so the analytics section gets the same
     // ``allBoqs`` data without firing a second 1×N round of GETs.
     queryKey: ['dashboard-all-boqs', projects.map((p) => p.id).join(',')],
-    queryFn: async () => {
-      const results: BOQWithTotal[] = [];
-      for (const project of projects) {
-        try {
-          const boqs = await apiGet<BOQWithTotal[]>(
-            `/v1/boq/boqs/?project_id=${project.id}`,
-          );
-          results.push(...boqs);
-        } catch {
-          // Skip projects with no BOQs
-        }
-      }
-      return results;
-    },
+    queryFn: () =>
+      fanOutPooled(projects, 8, (project) =>
+        apiGet<BOQWithTotal[]>(`/v1/boq/boqs/?project_id=${project.id}`),
+      ),
     enabled: projects.length > 0,
     retry: false,
   });

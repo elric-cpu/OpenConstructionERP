@@ -1,4 +1,4 @@
-"""Carbon & Sustainability module manifest."""
+"""‌⁠‍Carbon & Sustainability module manifest."""
 
 from app.core.module_loader import ModuleManifest
 

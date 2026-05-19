@@ -7,6 +7,8 @@ Tables:
     oe_boq_position — individual line items within a BOQ
     oe_boq_markup — markup/overhead lines applied to a BOQ
     oe_boq_activity_log — audit trail for BOQ mutations
+    oe_boq_snapshot — point-in-time BOQ state for version history
+    oe_boq_quantity_link — live model→position quantity binding
 """
 
 import uuid
@@ -320,3 +322,100 @@ class BOQSnapshot(Base):
 
     def __repr__(self) -> str:
         return f"<BOQSnapshot boq={self.boq_id} name={self.name}>"
+
+
+class QuantityLink(Base):
+    """Live binding between a BOQ position and a set of BIM model elements.
+
+    Records *how* a position's numeric field is derived from the canonical
+    quantities of one or more model elements so the figure can be
+    re-pulled when the source model revises. The link is a *rule*, never a
+    cached value — the current quantity always lives on
+    :class:`Position`; this row only states the extraction recipe and the
+    provenance of the last applied pull.
+
+    Columns:
+        position_id — owning BOQ position (CASCADE on delete)
+        boq_id — denormalised owning BOQ for cheap per-BOQ listing/refresh
+        model_id — the BIM model the binding tracks (NOT version-pinned;
+            ``compute_diff`` resolves the latest version on refresh)
+        element_stable_ids — list[str] of canonical element ``stable_id``s
+            whose quantities feed this position
+        quantity_field — the canonical quantity key to read off each
+            element's ``quantities`` map, e.g. ``area_m2`` / ``volume_m3``
+        target_field — the Position numeric field the aggregate writes to;
+            currently always ``quantity`` (only field a model can drive)
+        aggregation — how multiple elements combine: ``sum`` (default),
+            ``max``, ``min``, ``count``, ``first``
+        status — ``active`` (in sync) | ``stale`` (a refresh detected the
+            source elements changed and a human has not yet applied) |
+            ``broken`` (model/elements no longer resolvable)
+        source_model_version — the model ``version`` string captured at
+            the last successful apply (provenance)
+        last_applied_quantity — the position quantity this link last
+            wrote (provenance / staleness baseline), stored as a string
+            for the same SQLite-precision reason as Position.quantity
+        last_pulled_at — ISO-8601 UTC timestamp of the last refresh probe
+        last_applied_at — ISO-8601 UTC timestamp of the last human apply
+        created_by / applied_by — user provenance (who bound / who applied)
+        metadata_ — module-extensible blob (last diff envelope etc.)
+    """
+
+    __tablename__ = "oe_boq_quantity_link"
+    __table_args__ = (
+        Index("ix_boq_quantity_link_boq", "boq_id"),
+        Index("ix_boq_quantity_link_status", "status"),
+    )
+
+    position_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_boq_position.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    boq_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_boq_boq.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    model_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        nullable=False,
+        index=True,
+    )
+    element_stable_ids: Mapped[list] = mapped_column(  # type: ignore[assignment]
+        JSON,
+        nullable=False,
+        default=list,
+        server_default="[]",
+    )
+    quantity_field: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_field: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="quantity", server_default="quantity"
+    )
+    aggregation: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="sum", server_default="sum"
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="active", server_default="active"
+    )
+    source_model_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    last_applied_quantity: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    last_pulled_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    last_applied_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
+    applied_by: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
+    metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        "metadata",
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<QuantityLink pos={self.position_id} model={self.model_id} "
+            f"{self.quantity_field}->{self.target_field} ({self.status})>"
+        )

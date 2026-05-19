@@ -1,4 +1,4 @@
-"""Project-member service.
+"""‌⁠‍Project-member service.
 
 The Team Strip surfaces "who is on this project" at the project level. We
 implement it as a thin wrapper over the existing team-membership tables —
@@ -37,7 +37,7 @@ from app.modules.users.models import User
 async def _get_or_create_default_team(
     session: AsyncSession, project_id: uuid.UUID
 ) -> Team:
-    """Fetch the project's default team, lazily creating one if missing."""
+    """‌⁠‍Fetch the project's default team, lazily creating one if missing."""
     stmt = (
         select(Team)
         .where(Team.project_id == project_id, Team.is_default.is_(True))
@@ -73,7 +73,7 @@ async def _load_project(session: AsyncSession, project_id: uuid.UUID) -> Project
 async def list_project_members(
     session: AsyncSession, project_id: uuid.UUID
 ) -> list[ProjectMemberResponse]:
-    """Return all members of the project's default team, joined to User.
+    """‌⁠‍Return all members of the project's default team, joined to User.
 
     The project owner is always included, even if for some reason the owner
     membership row was never created (e.g. data imported from an older dump).

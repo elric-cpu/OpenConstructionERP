@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Pass 4: cleanup leaked English words in already-translated entries.
+"""‌⁠‍Pass 4: cleanup leaked English words in already-translated entries.
 
 Instead of replacing whole values, we surgically substitute leaked English
 words with their Mongolian equivalents WITHIN existing Mongolian translations.
@@ -1676,7 +1676,7 @@ NUM_RE = re.compile(r"\b\d+([.,]\d+)*\b")
 
 
 def protect_special(text: str) -> tuple[str, list[str]]:
-    """Replace placeholders and protected terms with sentinels."""
+    """‌⁠‍Replace placeholders and protected terms with sentinels."""
     tokens: list[str] = []
 
     def keep(m: re.Match) -> str:
@@ -1701,7 +1701,7 @@ def restore(text: str, tokens: list[str]) -> str:
 
 
 def replace_words(text: str) -> str:
-    """Replace English words case-aware."""
+    """‌⁠‍Replace English words case-aware."""
     def replacer(m: re.Match) -> str:
         w = m.group(0)
         lw = w.lower()

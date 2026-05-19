@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
+"""‌⁠‍
 Builds a complete frontend/src/app/locales/mn.ts (Mongolian translation)
 from the source-of-truth en.ts.
 
@@ -1907,7 +1907,7 @@ KEY_RE = re.compile(r'^\s*"([^"]+)":\s*(.*?),?\s*$')
 
 
 def parse_en_ts(path: Path) -> dict[str, str]:
-    """Parse en.ts. We rely on the file using JSON-quoted keys and values.
+    """‌⁠‍Parse en.ts. We rely on the file using JSON-quoted keys and values.
 
     Two value shapes occur:
       - single-line:  "key": "value",
@@ -1980,7 +1980,7 @@ PATTERNS: list[tuple[re.Pattern, str]] = [
 
 
 def translate_value(en: str) -> str:
-    """Translate one English value to Mongolian. Falls back to English."""
+    """‌⁠‍Translate one English value to Mongolian. Falls back to English."""
     if not isinstance(en, str):
         return en
     stripped = en.strip()

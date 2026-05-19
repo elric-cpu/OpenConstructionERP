@@ -111,7 +111,7 @@ export function HSEAdvancedPage() {
   const tabs: { key: HSETab; label: string; icon: React.ReactNode }[] = [
     {
       key: 'incidents',
-      label: t('hse_advanced.tab_incidents', { defaultValue: 'Incidents' }),
+      label: t('hse_advanced.tab_incidents', { defaultValue: 'Incidents‌⁠‍' }),
       icon: <ShieldAlert size={15} />,
     },
     {
@@ -121,12 +121,12 @@ export function HSEAdvancedPage() {
     },
     {
       key: 'permits',
-      label: t('hse_advanced.tab_permits', { defaultValue: 'Permits' }),
+      label: t('hse_advanced.tab_permits', { defaultValue: 'Permits‌⁠‍' }),
       icon: <FileCheck size={15} />,
     },
     {
       key: 'toolbox',
-      label: t('hse_advanced.tab_toolbox', { defaultValue: 'Toolbox' }),
+      label: t('hse_advanced.tab_toolbox', { defaultValue: 'Toolbox‌⁠‍' }),
       icon: <Users size={15} />,
     },
     {
@@ -136,7 +136,7 @@ export function HSEAdvancedPage() {
     },
     {
       key: 'audits',
-      label: t('hse_advanced.tab_audits', { defaultValue: 'Audits' }),
+      label: t('hse_advanced.tab_audits', { defaultValue: 'Audits‌⁠‍' }),
       icon: <ShieldCheck size={15} />,
     },
     {
@@ -150,7 +150,7 @@ export function HSEAdvancedPage() {
     <div className="w-full animate-fade-in">
       <Breadcrumb
         items={[
-          { label: t('nav.dashboard', { defaultValue: 'Dashboard' }), to: '/' },
+          { label: t('nav.dashboard', { defaultValue: 'Dashboard‌⁠‍' }), to: '/' },
           ...(projectName ? [{ label: projectName, to: `/projects/${projectId}` }] : []),
           { label: t('hse_advanced.title', { defaultValue: 'HSE Advanced' }) },
         ]}

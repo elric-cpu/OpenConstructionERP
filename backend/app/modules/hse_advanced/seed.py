@@ -1,5 +1,5 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
-"""Deterministic demo seed for the HSE Advanced module.
+"""‌⁠‍Deterministic demo seed for the HSE Advanced module.
 
 Generates realistic volumes per PRD scope:
 
@@ -208,7 +208,7 @@ _COMPANIES: tuple[str, ...] = (
 
 
 async def _table_has_rows(session: AsyncSession, model: type) -> bool:
-    """Return True if the given ORM model already has any rows."""
+    """‌⁠‍Return True if the given ORM model already has any rows."""
     stmt = select(func.count()).select_from(model)
     total = (await session.execute(stmt)).scalar_one()
     return int(total or 0) > 0
@@ -218,7 +218,7 @@ async def seed_hse_advanced_demo(
     session: AsyncSession,
     project_ids: Sequence[uuid.UUID] | None = None,
 ) -> dict[str, int]:
-    """Idempotently populate the HSE Advanced tables with demo data.
+    """‌⁠‍Idempotently populate the HSE Advanced tables with demo data.
 
     Args:
         session: an active :class:`AsyncSession`.

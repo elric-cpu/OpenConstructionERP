@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Categorize mixed translations by 'badness' — how many English words remain."""
+"""‌⁠‍Categorize mixed translations by 'badness' — how many English words remain."""
 import re
 import json
 from pathlib import Path

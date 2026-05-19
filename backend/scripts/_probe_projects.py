@@ -1,4 +1,4 @@
-"""One-shot probe: list projects + their region/currency/BIM-model state.
+"""‌⁠‍One-shot probe: list projects + their region/currency/BIM-model state.
 
 Run:  python scripts/_probe_projects.py
 """

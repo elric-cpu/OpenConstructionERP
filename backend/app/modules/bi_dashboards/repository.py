@@ -1,5 +1,5 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
-"""Data-access layer for the BI Dashboards module."""
+"""‌⁠‍Data-access layer for the BI Dashboards module."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from app.modules.bi_dashboards.models import (
 
 
 class BIDashboardsRepository:
-    """Single repository per module — entity-typed methods stay grouped."""
+    """‌⁠‍Single repository per module — entity-typed methods stay grouped."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -112,7 +112,7 @@ class BIDashboardsRepository:
     async def list_dashboards_visible_to(
         self, owner_user_id: uuid.UUID | None,
     ) -> list[Dashboard]:
-        """Return dashboards a user can see: own + role/global ones."""
+        """‌⁠‍Return dashboards a user can see: own + role/global ones."""
         stmt = select(Dashboard).order_by(
             Dashboard.scope.asc(), Dashboard.name.asc(),
         )

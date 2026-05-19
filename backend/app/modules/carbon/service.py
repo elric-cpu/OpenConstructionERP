@@ -1,4 +1,4 @@
-"""Carbon & Sustainability service — pure carbon-math + orchestration.
+"""‌⁠‍Carbon & Sustainability service — pure carbon-math + orchestration.
 
 Pure functions:
     * normalise_quantity_to_factor_unit
@@ -77,7 +77,7 @@ logger = logging.getLogger(__name__)
 
 
 class UnitMismatchError(ValueError):
-    """Raised when two units cannot be converted without extra info."""
+    """‌⁠‍Raised when two units cannot be converted without extra info."""
 
 
 # ── Pure helpers ──────────────────────────────────────────────────────────
@@ -104,7 +104,7 @@ _PIECE_ALIASES: dict[str, str] = {
 
 
 def _canon_unit(unit: str | None) -> str:
-    """Lowercase a unit and resolve common aliases."""
+    """‌⁠‍Lowercase a unit and resolve common aliases."""
     if not unit:
         return ""
     u = unit.strip().lower()

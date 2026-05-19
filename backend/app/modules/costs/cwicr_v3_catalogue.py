@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Registry of DDC v3 BGE-M3 catalogues — the 30-region master list.
+"""‌⁠‍Registry of DDC v3 BGE-M3 catalogues — the 30-region master list.
 
 This is the single source of truth that the ``GET /catalogues-v3/``
 endpoint serves to the frontend. Each entry describes one CWICR region
@@ -47,7 +47,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class CwicrV3Catalogue:
-    """One row in the v3 catalogue registry. Frozen so callers can't mutate."""
+    """‌⁠‍One row in the v3 catalogue registry. Frozen so callers can't mutate."""
 
     region: str
     country_iso: str
@@ -69,7 +69,7 @@ class CwicrV3Catalogue:
 
     @property
     def collection(self) -> str:
-        """Target Qdrant collection — the search-time name."""
+        """‌⁠‍Target Qdrant collection — the search-time name."""
         return f"cwicr_{self.language}_v3"
 
 

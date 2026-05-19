@@ -20,15 +20,8 @@ export const manifest: ModuleManifest = {
       component: DEExchangeModule,
     },
   ],
-  navItems: [
-    {
-      labelKey: 'nav.de_din276_exchange',
-      to: '/de-din276-exchange',
-      icon: Landmark,
-      group: 'regional',
-      advancedOnly: true,
-    },
-  ],
+  // Issue #217 — reached from /boq (regional import/export); no duplicate sidebar entry.
+  navItems: [],
   searchEntries: [
     {
       label: 'DACH DIN 276 Import / Export',

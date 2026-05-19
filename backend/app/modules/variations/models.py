@@ -1,4 +1,4 @@
-"""Variations & Site Measurements ORM models.
+"""‌⁠‍Variations & Site Measurements ORM models.
 
 Tables (all prefixed ``oe_variations_``):
     notice                  -- early-warning notice of variation
@@ -25,7 +25,7 @@ from app.database import GUID, Base
 
 
 class Notice(Base):
-    """Early-warning notice raised to recipient on a project."""
+    """‌⁠‍Early-warning notice raised to recipient on a project."""
 
     __tablename__ = "oe_variations_notice"
     __table_args__ = (
@@ -68,7 +68,7 @@ class Notice(Base):
 
 
 class VariationRequest(Base):
-    """Formal variation request submitted for approval."""
+    """‌⁠‍Formal variation request submitted for approval."""
 
     __tablename__ = "oe_variations_request"
     __table_args__ = (

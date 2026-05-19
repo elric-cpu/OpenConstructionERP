@@ -10,7 +10,13 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import noload
 
-from app.modules.boq.models import BOQ, BOQActivityLog, BOQMarkup, Position
+from app.modules.boq.models import (
+    BOQ,
+    BOQActivityLog,
+    BOQMarkup,
+    Position,
+    QuantityLink,
+)
 
 
 class BOQRepository:
@@ -263,6 +269,22 @@ class PositionRepository:
         result = (await self.session.execute(stmt)).scalar_one()
         return int(result)
 
+    async def shift_sort_order_after(self, boq_id: uuid.UUID, threshold: int) -> None:
+        """Open a one-slot gap by bumping every later position down by one.
+
+        Every position in ``boq_id`` whose ``sort_order`` is strictly greater
+        than ``threshold`` gets ``sort_order += 1``. Used by issue #139 so a
+        freshly added partida can slot in directly *after* the selected row
+        (``sort_order = threshold + 1``) instead of at the end of the section.
+        """
+        stmt = (
+            update(Position)
+            .where(Position.boq_id == boq_id, Position.sort_order > threshold)
+            .values(sort_order=Position.sort_order + 1)
+        )
+        await self.session.execute(stmt)
+        await self.session.flush()
+
     async def ordinal_exists(self, boq_id: uuid.UUID, ordinal: str, exclude_id: uuid.UUID | None = None) -> bool:
         """Check if a position with the given ordinal already exists in the BOQ.
 
@@ -493,3 +515,58 @@ class ActivityLogRepository:
         entries = list(result.scalars().all())
 
         return entries, total
+
+
+class QuantityLinkRepository:
+    """Data access for QuantityLink — model→position quantity bindings."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def get_by_id(self, link_id: uuid.UUID) -> QuantityLink | None:
+        """Get a quantity link by its primary key."""
+        return await self.session.get(QuantityLink, link_id)
+
+    async def list_for_position(self, position_id: uuid.UUID) -> list[QuantityLink]:
+        """List every quantity link bound to a single position, oldest first."""
+        stmt = (
+            select(QuantityLink)
+            .where(QuantityLink.position_id == position_id)
+            .order_by(QuantityLink.created_at)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_for_boq(self, boq_id: uuid.UUID) -> list[QuantityLink]:
+        """List every quantity link for a BOQ, ordered by position then age."""
+        stmt = (
+            select(QuantityLink)
+            .where(QuantityLink.boq_id == boq_id)
+            .order_by(QuantityLink.position_id, QuantityLink.created_at)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def create(self, link: QuantityLink) -> QuantityLink:
+        """Insert a new quantity link and return it with its generated id."""
+        self.session.add(link)
+        await self.session.flush()
+        await self.session.refresh(link)
+        return link
+
+    async def update_fields(self, link_id: uuid.UUID, **fields: object) -> None:
+        """Update specific columns on a quantity link.
+
+        Expires the identity map afterwards so a subsequent ``get_by_id``
+        re-reads the freshly persisted row (mirrors PositionRepository).
+        """
+        stmt = update(QuantityLink).where(QuantityLink.id == link_id).values(**fields)
+        await self.session.execute(stmt)
+        await self.session.flush()
+        self.session.expire_all()
+
+    async def delete(self, link_id: uuid.UUID) -> None:
+        """Delete a single quantity link by id."""
+        stmt = delete(QuantityLink).where(QuantityLink.id == link_id)
+        await self.session.execute(stmt)
+        await self.session.flush()

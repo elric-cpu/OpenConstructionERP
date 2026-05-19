@@ -1,4 +1,4 @@
-"""Daily Site Diary business logic.
+"""‌⁠‍Daily Site Diary business logic.
 
 Pure helpers are exposed as module-level functions so they can be unit
 tested without a database. The :class:`DailyDiaryService` orchestrates
@@ -81,7 +81,7 @@ def _status_index(value: str) -> int:
 
 
 def _ensure_can_transition(current: str, target: str) -> None:
-    """Raise HTTPException(409) if the transition would regress."""
+    """‌⁠‍Raise HTTPException(409) if the transition would regress."""
     if _status_index(target) <= _status_index(current):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -96,7 +96,7 @@ def _ensure_can_transition(current: str, target: str) -> None:
 
 
 def _json_default(value: Any) -> Any:
-    """JSON encoder fallback used by the canonical payload serialiser."""
+    """‌⁠‍JSON encoder fallback used by the canonical payload serialiser."""
     if isinstance(value, uuid.UUID):
         return str(value)
     if isinstance(value, datetime):

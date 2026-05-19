@@ -1,4 +1,4 @@
-"""
+"""‌⁠‍
 i18n coverage audit for OpenConstructionERP.
 
 Reads frontend/src/app/locales/*.ts and reports:
@@ -48,7 +48,7 @@ PLACEHOLDER_ONLY_RE = re.compile(r"^\{\{[^}]+\}\}$")
 
 
 def parse_locale(path: Path) -> dict[str, str]:
-    """Parse a .ts locale file. Flat keys: '"key": "value",' on one line."""
+    """‌⁠‍Parse a .ts locale file. Flat keys: '"key": "value",' on one line."""
     text = path.read_text(encoding="utf-8")
     result: dict[str, str] = {}
 
@@ -70,7 +70,7 @@ def parse_locale(path: Path) -> dict[str, str]:
 
 
 def unescape_ts(s: str) -> str:
-    """Undo TS double-quoted string escapes."""
+    """‌⁠‍Undo TS double-quoted string escapes."""
     return (
         s.replace(r"\\", "\\")
         .replace(r"\"", '"')

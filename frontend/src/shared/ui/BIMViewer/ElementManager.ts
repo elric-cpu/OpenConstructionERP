@@ -314,6 +314,41 @@ export function getCategoryColor(elementType: string): number {
   return CATEGORY_COLORS[elementType] ?? 0xdd8833; // default warm orange
 }
 
+/* ── Glass detection ──────────────────────────────────────────────────────
+ *
+ * Cheap, allocation-free heuristic: a glass-like element is recognised by
+ * its Revit/IFC category or name (Windows, Curtain Panels, Glazing, …) or
+ * by an obviously-glass material string when the converter named it. We
+ * deliberately do NOT use physical transmission/refraction — that needs a
+ * second render target and a roughness map and tanks the frame rate on big
+ * models. A plain `transparent:true` + tuned `opacity` + `depthWrite:false`
+ * gives a convincing glass look in the existing single forward pass with
+ * no measurable cost (only the small glass subset pays the alpha-blend +
+ * sort, which Three.js already does for any transparent material). */
+const GLASS_NAME_RE =
+  /\b(glass|glazing|glazed|curtain\s*panel|curtain\s*wall|window|vidro|verre|glas|vitr|стекл|玻璃|ガラス|skylight|storefront|spider\s*glass|laminated\s*glass|tempered\s*glass)\b/i;
+
+/** True when the element reads as glass from its category / name, or the
+ *  GLB/DAE material was explicitly named like glass. Mullions, frames and
+ *  hardware are explicitly excluded — only the transparent infill panes
+ *  should turn translucent, not the aluminium that holds them. */
+export function isGlassLikeElement(
+  el: { element_type?: string | null; name?: string | null } | undefined,
+  materialName?: string | null,
+): boolean {
+  const type = (el?.element_type || '').toLowerCase();
+  // Frames / mullions / hardware are opaque even on glazed assemblies.
+  if (
+    /mullion|frame|hardware|sill|astragal|spider|fitting|bracket/.test(type)
+  ) {
+    return false;
+  }
+  if (el?.element_type && GLASS_NAME_RE.test(el.element_type)) return true;
+  if (el?.name && GLASS_NAME_RE.test(el.name)) return true;
+  if (materialName && GLASS_NAME_RE.test(materialName)) return true;
+  return false;
+}
+
 /* ── Element Manager ───────────────────────────────────────────────────── */
 
 export class ElementManager {
@@ -332,6 +367,15 @@ export class ElementManager {
   private batchedMeshes: THREE.BatchedMesh[] = [];
   private elementDataMap = new Map<string, BIMElementData>();
   private baseMaterials = new Map<string, THREE.MeshStandardMaterial>();
+  /**
+   * Cached translucent "glass" materials, keyed by the source material's
+   * uuid (or a `_fallback` key when we synthesised one). Glass meshes that
+   * share a base material share one cloned translucent material — the whole
+   * model's glazing typically collapses to 1–3 extra materials, NOT one
+   * allocation per pane, so the effect is essentially free. Disposed in
+   * `dispose()` alongside `createdMaterials`.
+   */
+  private glassMaterials = new Map<string, THREE.Material>();
   private wireframeEnabled = false;
   private geometryLoaded = false;
   // In-flight promise per URL so concurrent ``loadGeometry`` calls share the
@@ -354,6 +398,16 @@ export class ElementManager {
    * filter state, not the colorBy mode. Disposed in `dispose()`.
    */
   private categoryMaterials = new Map<string, THREE.Material>();
+  /**
+   * Shared translucent "ghost" material applied to non-kept meshes when
+   * the user ghosts a selection.  One instance for the whole scene; the
+   * original material per mesh is parked in `userData.ghostOriginal` and
+   * restored on `clearGhost()`.  Lazily created so a viewer that never
+   * ghosts pays no GPU cost.
+   */
+  private ghostMaterial: THREE.MeshStandardMaterial | null = null;
+  /** Element ids currently ghosted — used for a clean, exact restore. */
+  private ghostedIds = new Set<string>();
   /**
    * Fraction of loaded elements that the viewer was able to match to DAE
    * mesh nodes by stable_id. < 0.02 means we effectively have no mesh-level
@@ -1217,6 +1271,41 @@ export class ElementManager {
     const totalElements = this.elementDataMap.size;
     this.meshMatchRatio = totalElements > 0 ? matchedCount / totalElements : 0;
 
+    // ── Glass pass ──────────────────────────────────────────────────────
+    // Runs AFTER every matching strategy (stable-id, name, positional
+    // fallback, stubs) so an element resolved late still gets its
+    // translucent material. Glass-like elements arrive from the converter
+    // as solid slabs (baked albedo, alpha=1, no transmission); swap in a
+    // cached translucent variant so windows / curtain panels read as
+    // glazing. Detection is a cheap category/name string test and the
+    // material is shared per source-uuid, so this whole pass is O(meshes)
+    // string compares + at most a few material clones — no measurable
+    // frame-rate cost even on 50k-mesh models.
+    let glassMeshCount = 0;
+    for (const mesh of this.allDaeMeshes) {
+      const ud = mesh.userData as { elementData?: BIMElementData };
+      if (!isGlassLikeElement(ud.elementData)) continue;
+      const cur = Array.isArray(mesh.material)
+        ? mesh.material[0]
+        : mesh.material;
+      mesh.material = this.getGlassMaterial(cur);
+      // Keep the swapped material as the "original" so resetColors() /
+      // ghost-restore put the glass look back, not the opaque slab.
+      (mesh.userData as { originalMaterial?: THREE.Material }).originalMaterial =
+        mesh.material as THREE.Material;
+      glassMeshCount++;
+    }
+    if (
+      glassMeshCount > 0 &&
+      typeof import.meta !== 'undefined' &&
+      import.meta.env?.DEV
+    ) {
+      console.info(
+        `[BIM] glass pass: ${glassMeshCount} mesh(es) → translucent ` +
+          `(${this.glassMaterials.size} shared glass material(s))`,
+      );
+    }
+
     this.daeGroup.add(scene);
     this.elementGroup.add(this.daeGroup);
     this.geometryLoaded = true;
@@ -1460,6 +1549,63 @@ export class ElementManager {
       this.baseMaterials.set(key, mat);
     }
     return mat;
+  }
+
+  /**
+   * Return a translucent variant of `source` for a glass-like element.
+   *
+   * The variant keeps the source's albedo (so blue/green tinted glazing
+   * stays tinted) but becomes alpha-blended with a low opacity, a glossy
+   * low-roughness finish and `depthWrite:false` so panes behind it still
+   * show through instead of z-fighting into an opaque slab.
+   *
+   * Performance contract: NO transmission/refraction (those need a second
+   * render target). The only added cost is the alpha-blend + back-to-front
+   * sort that Three.js already performs for any `transparent` material, and
+   * it is paid only by the small glass subset. Variants are cached per
+   * source-material uuid so the model's glazing collapses to a handful of
+   * extra materials regardless of pane count.
+   */
+  private getGlassMaterial(source: THREE.Material | undefined): THREE.Material {
+    const key = source?.uuid ?? '_fallback';
+    const cached = this.glassMaterials.get(key);
+    if (cached) return cached;
+
+    let glass: THREE.Material;
+    if (
+      source &&
+      (source as THREE.MeshStandardMaterial).isMeshStandardMaterial
+    ) {
+      const std = source.clone() as THREE.MeshStandardMaterial;
+      std.transparent = true;
+      std.opacity = 0.28;
+      std.roughness = 0.05;
+      std.metalness = 0.0;
+      std.depthWrite = false;
+      // A faint envelope so edges read even against a bright background.
+      std.side = THREE.DoubleSide;
+      glass = std;
+    } else if (source && (source as THREE.Material).clone) {
+      const m = source.clone();
+      (m as THREE.Material & { transparent: boolean }).transparent = true;
+      (m as THREE.Material & { opacity: number }).opacity = 0.3;
+      (m as THREE.Material & { depthWrite: boolean }).depthWrite = false;
+      glass = m;
+    } else {
+      glass = new THREE.MeshStandardMaterial({
+        color: 0x9fc8d8,
+        transparent: true,
+        opacity: 0.28,
+        roughness: 0.05,
+        metalness: 0.0,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        wireframe: this.wireframeEnabled,
+      });
+    }
+    this.glassMaterials.set(key, glass);
+    this.createdMaterials.add(glass);
+    return glass;
   }
 
   /** Get or create a material keyed by category name + color.
@@ -1713,12 +1859,16 @@ export class ElementManager {
    * every matching mesh orange while leaving the rest at normal colour.
    *
    * Passing an empty array clears the highlight and restores original colours.
+   *
+   * `colorHex` overrides the default orange — used by the clash-review
+   * deep-link to flag interfering elements in a distinct clash red so they
+   * read differently from a normal BOQ-link highlight.
    */
-  highlight(elementIds: string[]): void {
+  highlight(elementIds: string[], colorHex?: number): void {
     // Dispose previous colorBy/highlight materials before applying new ones
     this.disposeCreatedMaterials();
 
-    const highlightColor = new THREE.Color(0xff9500); // orange
+    const highlightColor = new THREE.Color(colorHex ?? 0xff9500); // default orange
     const keep = new Set(elementIds);
     for (const [id, mesh] of this.meshMap) {
       if (keep.has(id)) {
@@ -1771,6 +1921,104 @@ export class ElementManager {
       }
     }
     this.sceneManager.requestRender();
+  }
+
+  /**
+   * Return the meshes currently mapped to the given element IDs.  Used by
+   * the clash-review deep-link to (a) decide whether the clash elements
+   * actually resolved to geometry in this model and (b) frame the camera on
+   * them.  Showcase IFC/RVT exports whose GLB nodes are numeric Revit ids
+   * (unrelated to the DB element UUIDs) only resolve via the positional
+   * fallback, so a caller that gets back fewer meshes than ids should fall
+   * back to the clash centroid for camera framing rather than trust an
+   * approximate pairing. */
+  getMeshesForIds(elementIds: string[]): THREE.Mesh[] {
+    const out: THREE.Mesh[] = [];
+    for (const id of elementIds) {
+      const m = this.meshMap.get(id);
+      if (m) out.push(m);
+    }
+    return out;
+  }
+
+  private ensureGhostMaterial(): THREE.MeshStandardMaterial {
+    if (this.ghostMaterial) return this.ghostMaterial;
+    this.ghostMaterial = new THREE.MeshStandardMaterial({
+      color: 0x9aa5b1,
+      transparent: true,
+      opacity: 0.12,
+      // depthWrite off so the kept elements always read through the ghost
+      // shell rather than fighting it for the depth buffer.
+      depthWrite: false,
+      roughness: 0.9,
+      metalness: 0,
+    });
+    return this.ghostMaterial;
+  }
+
+  /**
+   * Ghost every element NOT in `keepIds`: keep them visible but render them
+   * as a faint translucent shell so the kept set reads as fully solid in
+   * context.  The original material per mesh is parked in
+   * `userData.ghostOriginal`; `clearGhost()` restores it exactly.
+   *
+   * Re-callable: switching the kept set first restores any previously
+   * ghosted meshes so state never accumulates.  Passing an empty keep set
+   * is a no-op (nothing to contrast against) — callers should use
+   * `clearGhost()` instead.
+   */
+  ghost(keepIds: string[]): void {
+    const keep = new Set(keepIds);
+    if (keep.size === 0) {
+      this.clearGhost();
+      return;
+    }
+    // Restore anything ghosted from a previous call that is now kept, then
+    // (re)ghost the current complement.  Cheaper than a full clear+reapply
+    // and avoids a one-frame flash.
+    for (const id of [...this.ghostedIds]) {
+      if (keep.has(id)) this.restoreGhostMesh(id);
+    }
+    const ghostMat = this.ensureGhostMaterial();
+    for (const [id, mesh] of this.meshMap) {
+      if (keep.has(id)) continue;
+      if (this.ghostedIds.has(id)) continue;
+      const ud = mesh.userData as {
+        ghostOriginal?: THREE.Material | THREE.Material[];
+      };
+      if (ud.ghostOriginal === undefined) ud.ghostOriginal = mesh.material;
+      mesh.material = ghostMat;
+      this.ghostedIds.add(id);
+    }
+    this.sceneManager.requestRender();
+  }
+
+  /** Restore one ghosted mesh's original material (internal helper). */
+  private restoreGhostMesh(id: string): void {
+    const mesh = this.meshMap.get(id);
+    if (mesh) {
+      const ud = mesh.userData as {
+        ghostOriginal?: THREE.Material | THREE.Material[];
+      };
+      if (ud.ghostOriginal !== undefined) {
+        mesh.material = ud.ghostOriginal;
+        delete ud.ghostOriginal;
+      }
+    }
+    this.ghostedIds.delete(id);
+  }
+
+  /** Drop ghosting entirely and restore every original material. */
+  clearGhost(): void {
+    if (this.ghostedIds.size === 0) return;
+    for (const id of [...this.ghostedIds]) this.restoreGhostMesh(id);
+    this.ghostedIds.clear();
+    this.sceneManager.requestRender();
+  }
+
+  /** Whether any element is currently ghosted. */
+  isGhostActive(): boolean {
+    return this.ghostedIds.size > 0;
   }
 
   /**
@@ -2026,6 +2274,9 @@ export class ElementManager {
     this.allDaeMeshes = [];
     this.meshMatchRatio = 0;
     this.geometryLoaded = false;
+    // Ghost references point at meshes that were just disposed above —
+    // drop them so a fresh model doesn't try to restore stale materials.
+    this.ghostedIds.clear();
     // Materials are reused — dispose them only on full destroy
   }
 
@@ -2041,11 +2292,19 @@ export class ElementManager {
       mat.dispose();
     }
     this.createdMaterials.clear();
+    // Glass variants were registered in createdMaterials (disposed above) —
+    // just drop the cache map so a re-loaded model rebuilds fresh ones.
+    this.glassMaterials.clear();
     // Release per-category material clones from setCategoryOpacity.
     for (const mat of this.categoryMaterials.values()) {
       mat.dispose();
     }
     this.categoryMaterials.clear();
+    if (this.ghostMaterial) {
+      this.ghostMaterial.dispose();
+      this.ghostMaterial = null;
+    }
+    this.ghostedIds.clear();
     this.sceneManager.scene.remove(this.elementGroup);
   }
 }

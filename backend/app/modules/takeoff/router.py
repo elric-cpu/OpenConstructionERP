@@ -3644,7 +3644,7 @@ async def analyze_document(
     import time
     import uuid as _uuid
 
-    from app.modules.ai.ai_client import call_ai, extract_json, resolve_provider_and_key
+    from app.modules.ai.ai_client import call_ai, extract_json, resolve_provider_key_model
     from app.modules.ai.prompts import (
         SMART_IMPORT_PROMPT,
         SYSTEM_PROMPT,
@@ -3676,7 +3676,7 @@ async def analyze_document(
     settings = await settings_repo.get_by_user_id(_uuid.UUID(user_id))
 
     try:
-        provider, api_key = resolve_provider_and_key(settings)
+        provider, api_key, model_override = resolve_provider_key_model(settings)
     except ValueError as exc:
         raise HTTPException(
             status_code=400,
@@ -3700,6 +3700,7 @@ async def analyze_document(
             api_key=api_key,
             system=SYSTEM_PROMPT,
             prompt=prompt,
+            model=model_override,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

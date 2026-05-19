@@ -246,7 +246,14 @@ async def test_boq_full_lifecycle(shared_client: AsyncClient, shared_auth: dict)
     for pos in positions:
         ordinal = pos["ordinal"]
         if ordinal in expected_totals:
-            assert abs(pos["total"] - expected_totals[ordinal]) < 0.01, (
+            # ``PositionResponse.total`` is typed ``Decimal`` and serialises
+            # as a plain decimal *string* (BUG-B-011 — exact large-total
+            # round-trip).  Coerce before arithmetic, matching the
+            # established contract used by every other integration test
+            # (test_api_smoke / test_boq_domain_integrity /
+            # test_boq_linked_positions / test_boq_variants all do
+            # ``float(pos["total"])``).
+            assert abs(float(pos["total"]) - expected_totals[ordinal]) < 0.01, (
                 f"Total mismatch for {ordinal}: {pos['total']} != {expected_totals[ordinal]}"
             )
 
@@ -381,8 +388,13 @@ async def test_boq_full_lifecycle(shared_client: AsyncClient, shared_auth: dict)
     assert "Pos." in header
     assert "Total" in header
 
-    last_row = rows[-1]
-    assert "Grand Total" in last_row[1]
+    # The CSV trailer carries a provenance footer + a frozen-FX appendix
+    # after Grand Total, so locate the Grand Total row by its label rather
+    # than assuming it is the last row.
+    grand_row = next(
+        (r for r in rows if len(r) > 1 and "Grand Total" in r[1]), None
+    )
+    assert grand_row is not None, "Grand Total row not found in CSV export"
 
     # ── Step 10: Export to GAEB XML -- verify valid XML ──────────────────
 
@@ -600,7 +612,13 @@ async def test_export_data_integrity(shared_client: AsyncClient, shared_auth: di
     resp = await client.get(f"/api/v1/boq/boqs/{bid}/export/csv", headers=auth)
     assert resp.status_code == 200
     rows = list(csv_mod.reader(io.StringIO(resp.text)))
-    csv_total = float(rows[-1][5])
+    # Grand Total is no longer the last row (provenance footer + frozen-FX
+    # appendix follow it) — find it by label.
+    grand_row = next(
+        (r for r in rows if len(r) > 5 and "Grand Total" in r[1]), None
+    )
+    assert grand_row is not None, "Grand Total row not found in CSV export"
+    csv_total = float(grand_row[5])
     assert abs(csv_total - structured_grand) < 0.01, (
         f"CSV grand total {csv_total} != structured grand total {structured_grand}"
     )

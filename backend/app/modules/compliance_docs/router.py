@@ -1,5 +1,5 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
-"""FastAPI router for the compliance documents tracker.
+"""‌⁠‍FastAPI router for the compliance documents tracker.
 
 All endpoints are owner-scoped via the existing
 :func:`app.dependencies.verify_project_access` guard — the same pattern
@@ -38,7 +38,7 @@ def _get_service(session: SessionDep) -> ComplianceDocService:
 
 
 def _to_response(item: object) -> ComplianceDocResponse:
-    """Build a response model with the computed ``days_until_expiry``."""
+    """‌⁠‍Build a response model with the computed ``days_until_expiry``."""
     today = datetime.now(UTC).date()
     expires_at = getattr(item, "expires_at", None)
     days_until_expiry = 0
@@ -65,7 +65,7 @@ async def list_compliance_docs(
     doc_type: str | None = Query(default=None),
     service: ComplianceDocService = Depends(_get_service),
 ) -> list[ComplianceDocResponse]:
-    """List compliance docs for a project."""
+    """‌⁠‍List compliance docs for a project."""
     await verify_project_access(project_id, user_id, session)
     items = await service.list_docs(
         project_id, status=status_filter, doc_type=doc_type,

@@ -1,4 +1,4 @@
-"""Contracts API routes.
+"""‌⁠‍Contracts API routes.
 
 Mounted at ``/api/v1/contracts/`` by the module loader.
 
@@ -215,7 +215,7 @@ async def list_contracts(
     limit: int = Query(default=50, ge=1, le=200),
     _perm: None = Depends(RequirePermission("contracts.read")),
 ) -> list[ContractResponse]:
-    """List contracts for a project."""
+    """‌⁠‍List contracts for a project."""
     await verify_project_access(project_id, user_id, session)
     service = ContractsService(session)
     items, _total = await service.contract_repo.list_for_project(
@@ -446,7 +446,7 @@ async def list_type_configurations(
     _user: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("contracts.read")),
 ) -> list[ContractTypeConfigurationResponse]:
-    """Read-only catalog — tenant-wide metadata, no per-project access check."""
+    """‌⁠‍Read-only catalog — tenant-wide metadata, no per-project access check."""
     repo = ContractTypeConfigurationRepository(session)
     items = await repo.list_all()
     return [ContractTypeConfigurationResponse.model_validate(it) for it in items]

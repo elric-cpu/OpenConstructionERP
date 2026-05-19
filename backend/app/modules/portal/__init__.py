@@ -1,5 +1,5 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
-"""Customer & Partner Portal module.
+"""‌⁠‍Customer & Partner Portal module.
 
 External-facing portal users (clients, investors, consultants, subcontractors,
 suppliers, building users) with magic-link authentication, row-level security
@@ -13,7 +13,7 @@ based; the password column is reserved for future use but unused in v0.1.
 
 
 async def on_startup() -> None:
-    """Module startup hook — register permissions."""
+    """‌⁠‍Module startup hook — register permissions."""
     from app.modules.portal.permissions import register_portal_permissions
 
     register_portal_permissions()

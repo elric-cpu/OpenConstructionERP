@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Third-pass translator for the final remaining entries.
+"""‌⁠‍Third-pass translator for the final remaining entries.
 
 These are mostly technical labels where translation matters less, but we'll
 handle the cases that have real prose. Pure-acronym entries (CPI, SPI, EVM,

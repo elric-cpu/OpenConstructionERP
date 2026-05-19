@@ -1,4 +1,4 @@
-"""Bid Management module.
+"""‌⁠‍Bid Management module.
 
 Sister module to ``oe_tendering``. Provides a richer bid package /
 invitation / submission / leveling / award workflow without modifying
@@ -8,7 +8,7 @@ reference (no FK across modules).
 
 
 async def on_startup() -> None:
-    """Module startup hook — register permissions."""
+    """‌⁠‍Module startup hook — register permissions."""
     from app.modules.bid_management.permissions import register_bid_management_permissions
 
     register_bid_management_permissions()

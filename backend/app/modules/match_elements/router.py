@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Match Elements REST router.
+"""‌⁠‍Match Elements REST router.
 
 Endpoints (auto-mounted at /api/v1/match_elements/ by the module loader):
 
@@ -58,7 +58,7 @@ async def _assert_session_access(
     session_id: uuid.UUID,
     user_id: str,
 ) -> uuid.UUID:
-    """Authorise a request that targets a specific MatchSession.
+    """‌⁠‍Authorise a request that targets a specific MatchSession.
 
     Loads the row, raises 404 if missing, and delegates project-level
     ownership to ``verify_project_access`` (which also returns 404 on
@@ -113,7 +113,7 @@ async def create_session_from_excel(
     catalogue_id: str | None = Form(None),
     construction_stage: str | None = Form(None),
 ) -> schemas.SessionRead:
-    """Upload an xlsx BoQ and create a match session in one round-trip.
+    """‌⁠‍Upload an xlsx BoQ and create a match session in one round-trip.
 
     Implements MAPPING_PROCESS.md §4.1.5 — the Excel BoQ source. Column
     detection is multi-language (English/German/Russian/Spanish/Chinese

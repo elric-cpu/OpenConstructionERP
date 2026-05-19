@@ -1,4 +1,4 @@
-"""Insert-or-replace v3.0 18-Modules Wave nav.* keys in 25 non-EN, non-MN locales.
+"""‌⁠‍Insert-or-replace v3.0 18-Modules Wave nav.* keys in 25 non-EN, non-MN locales.
 
 Previous replace-only patch (patch_nav_v3_modules.py) ran successfully twice,
 but each run was wiped by an external `git reset --hard HEAD` (reflog 08:20
@@ -26,7 +26,7 @@ TRANSLATIONS = mod.TRANSLATIONS
 
 
 def patch_locale(code: str) -> tuple[int, int, int]:
-    """Return (inserted, replaced, skipped)."""
+    """‌⁠‍Return (inserted, replaced, skipped)."""
     path = ROOT / f'frontend/src/app/locales/{code}.ts'
     text = path.read_text(encoding='utf-8')
     original = text

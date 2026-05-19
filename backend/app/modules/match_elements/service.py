@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Match Elements orchestrator service — Phase A core wiring.
+"""‌⁠‍Match Elements orchestrator service — Phase A core wiring.
 
 The service stitches together the source adapters and matchers behind
 a single API surface the router calls. Stateless: every method takes
@@ -107,7 +107,7 @@ def _to_session_read(row: MatchSession) -> schemas.SessionRead:
 
 
 def _ifc_class_from_group_key(group_key: str) -> str | None:
-    """Pull the ``ifc_class:`` segment out of a composite group key."""
+    """‌⁠‍Pull the ``ifc_class:`` segment out of a composite group key."""
     for chunk in (group_key or "").split("|"):
         if ":" in chunk:
             k, _, v = chunk.partition(":")
@@ -119,7 +119,7 @@ def _ifc_class_from_group_key(group_key: str) -> str | None:
 def _human_group_label(
     group_key: str, sample_attrs: dict[str, Any] | None,
 ) -> str:
-    """Render a group_key into a human-readable single-line label.
+    """‌⁠‍Render a group_key into a human-readable single-line label.
 
     ``"ifc_class:IfcWallStandardCase|material:Concrete C30/37|level:L01"``
     becomes ``"Wall · Concrete C30/37 · L01"``.

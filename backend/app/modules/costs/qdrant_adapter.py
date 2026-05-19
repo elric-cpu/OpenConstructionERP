@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""CWICR Qdrant adapter — 30-collection multilingual cost-rate search.
+"""‌⁠‍CWICR Qdrant adapter — 30-collection multilingual cost-rate search.
 
 Replaces the legacy ``vector_adapter`` (LanceDB + e5-small + 384-dim) for
 the ``/match-elements`` path. The new pipeline holds rate vectors in
@@ -77,7 +77,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class QdrantHit:
-    """One result from :func:`search`.
+    """‌⁠‍One result from :func:`search`.
 
     ``score`` is the RRF-fused score from Qdrant Query API, not a raw
     cosine similarity. Use for relative ranking only — absolute values
@@ -113,7 +113,7 @@ class QdrantHit:
 
 
 def _collection_version_suffix() -> str:
-    """Return the configured ``_<ver>`` suffix or empty for legacy installs.
+    """‌⁠‍Return the configured ``_<ver>`` suffix or empty for legacy installs.
 
     Reads ``settings.cwicr_collection_version`` lazily so test monkeypatching
     of the env var after import still takes effect. The leading underscore

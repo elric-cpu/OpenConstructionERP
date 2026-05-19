@@ -1,4 +1,4 @@
-"""End-to-end smoke for /match-elements on three real projects.
+"""‌⁠‍End-to-end smoke for /match-elements on three real projects.
 
 Verifies the full pipeline yields a real BOQ with non-zero cost in the
 project's currency:
@@ -45,7 +45,7 @@ PROJECTS = [
 
 
 async def run_for(session_factory, project_id: uuid.UUID, project_name: str, currency: str) -> dict:
-    """Run the full match → confirm → apply flow for one project. Return summary."""
+    """‌⁠‍Run the full match → confirm → apply flow for one project. Return summary."""
     svc = get_service()
     user_id = uuid.uuid4()  # any uuid — service just stores the FK
     out = {

@@ -20,15 +20,8 @@ export const manifest: ModuleManifest = {
       component: TRExchangeModule,
     },
   ],
-  navItems: [
-    {
-      labelKey: 'nav.tr_birimfiyat_exchange',
-      to: '/tr-birimfiyat-exchange',
-      icon: Building2,
-      group: 'regional',
-      advancedOnly: true,
-    },
-  ],
+  // Issue #217 — reached from /boq (regional import/export); no duplicate sidebar entry.
+  navItems: [],
   searchEntries: [
     {
       label: 'Turkey Birim Fiyat Import / Export',

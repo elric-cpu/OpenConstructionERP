@@ -1,4 +1,4 @@
-"""Per-folder permission ORM models for the file-manager.
+"""‌⁠‍Per-folder permission ORM models for the file-manager.
 
 Tables:
     oe_documents_folder_permission — grants a project member ``viewer``,
@@ -78,12 +78,12 @@ FOLDER_ROLE_RANK: dict[str, int] = {
 
 
 def role_satisfies(actual: str, required: str) -> bool:
-    """Return True when ``actual`` is at least as strong as ``required``."""
+    """‌⁠‍Return True when ``actual`` is at least as strong as ``required``."""
     return FOLDER_ROLE_RANK.get(actual, -1) >= FOLDER_ROLE_RANK.get(required, 99)
 
 
 class FolderPermission(Base):
-    """Per-folder grant scoped to a project member.
+    """‌⁠‍Per-folder grant scoped to a project member.
 
     The ``(project_id, scope_kind, scope_path, user_id)`` unique
     constraint includes a special-case for ``NULL`` ``scope_path``:

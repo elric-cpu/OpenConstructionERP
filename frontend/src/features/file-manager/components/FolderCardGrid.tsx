@@ -149,7 +149,7 @@ export function FolderCardGrid({
       <div className="flex flex-col items-center justify-center py-16 px-6 text-center text-content-tertiary">
         <Folder size={36} className="mb-3 opacity-60" />
         <p className="text-sm font-medium text-content-secondary">
-          {t('files.tree.empty', { defaultValue: 'No files yet.' })}
+          {t('files.tree.empty', { defaultValue: 'No files yet.‌⁠‍' })}
         </p>
         <button
           type="button"
@@ -157,7 +157,7 @@ export function FolderCardGrid({
           className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-oe-blue text-white hover:bg-oe-blue-hover transition-colors"
         >
           <UploadCloud size={14} />
-          {t('files.upload', { defaultValue: 'Upload files' })}
+          {t('files.upload', { defaultValue: 'Upload files‌⁠‍' })}
         </button>
       </div>
     );
@@ -227,7 +227,7 @@ function FolderCard({
       ? 'files.permissions.lock_tooltip'
       : 'files.permissions.lock_tooltip_plural',
     {
-      defaultValue: 'Restricted: {{count}} members can access',
+      defaultValue: 'Restricted: {{count}} members can access‌⁠‍',
       count: permissionCount,
     },
   );
@@ -262,13 +262,13 @@ function FolderCard({
         </div>
         <p className="mt-2 text-xs text-content-tertiary">
           {t('files.empty_category', {
-            defaultValue: 'No {{category}} yet',
+            defaultValue: 'No {{category}} yet‌⁠‍',
             category: label.toLowerCase(),
           })}
         </p>
         <span className="mt-auto pt-2.5 inline-flex items-center gap-1.5 text-xs font-medium text-oe-blue opacity-80 group-hover:opacity-100">
           <UploadCloud size={12} />
-          {t('files.cta.add_first_short', { defaultValue: 'Add files' })}
+          {t('files.cta.add_first_short', { defaultValue: 'Add files‌⁠‍' })}
         </span>
       </button>
     );

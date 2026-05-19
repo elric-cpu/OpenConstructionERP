@@ -673,7 +673,7 @@ async def _extract_with_ai(
     try:
         from sqlalchemy import select
 
-        from app.modules.ai.ai_client import call_ai, extract_json, resolve_provider_and_key
+        from app.modules.ai.ai_client import call_ai, extract_json, resolve_provider_key_model
         from app.modules.ai.models import AISettings
 
         result = await session.execute(  # type: ignore[union-attr]
@@ -684,7 +684,7 @@ async def _extract_with_ai(
         if not ai_settings:
             return False
 
-        provider, api_key = resolve_provider_and_key(ai_settings)
+        provider, api_key, model_override = resolve_provider_key_model(ai_settings)
 
         # Truncate transcript for AI prompt (leave room for the prompt template)
         transcript_preview = text_content[:8000]
@@ -696,6 +696,7 @@ async def _extract_with_ai(
             system=_AI_MEETING_SYSTEM,
             prompt=ai_prompt,
             max_tokens=4096,
+            model=model_override,
         )
 
         ai_data = extract_json(raw_response)

@@ -1,4 +1,4 @@
-"""Bid Management Pydantic schemas — request/response models."""
+"""‌⁠‍Bid Management Pydantic schemas — request/response models."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ _REJECTION_CODE = r"^(price|scope|completeness|qualification|other)$"
 
 
 class BidPackageCreate(BaseModel):
-    """Create a new bid package."""
+    """‌⁠‍Create a new bid package."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -39,7 +39,7 @@ class BidPackageCreate(BaseModel):
 
 
 class BidPackageUpdate(BaseModel):
-    """Partial update for a bid package."""
+    """‌⁠‍Partial update for a bid package."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 

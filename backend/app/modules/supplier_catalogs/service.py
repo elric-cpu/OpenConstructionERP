@@ -1,4 +1,4 @@
-"""Supplier Catalogs service — vendor management, catalog, PR/PO/GR/Invoice,
+"""‌⁠‍Supplier Catalogs service — vendor management, catalog, PR/PO/GR/Invoice,
 warehouse stock control, 3-way match.
 
 Stateless. All cross-module references (project_id, contract_id, user_id,
@@ -121,7 +121,7 @@ VALID_PO_STATUSES = {
 
 
 async def _safe_publish(name: str, data: dict[str, Any]) -> None:
-    """Fire-and-forget event publish; never propagate publish failures."""
+    """‌⁠‍Fire-and-forget event publish; never propagate publish failures."""
     try:
         event_bus.publish_detached(name, data, source_module="oe_supplier_catalogs")
     except Exception:  # noqa: BLE001
@@ -142,7 +142,7 @@ def _to_decimal(value: Any, default: str = "0") -> Decimal:
 
 
 class SupplierCatalogsService:
-    """High-level facade exposing all supplier-catalogs business operations."""
+    """‌⁠‍High-level facade exposing all supplier-catalogs business operations."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session

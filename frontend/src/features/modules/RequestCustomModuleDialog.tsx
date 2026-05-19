@@ -170,18 +170,18 @@ export function RequestCustomModuleDialog({ open, onClose }: Props) {
             <X size={18} />
           </button>
           <div className="relative px-6 sm:px-10 py-8 sm:py-10 text-center">
-            <div className="inline-flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-2xl bg-white dark:bg-white shadow-lg mb-4 p-2 ring-1 ring-border-light">
+            <div className="inline-flex h-20 w-20 sm:h-24 sm:w-24 items-center justify-center mb-4">
               <img
                 src={ddcLogoUrl}
                 alt="DataDrivenConstruction"
                 className="max-h-full max-w-full object-contain"
-                width="48"
-                height="48"
+                width="96"
+                height="96"
               />
             </div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-purple-600 dark:text-purple-300 mb-2">
               {t('modules.request_eyebrow', {
-                defaultValue: 'Missing a module?',
+                defaultValue: 'Missing a module?‌⁠‍',
               })}
             </p>
             <h2
@@ -189,13 +189,13 @@ export function RequestCustomModuleDialog({ open, onClose }: Props) {
               className="text-2xl sm:text-3xl font-bold text-content-primary leading-tight"
             >
               {t('modules.request_hero_title', {
-                defaultValue: 'Tell us what your team needs.',
+                defaultValue: 'Tell us what your team needs.‌⁠‍',
               })}
             </h2>
             <p className="mt-3 mx-auto max-w-[640px] text-sm sm:text-base text-content-secondary leading-relaxed">
               {t('modules.request_hero_subtitle', {
                 defaultValue:
-                  'OpenConstructionERP runs on a plug-in architecture — every report, integration, regional catalogue and AI tool is its own module. If the one you need is missing, we will build it. Choose the path that fits your situation.',
+                  'OpenConstructionERP runs on a plug-in architecture — every report, integration, regional catalogue and AI tool is its own module. If the one you need is missing, we will build it. Choose the path that fits your situation.‌⁠‍',
               })}
             </p>
           </div>
@@ -226,12 +226,12 @@ export function RequestCustomModuleDialog({ open, onClose }: Props) {
               <div className="min-w-0 flex-1">
                 <h3 className="text-base sm:text-lg font-semibold text-content-primary">
                   {t('modules.request_card_community_title', {
-                    defaultValue: 'Could help other teams too',
+                    defaultValue: 'Could help other teams too‌⁠‍',
                   })}
                 </h3>
                 <p className="mt-1 text-xs text-content-tertiary uppercase tracking-wider font-semibold">
                   {t('modules.request_card_community_tag', {
-                    defaultValue: 'Open-source · free for everyone',
+                    defaultValue: 'Open-source · free for everyone‌⁠‍',
                   })}
                 </p>
               </div>

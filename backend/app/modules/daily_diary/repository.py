@@ -1,4 +1,4 @@
-"""Daily Site Diary data-access layer.
+"""‌⁠‍Daily Site Diary data-access layer.
 
 One repository class per entity. Repositories are pure SQLAlchemy
 adapters — no business logic — and exposed to service.py.
@@ -28,7 +28,7 @@ _M = TypeVar("_M")
 
 
 class _BaseRepository:
-    """Shared CRUD helpers."""
+    """‌⁠‍Shared CRUD helpers."""
 
     model: type
 
@@ -57,7 +57,7 @@ class _BaseRepository:
 
 
 class DailyDiaryRepository(_BaseRepository):
-    """Data access for DailyDiary."""
+    """‌⁠‍Data access for DailyDiary."""
 
     model = DailyDiary
 

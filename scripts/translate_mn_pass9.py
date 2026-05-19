@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Pass 9: tiny final boost to push translated count over 99%."""
+"""‌⁠‍Pass 9: tiny final boost to push translated count over 99%."""
 import re
 from pathlib import Path
 

@@ -51,6 +51,7 @@ import {
   LayoutGrid,
   Maximize2,
   Package,
+  GitCompare,
 } from 'lucide-react';
 import { Badge, EmptyState, Breadcrumb, ConfirmDialog } from '@/shared/ui';
 import { useConfirm } from '@/shared/hooks/useConfirm';
@@ -63,6 +64,8 @@ import {
 } from '@/shared/ui/BIMViewer/urlState';
 import BIMFilterGroupsPanel from './BIMFilterGroupsPanel';
 import BIMRightPanelTabs from './BIMRightPanelTabs';
+import BIMDiffPanel from './BIMDiffPanel';
+import type { DiffChangeType } from './diffGrouping';
 import ElementAssetCard from './ElementAssetCard';
 import BIMSnapshotsPopover from './BIMSnapshotsPopover';
 import { useBIMViewerStore } from '@/stores/useBIMViewerStore';
@@ -1531,6 +1534,17 @@ export function BIMPage() {
   // highlighted across renders (parent's `[selectedElementId]` would collapse
   // the highlight to the most recent click only).
   const [multiSelectedIds, setMultiSelectedIds] = useState<string[]>([]);
+  // Resolved element rows for the current viewer selection — includes
+  // viewer-side stubs (mesh_ref but no DB row yet) so "save as group"
+  // can resolve them to real BIMElement UUIDs before persisting.
+  const [selectedElementData, setSelectedElementData] = useState<BIMElementData[]>([]);
+  const handleViewerSelectionChange = useCallback(
+    (ids: string[], els: BIMElementData[]) => {
+      setMultiSelectedIds(ids);
+      setSelectedElementData(els);
+    },
+    [],
+  );
 
   // Deep-link auto-select: Cmd+Shift+K global semantic search and the
   // similar-items panel land here with `?element=<element_id>` — pick
@@ -1571,7 +1585,27 @@ export function BIMPage() {
   >('default');
   const showBoundingBoxes = false;
   const [isolatedIds, setIsolatedIds] = useState<string[] | null>(null);
+  /** Clash-review deep-link state. `clashHighlightIds` are the two
+   *  interfering element ids (coloured clash-red on top of the isolation);
+   *  `clashFocusPoint` is the clash world centroid (`cx/cy/cz`) used as the
+   *  reliable camera target even on showcase models whose GLB nodes don't
+   *  match the DB element UUIDs. Both come from the /clash "3D" link. */
+  const [clashHighlightIds, setClashHighlightIds] = useState<string[] | null>(
+    null,
+  );
+  const [clashFocusPoint, setClashFocusPoint] = useState<{
+    x: number;
+    y: number;
+    z: number;
+  } | null>(null);
   const [meshMatchRatio, setMeshMatchRatio] = useState<number | null>(null);
+  /** Model-version diff review state. `diffPanelOpen` shows the side panel;
+   *  `diffChangeByStableId` drives the BIMViewer change-colour overlay. */
+  const [diffPanelOpen, setDiffPanelOpen] = useState(false);
+  const [diffChangeByStableId, setDiffChangeByStableId] = useState<Map<
+    string,
+    DiffChangeType
+  > | null>(null);
   /** Elements queued for linking via the AddToBOQ modal. Single element
    *  when the user clicks an element; multiple elements when "quick
    *  takeoff" on a filtered category. */
@@ -1579,7 +1613,7 @@ export function BIMPage() {
   /** Save-as-group modal state — captures the current filter snapshot. */
   const [saveGroupState, setSaveGroupState] = useState<{
     filterCriteria: BIMGroupFilterCriteria;
-    elementIds: string[];
+    elements: BIMElementData[];
   } | null>(null);
   /** Inline create-from-element modal targets.  Each one stores the
    *  elements the user wants to link from — typically [singleClickedElement]. */
@@ -1716,11 +1750,15 @@ export function BIMPage() {
     setFilterPredicate(null);
     setVisibleElementCount(null);
     setIsolatedIds(null);
+    setClashHighlightIds(null);
+    setClashFocusPoint(null);
     setColorByMode('default');
     setFullModelRequested(false);
     setActiveGroupId(null);
     setSelectedElementId(null);
     setMultiSelectedIds([]);
+    setDiffPanelOpen(false);
+    setDiffChangeByStableId(null);
     clearBIMLinkSelection();
   }, [activeModelId, clearBIMLinkSelection]);
 
@@ -1776,29 +1814,80 @@ export function BIMPage() {
     }
   }, [deepLinkElementId, elements, searchParams, setSearchParams, setBIMSelection]);
 
-  // Deep-link: ?isolate=id1,id2,... — isolate the listed BIM elements in
-  // the 3D viewer.  Used by the BOQ editor's "View in BIM" button when a
-  // position is linked to one or more BIM elements.  Stripped after first
-  // application so a page refresh resets to the full model view.
+  // Deep-link: ?isolate=id1,id2,...[&clash=1][&focus=cx,cy,cz]
+  //
+  // Used by:
+  //   • BOQ editor "View in BIM" — one or more linked element ids.
+  //   • /clash review "3D" link — the two interfering element ids plus
+  //     `clash=1` (colour them clash-red) and `focus=cx,cy,cz` (the clash
+  //     world centroid). The centroid is the reliable camera target: on
+  //     showcase IFC/RVT models the GLB nodes are numeric Revit ids that
+  //     never equal the DB element UUIDs, so per-element mesh resolution is
+  //     only an approximate positional fallback and framing the matched
+  //     meshes can point the camera at the wrong spot. The centroid is
+  //     exact regardless.
+  //
+  // Stripped after first application so a refresh resets to the full model.
   const isolateParam = searchParams.get('isolate');
+  const clashParam = searchParams.get('clash');
+  const focusParam = searchParams.get('focus');
   useEffect(() => {
     if (!isolateParam || elements.length === 0) return;
     const ids = isolateParam.split(',').filter((id) => id.length > 0);
     if (ids.length === 0) return;
-    // Verify at least one ID actually exists in the current model
+    const isClash = clashParam === '1';
+
+    // Parse the clash centroid (3 finite floats) if supplied.
+    let focus: { x: number; y: number; z: number } | null = null;
+    if (focusParam) {
+      const parts = focusParam.split(',').map((s) => Number.parseFloat(s));
+      if (parts.length === 3 && parts.every((n) => Number.isFinite(n))) {
+        focus = { x: parts[0]!, y: parts[1]!, z: parts[2]! };
+      }
+    }
+
+    // Which of the requested ids actually exist in this model's element
+    // list. The clash backend stores real BIMElement UUIDs, so for a seeded
+    // showcase model these resolve directly. (We do NOT bail when the
+    // intersection is empty for a clash with a centroid — the viewer can
+    // still frame the interference via `focus`.)
     const elementIdSet = new Set(elements.map((e) => e.id));
     const validIds = ids.filter((id) => elementIdSet.has(id));
-    if (validIds.length === 0) return;
-    setIsolatedIds(validIds);
-    // If a single element is isolated, also select it to show its detail
-    if (validIds.length === 1) {
+
+    if (validIds.length === 0 && !(isClash && focus)) {
+      // Non-clash deep-link with no resolvable ids and no centroid — there
+      // is nothing meaningful we can show. Leave the param in place so a
+      // later element page (lazy load) can still satisfy it.
+      return;
+    }
+
+    if (validIds.length > 0) {
+      setIsolatedIds(validIds);
+    }
+    if (isClash) {
+      setClashHighlightIds(validIds.length > 0 ? validIds : null);
+      setClashFocusPoint(focus);
+    } else if (validIds.length === 1) {
+      // BOQ-link single-element deep-link: also select it so the detail
+      // panel opens (unchanged behaviour).
       setSelectedElementId(validIds[0]!);
       setBIMSelection(validIds);
     }
+
     const next = new URLSearchParams(searchParams);
     next.delete('isolate');
+    next.delete('clash');
+    next.delete('focus');
     setSearchParams(next, { replace: true });
-  }, [isolateParam, elements, searchParams, setSearchParams, setBIMSelection]);
+  }, [
+    isolateParam,
+    clashParam,
+    focusParam,
+    elements,
+    searchParams,
+    setSearchParams,
+    setBIMSelection,
+  ]);
 
   // Saved element groups for the current model — populated by the
   // /api/v1/bim_hub/element-groups/ endpoint and rendered at the top
@@ -2145,7 +2234,7 @@ export function BIMPage() {
     types: Set<string>;
   };
   const handleSaveAsGroup = useCallback(
-    (filter: FilterStateShape, visibleElementIds: string[]) => {
+    (filter: FilterStateShape, visibleElements: BIMElementData[]) => {
       const criteria: BIMGroupFilterCriteria = {};
       if (filter.storeys.size > 0) {
         criteria.storey = Array.from(filter.storeys);
@@ -2158,15 +2247,18 @@ export function BIMPage() {
       // Prefer the explicit multi-selection when the user has Ctrl+clicked
       // a subset — that gesture means "this is what I want", not "every
       // element matching the current filter".  Falls back to the visible
-      // (filtered + isolated) subset otherwise.
-      const targetIds =
-        multiSelectedIds.length > 0 ? multiSelectedIds : visibleElementIds;
+      // (filtered + isolated) subset otherwise.  We pass full element rows
+      // (not ids) so SaveGroupModal can resolve viewer stubs to real
+      // BIMElement UUIDs before persisting — storing stub ids verbatim
+      // was the root cause of "group save broken".
+      const targetElements =
+        selectedElementData.length > 0 ? selectedElementData : visibleElements;
       setSaveGroupState({
         filterCriteria: criteria,
-        elementIds: targetIds,
+        elements: targetElements,
       });
     },
-    [multiSelectedIds],
+    [selectedElementData],
   );
 
   // Isolate a saved group's member elements in the 3D viewport.
@@ -2577,6 +2669,26 @@ export function BIMPage() {
                 {t('bim.linked_boq_button', { defaultValue: 'Linked BOQ' })}
               </button>
 
+              <button
+                onClick={() => setDiffPanelOpen((o) => !o)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-colors border ${
+                  diffPanelOpen
+                    ? 'bg-oe-blue/10 text-oe-blue border-oe-blue/30'
+                    : 'text-content-secondary bg-surface-secondary border-border-light hover:bg-surface-tertiary'
+                }`}
+                title={t('bim.diff_toggle', {
+                  defaultValue: 'Compare model versions',
+                })}
+                aria-label={t('bim.diff_toggle', {
+                  defaultValue: 'Compare model versions',
+                })}
+                aria-pressed={diffPanelOpen}
+                data-testid="bim-diff-toggle"
+              >
+                <GitCompare size={13} />
+                {t('bim.diff_button', { defaultValue: 'Compare' })}
+              </button>
+
               {/* Color-by selector — three families:
                   · Field-based (Storey / Type) use the hash-to-hue palette
                   · Compliance-based (Validation / BOQ / Documents) use a
@@ -2921,7 +3033,7 @@ export function BIMPage() {
             modelMetadata={activeModel?.metadata ?? null}
             selectedElementIds={selectedElementIds}
             onElementSelect={handleElementSelect}
-            onSelectionChange={setMultiSelectedIds}
+            onSelectionChange={handleViewerSelectionChange}
             highlightedIds={highlightedBIMElementIds.length > 0 ? highlightedBIMElementIds : null}
             elements={elements}
             isLoading={elementsQuery.isLoading}
@@ -2931,7 +3043,18 @@ export function BIMPage() {
             filterPredicate={filterPredicate}
             colorByMode={colorByMode}
             isolatedIds={isolatedIds}
-            onIsolationChange={setIsolatedIds}
+            onIsolationChange={(ids) => {
+              setIsolatedIds(ids);
+              // Clearing isolation (e.g. viewer "Show all") also drops the
+              // clash review overlay so the red colouring / centroid framing
+              // don't linger over the full model.
+              if (!ids || ids.length === 0) {
+                setClashHighlightIds(null);
+                setClashFocusPoint(null);
+              }
+            }}
+            clashHighlightIds={clashHighlightIds}
+            focusPoint={clashFocusPoint}
             onGeometryLoaded={setMeshMatchRatio}
             onAddToBOQ={handleAddToBOQ}
             onUnlinkBOQ={handleUnlinkBOQ}
@@ -2945,6 +3068,7 @@ export function BIMPage() {
             onLinkRequirement={handleLinkRequirement}
             onSmartFilter={handleSmartFilter}
             leftPanelOpen={filterPanelOpen && elements.length > 0}
+            diffChangeByStableId={diffChangeByStableId}
             className="h-full"
           />
 
@@ -3043,6 +3167,29 @@ export function BIMPage() {
             />
           </div>
         )}
+
+        {/* Model-version diff review — docked on the left so it never
+            collides with the right-panel tabs.  Read-only consumer of the
+            backend per-element diff. */}
+        {activeModelId && !isModelNonReady && elements.length > 0 && diffPanelOpen && (
+          <div className="absolute top-0 start-0 h-full z-[25] w-[360px] bg-surface-primary border-e border-border-light flex flex-col">
+            <BIMDiffPanel
+              activeModelId={activeModelId}
+              models={models}
+              elements={elements}
+              onDiffChange={setDiffChangeByStableId}
+              onSelectElement={(id) => {
+                setSelectedElementId(id);
+                setMultiSelectedIds([id]);
+                setBIMSelection([id]);
+              }}
+              onClose={() => {
+                setDiffPanelOpen(false);
+                setDiffChangeByStableId(null);
+              }}
+            />
+          </div>
+        )}
       </div>
 
       {/* ── Model Filmstrip (collapsible, auto-hides after 5s) ── */}
@@ -3078,8 +3225,8 @@ export function BIMPage() {
           projectId={projectId}
           modelId={activeModelId}
           filterCriteria={saveGroupState.filterCriteria}
-          elementIds={saveGroupState.elementIds}
-          visibleCount={saveGroupState.elementIds.length}
+          elements={saveGroupState.elements}
+          visibleCount={saveGroupState.elements.length}
           onClose={() => setSaveGroupState(null)}
           onSaved={() => {
             // SavedGroupModal already invalidates the query; nothing extra here

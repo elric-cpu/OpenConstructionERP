@@ -20,15 +20,8 @@ export const manifest: ModuleManifest = {
       component: CNExchangeModule,
     },
   ],
-  navItems: [
-    {
-      labelKey: 'nav.cn_boq_exchange',
-      to: '/cn-boq-exchange',
-      icon: Building,
-      group: 'regional',
-      advancedOnly: true,
-    },
-  ],
+  // Issue #217 — reached from /boq (regional import/export); no duplicate sidebar entry.
+  navItems: [],
   searchEntries: [
     {
       label: 'China BOQ Import / Export',

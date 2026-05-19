@@ -1,4 +1,4 @@
-"""v3 live smoke #188 — restore a DDC CWICR snapshot into embedded Qdrant.
+"""‌⁠‍v3 live smoke #188 — restore a DDC CWICR snapshot into embedded Qdrant.
 
 Run:
     python scripts/v3_smoke_recover.py /tmp/cwicr-v3/RU_STPETERSBURG.snapshot

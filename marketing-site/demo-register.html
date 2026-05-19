@@ -126,9 +126,11 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 
 /* ============ Hero ============ */
 .hero{
-  display:grid;grid-template-columns:1.05fr .95fr;gap:44px;align-items:start;
+  display:grid;grid-template-columns:1.05fr .95fr;gap:44px;align-items:stretch;
 }
-.hero-left{display:flex;flex-direction:column;gap:14px}
+.hero-left{display:flex;flex-direction:column;justify-content:space-between;gap:28px}
+.hero-top{display:flex;flex-direction:column;gap:14px}
+.hero-bottom{display:flex;flex-direction:column;gap:16px}
 .eyebrow{
   display:inline-flex;align-items:center;gap:10px;
   font-family:'JetBrains Mono',ui-monospace,monospace;
@@ -416,6 +418,7 @@ h1.display em{
     <section class="hero reveal">
 
       <div class="hero-left">
+       <div class="hero-top">
         <span class="eyebrow">Free demo access</span>
 
         <h1 class="display">Run the full platform <em>in your browser</em>, no setup.</h1>
@@ -425,7 +428,9 @@ h1.display em{
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
           No credit card · email verification only
         </span>
+       </div>
 
+       <div class="hero-bottom">
         <ul class="features">
           <li>
             <span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
@@ -451,6 +456,7 @@ h1.display em{
           <div class="stat"><div class="stat-value">20</div><div class="stat-label">languages</div></div>
           <div class="stat"><div class="stat-value">AGPL</div><div class="stat-label">open-source</div></div>
         </div>
+       </div>
       </div>
 
       <div class="card">

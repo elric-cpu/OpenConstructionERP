@@ -205,9 +205,9 @@ export function SectionFullWidthRenderer(params: ICellRendererParams) {
   return (
     <div
       className={`flex items-center w-full h-full px-2 gap-2 select-none group/section transition-colors ${
-        depth > 0 ? 'border-l-2 border-oe-blue/30' : ''
+        depth > 0 ? 'border-l-[3px] border-oe-blue' : ''
       } ${
-        dragOver ? 'bg-oe-blue-subtle/40 border-t-2 border-oe-blue' : ''
+        dragOver ? 'bg-oe-blue-subtle border-t-2 border-oe-blue' : ''
       }`}
       style={depth > 0 ? { paddingLeft: 8 + depth * 22 } : undefined}
       draggable
@@ -262,7 +262,7 @@ export function SectionFullWidthRenderer(params: ICellRendererParams) {
 
       {ordinal && (
         <span className="shrink-0 inline-flex items-center h-4 px-1.5 rounded
-                         bg-oe-blue/10 text-oe-blue text-[10px] font-mono font-semibold
+                         bg-oe-blue-subtle text-oe-blue text-[10px] font-mono font-semibold
                          tabular-nums">
           {ordinal}
         </span>
@@ -344,16 +344,15 @@ export function SectionFullWidthRenderer(params: ICellRendererParams) {
             e.stopPropagation();
             ctx.onAddSubSection!(data.id);
           }}
-          className="shrink-0 h-5 flex items-center gap-0.5 px-1.5 rounded
-                     text-[10px] font-medium
-                     text-content-tertiary hover:text-oe-blue
-                     bg-transparent hover:bg-oe-blue-subtle
-                     opacity-0 group-hover/section:opacity-100
-                     transition-all"
+          className="shrink-0 h-5 flex items-center gap-1 px-2 rounded ring-1 ring-oe-blue
+                     text-[10px] font-semibold
+                     bg-oe-blue-subtle text-oe-blue
+                     hover:bg-oe-blue hover:text-white
+                     transition-colors"
           title={t('boq.add_sub_section', { defaultValue: 'Add sub-section nested under this section' })}
           aria-label={t('boq.add_sub_section', { defaultValue: 'Add sub-section' })}
         >
-          <FolderPlus size={10} />
+          <FolderPlus size={11} />
           {t('boq.sub_section_short', { defaultValue: 'Sub' })}
         </button>
       )}
@@ -611,23 +610,29 @@ export function ExpandCellRenderer(params: ICellRendererParams) {
     ? t('boq.collapse_resources', { defaultValue: 'Collapse {{count}} resources', count: resCount })
     : t('boq.expand_resources', { defaultValue: 'Show {{count}} resources', count: resCount });
 
-  // Persistently tinted (not hover-only) so the affordance is always
-  // obvious — the faint hover-only chevron read as "missing" to users.
+  // Solid theme tokens ONLY. `--oe-blue` is a hex-valued CSS variable, so
+  // Tailwind opacity modifiers over it (`bg-oe-blue/10`, `ring-oe-blue/30`)
+  // emit `rgb(#0071e3 / 0.1)` — invalid CSS the browser drops, leaving the
+  // chip transparent + ring-less (it read as "missing"). Every class here
+  // is a real solid token. Modern soft-affordance: a low-contrast tinted
+  // chip at rest (calm, not loud), full blue only on hover/expanded so
+  // it's still unmistakably a control. Size pinned inline so it can never
+  // collapse to icon width.
   return (
     <div className="flex items-center justify-center h-full w-full">
       <button
         onClick={() => ctx?.onToggleResources?.(data.id)}
-        className={`h-[22px] w-[22px] flex items-center justify-center rounded-md
-                   ring-1 transition-colors cursor-pointer ${
+        style={{ width: 22, height: 22 }}
+        className={`shrink-0 flex items-center justify-center rounded-md ring-1 transition-colors cursor-pointer hover:bg-oe-blue hover:text-white hover:ring-oe-blue ${
           isExpanded
-            ? 'bg-oe-blue text-white ring-oe-blue'
-            : 'bg-oe-blue/10 text-oe-blue ring-oe-blue/30 hover:bg-oe-blue/20'
+            ? 'bg-oe-blue-subtle text-oe-blue-dark ring-oe-blue'
+            : 'bg-oe-blue-subtle text-oe-blue ring-oe-blue-subtle'
         }`}
         title={expandTitle}
         aria-label={expandTitle}
         aria-expanded={isExpanded}
       >
-        {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+        {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
       </button>
     </div>
   );
@@ -3659,14 +3664,14 @@ export function EditableResourceRow({ data, ctx, slots, leftPad }: { data: Recor
   const renderOrdinalSlot = (width: number) => (
     <span
       key="ordinal"
-      className="shrink-0 inline-flex items-center justify-end self-center pr-2 text-[10px] font-mono whitespace-nowrap overflow-hidden"
+      className="shrink-0 inline-flex items-center justify-end self-center pr-2 text-[9px] font-mono whitespace-nowrap overflow-hidden"
       style={{ width: `${width}px` }}
       title={resourceCode
         ? ctx.t('boq.resource_catalog_code', { defaultValue: 'Catalogue code: {{code}}', code: resourceCode })
         : ctx.t('boq.resource_customised', { defaultValue: 'Customised resource — no catalogue code' })}
     >
       {resourceCode ? (
-        <span className="px-1.5 py-0.5 rounded bg-oe-blue/10 text-oe-blue font-semibold tracking-tight overflow-hidden text-ellipsis">
+        <span className="font-normal tracking-tight text-content-tertiary/70 overflow-hidden text-ellipsis">
           {resourceCode}
         </span>
       ) : (

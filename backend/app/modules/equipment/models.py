@@ -1,4 +1,4 @@
-"""Equipment & Fleet ORM models.
+"""‌⁠‍Equipment & Fleet ORM models.
 
 Tables:
     oe_equipment_type                   — Catalog of equipment types
@@ -37,7 +37,7 @@ from app.database import GUID, Base
 
 
 class EquipmentType(Base):
-    """Catalog of equipment types with default maintenance intervals."""
+    """‌⁠‍Catalog of equipment types with default maintenance intervals."""
 
     __tablename__ = "oe_equipment_type"
 
@@ -63,7 +63,7 @@ class EquipmentType(Base):
 
 
 class Equipment(Base):
-    """A single piece of equipment in the fleet."""
+    """‌⁠‍A single piece of equipment in the fleet."""
 
     __tablename__ = "oe_equipment_equipment"
     __table_args__ = (

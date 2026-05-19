@@ -1,4 +1,4 @@
-"""Equipment Pydantic schemas — request/response models."""
+"""‌⁠‍Equipment Pydantic schemas — request/response models."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ _ISO_DATE_PATTERN = r"^\d{4}-\d{2}-\d{2}$"
 
 
 class EquipmentTypeCreate(BaseModel):
-    """Create a new equipment type catalog entry."""
+    """‌⁠‍Create a new equipment type catalog entry."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -30,7 +30,7 @@ class EquipmentTypeCreate(BaseModel):
 
 
 class EquipmentTypeUpdate(BaseModel):
-    """Partial update for an equipment type."""
+    """‌⁠‍Partial update for an equipment type."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 

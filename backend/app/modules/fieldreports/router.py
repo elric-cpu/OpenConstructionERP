@@ -32,6 +32,9 @@ from app.modules.fieldreports.schemas import (
     FieldReportCreate,
     FieldReportResponse,
     FieldReportSummary,
+    FieldReportTemplateCreate,
+    FieldReportTemplateResponse,
+    FieldReportTemplateUpdate,
     FieldReportUpdate,
     LinkDocumentsRequest,
     LinkedDocumentResponse,
@@ -42,7 +45,7 @@ from app.modules.fieldreports.schemas import (
     SiteWorkforceLogResponse,
     SiteWorkforceLogUpdate,
 )
-from app.modules.fieldreports.service import FieldReportService
+from app.modules.fieldreports.service import FieldReportService, FieldReportTemplateService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -50,6 +53,10 @@ logger = logging.getLogger(__name__)
 
 def _get_service(session: SessionDep) -> FieldReportService:
     return FieldReportService(session)
+
+
+def _get_template_service(session: SessionDep) -> FieldReportTemplateService:
+    return FieldReportTemplateService(session)
 
 
 def _report_to_response(report: object) -> FieldReportResponse:
@@ -861,6 +868,146 @@ async def export_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f"attachment; filename=field_report_{report_id}.pdf"},
     )
+
+
+# ── Report Templates CRUD ──────────────────────────────────────────────────
+
+
+def _template_to_response(tpl: object) -> FieldReportTemplateResponse:
+    """Build a response from either a built-in dict or an ORM row."""
+    if isinstance(tpl, dict):
+        return FieldReportTemplateResponse.model_validate(tpl)
+    return FieldReportTemplateResponse(
+        id=str(tpl.id),  # type: ignore[attr-defined]
+        project_id=str(tpl.project_id),  # type: ignore[attr-defined]
+        name=tpl.name,  # type: ignore[attr-defined]
+        description=tpl.description,  # type: ignore[attr-defined]
+        report_type=tpl.report_type,  # type: ignore[attr-defined]
+        fields=tpl.fields or [],  # type: ignore[attr-defined]
+        is_active=tpl.is_active,  # type: ignore[attr-defined]
+        is_builtin=False,
+        created_by=tpl.created_by,  # type: ignore[attr-defined]
+        metadata=getattr(tpl, "metadata_", {}),
+        created_at=tpl.created_at,  # type: ignore[attr-defined]
+        updated_at=tpl.updated_at,  # type: ignore[attr-defined]
+    )
+
+
+@router.get(
+    "/templates/",
+    response_model=list[FieldReportTemplateResponse],
+)
+async def list_templates(
+    session: SessionDep,
+    project_id: uuid.UUID = Query(...),
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("fieldreports.read")),
+    service: FieldReportTemplateService = Depends(_get_template_service),
+) -> list[FieldReportTemplateResponse]:
+    """List built-in + custom report templates available for a project."""
+    await verify_project_access(project_id, user_id, session)
+    templates = await service.list_templates(project_id)
+    return [_template_to_response(t) for t in templates]
+
+
+@router.post(
+    "/templates/",
+    response_model=FieldReportTemplateResponse,
+    status_code=201,
+)
+async def create_template(
+    data: FieldReportTemplateCreate,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    _perm: None = Depends(RequirePermission("fieldreports.create")),
+    service: FieldReportTemplateService = Depends(_get_template_service),
+) -> FieldReportTemplateResponse:
+    """Create a custom, project-scoped report template."""
+    await verify_project_access(data.project_id, user_id, session)
+    tpl = await service.create_template(data, user_id=user_id)
+    return _template_to_response(tpl)
+
+
+@router.get(
+    "/templates/{template_id}",
+    response_model=FieldReportTemplateResponse,
+)
+async def get_template(
+    template_id: str,
+    session: SessionDep,
+    project_id: uuid.UUID = Query(...),
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("fieldreports.read")),
+    service: FieldReportTemplateService = Depends(_get_template_service),
+) -> FieldReportTemplateResponse:
+    """Get a single template (built-in or project-scoped custom)."""
+    await verify_project_access(project_id, user_id, session)
+    tpl = await service.get_template(template_id, project_id)
+    return _template_to_response(tpl)
+
+
+@router.patch(
+    "/templates/{template_id}",
+    response_model=FieldReportTemplateResponse,
+)
+async def update_template(
+    template_id: str,
+    data: FieldReportTemplateUpdate,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    project_id: uuid.UUID = Query(...),
+    _perm: None = Depends(RequirePermission("fieldreports.update")),
+    service: FieldReportTemplateService = Depends(_get_template_service),
+) -> FieldReportTemplateResponse:
+    """Update a custom template. Built-in templates are read-only."""
+    from app.modules.fieldreports.service import is_builtin_id
+
+    if is_builtin_id(template_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Built-in templates are read-only. Duplicate it to customise.",
+        )
+    try:
+        tpl_uuid = uuid.UUID(template_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Template not found") from None
+
+    # IDOR guard: load first, verify the template's project, then mutate.
+    existing = await service.repo.get_by_id(tpl_uuid)
+    if existing is None or str(existing.project_id) != str(project_id):
+        raise HTTPException(status_code=404, detail="Template not found")
+    await verify_project_access(existing.project_id, user_id, session)
+    tpl = await service.update_template(tpl_uuid, data)
+    return _template_to_response(tpl)
+
+
+@router.delete("/templates/{template_id}", status_code=204)
+async def delete_template(
+    template_id: str,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    project_id: uuid.UUID = Query(...),
+    _perm: None = Depends(RequirePermission("fieldreports.delete")),
+    service: FieldReportTemplateService = Depends(_get_template_service),
+) -> None:
+    """Delete a custom template. Built-in templates cannot be deleted."""
+    from app.modules.fieldreports.service import is_builtin_id
+
+    if is_builtin_id(template_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Built-in templates cannot be deleted.",
+        )
+    try:
+        tpl_uuid = uuid.UUID(template_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Template not found") from None
+
+    existing = await service.repo.get_by_id(tpl_uuid)
+    if existing is None or str(existing.project_id) != str(project_id):
+        raise HTTPException(status_code=404, detail="Template not found")
+    await verify_project_access(existing.project_id, user_id, session)
+    await service.delete_template(tpl_uuid)
 
 
 # ── Site Workforce Log CRUD ────────────────────────────────────────────────

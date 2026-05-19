@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Match-quality analytics for the §10 production observability layer.
+"""‌⁠‍Match-quality analytics for the §10 production observability layer.
 
 The :func:`compute_match_analytics` function aggregates rows from
 ``oe_match_elements_search_log`` (populated by ranker_qdrant for every
@@ -55,14 +55,14 @@ _HIGH_RANK_PCT = float(os.getenv("MATCH_ALERT_HIGH_RANK_PCT", "0.20"))
 _ZERO_HIT_PCT = float(os.getenv("MATCH_ALERT_ZERO_HIT_PCT", "0.10"))
 
 _MIN_SAMPLE = int(os.getenv("MATCH_ALERT_MIN_SAMPLE", "20"))
-"""Don't fire any alert until the window has at least this many rows.
+"""‌⁠‍Don't fire any alert until the window has at least this many rows.
 
 Without this guard a fresh deploy with two test queries — one of which
 happened to score 0.1 — would page the on-call team. The §10 thresholds
 are statistical and need a real denominator."""
 
 _BREAKDOWN_LIMIT = 8
-"""How many rows to surface per by-dimension table (top-N by volume)."""
+"""‌⁠‍How many rows to surface per by-dimension table (top-N by volume)."""
 
 _MAX_DAYS = 90
 """Hard cap on the lookback window. Even at 100k rows / week the in-Python

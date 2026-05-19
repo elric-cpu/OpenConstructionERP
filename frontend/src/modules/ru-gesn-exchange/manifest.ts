@@ -20,15 +20,8 @@ export const manifest: ModuleManifest = {
       component: RUExchangeModule,
     },
   ],
-  navItems: [
-    {
-      labelKey: 'nav.ru_gesn_exchange',
-      to: '/ru-gesn-exchange',
-      icon: Landmark,
-      group: 'regional',
-      advancedOnly: true,
-    },
-  ],
+  // Issue #217 — reached from /boq (regional import/export); no duplicate sidebar entry.
+  navItems: [],
   searchEntries: [
     {
       label: 'Russia GESN Import / Export',

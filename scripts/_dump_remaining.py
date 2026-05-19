@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Dump remaining untranslated entries."""
+"""‌⁠‍Dump remaining untranslated entries."""
 import re
 import json
 from pathlib import Path

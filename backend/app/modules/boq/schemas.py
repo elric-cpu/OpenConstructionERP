@@ -291,6 +291,18 @@ class PositionCreate(BaseModel):
             "collision: always a plain create."
         ),
     )
+    # ── Issue #139: insert directly below the selected row ───────────────
+    after_position_id: UUID | None = Field(
+        default=None,
+        description=(
+            "Optional UUID of an existing position the new row should be "
+            "placed *immediately after* (same BOQ). When set, the new "
+            "position's sort_order slots right after that sibling and every "
+            "later position shifts down by one — so 'Add position' inserts "
+            "below the selected row instead of at the end of the section. "
+            "Ignored for the reuse/linked-instance path."
+        ),
+    )
 
     # Sanitise + canonicalise; **don't** gate on a fixed catalogue.  Locale
     # spellings (Romanian "Bucat", Bulgarian "бр", Russian "шт", German
@@ -799,9 +811,17 @@ class AIChatItem(BaseModel):
 
 
 class AIChatResponse(BaseModel):
-    """Response from AI chat with generated BOQ items."""
+    """Response from AI chat.
+
+    ``reply`` is the assistant's natural-language answer — always populated
+    when the model produced any output, so a knowledge question gets a real
+    answer instead of an empty chat (issue #138). ``items`` are suggested
+    BOQ positions, present only when the user asked to generate scope.
+    ``message`` is an optional operational summary of generated items.
+    """
 
     items: list[AIChatItem] = Field(default_factory=list)
+    reply: str = ""
     message: str = ""
 
 
@@ -1564,3 +1584,192 @@ class AnomalyResponse(BaseModel):
     detail: str = ""
     value: float | None = None
     reference: float | None = None
+
+
+# ── Feature 1: model→BOQ quantity-link schemas ────────────────────────────────
+
+# The canonical aggregation modes a link may apply across its bound
+# elements. Kept as a Literal so a typo is a 422, not a silent "sum".
+QuantityAggregation = Literal["sum", "max", "min", "count", "first"]
+
+
+class QuantityLinkCreate(BaseModel):
+    """Bind a BOQ position numeric field to one or more BIM elements.
+
+    The link is an *extraction rule*, never a cached value. Creating it
+    does NOT mutate the position quantity — call the refresh + confirm
+    endpoints to pull and (human-)apply values.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    model_id: UUID
+    element_stable_ids: list[str] = Field(..., min_length=1)
+    quantity_field: str = Field(..., min_length=1, max_length=64)
+    target_field: Literal["quantity"] = "quantity"
+    aggregation: QuantityAggregation = "sum"
+
+    @field_validator("element_stable_ids")
+    @classmethod
+    def _dedupe_non_empty(cls, v: list[str]) -> list[str]:
+        """Strip blanks and duplicates while preserving first-seen order."""
+        seen: set[str] = set()
+        out: list[str] = []
+        for raw in v:
+            s = str(raw).strip()
+            if s and s not in seen:
+                seen.add(s)
+                out.append(s)
+        if not out:
+            raise ValueError("element_stable_ids must contain at least one id")
+        return out
+
+
+class QuantityLinkResponse(BaseModel):
+    """A persisted quantity link returned from the API."""
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    position_id: UUID
+    boq_id: UUID
+    model_id: UUID
+    element_stable_ids: list[str]
+    quantity_field: str
+    target_field: str
+    aggregation: str
+    status: str
+    source_model_version: str | None = None
+    last_applied_quantity: str | None = None
+    last_pulled_at: str | None = None
+    last_applied_at: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class QuantityLinkRefreshRow(BaseModel):
+    """Per-position review row produced by the refresh endpoint.
+
+    ``new_quantity`` is what the bound elements compute *now* (post the
+    latest model version). ``old_quantity`` is the position's current
+    stored value. ``delta`` = new − old. Nothing is written until the
+    confirm endpoint is called for the chosen links (the architecture guide §7).
+    """
+
+    link_id: UUID
+    position_id: UUID
+    ordinal: str
+    description: str
+    quantity_field: str
+    target_field: str
+    aggregation: str
+    unit: str
+    old_quantity: str
+    new_quantity: str
+    delta: str
+    changed: bool
+    status: str
+    contributing_elements: list[str]
+    missing_element_ids: list[str]
+    message: str = ""
+
+
+class QuantityLinkRefreshResponse(BaseModel):
+    """Result of probing every link in a BOQ against the latest model."""
+
+    boq_id: UUID
+    checked: int
+    stale: int
+    rows: list[QuantityLinkRefreshRow]
+
+
+class QuantityLinkApplyRequest(BaseModel):
+    """Confirm payload — explicit list of link ids to apply (human gate)."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    link_ids: list[UUID] = Field(..., min_length=1)
+
+
+class QuantityLinkApplyResultRow(BaseModel):
+    """Outcome of applying one re-pulled quantity to its position."""
+
+    link_id: UUID
+    position_id: UUID
+    ordinal: str
+    applied: bool
+    old_quantity: str
+    new_quantity: str
+    message: str = ""
+
+
+class QuantityLinkApplyResponse(BaseModel):
+    """Aggregate result of a confirm/apply call."""
+
+    boq_id: UUID
+    applied: int
+    skipped: int
+    results: list[QuantityLinkApplyResultRow]
+
+
+# ── Feature 2: estimate baseline / line-level compare schemas ─────────────────
+
+# How a position pairs across the two BOQs and what (if anything) moved.
+CompareChangeType = Literal[
+    "added", "removed", "qty_changed", "rate_changed", "changed", "unchanged"
+]
+
+
+class ComparePositionRow(BaseModel):
+    """One classified line in a BOQ-to-BOQ comparison.
+
+    Money/quantity fields are emitted as plain decimal strings (same
+    contract as :class:`PositionResponse`) so large totals round-trip
+    exactly and stay locale-neutral. ``*_base`` totals are the position
+    totals rebased into the project base currency via the existing FX
+    table so a multi-currency estimate compares apples to apples.
+    """
+
+    change_type: CompareChangeType
+    match_key: str
+    reference_code: str | None = None
+    ordinal: str
+    description: str
+    unit: str
+
+    old_quantity: str | None = None
+    new_quantity: str | None = None
+    old_unit_rate: str | None = None
+    new_unit_rate: str | None = None
+    old_total: str | None = None
+    new_total: str | None = None
+    old_total_base: str | None = None
+    new_total_base: str | None = None
+    currency: str = ""
+    total_delta_base: str = "0"
+
+
+class CompareSummary(BaseModel):
+    """Roll-up counts + base-currency money deltas for a comparison."""
+
+    base_currency: str = ""
+    added: int = 0
+    removed: int = 0
+    qty_changed: int = 0
+    rate_changed: int = 0
+    changed: int = 0
+    unchanged: int = 0
+    old_direct_cost_base: str = "0"
+    new_direct_cost_base: str = "0"
+    direct_cost_delta_base: str = "0"
+
+
+class BOQCompareResponse(BaseModel):
+    """Side-by-side comparison of two BOQs (pure read, no mutation)."""
+
+    base_boq_id: UUID
+    other_boq_id: UUID
+    base_boq_name: str
+    other_boq_name: str
+    summary: CompareSummary
+    rows: list[ComparePositionRow]

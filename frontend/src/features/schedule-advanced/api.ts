@@ -238,6 +238,27 @@ export function createMasterSchedule(data: {
   );
 }
 
+export function updateMasterSchedule(
+  masterId: string,
+  data: {
+    name?: string;
+    planned_start?: string | null;
+    planned_finish?: string | null;
+    baseline_date?: string | null;
+    status?: MasterStatus;
+    notes?: string | null;
+  },
+): Promise<MasterSchedule> {
+  return apiPatch<MasterSchedule>(
+    `/v1/schedule-advanced/master-schedules/${masterId}`,
+    data,
+  );
+}
+
+export function deleteMasterSchedule(masterId: string): Promise<void> {
+  return apiDelete(`/v1/schedule-advanced/master-schedules/${masterId}`);
+}
+
 export function projectDashboard(projectId: string): Promise<LPSDashboard> {
   return apiGet<LPSDashboard>(
     `/v1/schedule-advanced/dashboard/project/${projectId}`,

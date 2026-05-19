@@ -1,4 +1,4 @@
-"""CRM Pydantic schemas — request/response models."""
+"""‌⁠‍CRM Pydantic schemas — request/response models."""
 
 from __future__ import annotations
 
@@ -253,6 +253,7 @@ class OpportunityCreate(BaseModel):
     )
     notes: str = Field(default="", max_length=20000)
     primary_contact_id: UUID | None = None
+    project_id: UUID | None = None
     competitor_names: list[str] = Field(default_factory=list)
 
 
@@ -279,6 +280,7 @@ class OpportunityUpdate(BaseModel):
     )
     notes: str | None = Field(default=None, max_length=20000)
     primary_contact_id: UUID | None = None
+    project_id: UUID | None = None
     competitor_names: list[str] | None = None
 
 
@@ -303,6 +305,7 @@ class OpportunityResponse(BaseModel):
     lost_reason_code: str | None
     notes: str
     primary_contact_id: UUID | None
+    project_id: UUID | None
     competitor_names: list[str]
     created_at: datetime
     updated_at: datetime

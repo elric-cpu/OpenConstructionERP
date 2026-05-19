@@ -1,4 +1,4 @@
-"""Insert "nav.project_files" into the locales that don't have it.
+"""‌⁠‍Insert "nav.project_files" into the locales that don't have it.
 
 The key is referenced by Sidebar.tsx and Header.tsx. Locales without it
 fall through to the English label "Project Files" — surfaces in the

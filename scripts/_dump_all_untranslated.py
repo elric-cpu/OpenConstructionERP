@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Dump all untranslated entries grouped by prefix, sorted by length."""
+"""‌⁠‍Dump all untranslated entries grouped by prefix, sorted by length."""
 import re
 import json
 from pathlib import Path

@@ -20,15 +20,8 @@ export const manifest: ModuleManifest = {
       component: NRMExchangeModule,
     },
   ],
-  navItems: [
-    {
-      labelKey: 'nav.uk_nrm_exchange',
-      to: '/uk-nrm-exchange',
-      icon: PoundSterling,
-      group: 'regional',
-      advancedOnly: true,
-    },
-  ],
+  // Issue #217 — reached from /boq (regional import/export); no duplicate sidebar entry.
+  navItems: [],
   searchEntries: [
     {
       label: 'UK NRM BOQ Import / Export',

@@ -1,5 +1,5 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
-"""Pydantic schemas for the compliance documents tracker."""
+"""‌⁠‍Pydantic schemas for the compliance documents tracker."""
 
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ _DATE_PATTERN = r"^\d{4}-\d{2}-\d{2}$"
 
 
 class ComplianceDocCreate(BaseModel):
-    """Body for ``POST /v1/compliance_docs/``."""
+    """‌⁠‍Body for ``POST /v1/compliance_docs/``."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -84,7 +84,7 @@ class ComplianceDocCreate(BaseModel):
 
 
 class ComplianceDocUpdate(BaseModel):
-    """Body for ``PATCH /v1/compliance_docs/{id}``."""
+    """‌⁠‍Body for ``PATCH /v1/compliance_docs/{id}``."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 

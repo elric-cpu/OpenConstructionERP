@@ -1,4 +1,4 @@
-"""Resources API routes.
+"""‌⁠‍Resources API routes.
 
 Mounted at ``/api/v1/resources/``.
 """
@@ -728,7 +728,7 @@ async def rank_candidates(
     _perm: None = Depends(RequirePermission("resources.read")),
     service: ResourcesService = Depends(_get_service),
 ) -> list[dict]:
-    """Return ranked candidate resources scored on skills × availability × proximity.
+    """‌⁠‍Return ranked candidate resources scored on skills × availability × proximity.
 
     Body:
         required_skill_ids: list[uuid] — required skills
@@ -783,7 +783,7 @@ async def cert_expiry_scan(
     _perm: None = Depends(RequirePermission("resources.read")),
     service: ResourcesService = Depends(_get_service),
 ) -> dict:
-    """Scan expiring certifications and emit ``resources.cert_expiring`` events.
+    """‌⁠‍Scan expiring certifications and emit ``resources.cert_expiring`` events.
 
     Body (optional):
         windows_days: list[int] — default [60, 30, 14, 7]

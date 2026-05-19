@@ -1,4 +1,4 @@
-"""Resources service — business logic for assignment, conflicts, skill matching."""
+"""‌⁠‍Resources service — business logic for assignment, conflicts, skill matching."""
 
 from __future__ import annotations
 
@@ -61,7 +61,7 @@ logger = logging.getLogger(__name__)
 
 
 class ResourceConflictError(ValueError):
-    """Raised when a proposed assignment conflicts with existing ones."""
+    """‌⁠‍Raised when a proposed assignment conflicts with existing ones."""
 
     def __init__(self, message: str, conflicts: list[ConflictDetail]) -> None:
         super().__init__(message)
@@ -69,7 +69,7 @@ class ResourceConflictError(ValueError):
 
 
 class SkillMismatchError(ValueError):
-    """Raised when a resource does not satisfy required skills."""
+    """‌⁠‍Raised when a resource does not satisfy required skills."""
 
     def __init__(self, message: str, missing: list[str]) -> None:
         super().__init__(message)

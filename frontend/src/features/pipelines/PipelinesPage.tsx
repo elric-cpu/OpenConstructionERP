@@ -77,6 +77,7 @@ export function PipelinesPage() {
 
   // ── Store wiring ────────────────────────────────────────────────────────
   const nodeCount = usePipelineStore((s) => s.nodes.length);
+  const edgeCount = usePipelineStore((s) => s.edges.length);
   const loadGraphMeta = usePipelineStore((s) => s.loadGraph);
   const markSaved = usePipelineStore((s) => s.markSaved);
   const patchMeta = usePipelineStore((s) => s.patchMeta);
@@ -140,8 +141,9 @@ export function PipelinesPage() {
       }
     }
     return count;
-    // recompute when the graph version changes
-  }, [nodeCount, loadToken, runDetailQuery.dataUpdatedAt]);
+    // recompute when the node OR edge set changes (an unconnected
+    // required input is an edge-level fact, so edgeCount must be a dep)
+  }, [nodeCount, edgeCount, loadToken, runDetailQuery.dataUpdatedAt]);
 
   // ── Actions ─────────────────────────────────────────────────────────────
   const handleSave = useCallback(async () => {
@@ -149,7 +151,7 @@ export function PipelinesPage() {
     const graph = toGraphJSON();
     const name =
       meta.name.trim() ||
-      t('pipeline.untitled', { defaultValue: 'Untitled pipeline' });
+      t('pipeline.untitled', { defaultValue: 'Untitled pipeline‌⁠‍' });
     try {
       if (meta.id) {
         await updateMut.mutateAsync({
@@ -169,13 +171,13 @@ export function PipelinesPage() {
       }
       addToast({
         type: 'success',
-        title: t('pipeline.toast.saved', { defaultValue: 'Pipeline saved' }),
+        title: t('pipeline.toast.saved', { defaultValue: 'Pipeline saved‌⁠‍' }),
       });
     } catch (err) {
       addToast({
         type: 'error',
         title: t('pipeline.toast.save_failed', {
-          defaultValue: 'Could not save pipeline',
+          defaultValue: 'Could not save pipeline‌⁠‍',
         }),
         message: getErrorMessage(err),
       });
@@ -191,7 +193,7 @@ export function PipelinesPage() {
         const created = await createMut.mutateAsync({
           name:
             meta.name.trim() ||
-            t('pipeline.untitled', { defaultValue: 'Untitled pipeline' }),
+            t('pipeline.untitled', { defaultValue: 'Untitled pipeline‌⁠‍' }),
           description: meta.description || undefined,
           project_id: meta.projectId,
           graph: toGraphJSON(),
@@ -202,7 +204,7 @@ export function PipelinesPage() {
         addToast({
           type: 'error',
           title: t('pipeline.toast.run_failed', {
-            defaultValue: 'Could not start the run',
+            defaultValue: 'Could not start the run‌⁠‍',
           }),
           message: getErrorMessage(err),
         });

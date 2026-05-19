@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Pass 5: Replace heavily-mixed long descriptive sentences with proper
+"""‌⁠‍Pass 5: Replace heavily-mixed long descriptive sentences with proper
 full Mongolian translations. These are mostly the marketing/landing
 paragraphs in the 'about' section and long descriptive labels."""
 from __future__ import annotations

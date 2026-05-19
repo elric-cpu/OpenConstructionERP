@@ -5,6 +5,34 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.7.0] — 2026-05-19 · Clash Detection module + GitHub issue sweep + file-manager polish
+
+### Added
+
+- New **Clash Detection** module (`/clash`): intra-project geometric interference + clearance coordination over real GLB element geometry — exact OBB-SAT + Möller tri-tri narrow phase, discipline×discipline matrix, Navisworks/Solibri-grade review table, BCF export, one-click "Isolate in 3D".
+- Clash: Navisworks-style category/type **selection sets** (Set A × Set B) as the primary search mode; collision results deep-link into the BIM viewer and frame the camera on the clash centroid.
+- Clash: active-project context panel — model/element/run summary + working links to BIM 3D Viewer, element matcher and project overview.
+- New **Incoming Webhook Leads** module (`oe_webhook_leads`): secure `POST /incoming/{source}` ingestion (API-key/HMAC/JWT, IP allow-list, rate limit), payload→lead mapping, audit log, Settings UI (#147).
+- File manager: clicking a BIM model offers BIM 3D Viewer / CAD-BIM BI Explorer / Clash Detection navigation.
+
+### Fixed
+
+- Multi-currency: foreign-currency positions now convert correctly in **section subtotals** (two places) and project totals; FX-correct CSV/Excel export with a frozen-rate appendix (#111).
+- "Add partida" now inserts directly **below the selected row** instead of elsewhere (#139).
+- AI Chat now renders the streamed answer (OpenRouter/OpenAI SSE) instead of staying blank while tokens are consumed (#138).
+- BOQ supports up to **8 nested section/partida levels** with recursive subtotals and a `/v1/boq/limits/` contract (#136).
+- Resources can carry a unique **code** with a reuse-or-create prompt and master→instance propagation (#133).
+- Clash 3D: collisions now actually display (fixed GLB load-race, element highlight and camera target).
+- File manager: BIM-model and sheet rows no longer report 0 bytes — size falls back to the real GLB artifact / parent-document share.
+- **Hardened JSON-column deserialization**: a legacy/gap-fill scalar in a JSON column (e.g. `activity = construction`) no longer 500s every read of the affected row — fixed the "Failed to add position / Internal server error" and project-profile crashes via a tolerant engine `json_deserializer`.
+- BOQ: deleting a **sub-section that contains nested sub-sections** now works — the editor delegates to the backend's recursive cascade instead of a flat child sweep that silently 409'd.
+- Clash: the active-project panel's **BIM 3D Viewer / Match / Project-overview** buttons now navigate (were inert due to a button-inside-link); BIM target picks the first model with parsed geometry.
+
+### Changed
+
+- Clash page: full-width horizontal setup before a run; config collapses into a left-rail menu once results exist. Models auto-included (intra-project) and labelled without the redundant project prefix.
+- 3D-geometry clash engine optimised to run under 30 s on showcase models (result-preserving).
+
 ## [3.6.1] — 2026-05-18 · BOQ hierarchy visible + nesting fixes + project-focus sidebar
 
 ### Fixed

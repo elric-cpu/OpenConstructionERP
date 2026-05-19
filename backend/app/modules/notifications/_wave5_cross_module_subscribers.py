@@ -1,4 +1,4 @@
-"""Wave-5 cross-module subscribers — Resources / Contracts / CRM / Carbon.
+"""‌⁠‍Wave-5 cross-module subscribers — Resources / Contracts / CRM / Carbon.
 
 Wires real cross-module side-effects emitted by the wave-5 deep-dive:
 
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 async def _can_open_isolated_session() -> bool:
-    """Return True only when we can safely write from a subscriber.
+    """‌⁠‍Return True only when we can safely write from a subscriber.
 
     On SQLite (dev), foreground commits already shipped — re-entering with
     a new session would race the single writer.
@@ -48,7 +48,7 @@ async def _can_open_isolated_session() -> bool:
 
 
 async def _on_cert_expiring(event: Event) -> None:
-    """``resources.cert_expiring`` → notify the resource owner."""
+    """‌⁠‍``resources.cert_expiring`` → notify the resource owner."""
     if not await _can_open_isolated_session():
         return
     data = event.data or {}

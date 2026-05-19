@@ -1,4 +1,4 @@
-"""End-to-end smoke test for the cost database import templates.
+"""‌⁠‍End-to-end smoke test for the cost database import templates.
 
 Verifies that:
   1. The flat CSV template (`example_us_construction.csv`) uploads via

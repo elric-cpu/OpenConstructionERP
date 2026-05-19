@@ -1,4 +1,4 @@
-"""Document activity log ORM models.
+"""‌⁠‍Document activity log ORM models.
 
 Tables:
     oe_documents_activity — append-only log of per-document events
@@ -23,7 +23,7 @@ from app.database import GUID, Base
 
 
 class DocumentActivity(Base):
-    """Append-only audit event for a single :class:`Document` row.
+    """‌⁠‍Append-only audit event for a single :class:`Document` row.
 
     ``action`` is a short tag (``uploaded`` / ``renamed`` / ``downloaded``
     / ``deleted`` / ``cde_state_changed``). ``meta`` is a free-form JSON

@@ -137,16 +137,20 @@ async def _get_ai_settings(session: AsyncSession) -> Any:
         return None
 
 
-async def _resolve_provider(session: AsyncSession) -> tuple[str, str] | None:
-    """Resolve AI provider and key. Returns None if no LLM configured."""
+async def _resolve_provider(session: AsyncSession) -> tuple[str, str, str | None] | None:
+    """Resolve (provider, key, model_override). None if no LLM configured.
+
+    The model override (Settings > AI) is returned so the advisor honors the
+    user's chosen model instead of a hardcoded provider default — issue #138.
+    """
     try:
-        from app.modules.ai.ai_client import resolve_provider_and_key
+        from app.modules.ai.ai_client import resolve_provider_key_model
 
         settings = await _get_ai_settings(session)
         if settings is None:
             return None
-        provider, key = resolve_provider_and_key(settings)
-        return (provider, key)
+        provider, key, model_override = resolve_provider_key_model(settings)
+        return (provider, key, model_override)
     except (ValueError, Exception):
         return None
 
@@ -176,7 +180,7 @@ async def generate_recommendations(
         try:
             from app.modules.ai.ai_client import call_ai
 
-            provider, api_key = provider_info
+            provider, api_key, model_override = provider_info
             system = _build_system_prompt(role, language, state.standard)
             context = _build_context_prompt(state, score)
             prompt = (
@@ -188,6 +192,7 @@ async def generate_recommendations(
             text_response, _tokens = await call_ai(
                 provider=provider,
                 api_key=api_key,
+                model=model_override,
                 system=system,
                 prompt=prompt,
                 max_tokens=2048,
@@ -222,7 +227,7 @@ async def explain_gap(
         try:
             from app.modules.ai.ai_client import call_ai
 
-            provider, api_key = provider_info
+            provider, api_key, model_override = provider_info
             system = (
                 f"You are a construction ERP expert explaining a project issue. "
                 f"Respond in {language}. Be specific, actionable, and concise."
@@ -242,6 +247,7 @@ async def explain_gap(
             text_response, _tokens = await call_ai(
                 provider=provider,
                 api_key=api_key,
+                model=model_override,
                 system=system,
                 prompt=prompt,
                 max_tokens=1024,
@@ -327,7 +333,7 @@ async def answer_question(
         try:
             from app.modules.ai.ai_client import call_ai
 
-            provider, api_key = provider_info
+            provider, api_key, model_override = provider_info
             system = _build_system_prompt(role, language, state.standard)
             context = _build_context_prompt(state, score)
             # Pull semantically relevant chunks from BOQ / documents / tasks /
@@ -353,6 +359,7 @@ async def answer_question(
             text_response, _tokens = await call_ai(
                 provider=provider,
                 api_key=api_key,
+                model=model_override,
                 system=system,
                 prompt=prompt,
                 max_tokens=1024,

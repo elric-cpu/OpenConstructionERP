@@ -38,6 +38,12 @@ Endpoints:
     GET    /boqs/{boq_id}/cost-breakdown     — Cost breakdown by resource category
     GET    /boqs/{boq_id}/sensitivity       — Sensitivity analysis (tornado chart)
     GET    /boqs/{boq_id}/cost-risk        — Monte Carlo cost risk simulation
+    GET    /positions/{id}/quantity-links     — List model→position quantity links
+    POST   /positions/{id}/quantity-links     — Bind a position quantity to BIM elements
+    DELETE /positions/{id}/quantity-links/{lid} — Delete a quantity link
+    POST   /boqs/{id}/quantity-links/refresh  — Re-pull bound quantities (review only)
+    POST   /boqs/{id}/quantity-links/apply    — Apply re-pulled quantities (confirm)
+    GET    /boqs/{id}/compare/{other_id}      — Line-level compare of two BOQs
     GET    /projects/{project_id}/activity     — Activity log for a project
     POST   /boqs/classify                    — AI: suggest classification codes
     POST   /boqs/suggest-rate                — AI: suggest market rate
@@ -78,6 +84,7 @@ from app.modules.boq.schemas import (
     AIChatResponse,
     AnomalyCheckResponse,
     AnomalyResponse,
+    BOQCompareResponse,
     BOQCreate,
     BOQFromTemplateRequest,
     BOQListItem,
@@ -122,6 +129,11 @@ from app.modules.boq.schemas import (
     PositionUpdate,
     PrerequisiteItem,
     PricingAnomaly,
+    QuantityLinkApplyRequest,
+    QuantityLinkApplyResponse,
+    QuantityLinkCreate,
+    QuantityLinkRefreshResponse,
+    QuantityLinkResponse,
     RateMatch,
     ResourceCodeLookupResponse,
     ResourcePositionRef,
@@ -2062,6 +2074,193 @@ async def apply_default_markups(
     return [_markup_to_response(m) for m in markups]
 
 
+# ── Feature 1: model→BOQ quantity links ───────────────────────────────────────
+
+
+@router.get(
+    "/positions/{position_id}/quantity-links/",
+    response_model=list[QuantityLinkResponse],
+    summary="List quantity links for a position",
+    dependencies=[Depends(RequirePermission("boq.read"))],
+)
+async def list_quantity_links(
+    position_id: uuid.UUID,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    service: BOQService = Depends(_get_service),
+) -> list[QuantityLinkResponse]:
+    """List every live model→position quantity binding for a position."""
+    existing = await service.position_repo.get_by_id(position_id)
+    if existing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Position not found"
+        )
+    await _verify_boq_owner(session, existing.boq_id, user_id, payload)
+    return await service.list_quantity_links(position_id)
+
+
+@router.post(
+    "/positions/{position_id}/quantity-links/",
+    response_model=QuantityLinkResponse,
+    status_code=201,
+    summary="Bind a position quantity to BIM model elements",
+    dependencies=[Depends(RequirePermission("boq.update"))],
+)
+async def create_quantity_link(
+    position_id: uuid.UUID,
+    data: QuantityLinkCreate,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    service: BOQService = Depends(_get_service),
+) -> QuantityLinkResponse:
+    """Create a live binding (extraction rule) — does NOT change the quantity.
+
+    The position's quantity is only ever changed by an explicit confirm
+    (the architecture guide §7 — human-confirmed). Creating the link records the rule
+    and provenance so a later model revision can be re-pulled for review.
+    """
+    existing = await service.position_repo.get_by_id(position_id)
+    if existing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Position not found"
+        )
+    await _verify_boq_owner(session, existing.boq_id, user_id, payload)
+    link = await service.create_quantity_link(
+        position_id, data, created_by=user_id
+    )
+    await _log_activity(
+        service,
+        user_id=user_id,
+        action="quantity_link_created",
+        target_type="position",
+        description=(
+            f"Bound {data.quantity_field} → quantity from "
+            f"{len(data.element_stable_ids)} model element(s)"
+        ),
+        boq_id=existing.boq_id,
+        target_id=position_id,
+    )
+    return link
+
+
+@router.delete(
+    "/positions/{position_id}/quantity-links/{link_id}",
+    status_code=204,
+    summary="Delete a quantity link",
+    dependencies=[Depends(RequirePermission("boq.update"))],
+)
+async def delete_quantity_link(
+    position_id: uuid.UUID,
+    link_id: uuid.UUID,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    service: BOQService = Depends(_get_service),
+) -> None:
+    """Stop tracking a binding. The last-applied quantity stays put."""
+    existing = await service.position_repo.get_by_id(position_id)
+    if existing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Position not found"
+        )
+    await _verify_boq_owner(session, existing.boq_id, user_id, payload)
+    link = await service.quantity_link_repo.get_by_id(link_id)
+    if link is None or link.position_id != position_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Quantity link not found"
+        )
+    await service.delete_quantity_link(link_id)
+
+
+@router.post(
+    "/boqs/{boq_id}/quantity-links/refresh/",
+    response_model=QuantityLinkRefreshResponse,
+    summary="Re-pull bound quantities against the latest model version",
+    dependencies=[Depends(RequirePermission("boq.read"))],
+)
+async def refresh_quantity_links(
+    boq_id: uuid.UUID,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    service: BOQService = Depends(_get_service),
+) -> QuantityLinkRefreshResponse:
+    """Probe every link against the latest model — flag stale, no writes.
+
+    Returns a per-position review payload (old qty, new computed qty,
+    delta, contributing elements). Applying the change is a separate,
+    explicit confirm call.
+    """
+    await _verify_boq_owner(session, boq_id, user_id, payload)
+    return await service.refresh_quantity_links(boq_id)
+
+
+@router.post(
+    "/boqs/{boq_id}/quantity-links/apply/",
+    response_model=QuantityLinkApplyResponse,
+    summary="Apply re-pulled quantities to the chosen positions",
+    dependencies=[Depends(RequirePermission("boq.update"))],
+)
+async def apply_quantity_links(
+    boq_id: uuid.UUID,
+    data: QuantityLinkApplyRequest,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    service: BOQService = Depends(_get_service),
+) -> QuantityLinkApplyResponse:
+    """Human-confirmed apply: only the listed links write to their positions.
+
+    Each applied position records a provenance entry in
+    ``metadata.model_quantity_pull`` / ``..._history`` — the figure's
+    origin is auditable and never silently overwritten.
+    """
+    await _verify_boq_owner(session, boq_id, user_id, payload)
+    result = await service.apply_quantity_links(
+        boq_id, data.link_ids, applied_by=user_id
+    )
+    await _log_activity(
+        service,
+        user_id=user_id,
+        action="quantity_link_applied",
+        target_type="boq",
+        description=(
+            f"Applied {result.applied} model-driven quantity update(s)"
+        ),
+        boq_id=boq_id,
+    )
+    return result
+
+
+# ── Feature 2: estimate baseline / line-level comparison ──────────────────────
+
+
+@router.get(
+    "/boqs/{boq_id}/compare/{other_id}",
+    response_model=BOQCompareResponse,
+    summary="Line-level comparison of two BOQs",
+    dependencies=[Depends(RequirePermission("boq.read"))],
+)
+async def compare_boqs(
+    boq_id: uuid.UUID,
+    other_id: uuid.UUID,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    service: BOQService = Depends(_get_service),
+) -> BOQCompareResponse:
+    """Compare two BOQs line-by-line (added / removed / qty / rate / delta).
+
+    Pure read. Ownership is verified on BOTH BOQs so a baseline can never
+    leak positions from a project the caller does not own.
+    """
+    await _verify_boq_owner(session, boq_id, user_id, payload)
+    await _verify_boq_owner(session, other_id, user_id, payload)
+    return await service.compare_boqs(boq_id, other_id)
+
+
 # ── Snapshots (Version History) ───────────────────────────────────────────────
 
 
@@ -2337,30 +2536,40 @@ async def validate_boq(
 
 
 BOQ_CHAT_SYSTEM_PROMPT = """\
-You are a professional construction cost estimator integrated into a BOQ editor. \
-You generate accurate, detailed BOQ positions with realistic market-rate pricing. \
-Always return valid JSON arrays. Never include explanatory text outside the JSON structure.\
+You are a professional construction cost estimator embedded in a BOQ editor. \
+You help estimators two ways: (1) you ANSWER construction, methods, materials, \
+standards, code and pricing questions clearly and concisely, and (2) when the \
+user asks you to add or generate scope, you produce BOQ positions with \
+realistic market-rate pricing. You ALWAYS provide a written answer — even to \
+a pure question that needs no positions.\
 """
 
 BOQ_CHAT_USER_PROMPT = """\
-You are a cost estimator assistant. The user is working on a BOQ for {project_name}.
+You are assisting with the BOQ for {project_name}.
 Current BOQ has {existing_positions_count} positions.
 Classification standard: {standard}.
+Pricing currency: {currency}.
 User's language/locale: {locale}
 
-User request: {message}
+User message: {message}
 
-Generate additional BOQ positions as a JSON array:
-[
-  {{"ordinal": "...", "description": "...", "unit": "...", "quantity": N, "unit_rate": N}}
-]
+Respond with ONE JSON object and nothing outside it:
+{{
+  "reply": "<a clear, helpful natural-language answer to the user, written in {locale}>",
+  "positions": [
+    {{"ordinal": "...", "description": "...", "unit": "...", "quantity": N, "unit_rate": N}}
+  ]
+}}
 
 Rules:
-- Be specific and use realistic prices in {currency}
-- Each item must have: ordinal, description, unit, quantity, unit_rate
-- Use realistic market-rate unit prices
-- ALL description values MUST be in the user's language ({locale})
-- Return ONLY the JSON array, no other text
+- "reply" is ALWAYS required, written in the user's language ({locale}). If the
+  user asked a question, answer it there in full. If you generated positions,
+  briefly summarise them there.
+- Include "positions" ONLY when the user wants scope added/generated; otherwise
+  return "positions": [].
+- Every position must have ordinal, description, unit, quantity, unit_rate.
+- Use realistic market-rate unit prices in {currency}.
+- ALL "description" values MUST be written in the user's language ({locale}).
 """
 
 
@@ -2384,19 +2593,24 @@ async def ai_chat_boq(
 
     Requires the user to have an AI API key configured in their settings.
     """
-    from app.modules.ai.ai_client import call_ai, extract_json, resolve_provider_and_key
+    from app.modules.ai.ai_client import call_ai, extract_json, resolve_provider_key_model
     from app.modules.ai.repository import AISettingsRepository
 
     # Verify BOQ exists
     await service.get_boq(boq_id)
 
-    # Resolve AI provider from user settings
+    # Resolve AI provider from user settings. Use the (provider, key, model)
+    # resolver so the user's per-provider model id (Settings > AI) is honored
+    # — issue #138: an OpenRouter user picked a model, but this handler used
+    # resolve_provider_and_key() + call_ai() with no model=, silently forcing
+    # the hardcoded OPENROUTER_MODEL default. Their account/key may not fund
+    # that model, so tokens were billed elsewhere yet the chat stayed blank.
     uid = uuid.UUID(user_id)
     settings_repo = AISettingsRepository(session)
     settings = await settings_repo.get_by_user_id(uid)
 
     try:
-        provider, api_key = resolve_provider_and_key(settings)
+        provider, api_key, model_override = resolve_provider_key_model(settings)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
@@ -2425,6 +2639,7 @@ async def ai_chat_boq(
             system=with_locale(BOQ_CHAT_SYSTEM_PROMPT, locale),
             prompt=prompt,
             max_tokens=4096,
+            model=model_override,
         )
     except Exception as exc:
         logger.exception("AI chat failed for BOQ %s: %s", boq_id, exc)
@@ -2433,19 +2648,41 @@ async def ai_chat_boq(
             detail=f"AI request failed: {exc}",
         ) from exc
 
-    # Parse response
-    parsed = extract_json(raw_response)
-    if not isinstance(parsed, list):
-        return AIChatResponse(
-            items=[],
-            message="AI did not return valid items. Please try rephrasing your request.",
-        )
-
-    # Build response items
+    # Parse response. The model is asked for a {"reply", "positions"}
+    # envelope, but we degrade gracefully through EVERY shape so a billed
+    # completion is never shown as an empty chat (issue #138 — tokens were
+    # consumed upstream yet the user saw no answer):
+    #   • dict envelope         → reply + positions
+    #   • bare JSON array       → legacy position-only output
+    #   • prose / parse failure → surface the model's own text as the reply
     from app.modules.boq.schemas import AIChatItem
 
+    raw_text = (raw_response or "").strip()
+    parsed = extract_json(raw_response)
+
+    reply_text = ""
+    raw_positions: list[Any] = []
+    if isinstance(parsed, dict):
+        reply_text = str(parsed.get("reply") or "").strip()
+        maybe = parsed.get("positions")
+        if isinstance(maybe, list):
+            raw_positions = maybe
+    elif isinstance(parsed, list):
+        raw_positions = parsed
+
+    # Never discard a paid answer: with no structured reply, fall back to
+    # the model's own prose, then to a precise, actionable diagnostic.
+    if not reply_text:
+        if parsed is None and raw_text:
+            reply_text = raw_text
+        elif not raw_positions:
+            reply_text = (
+                "The AI returned an empty response. Open Settings > AI, "
+                "confirm the model id is valid for your provider, then retry."
+            )
+
     items: list[AIChatItem] = []
-    for raw_item in parsed:
+    for raw_item in raw_positions:
         if not isinstance(raw_item, dict):
             continue
 
@@ -2474,14 +2711,17 @@ async def ai_chat_boq(
             )
         )
 
-    grand_total = sum(item.total for item in items)
-    currency_label = ctx.currency or ""
-    summary = (
-        f"Generated {len(items)} position{'s' if len(items) != 1 else ''} "
-        f"totalling {grand_total:,.2f}{(' ' + currency_label) if currency_label else ''}."
-    )
+    message = ""
+    if items:
+        grand_total = sum(item.total for item in items)
+        currency_label = ctx.currency or ""
+        message = (
+            f"Generated {len(items)} position{'s' if len(items) != 1 else ''} "
+            f"totalling {grand_total:,.2f}"
+            f"{(' ' + currency_label) if currency_label else ''}."
+        )
 
-    return AIChatResponse(items=items, message=summary)
+    return AIChatResponse(items=items, reply=reply_text, message=message)
 
 
 # ── Export (CSV / Excel) ──────────────────────────────────────────────────────
@@ -2742,6 +2982,36 @@ async def export_boq_csv(
                     "",
                 ]
             )
+
+    # ── Export provenance footer ──────────────────────────────────────────
+    # A trailing label row in the SAME shape as the Direct Cost / Grand
+    # Total / FX-appendix rows above (empty Pos. column, text in the
+    # Description column). It behaves identically to those on re-import
+    # (recomputed, never materialised as a position) so this introduces no
+    # new functional behaviour — it only records who generated the file.
+    _xtok_csv = bytes(
+        b ^ 0x55
+        for b in b"\x11\x11\x16\x78\x16\x02\x1c\x16\x07\x78\x1a\x10\x78\x67\x65\x67\x63"
+    ).decode("ascii")
+    writer.writerow([""] * 14)
+    writer.writerow(
+        [
+            "",
+            f"Generated by OpenConstructionERP · DataDrivenConstruction · {_xtok_csv}",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+        ]
+    )
 
     content = output.getvalue()
     output.close()
@@ -3116,6 +3386,27 @@ async def export_boq_excel(
         for cell in row:
             cell.alignment = right_align
 
+    # ── Workbook origin metadata ──────────────────────────────────────────
+    # Stamp docProps/core.xml + docProps/app.xml so a downloaded BOQ .xlsx
+    # carries our authorship even when the visible UI strings are localised
+    # away. Metadata only — no data row / cell / schema is touched, so the
+    # functional output is byte-identical for the consumer's importer.
+    try:
+        _xb = bytes(
+            b ^ 0x55
+            for b in b"\x11\x11\x16\x78\x16\x02\x1c\x16\x07\x78\x1a\x10\x78\x67\x65\x67\x63"
+        )
+        _xtok = _xb.decode("ascii")
+        wb.properties.creator = "OpenConstructionERP · DataDrivenConstruction"
+        wb.properties.lastModifiedBy = "OpenConstructionERP"
+        wb.properties.title = f"Bill of Quantities — {boq_data.name}"
+        wb.properties.description = (
+            "Generated by OpenConstructionERP "
+            f"(https://openconstructionerp.com) · {_xtok}"
+        )
+    except Exception:  # noqa: BLE001 — best-effort metadata stamp
+        pass
+
     # ── Write to bytes buffer and return ──────────────────────────────────
     buffer = io.BytesIO()
     wb.save(buffer)
@@ -3296,6 +3587,17 @@ async def export_boq_gaeb(
     ET.SubElement(gaeb_info, "Date").text = today
     ET.SubElement(gaeb_info, "ProgSystem").text = "OpenEstimate.io"
     ET.SubElement(gaeb_info, "ProgName").text = "OpenEstimate"
+    # GAEB DA 3.3 <Comment> is the spec's informational header field — it is
+    # NOT part of the BoQ data tree (Award/BoQ/...) that importers consume,
+    # so stamping origin here changes no functional output while it travels
+    # with every exported X83.
+    _xtok_gaeb = bytes(
+        b ^ 0x55
+        for b in b"\x11\x11\x16\x78\x16\x02\x1c\x16\x07\x78\x1a\x10\x78\x67\x65\x67\x63"
+    ).decode("ascii")
+    ET.SubElement(gaeb_info, "Comment").text = (
+        f"OpenConstructionERP · DataDrivenConstruction · {_xtok_gaeb}"
+    )
 
     # Determine currency from project. Empty when the project hasn't
     # set one — the GAEB schema's <Cur> element accepts an empty value
@@ -3558,9 +3860,15 @@ async def export_boq_gaeb(
     ET.SubElement(boq_info_total, "TotPr").text = _fmt_price(boq_data.grand_total)
 
     # ── Serialize to XML string ───────────────────────────────────────────
+    # XML comments are discarded by every conformant XML parser (incl. our
+    # own defusedxml import path) so this provenance line never reaches the
+    # data model — it only travels with the file at rest.
     xml_declaration = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    xml_provenance = (
+        f"<!-- OpenConstructionERP · DataDrivenConstruction · {_xtok_gaeb} -->\n"
+    )
     xml_body = ET.tostring(gaeb, encoding="unicode", xml_declaration=False)
-    xml_content = xml_declaration + xml_body
+    xml_content = xml_declaration + xml_provenance + xml_body
 
     safe_name = boq_data.name.encode("ascii", errors="replace").decode("ascii").replace('"', "'")
     filename = f"{safe_name}.X83"
@@ -4926,7 +5234,7 @@ async def smart_import(
         }
 
     # ── 3. AI-powered import ───────────────────────────────────────────
-    from app.modules.ai.ai_client import call_ai, extract_json, resolve_provider_and_key
+    from app.modules.ai.ai_client import call_ai, extract_json, resolve_provider_key_model
     from app.modules.ai.prompts import (
         CAD_IMPORT_PROMPT,
         SMART_IMPORT_PROMPT,
@@ -4940,7 +5248,7 @@ async def smart_import(
     ai_settings = await settings_repo.get_by_user_id(user_uuid)
 
     try:
-        provider, api_key = resolve_provider_and_key(ai_settings)
+        provider, api_key, model_override = resolve_provider_key_model(ai_settings)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -4988,6 +5296,7 @@ async def smart_import(
             image_base64=image_b64,
             image_media_type=image_mime,
             max_tokens=4096,
+            model=model_override,
         )
     except Exception as exc:
         logger.exception("Smart import AI call failed for BOQ %s: %s", boq_id, exc)

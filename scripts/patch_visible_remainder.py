@@ -1,4 +1,4 @@
-"""Second-pass: patch remaining visible-namespace keys in dashboard.*/common.*/modules.*.
+"""‌⁠‍Second-pass: patch remaining visible-namespace keys in dashboard.*/common.*/modules.*.
 
 Skip onboarding.* — the onboarding redesign agent owns that namespace.
 Skip nav.*_exchange — regional pack names (DIN 276, NRM, MasterFormat) are standards

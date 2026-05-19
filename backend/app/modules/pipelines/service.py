@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Pipeline Builder business logic.
+"""‌⁠‍Pipeline Builder business logic.
 
 Owns: graph validation (registry + structural ``pipeline`` rule), JobRun
 submission, run snapshotting and the read-model assembly that the router
@@ -13,6 +13,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
+from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.pipeline.executor import (
@@ -38,11 +39,59 @@ def _as_uuid(value: str | uuid.UUID | None) -> uuid.UUID | None:
 
 
 class PipelineService:
-    """Stateless service for pipeline CRUD + run orchestration."""
+    """‌⁠‍Stateless service for pipeline CRUD + run orchestration."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
         self.repo = PipelineRepository(session)
+
+    # ── Access control (IDOR guard) ──────────────────────────────────────
+
+    async def _is_admin(self, user_id: str | None) -> bool:
+        """Best-effort admin check (mirrors the clash module's guard)."""
+        if not user_id:
+            return False
+        from app.modules.users.repository import UserRepository
+
+        try:
+            user = await UserRepository(self.session).get_by_id(
+                uuid.UUID(str(user_id))
+            )
+        except (ValueError, TypeError):
+            return False
+        return user is not None and getattr(user, "role", "") == "admin"
+
+    async def _assert_can_access(
+        self, pipeline: Pipeline, user_id: str | None
+    ) -> None:
+        """Raise 403 unless the caller created the pipeline, owns its
+        bound project, or is an admin.
+
+        Without this every authenticated user could read / mutate / run
+        and read run outputs (project BOQ rows) of *any* pipeline — a
+        cross-tenant IDOR. Authentication alone is not authorization.
+        """
+        actor = _as_uuid(user_id)
+        if actor is not None and pipeline.created_by == actor:
+            return
+        if await self._is_admin(user_id):
+            return
+        # Fall back to project ownership so a project owner can manage
+        # pipelines a teammate created against their project.
+        if pipeline.project_id is not None and actor is not None:
+            from app.modules.projects.repository import ProjectRepository
+
+            project = await ProjectRepository(self.session).get_by_id(
+                pipeline.project_id
+            )
+            if project is not None and getattr(
+                project, "owner_id", None
+            ) == actor:
+                return
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have access to this pipeline",
+        )
 
     # ── CRUD ─────────────────────────────────────────────────────────────
 
@@ -56,7 +105,7 @@ class PipelineService:
         policy: dict[str, Any],
         created_by: str | None,
     ) -> Pipeline:
-        """Create a pipeline (always starts unpublished)."""
+        """‌⁠‍Create a pipeline (always starts unpublished)."""
         pipeline = Pipeline(
             name=name,
             description=description,
@@ -75,10 +124,38 @@ class PipelineService:
     async def get(self, pipeline_id: uuid.UUID) -> Pipeline | None:
         return await self.repo.get(pipeline_id)
 
+    async def get_authorized(
+        self, pipeline_id: uuid.UUID, user_id: str | None
+    ) -> Pipeline | None:
+        """Load a pipeline only if the caller is allowed to see it.
+
+        Returns ``None`` when the row does not exist (router maps that to
+        404); raises 403 when it exists but the caller has no access.
+        """
+        pipeline = await self.repo.get(pipeline_id)
+        if pipeline is None:
+            return None
+        await self._assert_can_access(pipeline, user_id)
+        return pipeline
+
     async def list(
-        self, *, project_id: str | None = None
+        self,
+        *,
+        project_id: str | None = None,
+        user_id: str | None = None,
     ) -> list[Pipeline]:
-        return await self.repo.list(project_id=_as_uuid(project_id))
+        """List pipelines visible to the caller.
+
+        Admins see everything (optionally project-scoped); everyone else
+        sees only the pipelines they created (so the list endpoint can't
+        be used to enumerate other tenants' automations).
+        """
+        created_by = (
+            None if await self._is_admin(user_id) else _as_uuid(user_id)
+        )
+        return await self.repo.list(
+            project_id=_as_uuid(project_id), created_by=created_by
+        )
 
     async def update(
         self,
@@ -195,6 +272,23 @@ class PipelineService:
 
     async def get_run(self, run_id: uuid.UUID) -> PipelineRun | None:
         return await self.repo.get_run(run_id)
+
+    async def get_run_authorized(
+        self, run_id: uuid.UUID, user_id: str | None
+    ) -> PipelineRun | None:
+        """Load a run only if the caller may access its parent pipeline.
+
+        A run's node outputs embed project BOQ rows, so the same IDOR
+        guard that protects the pipeline must protect its runs.
+        """
+        run = await self.repo.get_run(run_id)
+        if run is None:
+            return None
+        pipeline = await self.repo.get(run.pipeline_id)
+        if pipeline is None:
+            return None
+        await self._assert_can_access(pipeline, user_id)
+        return run
 
     async def list_runs(self, pipeline_id: uuid.UUID) -> list[PipelineRun]:
         return await self.repo.list_runs(pipeline_id)

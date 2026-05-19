@@ -1,4 +1,4 @@
-"""Variations data access layer (one repository class per entity)."""
+"""‌⁠‍Variations data access layer (one repository class per entity)."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ T = TypeVar("T")
 
 
 class _BaseRepo:
-    """Shared CRUD helpers — concrete repos bind ``model`` and ``project_field``."""
+    """‌⁠‍Shared CRUD helpers — concrete repos bind ``model`` and ``project_field``."""
 
     model: Any
     # Column NAME (str), not the mapped attribute. Storing the
@@ -82,7 +82,7 @@ class _BaseRepo:
         return list(result.scalars().all()), total
 
     async def status_counts(self, project_id: uuid.UUID) -> dict[str, int]:
-        """``{status: count}`` for the project — one ``GROUP BY`` query.
+        """‌⁠‍``{status: count}`` for the project — one ``GROUP BY`` query.
 
         Used by the dashboard so it does not pull every row into Python
         just to bucket by status (N+1 / O(rows) memory).

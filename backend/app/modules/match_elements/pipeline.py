@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Visible-pipeline runner for /match-elements.
+"""‌⁠‍Visible-pipeline runner for /match-elements.
 
 The match flow already runs end-to-end through :class:`MatchService` —
 this module layers a *visible* seven-stage state machine on top of that
@@ -283,7 +283,7 @@ SYSTEM_PROMPT_SEEDS: list[dict[str, str]] = [
 
 
 async def ensure_system_prompts(db: AsyncSession) -> int:
-    """Insert any missing system prompt rows. Idempotent.
+    """‌⁠‍Insert any missing system prompt rows. Idempotent.
 
     Returns the number of rows inserted (0 on the steady state). Called
     lazily from the stage + prompt-template endpoints so a SQLite deploy
@@ -384,7 +384,7 @@ async def list_stages(
     db: AsyncSession,
     session_id: uuid.UUID,
 ) -> list[dict[str, Any]]:
-    """Return the seven stage rows for a session in canonical order.
+    """‌⁠‍Return the seven stage rows for a session in canonical order.
 
     Missing stages are returned with status ``pending`` and empty
     inputs/output — the UI never has to deal with a hole in the

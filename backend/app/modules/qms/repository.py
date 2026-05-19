@@ -1,4 +1,4 @@
-"""QMS data-access layer.
+"""‌⁠‍QMS data-access layer.
 
 Thin wrapper around :class:`AsyncSession` providing CRUD helpers per
 entity. All update writes use ``UPDATE ... WHERE id = :id`` to avoid
@@ -31,7 +31,7 @@ from app.modules.qms.models import (
 
 
 class QMSRepository:
-    """Async CRUD for every QMS model."""
+    """‌⁠‍Async CRUD for every QMS model."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -328,7 +328,7 @@ class QMSRepository:
     # ── Analytics helpers ──────────────────────────────────────────────
 
     async def sum_ncr_cost_impact(self, project_id: uuid.UUID) -> Any:
-        """Sum cost_impact_amount for non-cancelled NCRs in a project."""
+        """‌⁠‍Sum cost_impact_amount for non-cancelled NCRs in a project."""
         stmt = select(
             func.coalesce(func.sum(QMSNCR.cost_impact_amount), 0)
         ).where(

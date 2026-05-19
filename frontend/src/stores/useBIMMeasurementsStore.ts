@@ -16,12 +16,22 @@
  */
 import { create } from 'zustand';
 
+/** Mirrors `MeasureKind` from the MeasureManager. Kept inline so the store
+ *  has no import cycle with the Three.js layer. */
+export type StoredMeasureKind = 'distance' | 'area' | 'angle';
+
 export interface StoredMeasurement {
   /** Stable id mirrored from the underlying MeasureManager.Measurement.id. */
   id: string;
-  /** Distance in metres (rounded to 2 dp at display time, raw here). */
+  /** What was measured — drives the unit shown in the Tools list. */
+  kind: StoredMeasureKind;
+  /** Distance in metres (only meaningful when kind === 'distance'). */
   distance: number;
-  /** User-supplied label (defaults to "Measurement N"). */
+  /** Generic numeric result: m (distance), m² (area), ° (angle). */
+  value: number;
+  /** Closed perimeter in metres — only present for area measurements. */
+  perimeter?: number;
+  /** User-supplied label (defaults to a kind-specific "Distance/Area/Angle N"). */
   label: string;
   /** Whether the user has hidden the on-canvas line + label. */
   visible: boolean;
@@ -32,7 +42,13 @@ interface BIMMeasurementsState {
   measurements: StoredMeasurement[];
   /** Append a new measurement (typically from the MeasureManager onMeasurementAdded
    *  callback). */
-  add: (m: { id: string; distance: number }) => void;
+  add: (m: {
+    id: string;
+    kind?: StoredMeasureKind;
+    distance: number;
+    value?: number;
+    perimeter?: number;
+  }) => void;
   /** Drop a single measurement. */
   remove: (id: string) => void;
   /** Reset everything — used when the user clicks "Clear all" or the
@@ -47,19 +63,25 @@ interface BIMMeasurementsState {
 export const useBIMMeasurementsStore = create<BIMMeasurementsState>((set) => ({
   measurements: [],
 
-  add: ({ id, distance }) =>
+  add: ({ id, kind = 'distance', distance, value, perimeter }) =>
     set((state) => {
       // Defensive: skip duplicates (shouldn't happen, but the random-id
       // generator could collide on a long session).
       if (state.measurements.some((m) => m.id === id)) return state;
-      const ordinal = state.measurements.length + 1;
+      const ordinal =
+        state.measurements.filter((m) => m.kind === kind).length + 1;
+      const prefix =
+        kind === 'area' ? 'Area' : kind === 'angle' ? 'Angle' : 'Distance';
       return {
         measurements: [
           ...state.measurements,
           {
             id,
+            kind,
             distance,
-            label: `Measurement ${ordinal}`,
+            value: value ?? distance,
+            perimeter,
+            label: `${prefix} ${ordinal}`,
             visible: true,
             createdAt: Date.now(),
           },

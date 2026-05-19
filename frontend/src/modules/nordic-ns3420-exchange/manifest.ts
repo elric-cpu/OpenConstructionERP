@@ -20,15 +20,8 @@ export const manifest: ModuleManifest = {
       component: NordicExchangeModule,
     },
   ],
-  navItems: [
-    {
-      labelKey: 'nav.nordic_ns3420_exchange',
-      to: '/nordic-ns3420-exchange',
-      icon: Snowflake,
-      group: 'regional',
-      advancedOnly: true,
-    },
-  ],
+  // Issue #217 — reached from /boq (regional import/export); no duplicate sidebar entry.
+  navItems: [],
   searchEntries: [
     {
       label: 'Nordic NS 3420 / AMA / V&S Import / Export',

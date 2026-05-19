@@ -4,11 +4,12 @@ Tables:
     oe_fieldreports_report     — daily/inspection/safety/concrete pour field reports
     oe_fieldreports_workforce  — structured workforce log entries per report
     oe_fieldreports_equipment  — structured equipment log entries per report
+    oe_fieldreports_template   — reusable, per-project report templates
 """
 
 import uuid
 
-from sqlalchemy import JSON, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import GUID, Base
@@ -191,3 +192,65 @@ class SiteEquipmentLog(Base):
 
     def __repr__(self) -> str:
         return f"<SiteEquipmentLog {self.equipment_description[:40]}>"
+
+
+class FieldReportTemplate(Base):
+    """‌⁠‍A reusable report template — a named, ordered set of custom fields.
+
+    Project-scoped: ``project_id`` is always set so the standard
+    project-access / IDOR guard applies exactly like every other
+    field-reports endpoint. Built-in templates (Daily Site Report,
+    Safety Walk, Progress Report) are *code-defined* and merged in by
+    the service layer — they are never stored as rows, so a fresh
+    install needs no seed migration.
+
+    ``fields`` is an ordered list of field definitions, each::
+
+        {"key": "weather_summary",
+         "label": "Weather summary",
+         "type": "text" | "textarea" | "number" | "select" | "date" | "checkbox",
+         "required": false,
+         "options": ["Dry", "Wet"],   # only for type == "select"
+         "placeholder": "…"}
+    """
+
+    __tablename__ = "oe_fieldreports_template"
+    __table_args__ = (
+        Index(
+            "ix_oe_fieldreports_template_project",
+            "project_id",
+        ),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_projects_project.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    report_type: Mapped[str] = mapped_column(String(30), nullable=False, default="daily")
+    fields: Mapped[list] = mapped_column(  # type: ignore[assignment]
+        JSON,
+        nullable=False,
+        default=list,
+        server_default="[]",
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="1",
+    )
+    created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        "metadata",
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
+
+    def __repr__(self) -> str:
+        return f"<FieldReportTemplate {self.name} ({self.report_type})>"

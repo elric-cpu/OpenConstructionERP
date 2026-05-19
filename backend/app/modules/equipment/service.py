@@ -1,4 +1,4 @@
-"""Equipment service — business logic for fleet, maintenance, rentals, and damage.
+"""‌⁠‍Equipment service — business logic for fleet, maintenance, rentals, and damage.
 
 Key features:
     * record_telemetry — append reading + bump Equipment counters if newer.
@@ -78,7 +78,7 @@ def compute_next_due(
     current_km: Decimal | None = None,
     today: str | None = None,
 ) -> dict[str, Any]:
-    """Compute the next due trigger for a schedule.
+    """‌⁠‍Compute the next due trigger for a schedule.
 
     Returns a dict with `next_due_meter` (Decimal | None) and `next_due_date`
     (str | None). The shape mirrors :class:`MaintenanceSchedule` fields.
@@ -124,7 +124,7 @@ def compute_rental_billing(
     period_end: str,
     hours_logged: Decimal | float | int | None = None,
 ) -> Decimal:
-    """Compute billing for a rental over a period.
+    """‌⁠‍Compute billing for a rental over a period.
 
     Hours billing takes precedence if ``hours_logged`` is provided and the
     rental has a non-zero hourly rate; otherwise day billing applies.

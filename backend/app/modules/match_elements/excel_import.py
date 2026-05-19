@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Excel BoQ ingest for the match-elements module.
+"""‌⁠‍Excel BoQ ingest for the match-elements module.
 
 Parses a multi-language BoQ spreadsheet into the row-dict shape that
 :class:`BoqAdapter` already understands. Mirrors the column-alias logic
@@ -115,7 +115,7 @@ _ALIASES: dict[str, list[str]] = {
 
 
 def _match_column(header: Any) -> str | None:
-    """Return the canonical column name for a header cell, or ``None``.
+    """‌⁠‍Return the canonical column name for a header cell, or ``None``.
 
     Lookup is whitespace-insensitive, lowercased, and tolerant of header
     cells that arrive as a non-string (openpyxl returns ``None`` for
@@ -133,7 +133,7 @@ def _match_column(header: Any) -> str | None:
 
 
 def _to_float_qty(value: Any) -> float | None:
-    """Coerce a qty cell to float, tolerating ``"1.234,56"`` Euro form.
+    """‌⁠‍Coerce a qty cell to float, tolerating ``"1.234,56"`` Euro form.
 
     Returns ``None`` for blanks, NaN, and non-numeric strings — the
     caller drops those rows so downstream matchers don't divide by zero.

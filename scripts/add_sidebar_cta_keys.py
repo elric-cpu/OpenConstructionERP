@@ -1,4 +1,4 @@
-"""Inject 5 sidebar CTA i18n keys into all locale files.
+"""‌⁠‍Inject 5 sidebar CTA i18n keys into all locale files.
 
 Idempotent: if a key already exists in a locale, it's left unchanged.
 """
@@ -209,7 +209,7 @@ CLOSING_BRACE_PATTERNS = [
 
 
 def inject_keys(locale_code: str, keys: dict[str, str]) -> tuple[int, int]:
-    """Return (added, skipped) count."""
+    """‌⁠‍Return (added, skipped) count."""
     fp = LOCALES_DIR / f"{locale_code}.ts"
     if not fp.exists():
         print(f"  SKIP {locale_code}: file missing")

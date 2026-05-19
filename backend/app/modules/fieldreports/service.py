@@ -16,9 +16,22 @@ from typing import Any
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.fieldreports.models import FieldReport
-from app.modules.fieldreports.repository import FieldReportRepository
-from app.modules.fieldreports.schemas import FieldReportCreate, FieldReportUpdate
+from app.modules.fieldreports.builtin_templates import (
+    BUILTIN_TEMPLATES,
+    get_builtin,
+    is_builtin_id,
+)
+from app.modules.fieldreports.models import FieldReport, FieldReportTemplate
+from app.modules.fieldreports.repository import (
+    FieldReportRepository,
+    FieldReportTemplateRepository,
+)
+from app.modules.fieldreports.schemas import (
+    FieldReportCreate,
+    FieldReportTemplateCreate,
+    FieldReportTemplateUpdate,
+    FieldReportUpdate,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -436,6 +449,159 @@ class FieldReportService:
         pdf = _build_minimal_pdf(content)
         logger.info("Field report PDF exported: %s", report_id)
         return pdf
+
+
+class FieldReportTemplateService:
+    """‌⁠‍Business logic for report templates.
+
+    Merges code-defined built-in templates with the project's own
+    custom templates. Built-ins are read-only; mutation endpoints reject
+    them with HTTP 400. All project-scoped access control is enforced by
+    the router via ``verify_project_access`` exactly like field reports.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+        self.repo = FieldReportTemplateRepository(session)
+
+    @staticmethod
+    def _builtin_to_dict() -> list[dict[str, Any]]:
+        """Return built-in templates as response-shaped dicts."""
+        return [
+            {
+                "id": tpl["id"],
+                "project_id": None,
+                "name": tpl["name"],
+                "description": tpl.get("description"),
+                "report_type": tpl.get("report_type", "daily"),
+                "fields": tpl["fields"],
+                "is_active": True,
+                "is_builtin": True,
+                "created_by": None,
+                "metadata_": {},
+                "created_at": None,
+                "updated_at": None,
+            }
+            for tpl in BUILTIN_TEMPLATES
+        ]
+
+    async def list_templates(
+        self, project_id: uuid.UUID, *, include_builtin: bool = True
+    ) -> list[dict[str, Any]]:
+        """List built-in + custom templates available for a project."""
+        out: list[dict[str, Any]] = []
+        if include_builtin:
+            out.extend(self._builtin_to_dict())
+        customs = await self.repo.list_for_project(project_id)
+        out.extend(customs)  # ORM objects — Pydantic from_attributes handles them
+        return out
+
+    async def get_template(
+        self, template_id: str, project_id: uuid.UUID
+    ) -> Any:
+        """Get a single template (built-in or custom). Raises 404."""
+        if is_builtin_id(template_id):
+            tpl = get_builtin(template_id)
+            if tpl is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Template not found",
+                )
+            return self._builtin_to_dict_one(tpl)
+
+        try:
+            tpl_uuid = uuid.UUID(template_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Template not found",
+            ) from None
+        row = await self.repo.get_by_id(tpl_uuid)
+        if row is None or str(row.project_id) != str(project_id):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Template not found",
+            )
+        return row
+
+    @staticmethod
+    def _builtin_to_dict_one(tpl: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": tpl["id"],
+            "project_id": None,
+            "name": tpl["name"],
+            "description": tpl.get("description"),
+            "report_type": tpl.get("report_type", "daily"),
+            "fields": tpl["fields"],
+            "is_active": True,
+            "is_builtin": True,
+            "created_by": None,
+            "metadata_": {},
+            "created_at": None,
+            "updated_at": None,
+        }
+
+    async def create_template(
+        self, data: FieldReportTemplateCreate, user_id: str | None = None
+    ) -> FieldReportTemplate:
+        """Create a custom, project-scoped template."""
+        template = FieldReportTemplate(
+            project_id=data.project_id,
+            name=data.name,
+            description=data.description,
+            report_type=data.report_type,
+            fields=[f.model_dump() for f in data.fields],
+            is_active=data.is_active,
+            created_by=user_id,
+            metadata_=data.metadata,
+        )
+        template = await self.repo.create(template)
+        logger.info(
+            "Field report template created: %s for project %s",
+            template.name,
+            data.project_id,
+        )
+        return template
+
+    async def update_template(
+        self,
+        template_id: uuid.UUID,
+        data: FieldReportTemplateUpdate,
+    ) -> FieldReportTemplate:
+        """Update a custom template. Built-ins cannot be updated."""
+        template = await self.repo.get_by_id(template_id)
+        if template is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Template not found",
+            )
+
+        fields = data.model_dump(exclude_unset=True)
+        if "metadata" in fields:
+            fields["metadata_"] = fields.pop("metadata")
+        if "fields" in fields and fields["fields"] is not None:
+            fields["fields"] = [
+                f.model_dump() if hasattr(f, "model_dump") else f
+                for f in fields["fields"]
+            ]
+        if not fields:
+            return template
+
+        await self.repo.update_fields(template_id, **fields)
+        await self.session.refresh(template)
+        logger.info("Field report template updated: %s", template_id)
+        return template
+
+    async def delete_template(self, template_id: uuid.UUID) -> None:
+        """Delete a custom template. Built-ins cannot be deleted."""
+        template = await self.repo.get_by_id(template_id)
+        if template is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Template not found",
+            )
+        await self.repo.delete(template_id)
+        logger.info("Field report template deleted: %s", template_id)
 
 
 def _build_minimal_pdf(text: str) -> bytes:

@@ -15,6 +15,7 @@ from app.modules.ai.ai_client import (
     GEMINI_MODEL,
     OPENAI_MODEL,
     OPENROUTER_MODEL,
+    _extract_openai_message_text,
     _model_override_for,
     default_model_for,
     extract_json,
@@ -105,6 +106,62 @@ class TestExtractJson:
         text = '[{"ordinal": "01.01", "description": "incomplete'
         result = extract_json(text)
         assert result is None
+
+
+# ── OpenAI-shaped extraction hardening (issue #138) ──────────────────────────
+
+
+class TestExtractOpenAIMessageText:
+    """A billed completion must NEVER be silently dropped — every response
+    shape resolves to non-empty text or a precise, actionable ValueError."""
+
+    def test_plain_string_content(self):
+        data = {"choices": [{"message": {"content": "  Hello estimator  "}}]}
+        assert _extract_openai_message_text("openrouter", data) == "Hello estimator"
+
+    def test_content_as_typed_parts_list(self):
+        data = {
+            "choices": [
+                {
+                    "message": {
+                        "content": [
+                            {"type": "text", "text": "Part one. "},
+                            {"type": "text", "text": "Part two."},
+                        ]
+                    }
+                }
+            ]
+        }
+        assert _extract_openai_message_text("openai", data) == "Part one. Part two."
+
+    def test_falls_back_to_reasoning_when_content_empty(self):
+        data = {
+            "choices": [
+                {"message": {"content": None, "reasoning": "Chain of thought answer"}}
+            ]
+        }
+        assert (
+            _extract_openai_message_text("openrouter", data)
+            == "Chain of thought answer"
+        )
+
+    def test_in_body_error_without_choices_raises(self):
+        data = {"error": {"message": "insufficient credits"}}
+        with pytest.raises(ValueError, match="insufficient credits"):
+            _extract_openai_message_text("openrouter", data)
+
+    def test_empty_choices_raises(self):
+        with pytest.raises(ValueError, match="no choices"):
+            _extract_openai_message_text("openrouter", {"choices": []})
+
+    def test_empty_message_raises_with_finish_reason(self):
+        data = {
+            "choices": [
+                {"message": {"content": ""}, "finish_reason": "content_filter"}
+            ]
+        }
+        with pytest.raises(ValueError, match="content_filter"):
+            _extract_openai_message_text("openrouter", data)
 
 
 # ── Model constants ──────────────────────────────────────────────────────────

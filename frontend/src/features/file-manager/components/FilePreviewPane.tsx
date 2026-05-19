@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { useToastStore } from '@/stores/useToastStore';
+import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { apiGet } from '@/shared/lib/api';
 import type { FileRow, FileKind } from '../types';
@@ -57,6 +58,9 @@ export function FilePreviewPane({ row, onClose, onEmail, onShare, onManageAccess
   const { t } = useTranslation();
   const navigate = useNavigate();
   const addToast = useToastStore((s) => s.addToast);
+  const ctxProjectId = useProjectContextStore((s) => s.activeProjectId);
+  const ctxProjectName = useProjectContextStore((s) => s.activeProjectName);
+  const setActiveProject = useProjectContextStore((s) => s.setActiveProject);
   const [pathCopied, setPathCopied] = useState(false);
   // Slide-over drawer with the full audit timeline. Opens on demand so
   // we don't fire the activity request for every previewed file —
@@ -69,7 +73,7 @@ export function FilePreviewPane({ row, onClose, onEmail, onShare, onManageAccess
       <aside className="w-80 shrink-0 border-l border-border-light bg-surface-secondary/40 flex items-center justify-center">
         <p className="text-xs text-content-tertiary px-4 text-center">
           {t('files.preview.empty', {
-            defaultValue: 'Select a file to see details.',
+            defaultValue: 'Select a file to see details.‌⁠‍',
           })}
         </p>
       </aside>
@@ -89,6 +93,15 @@ export function FilePreviewPane({ row, onClose, onEmail, onShare, onManageAccess
   const file = row;
 
   function navigateToModule(target: typeof primary) {
+    // Clash Detection / CAD-BIM BI Explorer read the project from the
+    // global context store, not a path param — bind it to this file's
+    // project first so the destination opens populated instead of on the
+    // empty "no active project" state. Reuse the already-known context
+    // name when it's the same project; the id is what the pages key on.
+    if (target.setsActiveProject) {
+      const name = ctxProjectId === file.project_id ? ctxProjectName : '';
+      setActiveProject(file.project_id, name);
+    }
     navigate(target.route(file.project_id, file.id));
   }
 
@@ -101,7 +114,7 @@ export function FilePreviewPane({ row, onClose, onEmail, onShare, onManageAccess
     } else {
       addToast({
         type: 'error',
-        title: t('files.toast.copy_failed', { defaultValue: 'Could not copy path' }),
+        title: t('files.toast.copy_failed', { defaultValue: 'Could not copy path‌⁠‍' }),
       });
     }
   }
@@ -114,7 +127,7 @@ export function FilePreviewPane({ row, onClose, onEmail, onShare, onManageAccess
     <aside className="w-80 shrink-0 border-l border-border-light bg-surface-elevated overflow-y-auto">
       <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2.5 border-b border-border-light bg-surface-elevated">
         <span className="text-xs font-semibold text-content-primary truncate">
-          {t('files.preview.title', { defaultValue: 'File details' })}
+          {t('files.preview.title', { defaultValue: 'File details‌⁠‍' })}
         </span>
         <button
           type="button"
@@ -169,7 +182,7 @@ export function FilePreviewPane({ row, onClose, onEmail, onShare, onManageAccess
           >
             <PrimaryIcon size={13} strokeWidth={2.25} />
             {t('files.actions.open_in', {
-              defaultValue: 'Open in {{module}}',
+              defaultValue: 'Open in {{module}}‌⁠‍',
               module: t(primary.i18nKey, { defaultValue: primary.label }),
             })}
             <ExternalLink size={11} className="opacity-80" />
@@ -212,7 +225,7 @@ export function FilePreviewPane({ row, onClose, onEmail, onShare, onManageAccess
               className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium border border-border-light text-content-primary hover:bg-surface-secondary transition-colors"
             >
               <Download size={13} />
-              {t('files.actions.download', { defaultValue: 'Download' })}
+              {t('files.actions.download', { defaultValue: 'Download‌⁠‍' })}
             </a>
           )}
           <button

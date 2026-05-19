@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Project-profile service — apply / read / recompute / retrofit.
+"""‌⁠‍Project-profile service — apply / read / recompute / retrofit.
 
 Stateless; every method takes the AsyncSession explicitly. Presentation
 -only gating: writing :class:`ProjectModule` rows never unloads a module
@@ -28,7 +28,7 @@ from app.modules.projects.profile_scoring import (
 
 @lru_cache(maxsize=1)
 def discover_module_names() -> tuple[str, ...]:
-    """All real module folder ids (every ``app/modules/<id>/manifest.py``).
+    """‌⁠‍All real module folder ids (every ``app/modules/<id>/manifest.py``).
 
     Cached — the module set is fixed for a process lifetime. Falls back
     to the preset/always-on universe if the directory can't be read
@@ -76,19 +76,56 @@ def _to_module_read(row: ProjectModule) -> schemas.ProjectModuleRead:
     return schemas.ProjectModuleRead.model_validate(row)
 
 
+def _as_str_list(value: object) -> list[str]:
+    """‌⁠‍Coerce a JSON column back to its declared ``list[str]`` shape.
+
+    The ``activity`` / ``phases`` / ``extensions_enabled`` columns are
+    declared ``Mapped[list]`` but a profile can be persisted with a
+    scalar there (e.g. legacy / gap-fill seeds wrote ``activity =
+    "construction"`` — a bare string, not ``["construction"]``).
+    ``list("construction")`` would silently explode into single
+    characters, so coerce explicitly: a real list stays a list of its
+    string items; a non-empty scalar becomes a one-element list; ``None``
+    / empty becomes ``[]``. Never raises — the read path must survive any
+    persisted state.
+    """
+
+    if value is None or value == "":
+        return []
+    if isinstance(value, (list, tuple, set)):
+        return [str(v) for v in value if v is not None and v != ""]
+    return [str(value)]
+
+
+def _as_dict(value: object) -> dict:
+    """‌⁠‍Coerce a JSON column back to its declared ``dict`` shape.
+
+    ``setup_completion`` is declared ``Mapped[dict]`` but a profile can
+    be persisted with a scalar there (gap-fill seeds wrote ``1``).
+    ``dict(1)`` raises ``TypeError: 'int' object is not iterable`` — the
+    actual root cause of the ``GET /profile`` HTTP 500. A real mapping is
+    returned as-is; anything else (scalar / list / ``None``) collapses to
+    ``{}`` so the contract (``setup_completion: dict``) always holds.
+    """
+
+    if isinstance(value, dict):
+        return dict(value)
+    return {}
+
+
 def _to_profile_read(row: ProjectProfile) -> schemas.ProjectProfileRead:
     return schemas.ProjectProfileRead(
         project_id=row.project_id,
         preset=row.preset,
-        activity=list(row.activity or []),
-        phases=list(row.phases or []),
+        activity=_as_str_list(row.activity),
+        phases=_as_str_list(row.phases),
         role=row.role,
         size=row.size,
         region=row.region,
         language=row.language,
-        extensions_enabled=list(row.extensions_enabled or []),
+        extensions_enabled=_as_str_list(row.extensions_enabled),
         focus_mode_enabled=row.focus_mode_enabled,
-        setup_completion=dict(row.setup_completion or {}),
+        setup_completion=_as_dict(row.setup_completion),
     )
 
 
@@ -124,7 +161,7 @@ async def apply_profile(
     spec: schemas.ProfileSpec,
     user_id: uuid.UUID | None,
 ) -> schemas.ProjectProfileResult:
-    """Upsert the profile and replace the project's module assignments."""
+    """‌⁠‍Upsert the profile and replace the project's module assignments."""
 
     prof = (
         await db.execute(

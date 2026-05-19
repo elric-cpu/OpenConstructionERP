@@ -21,15 +21,8 @@ export const manifest: ModuleManifest = {
       component: ITExchangeModule,
     },
   ],
-  navItems: [
-    {
-      labelKey: 'nav.it_computo_exchange',
-      to: '/it-computo-exchange',
-      icon: Euro,
-      group: 'regional',
-      advancedOnly: true,
-    },
-  ],
+  // Issue #217 — reached from /boq (regional import/export); no duplicate sidebar entry.
+  navItems: [],
   searchEntries: [
     {
       label: 'Italy Computo Metrico Import / Export',

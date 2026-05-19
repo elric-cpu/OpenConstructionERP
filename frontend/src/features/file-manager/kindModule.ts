@@ -1,4 +1,4 @@
-import { Box, FileBarChart, FileText, Image as ImageIcon, Layout, MapPin, Package, Pencil, PenTool, Ruler, type LucideIcon } from 'lucide-react';
+import { BarChart3, Box, FileBarChart, FileText, Image as ImageIcon, MapPin, Package, Pencil, PenTool, Radar, Ruler, type LucideIcon } from 'lucide-react';
 import type { FileKind } from './types';
 
 // One file kind can be opened in several modules — a single .pdf is
@@ -17,6 +17,15 @@ export interface ModuleTarget {
   icon: LucideIcon;
   /** Path template — `{projectId}` is substituted in by the consumer. */
   route: (projectId: string, fileId?: string) => string;
+  /**
+   * Some destinations (Clash Detection, CAD-BIM BI Explorer) resolve the
+   * project from the global project-context store rather than from a path
+   * param, so they'd land on the empty "no project" state when reached via
+   * a deep-link. When this flag is set the consumer must call
+   * `useProjectContextStore.setActiveProject(...)` for the file's project
+   * BEFORE navigating so the destination opens populated.
+   */
+  setsActiveProject?: boolean;
 }
 
 const PROJECT = (p: string, sub: string) => `/projects/${p}/${sub}`;
@@ -92,22 +101,42 @@ export const KIND_MODULES: Record<FileKind, ModuleTarget[]> = {
   ],
   bim_model: [
     {
-      label: 'BIM Viewer',
+      // Primary — opens the model directly in the 3D viewport via the
+      // /projects/:projectId/bim/:modelId route (BIMPage.tsx L1496 reads
+      // both path params; App.tsx L486).
+      label: 'BIM 3D Viewer',
       i18nKey: 'files.module.bim_viewer',
       description: 'Inspect 3D model elements & quantities',
       descriptionI18nKey: 'files.module.bim_viewer_desc',
       icon: Box,
-      // BIM viewer accepts the model id as a path param —
-      // /projects/{p}/bim/{modelId} loads it directly.
       route: (p, f) => (f ? PROJECT(p, `bim/${encodeURIComponent(f)}`) : PROJECT(p, 'bim')),
     },
     {
-      label: 'BIM Rules',
-      i18nKey: 'files.module.bim_rules',
-      description: 'Apply quantity & validation rules to the model',
-      descriptionI18nKey: 'files.module.bim_rules_desc',
-      icon: Layout,
-      route: () => '/bim/rules',
+      // CAD-BIM BI Explorer — spreadsheet/pivot/chart analytics over the
+      // model's element data. Route /data-explorer (App.tsx L475, sidebar
+      // label `nav.cad_bim_explorer`). Its landing page lets the user
+      // pick the model/session; setting the active project keeps the
+      // rest of the workspace bound to the same project.
+      label: 'CAD-BIM BI Explorer',
+      i18nKey: 'files.module.cad_bim_explorer',
+      description: 'Pivot, chart & analyse element quantities',
+      descriptionI18nKey: 'files.module.cad_bim_explorer_desc',
+      icon: BarChart3,
+      route: () => '/data-explorer',
+      setsActiveProject: true,
+    },
+    {
+      // Clash Detection — geometric interference review. Route /clash
+      // (App.tsx L482); ClashDetectionPage.tsx L167 resolves the project
+      // from the global context store first, falling back to ?project=.
+      // We set the store AND pass ?project= so the page opens populated.
+      label: 'Clash Detection',
+      i18nKey: 'files.module.clash_detection',
+      description: 'Run geometric interference checks on this model',
+      descriptionI18nKey: 'files.module.clash_detection_desc',
+      icon: Radar,
+      route: (p) => `/clash?project=${encodeURIComponent(p)}`,
+      setsActiveProject: true,
     },
   ],
   dwg_drawing: [

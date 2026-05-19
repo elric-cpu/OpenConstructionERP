@@ -1,4 +1,4 @@
-"""Pure constraint evaluator for EAC requirements.
+"""‌⁠‍Pure constraint evaluator for EAC requirements.
 
 A single function that decides whether an actual value satisfies a
 requirement's ``constraint_type`` + ``constraint_value`` pair. Used by
@@ -37,7 +37,7 @@ _RANGE_SPLIT_RE: Final = re.compile(r"\s*(?:\.\.|;|,|-)\s*")
 
 @dataclass(frozen=True)
 class EvalResult:
-    """Outcome of a single constraint check."""
+    """‌⁠‍Outcome of a single constraint check."""
 
     passed: bool
     reason: str  # human-readable; empty when passed cleanly
@@ -81,7 +81,7 @@ def evaluate(
     constraint_value: str,
     actual: object,
 ) -> EvalResult:
-    """Run one EAC constraint against an actual value.
+    """‌⁠‍Run one EAC constraint against an actual value.
 
     Returns ``EvalResult(passed, reason)``. A pass always has empty
     reason; a fail explains why so the caller can store it verbatim

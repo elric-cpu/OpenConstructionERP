@@ -1,4 +1,4 @@
-"""FastAPI routes for the Service & Maintenance module.
+"""‌⁠‍FastAPI routes for the Service & Maintenance module.
 
 Mounted at ``/api/v1/service/`` by the module loader.
 
@@ -69,7 +69,7 @@ def _get_service(session: SessionDep) -> ServiceService:
 
 
 def _payload_has_permission(payload: dict, permission: str) -> bool:
-    """Mirror :class:`RequirePermission` semantics for an ad-hoc check.
+    """‌⁠‍Mirror :class:`RequirePermission` semantics for an ad-hoc check.
 
     Used where a single endpoint needs *different* permission levels depending
     on a request flag (read-only vs. side-effecting). Honours the admin bypass
@@ -91,7 +91,7 @@ async def _verify_contract_project(
     session: SessionDep,
     svc: ServiceService,
 ) -> None:
-    """If the contract is project-scoped, enforce project access.
+    """‌⁠‍If the contract is project-scoped, enforce project access.
 
     Tickets / work orders / assets do not carry a ``project_id`` themselves;
     they inherit it from their parent ``ServiceContract``. When the contract

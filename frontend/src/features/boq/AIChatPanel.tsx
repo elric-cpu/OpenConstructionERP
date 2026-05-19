@@ -69,24 +69,40 @@ export function AIChatPanel({
       // Remove the loading indicator
       setMessages((prev) => prev.filter((m) => m.id !== 'loading'));
 
-      // Build localized summary
+      const hasItems = response.items.length > 0;
       const total = response.items.reduce((s, item) => s + (item.total ?? 0), 0);
-      const currency = context.currency || 'EUR';
-      const localizedMessage = response.items.length > 0
+      const currency = context.currency || '';
+      const summary = hasItems
         ? t('boq.ai_generated_summary', {
             defaultValue: 'Generated {{count}} positions totalling {{total}} {{currency}}.‌⁠‍',
             count: response.items.length,
             total: total.toLocaleString(i18n.language, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
             currency,
           })
-        : response.message;
+        : '';
+
+      // The assistant's natural-language answer is primary — a knowledge
+      // question now gets a real reply here instead of an empty chat
+      // (issue #138). Fall back to the operational summary/message so the
+      // bubble is never blank even when the model only returned positions.
+      const reply = (response.reply ?? '').trim();
+      const text = reply
+        ? hasItems && summary
+          ? `${reply}\n\n${summary}`
+          : reply
+        : summary ||
+          response.message ||
+          t('boq.ai_no_answer', {
+            defaultValue:
+              'The assistant did not return an answer. Please rephrase or try again.‌⁠‍',
+          });
 
       // Add assistant response
       const assistantMsg: ChatMessage = {
         id: `assistant-${Date.now()}`,
         role: 'assistant',
-        text: localizedMessage,
-        items: response.items.length > 0 ? response.items : undefined,
+        text,
+        items: hasItems ? response.items : undefined,
       };
       setMessages((prev) => [...prev, assistantMsg]);
 
@@ -240,7 +256,7 @@ export function AIChatPanel({
             <p className="text-sm text-content-secondary max-w-[260px]">
               {t('boq.ai_welcome', {
                 defaultValue:
-                  'Ask me to generate BOQ positions. For example: "Add MEP items for a 5-story office building"‌⁠‍',
+                  'Ask me anything about construction, methods, materials or pricing — or ask me to generate BOQ positions, e.g. "Add MEP items for a 5-story office building".‌⁠‍',
               })}
             </p>
           </div>
@@ -304,9 +320,11 @@ export function AIChatPanel({
                 <Sparkles size={12} className="text-oe-blue" />
               </div>
               <div className="flex-1 min-w-0">
-                {/* Summary text */}
+                {/* Assistant answer / summary */}
                 {msg.text && (
-                  <p className="text-xs text-content-secondary mb-2">{msg.text}</p>
+                  <p className="text-xs leading-relaxed text-content-primary mb-2 whitespace-pre-wrap break-words">
+                    {msg.text}
+                  </p>
                 )}
 
                 {/* Generated items table */}
@@ -406,7 +424,7 @@ export function AIChatPanel({
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={t('boq.ai_placeholder', {
-              defaultValue: 'Describe positions to generate...',
+              defaultValue: 'Ask a question or describe positions to generate…',
             })}
             disabled={chatMutation.isPending}
             className="flex-1 rounded-lg border border-border-light bg-surface-elevated px-3 py-2 text-sm text-content-primary placeholder:text-content-tertiary outline-none focus:ring-2 focus:ring-oe-blue/20 focus:border-oe-blue/40 disabled:opacity-50 transition-all"

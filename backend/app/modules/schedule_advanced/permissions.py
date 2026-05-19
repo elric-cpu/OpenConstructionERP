@@ -1,10 +1,10 @@
-"""Schedule Advanced module permission definitions."""
+"""‌⁠‍Schedule Advanced module permission definitions."""
 
 from app.core.permissions import Role, permission_registry
 
 
 def register_schedule_advanced_permissions() -> None:
-    """Register permissions for the schedule_advanced (Last Planner) module."""
+    """‌⁠‍Register permissions for the schedule_advanced (Last Planner) module."""
     permission_registry.register_module_permissions(
         "schedule_advanced",
         {

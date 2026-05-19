@@ -1,4 +1,4 @@
-"""Declarative finite-state-machine helper for entity status transitions.
+"""‌⁠‍Declarative finite-state-machine helper for entity status transitions.
 
 This module supplies a tiny FSM toolkit used to enforce workflow integrity
 across core OpenConstructionERP entities (BOQ, Project, Invoice, NCR, RFQ,
@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 
 class FSMError(Exception):
-    """Base class for FSM rejection errors. Subclasses map to HTTP 409/403."""
+    """‌⁠‍Base class for FSM rejection errors. Subclasses map to HTTP 409/403."""
 
     def __init__(
         self,
@@ -61,7 +61,7 @@ class FSMError(Exception):
         self.allowed_transitions = allowed_transitions
 
     def as_detail(self) -> dict[str, Any]:
-        """Render this error as an HTTP response payload."""
+        """‌⁠‍Render this error as an HTTP response payload."""
         return {
             "detail": self.message,
             "current_status": self.current_status,

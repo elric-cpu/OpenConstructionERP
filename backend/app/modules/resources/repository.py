@@ -1,4 +1,4 @@
-"""Resources data access layer."""
+"""‌⁠‍Resources data access layer."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from app.modules.resources.models import (
 
 
 class ResourceRepository:
-    """Data access for :class:`Resource`."""
+    """‌⁠‍Data access for :class:`Resource`."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -88,7 +88,7 @@ class ResourceRepository:
 
 
 class SkillRepository:
-    """Data access for :class:`Skill`."""
+    """‌⁠‍Data access for :class:`Skill`."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session

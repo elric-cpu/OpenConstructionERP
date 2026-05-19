@@ -346,6 +346,46 @@ export class SceneManager {
     this.zoomToFit(box);
   }
 
+  /**
+   * Frame the camera on an arbitrary world-space point with a small radius.
+   *
+   * Used by the clash-review deep-link: a clash carries a reliable world
+   * centroid (`cx/cy/cz`) even for showcase IFC/RVT models whose GLB nodes
+   * are numeric Revit ids that never match the DB element UUIDs (so the
+   * per-element mesh resolution is only approximate).  Pointing the camera
+   * at the centroid guarantees the interference is on-screen regardless of
+   * whether the two element meshes resolved exactly.
+   */
+  focusOnPoint(world: { x: number; y: number; z: number }, radius = 3): void {
+    const center = new THREE.Vector3(world.x, world.y, world.z);
+    if (
+      !Number.isFinite(center.x) ||
+      !Number.isFinite(center.y) ||
+      !Number.isFinite(center.z)
+    ) {
+      return;
+    }
+    const r = Number.isFinite(radius) && radius > 0 ? radius : 3;
+    const fov = this.camera.fov * (Math.PI / 180);
+    // Frame a sphere of `r` around the point: distance so the sphere fills
+    // ~70% of the viewport (the 1.4 multiplier leaves breathing room so the
+    // surrounding context is visible around the collision).
+    const dist = (r / Math.tan(fov / 2)) * 1.4;
+    this.camera.near = Math.max(r / 500, 0.01);
+    this.camera.far = Math.max(dist * 50, r * 200, this.camera.far);
+    this.camera.updateProjectionMatrix();
+    this.controls.maxDistance = this.camera.far * 0.5;
+    this.controls.target.copy(center);
+    this.camera.position.set(
+      center.x + dist * 0.7,
+      center.y + dist * 0.35,
+      center.z + dist * 0.5,
+    );
+    this.camera.lookAt(center);
+    this.controls.update();
+    this._needsRender = true;
+  }
+
   /** Set camera to a specific viewpoint. */
   setViewpoint(position: Viewpoint['position'], target: Viewpoint['target']): void {
     this.camera.position.set(position.x, position.y, position.z);

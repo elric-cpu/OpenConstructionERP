@@ -1124,7 +1124,7 @@ export function CostsPage() {
                     <th className="px-4 py-3 font-medium text-content-secondary w-28 text-center">
                       {t('costs.classification', 'Class.')}
                     </th>
-                    <th className="px-2 py-3 w-20" />
+                    <th className="px-3 py-3 w-32" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border-light">
@@ -2348,15 +2348,15 @@ function CostItemRow({
             <span className="text-content-tertiary">-</span>
           )}
         </td>
-        <td className="px-2 py-3">
-          <div className="flex items-center gap-0.5">
+        <td className="px-3 py-3">
+          <div className="flex items-center justify-end gap-0.5 whitespace-nowrap">
             <button
               onClick={(e) => { e.stopPropagation(); onSelect(); }}
               title={t('costs.add_to_boq', 'Select for BOQ')}
-              className={`flex h-7 w-7 items-center justify-center rounded-md transition-all ${
+              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-all ${
                 isSelected
                   ? 'bg-oe-blue text-white'
-                  : 'text-content-tertiary opacity-0 group-hover:opacity-100 hover:bg-oe-blue-subtle hover:text-oe-blue'
+                  : 'text-content-tertiary hover:bg-oe-blue-subtle hover:text-oe-blue'
               }`}
             >
               <Plus size={14} />
@@ -2364,7 +2364,7 @@ function CostItemRow({
             <button
               onClick={(e) => { e.stopPropagation(); onCopy(); }}
               title={t('costs.copy_rate', 'Copy rate')}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-content-tertiary opacity-0 transition-all group-hover:opacity-100 hover:bg-surface-tertiary hover:text-content-primary"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-content-tertiary transition-all hover:bg-surface-tertiary hover:text-content-primary"
             >
               {copiedId === item.id ? (
                 <Check size={13} className="text-semantic-success" />
@@ -2383,7 +2383,7 @@ function CostItemRow({
                   if (ok) onDelete?.(item.id);
                 }}
                 title={t('common.delete', { defaultValue: 'Delete' })}
-                className="flex h-7 w-7 items-center justify-center rounded text-content-tertiary hover:text-semantic-error hover:bg-semantic-error-bg transition-colors"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-content-tertiary hover:text-semantic-error hover:bg-semantic-error-bg transition-colors"
               >
                 <Trash2 size={13} />
               </button>

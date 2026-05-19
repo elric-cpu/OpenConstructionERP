@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Excel BoQ source adapter — pre-parsed BoQ rows to /match-elements.
+"""‌⁠‍Excel BoQ source adapter — pre-parsed BoQ rows to /match-elements.
 
 Implements MAPPING_PROCESS.md §4.1.5 — the "Excel BoQ" source. The
 estimator uploads an xlsx (description + qty + unit, optionally a
@@ -109,7 +109,7 @@ _UNIT_TO_QTY_KEY: dict[str, str] = {
 
 
 def _to_float(val: Any) -> float | None:
-    """Coerce a BoQ qty cell to float, tolerating "12,3" and "12.3 m³".
+    """‌⁠‍Coerce a BoQ qty cell to float, tolerating "12,3" and "12.3 m³".
 
     Returns ``None`` for blanks, non-numeric text, or coercion failures —
     callers treat that as "no quantity for this row".
@@ -141,7 +141,7 @@ def _to_float(val: Any) -> float | None:
 
 
 def _quantities_for(unit: str | None, qty: float | None) -> dict[str, float]:
-    """Map ``unit`` + ``qty`` onto the canonical quantity dimensions.
+    """‌⁠‍Map ``unit`` + ``qty`` onto the canonical quantity dimensions.
 
     Always returns at least ``count=1.0`` so a "no qty / lump-sum" BoQ
     row still flows through the matcher pipeline.

@@ -641,6 +641,45 @@ export async function ensureBIMElement(
   );
 }
 
+/** Matches a canonical 36-char UUID (8-4-4-4-12, hex + dashes). Anything
+ *  else — notably the viewer's client-side `_unmatched_N` stubs and raw
+ *  Revit numeric ids — must be resolved to a real BIMElement UUID via
+ *  `ensureBIMElement` before it can travel through a UUID-typed endpoint
+ *  (POST /links/, element-group element_ids, …). */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Turn any viewer element into a persisted BIMElement UUID.
+ *
+ *  UUIDs pass through untouched.  Client-side stubs (`_unmatched_N`) and
+ *  raw numeric ids hit the backend lazy-create endpoint keyed by
+ *  `mesh_ref` (or `stable_id`).  Shared by AddToBOQModal and SaveGroupModal
+ *  so element→BOQ links AND saved groups always reference real rows — a
+ *  stub id stored verbatim in a group's `element_ids` would never resolve
+ *  back to a member and the group would appear empty/broken on reload. */
+export async function resolveElementUUID(
+  modelId: string,
+  el: {
+    id: string;
+    mesh_ref?: string | null;
+    stable_id?: string | null;
+  },
+): Promise<string> {
+  if (UUID_RE.test(el.id)) return el.id;
+  const ref = {
+    meshRef: el.mesh_ref ?? null,
+    stableId: el.stable_id ?? null,
+  };
+  if (!ref.meshRef && !ref.stableId) {
+    throw new Error(
+      'This mesh has no Revit ElementId — cannot persist it. ' +
+        'Re-upload the model so the viewer can attach a stable reference.',
+    );
+  }
+  const { id } = await ensureBIMElement(modelId, ref);
+  return id;
+}
+
 /** Create a new BIM ↔ BOQ link. Returns the created record. */
 export async function createLink(
   payload: CreateBOQElementLinkRequest,
@@ -1300,4 +1339,78 @@ export async function downloadCobieXlsx(
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+/* ── Model version diff ────────────────────────────────────────────────────
+ *
+ * Read-only client for the backend's existing per-element model diff
+ * (`bim_hub` service `compute_diff`). We never reshape or recompute the
+ * diff — these helpers only surface what the API already returns.
+ *
+ * Endpoints:
+ *   POST /v1/bim_hub/models/{new_id}/diff/{old_id}  → compute (idempotent)
+ *   GET  /v1/bim_hub/diffs/{diff_id}                → fetch existing
+ */
+
+/** One changed field inside a modified element (matches the service shape). */
+export interface BIMDiffFieldChange {
+  field: string;
+  old: unknown;
+  new: unknown;
+}
+
+/** A modified element entry from `diff_details.modified`. */
+export interface BIMDiffModifiedEntry {
+  stable_id: string;
+  element_type: string | null;
+  changes: BIMDiffFieldChange[];
+}
+
+/** An added / deleted element entry from `diff_details`. */
+export interface BIMDiffSimpleEntry {
+  stable_id: string;
+  element_type: string | null;
+  name: string | null;
+}
+
+export interface BIMModelDiffSummary {
+  unchanged: number;
+  modified: number;
+  added: number;
+  deleted: number;
+}
+
+export interface BIMModelDiffDetails {
+  modified: BIMDiffModifiedEntry[];
+  added: BIMDiffSimpleEntry[];
+  deleted: BIMDiffSimpleEntry[];
+}
+
+export interface BIMModelDiff {
+  id: string;
+  old_model_id: string;
+  new_model_id: string;
+  diff_summary: BIMModelDiffSummary;
+  diff_details: BIMModelDiffDetails | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Compute (or return the cached) diff between a newer and an older model
+ *  version. The backend de-dupes by model pair so this is safe to call
+ *  repeatedly. */
+export async function computeBIMModelDiff(
+  newModelId: string,
+  oldModelId: string,
+): Promise<BIMModelDiff> {
+  return apiPost<BIMModelDiff>(
+    `/v1/bim_hub/models/${encodeURIComponent(newModelId)}/diff/${encodeURIComponent(oldModelId)}`,
+    {},
+  );
+}
+
+/** Fetch a previously-computed diff by its id. */
+export async function fetchBIMModelDiff(diffId: string): Promise<BIMModelDiff> {
+  return apiGet<BIMModelDiff>(`/v1/bim_hub/diffs/${encodeURIComponent(diffId)}`);
 }

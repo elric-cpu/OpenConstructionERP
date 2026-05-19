@@ -1,4 +1,4 @@
-"""Backfill 19 boq.mvp.* keys into the 22 locales that don't have them.
+"""‌⁠‍Backfill 19 boq.mvp.* keys into the 22 locales that don't have them.
 
 These keys power the MultiVariantPicker modal — a high-touch BOQ flow where
 estimators choose between resource variants. Falling through to English on
@@ -284,7 +284,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
 
 
 def insert_keys(path: pathlib.Path, code: str) -> int:
-    """Insert missing boq.mvp.* keys into one locale file.
+    """‌⁠‍Insert missing boq.mvp.* keys into one locale file.
 
     The locales are CommonJS-ish modules; we anchor on the existing nav.boq
     line and inject the boq.mvp.* block right after the existing boq.* keys.

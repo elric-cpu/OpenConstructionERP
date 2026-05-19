@@ -1,4 +1,4 @@
-"""Resources module manifest."""
+"""‌⁠‍Resources module manifest."""
 
 from app.core.module_loader import ModuleManifest
 

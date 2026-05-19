@@ -10,7 +10,7 @@ from datetime import date
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.fieldreports.models import FieldReport
+from app.modules.fieldreports.models import FieldReport, FieldReportTemplate
 
 
 class FieldReportRepository:
@@ -170,3 +170,51 @@ class FieldReportRepository:
         )
         result = await self.session.execute(stmt)
         return [row[0] or [] for row in result.all()]
+
+
+class FieldReportTemplateRepository:
+    """‌⁠‍Data access for FieldReportTemplate models (project-scoped)."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def get_by_id(self, template_id: uuid.UUID) -> FieldReportTemplate | None:
+        """Get a custom template by ID."""
+        return await self.session.get(FieldReportTemplate, template_id)
+
+    async def list_for_project(
+        self, project_id: uuid.UUID, *, active_only: bool = False
+    ) -> list[FieldReportTemplate]:
+        """List all custom templates for a project (newest first)."""
+        stmt = select(FieldReportTemplate).where(
+            FieldReportTemplate.project_id == project_id
+        )
+        if active_only:
+            stmt = stmt.where(FieldReportTemplate.is_active.is_(True))
+        stmt = stmt.order_by(FieldReportTemplate.created_at.desc())
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def create(self, template: FieldReportTemplate) -> FieldReportTemplate:
+        """Insert a new template."""
+        self.session.add(template)
+        await self.session.flush()
+        return template
+
+    async def update_fields(self, template_id: uuid.UUID, **fields: object) -> None:
+        """Update specific fields on a template."""
+        stmt = (
+            update(FieldReportTemplate)
+            .where(FieldReportTemplate.id == template_id)
+            .values(**fields)
+        )
+        await self.session.execute(stmt)
+        await self.session.flush()
+        self.session.expire_all()
+
+    async def delete(self, template_id: uuid.UUID) -> None:
+        """Hard delete a template."""
+        template = await self.get_by_id(template_id)
+        if template is not None:
+            await self.session.delete(template)
+            await self.session.flush()

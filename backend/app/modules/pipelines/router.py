@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Pipeline Builder REST API.
+"""‌⁠‍Pipeline Builder REST API.
 
 Auto-mounted by the module loader at ``/api/v1/pipelines`` (kebab-case of
 the ``pipelines`` directory). The wire contract is PINNED — the frontend
@@ -58,14 +58,16 @@ def _detail(p: Pipeline) -> PipelineDetail:
     )
 
 
-async def _load(service: PipelineService, pipeline_id: str) -> Pipeline:
+async def _load(
+    service: PipelineService, pipeline_id: str, user_id: str
+) -> Pipeline:
     try:
         pid = uuid.UUID(pipeline_id)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Pipeline not found"
         ) from exc
-    pipeline = await service.get(pid)
+    pipeline = await service.get_authorized(pid, user_id)
     if pipeline is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Pipeline not found"
@@ -79,7 +81,7 @@ async def _load(service: PipelineService, pipeline_id: str) -> Pipeline:
 
 @router.get("/node-types/", response_model=list[NodeTypeOut])
 async def list_node_types(_user: CurrentUserId) -> list[NodeTypeOut]:
-    """Return every registered node type (the palette catalog)."""
+    """‌⁠‍Return every registered node type (the palette catalog)."""
     return [NodeTypeOut(**spec.public_dict()) for spec in list_node_specs()]
 
 
@@ -88,9 +90,9 @@ async def list_node_types(_user: CurrentUserId) -> list[NodeTypeOut]:
 
 @router.get("/runs/{run_id}", response_model=RunDetail)
 async def get_run(
-    run_id: str, session: SessionDep, _user: CurrentUserId
+    run_id: str, session: SessionDep, user_id: CurrentUserId
 ) -> RunDetail:
-    """Return a run with its per-node states."""
+    """‌⁠‍Return a run with its per-node states."""
     service = PipelineService(session)
     try:
         rid = uuid.UUID(run_id)
@@ -98,7 +100,7 @@ async def get_run(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Run not found"
         ) from exc
-    run = await service.get_run(rid)
+    run = await service.get_run_authorized(rid, user_id)
     if run is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Run not found"
@@ -112,12 +114,12 @@ async def get_run(
 @router.get("/", response_model=list[PipelineSummary])
 async def list_pipelines(
     session: SessionDep,
-    _user: CurrentUserId,
+    user_id: CurrentUserId,
     project_id: str | None = Query(default=None),
 ) -> list[PipelineSummary]:
     """List pipelines, optionally scoped to a project."""
     service = PipelineService(session)
-    rows = await service.list(project_id=project_id)
+    rows = await service.list(project_id=project_id, user_id=user_id)
     return [
         PipelineSummary(
             id=str(p.id),
@@ -154,11 +156,11 @@ async def create_pipeline(
 
 @router.get("/{pipeline_id}", response_model=PipelineDetail)
 async def get_pipeline(
-    pipeline_id: str, session: SessionDep, _user: CurrentUserId
+    pipeline_id: str, session: SessionDep, user_id: CurrentUserId
 ) -> PipelineDetail:
     """Fetch a single pipeline by id."""
     service = PipelineService(session)
-    return _detail(await _load(service, pipeline_id))
+    return _detail(await _load(service, pipeline_id, user_id))
 
 
 @router.put("/{pipeline_id}", response_model=PipelineDetail)
@@ -166,11 +168,11 @@ async def update_pipeline(
     pipeline_id: str,
     body: PipelineUpdate,
     session: SessionDep,
-    _user: CurrentUserId,
+    user_id: CurrentUserId,
 ) -> PipelineDetail:
     """Patch a pipeline. Publishing is gated by the structural rule."""
     service = PipelineService(session)
-    pipeline = await _load(service, pipeline_id)
+    pipeline = await _load(service, pipeline_id, user_id)
     try:
         updated = await service.update(
             pipeline,
@@ -189,11 +191,11 @@ async def update_pipeline(
 
 @router.delete("/{pipeline_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_pipeline(
-    pipeline_id: str, session: SessionDep, _user: CurrentUserId
+    pipeline_id: str, session: SessionDep, user_id: CurrentUserId
 ) -> None:
     """Delete a pipeline (cascades to its runs + node states)."""
     service = PipelineService(session)
-    pipeline = await _load(service, pipeline_id)
+    pipeline = await _load(service, pipeline_id, user_id)
     await service.delete(pipeline)
 
 
@@ -209,7 +211,7 @@ async def run_pipeline(
 ) -> RunAccepted:
     """Validate, snapshot and enqueue a run as a JobRun."""
     service = PipelineService(session)
-    pipeline = await _load(service, pipeline_id)
+    pipeline = await _load(service, pipeline_id, user_id)
     try:
         run, job = await service.submit_run(
             pipeline,
@@ -229,10 +231,10 @@ async def run_pipeline(
 
 @router.get("/{pipeline_id}/runs/", response_model=list[RunSummary])
 async def list_runs(
-    pipeline_id: str, session: SessionDep, _user: CurrentUserId
+    pipeline_id: str, session: SessionDep, user_id: CurrentUserId
 ) -> list[RunSummary]:
     """List every run of a pipeline, newest first."""
     service = PipelineService(session)
-    pipeline = await _load(service, pipeline_id)
+    pipeline = await _load(service, pipeline_id, user_id)
     runs = await service.list_runs(pipeline.id)
     return [RunSummary(**await service.run_summary(r)) for r in runs]

@@ -20,15 +20,8 @@ export const manifest: ModuleManifest = {
       component: KRExchangeModule,
     },
   ],
-  navItems: [
-    {
-      labelKey: 'nav.kr_boq_exchange',
-      to: '/kr-boq-exchange',
-      icon: Building2,
-      group: 'regional',
-      advancedOnly: true,
-    },
-  ],
+  // Issue #217 — reached from /boq (regional import/export); no duplicate sidebar entry.
+  navItems: [],
   searchEntries: [
     {
       label: 'Korea BOQ Import / Export',

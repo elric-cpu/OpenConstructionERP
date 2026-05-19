@@ -72,9 +72,7 @@ async function fileToDataUrl(file: File): Promise<string> {
 
 export function CustomBranding({ iconified }: CustomBrandingProps) {
   const { t } = useTranslation();
-  const { mode, logoDataUrl, companyName, setLogo, setCompanyName, reset } =
-    useBrandingStore();
-  const { addToast } = useToastStore();
+  const { mode, logoDataUrl, companyName } = useBrandingStore();
   const [editing, setEditing] = useState(false);
 
   // Iconified sidebar — render only the brand glyph (user logo if set,
@@ -86,8 +84,8 @@ export function CustomBranding({ iconified }: CustomBrandingProps) {
           type="button"
           onClick={() => setEditing(true)}
           className="hover:opacity-80 transition-opacity"
-          title={companyName || t('branding.edit', { defaultValue: 'Customise branding' })}
-          aria-label={t('branding.edit', { defaultValue: 'Customise branding' })}
+          title={companyName || t('branding.edit', { defaultValue: 'Customise branding‌⁠‍' })}
+          aria-label={t('branding.edit', { defaultValue: 'Customise branding‌⁠‍' })}
         >
           <img
             src={logoDataUrl}
@@ -129,8 +127,8 @@ export function CustomBranding({ iconified }: CustomBrandingProps) {
               type="button"
               onClick={() => setEditing(true)}
               className="block w-full text-left rounded-lg p-1 -m-1 hover:bg-surface-secondary/40 transition-colors"
-              aria-label={t('branding.edit', { defaultValue: 'Customise branding' })}
-              title={t('branding.edit', { defaultValue: 'Customise branding' })}
+              aria-label={t('branding.edit', { defaultValue: 'Customise branding‌⁠‍' })}
+              title={t('branding.edit', { defaultValue: 'Customise branding‌⁠‍' })}
             >
               {mode === 'logo' && logoDataUrl ? (
                 <img
@@ -211,7 +209,7 @@ export function CustomBranding({ iconified }: CustomBrandingProps) {
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40',
             'transition-colors',
           )}
-          aria-label={t('branding.edit', { defaultValue: 'Customise branding' })}
+          aria-label={t('branding.edit', { defaultValue: 'Customise branding‌⁠‍' })}
           title={t('branding.edit_tooltip', {
             defaultValue: 'Add your logo or company name',
           })}
@@ -220,48 +218,64 @@ export function CustomBranding({ iconified }: CustomBrandingProps) {
         </button>
       </div>
 
-      {editing && (
-        <BrandingEditor
-          mode={mode}
-          logoDataUrl={logoDataUrl}
-          companyName={companyName}
-          onClose={() => setEditing(false)}
-          onApplyLogo={async (file) => {
-            try {
-              const url = await fileToDataUrl(file);
-              setLogo(url);
-              addToast({
-                type: 'success',
-                title: t('branding.logo_saved', { defaultValue: 'Logo updated' }),
-              });
-              setEditing(false);
-            } catch (e) {
-              addToast({
-                type: 'error',
-                title: t('branding.logo_error', { defaultValue: 'Could not load logo' }),
-                message: e instanceof Error ? e.message : String(e),
-              });
-            }
-          }}
-          onApplyName={(name) => {
-            setCompanyName(name);
-            addToast({
-              type: 'success',
-              title: t('branding.name_saved', { defaultValue: 'Company name updated' }),
-            });
-            setEditing(false);
-          }}
-          onReset={() => {
-            reset();
-            addToast({
-              type: 'info',
-              title: t('branding.reset', { defaultValue: 'Restored default branding' }),
-            });
-            setEditing(false);
-          }}
-        />
-      )}
+      {editing && <BrandingEditorModal onClose={() => setEditing(false)} />}
     </>
+  );
+}
+
+/**
+ * Store-wired branding editor modal. Self-contained: pulls the branding
+ * store + toast store itself and renders {@link BrandingEditor} with all
+ * callbacks bound. Reused verbatim by the sidebar brand control *and* the
+ * pre-auth login screen so "customise logo" behaves identically in both
+ * places (single source of truth — no duplicated upload/validation).
+ */
+export function BrandingEditorModal({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation();
+  const { mode, logoDataUrl, companyName, setLogo, setCompanyName, reset } =
+    useBrandingStore();
+  const { addToast } = useToastStore();
+
+  return (
+    <BrandingEditor
+      mode={mode}
+      logoDataUrl={logoDataUrl}
+      companyName={companyName}
+      onClose={onClose}
+      onApplyLogo={async (file) => {
+        try {
+          const url = await fileToDataUrl(file);
+          setLogo(url);
+          addToast({
+            type: 'success',
+            title: t('branding.logo_saved', { defaultValue: 'Logo updated' }),
+          });
+          onClose();
+        } catch (e) {
+          addToast({
+            type: 'error',
+            title: t('branding.logo_error', { defaultValue: 'Could not load logo' }),
+            message: e instanceof Error ? e.message : String(e),
+          });
+        }
+      }}
+      onApplyName={(name) => {
+        setCompanyName(name);
+        addToast({
+          type: 'success',
+          title: t('branding.name_saved', { defaultValue: 'Company name updated' }),
+        });
+        onClose();
+      }}
+      onReset={() => {
+        reset();
+        addToast({
+          type: 'info',
+          title: t('branding.reset', { defaultValue: 'Restored default branding' }),
+        });
+        onClose();
+      }}
+    />
   );
 }
 

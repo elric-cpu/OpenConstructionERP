@@ -1,5 +1,5 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
-"""Compliance documents service — CRUD + status derivation."""
+"""‌⁠‍Compliance documents service — CRUD + status derivation."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ def recompute_status(
     *,
     current_status: str | None = None,
 ) -> str:
-    """Derive ``status`` from the date window.
+    """‌⁠‍Derive ``status`` from the date window.
 
     Pure function so unit tests can drive it without a session.
 
@@ -72,7 +72,7 @@ def recompute_status(
 
 
 class ComplianceDocService:
-    """Business logic for the compliance docs tracker."""
+    """‌⁠‍Business logic for the compliance docs tracker."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session

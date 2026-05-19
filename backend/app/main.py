@@ -58,7 +58,7 @@ import structlog
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config import Settings, get_settings
+from app.config import Settings, build_provenance_tag, get_settings
 from app.core.module_loader import module_loader
 from app.dependencies import RequireRole, get_current_user_id
 
@@ -738,6 +738,15 @@ def create_app() -> FastAPI:
         title=settings.app_name,
         version=settings.app_version,
         description="Open-source modular platform for construction cost estimation",
+        contact={
+            "name": "DataDrivenConstruction · OpenConstructionERP",
+            "url": "https://openconstructionerp.com",
+            "email": "info@datadrivenconstruction.io",
+        },
+        license_info={
+            "name": "AGPL-3.0-or-later · DDC-CWICR-OE-2026",
+            "url": "https://www.gnu.org/licenses/agpl-3.0.html",
+        },
         docs_url="/api/docs" if not settings.is_production else None,
         redoc_url="/api/redoc" if not settings.is_production else None,
         # BUG-394: don't expose the full OpenAPI schema in production — it
@@ -758,6 +767,41 @@ def create_app() -> FastAPI:
         # FastAPI's default Pydantic-direct path; orjson is still used
         # by handlers that explicitly opt in.
     )
+
+    # ── OpenAPI origin extension ─────────────────────────────────────────
+    # Stamp an x- vendor extension into info{} so any fork that exposes
+    # /api/openapi.json or /api/docs leaks provenance. ``x-`` extensions
+    # are valid per the OpenAPI spec and ignored by every generator /
+    # client (incl. openapi-typescript), so the API surface is unchanged.
+    # The token bytes XOR-decode (key 0x55) to the authorship marker.
+    from fastapi.openapi.utils import get_openapi as _get_openapi
+
+    def _custom_openapi() -> dict[str, Any]:
+        if app.openapi_schema:
+            return app.openapi_schema
+        schema = _get_openapi(
+            title=app.title,
+            version=app.version,
+            description=app.description,
+            routes=app.routes,
+            contact=app.contact,
+            license_info=app.license_info,
+        )
+        _oa_tok = bytes(
+            b ^ 0x55
+            for b in b"\x11\x11\x16\x78\x16\x02\x1c\x16\x07\x78\x1a\x10\x78\x67\x65\x67\x63"
+        ).decode("ascii")
+        schema.setdefault("info", {})
+        schema["info"]["x-ddc-origin"] = (
+            "OpenConstructionERP · DataDrivenConstruction · " + _oa_tok
+        )
+        schema["info"]["x-ddc-author"] = (
+            "Artem Boiko <info@datadrivenconstruction.io>"
+        )
+        app.openapi_schema = schema
+        return schema
+
+    app.openapi = _custom_openapi  # type: ignore[method-assign]
 
     # ── Middleware ───────────────────────────────────────────────────────
     cors_origins = settings.cors_origins
@@ -861,11 +905,22 @@ def create_app() -> FastAPI:
             sent = False
 
             async def replay() -> Message:
+                # First call: hand the app the fully buffered body. Every
+                # subsequent call must delegate to the *real* receive() — it
+                # MUST NOT synthesize ``http.disconnect`` here. Streaming
+                # responses (SSE: /erp_chat/stream/, AI chat) run
+                # ``listen_for_disconnect`` concurrently with the body
+                # generator under Starlette's StreamingResponse; a premature
+                # fake ``http.disconnect`` made that watcher return instantly
+                # and cancel the stream before a single byte was sent (the
+                # endpoint returned HTTP 200 with a 0-byte body). Forwarding
+                # the genuine receive() preserves real client-disconnect
+                # detection without killing live streams.
                 nonlocal sent
                 if not sent:
                     sent = True
                     return {"type": "http.request", "body": bytes(body), "more_body": False}
-                return {"type": "http.disconnect"}
+                return await receive()
 
             await self.inner(scope, replay, send)
 
@@ -1024,6 +1079,7 @@ def create_app() -> FastAPI:
             "env": settings.app_env,
             "instance_id": _INSTANCE_ID,
             "build": f"DDC-{_BUILD_HASH}",
+            "signature": build_provenance_tag(settings.app_version),
             "modules_loaded": len(module_loader.list_modules()),
             "uptime_seconds": int(time.time() - _startup_time),
         }

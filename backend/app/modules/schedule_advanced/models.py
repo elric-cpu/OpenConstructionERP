@@ -1,4 +1,4 @@
-"""Schedule Advanced ORM models — Last Planner System (LPS) + baselines.
+"""‌⁠‍Schedule Advanced ORM models — Last Planner System (LPS) + baselines.
 
 Tables:
     oe_schedule_advanced_master_schedule
@@ -43,7 +43,7 @@ from app.database import GUID, Base
 
 
 class MasterSchedule(Base):
-    """Top-level project schedule container for the LPS workflow.
+    """‌⁠‍Top-level project schedule container for the LPS workflow.
 
     Each project may have many master schedules (e.g. baseline, current
     rev-B, etc.). Phase plans, look-aheads, weekly plans, and baselines
@@ -76,7 +76,7 @@ class MasterSchedule(Base):
 
 
 class PhasePlan(Base):
-    """A pull-planning phase (e.g. "Foundations", "Tower Crane Phase").
+    """‌⁠‍A pull-planning phase (e.g. "Foundations", "Tower Crane Phase").
 
     Created collaboratively in a pull session. ``milestone_target_id``
     references a task UUID — kept as a plain UUID (NOT FK at ORM level)

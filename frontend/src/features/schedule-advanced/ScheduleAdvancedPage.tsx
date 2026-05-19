@@ -40,6 +40,8 @@ import { projectsApi } from '@/features/projects/api';
 import {
   listMasterSchedules,
   createMasterSchedule,
+  updateMasterSchedule,
+  deleteMasterSchedule,
   listPhasePlans,
   createPhasePlan,
   updatePhasePlan,
@@ -164,6 +166,8 @@ export function ScheduleAdvancedPage() {
   const [weekPlanId, setWeekPlanId] = useState<string>('');
   const [constraintFilter, setConstraintFilter] = useState<string>('');
   const [createMaster, setCreateMaster] = useState(false);
+  const [editMaster, setEditMaster] = useState<MasterSchedule | null>(null);
+  const [deleteMaster, setDeleteMaster] = useState<MasterSchedule | null>(null);
   const [createWeek, setCreateWeek] = useState(false);
   const [createLA, setCreateLA] = useState(false);
   const [createBaselineOpen, setCreateBaselineOpen] = useState(false);
@@ -266,13 +270,43 @@ export function ScheduleAdvancedPage() {
     [weeklyQ.data, weekPlanId],
   );
 
+  const qc = useQueryClient();
+  const addToast = useToastStore((s) => s.addToast);
+
+  const deleteMasterMut = useMutation({
+    mutationFn: (id: string) => deleteMasterSchedule(id),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({
+        queryKey: ['schedule-advanced', 'master', projectId],
+      });
+      // If the deleted master was the active selection, drop every
+      // dependent selection so child tabs don't query a dangling parent.
+      if (id === masterId) {
+        setMasterId('');
+        setLookAheadId('');
+        setWeekPlanId('');
+      }
+      setDeleteMaster(null);
+      addToast({
+        type: 'success',
+        title: t('schedule_advanced.master_deleted', {
+          defaultValue: 'Master schedule deleted',
+        }),
+      });
+    },
+    onError: (err) => {
+      setDeleteMaster(null);
+      addToast({ type: 'error', title: getErrorMessage(err) });
+    },
+  });
+
   return (
     <div className="space-y-5">
       <Breadcrumb
         items={[
           {
             label: t('schedule_advanced.title', {
-              defaultValue: 'Last Planner / CPM',
+              defaultValue: 'Last Planner / CPM‌⁠‍',
             }),
           },
         ]}
@@ -284,12 +318,12 @@ export function ScheduleAdvancedPage() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold text-content-primary">
-            {t('schedule_advanced.title', { defaultValue: 'Last Planner / CPM' })}
+            {t('schedule_advanced.title', { defaultValue: 'Last Planner / CPM‌⁠‍' })}
           </h1>
           <p className="mt-1 text-sm text-content-secondary">
             {t('schedule_advanced.subtitle', {
               defaultValue:
-                'Pull-planning, lookaheads, weekly commitments, constraints and baselines.',
+                'Pull-planning, lookaheads, weekly commitments, constraints and baselines.‌⁠‍',
             })}
           </p>
         </div>
@@ -317,7 +351,7 @@ export function ScheduleAdvancedPage() {
       <InfoHint
         text={t('schedule_advanced.what_is_lps', {
           defaultValue:
-            'The Last Planner System is pull-based production control that complements the 4D Schedule. Master schedule sets milestones, Phase Plans pull work backwards from them, Look-Aheads (6 weeks) make work ready by removing constraints, and Weekly Work Plans capture crew commitments. PPC (Percent Plan Complete) and constraint logs measure reliability. Use the 4D Schedule for the CPM critical path; use this for what the team actually commits to do next.',
+            'The Last Planner System is pull-based production control that complements the 4D Schedule. Master schedule sets milestones, Phase Plans pull work backwards from them, Look-Aheads (6 weeks) make work ready by removing constraints, and Weekly Work Plans capture crew commitments. PPC (Percent Plan Complete) and constraint logs measure reliability. Use the 4D Schedule for the CPM critical path; use this for what the team actually commits to do next.‌⁠‍',
         })}
       />
 
@@ -326,7 +360,7 @@ export function ScheduleAdvancedPage() {
         <nav className="flex gap-1 -mb-px overflow-x-auto">
           {(
             [
-              { id: 'master', label: t('schedule_advanced.tab_master', { defaultValue: 'Master' }), icon: Calendar },
+              { id: 'master', label: t('schedule_advanced.tab_master', { defaultValue: 'Master‌⁠‍' }), icon: Calendar },
               { id: 'phases', label: t('schedule_advanced.tab_phases', { defaultValue: 'Phase Plans' }), icon: LayoutGrid },
               { id: 'look_ahead', label: t('schedule_advanced.tab_look_ahead', { defaultValue: 'Look-Ahead' }), icon: Clock },
               { id: 'weekly', label: t('schedule_advanced.tab_weekly', { defaultValue: 'Weekly Plan' }), icon: ClipboardCheck },
@@ -391,6 +425,8 @@ export function ScheduleAdvancedPage() {
           masterId={masterId}
           onSelect={setMasterId}
           onCreate={() => setCreateMaster(true)}
+          onEdit={setEditMaster}
+          onDelete={setDeleteMaster}
           current={currentMaster}
         />
       ) : !masterId ? (
@@ -467,11 +503,38 @@ export function ScheduleAdvancedPage() {
 
       {/* Modals */}
       {createMaster && projectId && (
-        <CreateMasterModal
+        <MasterFormModal
           projectId={projectId}
           onClose={() => setCreateMaster(false)}
         />
       )}
+      {editMaster && (
+        <MasterFormModal
+          projectId={editMaster.project_id}
+          master={editMaster}
+          onClose={() => setEditMaster(null)}
+        />
+      )}
+      <ConfirmDialog
+        open={!!deleteMaster}
+        title={t('schedule_advanced.delete_master_title', {
+          defaultValue: 'Delete master schedule?',
+        })}
+        message={
+          deleteMaster
+            ? t('schedule_advanced.delete_master_message', {
+                name: deleteMaster.name,
+                defaultValue:
+                  '"{{name}}" and everything under it — phase plans, look-aheads, weekly work plans, commitments and baselines — will be permanently deleted. This cannot be undone.',
+              })
+            : ''
+        }
+        onConfirm={() =>
+          deleteMaster && deleteMasterMut.mutate(deleteMaster.id)
+        }
+        onCancel={() => setDeleteMaster(null)}
+        loading={deleteMasterMut.isPending}
+      />
       {createWeek && masterId && (
         <CreateWeeklyModal
           masterId={masterId}
@@ -504,6 +567,8 @@ function MasterTab({
   masterId,
   onSelect,
   onCreate,
+  onEdit,
+  onDelete,
   current,
 }: {
   masters: MasterSchedule[];
@@ -513,6 +578,8 @@ function MasterTab({
   masterId: string;
   onSelect: (id: string) => void;
   onCreate: () => void;
+  onEdit: (m: MasterSchedule) => void;
+  onDelete: (m: MasterSchedule) => void;
   current: MasterSchedule | undefined;
 }) {
   const { t } = useTranslation();
@@ -533,7 +600,8 @@ function MasterTab({
           icon={<Calendar size={22} />}
           title={t('schedule_advanced.no_master_yet', { defaultValue: 'No master schedule yet' })}
           description={t('schedule_advanced.no_master_yet_desc', {
-            defaultValue: 'A master schedule anchors all pull-plans and lookaheads.',
+            defaultValue:
+              'The master schedule is the top-level plan that every phase plan, look-ahead and weekly work plan rolls up to. Create one to start pull-planning — you can rename it, change its dates, or delete it at any time.',
           })}
           action={{
             label: t('schedule_advanced.create_master', { defaultValue: 'Create Master' }),
@@ -545,6 +613,13 @@ function MasterTab({
   }
   return (
     <div className="space-y-4">
+      <InfoHint
+        text={t('schedule_advanced.master_hint', {
+          defaultValue:
+            'Select a master schedule to make it the working plan for the Phases, Look-Ahead, Weekly and Constraints tabs. Use the row actions to rename it, change its planned dates and status, or delete it.‌⁠‍',
+        })}
+      />
+
       <div className="flex justify-end">
         <Button
           variant="primary"
@@ -565,32 +640,76 @@ function MasterTab({
                 <th className="px-4 py-2.5 text-left">{t('schedule_advanced.planned_start', { defaultValue: 'Planned start' })}</th>
                 <th className="px-4 py-2.5 text-left">{t('schedule_advanced.planned_finish', { defaultValue: 'Planned finish' })}</th>
                 <th className="px-4 py-2.5 text-left">{t('common.status', { defaultValue: 'Status' })}</th>
+                <th className="px-4 py-2.5 text-right">{t('common.actions', { defaultValue: 'Actions' })}</th>
               </tr>
             </thead>
             <tbody>
-              {masters.map((m) => (
-                <tr
-                  key={m.id}
-                  onClick={() => onSelect(m.id)}
-                  className={clsx(
-                    'border-t border-border-light hover:bg-surface-secondary cursor-pointer',
-                    m.id === masterId && 'bg-oe-blue-subtle/30',
-                  )}
-                >
-                  <td className="px-4 py-2 font-medium">{m.name}</td>
-                  <td className="px-4 py-2 text-content-secondary text-xs">
-                    {m.planned_start ? <DateDisplay value={m.planned_start} /> : '—'}
-                  </td>
-                  <td className="px-4 py-2 text-content-secondary text-xs">
-                    {m.planned_finish ? <DateDisplay value={m.planned_finish} /> : '—'}
-                  </td>
-                  <td className="px-4 py-2">
-                    <Badge variant={m.status === 'active' ? 'success' : 'neutral'} dot>
-                      {m.status}
-                    </Badge>
-                  </td>
-                </tr>
-              ))}
+              {masters.map((m) => {
+                const selected = m.id === masterId;
+                return (
+                  <tr
+                    key={m.id}
+                    onClick={() => onSelect(m.id)}
+                    className={clsx(
+                      'border-t border-border-light hover:bg-surface-secondary cursor-pointer',
+                      selected && 'bg-oe-blue-subtle/30',
+                    )}
+                  >
+                    <td className="px-4 py-2 font-medium">
+                      <span className="flex items-center gap-2">
+                        <span
+                          className={clsx(
+                            'inline-block h-1.5 w-1.5 shrink-0 rounded-full',
+                            selected ? 'bg-oe-blue' : 'bg-transparent',
+                          )}
+                          aria-hidden
+                        />
+                        <span className="truncate" title={m.name}>{m.name}</span>
+                        {selected && (
+                          <Badge variant="blue">
+                            {t('schedule_advanced.active_selection', { defaultValue: 'Working plan' })}
+                          </Badge>
+                        )}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2 text-content-secondary text-xs">
+                      {m.planned_start ? <DateDisplay value={m.planned_start} /> : '—'}
+                    </td>
+                    <td className="px-4 py-2 text-content-secondary text-xs">
+                      {m.planned_finish ? <DateDisplay value={m.planned_finish} /> : '—'}
+                    </td>
+                    <td className="px-4 py-2">
+                      <Badge variant={m.status === 'active' ? 'success' : 'neutral'} dot>
+                        {t(`schedule_advanced.master_status.${m.status}`, { defaultValue: m.status })}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-2">
+                      <div className="flex justify-end gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          icon={<Pencil size={12} />}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onEdit(m);
+                          }}
+                          aria-label={t('common.edit', { defaultValue: 'Edit' })}
+                        />
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          icon={<Trash2 size={12} />}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDelete(m);
+                          }}
+                          aria-label={t('common.delete', { defaultValue: 'Delete' })}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -2731,32 +2850,82 @@ function ModalShell({
   );
 }
 
-function CreateMasterModal({
+function MasterFormModal({
   projectId,
+  master,
   onClose,
 }: {
   projectId: string;
+  master?: MasterSchedule;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const addToast = useToastStore((s) => s.addToast);
-  const [name, setName] = useState('');
-  const [start, setStart] = useState(todayIso());
-  const [finish, setFinish] = useState(todayIso(180));
+  const isEdit = !!master;
+  const [name, setName] = useState(master?.name ?? '');
+  const [start, setStart] = useState(master?.planned_start ?? todayIso());
+  const [finish, setFinish] = useState(master?.planned_finish ?? todayIso(180));
+  const [status, setStatus] = useState<'active' | 'archived'>(
+    master?.status ?? 'active',
+  );
+  const [notes, setNotes] = useState(master?.notes ?? '');
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const validate = (): string | null => {
+    if (!name.trim()) {
+      return t('schedule_advanced.err_master_name_required', {
+        defaultValue: 'Master schedule name is required.',
+      });
+    }
+    if (start && finish && new Date(finish).getTime() < new Date(start).getTime()) {
+      return t('schedule_advanced.err_finish_after_start', {
+        defaultValue: 'Planned finish must be on or after planned start.',
+      });
+    }
+    return null;
+  };
 
   const submit = async () => {
+    const v = validate();
+    if (v) {
+      setError(v);
+      return;
+    }
+    setError(null);
     setBusy(true);
     try {
-      await createMasterSchedule({
-        project_id: projectId,
-        name: name || 'Master Schedule',
-        planned_start: start,
-        planned_finish: finish,
-      });
+      if (isEdit && master) {
+        await updateMasterSchedule(master.id, {
+          name: name.trim(),
+          planned_start: start || null,
+          planned_finish: finish || null,
+          status,
+          notes,
+        });
+        addToast({
+          type: 'success',
+          title: t('schedule_advanced.master_updated', {
+            defaultValue: 'Master schedule updated',
+          }),
+        });
+      } else {
+        await createMasterSchedule({
+          project_id: projectId,
+          name: name.trim(),
+          planned_start: start || undefined,
+          planned_finish: finish || undefined,
+          notes,
+        });
+        addToast({
+          type: 'success',
+          title: t('schedule_advanced.master_created', {
+            defaultValue: 'Master schedule created',
+          }),
+        });
+      }
       qc.invalidateQueries({ queryKey: ['schedule-advanced', 'master', projectId] });
-      addToast({ type: 'success', title: t('schedule_advanced.master_created', { defaultValue: 'Master schedule created' }) });
       onClose();
     } catch (err) {
       addToast({ type: 'error', title: getErrorMessage(err) });
@@ -2766,50 +2935,117 @@ function CreateMasterModal({
   };
 
   return (
-    <ModalShell
-      title={t('schedule_advanced.create_master', { defaultValue: 'New master schedule' })}
+    <WideModal
+      open
+      onClose={onClose}
+      title={
+        isEdit
+          ? t('schedule_advanced.edit_master', { defaultValue: 'Edit master schedule' })
+          : t('schedule_advanced.create_master', { defaultValue: 'New master schedule' })
+      }
       subtitle={t('schedule_advanced.create_master_subtitle', {
         defaultValue:
-          'The master schedule is the top-level CPM plan for this project. Phase plans, weekly plans and look-aheads all roll up to it.',
+          'The master schedule is the top-level plan for this project. Phase plans, weekly plans and look-aheads all roll up to it.',
       })}
-      onClose={onClose}
-      onSubmit={submit}
+      size="lg"
       busy={busy}
-      disabled={!name.trim()}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
+            {t('common.cancel', { defaultValue: 'Cancel' })}
+          </Button>
+          <Button
+            variant="primary"
+            onClick={submit}
+            loading={busy}
+            disabled={!name.trim()}
+          >
+            {isEdit
+              ? t('common.save', { defaultValue: 'Save' })
+              : t('common.create', { defaultValue: 'Create' })}
+          </Button>
+        </>
+      }
     >
-      <div>
-        <label className={labelCls}>{t('common.name', { defaultValue: 'Name' })} *</label>
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className={inputCls}
-        />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="space-y-3">
+        {error && (
+          <div className="rounded-md border border-semantic-error/30 bg-semantic-error-bg/40 px-3 py-2 text-sm text-semantic-error">
+            {error}
+          </div>
+        )}
         <div>
-          <label className={labelCls}>
-            {t('schedule_advanced.planned_start', { defaultValue: 'Planned start' })}
-          </label>
+          <label className={labelCls}>{t('common.name', { defaultValue: 'Name' })} *</label>
           <input
-            type="date"
-            value={start}
-            onChange={(e) => setStart(e.target.value)}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
             className={inputCls}
+            placeholder={t('schedule_advanced.master_name_placeholder', {
+              defaultValue: 'e.g. Construction master schedule',
+            })}
+            autoFocus
           />
         </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={labelCls}>
+              {t('schedule_advanced.planned_start', { defaultValue: 'Planned start' })}
+            </label>
+            <input
+              type="date"
+              value={start}
+              onChange={(e) => setStart(e.target.value)}
+              className={inputCls}
+            />
+          </div>
+          <div>
+            <label className={labelCls}>
+              {t('schedule_advanced.planned_finish', { defaultValue: 'Planned finish' })}
+            </label>
+            <input
+              type="date"
+              value={finish}
+              onChange={(e) => setFinish(e.target.value)}
+              className={inputCls}
+            />
+          </div>
+        </div>
+        {isEdit && (
+          <div>
+            <label className={labelCls}>{t('common.status', { defaultValue: 'Status' })}</label>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value as 'active' | 'archived')}
+              className={inputCls}
+            >
+              <option value="active">
+                {t('schedule_advanced.master_status.active', { defaultValue: 'Active' })}
+              </option>
+              <option value="archived">
+                {t('schedule_advanced.master_status.archived', { defaultValue: 'Archived' })}
+              </option>
+            </select>
+            <p className="mt-1 text-xs text-content-tertiary">
+              {t('schedule_advanced.master_status_hint', {
+                defaultValue:
+                  'Archive a schedule to keep its history without it being the working plan. Archived schedules can be reactivated here at any time.',
+              })}
+            </p>
+          </div>
+        )}
         <div>
-          <label className={labelCls}>
-            {t('schedule_advanced.planned_finish', { defaultValue: 'Planned finish' })}
-          </label>
-          <input
-            type="date"
-            value={finish}
-            onChange={(e) => setFinish(e.target.value)}
-            className={inputCls}
+          <label className={labelCls}>{t('common.notes', { defaultValue: 'Notes' })}</label>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={3}
+            className={clsx(inputCls, 'h-auto py-2')}
+            placeholder={t('schedule_advanced.master_notes_placeholder', {
+              defaultValue: 'Scope, contract reference, key milestones…',
+            })}
           />
         </div>
       </div>
-    </ModalShell>
+    </WideModal>
   );
 }
 

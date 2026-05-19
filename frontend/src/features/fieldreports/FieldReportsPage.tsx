@@ -25,6 +25,7 @@ import {
   Upload,
   FileDown,
   Loader2,
+  LayoutTemplate,
 } from 'lucide-react';
 import {
   Button,
@@ -63,7 +64,15 @@ import type {
   CreateFieldReportPayload,
   UpdateFieldReportPayload,
   ImportResult,
+  FieldReportTemplate,
 } from './api';
+import {
+  TemplatePicker,
+  TemplateFieldEditor,
+  ReportAttachments,
+  type TemplateFieldValues,
+} from './ReportTemplateFields';
+import { ManageTemplatesModal } from './ManageTemplatesModal';
 
 declare global {
   interface Window {
@@ -170,6 +179,7 @@ export function FieldReportsPage() {
   // Modal state
   const [showModal, setShowModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showTemplatesModal, setShowTemplatesModal] = useState(false);
   const [editingReport, setEditingReport] = useState<FieldReport | null>(null);
 
   // ── Queries ──────────────────────────────────────────────────────────
@@ -456,6 +466,15 @@ export function FieldReportsPage() {
           >
             <Upload size={14} className="mr-1.5 shrink-0" />
             <span className="whitespace-nowrap">{t('fieldreports.import', { defaultValue: 'Import' })}</span>
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowTemplatesModal(true)}
+            className="shrink-0 whitespace-nowrap"
+          >
+            <LayoutTemplate size={14} className="mr-1.5 shrink-0" />
+            <span className="whitespace-nowrap">{t('fieldreports.templates', { defaultValue: 'Templates' })}</span>
           </Button>
           <Button variant="primary" size="sm" onClick={handleOpenNew} className="shrink-0 whitespace-nowrap" icon={<Plus size={14} />}>
             {t('fieldreports.new_report', { defaultValue: 'New Report' })}
@@ -855,6 +874,14 @@ export function FieldReportsPage() {
           }}
         />
       )}
+
+      {/* Manage templates modal */}
+      {showTemplatesModal && (
+        <ManageTemplatesModal
+          projectId={projectId}
+          onClose={() => setShowTemplatesModal(false)}
+        />
+      )}
       <ConfirmDialog {...confirmProps} />
     </div>
   );
@@ -1126,6 +1153,45 @@ function ReportModal({
   const [deliveries, setDeliveries] = useState(report?.deliveries ?? '');
   const [notes, setNotes] = useState(report?.notes ?? '');
 
+  // Template state. Existing reports carry their template id + filled
+  // values inside metadata (the report table itself is untouched).
+  const reportMeta = (report?.metadata ?? {}) as Record<string, unknown>;
+  const [templateId, setTemplateId] = useState<string>(
+    typeof reportMeta.template_id === 'string' ? reportMeta.template_id : '',
+  );
+  const [selectedTemplate, setSelectedTemplate] =
+    useState<FieldReportTemplate | null>(null);
+  const [templateValues, setTemplateValues] = useState<TemplateFieldValues>(
+    (reportMeta.template_fields as TemplateFieldValues) ?? {},
+  );
+
+  const handleTemplateChange = useCallback(
+    (id: string, tpl: FieldReportTemplate | null) => {
+      setTemplateId(id);
+      setSelectedTemplate(tpl);
+      if (tpl && id !== templateId) {
+        // Seed empty values for the new template's keys without losing
+        // any already-entered value whose key still exists.
+        setTemplateValues((prev) => {
+          const next: TemplateFieldValues = {};
+          for (const f of tpl.fields) {
+            next[f.key] = prev[f.key] ?? (f.type === 'checkbox' ? false : '');
+          }
+          return next;
+        });
+      }
+      if (!tpl) setTemplateValues({});
+    },
+    [templateId],
+  );
+
+  const handleTemplateValueChange = useCallback(
+    (key: string, value: string | number | boolean) => {
+      setTemplateValues((prev) => ({ ...prev, [key]: value }));
+    },
+    [],
+  );
+
   const handleAddWorkforce = useCallback(() => {
     setWorkforce((prev) => [...prev, { trade: '', count: 0, hours: 8 }]);
   }, []);
@@ -1145,6 +1211,16 @@ function ReportModal({
 
   const handleSave = useCallback(() => {
     const cleanWorkforce = workforce.filter((e) => e.trade.trim() !== '');
+    // Preserve any pre-existing metadata keys; only (re)write the
+    // template binding so nothing else (e.g. imported flags) is lost.
+    const baseMeta = { ...reportMeta } as Record<string, unknown>;
+    if (templateId) {
+      baseMeta.template_id = templateId;
+      baseMeta.template_fields = templateValues;
+    } else {
+      delete baseMeta.template_id;
+      delete baseMeta.template_fields;
+    }
     const payload = {
       report_date: reportDate,
       report_type: reportType,
@@ -1161,6 +1237,7 @@ function ReportModal({
       visitors: visitors || null,
       deliveries: deliveries || null,
       notes: notes || null,
+      metadata: baseMeta,
     };
 
     if (isEdit && report) {
@@ -1187,6 +1264,9 @@ function ReportModal({
     visitors,
     deliveries,
     notes,
+    reportMeta,
+    templateId,
+    templateValues,
     onCreate,
     onUpdate,
   ]);
@@ -1240,6 +1320,13 @@ function ReportModal({
       }
     >
       <WideModalSection columns={2}>
+        <TemplatePicker
+          projectId={projectId}
+          value={templateId}
+          onChange={handleTemplateChange}
+          onResolve={setSelectedTemplate}
+          disabled={isEdit && report?.status === 'approved'}
+        />
         <WideModalField label={t('fieldreports.report_date', { defaultValue: 'Date' })}>
           <input
             type="date"
@@ -1264,6 +1351,37 @@ function ReportModal({
           </select>
         </WideModalField>
       </WideModalSection>
+
+      {selectedTemplate && selectedTemplate.id === templateId && (
+        <TemplateFieldEditor
+          template={selectedTemplate}
+          values={templateValues}
+          onChange={handleTemplateValueChange}
+        />
+      )}
+
+      {isEdit && report && (
+        <ReportAttachments reportId={report.id} projectId={projectId} />
+      )}
+
+      {!isEdit && (
+        <WideModalSection
+          title={t('fieldreports.attachments', { defaultValue: 'Attachments' })}
+          columns={1}
+        >
+          <WideModalField
+            label={t('fieldreports.attachments', { defaultValue: 'Attachments' })}
+            className="sm:[&>label]:hidden"
+          >
+            <p className="text-xs text-content-tertiary">
+              {t('fieldreports.attachments_after_save', {
+                defaultValue:
+                  'Save the report first, then reopen it to attach photos and documents.',
+              })}
+            </p>
+          </WideModalField>
+        </WideModalSection>
+      )}
 
       <WideModalSection
         title={t('fieldreports.weather', { defaultValue: 'Weather Conditions' })}

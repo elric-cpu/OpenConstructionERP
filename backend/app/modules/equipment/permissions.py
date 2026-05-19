@@ -1,10 +1,10 @@
-"""Equipment module permission definitions."""
+"""‌⁠‍Equipment module permission definitions."""
 
 from app.core.permissions import Role, permission_registry
 
 
 def register_equipment_permissions() -> None:
-    """Register permissions for the equipment module."""
+    """‌⁠‍Register permissions for the equipment module."""
     permission_registry.register_module_permissions(
         "equipment",
         {

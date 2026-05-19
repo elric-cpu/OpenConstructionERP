@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""DWG source adapter — reads ``oe_takeoff_cad_session`` for the
+"""‌⁠‍DWG source adapter — reads ``oe_takeoff_cad_session`` for the
 match-elements module.
 
 Phase B of /match-elements. The DDC ``DwgExporter`` pipeline lands an
@@ -124,7 +124,7 @@ _QUANTITY_ALIASES: dict[str, str] = {
 
 
 def _canon_attr(raw_key: str) -> str | None:
-    """Map a raw element dict key to our canonical attribute name.
+    """‌⁠‍Map a raw element dict key to our canonical attribute name.
 
     Keys not in the alias table pass through untouched (so a project
     that ships extra DDC columns — wall fire rating, hatch pattern,
@@ -138,7 +138,7 @@ def _canon_attr(raw_key: str) -> str | None:
 
 
 def _to_float(val: Any) -> float | None:
-    """Best-effort numeric coercion. DDC Excel ships floats already
+    """‌⁠‍Best-effort numeric coercion. DDC Excel ships floats already
     but some rows arrive as strings ('12.3 m²' for human display)."""
     if val is None:
         return None

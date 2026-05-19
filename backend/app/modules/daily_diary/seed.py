@@ -1,4 +1,4 @@
-"""Deterministic demo seed for the daily-diary module.
+"""‌⁠‍Deterministic demo seed for the daily-diary module.
 
 Usage::
 
@@ -86,7 +86,7 @@ async def seed_daily_diary_demo(
     base_date: datetime | None = None,
     deterministic_seed: int = 42,
 ) -> dict[str, int]:
-    """Populate the daily-diary tables with deterministic demo data.
+    """‌⁠‍Populate the daily-diary tables with deterministic demo data.
 
     Args:
         session: Async SQLAlchemy session, will be flushed but **not** committed.

@@ -1,4 +1,4 @@
-"""HSE Advanced API routes — JSA, PTW, toolbox, PPE, audits, CAPA, KPI."""
+"""‌⁠‍HSE Advanced API routes — JSA, PTW, toolbox, PPE, audits, CAPA, KPI."""
 
 from __future__ import annotations
 
@@ -92,7 +92,7 @@ async def list_investigations(
     _perm: None = Depends(RequirePermission("hse_advanced.read")),
     service: HSEAdvancedService = Depends(_get_service),
 ) -> list[InvestigationResponse]:
-    """List investigations, optionally scoped to a project or incident.
+    """‌⁠‍List investigations, optionally scoped to a project or incident.
 
     The HSE Advanced dashboard surfaces a "project's investigations" view
     even though investigations are keyed by ``incident_ref`` rather than
@@ -131,7 +131,7 @@ async def create_investigation(
     _perm: None = Depends(RequirePermission("hse_advanced.create")),
     service: HSEAdvancedService = Depends(_get_service),
 ) -> InvestigationResponse:
-    """Create a root-cause investigation for an incident."""
+    """‌⁠‍Create a root-cause investigation for an incident."""
     obj = await service.create_investigation(data, user_id=user_id)
     return InvestigationResponse.model_validate(obj)
 

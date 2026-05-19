@@ -1,4 +1,4 @@
-"""v3 snapshot loader — restore DDC CWICR v3 snapshots into a Qdrant server.
+"""‌⁠‍v3 snapshot loader — restore DDC CWICR v3 snapshots into a Qdrant server.
 
 Usage::
 

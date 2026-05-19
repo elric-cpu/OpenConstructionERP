@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Pipeline Builder module manifest."""
+"""‌⁠‍Pipeline Builder module manifest."""
 
 from app.core.module_loader import ModuleManifest
 

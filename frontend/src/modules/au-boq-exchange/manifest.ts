@@ -20,15 +20,8 @@ export const manifest: ModuleManifest = {
       component: AUExchangeModule,
     },
   ],
-  navItems: [
-    {
-      labelKey: 'nav.au_boq_exchange',
-      to: '/au-boq-exchange',
-      icon: Map,
-      group: 'regional',
-      advancedOnly: true,
-    },
-  ],
+  // Issue #217 — reached from /boq (regional import/export); no duplicate sidebar entry.
+  navItems: [],
   searchEntries: [
     {
       label: 'Australia BOQ Import / Export',

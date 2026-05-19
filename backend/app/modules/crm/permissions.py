@@ -1,10 +1,10 @@
-"""CRM module permission definitions."""
+"""‌⁠‍CRM module permission definitions."""
 
 from app.core.permissions import Role, permission_registry
 
 
 def register_crm_permissions() -> None:
-    """Register permissions for the CRM module.
+    """‌⁠‍Register permissions for the CRM module.
 
     Permission map:
         crm.read             VIEWER   — list / read accounts, leads, opportunities, etc.

@@ -20,15 +20,8 @@ export const manifest: ModuleManifest = {
       component: CAExchangeModule,
     },
   ],
-  navItems: [
-    {
-      labelKey: 'nav.ca_boq_exchange',
-      to: '/ca-boq-exchange',
-      icon: MapPin,
-      group: 'regional',
-      advancedOnly: true,
-    },
-  ],
+  // Issue #217 — reached from /boq (regional import/export); no duplicate sidebar entry.
+  navItems: [],
   searchEntries: [
     {
       label: 'Canada BOQ Import / Export',

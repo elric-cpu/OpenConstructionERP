@@ -90,7 +90,7 @@ _AI_PROVIDERS: list[dict[str, Any]] = [
         "id": "openai",
         "display_name": "OpenAI",
         "supports_streaming": True,
-        "model_choices": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
+        "model_choices": ["gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini"],
     },
     {
         "id": "gemini",

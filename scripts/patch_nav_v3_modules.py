@@ -1,4 +1,4 @@
-"""Backfill v3.0 18-Modules Wave nav.* keys across all 25 non-EN, non-MN locales.
+"""‌⁠‍Backfill v3.0 18-Modules Wave nav.* keys across all 25 non-EN, non-MN locales.
 
 These keys exist in en.ts as English; in every other locale (except mn) they
 were copied through as English and never translated. The user explicitly flagged
@@ -348,7 +348,7 @@ TRANSLATIONS = {
 
 
 def patch_locale(code: str) -> tuple[int, int]:
-    """Patch one locale file. Returns (replaced, skipped)."""
+    """‌⁠‍Patch one locale file. Returns (replaced, skipped)."""
     path = ROOT / f'frontend/src/app/locales/{code}.ts'
     text = path.read_text(encoding='utf-8')
     original = text

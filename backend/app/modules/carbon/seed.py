@@ -1,4 +1,4 @@
-"""Deterministic seed data for the Carbon & Sustainability module.
+"""‌⁠‍Deterministic seed data for the Carbon & Sustainability module.
 
 Usage:
     >>> from app.modules.carbon.seed import seed_carbon_demo
@@ -152,7 +152,7 @@ _FUEL_FACTORS = {
 
 
 def _build_epd_records(rng: random.Random) -> list[EPDRecord]:
-    """50 EPD records spanning the 10 material classes above."""
+    """‌⁠‍50 EPD records spanning the 10 material classes above."""
     records: list[EPDRecord] = []
     counter = 0
     for material_class, items in _MATERIAL_TEMPLATES:
@@ -190,7 +190,7 @@ def _build_epd_records(rng: random.Random) -> list[EPDRecord]:
 def _build_factors(
     rng: random.Random, epds: list[EPDRecord],
 ) -> list[MaterialCarbonFactor]:
-    """100 material factors, half linked to an EPD, half with override only."""
+    """‌⁠‍100 material factors, half linked to an EPD, half with override only."""
     factors: list[MaterialCarbonFactor] = []
     for i in range(100):
         epd = epds[i % len(epds)] if i % 2 == 0 else None

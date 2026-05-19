@@ -1,4 +1,4 @@
-"""CRM ORM models.
+"""‌⁠‍CRM ORM models.
 
 Tables:
     oe_crm_account                    — customer / prospect accounts
@@ -44,7 +44,7 @@ from app.database import GUID, Base
 
 
 class PipelineStage(Base):
-    """A configurable stage in the sales pipeline (Lead → Won/Lost)."""
+    """‌⁠‍A configurable stage in the sales pipeline (Lead → Won/Lost)."""
 
     __tablename__ = "oe_crm_pipeline_stage"
 
@@ -74,7 +74,7 @@ class PipelineStage(Base):
 
 
 class WinLossReason(Base):
-    """Catalogue entry for the reason an opportunity was won or lost."""
+    """‌⁠‍Catalogue entry for the reason an opportunity was won or lost."""
 
     __tablename__ = "oe_crm_win_loss_reason"
 
@@ -279,7 +279,17 @@ class Opportunity(Base):
         Text, nullable=False, default="", server_default=""
     )
     # NOTE: plain UUID — no SQLAlchemy FK to oe_contacts_contact (see header).
+    # The CRM does NOT own contacts: this points at a row in the shared
+    # Contacts directory (``oe_contacts_contact``). People/companies are
+    # always created & edited through the Contacts module, never duplicated
+    # here.
     primary_contact_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
+    # Link to a delivery Project (``oe_projects_project``). Plain UUID for
+    # the same reason as primary_contact_id — the ORM stays unaware so unit
+    # fixtures that never load the Projects module don't trip
+    # NoReferencedTableError. A won deal references the project it spawned;
+    # an open deal can be pre-linked to a tender/estimate project.
+    project_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
     competitor_names: Mapped[list] = mapped_column(  # type: ignore[assignment]
         JSON, nullable=False, default=list, server_default="[]"
     )

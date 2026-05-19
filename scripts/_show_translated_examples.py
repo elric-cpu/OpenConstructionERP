@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Show translated examples for each prefix to understand existing style."""
+"""‌⁠‍Show translated examples for each prefix to understand existing style."""
 import re
 from pathlib import Path
 

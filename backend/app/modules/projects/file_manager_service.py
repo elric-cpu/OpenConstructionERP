@@ -1,4 +1,4 @@
-"""File-manager aggregation service (Issue #109).
+"""‌⁠‍File-manager aggregation service (Issue #109).
 
 The file manager surfaces every binary that belongs to a project — across
 multiple modules — under a single API. Each module owns its own table /
@@ -95,7 +95,7 @@ _MIME_BY_EXT: dict[str, str] = {
 
 
 def _ext_of(name: str | None) -> str | None:
-    """Lower-cased extension without the leading dot, or None."""
+    """‌⁠‍Lower-cased extension without the leading dot, or None."""
     if not name:
         return None
     _, _, ext = name.rpartition(".")
@@ -112,7 +112,7 @@ def _mime_of(name: str | None, fallback: str | None = None) -> str | None:
 
 
 def _file_size(path: str | None) -> int:
-    """Size in bytes; 0 if path is missing or unreadable.
+    """‌⁠‍Size in bytes; 0 if path is missing or unreadable.
 
     Stat-failures are silently absorbed so a single deleted file never
     breaks the whole listing — the row still appears with ``size=0`` and
@@ -276,7 +276,7 @@ async def _collect_sheets(
     session: AsyncSession, project_id: str,
 ) -> list[FileRow]:
     try:
-        from app.modules.documents.models import Sheet
+        from app.modules.documents.models import Document, Sheet
     except ImportError:
         return []
     rows = (
@@ -286,6 +286,26 @@ async def _collect_sheets(
             .limit(_PER_COLLECTOR_LIMIT),
         )
     ).scalars().all()
+    # A sheet's only physical artifact is its thumbnail PNG, which is
+    # frequently absent (snapshot-seeded data, lazy thumbnailing). Rather
+    # than report a misleading 0, fall back to an even per-page share of
+    # the parent PDF's size — so the column is plausible and the per-doc
+    # rows still sum to ≈ the source document size.
+    doc_ids = {r.document_id for r in rows if r.document_id}
+    doc_size: dict[str, int] = {}
+    sheets_per_doc: dict[str, int] = {}
+    for r in rows:
+        if r.document_id:
+            sheets_per_doc[r.document_id] = sheets_per_doc.get(r.document_id, 0) + 1
+    if doc_ids:
+        for did, fsize in (
+            await session.execute(
+                select(Document.id, Document.file_size).where(
+                    Document.id.in_(doc_ids),
+                ),
+            )
+        ).all():
+            doc_size[str(did)] = int(fsize or 0)
     out: list[FileRow] = []
     for r in rows:
         path = r.thumbnail_path or ""
@@ -302,7 +322,15 @@ async def _collect_sheets(
                 kind="sheet",
                 name=name,
                 project_id=str(project_id),
-                size_bytes=_file_size(path),
+                size_bytes=(
+                    _file_size(path)
+                    or (
+                        doc_size.get(str(r.document_id), 0)
+                        // max(sheets_per_doc.get(r.document_id, 1), 1)
+                        if r.document_id
+                        else 0
+                    )
+                ),
                 mime_type="image/png",
                 extension="png",
                 modified_at=r.revision_date or getattr(r, "created_at", None),
@@ -328,6 +356,7 @@ async def _collect_bim_models(
     session: AsyncSession, project_id: str,
 ) -> list[FileRow]:
     try:
+        from app.modules.bim_hub import file_storage as bim_file_storage
         from app.modules.bim_hub.models import BIMModel
     except ImportError:
         return []
@@ -341,13 +370,25 @@ async def _collect_bim_models(
     out: list[FileRow] = []
     for r in rows:
         path = r.canonical_file_path or ""
+        # The canonical source file is frequently absent (snapshot-seeded
+        # models, S3-only deployments) yet the model still renders because
+        # its converted geometry (GLB/DAE) lives in BIM storage. Report the
+        # size of that real on-disk artifact rather than a misleading 0.
+        size = _file_size(path)
+        if not size:
+            try:
+                size = await bim_file_storage.compute_artifact_size_bytes(
+                    project_id, r.id,
+                )
+            except Exception:  # noqa: BLE001 - best-effort sizing
+                size = 0
         out.append(
             FileRow(
                 id=str(r.id),
                 kind="bim_model",
                 name=r.name,
                 project_id=str(project_id),
-                size_bytes=_file_size(path),
+                size_bytes=size,
                 mime_type=_mime_of(r.name),
                 extension=_ext_of(r.name) or r.model_format,
                 modified_at=getattr(r, "updated_at", None) or getattr(r, "created_at", None),

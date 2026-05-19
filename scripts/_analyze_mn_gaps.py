@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Analyze what's left untranslated in mn.ts."""
+"""‌⁠‍Analyze what's left untranslated in mn.ts."""
 import re
 from pathlib import Path
 from collections import Counter

@@ -1,4 +1,4 @@
-"""Pydantic schemas for the Backup & Restore module.
+"""‌⁠‍Pydantic schemas for the Backup & Restore module.
 
 Schemas are kept here so they appear explicitly in the OpenAPI spec.
 Bug-018: ``POST /backup/export/`` had no documented request body, which
@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 
 class ExportRequest(BaseModel):
-    """Request body for ``POST /api/v1/backup/export/``.
+    """‌⁠‍Request body for ``POST /api/v1/backup/export/``.
 
     All fields are optional; an empty body (``{}``) produces a full
     backup of every table the requesting user owns.
@@ -49,7 +49,7 @@ class ExportRequest(BaseModel):
 
 
 class RestoreResponse(BaseModel):
-    """Result of a restore operation."""
+    """‌⁠‍Result of a restore operation."""
 
     status: str
     mode: str

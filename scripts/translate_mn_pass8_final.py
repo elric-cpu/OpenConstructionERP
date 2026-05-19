@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Pass 8: Final tweaks to translate remaining items that have genuine
+"""‌⁠‍Pass 8: Final tweaks to translate remaining items that have genuine
 Mongolian equivalents. Items like 'Imperial (ft, lb)' can get a partial
 Mongolian translation."""
 import re

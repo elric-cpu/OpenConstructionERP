@@ -1,4 +1,4 @@
-"""Real weather ingestion for the daily-diary module.
+"""‌⁠‍Real weather ingestion for the daily-diary module.
 
 This module fetches actual weather observations from the public, free,
 no-API-key-required `Open-Meteo <https://open-meteo.com>`_ API.
@@ -74,7 +74,7 @@ def _classify_conditions(code: int | None) -> tuple[str | None, str | None]:
 
 
 def _build_forecast_url(lat: float, lng: float, target: date) -> str:
-    """Build the Open-Meteo forecast URL for a specific date."""
+    """‌⁠‍Build the Open-Meteo forecast URL for a specific date."""
     params = {
         "latitude": f"{lat:.6f}",
         "longitude": f"{lng:.6f}",
@@ -91,7 +91,7 @@ def _build_forecast_url(lat: float, lng: float, target: date) -> str:
 
 
 def _build_historical_url(lat: float, lng: float, target: date) -> str:
-    """Build the Open-Meteo archive URL for a historical date."""
+    """‌⁠‍Build the Open-Meteo archive URL for a historical date."""
     params = {
         "latitude": f"{lat:.6f}",
         "longitude": f"{lng:.6f}",

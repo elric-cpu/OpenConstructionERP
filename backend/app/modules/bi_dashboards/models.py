@@ -1,5 +1,5 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
-"""BI Dashboards ORM models.
+"""‌⁠‍BI Dashboards ORM models.
 
 All tables prefixed ``oe_bi_dashboards_``. Cross-module references
 (project_id, owner_user_id, widget→dashboard) deliberately omit ORM
@@ -34,7 +34,7 @@ from app.database import GUID, Base
 
 
 class KPIDefinition(Base):
-    """A registered KPI in the library.
+    """‌⁠‍A registered KPI in the library.
 
     The ``formula_ref`` column is the lookup key into the in-process
     :data:`app.modules.bi_dashboards.kpis.KPI_FORMULAS` registry. System
@@ -74,7 +74,7 @@ class KPIDefinition(Base):
 
 
 class Dashboard(Base):
-    """A dashboard configuration (collection of widgets)."""
+    """‌⁠‍A dashboard configuration (collection of widgets)."""
 
     __tablename__ = "oe_bi_dashboards_dashboard"
 

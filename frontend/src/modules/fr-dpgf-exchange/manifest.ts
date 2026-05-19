@@ -21,15 +21,8 @@ export const manifest: ModuleManifest = {
       component: DPGFExchangeModule,
     },
   ],
-  navItems: [
-    {
-      labelKey: 'nav.fr_dpgf_exchange',
-      to: '/fr-dpgf-exchange',
-      icon: Euro,
-      group: 'regional',
-      advancedOnly: true,
-    },
-  ],
+  // Issue #217 — reached from /boq (regional import/export); no duplicate sidebar entry.
+  navItems: [],
   searchEntries: [
     {
       label: 'France DPGF / DQE Import / Export',

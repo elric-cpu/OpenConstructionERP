@@ -64,6 +64,9 @@ export const manifest: ModuleManifest = {
     en: {
       'nav.pipelines': 'Pipeline Builder',
     },
+    es: {
+      'nav.pipelines': 'Constructor de pipelines',
+    },
     de: {
       'nav.pipelines': 'Pipeline-Builder',
     },

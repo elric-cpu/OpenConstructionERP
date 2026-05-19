@@ -1,4 +1,4 @@
-"""In-process rank trace — sits in backend/ so import resolution matches the live server."""
+"""‌⁠‍In-process rank trace — sits in backend/ so import resolution matches the live server."""
 import asyncio, sys, io, logging, uuid, os
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")

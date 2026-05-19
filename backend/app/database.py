@@ -4,6 +4,7 @@ Supports both PostgreSQL (production) and SQLite (local dev without Docker).
 Set DATABASE_URL to 'sqlite+aiosqlite:///./openestimate.db' for SQLite mode.
 """
 
+import json
 import uuid
 from collections.abc import AsyncGenerator
 from datetime import datetime
@@ -104,6 +105,24 @@ def _is_sqlite(url: str) -> bool:
     return "sqlite" in url
 
 
+def _tolerant_json_loads(value: object) -> object:
+    """Deserialize a JSON column without poisoning the whole request.
+
+    SQLite JSON columns are untyped TEXT, so legacy/gap-fill seeds could
+    persist a bare scalar (e.g. ``activity = construction`` instead of
+    ``["construction"]``, or ``setup_completion = 1``). SQLAlchemy's
+    default ``json.loads`` raises on these *during ORM load*, before any
+    model-level coercion (``_as_str_list`` / ``_as_dict``) can run — which
+    500'd every read of the row. Returning the raw value instead lets the
+    object construct so downstream coercers normalise it. Mirrors the
+    GUID.process_result_value fallback above.
+    """
+    try:
+        return json.loads(value)  # type: ignore[arg-type]
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return value
+
+
 def create_engine_from_settings():
     """Create async engine from application settings."""
     settings = get_settings()
@@ -112,6 +131,7 @@ def create_engine_from_settings():
     kwargs: dict = {
         "echo": settings.database_echo,
         "future": True,
+        "json_deserializer": _tolerant_json_loads,
     }
 
     if _is_sqlite(url):

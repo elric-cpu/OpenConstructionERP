@@ -1,4 +1,4 @@
-"""Daily Site Diary Pydantic schemas — request/response models (Pydantic v2)."""
+"""‌⁠‍Daily Site Diary Pydantic schemas — request/response models (Pydantic v2)."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ _PHOTO_MIME_RE = (
 
 
 class DailyDiaryCreate(BaseModel):
-    """Create a new daily diary."""
+    """‌⁠‍Create a new daily diary."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -47,7 +47,7 @@ class DailyDiaryCreate(BaseModel):
 
 
 class DailyDiaryUpdate(BaseModel):
-    """Partial update for a daily diary."""
+    """‌⁠‍Partial update for a daily diary."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 

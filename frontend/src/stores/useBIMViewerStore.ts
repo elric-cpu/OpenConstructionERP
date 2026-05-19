@@ -14,6 +14,12 @@ export type BIMRightPanelTab =
   | 'groups'
   | 'match';
 
+/** Which quantity the measure tool captures on the next clicks. */
+export type BIMMeasureKind = 'distance' | 'area' | 'angle';
+
+/** Active section/clip mode. `none` = no cut applied. */
+export type BIMClipMode = 'none' | 'box' | 'plane';
+
 const ASSET_CARD_KEY = 'oe_bim_asset_card_enabled';
 
 function readAssetCardEnabled(): boolean {
@@ -45,6 +51,16 @@ interface BIMViewerState {
   rightPanelOpen: boolean;
   /** Whether the measure tool is enabled. */
   measureActive: boolean;
+  /** Which quantity the measure tool captures (distance / area / angle). */
+  measureKind: BIMMeasureKind;
+  /** Whether the measure tool snaps clicks to the nearest geometry vertex. */
+  measureSnap: boolean;
+  /** Active section / clipping mode. */
+  clipMode: BIMClipMode;
+  /** Whether the clip-controls popover is open. */
+  clipPanelOpen: boolean;
+  /** Whether selection-driven ghost mode is on (non-selected = translucent). */
+  ghostActive: boolean;
   /** Whether the floating "Model / Filtered / Selection summary" panel
    *  is visible. Toggled from the top toolbar or the panel's own X. */
   summaryPanelOpen: boolean;
@@ -62,6 +78,11 @@ interface BIMViewerState {
   setRightPanelTab: (tab: BIMRightPanelTab) => void;
   setRightPanelOpen: (open: boolean) => void;
   setMeasureActive: (active: boolean) => void;
+  setMeasureKind: (kind: BIMMeasureKind) => void;
+  setMeasureSnap: (snap: boolean) => void;
+  setClipMode: (mode: BIMClipMode) => void;
+  setClipPanelOpen: (open: boolean) => void;
+  setGhostActive: (active: boolean) => void;
   setSummaryPanelOpen: (open: boolean) => void;
   setDimensionsVisible: (visible: boolean) => void;
   setAssetCardEnabled: (enabled: boolean) => void;
@@ -73,6 +94,11 @@ export const useBIMViewerStore = create<BIMViewerState>((set) => ({
   rightPanelTab: 'properties',
   rightPanelOpen: false,
   measureActive: false,
+  measureKind: 'distance',
+  measureSnap: true,
+  clipMode: 'none',
+  clipPanelOpen: false,
+  ghostActive: false,
   summaryPanelOpen: true,
   dimensionsVisible: true,
   assetCardEnabled: readAssetCardEnabled(),
@@ -95,6 +121,11 @@ export const useBIMViewerStore = create<BIMViewerState>((set) => ({
   setRightPanelTab: (tab) => set({ rightPanelTab: tab, rightPanelOpen: true }),
   setRightPanelOpen: (open) => set({ rightPanelOpen: open }),
   setMeasureActive: (active) => set({ measureActive: active }),
+  setMeasureKind: (kind) => set({ measureKind: kind }),
+  setMeasureSnap: (snap) => set({ measureSnap: snap }),
+  setClipMode: (mode) => set({ clipMode: mode }),
+  setClipPanelOpen: (open) => set({ clipPanelOpen: open }),
+  setGhostActive: (active) => set({ ghostActive: active }),
   setSummaryPanelOpen: (open) => set({ summaryPanelOpen: open }),
   setDimensionsVisible: (visible) => set({ dimensionsVisible: visible }),
   setAssetCardEnabled: (enabled) => {

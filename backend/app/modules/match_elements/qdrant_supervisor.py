@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Qdrant vector-DB supervisor — no Docker, no daemon.
+"""‌⁠‍Qdrant vector-DB supervisor — no Docker, no daemon.
 
 Mirrors the existing converter-installer pattern from
 :mod:`app.modules.takeoff.router` and :mod:`app.modules.boq.cad_import`:
@@ -142,7 +142,7 @@ class QdrantHealth:
 
 
 def find_qdrant_binary() -> Path | None:
-    """Return the on-disk path to ``qdrant[.exe]`` or ``None`` if missing."""
+    """‌⁠‍Return the on-disk path to ``qdrant[.exe]`` or ``None`` if missing."""
 
     candidate = _expected_binary_path()
     if candidate.is_file() and candidate.stat().st_size > 1_000_000:
@@ -158,7 +158,7 @@ def find_qdrant_binary() -> Path | None:
 
 
 def probe_qdrant(url: str, *, timeout_s: float = 1.5) -> bool:
-    """Return ``True`` if Qdrant answers ``GET /readyz`` quickly.
+    """‌⁠‍Return ``True`` if Qdrant answers ``GET /readyz`` quickly.
 
     ``readyz`` is the official liveness endpoint — it returns 200 with
     the string ``all shards are ready`` once the storage layer has

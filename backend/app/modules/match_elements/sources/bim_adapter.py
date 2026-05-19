@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""BIM source adapter — reads ``oe_bim_element`` for the match-elements module.
+"""‌⁠‍BIM source adapter — reads ``oe_bim_element`` for the match-elements module.
 
 The adapter joins through ``oe_bim_model`` to scope by project, returning
 ``SourceElement`` records that carry both the raw and net quantities the
@@ -56,7 +56,7 @@ _YIELD_PER = 2_000
 
 
 def _read_attr(element: BIMElement, key: str) -> Any:
-    """Best-effort lookup across Bim element attributes.
+    """‌⁠‍Best-effort lookup across Bim element attributes.
 
     BIM extractors store some keys as columns (``element_type``, ``storey``,
     ``discipline``) and others inside ``properties``. The match-elements
@@ -95,7 +95,7 @@ def _read_attr(element: BIMElement, key: str) -> Any:
 def _net_quantities(
     raw: dict[str, Any], properties: dict[str, Any], use_net: bool,
 ) -> dict[str, float]:
-    """Build the rolled-up quantity dict for a single element."""
+    """‌⁠‍Build the rolled-up quantity dict for a single element."""
     out: dict[str, float] = {}
 
     def _f(d: dict[str, Any], *keys: str) -> float | None:

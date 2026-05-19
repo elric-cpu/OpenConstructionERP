@@ -256,7 +256,7 @@ async def _build_ai_caller(
         # Lazy imports keep the compliance module independent of AI.
         from app.modules.ai.ai_client import (
             call_ai,
-            resolve_provider_and_key,
+            resolve_provider_key_model,
         )
         from app.modules.ai.repository import AISettingsRepository
     except Exception:  # pragma: no cover — defensive
@@ -272,7 +272,7 @@ async def _build_ai_caller(
 
     try:
         settings_obj = await AISettingsRepository(session).get_by_user_id(uid)
-        provider, api_key = resolve_provider_and_key(settings_obj)
+        provider, api_key, model_override = resolve_provider_key_model(settings_obj)
     except Exception:
         return None
 
@@ -283,6 +283,7 @@ async def _build_ai_caller(
             system=system,
             prompt=prompt,
             max_tokens=1024,
+            model=model_override,
         )
         return text
 

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Comprehensive translator for the 2300 untranslated mn.ts entries.
+"""‌⁠‍Comprehensive translator for the 2300 untranslated mn.ts entries.
 
 Strategy:
 1. Build a phrase-level dictionary keyed by exact English (case-sensitive)
@@ -74,7 +74,7 @@ NUM_RE = re.compile(r"\b\d+([.,]\d+)?[%kMG]?\b")
 
 
 def protect(text: str) -> tuple[str, list[str]]:
-    """Replace tokens we must keep verbatim with sentinels."""
+    """‌⁠‍Replace tokens we must keep verbatim with sentinels."""
     tokens: list[str] = []
 
     def keep(m: re.Match) -> str:
@@ -1291,7 +1291,7 @@ def title_case(word: str) -> str:
 
 
 def translate_word_aware(text: str) -> str:
-    """Translate while preserving case of first letter for nouns/verbs."""
+    """‌⁠‍Translate while preserving case of first letter for nouns/verbs."""
     def replace(m: re.Match) -> str:
         w = m.group(0)
         lw = w.lower()

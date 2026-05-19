@@ -1,5 +1,5 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
-"""Compliance documents ORM models.
+"""‌⁠‍Compliance documents ORM models.
 
 Tables:
     oe_compliance_docs_doc — project-scoped tracker for any document
@@ -26,7 +26,7 @@ from app.database import GUID, Base
 
 
 class ComplianceDoc(Base):
-    """A tracked compliance document (insurance / permit / bond / cert)."""
+    """‌⁠‍A tracked compliance document (insurance / permit / bond / cert)."""
 
     __tablename__ = "oe_compliance_docs_doc"
 

@@ -1,4 +1,4 @@
-"""Demo seed data for the QMS module.
+"""‌⁠‍Demo seed data for the QMS module.
 
 Creates an end-to-end sample for a single project:
     * 1 ITP plan with 5 control points
@@ -40,7 +40,7 @@ async def seed_qms(
     *,
     project_id: uuid.UUID | None = None,
 ) -> dict[str, object]:
-    """Insert a complete demo dataset for QMS.
+    """‌⁠‍Insert a complete demo dataset for QMS.
 
     Returns a small dict of created IDs the caller can use to verify
     or roll back.

@@ -1,4 +1,4 @@
-"""Variations & Site Measurements module.
+"""‌⁠‍Variations & Site Measurements module.
 
 Covers the full variations lifecycle:
 
@@ -16,7 +16,7 @@ link (plain UUID, no DB-level FK to keep the two modules independent).
 
 
 async def on_startup() -> None:
-    """Module startup hook -- register permissions."""
+    """‌⁠‍Module startup hook -- register permissions."""
     from app.modules.variations.permissions import register_variations_permissions
 
     register_variations_permissions()

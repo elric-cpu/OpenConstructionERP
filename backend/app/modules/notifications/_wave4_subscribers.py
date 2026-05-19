@@ -1,4 +1,4 @@
-"""Wave-4 notification subscribers (BI Dashboards, QMS, Supplier Catalogs).
+"""‌⁠‍Wave-4 notification subscribers (BI Dashboards, QMS, Supplier Catalogs).
 
 Single landing zone for Wave-4 module subscribers that ship in parallel and
 shouldn't all crowd into ``events.py``. Each ``register_*`` function must be
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 async def _can_open_isolated_session() -> bool:
-    """Return True if we can safely open a write session in a subscriber.
+    """‌⁠‍Return True if we can safely open a write session in a subscriber.
 
     Skip cross-session notification writes on SQLite (single-writer) — those
     deployments rely on the foreground transaction to ship notifications.
@@ -43,7 +43,7 @@ async def _can_open_isolated_session() -> bool:
 
 
 async def _on_bi_alert_triggered(event: Event) -> None:
-    """``bi.alert.triggered`` → notify every recipient over their channels."""
+    """‌⁠‍``bi.alert.triggered`` → notify every recipient over their channels."""
     if not await _can_open_isolated_session():
         return
     data = event.data or {}

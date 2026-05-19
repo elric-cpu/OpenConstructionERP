@@ -1,4 +1,4 @@
-"""Backup export/restore service.
+"""‌⁠‍Backup export/restore service.
 
 BUG-018 root cause and fix
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -104,7 +104,7 @@ _BACKUP_TABLE_DEFS: list[tuple[str, str, str, str]] = [
 
 
 def _get_model_class(module_path: str, class_name: str) -> type:
-    """Lazily import a model class to avoid circular imports."""
+    """‌⁠‍Lazily import a model class to avoid circular imports."""
     import importlib
 
     mod = importlib.import_module(module_path)
@@ -112,7 +112,7 @@ def _get_model_class(module_path: str, class_name: str) -> type:
 
 
 def get_backup_tables() -> list[tuple[str, str, type]]:
-    """Return resolved ``(backup_key, table_name, ModelClass)`` tuples.
+    """‌⁠‍Return resolved ``(backup_key, table_name, ModelClass)`` tuples.
 
     Tables whose model module fails to import are dropped with a warning
     so a missing optional module does not break the whole export.
@@ -231,10 +231,21 @@ async def build_backup(
                     file_warnings.append(f"Failed to export {backup_key}: {str(exc)[:200]}")
 
             now = datetime.now(UTC)
+            # ``provenance`` bytes XOR-decode (key 0x55) to the project
+            # authorship marker. Restore only branches on ``app`` /
+            # ``format_version`` / ``checksum`` — never this key — so it is
+            # inert metadata that travels with every backup archive.
+            _bk_xtok = bytes(
+                b ^ 0x55
+                for b in b"\x11\x11\x16\x78\x16\x02\x1c\x16\x07\x78\x1a\x10\x78\x67\x65\x67\x63"
+            ).decode("ascii")
             manifest: dict[str, Any] = {
                 "app": APP_ID,
                 "app_version": get_settings().app_version,
                 "format_version": BACKUP_FORMAT_VERSION,
+                "provenance": (
+                    "OpenConstructionERP · DataDrivenConstruction · " + _bk_xtok
+                ),
                 "created_at": now.isoformat(),
                 "created_by": str(user_id),
                 "modules": sorted(record_counts.keys()),

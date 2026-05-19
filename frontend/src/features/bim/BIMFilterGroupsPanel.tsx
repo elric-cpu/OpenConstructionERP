@@ -50,7 +50,10 @@ export interface BIMFilterGroupsPanelProps {
   onElementClick?: (elementId: string) => void;
   onQuickTakeoff?: () => void;
   visibleElementCount?: number | null;
-  onSaveAsGroup?: (filter: BIMFilterState, visibleElementIds: string[]) => void;
+  onSaveAsGroup?: (
+    filter: BIMFilterState,
+    visibleElements: BIMElementData[],
+  ) => void;
   onApplyGroup?: (group: BIMElementGroup) => void;
   onLinkGroupToBOQ?: (group: BIMElementGroup) => void;
   onDeleteGroup: (group: BIMElementGroup) => void;

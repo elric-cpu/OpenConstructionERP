@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""SourceAdapter — uniform read interface across BIM/DWG/PDF/photo.
+"""‌⁠‍SourceAdapter — uniform read interface across BIM/DWG/PDF/photo.
 
 Each adapter loads source-specific elements (BIMElement rows, DWG
 session entries, PDF measurements, etc.) and yields :class:`SourceElement`
@@ -19,7 +19,7 @@ from typing import Any, Protocol
 
 
 class SourceElement:
-    """A single estimable element from any source.
+    """‌⁠‍A single estimable element from any source.
 
     Lightweight DTO — not a Pydantic model — because we instantiate
     these by the millions (200K-element Revit models are a thing) and
@@ -55,7 +55,7 @@ class SourceElement:
 
 
 class SourceAdapter(Protocol):
-    """Protocol every source adapter implements."""
+    """‌⁠‍Protocol every source adapter implements."""
 
     source_name: str  # 'bim' | 'dwg' | 'pdf' | 'photo'
 

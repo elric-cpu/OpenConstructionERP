@@ -1,4 +1,4 @@
-"""Replace the bulky DATA FLOW block on index.html with a tighter,
+"""‌⁠‍Replace the bulky DATA FLOW block on index.html with a tighter,
 more visually-rich version that includes a Photo / image input and
 proper mini-illustrations for every input/output node.
 """
@@ -9,7 +9,7 @@ INDEX = Path(r"c:\Users\Artem Boiko\Desktop\CodeProjects\ERP_26030500\website-ma
 START_MARK = "  <!-- SECTION 9.5 — DATA FLOW (project file → priced BOQ → tender pack) -->\n"
 END_MARK = "  <!-- SECTION 10 — COMMUNITY                                            -->\n"
 
-NEW_BLOCK = """  <!-- SECTION 9.5 — DATA FLOW (project file → priced BOQ → tender pack) -->
+NEW_BLOCK = """‌⁠‍  <!-- SECTION 9.5 — DATA FLOW (project file → priced BOQ → tender pack) -->
   <!-- ================================================================ -->
   <style>
     .df-section { padding: 64px 0 48px; }

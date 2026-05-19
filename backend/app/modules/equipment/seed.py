@@ -1,4 +1,4 @@
-"""Deterministic demo seed for the equipment module.
+"""‌⁠‍Deterministic demo seed for the equipment module.
 
 Generates a representative fleet with telemetry, schedules, work orders,
 inspections, rentals, fuel logs, and damage reports. Uses ``random.Random(42)``
@@ -49,7 +49,7 @@ _MANUFACTURERS = ("Caterpillar", "Komatsu", "Volvo", "Liebherr", "JCB", "Hitachi
 
 
 async def seed_equipment_demo(session: AsyncSession) -> dict[str, int]:
-    """Create the demo fleet inside ``session``. Returns counts per entity.
+    """‌⁠‍Create the demo fleet inside ``session``. Returns counts per entity.
 
     Idempotent: returns zeros for an already-seeded DB (checked via
     presence of equipment codes ``EQ-0001``).

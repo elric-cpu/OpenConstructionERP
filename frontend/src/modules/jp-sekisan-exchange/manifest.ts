@@ -21,15 +21,8 @@ export const manifest: ModuleManifest = {
       component: JPExchangeModule,
     },
   ],
-  navItems: [
-    {
-      labelKey: 'nav.jp_sekisan_exchange',
-      to: '/jp-sekisan-exchange',
-      icon: Building,
-      group: 'regional',
-      advancedOnly: true,
-    },
-  ],
+  // Issue #217 — reached from /boq (regional import/export); no duplicate sidebar entry.
+  navItems: [],
   searchEntries: [
     {
       label: 'Japan Sekisan Import / Export',

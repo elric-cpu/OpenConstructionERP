@@ -1,4 +1,4 @@
-"""Property Development Pydantic schemas — request/response models."""
+"""‌⁠‍Property Development Pydantic schemas — request/response models."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class DevelopmentCreate(BaseModel):
-    """Create a new development."""
+    """‌⁠‍Create a new development."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -35,7 +35,7 @@ class DevelopmentCreate(BaseModel):
 
 
 class DevelopmentUpdate(BaseModel):
-    """Partial update for a development."""
+    """‌⁠‍Partial update for a development."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 

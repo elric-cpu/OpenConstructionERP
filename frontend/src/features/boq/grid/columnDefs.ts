@@ -1,5 +1,5 @@
 import type { ColDef, ValueFormatterParams, ValueGetterParams, ValueSetterParams } from 'ag-grid-community';
-import { convertToBase, fmtWithCurrency } from '../boqHelpers';
+import { convertToBase, fmtWithCurrency, resourceAwareTotalInBase } from '../boqHelpers';
 import { unitColumnValueSetter } from './cellEditors';
 import {
   buildFormulaContext,
@@ -126,7 +126,7 @@ export function getColumnDefs(context: BOQColumnContext): ColDef[] {
       suppressNavigable: true,
       suppressHeaderMenuButton: true,
       cellRenderer: 'expandCellRenderer',
-      cellClass: 'p-0',
+      cellClass: 'oe-icon-cell',
     },
     {
       headerName: t('boq.ordinal', { defaultValue: 'Pos.' }),
@@ -377,17 +377,28 @@ export function getColumnDefs(context: BOQColumnContext): ColDef[] {
         if (!d || d._isFooter || d._isSection) return d?.total ?? 0;
         const meta = (d.metadata || d.metadata_ || {}) as Record<string, unknown>;
         const resources = meta.resources;
-        let raw: number;
-        if (Array.isArray(resources) && resources.length > 0) {
-          // Resource-driven: server-computed total is authoritative
-          raw = d.total ?? 0;
-        } else {
-          // No resources: live compute quantity × unit_rate
-          const q = typeof d.quantity === 'number' ? d.quantity : parseFloat(d.quantity) || 0;
-          const r = typeof d.unit_rate === 'number' ? d.unit_rate : parseFloat(d.unit_rate) || 0;
-          raw = q * r;
-        }
         const ctx = params.context as BOQColumnContext | undefined;
+        if (Array.isArray(resources) && resources.length > 0) {
+          // Resource-driven: server-computed total is authoritative.
+          // Issue #111 (skolodi) — when any resource is priced in a
+          // foreign currency the stored total mixes currencies (built
+          // from Σ(r.qty×r.rate) with no FX); rebase per-resource so a
+          // USD resource in an ARS project no longer reads "1 USD = 1 ARS".
+          return resourceAwareTotalInBase(
+            {
+              total: d.total ?? 0,
+              quantity: d.quantity,
+              metadata: meta,
+            },
+            ctx?.currencyCode,
+            ctx?.fxRates,
+          );
+        }
+        // No resources: live compute quantity × unit_rate, then rebase
+        // via the position-level metadata.currency (verified #131 path).
+        const q = typeof d.quantity === 'number' ? d.quantity : parseFloat(d.quantity) || 0;
+        const r = typeof d.unit_rate === 'number' ? d.unit_rate : parseFloat(d.unit_rate) || 0;
+        const raw = q * r;
         const sourceCurrency = (meta.currency as string | undefined) || ctx?.currencyCode;
         return convertToBase(raw, sourceCurrency, ctx?.currencyCode, ctx?.fxRates);
       },

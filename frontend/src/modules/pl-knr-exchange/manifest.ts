@@ -20,15 +20,8 @@ export const manifest: ModuleManifest = {
       component: PLExchangeModule,
     },
   ],
-  navItems: [
-    {
-      labelKey: 'nav.pl_knr_exchange',
-      to: '/pl-knr-exchange',
-      icon: Landmark,
-      group: 'regional',
-      advancedOnly: true,
-    },
-  ],
+  // Issue #217 — reached from /boq (regional import/export); no duplicate sidebar entry.
+  navItems: [],
   searchEntries: [
     {
       label: 'Poland KNR Import / Export',

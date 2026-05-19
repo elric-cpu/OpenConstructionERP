@@ -20,15 +20,8 @@ export const manifest: ModuleManifest = {
       component: BRExchangeModule,
     },
   ],
-  navItems: [
-    {
-      labelKey: 'nav.br_sinapi_exchange',
-      to: '/br-sinapi-exchange',
-      icon: Globe,
-      group: 'regional',
-      advancedOnly: true,
-    },
-  ],
+  // Issue #217 — reached from /boq (regional import/export); no duplicate sidebar entry.
+  navItems: [],
   searchEntries: [
     {
       label: 'Brazil SINAPI Import / Export',

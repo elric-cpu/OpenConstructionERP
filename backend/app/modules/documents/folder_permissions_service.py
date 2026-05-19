@@ -1,4 +1,4 @@
-"""Folder-permission service — grant / revoke / effective-permissions API.
+"""‌⁠‍Folder-permission service — grant / revoke / effective-permissions API.
 
 Stateless functions mirroring :mod:`app.modules.documents.share_service`.
 
@@ -65,7 +65,7 @@ async def is_project_owner(
     project_id: uuid.UUID,
     user_id: uuid.UUID,
 ) -> bool:
-    """True when ``user_id`` is the project's ``owner_id``."""
+    """‌⁠‍True when ``user_id`` is the project's ``owner_id``."""
     stmt = select(Project.owner_id).where(Project.id == project_id)
     owner_id = (await session.execute(stmt)).scalar_one_or_none()
     return owner_id is not None and str(owner_id) == str(user_id)
@@ -76,7 +76,7 @@ async def is_project_member(
     project_id: uuid.UUID,
     user_id: uuid.UUID,
 ) -> bool:
-    """True when ``user_id`` is a member of the project's default team
+    """‌⁠‍True when ``user_id`` is a member of the project's default team
     (owner counts as a member by definition — convenient for callers
     that just want a binary "can this user even see the project?")."""
     if await is_project_owner(session, project_id, user_id):

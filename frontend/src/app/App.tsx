@@ -160,6 +160,9 @@ const BIMPage = lazy(() =>
 const BIMQuantityRulesPage = lazy(() =>
   import('@/features/bim/BIMQuantityRulesPage').then((m) => ({ default: m.BIMQuantityRulesPage }))
 );
+const ClashDetectionPage = lazy(() =>
+  import('@/features/clash/ClashDetectionPage').then((m) => ({ default: m.ClashDetectionPage }))
+);
 const UserManagementPage = lazy(() =>
   import('@/features/users/UserManagementPage').then((m) => ({ default: m.UserManagementPage }))
 );
@@ -476,6 +479,7 @@ export default function App() {
         {/* Legacy alias — must come BEFORE /bim/:modelId so the literal
             "quantity-rules" segment isn't swallowed as a UUID model id. */}
         <Route path="/bim/quantity-rules" element={<Navigate to="/bim/rules" replace />} />
+        <Route path="/clash" element={<P title="Clash Detection"><ClashDetectionPage /></P>} />
         <Route path="/assets" element={<P title="Asset Register"><AssetsPage /></P>} />
         <Route path="/bim/:modelId" element={<P title="BIM Viewer"><BIMPage /></P>} />
         <Route path="/projects/:projectId/bim" element={<P title="BIM Viewer"><BIMPage /></P>} />

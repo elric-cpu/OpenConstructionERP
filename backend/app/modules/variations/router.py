@@ -1,4 +1,4 @@
-"""Variations API routes — mounted at /api/v1/variations/."""
+"""‌⁠‍Variations API routes — mounted at /api/v1/variations/."""
 
 from __future__ import annotations
 
@@ -1216,7 +1216,7 @@ async def variation_dashboard(
 async def list_contract_standards(
     _perm: None = Depends(RequirePermission("variations.read")),
 ) -> list[str]:
-    """Return supported contract standards for variation clause stamping."""
+    """‌⁠‍Return supported contract standards for variation clause stamping."""
     return supported_contract_standards()
 
 
@@ -1231,7 +1231,7 @@ async def nec4_timer_status(
     _perm: None = Depends(RequirePermission("variations.read")),
     service: VariationsService = Depends(_get_service),
 ) -> NEC4TimerStatusResponse:
-    """Return overdue flags for the NEC4 quotation/assessment SLA."""
+    """‌⁠‍Return overdue flags for the NEC4 quotation/assessment SLA."""
     vr = await service.get_request(vr_id)
     await verify_project_access(vr.project_id, user_id, session)
     flags = is_nec4_overdue(vr)

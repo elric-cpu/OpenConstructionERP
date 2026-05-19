@@ -1,4 +1,4 @@
-"""Daily Diary cross-module event subscribers (Wave M4 deep-pass).
+"""‌⁠‍Daily Diary cross-module event subscribers (Wave M4 deep-pass).
 
 Wires diary close-out + signature into:
 
@@ -26,7 +26,7 @@ _SUBSCRIBED_FLAG = "_daily_diary_subscribers_registered"
 
 
 async def _on_diary_closed(event: Event) -> None:
-    """``daily_diary.closed`` → schedule-actuals + BI projection ticks."""
+    """‌⁠‍``daily_diary.closed`` → schedule-actuals + BI projection ticks."""
     data = event.data or {}
     diary_id = data.get("diary_id")
     project_id = data.get("project_id")
@@ -71,7 +71,7 @@ async def _on_diary_closed(event: Event) -> None:
 
 
 async def _on_diary_signed(event: Event) -> None:
-    """``daily_diary.signed`` → BI projection on contemporaneous-record rate."""
+    """‌⁠‍``daily_diary.signed`` → BI projection on contemporaneous-record rate."""
     data = event.data or {}
     project_id = data.get("project_id")
     if not project_id:

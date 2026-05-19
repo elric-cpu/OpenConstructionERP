@@ -1,5 +1,5 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
-"""Service layer for the BI Dashboards module.
+"""‌⁠‍Service layer for the BI Dashboards module.
 
 All cross-module reads route through :mod:`.kpis` so the service itself
 never imports another module's models directly. This keeps the
@@ -60,7 +60,7 @@ logger = logging.getLogger(__name__)
 
 
 def _safe_publish(name: str, data: dict[str, Any]) -> None:
-    """Fire-and-forget event publish that never crashes the caller."""
+    """‌⁠‍Fire-and-forget event publish that never crashes the caller."""
     try:
         event_bus.publish_detached(name, data, source_module="oe_bi_dashboards")
     except Exception:
@@ -82,7 +82,7 @@ def compute_next_run_at(
     day_of_month: int | None,
     base: datetime | None = None,
 ) -> datetime:
-    """Return the next UTC datetime a schedule should fire.
+    """‌⁠‍Return the next UTC datetime a schedule should fire.
 
     Pure function — testable without a DB. ``time_of_day`` is ``HH:MM``
     in UTC for simplicity (real impl would honour ``timezone``).

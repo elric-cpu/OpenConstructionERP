@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Find translations that are mixed English/Mongolian — likely poor quality."""
+"""‌⁠‍Find translations that are mixed English/Mongolian — likely poor quality."""
 import re
 import json
 from pathlib import Path

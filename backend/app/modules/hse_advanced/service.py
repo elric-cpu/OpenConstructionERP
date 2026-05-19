@@ -1,4 +1,4 @@
-"""HSE Advanced service — pure helpers + workflows for JSA / PTW / audits / CAPA / KPI."""
+"""‌⁠‍HSE Advanced service — pure helpers + workflows for JSA / PTW / audits / CAPA / KPI."""
 
 from __future__ import annotations
 
@@ -121,12 +121,12 @@ _PTW_PREREQUISITES: dict[str, tuple[str, ...]] = {
 
 
 def ptw_required_prerequisites(permit_type: str) -> tuple[str, ...]:
-    """Pure: return the required prerequisite flag names for a permit type."""
+    """‌⁠‍Pure: return the required prerequisite flag names for a permit type."""
     return _PTW_PREREQUISITES.get(permit_type, ("prereq_jsa_approved",))
 
 
 def check_ptw_prerequisites(permit: Any) -> tuple[list[str], list[str]]:
-    """Pure: return (met, missing) prerequisite lists for a permit.
+    """‌⁠‍Pure: return (met, missing) prerequisite lists for a permit.
 
     A flag is "met" when its boolean attribute on ``permit`` is truthy.
     Anything not in the requirement list is ignored.

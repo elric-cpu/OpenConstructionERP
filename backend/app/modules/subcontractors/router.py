@@ -1,4 +1,4 @@
-"""HTTP API for the subcontractors module.
+"""‌⁠‍HTTP API for the subcontractors module.
 
 Mounted at /api/v1/subcontractors/. All endpoints require an authenticated
 user and module-level permissions registered in :mod:`permissions`.
@@ -59,7 +59,7 @@ async def _verify_agreement_project(
     session: SessionDep,
     svc: SubcontractorService,
 ) -> None:
-    """Look up the parent agreement and gate by its (required) project_id."""
+    """‌⁠‍Look up the parent agreement and gate by its (required) project_id."""
     agreement = await svc.agreements.get_by_id(agreement_id)
     if agreement is None or agreement.project_id is None:
         return
@@ -72,7 +72,7 @@ async def _verify_work_package_project(
     session: SessionDep,
     svc: SubcontractorService,
 ) -> None:
-    """Look up wp → agreement → project_id and verify."""
+    """‌⁠‍Look up wp → agreement → project_id and verify."""
     wp = await svc.work_packages.get_by_id(work_package_id)
     if wp is None:
         return

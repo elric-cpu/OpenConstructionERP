@@ -754,7 +754,7 @@ export function AssembliesPage() {
       ) : (
         <>
           {viewMode === 'grid' ? (
-            <div data-testid="assemblies-grid" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div data-testid="assemblies-grid" className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
               {items.map((assembly) => (
                 <AssemblyCard
                   key={assembly.id}
@@ -1626,7 +1626,7 @@ function AssemblyCard({
         />
       )}
 
-      <div className="p-4">
+      <div className="p-3">
         {/* Top row: select checkbox + code + menu */}
         <div className="flex items-start justify-between mb-1">
           <div className="flex items-center gap-2 min-w-0">
@@ -1734,7 +1734,7 @@ function AssemblyCard({
         </div>
 
         {/* Rate */}
-        <p className="mt-2 text-lg font-bold tabular-nums" style={{ color: assembly.total_rate > 0 ? undefined : 'var(--color-content-tertiary)' }}>
+        <p className="mt-1.5 text-base font-bold tabular-nums" style={{ color: assembly.total_rate > 0 ? undefined : 'var(--color-content-tertiary)' }}>
           {assembly.total_rate > 0 ? fmt(assembly.total_rate) : '0,00'}
           <span className="ml-1 text-xs font-normal text-content-tertiary">
             / {assembly.unit}
@@ -1747,7 +1747,7 @@ function AssemblyCard({
         </p>
 
         {/* Category + currency badges */}
-        <div className="mt-2 flex flex-wrap items-center gap-1">
+        <div className="mt-1.5 flex flex-wrap items-center gap-1">
           {assembly.category && (
             <Badge variant={badgeVariant} size="sm">
               {assembly.category}

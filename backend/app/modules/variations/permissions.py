@@ -1,10 +1,10 @@
-"""Variations module permission definitions."""
+"""‌⁠‍Variations module permission definitions."""
 
 from app.core.permissions import Role, permission_registry
 
 
 def register_variations_permissions() -> None:
-    """Register permissions for the variations module."""
+    """‌⁠‍Register permissions for the variations module."""
     permission_registry.register_module_permissions(
         "variations",
         {

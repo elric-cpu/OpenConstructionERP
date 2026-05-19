@@ -1,4 +1,4 @@
-"""Subcontractors event subscribers — feed cross-module facts into the rating.
+"""‌⁠‍Subcontractors event subscribers — feed cross-module facts into the rating.
 
 When the NCR / HSE / Quality modules publish an event whose payload names a
 ``subcontractor_id``, this module bumps the corresponding sub's rating
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_sub_id(data: dict[str, object]) -> uuid.UUID | None:
-    """Pull a subcontractor_id out of an event payload (string or UUID).
+    """‌⁠‍Pull a subcontractor_id out of an event payload (string or UUID).
 
     Looks at the top-level ``subcontractor_id`` / ``sub_id`` keys first, then
     falls back to a nested ``metadata`` dict. The previous one-liner had an
@@ -53,7 +53,7 @@ def _resolve_sub_id(data: dict[str, object]) -> uuid.UUID | None:
 
 
 async def _bump(kind: str, event: Event) -> None:
-    """Common path: open a session, derive sub_id, bump rating."""
+    """‌⁠‍Common path: open a session, derive sub_id, bump rating."""
     data = event.data or {}
     sub_id = _resolve_sub_id(data)
     if sub_id is None:

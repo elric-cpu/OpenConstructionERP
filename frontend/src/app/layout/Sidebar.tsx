@@ -68,6 +68,7 @@ import {
   Leaf,
   BarChart3,
   LineChart,
+  Radar,
   type LucideIcon,
 } from 'lucide-react';
 import { useModuleStore } from '@/stores/useModuleStore';
@@ -86,8 +87,6 @@ import {
 } from '@/stores/useSidebarCollapseStore';
 import { RequestCustomModuleDialog } from '@/features/modules/RequestCustomModuleDialog';
 import {
-  PHASE_GROUPS,
-  PHASED_ROUTES,
   useActiveProjectProfile,
   buildModuleGate,
 } from '@/features/projects/useProjectProfile';
@@ -152,6 +151,7 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.dwg_takeoff', to: '/dwg-takeoff', icon: PencilRuler },
       { labelKey: 'nav.cad_bim_explorer', to: '/data-explorer', icon: TableProperties },
       { labelKey: 'nav.bim_viewer', to: '/bim', icon: Box },
+      { labelKey: 'nav.clash_detection', to: '/clash', icon: Radar, badge: 'NEW' },
       { labelKey: 'nav.bim_rules', to: '/bim/rules?mode=requirements', icon: SlidersHorizontal, badge: 'BETA' },
     ],
   },
@@ -589,31 +589,22 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   // string down to every `SidebarItem` so only one row lights up.
   const activeRoute = pickActiveRoute(location, Object.keys(ALL_NAV_ITEMS));
 
-  // ── Slice 3 — numbered phase-grouped "route line" ───────────────────
+  // ── Project focus (in-place) ────────────────────────────────────────
   // When the active project has a setup profile with focus mode ON, the
-  // sidebar shows a numbered execution-phase rail (1 Estimation → 2
-  // Planning → 3 Execution → 4 Quality & Closure) with off-scope
-  // modules greyed and in-phase ordering driven by ProjectModule
-  // .ordinal. No active project / no profile / focus mode OFF →
-  // `gate.active` is false and the legacy flat layout below renders
-  // unchanged (the "this mode can be turned off" requirement).
+  // sidebar keeps its ORIGINAL menu and ORIGINAL order — no separate
+  // "project route" section is hoisted to the top. Instead, in place:
+  //   • modules the project needs  → fully visible + a sequence number
+  //   • modules it does not need   → smaller and de-emphasized (grey)
+  //   • routes outside the profile → rendered normally (global nav
+  //     never breaks).
+  // No active project / no profile / focus mode OFF → `gate.active` is
+  // false and every row renders exactly as the flat default.
   const { profile: activeProfile } = useActiveProjectProfile();
   const gate = buildModuleGate(activeProfile);
-  // Current lifecycle phase highlight: derive a phase index from the
-  // most-active module's phase if the profile exposes one; otherwise
-  // every enabled phase is "active" and nothing is force-greyed.
-  const currentPhaseId: string | null = (() => {
-    if (!gate.active || !activeProfile) return null;
-    const phases = activeProfile.profile.phases ?? [];
-    // Map a profile lifecycle phase onto a sidebar phase group.
-    if (phases.includes('construction') || phases.includes('procurement'))
-      return 'phase_execution';
-    if (phases.includes('handover')) return 'phase_closure';
-    if (phases.includes('tender')) return 'phase_planning';
-    if (phases.includes('design') || phases.includes('concept'))
-      return 'phase_estimation';
-    return null;
-  })();
+  // Running 1..N sequence assigned to project-needed rows as they
+  // render top-to-bottom. Resets every render (component body re-runs),
+  // so the numbers always read in visual order regardless of grouping.
+  let routeSeq = 0;
 
   return (
     <aside
@@ -687,8 +678,6 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
             <X size={16} />
           </button>
         )}
-        {/* Soft hairline separator instead of a hard 1px border. */}
-        <div className="absolute bottom-0 left-4 right-4 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
       </div>
 
       {/* Floating collapse/expand tab — pill-shaped, half-protruding
@@ -828,109 +817,11 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
             )}
           </div>
         )}
-        {/* Numbered phase rail (Slice 3) — only when a project profile
-            with focus mode is active. Renders a stepper-style vertical
-            "route line" connecting phases 1..N. Phased routes are
-            removed from the flat groups below so nothing is duplicated;
-            everything not in a phase still renders flat afterwards so
-            global nav never breaks. */}
-        {gate.active && !iconified && (
-          <div className="mb-2">
-            <div className="mt-2 mb-1 flex items-center gap-1.5 px-2.5">
-              <span className="text-2xs font-medium uppercase tracking-wider text-content-tertiary">
-                {t('nav.project_route', { defaultValue: 'Project route' })}
-              </span>
-            </div>
-            <ol className="relative space-y-0.5">
-              {/* the route line — a single vertical rail down the badges */}
-              <span
-                aria-hidden
-                className="absolute left-[19px] top-3 bottom-3 w-px bg-border-light"
-              />
-              {PHASE_GROUPS.map((phase, pi) => {
-                // Resolve the phase's routes into real NavItems, apply
-                // the per-project enabled gate, and order by ordinal.
-                const rows = phase.routes
-                  .map((r) => {
-                    const nav = ALL_NAV_ITEMS[r];
-                    if (!nav) return null;
-                    const g = gate.byRoute(r);
-                    return {
-                      item: nav,
-                      greyed: g ? !g.enabled : false,
-                      ordinal: g?.ordinal ?? null,
-                    };
-                  })
-                  .filter(
-                    (x): x is {
-                      item: NavItem;
-                      greyed: boolean;
-                      ordinal: number | null;
-                    } => x !== null,
-                  )
-                  .filter(
-                    (x) =>
-                      (!x.item.moduleKey ||
-                        isModuleEnabled(x.item.moduleKey)) &&
-                      (!x.item.advancedOnly || isAdvanced),
-                  )
-                  .sort((a, b) => {
-                    if (a.ordinal == null && b.ordinal == null) return 0;
-                    if (a.ordinal == null) return 1;
-                    if (b.ordinal == null) return -1;
-                    return a.ordinal - b.ordinal;
-                  });
-                if (rows.length === 0) return null;
-                const isCurrent =
-                  currentPhaseId === null || currentPhaseId === phase.id;
-                return (
-                  <li key={phase.id} className="relative">
-                    {/* phase header: number badge + label */}
-                    <div className="flex items-center gap-2 px-2.5 py-1">
-                      <span
-                        className={clsx(
-                          'relative z-10 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ring-4 ring-surface-primary transition-colors',
-                          isCurrent
-                            ? 'bg-oe-blue text-white'
-                            : 'bg-surface-secondary text-content-tertiary border border-border-light',
-                        )}
-                      >
-                        {pi + 1}
-                      </span>
-                      <span
-                        className={clsx(
-                          'text-2xs font-semibold uppercase tracking-wider',
-                          isCurrent
-                            ? 'text-content-secondary'
-                            : 'text-content-quaternary',
-                        )}
-                      >
-                        {t(phase.labelKey, { defaultValue: phase.labelEn })}
-                      </span>
-                    </div>
-                    <ul className="ms-[26px] space-y-0.5">
-                      {rows.map(({ item, greyed }) => (
-                        <li key={item.to} className={greyed ? 'opacity-40' : ''}>
-                          <SidebarItem
-                            item={item}
-                            label={t(item.labelKey)}
-                            onClick={onClose}
-                            badge={badgeMap[item.to]}
-                            isPinned={pinned.includes(item.to)}
-                            onTogglePin={togglePin}
-                            activeRoute={activeRoute}
-                            iconified={iconified}
-                          />
-                        </li>
-                      ))}
-                    </ul>
-                  </li>
-                );
-              })}
-            </ol>
-            <div className="my-2 mx-3 h-px bg-border-light/60" aria-hidden />
-          </div>
-        )}
+        {/* Project focus is applied IN PLACE inside the original groups
+            below — there is NO separate "project route" section and no
+            reordering. Each row is only annotated: needed → sequence
+            number; not needed → smaller + greyed; unconstrained → as
+            default. Focus OFF / no profile → every row is default. */}
         {navGroups.map((group) => {
           // Hide entire group in simple mode if flagged
           if (group.hideInSimple && !isAdvanced) return null;
@@ -949,16 +840,14 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
               advancedOnly: mi.advancedOnly,
             }));
 
-          // Filter items by module enabled and advanced mode. When the
-          // numbered phase rail is active it already renders every
-          // phased route, so drop those here to avoid duplication —
-          // routes NOT in any phase still render flat as before.
+          // Filter by module-enabled + advanced mode ONLY. The menu
+          // keeps its original shape and order; project focus never
+          // removes or reorders rows — it only annotates them below.
           const allItems = [...group.items, ...dynamicItems];
           const visibleItems = allItems.filter(
             (item) =>
               (!item.moduleKey || isModuleEnabled(item.moduleKey)) &&
-              (!item.advancedOnly || isAdvanced) &&
-              !(gate.active && PHASED_ROUTES.has(item.to)),
+              (!item.advancedOnly || isAdvanced),
           );
 
           // Skip group if no visible items
@@ -975,24 +864,38 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
               iconified={iconified}
             >
               <ul className="space-y-0.5">
-                {visibleItems.map((item, i) => (
-                  <li
-                    key={item.to}
-                    className="oe-stagger"
-                    style={{ animationDelay: `${i * 18}ms` }}
-                  >
-                    <SidebarItem
-                      item={item}
-                      label={t(item.labelKey)}
-                      onClick={onClose}
-                      badge={badgeMap[item.to]}
-                      isPinned={pinned.includes(item.to)}
-                      onTogglePin={togglePin}
-                      activeRoute={activeRoute}
-                      iconified={iconified}
-                    />
-                  </li>
-                ))}
+                {visibleItems.map((item, i) => {
+                  // In-place project-focus annotation (no reorder):
+                  //   g === null      → route not profile-constrained →
+                  //                      render exactly as the default.
+                  //   g.enabled       → project needs it → sequence #.
+                  //   g.enabled false → not needed → smaller + greyed.
+                  const g =
+                    gate.active && !iconified ? gate.byRoute(item.to) : null;
+                  const notNeeded = g != null && !g.enabled;
+                  const needed = g != null && g.enabled;
+                  const seq = needed ? (routeSeq += 1) : null;
+                  return (
+                    <li
+                      key={item.to}
+                      className={clsx('oe-stagger', notNeeded && 'opacity-45')}
+                      style={{ animationDelay: `${i * 18}ms` }}
+                    >
+                      <SidebarItem
+                        item={item}
+                        label={t(item.labelKey)}
+                        onClick={onClose}
+                        badge={badgeMap[item.to]}
+                        seq={seq}
+                        compact={notNeeded}
+                        isPinned={pinned.includes(item.to)}
+                        onTogglePin={togglePin}
+                        activeRoute={activeRoute}
+                        iconified={iconified}
+                      />
+                    </li>
+                  );
+                })}
               </ul>
             </NavGroupSection>
           );
@@ -1267,6 +1170,7 @@ function SidebarItem({
   label,
   onClick,
   badge: numericBadge,
+  seq,
   isPinned,
   onTogglePin,
   activeRoute,
@@ -1277,6 +1181,7 @@ function SidebarItem({
   label: string;
   onClick?: () => void;
   badge?: number;
+  seq?: number | null;
   isPinned?: boolean;
   onTogglePin?: (route: string) => void;
   activeRoute?: string | null;
@@ -1364,6 +1269,22 @@ function SidebarItem({
           );
         }}
       >
+        {/* Project-focus sequence number — only set for rows the active
+            project needs (focus mode on). A small leading chip so the
+            menu reads as a numbered route while keeping its order. */}
+        {seq != null && (
+          <span
+            className={clsx(
+              'shrink-0 flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[10px] font-bold tabular-nums transition-colors',
+              isActive
+                ? 'bg-oe-blue text-white'
+                : 'bg-oe-blue-subtle text-oe-blue',
+            )}
+            aria-hidden
+          >
+            {seq}
+          </span>
+        )}
         <Icon size={compact ? 14 : 16} strokeWidth={isActive ? 2 : 1.75} className="shrink-0" />
         {/* Hover-tooltip via title falls back to the full label even when
             CSS truncates with an ellipsis. The visible width is now

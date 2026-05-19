@@ -22,7 +22,11 @@ logger = logging.getLogger(__name__)
 # ── Model defaults ───────────────────────────────────────────────────────────
 
 ANTHROPIC_MODEL = "claude-sonnet-4-20250514"
-OPENAI_MODEL = "gpt-4o"
+# gpt-4.1 is OpenAI's current flagship general model (vision + tool-calling,
+# 1M-token context, not deprecated). gpt-4o still works but is older — using
+# the current id by default reduces "deprecated model" failures (issue #129).
+# Users can override per-provider via Settings > AI without an app release.
+OPENAI_MODEL = "gpt-4.1"
 GEMINI_MODEL = "gemini-2.5-flash"
 # OpenRouter uses date-less, vendor-prefixed slugs. The dated Anthropic id
 # ("...-20250514") is NOT a valid OpenRouter model — passing it makes even a
@@ -135,6 +139,65 @@ async def call_anthropic(
     return text, tokens
 
 
+# ── OpenAI-shaped response extraction (shared) ───────────────────────────────
+
+
+def _extract_openai_message_text(provider: str, data: Any) -> str:
+    """Pull assistant text out of an OpenAI chat-completions response.
+
+    Hardened against the failure modes behind issue #138, where a request
+    billed tokens upstream (confirmed on the provider dashboard) yet the
+    user saw "no response": an HTTP-200 in-body ``error``, an empty
+    ``choices`` array, ``content`` returned as a list of typed parts, or
+    the model emitting only a ``reasoning`` trace. Every shape is reduced
+    to a non-empty string or a precise, actionable ``ValueError`` — a paid
+    completion is never silently discarded.
+    """
+    if isinstance(data, dict) and data.get("error") and not data.get("choices"):
+        err = data["error"]
+        detail = err.get("message") if isinstance(err, dict) else str(err)
+        msg = f"{provider} returned an error: {detail or err}"
+        raise ValueError(msg)
+
+    choices = (data or {}).get("choices") or []
+    if not choices:
+        msg = (
+            f"{provider} returned no choices — the model may have refused or "
+            f"the request was filtered. Raw: {str(data)[:200]}"
+        )
+        raise ValueError(msg)
+
+    message = choices[0].get("message") or {}
+    content = message.get("content")
+
+    if isinstance(content, list):
+        text = "".join(
+            p.get("text", "")
+            for p in content
+            if isinstance(p, dict) and p.get("type") in (None, "text", "output_text")
+        ).strip()
+    elif isinstance(content, str):
+        text = content.strip()
+    else:
+        text = ""
+
+    if not text:
+        reasoning = message.get("reasoning")
+        if isinstance(reasoning, str) and reasoning.strip():
+            text = reasoning.strip()
+
+    if not text:
+        finish = choices[0].get("finish_reason") or "unknown"
+        msg = (
+            f"{provider} returned an empty message (finish_reason={finish}). "
+            f"If 'length', raise max tokens; if 'content_filter', rephrase; "
+            f"otherwise pick a different model in Settings > AI."
+        )
+        raise ValueError(msg)
+
+    return text
+
+
 # ── OpenAI ───────────────────────────────────────────────────────────────────
 
 
@@ -196,7 +259,7 @@ async def call_openai(
         response.raise_for_status()
         data = response.json()
 
-    text = data["choices"][0]["message"]["content"]
+    text = _extract_openai_message_text("openai", data)
     tokens = data.get("usage", {}).get("total_tokens", 0)
     return text, tokens
 
@@ -388,7 +451,7 @@ async def call_openai_compatible(
         response.raise_for_status()
         data = response.json()
 
-    text = data["choices"][0]["message"]["content"]
+    text = _extract_openai_message_text(provider, data)
     tokens = data.get("usage", {}).get("total_tokens", 0)
     return text, tokens
 

@@ -14,13 +14,39 @@
 import * as THREE from 'three';
 import type { SceneManager } from './SceneManager';
 import type { ElementManager } from './ElementManager';
+import {
+  angleBetween3,
+  centroid3,
+  polygonArea3,
+  polygonPerimeter3,
+} from './measureMath';
 
 export type MeasureState = 'idle' | 'awaiting-first' | 'awaiting-second' | 'done';
 
+/**
+ * Measurement kinds. `distance` is the original two-point ruler (unchanged
+ * behaviour / two clicks). `area` collects ≥ 3 points then double-clicks (or
+ * Enter) to close the loop. `angle` is a fixed three-click vertex angle.
+ */
+export type MeasureKind = 'distance' | 'area' | 'angle';
+
 export interface Measurement {
   id: string;
-  points: [THREE.Vector3, THREE.Vector3];
+  /** Kind of measurement — drives how `value`/labels are interpreted. */
+  kind: MeasureKind;
+  /** Every clicked point. For `distance` this is exactly the two endpoints
+   *  (kept as the first two entries so existing 2-tuple consumers still
+   *  work); for `area` it is the full polygon ring; for `angle` it is the
+   *  three vertices [a, b, c] with the angle measured at `b`. */
+  points: THREE.Vector3[];
+  /** Straight-line distance — only meaningful for `kind === 'distance'`.
+   *  Retained as a named field for back-compat with the measurements store
+   *  / Tools panel which already read `.distance`. */
   distance: number;
+  /** Generic numeric result: metres (distance), m² (area), degrees (angle). */
+  value: number;
+  /** Closed perimeter in metres — only set for `kind === 'area'`. */
+  perimeter?: number;
   line: THREE.Line;
   labelEl: HTMLDivElement;
 }
@@ -53,15 +79,27 @@ export class MeasureManager {
 
   private _active = false;
   private _state: MeasureState = 'idle';
+  private _kind: MeasureKind = 'distance';
   private _pendingPoint: THREE.Vector3 | null = null;
+  /** Accumulated points for the multi-click kinds (area / angle). */
+  private _polyPoints: THREE.Vector3[] = [];
+  /** Snap to the nearest geometry vertex within this screen-radius (px). */
+  private snapPx = 12;
+  /** Whether vertex snapping is enabled (toggled from the UI). */
+  private _snapEnabled = true;
   private measurements: Measurement[] = [];
 
   private overlayHost: HTMLDivElement | null = null;
   private pendingMarker: THREE.Mesh | null = null;
+  /** Markers for in-progress polygon / angle vertices. */
+  private polyMarkers: THREE.Mesh[] = [];
+  /** Live rubber-band line shown while collecting polygon / angle points. */
+  private rubberLine: THREE.Line | null = null;
 
   private canvas: HTMLCanvasElement;
   private boundOnPointerDown: (e: PointerEvent) => void;
   private boundOnPointerUp: (e: PointerEvent) => void;
+  private boundOnDblClick: (e: MouseEvent) => void;
   private pointerDownPos: { x: number; y: number } | null = null;
   private pointerDownTime = 0;
   private readonly CLICK_THRESHOLD = 5;
@@ -83,6 +121,7 @@ export class MeasureManager {
 
     this.boundOnPointerDown = this.onPointerDown.bind(this);
     this.boundOnPointerUp = this.onPointerUp.bind(this);
+    this.boundOnDblClick = this.onDblClick.bind(this);
 
     // Overlay host for labels — absolute, full-bleed, pointer-events none so
     // clicks still reach the canvas underneath.
@@ -98,6 +137,27 @@ export class MeasureManager {
     return this._state;
   }
 
+  get kind(): MeasureKind {
+    return this._kind;
+  }
+
+  /** Switch measurement kind. Any in-progress measurement is dropped so the
+   *  new kind starts clean (a half-traced polygon must not bleed into an
+   *  angle, etc). No-op when the kind is unchanged. */
+  setKind(kind: MeasureKind): void {
+    if (this._kind === kind) return;
+    this._kind = kind;
+    this.cancelPending();
+  }
+
+  get snapEnabled(): boolean {
+    return this._snapEnabled;
+  }
+
+  setSnapEnabled(on: boolean): void {
+    this._snapEnabled = on;
+  }
+
   getMeasurements(): Measurement[] {
     return this.measurements.slice();
   }
@@ -109,11 +169,13 @@ export class MeasureManager {
     if (active) {
       this.canvas.addEventListener('pointerdown', this.boundOnPointerDown);
       this.canvas.addEventListener('pointerup', this.boundOnPointerUp);
+      this.canvas.addEventListener('dblclick', this.boundOnDblClick);
       this.setState('awaiting-first');
       this.canvas.style.cursor = 'crosshair';
     } else {
       this.canvas.removeEventListener('pointerdown', this.boundOnPointerDown);
       this.canvas.removeEventListener('pointerup', this.boundOnPointerUp);
+      this.canvas.removeEventListener('dblclick', this.boundOnDblClick);
       this.cancelPending();
       this.setState('idle');
       this.canvas.style.cursor = '';
@@ -131,8 +193,30 @@ export class MeasureManager {
       else m.dispose();
       this.pendingMarker = null;
     }
+    this.clearPolyScratch();
     if (this._active) this.setState('awaiting-first');
     this.sceneManager.requestRender();
+  }
+
+  /** Drop the in-progress polygon/angle markers + rubber-band line. */
+  private clearPolyScratch(): void {
+    for (const m of this.polyMarkers) {
+      this.sceneManager.scene.remove(m);
+      m.geometry.dispose();
+      const mat = m.material as THREE.Material | THREE.Material[];
+      if (Array.isArray(mat)) mat.forEach((mm) => mm.dispose());
+      else mat.dispose();
+    }
+    this.polyMarkers = [];
+    this._polyPoints = [];
+    if (this.rubberLine) {
+      this.sceneManager.scene.remove(this.rubberLine);
+      this.rubberLine.geometry.dispose();
+      const mat = this.rubberLine.material as THREE.Material | THREE.Material[];
+      if (Array.isArray(mat)) mat.forEach((mm) => mm.dispose());
+      else mat.dispose();
+      this.rubberLine = null;
+    }
   }
 
   /** Drop every stored measurement and any in-progress point. */
@@ -181,10 +265,9 @@ export class MeasureManager {
     const m = this.measurements.find((x) => x.id === id);
     if (!m) return;
     const box = new THREE.Box3();
-    box.expandByPoint(m.points[0]);
-    box.expandByPoint(m.points[1]);
+    for (const p of m.points) box.expandByPoint(p);
     // Fall back to the scene's zoomToFit-like behaviour by computing a
-    // sensible bounding sphere for the two points.
+    // sensible bounding sphere for the points.
     const center = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
     const radius = Math.max(size.length() * 0.5, 1.0);
@@ -200,8 +283,13 @@ export class MeasureManager {
   /** Handle a global keydown — called by the React wrapper. */
   handleKeyDown(e: KeyboardEvent): boolean {
     if (!this._active) return false;
+    if (e.key === 'Enter' && this._kind === 'area' && this._polyPoints.length >= 3) {
+      // Enter closes the polygon (alternative to double-click).
+      this.finalisePolygon();
+      return true;
+    }
     if (e.key === 'Escape') {
-      if (this._pendingPoint) {
+      if (this._pendingPoint || this._polyPoints.length > 0) {
         this.cancelPending();
         return true;
       }
@@ -279,6 +367,28 @@ export class MeasureManager {
       return;
     }
 
+    if (this._kind === 'distance') {
+      this.handleDistanceClick(hitPoint);
+      return;
+    }
+    // area / angle: accumulate a point ring.
+    this._polyPoints.push(hitPoint.clone());
+    this.placePolyMarker(hitPoint);
+    this.refreshRubberLine();
+    this.setState(
+      this._polyPoints.length >= (this._kind === 'angle' ? 1 : 2)
+        ? 'awaiting-second'
+        : 'awaiting-first',
+    );
+    // The angle tool is a fixed three-click gesture: auto-finalise on the
+    // third point so the user never has to double-click for a simple angle.
+    if (this._kind === 'angle' && this._polyPoints.length === 3) {
+      this.finaliseAngle();
+    }
+    this.sceneManager.requestRender();
+  }
+
+  private handleDistanceClick(hitPoint: THREE.Vector3): void {
     if (!this._pendingPoint) {
       this._pendingPoint = hitPoint.clone();
       this.placePendingMarker(hitPoint);
@@ -303,6 +413,18 @@ export class MeasureManager {
     this.setState('awaiting-first');
   }
 
+  /** Double-click closes an in-progress area polygon (≥ 3 points). For the
+   *  other kinds it is a no-op so the SelectionManager's own dblclick
+   *  isolate behaviour is unaffected (this listener is only attached while
+   *  the measure tool is active anyway). */
+  private onDblClick(e: MouseEvent): void {
+    if (!this._active || this._kind !== 'area') return;
+    if (this._polyPoints.length < 3) return;
+    e.preventDefault();
+    e.stopPropagation();
+    this.finalisePolygon();
+  }
+
   private raycastPoint(e: MouseEvent): THREE.Vector3 | null {
     const rect = this.canvas.getBoundingClientRect();
     const ndc = new THREE.Vector2(
@@ -320,9 +442,56 @@ export class MeasureManager {
     );
     for (const h of hits) {
       if (!(h.object instanceof THREE.Mesh)) continue;
-      return h.point.clone();
+      const surface = h.point.clone();
+      const snapped = this._snapEnabled
+        ? this.snapToVertex(h, e)
+        : null;
+      return snapped ?? surface;
     }
     return null;
+  }
+
+  /**
+   * If a triangle vertex of the hit face projects to within `snapPx` of the
+   * cursor, snap the picked point to it. This reuses the same picking path
+   * the existing code already supports (raycast intersection + face index)
+   * — we just inspect the three vertices of the hit triangle and pick the
+   * closest one in screen space. Returns null when nothing is close enough.
+   */
+  private snapToVertex(
+    hit: THREE.Intersection,
+    e: MouseEvent,
+  ): THREE.Vector3 | null {
+    const obj = hit.object;
+    if (!(obj instanceof THREE.Mesh) || !obj.geometry) return null;
+    const face = hit.face;
+    if (!face) return null;
+    const pos = obj.geometry.getAttribute('position') as
+      | THREE.BufferAttribute
+      | undefined;
+    if (!pos) return null;
+
+    const rect = this.canvas.getBoundingClientRect();
+    const camera = this.sceneManager.camera;
+    const cursorX = e.clientX - rect.left;
+    const cursorY = e.clientY - rect.top;
+
+    let best: THREE.Vector3 | null = null;
+    let bestDistSq = this.snapPx * this.snapPx;
+    for (const idx of [face.a, face.b, face.c]) {
+      const local = new THREE.Vector3().fromBufferAttribute(pos, idx);
+      const world = local.applyMatrix4(obj.matrixWorld);
+      const projected = world.clone().project(camera);
+      if (projected.z < -1 || projected.z > 1) continue;
+      const sx = (projected.x * 0.5 + 0.5) * rect.width;
+      const sy = (1 - (projected.y * 0.5 + 0.5)) * rect.height;
+      const dsq = (sx - cursorX) ** 2 + (sy - cursorY) ** 2;
+      if (dsq < bestDistSq) {
+        bestDistSq = dsq;
+        best = world;
+      }
+    }
+    return best;
   }
 
   private placePendingMarker(point: THREE.Vector3): void {
@@ -335,24 +504,8 @@ export class MeasureManager {
     this.pendingMarker = mesh;
   }
 
-  private finaliseMeasurement(p0: THREE.Vector3, p1: THREE.Vector3): void {
-    const dist = p0.distanceTo(p1);
-    // Dashed line between the two clicked points.
-    const geom = new THREE.BufferGeometry().setFromPoints([p0, p1]);
-    const mat = new THREE.LineDashedMaterial({
-      color: DASH_COLOR,
-      linewidth: 1,
-      dashSize: 0.3,
-      gapSize: 0.15,
-      transparent: true,
-      opacity: 0.9,
-    });
-    const line = new THREE.Line(geom, mat);
-    line.computeLineDistances();
-    line.renderOrder = 998;
-    this.sceneManager.scene.add(line);
-
-    // HTML label — we project the midpoint every frame in updateLabelPositions.
+  /** Build a styled overlay label element (shared by every kind). */
+  private makeLabel(text: string): HTMLDivElement {
     const label = document.createElement('div');
     label.className = 'oe-bim-measure-label';
     label.style.position = 'absolute';
@@ -366,20 +519,161 @@ export class MeasureManager {
     label.style.border = '1px solid rgba(255, 212, 0, 0.5)';
     label.style.whiteSpace = 'nowrap';
     label.style.pointerEvents = 'none';
-    label.textContent = `${dist.toFixed(2)} m`;
+    label.textContent = text;
     if (this.overlayHost) this.overlayHost.appendChild(label);
+    return label;
+  }
 
+  private dashedMaterial(): THREE.LineDashedMaterial {
+    return new THREE.LineDashedMaterial({
+      color: DASH_COLOR,
+      linewidth: 1,
+      dashSize: 0.3,
+      gapSize: 0.15,
+      transparent: true,
+      opacity: 0.9,
+    });
+  }
+
+  private finaliseMeasurement(p0: THREE.Vector3, p1: THREE.Vector3): void {
+    const dist = p0.distanceTo(p1);
+    const geom = new THREE.BufferGeometry().setFromPoints([p0, p1]);
+    const line = new THREE.Line(geom, this.dashedMaterial());
+    line.computeLineDistances();
+    line.renderOrder = 998;
+    this.sceneManager.scene.add(line);
+
+    const label = this.makeLabel(`${dist.toFixed(2)} m`);
     const measurement: Measurement = {
       id: randomId(),
+      kind: 'distance',
       points: [p0.clone(), p1.clone()],
       distance: dist,
+      value: dist,
       line,
       labelEl: label,
     };
+    this.commitMeasurement(measurement);
+  }
+
+  /** Close + persist the in-progress area polygon. */
+  private finalisePolygon(): void {
+    const pts = this._polyPoints.map((p) => p.clone());
+    if (pts.length < 3) {
+      this.cancelPending();
+      return;
+    }
+    const area = polygonArea3(pts);
+    const perimeter = polygonPerimeter3(pts);
+    // Closed loop: repeat the first point so the outline renders shut.
+    const geom = new THREE.BufferGeometry().setFromPoints([...pts, pts[0]!]);
+    const line = new THREE.Line(geom, this.dashedMaterial());
+    line.computeLineDistances();
+    line.renderOrder = 998;
+    this.sceneManager.scene.add(line);
+
+    const label = this.makeLabel(
+      `${area.toLocaleString(undefined, { maximumFractionDigits: 2 })} m²`,
+    );
+    const measurement: Measurement = {
+      id: randomId(),
+      kind: 'area',
+      points: pts,
+      distance: 0,
+      value: area,
+      perimeter,
+      line,
+      labelEl: label,
+    };
+    this.clearPolyScratch();
+    this.commitMeasurement(measurement);
+  }
+
+  /** Persist the three-point angle once the third vertex is clicked. */
+  private finaliseAngle(): void {
+    const pts = this._polyPoints.map((p) => p.clone());
+    if (pts.length < 3) return;
+    const [a, b, c] = pts as [THREE.Vector3, THREE.Vector3, THREE.Vector3];
+    const deg = angleBetween3(a, b, c);
+    const geom = new THREE.BufferGeometry().setFromPoints([a, b, c]);
+    const line = new THREE.Line(geom, this.dashedMaterial());
+    line.computeLineDistances();
+    line.renderOrder = 998;
+    this.sceneManager.scene.add(line);
+
+    const label = this.makeLabel(`${deg.toFixed(1)}°`);
+    const measurement: Measurement = {
+      id: randomId(),
+      kind: 'angle',
+      points: [a, b, c],
+      distance: 0,
+      value: deg,
+      line,
+      labelEl: label,
+    };
+    this.clearPolyScratch();
+    this.commitMeasurement(measurement);
+  }
+
+  private commitMeasurement(measurement: Measurement): void {
     this.measurements.push(measurement);
     this.callbacks.onMeasurementAdded?.(measurement);
     this.callbacks.onMeasurementsChanged?.(this.measurements.length);
+    // Chain the next measurement of the same kind without re-clicking.
+    this.setState('done');
+    this.setState('awaiting-first');
     this.sceneManager.requestRender();
+  }
+
+  private polyMarkerMesh(point: THREE.Vector3): THREE.Mesh {
+    const geom = new THREE.SphereGeometry(DOT_RADIUS, 10, 10);
+    const mat = new THREE.MeshBasicMaterial({ color: DOT_COLOR });
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.position.copy(point);
+    mesh.renderOrder = 999;
+    return mesh;
+  }
+
+  private placePolyMarker(point: THREE.Vector3): void {
+    const mesh = this.polyMarkerMesh(point);
+    this.sceneManager.scene.add(mesh);
+    this.polyMarkers.push(mesh);
+  }
+
+  /** Redraw the open scratch line connecting the collected polygon/angle
+   *  points (no closing segment until the user finalises). */
+  private refreshRubberLine(): void {
+    if (this.rubberLine) {
+      this.sceneManager.scene.remove(this.rubberLine);
+      this.rubberLine.geometry.dispose();
+      (this.rubberLine.material as THREE.Material).dispose();
+      this.rubberLine = null;
+    }
+    if (this._polyPoints.length < 2) return;
+    const geom = new THREE.BufferGeometry().setFromPoints(this._polyPoints);
+    const mat = new THREE.LineBasicMaterial({
+      color: DASH_COLOR,
+      transparent: true,
+      opacity: 0.7,
+    });
+    const line = new THREE.Line(geom, mat);
+    line.renderOrder = 997;
+    this.sceneManager.scene.add(line);
+    this.rubberLine = line;
+  }
+
+  /** Anchor point in world space for a measurement's overlay label. */
+  private labelAnchor(m: Measurement): THREE.Vector3 {
+    if (m.kind === 'distance') {
+      return m.points[0]!.clone().add(m.points[1]!).multiplyScalar(0.5);
+    }
+    if (m.kind === 'angle') {
+      // Sit the angle label on the vertex itself.
+      return m.points[1]!.clone();
+    }
+    // area → centroid
+    const c = centroid3(m.points);
+    return new THREE.Vector3(c.x, c.y, c.z);
   }
 
   private updateLabelPositions(): void {
@@ -389,8 +683,7 @@ export class MeasureManager {
     const width = rect.width;
     const height = rect.height;
     for (const m of this.measurements) {
-      const mid = m.points[0].clone().add(m.points[1]).multiplyScalar(0.5);
-      const projected = mid.project(camera);
+      const projected = this.labelAnchor(m).project(camera);
       // Hide label when behind camera (z > 1 after projection).
       if (projected.z > 1 || projected.z < -1) {
         m.labelEl.style.display = 'none';

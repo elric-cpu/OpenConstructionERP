@@ -20,14 +20,8 @@ export const manifest: ModuleManifest = {
       component: GAEBExchangeModule,
     },
   ],
-  navItems: [
-    {
-      labelKey: 'nav.gaeb_exchange',
-      to: '/gaeb-exchange',
-      icon: FileText,
-      group: 'regional',
-    },
-  ],
+  // Issue #217 — reached from /boq (regional import/export); no duplicate sidebar entry.
+  navItems: [],
   searchEntries: [
     {
       label: 'GAEB XML Import / Export',

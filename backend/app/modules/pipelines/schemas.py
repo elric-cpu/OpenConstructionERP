@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Pydantic request/response schemas for the Pipeline Builder REST API.
+"""‌⁠‍Pydantic request/response schemas for the Pipeline Builder REST API.
 
 The wire contract is PINNED — the frontend is built against it in
 parallel. Graph JSON shape:
@@ -22,14 +22,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class NodePosition(BaseModel):
-    """Canvas coordinates for a node (xyflow)."""
+    """‌⁠‍Canvas coordinates for a node (xyflow)."""
 
     x: float = 0.0
     y: float = 0.0
 
 
 class GraphNode(BaseModel):
-    """A single node in the editor graph."""
+    """‌⁠‍A single node in the editor graph."""
 
     id: str
     type: str

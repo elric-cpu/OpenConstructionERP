@@ -1,4 +1,4 @@
-"""Supplier Catalogs Pydantic schemas."""
+"""‌⁠‍Supplier Catalogs Pydantic schemas."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ VALID_COMMODITY_SCHEMES: tuple[str, ...] = ("unspsc", "eclass", "cpv")
 
 
 class VendorContactSchema(BaseModel):
-    """A vendor contact person (stored inside Vendor.contacts_json)."""
+    """‌⁠‍A vendor contact person (stored inside Vendor.contacts_json)."""
 
     name: str
     role: str | None = None
@@ -28,7 +28,7 @@ class VendorContactSchema(BaseModel):
 
 
 class VendorCreate(BaseModel):
-    """Create a vendor."""
+    """‌⁠‍Create a vendor."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 

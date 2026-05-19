@@ -1,4 +1,4 @@
-"""Service & Maintenance permission definitions."""
+"""‌⁠‍Service & Maintenance permission definitions."""
 
 from app.core.permissions import Role, permission_registry
 
@@ -17,5 +17,5 @@ SERVICE_PERMISSIONS: dict[str, Role] = {
 
 
 def register_service_permissions() -> None:
-    """Register permissions for the Service & Maintenance module."""
+    """‌⁠‍Register permissions for the Service & Maintenance module."""
     permission_registry.register_module_permissions("service", SERVICE_PERMISSIONS)

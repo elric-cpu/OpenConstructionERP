@@ -1,4 +1,4 @@
-"""Excel + CSV import/export for EAC requirements.
+"""‌⁠‍Excel + CSV import/export for EAC requirements.
 
 The EAC schema (entity, attribute, constraint_type, constraint_value,
 unit, category, priority, ...) maps cleanly to a flat sheet, so this
@@ -59,7 +59,7 @@ _TEMPLATE_HINT: dict[str, str] = {
 
 
 def build_template_xlsx() -> bytes:
-    """Generate a friendly Excel template — headers, a sample, and hints."""
+    """‌⁠‍Generate a friendly Excel template — headers, a sample, and hints."""
     import openpyxl
     from openpyxl.comments import Comment
     from openpyxl.styles import Alignment, Font, PatternFill
@@ -129,7 +129,7 @@ def build_template_xlsx() -> bytes:
 
 
 def _normalise_row(row: dict[str, Any]) -> dict[str, Any]:
-    """Coerce one parsed row into a RequirementCreate-friendly dict."""
+    """‌⁠‍Coerce one parsed row into a RequirementCreate-friendly dict."""
     out: dict[str, Any] = {}
     for col in COLUMNS:
         raw = row.get(col, "")

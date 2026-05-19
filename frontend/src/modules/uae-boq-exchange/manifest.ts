@@ -20,15 +20,8 @@ export const manifest: ModuleManifest = {
       component: UAEExchangeModule,
     },
   ],
-  navItems: [
-    {
-      labelKey: 'nav.uae_boq_exchange',
-      to: '/uae-boq-exchange',
-      icon: Building2,
-      group: 'regional',
-      advancedOnly: true,
-    },
-  ],
+  // Issue #217 — reached from /boq (regional import/export); no duplicate sidebar entry.
+  navItems: [],
   searchEntries: [
     {
       label: 'UAE BOQ Import / Export',

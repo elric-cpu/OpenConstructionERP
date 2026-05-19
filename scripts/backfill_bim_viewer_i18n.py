@@ -1,4 +1,4 @@
-"""Backfill 10 new bim.geometry_* / bim.loading_* i18n keys into 26 non-EN locales.
+"""‌⁠‍Backfill 10 new bim.geometry_* / bim.loading_* i18n keys into 26 non-EN locales.
 
 Idempotent: replaces existing values, inserts after `bim.no_elements` when absent.
 
@@ -352,12 +352,12 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
 
 
 def _escape_value(value: str) -> str:
-    """Escape value for TS double-quoted string literal."""
+    """‌⁠‍Escape value for TS double-quoted string literal."""
     return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
 def patch_locale(path: Path, translations: dict[str, str]) -> bool:
-    """Idempotently insert/replace the 10 keys into `path`.
+    """‌⁠‍Idempotently insert/replace the 10 keys into `path`.
 
     Returns True if file was modified.
     """

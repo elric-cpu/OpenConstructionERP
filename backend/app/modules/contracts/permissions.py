@@ -1,10 +1,10 @@
-"""Contracts module permission definitions."""
+"""‌⁠‍Contracts module permission definitions."""
 
 from app.core.permissions import Role, permission_registry
 
 
 def register_contracts_permissions() -> None:
-    """Register permissions for the contracts module."""
+    """‌⁠‍Register permissions for the contracts module."""
     permission_registry.register_module_permissions(
         "contracts",
         {

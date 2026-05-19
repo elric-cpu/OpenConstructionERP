@@ -1,4 +1,4 @@
-"""Build the ``cwicr_en_v3_enriched`` Qdrant collection from ``cwicr_en_v3``.
+"""‌⁠‍Build the ``cwicr_en_v3_enriched`` Qdrant collection from ``cwicr_en_v3``.
 
 Background
 ----------
@@ -82,7 +82,7 @@ except ImportError as exc:
 
 
 def _normalise_text(s: Any) -> str:
-    """Convert a payload field to a clean string (TitleCase ALL-CAPS)."""
+    """‌⁠‍Convert a payload field to a clean string (TitleCase ALL-CAPS)."""
     if s is None:
         return ""
     t = str(s).strip()
@@ -96,7 +96,7 @@ def _normalise_text(s: Any) -> str:
 
 
 def _split_camelcase(s: str) -> str:
-    """Split CamelCase / PascalCase into space-separated words.
+    """‌⁠‍Split CamelCase / PascalCase into space-separated words.
 
     ``ReinforcedConcrete`` → ``Reinforced Concrete``
     ``IfcSlab`` → ``Ifc Slab``

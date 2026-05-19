@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Pipeline Builder module.
+"""‌⁠‍Pipeline Builder module.
 
 A thin orchestration layer that turns the platform's existing async
 ``JobRun`` runner, validation engine and per-module services into a
@@ -15,7 +15,7 @@ design (the module deliberately reuses, never reinvents, infrastructure).
 
 
 async def on_startup() -> None:
-    """Module startup hook.
+    """‌⁠‍Module startup hook.
 
     Binds the ``pipeline.run`` JobRun handler (idempotent — also bound at
     executor import) so a fresh process always has it before the first

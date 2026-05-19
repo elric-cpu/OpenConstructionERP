@@ -1,4 +1,4 @@
-"""Schedule Advanced module (Last Planner System).
+"""‌⁠‍Schedule Advanced module (Last Planner System).
 
 Implements the Last Planner System (LPS) workflow on top of the existing
 schedule / tasks modules:
@@ -15,7 +15,7 @@ modify their source.
 
 
 async def on_startup() -> None:
-    """Module startup hook — register permissions."""
+    """‌⁠‍Module startup hook — register permissions."""
     from app.modules.schedule_advanced.permissions import register_schedule_advanced_permissions
 
     register_schedule_advanced_permissions()

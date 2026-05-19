@@ -1,4 +1,4 @@
-"""CRM demo seed data.
+"""‌⁠‍CRM demo seed data.
 
 Loads:
     * 6 standard pipeline stages (Lead → Qualified → Proposal → Negotiation
@@ -82,7 +82,7 @@ _ACTIVITY_OUTCOMES = (None, "no_answer", "voicemail", "positive", "negative", "n
 
 
 async def seed_crm_demo(session: AsyncSession) -> dict[str, int]:
-    """Seed CRM demo data (idempotent: skips if any account already exists).
+    """‌⁠‍Seed CRM demo data (idempotent: skips if any account already exists).
 
     Returns a dict with counts of records created per table.
     """

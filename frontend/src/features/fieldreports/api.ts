@@ -81,6 +81,7 @@ export interface CreateFieldReportPayload {
   notes?: string | null;
   signature_by?: string | null;
   signature_data?: string | null;
+  metadata?: Record<string, unknown>;
 }
 
 export interface UpdateFieldReportPayload {
@@ -104,6 +105,7 @@ export interface UpdateFieldReportPayload {
   notes?: string | null;
   signature_by?: string | null;
   signature_data?: string | null;
+  metadata?: Record<string, unknown>;
 }
 
 /* ── API Functions ─────────────────────────────────────────────────────── */
@@ -174,6 +176,102 @@ export async function fetchFieldReportCalendar(
 
 export function getFieldReportPdfUrl(id: string): string {
   return `/api/v1/fieldreports/reports/${id}/export/pdf`;
+}
+
+/* ── Report Templates ──────────────────────────────────────────────────── */
+
+export type TemplateFieldType =
+  | 'text'
+  | 'textarea'
+  | 'number'
+  | 'select'
+  | 'date'
+  | 'checkbox';
+
+export interface TemplateFieldDefinition {
+  key: string;
+  label: string;
+  type: TemplateFieldType;
+  required: boolean;
+  options: string[];
+  placeholder: string;
+  help_text: string;
+}
+
+export interface FieldReportTemplate {
+  id: string;
+  project_id: string | null;
+  name: string;
+  description: string | null;
+  report_type: ReportType;
+  fields: TemplateFieldDefinition[];
+  is_active: boolean;
+  is_builtin: boolean;
+  created_by: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface CreateTemplatePayload {
+  project_id: string;
+  name: string;
+  description?: string | null;
+  report_type?: ReportType;
+  fields: Omit<TemplateFieldDefinition, never>[];
+  is_active?: boolean;
+}
+
+export async function fetchFieldReportTemplates(
+  projectId: string,
+): Promise<FieldReportTemplate[]> {
+  if (!projectId) return [];
+  return apiGet<FieldReportTemplate[]>(
+    `/v1/fieldreports/templates/?project_id=${encodeURIComponent(projectId)}`,
+  );
+}
+
+export async function createFieldReportTemplate(
+  data: CreateTemplatePayload,
+): Promise<FieldReportTemplate> {
+  return apiPost<FieldReportTemplate>('/v1/fieldreports/templates/', data);
+}
+
+export async function deleteFieldReportTemplate(
+  id: string,
+  projectId: string,
+): Promise<void> {
+  return apiDelete(
+    `/v1/fieldreports/templates/${id}?project_id=${encodeURIComponent(projectId)}`,
+  );
+}
+
+/* ── Attachments (reuses the documents module + link-documents) ─────────── */
+
+export interface LinkedDocument {
+  id: string;
+  name: string;
+  category: string;
+  file_size: number;
+  mime_type: string;
+}
+
+export async function fetchReportDocuments(
+  reportId: string,
+): Promise<LinkedDocument[]> {
+  return apiGet<LinkedDocument[]>(
+    `/v1/fieldreports/reports/${reportId}/documents/`,
+  );
+}
+
+export async function linkReportDocuments(
+  reportId: string,
+  documentIds: string[],
+): Promise<FieldReport> {
+  return apiPost<FieldReport>(
+    `/v1/fieldreports/reports/${reportId}/link-documents/`,
+    { document_ids: documentIds },
+  );
 }
 
 /* ── Import / Export ────────��─────────────────────────────────────────────── */

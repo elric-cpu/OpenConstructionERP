@@ -1,4 +1,4 @@
-"""Project-bundle export (Issue #109).
+"""‌⁠‍Project-bundle export (Issue #109).
 
 Generates a ``.ocep`` zip — *OpenConstructionERP Project* — for a single
 project. Supports split-scope bundles so users with large BIM/DWG attachments
@@ -124,7 +124,7 @@ def _import_class(module_path: str, class_name: str) -> type | None:
 
 
 def _options_from_scope(opts: ExportOptions) -> ExportOptions:
-    """Translate a high-level scope to per-flag choices, keeping any
+    """‌⁠‍Translate a high-level scope to per-flag choices, keeping any
     explicit flags the caller already set."""
     scope = opts.scope
     if scope == "metadata_only":
@@ -160,7 +160,7 @@ def _options_from_scope(opts: ExportOptions) -> ExportOptions:
 
 
 def _enabled_table_keys(opts: ExportOptions) -> set[str]:
-    """Resolve which table-keys land in the bundle based on flags."""
+    """‌⁠‍Resolve which table-keys land in the bundle based on flags."""
     keys: set[str] = {k for k, *_rest in _BUNDLE_TABLES_CORE}
     if opts.include_documents or opts.include_photos or opts.include_sheets:
         for k, *_ in _BUNDLE_TABLES_DOCUMENTS:

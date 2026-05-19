@@ -1,4 +1,4 @@
-"""Third pass on the homepage DATA FLOW section.
+"""‌⁠‍Third pass on the homepage DATA FLOW section.
 
 Goals from the user:
   1. Container width must match the rest of the page (centred, max 1280px)
@@ -14,7 +14,7 @@ START_MARK = "  <!-- SECTION 9.5 — DATA FLOW (project file → priced BOQ → 
 END_MARK = "  <!-- SECTION 10 — COMMUNITY                                            -->\n"
 SEP = "  <!-- ================================================================ -->\n"
 
-NEW_BLOCK = """  <!-- SECTION 9.5 — DATA FLOW (project file → priced BOQ → tender pack) -->
+NEW_BLOCK = """‌⁠‍  <!-- SECTION 9.5 — DATA FLOW (project file → priced BOQ → tender pack) -->
   <!-- ================================================================ -->
   <style>
     .df-section { padding: 64px 0 48px; }

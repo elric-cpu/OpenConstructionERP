@@ -82,6 +82,15 @@ EXCLUDE_FILE_SUFFIXES = {
     ".log",
 }
 
+# Exact repo-relative path prefixes to skip. Unlike EXCLUDE_DIRS (which
+# matches a directory basename anywhere in the tree), these target one
+# specific subtree only. `backend/app/modules/clash` is excluded because
+# it is being authored concurrently by another worktree — watermarking it
+# here would race that work. The frontend `clash` feature is unaffected.
+EXCLUDE_PATH_PREFIXES = (
+    "backend/app/modules/clash",
+)
+
 PY_DOCSTRING_RE = re.compile(
     r'(?P<open>""")(?!""")(?P<body>(?:[^"\\]|\\.|"(?!"")|"")*?)(?P<close>""")',
     re.DOTALL,
@@ -106,6 +115,10 @@ def is_excluded(path: Path) -> bool:
     parts = set(path.parts)
     if parts & EXCLUDE_DIRS:
         return True
+    rel_posix = path.as_posix()
+    for prefix in EXCLUDE_PATH_PREFIXES:
+        if rel_posix == prefix or rel_posix.startswith(prefix + "/"):
+            return True
     for suf in EXCLUDE_FILE_SUFFIXES:
         if path.name.endswith(suf):
             return True
@@ -279,6 +292,7 @@ def cmd_inject() -> None:
         "pepper_description": "ZWNJ + WJ + ZWJ -- invisible 3-codepoint authorship fingerprint",
         "owner": "OpenConstructionERP / DataDrivenConstruction · Artem Boiko",
         "license": "AGPL-3.0-or-later",
+        "excluded_path_prefixes": list(EXCLUDE_PATH_PREFIXES),
         "total_marks": len(all_marks),
         "py_files_marked": py_files_marked,
         "ts_files_marked": ts_files_marked,

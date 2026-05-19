@@ -1,4 +1,4 @@
-"""QMS cross-module event subscribers.
+"""‌⁠‍QMS cross-module event subscribers.
 
 These handlers wire QMS to other modules without creating import-time
 coupling. They are registered idempotently via :func:`register_subscribers`
@@ -31,7 +31,7 @@ _SUBSCRIBED_FLAG = "_qms_subscribers_registered"
 
 
 async def _can_open_isolated_session() -> bool:
-    """Return True if we can safely open a write session in a subscriber."""
+    """‌⁠‍Return True if we can safely open a write session in a subscriber."""
     try:
         async with async_session_factory() as probe:
             bind = probe.get_bind()
@@ -42,7 +42,7 @@ async def _can_open_isolated_session() -> bool:
 
 
 async def _on_hse_capa_completed(event: Event) -> None:
-    """If the CAPA was sourced from an HSE incident with cost impact, mirror it."""
+    """‌⁠‍If the CAPA was sourced from an HSE incident with cost impact, mirror it."""
     data = event.data or {}
     capa_id = data.get("capa_id")
     project_id = data.get("project_id")

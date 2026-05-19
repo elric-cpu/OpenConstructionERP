@@ -1,4 +1,4 @@
-"""Property Development service — business logic + state machines.
+"""‌⁠‍Property Development service — business logic + state machines.
 
 Pure helpers (no DB / I/O) live at module top so tests can exercise them
 directly. The :class:`PropertyDevService` orchestrates them against the
@@ -127,12 +127,12 @@ _WARRANTY_TRANSITIONS: dict[str, set[str]] = {
 
 
 def allowed_plot_transitions(current: str) -> set[str]:
-    """Return the set of next valid plot statuses."""
+    """‌⁠‍Return the set of next valid plot statuses."""
     return set(_PLOT_TRANSITIONS.get(current, set()))
 
 
 def allowed_buyer_transitions(current: str) -> set[str]:
-    """Return the set of next valid buyer statuses."""
+    """‌⁠‍Return the set of next valid buyer statuses."""
     return set(_BUYER_TRANSITIONS.get(current, set()))
 
 

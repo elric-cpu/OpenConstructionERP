@@ -1,4 +1,4 @@
-"""Daily Site Diary module manifest."""
+"""‌⁠‍Daily Site Diary module manifest."""
 
 from app.core.module_loader import ModuleManifest
 

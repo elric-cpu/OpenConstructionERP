@@ -1,4 +1,4 @@
-"""Resources Pydantic schemas — request/response models (Pydantic v2)."""
+"""‌⁠‍Resources Pydantic schemas — request/response models (Pydantic v2)."""
 
 from datetime import datetime
 from decimal import Decimal
@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ResourceCreate(BaseModel):
-    """Create a new resource."""
+    """‌⁠‍Create a new resource."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -35,7 +35,7 @@ class ResourceCreate(BaseModel):
 
 
 class ResourceUpdate(BaseModel):
-    """Partial update for a resource."""
+    """‌⁠‍Partial update for a resource."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 

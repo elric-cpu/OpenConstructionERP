@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Fix the escape corruption introduced by earlier passes.
+"""‌⁠‍Fix the escape corruption introduced by earlier passes.
 
 Earlier passes did `value.replace("\\\\", "\\\\\\\\")` which doubled all backslashes,
 then escaped quotes again, producing `\\\\\\\\\"` where there should be just `\\\"`.

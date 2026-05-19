@@ -1,4 +1,4 @@
-"""PEPPOL UBL 2.1 invoice parser.
+"""‌⁠‍PEPPOL UBL 2.1 invoice parser.
 
 Implements a minimal but correct ``Invoice`` parser for the OASIS UBL 2.1
 syntax used by the PEPPOL BIS Billing 3.0 specification (EN 16931).
@@ -51,7 +51,7 @@ UBL_NS = {
 
 @dataclass
 class PeppolInvoiceLine:
-    """A single line parsed from ``cac:InvoiceLine``."""
+    """‌⁠‍A single line parsed from ``cac:InvoiceLine``."""
 
     line_id: str
     description: str
@@ -65,7 +65,7 @@ class PeppolInvoiceLine:
 
 @dataclass
 class PeppolInvoiceParsed:
-    """Fully parsed PEPPOL invoice ready for ingest."""
+    """‌⁠‍Fully parsed PEPPOL invoice ready for ingest."""
 
     invoice_id: str
     issue_date: str | None

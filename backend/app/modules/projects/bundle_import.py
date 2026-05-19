@@ -1,4 +1,4 @@
-"""Project-bundle import (Issue #109).
+"""‌⁠‍Project-bundle import (Issue #109).
 
 Inverse of :mod:`bundle_export`. Accepts a ``.ocep`` zip and reconstructs
 the project on the receiving instance.
@@ -62,7 +62,7 @@ logger = logging.getLogger(__name__)
 
 
 class BundleError(Exception):
-    """Raised by :func:`validate_bundle` when the bundle is unusable."""
+    """‌⁠‍Raised by :func:`validate_bundle` when the bundle is unusable."""
 
 
 def _read_zip(raw: bytes) -> zipfile.ZipFile:
@@ -73,7 +73,7 @@ def _read_zip(raw: bytes) -> zipfile.ZipFile:
 
 
 def _semver_key(v: str) -> tuple[int, int, int]:
-    """Parse ``"2.9.4"`` into ``(2, 9, 4)`` for comparison. Falls back to
+    """‌⁠‍Parse ``"2.9.4"`` into ``(2, 9, 4)`` for comparison. Falls back to
     zeros on malformed strings rather than raising — the import call is
     user-facing and a single typo in the manifest shouldn't 500."""
     parts = (v or "").split(".")

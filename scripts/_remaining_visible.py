@@ -1,4 +1,4 @@
-"""Dump remaining identicals per locale into a flat list grouped by key."""
+"""‌⁠‍Dump remaining identicals per locale into a flat list grouped by key."""
 import json
 from pathlib import Path
 from collections import defaultdict

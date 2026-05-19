@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Coordinate Reference System (CRS) auto-detection for CAD/BIM uploads.
+"""‌⁠‍Coordinate Reference System (CRS) auto-detection for CAD/BIM uploads.
 
 A real-world construction file (DWG / DXF / IFC / RVT canonical JSON)
 arrives with coordinates expressed in *some* projected CRS — a UTM zone,
@@ -73,7 +73,7 @@ DetectionMethod = Literal[
 
 
 class CRSGuess(BaseModel):
-    """A single CRS guess with confidence and provenance.
+    """‌⁠‍A single CRS guess with confidence and provenance.
 
     Use ``epsg=None`` for "we could not auto-detect"; the frontend
     surfaces a "Set CRS" affordance in that case. ``alternatives`` is
@@ -91,7 +91,7 @@ class CRSGuess(BaseModel):
     alternatives: list[CRSGuess] = Field(default_factory=list)
 
     def short_label(self) -> str:
-        """One-line label for UI chips."""
+        """‌⁠‍One-line label for UI chips."""
         if self.epsg is None:
             return self.name
         return f"{self.name} (EPSG:{self.epsg})"

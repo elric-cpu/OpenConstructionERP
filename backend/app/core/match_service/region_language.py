@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Single source of truth for region/catalogue → language mapping.
+"""‌⁠‍Single source of truth for region/catalogue → language mapping.
 
 Two callsites historically maintained their own copy of this mapping:
 
@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 
 def _default_fallback_language() -> str:
-    """Resolve the universal fallback language from env, default ``"en"``.
+    """‌⁠‍Resolve the universal fallback language from env, default ``"en"``.
 
     The fallback only kicks in when the catalogue id can't be resolved by
     any other path (canonical map, alias, head-prefix). Setting
@@ -169,7 +169,7 @@ _ALIASES: dict[str, str] = {
 # defensively: any failure (missing pyyaml, missing file, malformed
 # content) logs a warning and leaves the hardcoded dicts untouched.
 def _load_region_language_yaml_overlay() -> None:
-    """Merge ``data/match/region_language.yaml`` into the canonical maps.
+    """‌⁠‍Merge ``data/match/region_language.yaml`` into the canonical maps.
 
     Schema (all sections optional):
 

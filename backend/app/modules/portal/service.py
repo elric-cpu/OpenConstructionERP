@@ -1,5 +1,5 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
-"""Customer & Partner Portal — business logic.
+"""‌⁠‍Customer & Partner Portal — business logic.
 
 Pure-function helpers (token gen, hashing, permission predicate) plus a
 :class:`PortalService` that wraps the repositories with idempotent operations
@@ -63,12 +63,12 @@ _PERMISSION_RANK: dict[str, int] = {
 
 
 def now_utc() -> datetime:
-    """Return the current time as a timezone-aware UTC datetime."""
+    """‌⁠‍Return the current time as a timezone-aware UTC datetime."""
     return datetime.now(UTC)
 
 
 def generate_token() -> str:
-    """Generate a random 64-hex-char token (32 bytes of entropy).
+    """‌⁠‍Generate a random 64-hex-char token (32 bytes of entropy).
 
     Used for both magic-link tokens and session tokens. The plaintext is
     shown to the caller exactly once — only ``hash_token(plain)`` is stored.

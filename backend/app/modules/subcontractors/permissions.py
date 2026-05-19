@@ -1,10 +1,10 @@
-"""Subcontractor module permission definitions."""
+"""‌⁠‍Subcontractor module permission definitions."""
 
 from app.core.permissions import Role, permission_registry
 
 
 def register_subcontractors_permissions() -> None:
-    """Register permissions for the subcontractors module."""
+    """‌⁠‍Register permissions for the subcontractors module."""
     permission_registry.register_module_permissions(
         "subcontractors",
         {

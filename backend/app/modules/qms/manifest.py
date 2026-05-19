@@ -1,4 +1,4 @@
-"""QMS module manifest."""
+"""‌⁠‍QMS module manifest."""
 
 from app.core.module_loader import ModuleManifest
 

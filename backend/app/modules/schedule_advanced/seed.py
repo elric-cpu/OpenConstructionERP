@@ -1,4 +1,4 @@
-"""Schedule Advanced demo seed data.
+"""‌⁠‍Schedule Advanced demo seed data.
 
 Deterministic generator (seed=42) producing:
 * 3 master schedules across the supplied project ids
@@ -59,7 +59,7 @@ async def seed_schedule_advanced_demo(
     session: AsyncSession,
     project_ids: list[uuid.UUID],
 ) -> dict[str, int]:
-    """Seed deterministic LPS demo data.
+    """‌⁠‍Seed deterministic LPS demo data.
 
     Returns counts of created rows per entity.
     """

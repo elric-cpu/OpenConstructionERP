@@ -1,4 +1,4 @@
-"""Variations service — business logic for the variations lifecycle.
+"""‌⁠‍Variations service — business logic for the variations lifecycle.
 
 Pure helpers (top-level functions) are unit-tested directly. The
 :class:`VariationsService` class wires repositories together and emits
@@ -130,12 +130,12 @@ FA_TRANSITIONS: dict[str, list[str]] = {
 
 
 def allowed_notice_transitions(current: str) -> list[str]:
-    """Pure: return list of statuses Notice may move to from ``current``."""
+    """‌⁠‍Pure: return list of statuses Notice may move to from ``current``."""
     return list(NOTICE_TRANSITIONS.get(current, []))
 
 
 def allowed_vr_transitions(current: str) -> list[str]:
-    """Pure: return list of statuses VariationRequest may move to."""
+    """‌⁠‍Pure: return list of statuses VariationRequest may move to."""
     return list(VR_TRANSITIONS.get(current, []))
 
 

@@ -1,4 +1,4 @@
-"""Generic activity-log table and write-through helper.
+"""‌⁠‍Generic activity-log table and write-through helper.
 
 This is the FSM-aware companion to :mod:`app.core.audit`. While ``audit``
 records arbitrary CRUD actions on any entity, ``audit_log`` is structured
@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 
 
 class ActivityLog(Base):
-    """Append-only audit row recording one entity state change.
+    """‌⁠‍Append-only audit row recording one entity state change.
 
     Columns:
         id            — UUID PK (inherited from :class:`Base`).
@@ -129,7 +129,7 @@ async def log_activity(
     metadata: dict[str, Any] | None = None,
     tenant_id: str | uuid.UUID | None = None,
 ) -> ActivityLog:
-    """Write a single :class:`ActivityLog` row.
+    """‌⁠‍Write a single :class:`ActivityLog` row.
 
     The session is flushed but NOT committed — the caller's transaction
     boundary owns the commit so audit + business write either both land or

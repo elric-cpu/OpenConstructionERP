@@ -1,4 +1,4 @@
-"""Schedule Advanced API routes.
+"""‌⁠‍Schedule Advanced API routes.
 
 Mounted at ``/api/v1/schedule-advanced/`` by the module loader.
 
@@ -1129,7 +1129,7 @@ async def run_cpm(
     data: CPMRequest,
     _perm: None = Depends(RequirePermission("schedule_advanced.read")),
 ) -> CPMResponse:
-    """Run a CPM forward+backward pass on a supplied activity list.
+    """‌⁠‍Run a CPM forward+backward pass on a supplied activity list.
 
     Stateless — no DB I/O. Useful for what-if scheduling experiments,
     importing schedules from P6/MS Project, and powering the EoT/TIA
@@ -1153,7 +1153,7 @@ async def run_tia(
     data: TIARequest,
     _perm: None = Depends(RequirePermission("schedule_advanced.read")),
 ) -> TIAResponse:
-    """Time-Impact-Analysis — recompute completion date after a delay.
+    """‌⁠‍Time-Impact-Analysis — recompute completion date after a delay.
 
     Stateless — no DB I/O. Inputs are the full schedule + a single delay
     event (impacted activity id + delay in working days). Used by the

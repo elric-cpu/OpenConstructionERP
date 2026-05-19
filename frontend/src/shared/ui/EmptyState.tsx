@@ -34,15 +34,15 @@ export function standardEmptyCopy(
   const plural = entityPluralLabel ?? `${entity}s`;
   return {
     title: t('empty.no_yet', {
-      defaultValue: 'No {{plural}} yet',
+      defaultValue: 'No {{plural}} yet‌⁠‍',
       plural,
     }),
     description: t('empty.no_yet_description', {
-      defaultValue: 'Get started by creating your first {{entity}}.',
+      defaultValue: 'Get started by creating your first {{entity}}.‌⁠‍',
       entity,
     }),
     actionLabel: t('empty.create_first', {
-      defaultValue: 'Create your first {{entity}}',
+      defaultValue: 'Create your first {{entity}}‌⁠‍',
       entity,
     }),
   };

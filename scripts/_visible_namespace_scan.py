@@ -1,4 +1,4 @@
-"""Find identical-to-EN keys per locale, scoped to the most-visible namespaces."""
+"""‌⁠‍Find identical-to-EN keys per locale, scoped to the most-visible namespaces."""
 import re
 import json
 from pathlib import Path

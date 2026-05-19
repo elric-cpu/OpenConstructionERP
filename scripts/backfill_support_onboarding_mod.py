@@ -1,4 +1,4 @@
-"""Backfill missing support.* and onboarding.mod_* i18n keys across 25 locales.
+"""‌⁠‍Backfill missing support.* and onboarding.mod_* i18n keys across 25 locales.
 
 Source of truth: frontend/src/app/locales/en.ts (134 keys missing in each target locale).
 Anchor for insertion: line containing "onboarding.mod_collaboration_desc" in each target.

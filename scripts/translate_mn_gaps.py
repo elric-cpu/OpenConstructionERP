@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Translate untranslated mn.ts entries to Mongolian Cyrillic.
+"""‌⁠‍Translate untranslated mn.ts entries to Mongolian Cyrillic.
 
 Approach:
   1. Protect interpolation tokens (`{{...}}`), HTML, and domain acronyms.

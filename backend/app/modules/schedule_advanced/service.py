@@ -1,4 +1,4 @@
-"""Schedule Advanced service — Last Planner System (LPS) business logic.
+"""‌⁠‍Schedule Advanced service — Last Planner System (LPS) business logic.
 
 This module is organised as:
 
@@ -88,7 +88,7 @@ _RNC_CATEGORIES = (
 
 
 def compute_ppc(commitments: list[Commitment] | list[Any]) -> Decimal:
-    """Compute Percent Plan Complete for a list of commitments.
+    """‌⁠‍Compute Percent Plan Complete for a list of commitments.
 
     PPC = completed / committed × 100. "Completed" means status == "completed".
     "Committed" means status in (committed, in_progress, completed, missed,
@@ -111,7 +111,7 @@ def compute_rnc_pareto(
     period_start: date,
     period_end: date,
 ) -> dict[str, int]:
-    """Return a category -> count mapping for the supplied RNC records.
+    """‌⁠‍Return a category -> count mapping for the supplied RNC records.
 
     ``period_start`` / ``period_end`` are reported in the response but
     not enforced here — callers are expected to filter beforehand. The

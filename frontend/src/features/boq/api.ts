@@ -11,6 +11,9 @@ export interface BOQ {
   status: string;
   estimate_type: string | null;
   is_locked: boolean;
+  /** Set when this BOQ was created via "Create revision" — points at the
+   *  BOQ it was cloned from. Drives the baseline pick in the compare UI. */
+  parent_estimate_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -215,6 +218,11 @@ export interface CreatePositionData {
    *  linked instance (own ordinal + own quantity) instead of a 409. */
   reference_code?: string | null;
   link_mode?: LinkMode | null;
+  /** Issue #139 — UUID of the row the user had selected when they hit
+   *  "Add position". The new partida slots in directly *after* that
+   *  sibling (sort_order = anchor + 1, later rows shift down) instead of
+   *  at the end of the section. Ignored on the reuse/linked-instance path. */
+  after_position_id?: string | null;
 }
 
 export interface UpdatePositionData {
@@ -615,6 +623,9 @@ export interface AIChatItem {
 
 export interface AIChatResponse {
   items: AIChatItem[];
+  /** Assistant's natural-language answer — present for any non-empty model
+   *  output (knowledge questions get a real answer here, not just items). */
+  reply?: string;
   message: string;
 }
 
@@ -735,6 +746,133 @@ export interface BOQSnapshot {
   grand_total?: number;
   created_at: string;
   created_by: string | null;
+}
+
+/* ── Feature 1: model→BOQ quantity links ─────────────────────────────── */
+
+/** How multiple bound elements combine into one position quantity. */
+export type QuantityAggregation = 'sum' | 'max' | 'min' | 'count' | 'first';
+
+/** A persisted live binding between a position field and BIM elements. */
+export interface QuantityLink {
+  id: string;
+  position_id: string;
+  boq_id: string;
+  model_id: string;
+  element_stable_ids: string[];
+  quantity_field: string;
+  target_field: string;
+  aggregation: string;
+  status: string;
+  source_model_version: string | null;
+  last_applied_quantity: string | null;
+  last_pulled_at: string | null;
+  last_applied_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateQuantityLinkData {
+  model_id: string;
+  element_stable_ids: string[];
+  quantity_field: string;
+  target_field?: 'quantity';
+  aggregation?: QuantityAggregation;
+}
+
+/** One per-position review row produced by the refresh probe. */
+export interface QuantityLinkRefreshRow {
+  link_id: string;
+  position_id: string;
+  ordinal: string;
+  description: string;
+  quantity_field: string;
+  target_field: string;
+  aggregation: string;
+  unit: string;
+  old_quantity: string;
+  new_quantity: string;
+  delta: string;
+  changed: boolean;
+  status: string;
+  contributing_elements: string[];
+  missing_element_ids: string[];
+  message: string;
+}
+
+export interface QuantityLinkRefreshResponse {
+  boq_id: string;
+  checked: number;
+  stale: number;
+  rows: QuantityLinkRefreshRow[];
+}
+
+export interface QuantityLinkApplyResultRow {
+  link_id: string;
+  position_id: string;
+  ordinal: string;
+  applied: boolean;
+  old_quantity: string;
+  new_quantity: string;
+  message: string;
+}
+
+export interface QuantityLinkApplyResponse {
+  boq_id: string;
+  applied: number;
+  skipped: number;
+  results: QuantityLinkApplyResultRow[];
+}
+
+/* ── Feature 2: estimate baseline / line-level compare ───────────────── */
+
+export type CompareChangeType =
+  | 'added'
+  | 'removed'
+  | 'qty_changed'
+  | 'rate_changed'
+  | 'changed'
+  | 'unchanged';
+
+export interface ComparePositionRow {
+  change_type: CompareChangeType;
+  match_key: string;
+  reference_code: string | null;
+  ordinal: string;
+  description: string;
+  unit: string;
+  old_quantity: string | null;
+  new_quantity: string | null;
+  old_unit_rate: string | null;
+  new_unit_rate: string | null;
+  old_total: string | null;
+  new_total: string | null;
+  old_total_base: string | null;
+  new_total_base: string | null;
+  currency: string;
+  total_delta_base: string;
+}
+
+export interface CompareSummary {
+  base_currency: string;
+  added: number;
+  removed: number;
+  qty_changed: number;
+  rate_changed: number;
+  changed: number;
+  unchanged: number;
+  old_direct_cost_base: string;
+  new_direct_cost_base: string;
+  direct_cost_delta_base: string;
+}
+
+export interface BOQCompareResponse {
+  base_boq_id: string;
+  other_boq_id: string;
+  base_boq_name: string;
+  other_boq_name: string;
+  summary: CompareSummary;
+  rows: ComparePositionRow[];
 }
 
 /* ── AACE Estimate Classification types ──────────────────────────────── */
@@ -1038,7 +1176,15 @@ export const boqApi = {
       `/v1/boq/positions/${posId}/resources/${resourceIdx}/variant/`,
       { variant_code: variantCode },
     ),
-  deletePosition: (posId: string) => apiDelete(`/v1/boq/positions/${posId}`),
+  /**
+   * Delete a position. For a section/sub-section, pass
+   * ``{ cascade: true }`` so the backend recursively removes every
+   * descendant (nested sub-sections + their positions). Without it the
+   * backend returns 409 when the section still has children, which the
+   * UI used to swallow — making sub-section deletion silently no-op.
+   */
+  deletePosition: (posId: string, opts?: { cascade?: boolean }) =>
+    apiDelete(`/v1/boq/positions/${posId}${opts?.cascade ? '?cascade=true' : ''}`),
 
   /* ── Linked positions (Issue #127 — reuse the same code) ──────────── */
   /** List every member of this position's reference-code link group. */
@@ -1178,6 +1324,43 @@ export const boqApi = {
     apiPost<BOQSnapshot>(`/v1/boq/boqs/${boqId}/snapshots/`, { name: label ?? '' }),
   restoreSnapshot: (boqId: string, snapshotId: string) =>
     apiPost<{ ok: boolean }>(`/v1/boq/boqs/${boqId}/restore/${snapshotId}`, {}),
+
+  /* ── Feature 1: model→BOQ quantity links ──────────────────────────── */
+  /** List every live model→position binding for one position. */
+  getQuantityLinks: (positionId: string) =>
+    apiGet<QuantityLink[]>(
+      `/v1/boq/positions/${positionId}/quantity-links/`,
+    ),
+  /** Bind a position quantity to BIM elements. Does NOT mutate the
+   *  quantity — that requires an explicit confirm/apply. */
+  createQuantityLink: (positionId: string, data: CreateQuantityLinkData) =>
+    apiPost<QuantityLink, CreateQuantityLinkData>(
+      `/v1/boq/positions/${positionId}/quantity-links/`,
+      data,
+    ),
+  deleteQuantityLink: (positionId: string, linkId: string) =>
+    apiDelete<void>(
+      `/v1/boq/positions/${positionId}/quantity-links/${linkId}`,
+    ),
+  /** Re-pull every link against the latest model version (read-only;
+   *  flags stale rows and returns old→new→delta review payload). */
+  refreshQuantityLinks: (boqId: string) =>
+    apiPost<QuantityLinkRefreshResponse>(
+      `/v1/boq/boqs/${boqId}/quantity-links/refresh/`,
+      {},
+    ),
+  /** Human-confirmed apply — only the listed link ids are written. */
+  applyQuantityLinks: (boqId: string, linkIds: string[]) =>
+    apiPost<QuantityLinkApplyResponse, { link_ids: string[] }>(
+      `/v1/boq/boqs/${boqId}/quantity-links/apply/`,
+      { link_ids: linkIds },
+    ),
+
+  /* ── Feature 2: estimate baseline / line-level compare ─────────────── */
+  compareBoqs: (boqId: string, otherId: string) =>
+    apiGet<BOQCompareResponse>(
+      `/v1/boq/boqs/${boqId}/compare/${otherId}`,
+    ),
 
   /* Enrich positions with resources from cost database */
   enrichResources: (boqId: string) =>

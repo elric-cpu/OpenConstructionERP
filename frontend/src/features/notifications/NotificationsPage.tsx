@@ -104,6 +104,23 @@ function normalizeActionUrl(url: string): string {
   return url;
 }
 
+/* Last-resort label for a notification whose i18n key is missing from the
+   active locale AND has no server-side default. Turn the final segment of a
+   dotted key (e.g. "notifications.safety.incident_created_body") into a
+   readable sentence ("Incident created") instead of printing the raw path.
+   Generic by design — the per-message copy still lives in the locale files;
+   this only keeps an un-localised key from leaking to the user. */
+function humanizeKey(key: string): string {
+  const segment = key.split('.').pop() ?? key;
+  const words = segment
+    .replace(/_body$/i, '')
+    .replace(/_title$/i, '')
+    .replace(/[._]+/g, ' ')
+    .trim();
+  if (!words) return '';
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 const PAGE_SIZE = 50;
 
 type Filter = 'all' | 'unread' | 'read';
@@ -203,7 +220,7 @@ export function NotificationsPage() {
           )}
           {unreadCount > 0 && (
             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-2xs font-semibold bg-oe-blue-subtle text-oe-blue tabular-nums">
-              {unreadCount} {t('notifications.unread', { defaultValue: 'unread' })}
+              {unreadCount} {t('notifications.unread', { defaultValue: 'unread‌⁠‍' })}
             </span>
           )}
         </div>
@@ -223,10 +240,10 @@ export function NotificationsPage() {
             >
               <option value="all">{t('notifications.filter_all', { defaultValue: 'All' })}</option>
               <option value="unread">
-                {t('notifications.filter_unread', { defaultValue: 'Unread only' })}
+                {t('notifications.filter_unread', { defaultValue: 'Unread only‌⁠‍' })}
               </option>
               <option value="read">
-                {t('notifications.filter_read', { defaultValue: 'Read only' })}
+                {t('notifications.filter_read', { defaultValue: 'Read only‌⁠‍' })}
               </option>
             </select>
           </div>
@@ -238,7 +255,7 @@ export function NotificationsPage() {
               onClick={() => markAllReadMutation.mutate()}
               disabled={markAllReadMutation.isPending}
             >
-              {t('notifications.mark_all_read_short', { defaultValue: 'Mark all read' })}
+              {t('notifications.mark_all_read_short', { defaultValue: 'Mark all read‌⁠‍' })}
             </Button>
           )}
         </div>
@@ -249,7 +266,7 @@ export function NotificationsPage() {
         {isLoading ? (
           <div className="p-8 flex items-center justify-center text-content-tertiary">
             <Loader2 className="animate-spin me-2" size={16} />
-            {t('common.loading', { defaultValue: 'Loading...' })}
+            {t('common.loading', { defaultValue: 'Loading...‌⁠‍' })}
           </div>
         ) : isError ? (
           <div className="p-8 text-center">
@@ -283,12 +300,12 @@ export function NotificationsPage() {
               const cfg = ICON_MAP[n.icon_category] ?? ICON_MAP.info;
               const TypeIcon = cfg.icon;
               const title = t(n.title_key, {
-                defaultValue: n.title_default || n.title_key,
+                defaultValue: n.title_default || humanizeKey(n.title_key),
                 ...(n.body_context as Record<string, unknown>),
               });
               const body = n.body_key
                 ? t(n.body_key, {
-                    defaultValue: n.body_default,
+                    defaultValue: n.body_default || humanizeKey(n.body_key),
                     ...(n.body_context as Record<string, unknown>),
                   })
                 : n.body_default;

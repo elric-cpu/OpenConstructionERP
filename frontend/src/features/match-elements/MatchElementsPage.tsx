@@ -78,7 +78,7 @@ import { CataloguesPanelCard } from './CataloguesPanelCard';
 import { QdrantHealthCard } from './QdrantHealthCard';
 import { unwrapCataloguesPayload } from './catalogues-payload';
 import { MatchWizard } from './MatchWizard';
-import { MatchPipeline } from './MatchPipeline';
+import { MatchPipeline, PipelinePreview } from './MatchPipeline';
 import { MatchProgressCard } from './MatchProgressCard';
 import { MatchDetailPanel } from './MatchDetailPanel';
 import { NewSessionFromExcelModal } from './NewSessionFromExcelModal';
@@ -2114,8 +2114,15 @@ export function MatchElementsPage() {
       )}
 
       {projectId && !sessionId && (
-        <MatchWizard
-          projectId={projectId}
+        <>
+          {/* Advertise the full 7-stage pipeline up-front (read-only) so
+              the depth of the process is visible the moment the user
+              lands — the live interactive pipeline still takes over once
+              the setup wizard creates a session (single interactive
+              rail, no duplicate stepper). */}
+          <PipelinePreview />
+          <MatchWizard
+            projectId={projectId}
           projectRegion={projectRegion}
           sessions={sessionsQ.data ?? []}
           onComplete={(id, abortController) => {
@@ -2145,7 +2152,8 @@ export function MatchElementsPage() {
             // progress card. User goes straight to the results UI.
             setSessionId(id);
           }}
-        />
+          />
+        </>
       )}
 
       {projectId && sessionId && matchInFlight && (

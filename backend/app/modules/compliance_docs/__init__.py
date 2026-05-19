@@ -1,5 +1,5 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
-"""Compliance documents tracker — insurance / permits / bonds / certifications.
+"""‌⁠‍Compliance documents tracker — insurance / permits / bonds / certifications.
 
 Lightweight project-scoped module for tracking documents that expire
 (insurance policies, building / electrical / plumbing permits, payment /
@@ -14,7 +14,7 @@ lifecycles.
 
 
 async def on_startup() -> None:
-    """Module startup hook — register permissions."""
+    """‌⁠‍Module startup hook — register permissions."""
     from app.modules.compliance_docs.permissions import (
         register_compliance_docs_permissions,
     )

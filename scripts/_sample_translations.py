@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Show sample translations to verify quality."""
+"""‌⁠‍Show sample translations to verify quality."""
 import re
 from pathlib import Path
 

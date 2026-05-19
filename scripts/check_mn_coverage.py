@@ -1,4 +1,4 @@
-"""Measure real Mongolian translation coverage of mn.ts vs en.ts."""
+"""‌⁠‍Measure real Mongolian translation coverage of mn.ts vs en.ts."""
 import re
 from pathlib import Path
 

@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Polars-based lookup for CWICR's full 84-column rate data.
+"""‌⁠‍Polars-based lookup for CWICR's full 84-column rate data.
 
 The Qdrant store (:mod:`app.modules.costs.qdrant_adapter`) carries a
 deliberately narrow payload — only the keys and the columns the Query
@@ -57,7 +57,7 @@ _PARQUET_GLOB = "*_workitems_costs_resources_DDC_CWICR.parquet"
 
 
 def _resolve_root() -> Path:
-    """Return the configured CWICR parquet root.
+    """‌⁠‍Return the configured CWICR parquet root.
 
     Created on first call if it doesn't exist (the empty case is
     handled by the per-country resolver — a missing parquet for a given
@@ -75,7 +75,7 @@ def _resolve_root() -> Path:
 
 @lru_cache(maxsize=64)
 def _parquet_for_country(country: str) -> Path | None:
-    """Resolve the parquet file for a given country code, or ``None``.
+    """‌⁠‍Resolve the parquet file for a given country code, or ``None``.
 
     Memoised so repeated lookups skip the directory scan. The cache key
     is the upper-cased country head so ``DE_BERLIN`` and ``DE`` resolve

@@ -1,4 +1,4 @@
-"""Property Development API routes.
+"""‌⁠‍Property Development API routes.
 
 All routes are RBAC-gated and mounted by the module loader at
 ``/api/v1/property-dev/`` (slash inferred from module name).
@@ -971,7 +971,7 @@ async def cancel_buyer(
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.update")),
 ) -> DepositForfeitureResponse:
-    """Cancel a buyer + compute jurisdiction-specific deposit forfeiture."""
+    """‌⁠‍Cancel a buyer + compute jurisdiction-specific deposit forfeiture."""
     _buyer, forfeiture = await service.cancel_buyer(b_id, data)
     return DepositForfeitureResponse(
         buyer_id=b_id,
@@ -988,7 +988,7 @@ async def cancel_buyer(
 async def list_jurisdictions(
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> list[str]:
-    """List ISO-3166 alpha-2 codes with a real deposit-forfeiture rule."""
+    """‌⁠‍List ISO-3166 alpha-2 codes with a real deposit-forfeiture rule."""
     return supported_jurisdictions()
 
 

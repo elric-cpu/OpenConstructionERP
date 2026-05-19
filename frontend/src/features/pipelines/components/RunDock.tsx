@@ -30,7 +30,16 @@ function statusTone(
 ): 'success' | 'error' | 'warning' | 'neutral' {
   if (status === 'done' || status === 'success') return 'success';
   if (status === 'error' || status === 'failed') return 'error';
-  if (status === 'running' || status === 'queued' || status === 'paused')
+  // The owning JobRun reports `started`/`pending`; the per-node states
+  // report `running`/`queued`. Treat all in-flight states as the same
+  // "working" tone so the live dot is amber the whole time, not grey.
+  if (
+    status === 'running' ||
+    status === 'started' ||
+    status === 'queued' ||
+    status === 'pending' ||
+    status === 'paused'
+  )
     return 'warning';
   return 'neutral';
 }
@@ -64,8 +73,8 @@ export function RunDock({
           aria-expanded={expanded}
           aria-label={
             expanded
-              ? t('pipeline.dock.collapse', { defaultValue: 'Collapse run dock' })
-              : t('pipeline.dock.expand', { defaultValue: 'Expand run dock' })
+              ? t('pipeline.dock.collapse', { defaultValue: 'Collapse run dock‌⁠‍' })
+              : t('pipeline.dock.expand', { defaultValue: 'Expand run dock‌⁠‍' })
           }
           className="flex items-center gap-1.5 rounded px-1 py-0.5 font-medium text-content-secondary hover:bg-surface-secondary"
         >
@@ -91,12 +100,20 @@ export function RunDock({
           {run.status && run.status !== 'done' && run.status !== 'success' && (
             <span className="tabular-nums text-content-tertiary">
               {t('pipeline.dock.progress', {
-                defaultValue: '{{pct}}%',
+                defaultValue: '{{pct}}%‌⁠‍',
                 pct: Math.round(run.progress),
               })}
             </span>
           )}
         </span>
+        {(run.status === 'queued' || run.status === 'pending') &&
+          run.progress === 0 && (
+            <span className="truncate text-content-tertiary">
+              {t('pipeline.dock.queued_hint', {
+                defaultValue: 'Waiting for a worker to pick up the run…',
+              })}
+            </span>
+          )}
         {run.error && (
           <span className="truncate text-semantic-error">{run.error}</span>
         )}
@@ -124,7 +141,7 @@ export function RunDock({
                 {k === 'run'
                   ? t('pipeline.dock.tab_run', { defaultValue: 'Run' })
                   : t('pipeline.dock.tab_history', {
-                      defaultValue: 'History',
+                      defaultValue: 'History‌⁠‍',
                     })}
               </button>
             ))}
@@ -136,7 +153,7 @@ export function RunDock({
                 <p className="py-6 text-center text-xs text-content-tertiary">
                   {t('pipeline.dock.no_steps', {
                     defaultValue:
-                      'Add steps and press Run to watch data flow through your pipeline.',
+                      'Add steps and press Run to watch data flow through your pipeline.‌⁠‍',
                   })}
                 </p>
               ) : (
@@ -199,6 +216,10 @@ export function RunDock({
               <ul className="space-y-1" data-testid="pipeline-run-history">
                 {runs.map((r) => {
                   const rt = statusTone(r.status);
+                  const triggerType =
+                    r.trigger && typeof r.trigger === 'object'
+                      ? r.trigger.type
+                      : undefined;
                   return (
                     <li
                       key={r.id}
@@ -206,9 +227,9 @@ export function RunDock({
                     >
                       <StatusDot variant={rt} />
                       <span className="text-content-primary">
-                        {r.trigger
-                          ? t(`pipeline.trigger.${r.trigger}`, {
-                              defaultValue: r.trigger,
+                        {triggerType
+                          ? t(`pipeline.trigger.${triggerType}`, {
+                              defaultValue: triggerType,
                             })
                           : t('pipeline.dock.manual', {
                               defaultValue: 'Manual',

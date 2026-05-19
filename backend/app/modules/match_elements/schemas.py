@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Pydantic schemas for the match-elements REST API."""
+"""‌⁠‍Pydantic schemas for the match-elements REST API."""
 
 from __future__ import annotations
 
@@ -138,7 +138,7 @@ class SessionRead(BaseModel):
 
 
 class SessionSummary(BaseModel):
-    """Compact session row for the resume picker."""
+    """‌⁠‍Compact session row for the resume picker."""
 
     id: uuid.UUID
     project_id: uuid.UUID
@@ -156,7 +156,7 @@ class SessionSummary(BaseModel):
 
 
 class GroupSummary(BaseModel):
-    """One row in the group grid — summary fields only."""
+    """‌⁠‍One row in the group grid — summary fields only."""
 
     id: uuid.UUID
     group_key: str

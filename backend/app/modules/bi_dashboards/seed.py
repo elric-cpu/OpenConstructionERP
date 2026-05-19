@@ -1,5 +1,5 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
-"""Seed data for the BI Dashboards module.
+"""‌⁠‍Seed data for the BI Dashboards module.
 
 * All registered system KPIs as :class:`KPIDefinition` rows
 * 5 role-based default dashboards (CEO / CFO / PM / Site Manager /
@@ -336,7 +336,7 @@ async def _seed_alerts(session: AsyncSession) -> list[AlertRule]:
 
 
 async def _seed_kpi_history(session: AsyncSession) -> int:
-    """Seed 8 historical rows per registered system KPI (12-week trend)."""
+    """‌⁠‍Seed 8 historical rows per registered system KPI (12-week trend)."""
     total = 0
     now = datetime.now(UTC)
     today = now.date()
@@ -369,7 +369,7 @@ async def _seed_kpi_history(session: AsyncSession) -> int:
 
 
 async def seed_all(session: AsyncSession) -> dict[str, int]:
-    """Run every seed step in dependency order and return counts."""
+    """‌⁠‍Run every seed step in dependency order and return counts."""
     service = BIDashboardsService(session)
     kpi_count = await _seed_kpi_definitions(session, service)
     dashboards = await _seed_dashboards(session)

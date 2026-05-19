@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Project-profile → modules scoring engine (concept doc §2).
+"""‌⁠‍Project-profile → modules scoring engine (concept doc §2).
 
 Weighted scoring over five axes (Activity 0.35 · Role 0.25 · Phase 0.20
 · Size 0.10 · Region 0.10). The preset's explicit set is always
@@ -174,7 +174,7 @@ SIZE_BASE: dict[str, int] = {
 
 @dataclass(frozen=True)
 class ModuleAssignment:
-    """One row the service persists into ``oe_project_module``."""
+    """‌⁠‍One row the service persists into ``oe_project_module``."""
 
     module_name: str
     enabled: bool
@@ -231,7 +231,7 @@ def compute_module_score(
     size: str,
     region: str,
 ) -> int:
-    """Weighted 0–100 aggregate for one module under a profile (doc §2.3)."""
+    """‌⁠‍Weighted 0–100 aggregate for one module under a profile (doc §2.3)."""
 
     parts = {
         "activity": _axis_score_activity(module, activities),

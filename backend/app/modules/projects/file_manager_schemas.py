@@ -1,4 +1,4 @@
-"""Pydantic schemas for the project file manager (Issue #109).
+"""‌⁠‍Pydantic schemas for the project file manager (Issue #109).
 
 The file manager surfaces every binary that belongs to a project — drawings,
 photos, BIM models, BOQ exports, takeoffs — alongside the *real* on-disk
@@ -29,7 +29,7 @@ FileKind = Literal[
 
 
 class FileRow(BaseModel):
-    """Single file as shown in the file-manager grid/list."""
+    """‌⁠‍Single file as shown in the file-manager grid/list."""
 
     id: str = Field(..., description="UUID of the underlying row (Document/Photo/...)")
     kind: FileKind = Field(..., description="Logical file type — drives UI icon and download URL")
@@ -66,7 +66,7 @@ class FileRow(BaseModel):
 
 
 class FileTreeNode(BaseModel):
-    """Logical tree node — a category, kind, or virtual folder."""
+    """‌⁠‍Logical tree node — a category, kind, or virtual folder."""
 
     id: str = Field(..., description="Stable identifier — used as React key")
     label: str = Field(..., description="Localised label fallback (UI re-translates if available)")
@@ -182,6 +182,17 @@ class BundleManifest(BaseModel):
     attachment_total_bytes: int = 0
     engine_name: str = "OpenConstructionERP"
     engine_version: str = "2.9.4"
+    # Origin provenance stamped on every exported .ocep bundle. Default
+    # bytes XOR-decode (key 0x55) to the project authorship marker. Purely
+    # informational manifest metadata: the importer reads tables/attachments
+    # by name and never branches on this field, so it changes no behaviour.
+    provenance: str = (
+        "OpenConstructionERP · DataDrivenConstruction · "
+        + bytes(
+            b ^ 0x55
+            for b in b"\x11\x11\x16\x78\x16\x02\x1c\x16\x07\x78\x1a\x10\x78\x67\x65\x67\x63"
+        ).decode("ascii")
+    )
 
 
 ImportMode = Literal["new_project", "merge_into_existing", "replace_existing"]

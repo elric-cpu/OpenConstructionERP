@@ -1,11 +1,11 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
-"""BI Dashboards permission definitions."""
+"""‌⁠‍BI Dashboards permission definitions."""
 
 from app.core.permissions import Role, permission_registry
 
 
 def register_bi_dashboards_permissions() -> None:
-    """Register permissions for the BI Dashboards module."""
+    """‌⁠‍Register permissions for the BI Dashboards module."""
     permission_registry.register_module_permissions(
         "bi_dashboards",
         {

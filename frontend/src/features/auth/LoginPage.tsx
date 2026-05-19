@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import {
-  Eye, EyeOff, Mail, Lock, Globe, ChevronDown, Info, X,
+  Eye, EyeOff, Mail, Lock, Globe, ChevronDown, X, Github, Users, ArrowUpRight, Pencil,
   ShieldCheck, Zap, Brain,
   FileSpreadsheet, CalendarClock, TrendingUp, Boxes, Database,
   BarChart3, Upload, FileCheck,
@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 import { Button, Input, Logo, LogoWithText, CountryFlag } from '@/shared/ui';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { useBrandingStore } from '@/stores/useBrandingStore';
+import { BrandingEditorModal } from '@/app/layout/CustomBranding';
 import { extractErrorMessageFromBody } from '@/shared/lib/api';
 import { AuthBackground } from './AuthBackground';
 import { SUPPORTED_LANGUAGES } from '@/app/i18n';
@@ -20,6 +22,12 @@ export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const setTokens = useAuthStore((s) => s.setTokens);
+  // White-label brand (same localStorage store the in-app sidebar editor
+  // writes to). When a tenant has set a logo / company name we show it
+  // on the login card instead of the default OpenConstructionERP wordmark.
+  const { mode: brandMode, logoDataUrl: brandLogo, companyName: brandName } =
+    useBrandingStore();
+  const brandCustomised = brandMode === 'logo' || brandMode === 'text';
   // `?next=/path` lets guarded routes send the user back to where they wanted
   // to go after login. Falls back to `/` for direct visits.
   const nextPath = (() => {
@@ -40,6 +48,7 @@ export function LoginPage() {
   );
   const [langOpen, setLangOpen] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
+  const [brandOpen, setBrandOpen] = useState(false);
   const [demoOpen, setDemoOpen] = useState(true);
   const [demoLoading, setDemoLoading] = useState<string | null>(null);
   const langRef = useRef<HTMLDivElement>(null);
@@ -496,7 +505,7 @@ export function LoginPage() {
           <p className="text-[10px] text-content-quaternary/40">
             Created by{' '}
             <a
-              href="https://www.linkedin.com/in/artem-boiko/"
+              href="https://www.linkedin.com/in/boikoartem/"
               target="_blank"
               rel="noopener noreferrer"
               className="hover:text-content-tertiary underline-offset-2 hover:underline"
@@ -523,20 +532,68 @@ export function LoginPage() {
           <div className="absolute -top-24 -left-24 w-[420px] h-[420px] rounded-full bg-sky-100/55 dark:bg-sky-500/12 blur-[110px]" />
         </div>
         <div className="w-full max-w-[380px] relative z-10">
-          {/* Logo */}
-          <div className="mb-5 flex flex-col items-center animate-stagger-in" style={{ animationDelay: '0ms' }}>
-            <div className="flex items-center gap-2.5">
-              <Logo size="md" animate />
-              <span
-                className="text-2xl font-extrabold text-content-primary whitespace-nowrap"
-                style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", letterSpacing: '-0.02em' }}
-              >
-                Open<span className="text-oe-blue">Construction</span><span className="text-content-quaternary font-semibold">ERP</span>
-              </span>
-            </div>
+          {/* Logo — tenant white-label (logo / company name) when set via
+              the in-app sidebar editor; otherwise the default brand. The
+              small "by OpenConstructionERP" attribution stays visible in
+              customised modes (AGPL-3.0 requirement). */}
+          <div className="relative mb-5 flex flex-col items-center animate-stagger-in" style={{ animationDelay: '0ms' }}>
+            {brandCustomised ? (
+              <>
+                {brandMode === 'logo' && brandLogo ? (
+                  <img
+                    src={brandLogo}
+                    alt={brandName || 'Custom logo'}
+                    className="block max-h-16 w-auto max-w-full object-contain"
+                    draggable={false}
+                  />
+                ) : (
+                  <span
+                    className="block max-w-full truncate text-center text-3xl font-extrabold text-content-primary leading-none"
+                    style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", letterSpacing: '-0.02em' }}
+                    title={brandName}
+                  >
+                    {brandName}
+                  </span>
+                )}
+                {/* "by OpenConstructionERP" — subordinate attribution that
+                    stays visible (AGPL-3.0). Mirrors CustomBranding.tsx. */}
+                <span
+                  className="mt-2 block text-[11px] leading-none text-content-tertiary"
+                  style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", letterSpacing: '0.02em' }}
+                >
+                  by{' '}
+                  <span className="font-semibold tracking-tight">
+                    Open<span className="text-oe-blue/80">Construction</span>
+                    <span className="text-content-quaternary">ERP</span>
+                  </span>
+                </span>
+              </>
+            ) : (
+              <div className="flex items-center gap-2.5">
+                <Logo size="md" animate />
+                <span
+                  className="text-2xl font-extrabold text-content-primary whitespace-nowrap"
+                  style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", letterSpacing: '-0.02em' }}
+                >
+                  Open<span className="text-oe-blue">Construction</span><span className="text-content-quaternary font-semibold">ERP</span>
+                </span>
+              </div>
+            )}
             <p className="mt-2 text-sm text-content-tertiary">
               {t('login.workspace_tagline', { defaultValue: 'Professional construction project workspace' })}
             </p>
+            {/* White-label trigger — same editor as the in-app sidebar
+                brand control, available pre-auth so a tenant can put
+                their own logo on the sign-in screen. */}
+            <button
+              type="button"
+              onClick={() => setBrandOpen(true)}
+              className="absolute right-0 top-0 inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border-light bg-surface-elevated/60 text-content-tertiary backdrop-blur-sm transition-colors hover:border-oe-blue/40 hover:bg-oe-blue/5 hover:text-oe-blue focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
+              aria-label={t('login.brand_edit', { defaultValue: 'Customize logo' })}
+              title={t('login.brand_edit', { defaultValue: 'Customize logo' })}
+            >
+              <Pencil size={18} strokeWidth={2.25} />
+            </button>
           </div>
 
           {/* Open-source banner (mobile) */}
@@ -684,16 +741,57 @@ export function LoginPage() {
             </div>
           </div>
 
-          {/* Learn more — direct link to the marketing site (was a popup). */}
-          <div className="mt-4 flex items-center justify-center gap-3 animate-stagger-in" style={{ animationDelay: '520ms' }}>
+          {/* GitHub + Community — two primary entry points for the
+              open-source project (replaces the old single "Learn more"
+              link). Premium two-line cards with a tinted icon badge:
+              graphite for the source repo, oe-blue gradient for the
+              community hub. Mirrors the page's login-glass-pro language. */}
+          <div className="mt-4 grid grid-cols-2 gap-3 animate-stagger-in" style={{ animationDelay: '520ms' }}>
             <a
-              href="https://OpenConstructionERP.com"
+              href="https://github.com/datadrivenconstruction/OpenConstructionERP"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1.5 rounded-lg border border-border-light/60 px-3 py-1.5 text-2xs text-content-tertiary hover:text-oe-blue hover:border-oe-blue/30 transition-colors"
+              aria-label={`${t('login.github', { defaultValue: 'GitHub' })} — ${t('login.github_sub', { defaultValue: 'Source code' })}`}
+              className="group relative flex items-center gap-3 overflow-hidden rounded-xl border border-border-light/70 bg-white/75 dark:bg-surface-elevated/80 backdrop-blur-sm px-3.5 py-3 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/90 dark:hover:bg-surface-elevated/90 hover:border-content-primary/25 hover:shadow-lg"
             >
-              <Info size={12} />
-              {t('login.learn_more', 'Learn more about the platform')}
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-content-primary/[0.06] text-content-primary transition-colors group-hover:bg-content-primary/10">
+                <Github size={17} strokeWidth={1.9} />
+              </span>
+              <span className="min-w-0 flex-1 leading-tight">
+                <span className="block text-[13px] font-semibold text-content-primary">
+                  {t('login.github', { defaultValue: 'GitHub' })}
+                </span>
+                <span className="block truncate text-[11px] text-content-tertiary">
+                  {t('login.github_sub', { defaultValue: 'Source code' })}
+                </span>
+              </span>
+              <ArrowUpRight
+                size={15}
+                className="shrink-0 text-content-quaternary transition-all duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-content-secondary"
+              />
+            </a>
+            <a
+              href="https://github.com/datadrivenconstruction/OpenConstructionERP/discussions"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`${t('login.community', { defaultValue: 'Community' })} — ${t('login.community_sub', { defaultValue: 'Get help & discuss' })}`}
+              className="group relative flex items-center gap-3 overflow-hidden rounded-xl border border-oe-blue/25 bg-white/70 dark:bg-transparent bg-gradient-to-br from-oe-blue/[0.10] to-sky-500/[0.05] px-3.5 py-3 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/85 dark:hover:bg-transparent hover:border-oe-blue/45 hover:from-oe-blue/[0.16] hover:to-sky-500/[0.09] hover:shadow-lg"
+            >
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-oe-blue/12 text-oe-blue transition-colors group-hover:bg-oe-blue/20">
+                <Users size={17} strokeWidth={1.9} />
+              </span>
+              <span className="min-w-0 flex-1 leading-tight">
+                <span className="block text-[13px] font-semibold text-oe-blue">
+                  {t('login.community', { defaultValue: 'Community' })}
+                </span>
+                <span className="block truncate text-[11px] text-oe-blue/65">
+                  {t('login.community_sub', { defaultValue: 'Get help & discuss' })}
+                </span>
+              </span>
+              <ArrowUpRight
+                size={15}
+                className="shrink-0 text-oe-blue/55 transition-all duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-oe-blue"
+              />
             </a>
           </div>
           <div className="lg:hidden mt-2 text-center text-2xs text-content-quaternary">
@@ -705,6 +803,9 @@ export function LoginPage() {
           </div>
         </div>
       </div>
+
+      {/* ── White-label branding editor (pre-auth) ── */}
+      {brandOpen && <BrandingEditorModal onClose={() => setBrandOpen(false)} />}
 
       {/* ── About modal ── */}
       {showInfo && (

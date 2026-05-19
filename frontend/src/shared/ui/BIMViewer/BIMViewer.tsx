@@ -44,6 +44,11 @@ import {
   Settings,
   Camera,
   Sparkles,
+  Scissors,
+  Triangle,
+  PencilRuler,
+  RotateCcw,
+  Move3d,
 } from 'lucide-react';
 import { fetchBIMElementProperties } from '@/features/bim/api';
 import { SceneManager } from './SceneManager';
@@ -52,6 +57,8 @@ import type { BIMElementData } from './ElementManager';
 import { aggregateBIMQuantities, type AggResult } from './aggregation';
 import { SelectionManager } from './SelectionManager';
 import { MeasureManager } from './MeasureManager';
+import { ClipManager } from './ClipManager';
+import { deriveGeometry, deriveRelations } from './canonicalElementDetails';
 import { BIMContextMenu } from './BIMContextMenu';
 import type { BIMContextMenuState } from './BIMContextMenu';
 import {
@@ -63,6 +70,7 @@ import { TimelineScrubber } from './TimelineScrubber';
 import { use4dTimeline } from './use4dTimeline';
 import { resolveElementStatus } from './4dStatus';
 import SimilarItemsPanel from '@/shared/ui/SimilarItemsPanel';
+import { Slider } from '@/shared/ui/Slider';
 import { useBIMViewerStore } from '@/stores/useBIMViewerStore';
 import { useBIMGeometryCache } from '@/stores/useBIMGeometryCache';
 import { useBIMMeasurementsStore } from '@/stores/useBIMMeasurementsStore';
@@ -85,8 +93,17 @@ export interface BIMViewerProps {
   /** Callback firing on every selection change with the FULL set of selected
    *  element ids. Use this (not `onElementSelect`) to track Ctrl+click /
    *  Shift+click multi-selection in the parent so highlights stay correct
-   *  across renders. */
-  onSelectionChange?: (elementIds: string[]) => void;
+   *  across renders.
+   *
+   *  The second arg carries the resolved `BIMElementData` rows for the
+   *  selection (including viewer-side stubs that have a `mesh_ref` but no
+   *  DB row yet). Callers that need to persist the selection — e.g. "save
+   *  as group" — must use these rows so stub ids get resolved to real
+   *  BIMElement UUIDs instead of being stored verbatim. */
+  onSelectionChange?: (
+    elementIds: string[],
+    elements: BIMElementData[],
+  ) => void;
   /** Callback when an element is hovered. */
   onElementHover?: (elementId: string | null) => void;
   /** View mode coloring scheme. */
@@ -203,6 +220,34 @@ export interface BIMViewerProps {
    *  banner even before any element-level ``is_placeholder`` flag arrives
    *  (paginated element fetch can lag behind the model load). */
   modelMetadata?: Record<string, unknown> | null;
+  /**
+   * Model-version diff overlay. When set, every element is recoloured by
+   * its change type (added = green, deleted = red, modified = amber,
+   * unchanged = faded grey).  Read-only consumption of the backend diff —
+   * keyed by `stable_id` (deleted elements don't exist in this model so
+   * they can't be coloured, only counted/listed in the diff panel).
+   * Pass null to clear the overlay. The `elementsByStableId` lookup is
+   * built by the viewer itself.
+   */
+  diffChangeByStableId?: Map<string, 'added' | 'deleted' | 'modified'> | null;
+  /**
+   * Clash-review deep-link support. When the user opens a clash result's
+   * "3D" link the parent passes the two interfering element ids here so the
+   * viewer colours them in a distinct clash red (≠ the orange BOQ-link
+   * highlight) ON TOP of the isolation set in `isolatedIds`. Pass null when
+   * not reviewing a clash.
+   */
+  clashHighlightIds?: string[] | null;
+  /**
+   * World-space point to frame the camera on. The clash-review deep-link
+   * passes the clash centroid (`cx/cy/cz`) — a reliable focus target even
+   * for showcase IFC/RVT models whose GLB nodes are numeric Revit ids that
+   * never match the DB element UUIDs (so per-element mesh resolution is only
+   * approximate and `zoomToSelection` on the matched meshes can frame the
+   * wrong spot). Re-applied after geometry finishes loading so the deep-link
+   * survives the load race. Pass null for normal viewing.
+   */
+  focusPoint?: { x: number; y: number; z: number } | null;
 }
 
 /* ── Properties Table ──────────────────────────────────────────────────── */
@@ -432,6 +477,9 @@ export function BIMViewer({
   leftPanelWidth = 320,
   modelName,
   modelMetadata = null,
+  diffChangeByStableId = null,
+  clashHighlightIds = null,
+  focusPoint = null,
 }: BIMViewerProps) {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -439,13 +487,38 @@ export function BIMViewer({
   const elementMgrRef = useRef<ElementManager | null>(null);
   const selectionMgrRef = useRef<SelectionManager | null>(null);
   const measureMgrRef = useRef<MeasureManager | null>(null);
+  const clipMgrRef = useRef<ClipManager | null>(null);
   const categoryOpacity = useBIMViewerStore((s) => s.categoryOpacity);
   const hiddenCategories = useBIMViewerStore((s) => s.hiddenCategories);
   const measureActive = useBIMViewerStore((s) => s.measureActive);
   const setMeasureActive = useBIMViewerStore((s) => s.setMeasureActive);
+  const measureKind = useBIMViewerStore((s) => s.measureKind);
+  const setMeasureKind = useBIMViewerStore((s) => s.setMeasureKind);
+  const measureSnap = useBIMViewerStore((s) => s.measureSnap);
+  const setMeasureSnap = useBIMViewerStore((s) => s.setMeasureSnap);
+  const clipMode = useBIMViewerStore((s) => s.clipMode);
+  const setClipMode = useBIMViewerStore((s) => s.setClipMode);
+  const clipPanelOpen = useBIMViewerStore((s) => s.clipPanelOpen);
+  const setClipPanelOpen = useBIMViewerStore((s) => s.setClipPanelOpen);
+  const ghostActive = useBIMViewerStore((s) => s.ghostActive);
+  const setGhostActive = useBIMViewerStore((s) => s.setGhostActive);
   const summaryPanelOpen = useBIMViewerStore((s) => s.summaryPanelOpen);
   const setSummaryPanelOpen = useBIMViewerStore((s) => s.setSummaryPanelOpen);
   const [measureCount, setMeasureCount] = useState(0);
+  /** Local mirror of the live section-box / plane state for the popover. */
+  const [clipBox, setClipBox] = useState({
+    minX: 0,
+    maxX: 1,
+    minY: 0,
+    maxY: 1,
+    minZ: 0,
+    maxZ: 1,
+  });
+  const [clipPlane, setClipPlane] = useState<{
+    axis: 'x' | 'y' | 'z';
+    offset: number;
+    flipped: boolean;
+  }>({ axis: 'y', offset: 0.5, flipped: false });
   // Latest onIsolationChange callback — needed because the
   // SelectionManager init effect runs only on mount and would
   // otherwise capture a stale prop reference.
@@ -496,6 +569,13 @@ export function BIMViewer({
    *  clicks Retry. Doesn't change ``geometryUrl`` so we can't simply
    *  re-set state to the same value — a discriminating dep is needed. */
   const [geometryRetryNonce, setGeometryRetryNonce] = useState(0);
+  /** Bumped once geometry has finished loading + parsing AND the mesh⇄
+   *  element map is populated. The isolate / highlight / clash-focus effects
+   *  depend on this so a deep-link (`?isolate=`, clash "3D" link) that
+   *  arrives BEFORE geometry is ready is re-applied after the load instead
+   *  of being silently dropped (the meshMap was empty → isolate() hid
+   *  everything → zoomToSelection([]) early-returned → blank viewer). */
+  const [geometryReadyNonce, setGeometryReadyNonce] = useState(0);
   // Track the "hide-overlay" timeout so the cleanup effect can clear it
   // when the component unmounts mid-load (avoids setState-on-unmounted warns).
   const geometryProgressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -708,7 +788,14 @@ export function BIMViewer({
         // (so the parent can echo it back via selectedElementIds and keep
         // every Ctrl+click highlighted across renders).
         onElementSelectRef.current?.(ids.length > 0 ? ids[ids.length - 1]! : null);
-        onSelectionChangeRef.current?.(ids);
+        // Resolve full rows (including viewer stubs) so the parent can
+        // persist the selection without losing stub mesh_refs.
+        const selectedData: BIMElementData[] = [];
+        for (const id of ids) {
+          const d = elementMgr.getElementData(id);
+          if (d) selectedData.push(d);
+        }
+        onSelectionChangeRef.current?.(ids, selectedData);
         // Close context menu on selection change
         setContextMenu(null);
       },
@@ -758,8 +845,15 @@ export function BIMViewer({
       onMeasurementAdded: (m) => {
         // Mirror the new measurement into the Tools-panel store so the user
         // can manage it (rename / hide / delete) after they leave measure
-        // mode. RFC 19 §UX-10.
-        useBIMMeasurementsStore.getState().add({ id: m.id, distance: m.distance });
+        // mode. RFC 19 §UX-10. Carries kind/value/perimeter so the list can
+        // show m / m² / ° correctly (not just metres).
+        useBIMMeasurementsStore.getState().add({
+          id: m.id,
+          kind: m.kind,
+          distance: m.distance,
+          value: m.value,
+          perimeter: m.perimeter,
+        });
       },
       onMiss: () => {
         useToastStore.getState().addToast({
@@ -772,6 +866,9 @@ export function BIMViewer({
       },
     });
     measureMgrRef.current = measureMgr;
+
+    const clipMgr = new ClipManager(scene);
+    clipMgrRef.current = clipMgr;
 
     // Track mouse position for hover tooltip
     const handleMouseMoveForTooltip = (e: MouseEvent) => {
@@ -787,6 +884,7 @@ export function BIMViewer({
 
     return () => {
       canvas.removeEventListener('mousemove', handleMouseMoveForTooltip);
+      clipMgr.dispose();
       measureMgr.dispose();
       selectionMgr.dispose();
       elementMgr.dispose();
@@ -795,6 +893,7 @@ export function BIMViewer({
       elementMgrRef.current = null;
       selectionMgrRef.current = null;
       measureMgrRef.current = null;
+      clipMgrRef.current = null;
     };
     // Intentionally only run on mount — stable refs
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -858,6 +957,14 @@ export function BIMViewer({
   // Load DAE geometry when URL is available (after elements are loaded)
   const onGeometryLoadedRef = useRef(onGeometryLoaded);
   onGeometryLoadedRef.current = onGeometryLoaded;
+  // True while a deep-link isolation OR a clash-focus point is active. The
+  // post-load camera re-fit (which frames the FULL model) must NOT run in
+  // that case — it would override the deep-link framing the isolate/clash
+  // effect is about to apply, leaving the user staring at the whole model
+  // again (the original "nothing happens" symptom).
+  const deepLinkActiveRef = useRef(false);
+  deepLinkActiveRef.current =
+    !!(isolatedIds && isolatedIds.length > 0) || !!focusPoint;
   useEffect(() => {
     if (!elementMgrRef.current || !geometryUrl || !elements?.length) return;
     const mgr = elementMgrRef.current;
@@ -907,6 +1014,12 @@ export function BIMViewer({
             geometryProgressTimeoutRef.current = null;
           }, 200);
           onGeometryLoadedRef.current?.(mgr.getMeshMatchRatio());
+          // Signal that the meshMap is now populated so any deep-link
+          // isolate / clash-highlight / clash-focus that arrived before the
+          // geometry finished (the common case — the skeleton element list
+          // resolves long before the multi-MB GLB) gets re-applied instead
+          // of being lost to the load race.
+          setGeometryReadyNonce((n) => n + 1);
           // Re-fit the camera AFTER the DAE scene has been parented and
           // the next render cycle had a chance to commit world matrices.
           // We chain two requestAnimationFrame calls so the fit runs
@@ -917,7 +1030,13 @@ export function BIMViewer({
           // Each call inside SceneManager.zoomToFit forces
           // updateMatrixWorld(true), so a stale matrix tree cannot
           // sabotage the bbox computation.
-          const fit = () => sceneRef.current?.zoomToFit();
+          const fit = () => {
+            // Skip the full-model fit when a deep-link isolation / clash
+            // focus is pending — the isolate/clash effect frames the right
+            // subset/point instead (re-triggered by geometryReadyNonce).
+            if (deepLinkActiveRef.current) return;
+            sceneRef.current?.zoomToFit();
+          };
           fit();
           requestAnimationFrame(() => {
             fit();
@@ -991,6 +1110,27 @@ export function BIMViewer({
     setHiddenIds(new Set());
     const hasIsolation = !!(isolatedIds && isolatedIds.length > 0);
     const hasFilter = !!filterPredicate;
+    const hasClashFocus = !!focusPoint;
+    // Frame the camera on the clash centroid when one was supplied. This is
+    // the reliable focus target for the clash-review deep-link: showcase
+    // IFC/RVT models export GLB nodes named with numeric Revit ids that
+    // never equal the DB element UUIDs, so the per-element mesh pairing is
+    // only an approximate positional fallback — zooming to those meshes can
+    // frame the wrong spot. The clash centroid is exact regardless.
+    const frameClash = (): boolean => {
+      if (!hasClashFocus || !sceneRef.current) return false;
+      // `focusPoint` is the clash centroid in the backend's canonical Z-up
+      // world (same frame as element bounding boxes). The loaded scene is
+      // rotated -90° about X (Z-up → Y-up) — exactly the transform the
+      // positional-fallback applies to element bbox centres
+      // (ElementManager: vx = x, vy = z, vz = -y). Apply the same here so
+      // the camera target lands on the geometry, not 90° off.
+      sceneRef.current.focusOnPoint(
+        { x: focusPoint!.x, y: focusPoint!.z, z: -focusPoint!.y },
+        4,
+      );
+      return true;
+    };
     if (hasIsolation && hasFilter) {
       // Intersection semantics: visible = isolatedIds ∩ filterPredicate(elements).
       // Compute the intersecting id set and route through isolate() so the
@@ -1003,19 +1143,57 @@ export function BIMViewer({
         .filter((e) => idSet.has(e.id) && filterPredicate!(e))
         .map((e) => e.id);
       elementMgrRef.current.isolate(intersectIds);
-      const visibleMeshes = elementMgrRef.current
-        .getAllMeshes()
-        .filter((m) => m.visible);
-      if (visibleMeshes.length > 0) {
-        sceneRef.current.zoomToSelection(visibleMeshes);
+      if (!frameClash()) {
+        const visibleMeshes = elementMgrRef.current
+          .getAllMeshes()
+          .filter((m) => m.visible);
+        if (visibleMeshes.length > 0) {
+          sceneRef.current.zoomToSelection(visibleMeshes);
+        }
       }
     } else if (hasIsolation) {
       elementMgrRef.current.isolate(isolatedIds!);
-      const visibleMeshes = elementMgrRef.current
-        .getAllMeshes()
-        .filter((m) => m.visible);
-      if (visibleMeshes.length > 0) {
-        sceneRef.current.zoomToSelection(visibleMeshes);
+      // (The clash red / BOQ orange colouring is applied by the dedicated
+      // highlight effect below — keeping all highlight-material mutation in
+      // one place so the two consumers don't clear each other.)
+      //
+      // Prefer the clash centroid for framing; fall back to the matched
+      // meshes (and only those — not the whole model) when no centroid was
+      // passed.
+      if (!frameClash()) {
+        const visibleMeshes = elementMgrRef.current
+          .getAllMeshes()
+          .filter((m) => m.visible);
+        if (visibleMeshes.length > 0) {
+          sceneRef.current.zoomToSelection(visibleMeshes);
+        }
+      }
+      // Loud, useful failure: nothing isolated AND no centroid to fall
+      // back on means the clash elements could not be located in this
+      // model's geometry. Better than a silently blank viewer.
+      if (clashHighlightIds && clashHighlightIds.length > 0) {
+        const matched = elementMgrRef.current.getMeshesForIds(clashHighlightIds);
+        if (matched.length === 0 && !hasClashFocus) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            '[BIM] clash deep-link: none of',
+            clashHighlightIds,
+            'resolved to a mesh in model',
+            modelId,
+            '— and no clash centroid was supplied for camera framing.',
+          );
+          useToastStore.getState().addToast({
+            type: 'warning',
+            title: t('bim.clash_elements_not_found', {
+              defaultValue:
+                "Couldn't locate these elements in the 3D model.",
+            }),
+            message: t('bim.clash_elements_not_found_hint', {
+              defaultValue:
+                'The clash references elements that are not in this geometry. Re-upload the model so the viewer can attach a stable reference.',
+            }),
+          });
+        }
       }
     } else if (hasFilter) {
       const visibleCount = elementMgrRef.current.applyFilter(filterPredicate!);
@@ -1030,20 +1208,50 @@ export function BIMViewer({
         // All visible (e.g. cleared filter) — zoom back out to the full model
         sceneRef.current.zoomToFit();
       }
+    } else if (hasClashFocus) {
+      // Clash focus with no isolation/filter — keep the model visible for
+      // context and just point the camera at the interference. Colouring is
+      // handled by the highlight effect below.
+      elementMgrRef.current.showAll();
+      frameClash();
     } else {
       elementMgrRef.current.showAll();
       sceneRef.current.zoomToFit();
     }
-  }, [filterPredicate, isolatedIds, elements]);
+  // ``geometryReadyNonce`` re-runs this once the meshMap is populated so a
+  // deep-link that arrived before the GLB finished is (re)applied. The
+  // clash props frame/colour the interference.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    filterPredicate,
+    isolatedIds,
+    elements,
+    geometryReadyNonce,
+    clashHighlightIds,
+    focusPoint,
+  ]);
 
-  // Highlight linked elements in orange when the parent passes a set of
-  // IDs.  Unlike isolate(), this does NOT hide the rest of the model —
-  // it just recolours the matched meshes so the user sees the spatial
-  // distribution of whichever BOQ position they're inspecting.
+  // Highlight linked elements when the parent passes a set of IDs. Unlike
+  // isolate(), this does NOT hide the rest of the model — it just recolours
+  // the matched meshes.
+  //
+  // Two consumers share this single highlight pass (the manager keeps only
+  // one set of highlight materials, so they must NOT run in separate effects
+  // or the later one clears the earlier one):
+  //   • clashHighlightIds → clash red (#ff3b30) — the clash-review deep-link
+  //     flags the two interfering elements on top of the isolation set.
+  //   • highlightedIds     → BOQ-link orange — shows which elements a BOQ
+  //     position is linked to.
+  // Clash takes precedence when both are set. Depends on geometryReadyNonce
+  // so a deep-link that arrived before the GLB finished is re-applied.
   useEffect(() => {
     if (!elementMgrRef.current) return;
-    elementMgrRef.current.highlight(highlightedIds ?? []);
-  }, [highlightedIds, elements]);
+    if (clashHighlightIds && clashHighlightIds.length > 0) {
+      elementMgrRef.current.highlight(clashHighlightIds, 0xff3b30);
+    } else {
+      elementMgrRef.current.highlight(highlightedIds ?? []);
+    }
+  }, [highlightedIds, clashHighlightIds, elements, geometryReadyNonce]);
 
   // Apply color-by mode when it changes.
   // Field-based modes use the existing hash-to-hue palette via colorBy().
@@ -1052,6 +1260,36 @@ export function BIMViewer({
   useEffect(() => {
     if (!elementMgrRef.current || !elements?.length) return;
     const mgr = elementMgrRef.current;
+    // Diff overlay takes precedence over every colour-by mode: while a
+    // model-version comparison is active the user is reviewing changes,
+    // not coverage/validation. Added = green, modified = amber, unchanged
+    // = faded grey. Deleted elements aren't in this model so they only
+    // show in the diff panel list.
+    if (diffChangeByStableId && diffChangeByStableId.size > 0) {
+      import('three').then((THREE) => {
+        const GREEN = new THREE.Color('#10b981');
+        const AMBER = new THREE.Color('#f59e0b');
+        const GREY = new THREE.Color('#cbd5e1');
+        mgr.colorByDirect(
+          (el) => {
+            const change = el.stable_id
+              ? diffChangeByStableId.get(el.stable_id)
+              : undefined;
+            if (change === 'added') return GREEN;
+            if (change === 'modified') return AMBER;
+            return GREY;
+          },
+          (el) => {
+            const change = el.stable_id
+              ? diffChangeByStableId.get(el.stable_id)
+              : undefined;
+            // Fade the unchanged context so the changes pop.
+            return change === 'added' || change === 'modified' ? 1 : 0.35;
+          },
+        );
+      });
+      return;
+    }
     if (colorByMode === 'storey') {
       mgr.colorBy((el) => el.storey || 'Unassigned');
     } else if (colorByMode === 'type') {
@@ -1176,6 +1414,7 @@ export function BIMViewer({
   }, [
     colorByMode,
     elements,
+    diffChangeByStableId,
     // 4D mode is time-varying: recolour whenever the scrubber moves or
     // the schedule data re-arrives.  These deps are harmless for other
     // modes because `fourD.currentMs` is a stable 0 when unavailable.
@@ -1216,6 +1455,48 @@ export function BIMViewer({
     measureMgrRef.current?.setActive(measureActive);
     selectionMgrRef.current?.setSuspended(measureActive);
   }, [measureActive]);
+
+  // Sync measure kind (distance / area / angle) + vertex snapping from the
+  // shared store. Changing the kind clears any half-traced measurement.
+  useEffect(() => {
+    measureMgrRef.current?.setKind(measureKind);
+  }, [measureKind]);
+  useEffect(() => {
+    measureMgrRef.current?.setSnapEnabled(measureSnap);
+  }, [measureSnap]);
+
+  // Sync the section box / clipping plane from the shared store.
+  useEffect(() => {
+    clipMgrRef.current?.setMode(clipMode);
+  }, [clipMode]);
+  useEffect(() => {
+    clipMgrRef.current?.setBoxExtent(clipBox);
+  }, [clipBox]);
+  useEffect(() => {
+    clipMgrRef.current?.setPlaneState(clipPlane);
+  }, [clipPlane]);
+
+  // Re-fit the clip planes to the freshly loaded model so a section that was
+  // enabled before geometry streamed in cuts the new mesh, not the old box.
+  useEffect(() => {
+    if (clipMode !== 'none') clipMgrRef.current?.invalidateModelBox();
+    // Driven off element identity + geometry-loaded the same way the rest of
+    // the load chain is.
+  }, [elements, clipMode]);
+
+  // Ghost mode: dim everything except the current selection. Restores
+  // cleanly when toggled off or when the selection clears. Mutually
+  // exclusive with isolation (isolation hides, ghost dims) — the UI only
+  // lets one run at a time.
+  useEffect(() => {
+    const mgr = elementMgrRef.current;
+    if (!mgr) return;
+    if (ghostActive && selectedElementIds && selectedElementIds.length > 0) {
+      mgr.ghost(selectedElementIds);
+    } else {
+      mgr.clearGhost();
+    }
+  }, [ghostActive, selectedElementIds, elements]);
 
   // Expose a tiny camera bridge on `window.__oeBim` so sibling right-panel
   // tabs can snapshot/restore the camera without a direct SceneManager handle.
@@ -1693,6 +1974,15 @@ export function BIMViewer({
         return;
       }
 
+      // Enter closes an in-progress area polygon (delegated to the manager,
+      // which only acts when the area kind has ≥3 points).
+      if (measureMgrRef.current?.active && e.key === 'Enter') {
+        if (measureMgrRef.current.handleKeyDown(e)) {
+          e.preventDefault();
+          return;
+        }
+      }
+
       switch (e.key.toLowerCase()) {
         case 'f':
           e.preventDefault();
@@ -1888,6 +2178,27 @@ export function BIMViewer({
     if (!selectedElement?.quantities) return {};
     return selectedElement.quantities;
   }, [selectedElement]);
+
+  // Canonical geometry derived from the element's bounding box (the
+  // canonical format's geometry block is flattened into bbox/quantities by
+  // the API — this surfaces the W/D/H/footprint/diagonal it implies).
+  const elementGeometry = useMemo(
+    () => deriveGeometry(selectedElement?.bounding_box),
+    [selectedElement],
+  );
+  // Canonical spatial relations (level / zone / system / assembly / phase).
+  const elementRelations = useMemo(
+    () =>
+      selectedElement
+        ? deriveRelations({
+            storey: selectedElement.storey,
+            properties: selectedElement.properties,
+            metadata: (selectedElement as { metadata?: Record<string, unknown> })
+              .metadata,
+          })
+        : [],
+    [selectedElement],
+  );
 
   return (
     <div ref={containerRef} className={clsx('relative w-full h-full min-h-[400px] bg-surface-secondary rounded-lg overflow-hidden', className)}>
@@ -2230,35 +2541,148 @@ export function BIMViewer({
           active={measureActive}
           variant="group"
         />
+        <ToolbarButton
+          icon={Scissors}
+          label={t('bim.clip_toggle', {
+            defaultValue: 'Section box / clipping plane',
+          })}
+          onClick={() => setClipPanelOpen(!clipPanelOpen)}
+          active={clipMode !== 'none' || clipPanelOpen}
+          variant="group"
+          testId="bim-clip-toggle"
+        />
+        <ToolbarButton
+          icon={EyeOffIcon}
+          label={t('bim.ghost_toggle', {
+            defaultValue: 'Ghost non-selected (G hold)',
+          })}
+          onClick={() => setGhostActive(!ghostActive)}
+          active={ghostActive}
+          variant="group"
+          testId="bim-ghost-toggle"
+        />
       </div>
+
+      {/* Section / clipping-plane control popover. Anchored under the
+          toolbar; mutually-exclusive box vs plane modes with live
+          sliders. */}
+      {clipPanelOpen && (
+        <ClipControls
+          mode={clipMode}
+          onModeChange={setClipMode}
+          box={clipBox}
+          onBoxChange={(patch) => setClipBox((b) => ({ ...b, ...patch }))}
+          plane={clipPlane}
+          onPlaneChange={(patch) => setClipPlane((p) => ({ ...p, ...patch }))}
+          onReset={() => {
+            setClipMode('none');
+            setClipBox({
+              minX: 0,
+              maxX: 1,
+              minY: 0,
+              maxY: 1,
+              minZ: 0,
+              maxZ: 1,
+            });
+            setClipPlane({ axis: 'y', offset: 0.5, flipped: false });
+          }}
+          onClose={() => setClipPanelOpen(false)}
+          leftOffset={leftPanelOpen ? leftPanelWidth + 12 : 12}
+        />
+      )}
       {/* Measure hint shown while the tool is active. Includes a Clear
           affordance so users don't have to hunt for the right-panel Tools
           tab to drop stale measurements. */}
       {measureActive && (
         <div
-          className="absolute top-14 start-1/2 -translate-x-1/2 z-20 flex items-center gap-2 px-3 py-1.5 rounded-md bg-surface-primary border border-oe-blue/40 shadow-sm text-[11px] text-content-secondary"
+          className="absolute top-14 start-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-1.5 px-3 py-2 rounded-md bg-surface-primary border border-oe-blue/40 shadow-sm text-[11px] text-content-secondary"
           data-testid="bim-measure-hint"
         >
-          <Ruler size={12} className="text-oe-blue shrink-0" />
-          <span>
-            {t('bim.measure_hint', {
-              defaultValue:
-                'Click two points to measure. Esc to cancel. {{count}} saved.',
-              count: measureCount,
-            })}
-          </span>
-          {measureCount > 0 && (
+          <div className="flex items-center gap-2">
+            {/* Measure-kind segmented control. */}
+            <div
+              className="inline-flex rounded-md border border-border-light overflow-hidden"
+              role="group"
+              aria-label={t('bim.measure_kind_aria', {
+                defaultValue: 'Measurement type',
+              })}
+            >
+              {([
+                ['distance', Ruler, t('bim.measure_distance', { defaultValue: 'Distance' })] as const,
+                ['area', PencilRuler, t('bim.measure_area', { defaultValue: 'Area' })] as const,
+                ['angle', Triangle, t('bim.measure_angle', { defaultValue: 'Angle' })] as const,
+              ]).map(([k, KIcon, kLabel]) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setMeasureKind(k)}
+                  aria-pressed={measureKind === k}
+                  data-testid={`measure-kind-${k}`}
+                  className={clsx(
+                    'inline-flex items-center gap-1 px-2 py-1 text-[10px] font-medium transition-colors',
+                    measureKind === k
+                      ? 'bg-oe-blue text-white'
+                      : 'bg-surface-secondary text-content-secondary hover:bg-surface-tertiary',
+                  )}
+                >
+                  <KIcon size={11} />
+                  {kLabel}
+                </button>
+              ))}
+            </div>
             <button
               type="button"
-              onClick={() => {
-                measureMgrRef.current?.clearAll();
-                useBIMMeasurementsStore.getState().clear();
-              }}
-              className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-oe-blue hover:bg-oe-blue/10 transition-colors"
+              onClick={() => setMeasureSnap(!measureSnap)}
+              aria-pressed={measureSnap}
+              data-testid="measure-snap-toggle"
+              title={t('bim.measure_snap_hint', {
+                defaultValue: 'Snap clicks to the nearest geometry vertex',
+              })}
+              className={clsx(
+                'inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium border transition-colors',
+                measureSnap
+                  ? 'bg-oe-blue/10 text-oe-blue border-oe-blue/40'
+                  : 'bg-surface-secondary text-content-tertiary border-border-light hover:bg-surface-tertiary',
+              )}
             >
-              {t('bim.measure_clear', { defaultValue: 'Clear' })}
+              <Move3d size={11} />
+              {t('bim.measure_snap', { defaultValue: 'Snap' })}
             </button>
-          )}
+          </div>
+          <div className="flex items-center gap-2">
+            <Ruler size={12} className="text-oe-blue shrink-0" />
+            <span>
+              {measureKind === 'area'
+                ? t('bim.measure_hint_area', {
+                    defaultValue:
+                      'Click ≥3 points, then double-click or Enter to close. {{count}} saved.',
+                    count: measureCount,
+                  })
+                : measureKind === 'angle'
+                  ? t('bim.measure_hint_angle', {
+                      defaultValue:
+                        'Click 3 points — the angle is at the middle point. {{count}} saved.',
+                      count: measureCount,
+                    })
+                  : t('bim.measure_hint', {
+                      defaultValue:
+                        'Click two points to measure. Esc to cancel. {{count}} saved.',
+                      count: measureCount,
+                    })}
+            </span>
+            {measureCount > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  measureMgrRef.current?.clearAll();
+                  useBIMMeasurementsStore.getState().clear();
+                }}
+                className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-oe-blue hover:bg-oe-blue/10 transition-colors"
+              >
+                {t('bim.measure_clear', { defaultValue: 'Clear' })}
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -3215,6 +3639,50 @@ export function BIMViewer({
                   </div>
                 )}
 
+                {/* Geometry — derived from the canonical bounding box. */}
+                {elementGeometry && (
+                  <div data-testid="bim-geometry-section">
+                    <h4 className="text-sm font-semibold text-content-primary mb-1.5 flex items-center gap-1.5">
+                      <Move3d size={13} className="text-oe-blue" />
+                      {t('bim.geometry', { defaultValue: 'Geometry' })}
+                    </h4>
+                    <QuantitiesTable
+                      quantities={{
+                        [t('bim.geo_width', { defaultValue: 'Width (m)' })]:
+                          elementGeometry.width,
+                        [t('bim.geo_depth', { defaultValue: 'Depth (m)' })]:
+                          elementGeometry.depth,
+                        [t('bim.geo_height', { defaultValue: 'Height (m)' })]:
+                          elementGeometry.height,
+                        [t('bim.geo_footprint', {
+                          defaultValue: 'Footprint (m²)',
+                        })]: elementGeometry.footprint,
+                        [t('bim.geo_bbox_volume', {
+                          defaultValue: 'Bounding volume (m³)',
+                        })]: elementGeometry.bboxVolume,
+                        [t('bim.geo_diagonal', {
+                          defaultValue: 'Diagonal (m)',
+                        })]: elementGeometry.diagonal,
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* Spatial relations — level / zone / system / assembly. */}
+                {elementRelations.length > 0 && (
+                  <div data-testid="bim-relations-section">
+                    <h4 className="text-sm font-semibold text-content-primary mb-1.5 flex items-center gap-1.5">
+                      <Boxes size={13} className="text-emerald-500" />
+                      {t('bim.relations', { defaultValue: 'Spatial structure' })}
+                    </h4>
+                    <div className="space-y-1.5">
+                      {elementRelations.map((r) => (
+                        <InfoRow key={r.key} label={r.key} value={r.value} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Classification */}
                 {selectedElement.classification && Object.keys(selectedElement.classification).length > 0 && (
                   <div>
@@ -3755,6 +4223,199 @@ export function BIMViewer({
           }}
         />
       )}
+    </div>
+  );
+}
+
+/* ── Section / clipping controls ───────────────────────────────────────── */
+
+interface ClipControlsProps {
+  mode: 'none' | 'box' | 'plane';
+  onModeChange: (m: 'none' | 'box' | 'plane') => void;
+  box: {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+    minZ: number;
+    maxZ: number;
+  };
+  onBoxChange: (
+    patch: Partial<ClipControlsProps['box']>,
+  ) => void;
+  plane: { axis: 'x' | 'y' | 'z'; offset: number; flipped: boolean };
+  onPlaneChange: (patch: Partial<ClipControlsProps['plane']>) => void;
+  onReset: () => void;
+  onClose: () => void;
+  leftOffset: number;
+}
+
+/**
+ * ClipControls — popover for the section box / single clipping plane.
+ * Pure presentational; all geometry math lives in `ClipManager`. The two
+ * cut modes are mutually exclusive (a radio-style mode strip) so the user
+ * is never fighting six box planes and an arbitrary plane at once.
+ */
+function ClipControls({
+  mode,
+  onModeChange,
+  box,
+  onBoxChange,
+  plane,
+  onPlaneChange,
+  onReset,
+  onClose,
+  leftOffset,
+}: ClipControlsProps) {
+  const { t } = useTranslation();
+  const pct = (v: number) => `${Math.round(v * 100)}%`;
+  return (
+    <div
+      data-testid="bim-clip-controls"
+      className="absolute top-14 z-30 w-72 rounded-lg bg-surface-primary border border-border-light shadow-lg p-3 flex flex-col gap-3"
+      style={{ insetInlineStart: leftOffset }}
+    >
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-content-primary">
+          {t('bim.clip_title', { defaultValue: 'Section & clipping' })}
+        </h3>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label={t('common.close', { defaultValue: 'Close' })}
+          className="flex h-6 w-6 items-center justify-center rounded text-content-tertiary hover:bg-surface-secondary"
+        >
+          <X size={13} />
+        </button>
+      </div>
+
+      {/* Mode strip */}
+      <div
+        className="inline-flex rounded-md border border-border-light overflow-hidden"
+        role="group"
+        aria-label={t('bim.clip_mode_aria', { defaultValue: 'Clip mode' })}
+      >
+        {([
+          ['none', t('bim.clip_off', { defaultValue: 'Off' })] as const,
+          ['box', t('bim.clip_box', { defaultValue: 'Section box' })] as const,
+          ['plane', t('bim.clip_plane', { defaultValue: 'Plane' })] as const,
+        ]).map(([m, lbl]) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => onModeChange(m)}
+            aria-pressed={mode === m}
+            data-testid={`clip-mode-${m}`}
+            className={clsx(
+              'flex-1 px-2 py-1 text-[11px] font-medium transition-colors',
+              mode === m
+                ? 'bg-oe-blue text-white'
+                : 'bg-surface-secondary text-content-secondary hover:bg-surface-tertiary',
+            )}
+          >
+            {lbl}
+          </button>
+        ))}
+      </div>
+
+      {mode === 'box' && (
+        <div className="flex flex-col gap-2.5">
+          {(
+            [
+              ['X', 'minX', 'maxX'],
+              ['Y', 'minY', 'maxY'],
+              ['Z', 'minZ', 'maxZ'],
+            ] as const
+          ).map(([axisLabel, minKey, maxKey]) => (
+            <div key={axisLabel} className="flex flex-col gap-1">
+              <div className="flex items-center justify-between text-[10px] text-content-tertiary uppercase tracking-wider">
+                <span>
+                  {t('bim.clip_axis', {
+                    defaultValue: 'Axis {{axis}}',
+                    axis: axisLabel,
+                  })}
+                </span>
+                <span className="tabular-nums">
+                  {pct(box[minKey])} – {pct(box[maxKey])}
+                </span>
+              </div>
+              <Slider
+                value={box[minKey]}
+                onChange={(v) => onBoxChange({ [minKey]: v })}
+                min={0}
+                max={1}
+                step={0.01}
+              />
+              <Slider
+                value={box[maxKey]}
+                onChange={(v) => onBoxChange({ [maxKey]: v })}
+                min={0}
+                max={1}
+                step={0.01}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {mode === 'plane' && (
+        <div className="flex flex-col gap-2.5">
+          <div
+            className="inline-flex rounded-md border border-border-light overflow-hidden"
+            role="group"
+            aria-label={t('bim.clip_plane_axis_aria', {
+              defaultValue: 'Plane axis',
+            })}
+          >
+            {(['x', 'y', 'z'] as const).map((ax) => (
+              <button
+                key={ax}
+                type="button"
+                onClick={() => onPlaneChange({ axis: ax })}
+                aria-pressed={plane.axis === ax}
+                data-testid={`clip-plane-axis-${ax}`}
+                className={clsx(
+                  'flex-1 px-2 py-1 text-[11px] font-medium uppercase transition-colors',
+                  plane.axis === ax
+                    ? 'bg-oe-blue text-white'
+                    : 'bg-surface-secondary text-content-secondary hover:bg-surface-tertiary',
+                )}
+              >
+                {ax}
+              </button>
+            ))}
+          </div>
+          <Slider
+            label={t('bim.clip_plane_offset', { defaultValue: 'Offset' })}
+            value={plane.offset}
+            onChange={(v) => onPlaneChange({ offset: v })}
+            min={0}
+            max={1}
+            step={0.01}
+            format={(v) => `${Math.round(v * 100)}%`}
+          />
+          <button
+            type="button"
+            onClick={() => onPlaneChange({ flipped: !plane.flipped })}
+            aria-pressed={plane.flipped}
+            data-testid="clip-plane-flip"
+            className="inline-flex items-center justify-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium border border-border-light bg-surface-secondary text-content-secondary hover:bg-surface-tertiary transition-colors"
+          >
+            <RotateCcw size={12} />
+            {t('bim.clip_plane_flip', { defaultValue: 'Flip side' })}
+          </button>
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={onReset}
+        data-testid="clip-reset"
+        className="inline-flex items-center justify-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium text-content-tertiary hover:text-content-primary hover:bg-surface-secondary transition-colors"
+      >
+        <RotateCcw size={12} />
+        {t('bim.clip_reset', { defaultValue: 'Reset & disable' })}
+      </button>
     </div>
   );
 }

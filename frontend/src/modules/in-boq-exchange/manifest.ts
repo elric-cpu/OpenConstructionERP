@@ -20,15 +20,8 @@ export const manifest: ModuleManifest = {
       component: INExchangeModule,
     },
   ],
-  navItems: [
-    {
-      labelKey: 'nav.in_boq_exchange',
-      to: '/in-boq-exchange',
-      icon: Building2,
-      group: 'regional',
-      advancedOnly: true,
-    },
-  ],
+  // Issue #217 — reached from /boq (regional import/export); no duplicate sidebar entry.
+  navItems: [],
   searchEntries: [
     {
       label: 'India BOQ Import / Export',

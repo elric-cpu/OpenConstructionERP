@@ -1,4 +1,4 @@
-"""Insert the 6 new match_elements.group_by_* keys into 25 non-EN locales.
+"""‌⁠‍Insert the 6 new match_elements.group_by_* keys into 25 non-EN locales.
 
 Native translations sourced from each language's standard
 construction/UI dictionary. EN is already done in en.ts.

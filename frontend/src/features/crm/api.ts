@@ -106,7 +106,11 @@ export interface Opportunity {
   lost_at: string | null;
   lost_reason_code: string | null;
   notes: string;
+  /** References a row in the shared Contacts directory
+   *  (oe_contacts_contact). CRM never duplicates contact data. */
   primary_contact_id: string | null;
+  /** References a delivery/estimate Project (oe_projects_project). */
+  project_id: string | null;
   competitor_names: string[];
   created_at: string;
   updated_at: string;
@@ -197,6 +201,7 @@ export interface OpportunityCreatePayload {
   owner_user_id?: string | null;
   notes?: string;
   primary_contact_id?: string | null;
+  project_id?: string | null;
   competitor_names?: string[];
 }
 

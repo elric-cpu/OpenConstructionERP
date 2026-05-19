@@ -1,11 +1,11 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
-"""Compliance documents module permission definitions."""
+"""‌⁠‍Compliance documents module permission definitions."""
 
 from app.core.permissions import Role, permission_registry
 
 
 def register_compliance_docs_permissions() -> None:
-    """Register permissions for the compliance docs tracker."""
+    """‌⁠‍Register permissions for the compliance docs tracker."""
     permission_registry.register_module_permissions(
         "compliance_docs",
         {

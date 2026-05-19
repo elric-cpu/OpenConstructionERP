@@ -1,4 +1,4 @@
-"""HSE Advanced cross-module event subscribers (Wave M4 deep-pass).
+"""‌⁠‍HSE Advanced cross-module event subscribers (Wave M4 deep-pass).
 
 These handlers wire HSE Advanced to the rest of the platform without
 import-time coupling. They are registered idempotently via
@@ -35,7 +35,7 @@ _SUBSCRIBED_FLAG = "_hse_advanced_subscribers_registered"
 
 
 async def _on_safety_incident_created(event: Event) -> None:
-    """``safety.incident.created`` → fan-out to risk register + BI.
+    """‌⁠‍``safety.incident.created`` → fan-out to risk register + BI.
 
     Publishes two follow-on events with the same payload so downstream
     consumers can choose granularity. Idempotent on the upstream side
@@ -86,7 +86,7 @@ async def _on_safety_incident_created(event: Event) -> None:
 
 
 async def _on_capa_completed(event: Event) -> None:
-    """``hse.capa.completed`` → BI projection tick.
+    """‌⁠‍``hse.capa.completed`` → BI projection tick.
 
     The safety KPIs (TRIR/LTIFR) only change when the *incident* changes,
     but capa-completion lights up the "open CAPA" gauge so BI projections

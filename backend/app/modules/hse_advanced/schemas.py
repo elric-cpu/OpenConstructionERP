@@ -1,4 +1,4 @@
-"""HSE Advanced Pydantic schemas — request/response models."""
+"""‌⁠‍HSE Advanced Pydantic schemas — request/response models."""
 
 from datetime import date, datetime
 from decimal import Decimal
@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class InvestigationCreate(BaseModel):
-    """Create a new incident investigation."""
+    """‌⁠‍Create a new incident investigation."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -28,7 +28,7 @@ class InvestigationCreate(BaseModel):
 
 
 class InvestigationUpdate(BaseModel):
-    """Partial update for an investigation."""
+    """‌⁠‍Partial update for an investigation."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 

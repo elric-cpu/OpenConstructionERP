@@ -1,4 +1,4 @@
-"""Property Development module permission definitions."""
+"""‌⁠‍Property Development module permission definitions."""
 
 from app.core.permissions import Role, permission_registry
 
@@ -17,7 +17,7 @@ PROPERTY_DEV_PERMISSIONS: dict[str, Role] = {
 
 
 def register_property_dev_permissions() -> None:
-    """Register permissions for the property_dev module."""
+    """‌⁠‍Register permissions for the property_dev module."""
     permission_registry.register_module_permissions(
         "property_dev",
         PROPERTY_DEV_PERMISSIONS,

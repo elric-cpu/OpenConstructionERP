@@ -78,7 +78,7 @@ export function FileActionsBar({
   }, []);
 
   const sortLabels: Record<SortKey, string> = {
-    modified: t('files.sort.modified', { defaultValue: 'Modified' }),
+    modified: t('files.sort.modified', { defaultValue: 'Modified‌⁠‍' }),
     name: t('files.sort.name', { defaultValue: 'Name' }),
     size: t('files.sort.size', { defaultValue: 'Size' }),
     kind: t('files.sort.kind', { defaultValue: 'Type' }),
@@ -95,7 +95,7 @@ export function FileActionsBar({
           type="search"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder={t('files.search_placeholder', { defaultValue: 'Search files…' })}
+          placeholder={t('files.search_placeholder', { defaultValue: 'Search files…‌⁠‍' })}
           className="w-full h-9 pl-8 pr-8 text-sm rounded-lg border border-border-light bg-surface-primary text-content-primary placeholder:text-content-tertiary focus:outline-none focus:border-oe-blue focus:ring-2 focus:ring-oe-blue/20"
         />
         {draft && (
@@ -182,14 +182,14 @@ export function FileActionsBar({
           <ViewBtn
             active={view === 'grid'}
             onClick={() => onViewChange('grid')}
-            label={t('files.view_grid', { defaultValue: 'Grid view' })}
+            label={t('files.view_grid', { defaultValue: 'Grid view‌⁠‍' })}
           >
             <LayoutGrid size={14} />
           </ViewBtn>
           <ViewBtn
             active={view === 'list'}
             onClick={() => onViewChange('list')}
-            label={t('files.view_list', { defaultValue: 'List view' })}
+            label={t('files.view_list', { defaultValue: 'List view‌⁠‍' })}
           >
             <List size={14} />
           </ViewBtn>
@@ -201,7 +201,7 @@ export function FileActionsBar({
           className="inline-flex items-center gap-1.5 h-9 px-3 text-xs font-medium rounded-lg border border-border-light text-content-secondary hover:bg-surface-secondary"
         >
           <Upload size={13} />
-          {t('files.actions.import', { defaultValue: 'Import' })}
+          {t('files.actions.import', { defaultValue: 'Import‌⁠‍' })}
         </button>
         <button
           type="button"

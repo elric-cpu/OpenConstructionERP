@@ -171,9 +171,9 @@ export function SupportUsButton() {
           'transition-all duration-300 ease-out',
         )}
         title={t('support.button_tooltip', {
-          defaultValue: 'Support the project — star us or share',
+          defaultValue: 'Support the project — star us or share‌⁠‍',
         })}
-        aria-label={t('support.button_aria', { defaultValue: 'Support us' })}
+        aria-label={t('support.button_aria', { defaultValue: 'Support us‌⁠‍' })}
       >
         {/* Animated shine sweep on hover */}
         <span
@@ -186,7 +186,7 @@ export function SupportUsButton() {
           className="relative fill-amber-400 text-amber-500 drop-shadow-[0_0_3px_rgba(251,191,36,0.6)] group-hover:rotate-12 group-hover:scale-125 transition-transform duration-300"
         />
         <span className="relative text-xs font-semibold whitespace-nowrap tracking-wide">
-          {t('support.button_label', { defaultValue: 'Support us' })}
+          {t('support.button_label', { defaultValue: 'Support us‌⁠‍' })}
         </span>
       </button>
 
@@ -199,9 +199,9 @@ export function SupportUsButton() {
           'text-amber-500 hover:bg-surface-secondary transition-colors',
         )}
         title={t('support.button_tooltip', {
-          defaultValue: 'Support the project',
+          defaultValue: 'Support the project‌⁠‍',
         })}
-        aria-label={t('support.button_aria', { defaultValue: 'Support us' })}
+        aria-label={t('support.button_aria', { defaultValue: 'Support us‌⁠‍' })}
       >
         <Star size={16} strokeWidth={1.75} className="fill-amber-400 text-amber-500" />
       </button>
@@ -313,7 +313,7 @@ function SupportUsModal({ onClose, copied, setCopied }: ModalProps) {
             <p className="mt-3 mx-auto max-w-[560px] text-sm text-content-secondary leading-relaxed">
               {t('support.modal_subtitle', {
                 defaultValue:
-                  'We build OpenConstructionERP in the open and ship every feature for free. If you share a video, case study or article about your work — there is a very high chance industry professionals will notice it: senior estimators, BIM managers, planning leads and cost engineers from the largest construction and engineering firms follow DataDrivenConstruction across LinkedIn, X and our newsletter (tens of thousands of subscribers). One repost from us can put your project in front of the right people overnight.',
+                  'We build OpenConstructionERP in the open and ship every feature for free. If you share a video, case study or article about your work – there is a very high chance industry professionals will notice it: senior estimators, BIM managers, planning leads and cost engineers from the largest construction and engineering firms follow DataDrivenConstruction across LinkedIn, X and our newsletter (tens of thousands of subscribers). One repost from us can put your project in front of the right people overnight.',
               })}
             </p>
           </div>

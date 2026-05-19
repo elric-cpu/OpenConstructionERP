@@ -253,22 +253,33 @@ async def _safe_audit(
         _logger_audit.debug("Audit log write skipped for %s %s", action, entity_type)
 
 
-from app.modules.boq.models import BOQ, BOQActivityLog, BOQMarkup, BOQSnapshot, Position
+from app.modules.boq.models import (
+    BOQ,
+    BOQActivityLog,
+    BOQMarkup,
+    BOQSnapshot,
+    Position,
+    QuantityLink,
+)
 from app.modules.boq.repository import (
     ActivityLogRepository,
     BOQRepository,
     MarkupRepository,
     PositionRepository,
+    QuantityLinkRepository,
 )
 from app.modules.boq.schemas import (
     ActivityLogList,
     ActivityLogResponse,
+    BOQCompareResponse,
     BOQCreate,
     BOQFromTemplateRequest,
     BOQStatisticsResponse,
     BOQUpdate,
     BOQWithPositions,
     BOQWithSections,
+    ComparePositionRow,
+    CompareSummary,
     CostBreakdownCategory,
     CostBreakdownMarkup,
     CostBreakdownResource,
@@ -282,6 +293,12 @@ from app.modules.boq.schemas import (
     PositionCreate,
     PositionResponse,
     PositionUpdate,
+    QuantityLinkApplyResponse,
+    QuantityLinkApplyResultRow,
+    QuantityLinkCreate,
+    QuantityLinkRefreshResponse,
+    QuantityLinkRefreshRow,
+    QuantityLinkResponse,
     ResourceCodeLookupResponse,
     ResourceCodeMatch,
     SectionCreate,
@@ -1173,6 +1190,89 @@ def _position_total_in_base(
     return amount
 
 
+def _leaf_total_base_with_resources(
+    pos: object,
+    fx_rates_map: dict[str, str] | None,
+    base_currency: str,
+) -> Decimal:
+    """Convert a leaf position's total into the project BASE currency.
+
+    Issue #111 (skolodi follow-up) — ``_position_total_in_base`` only ever
+    converted a position whose ``metadata.currency`` was set.  The
+    contributor's real data (``Prueba_2.csv``) is the shape that path can
+    never catch: the position carries NO ``metadata.currency`` but its
+    ``metadata.resources`` are priced in a foreign currency.  At write
+    time ``update_position`` derives ``unit_rate = Σ(r.quantity ×
+    r.unit_rate)`` with no FX conversion, so the stored position ``total``
+    silently mixes foreign-resource money into the base-currency rollup —
+    a USD 25 000 resource in an ARS project rolled up as 25 000 ARS.
+
+    Resolution order:
+
+    * If the position has ``metadata.resources``, the per-unit ``unit_rate``
+      is the sum of each resource's ``quantity × unit_rate`` converted
+      from its own currency (``_resource_total_in_base`` semantics).  The
+      position total is then ``position.quantity × that converted
+      per-unit rate`` — exactly mirroring how ``update_position`` builds
+      ``total`` from ``unit_rate``, but now currency-correct.  This fixes
+      BOTH places the contributor circled (the per-position resource
+      subtotal AND the section subtotal that sums these leaves).
+
+    * Otherwise fall back to the established position-level
+      ``_position_total_in_base`` / ``_position_currency`` path so legacy
+      ``metadata.currency`` positions keep their verified #131 behaviour.
+
+    Pure function — no DB I/O.  Safe to call from the structured rollup,
+    compare, and export paths.
+    """
+    meta = getattr(pos, "metadata_", None)
+    if not isinstance(meta, dict):
+        meta = getattr(pos, "metadata", None)
+    resources = meta.get("resources") if isinstance(meta, dict) else None
+
+    has_priced_resources = (
+        isinstance(resources, list)
+        and len(resources) > 0
+        and any(isinstance(r, dict) for r in resources)
+    )
+    if has_priced_resources:
+        # If NONE of the resources carries a foreign currency the
+        # position total is already wholly in base — keep the stored
+        # decimal (preserves the exact 4 dp string the editor wrote and
+        # avoids a float roundtrip through the resource sum).
+        base = (base_currency or "").strip().upper()
+        any_foreign = any(
+            isinstance(r, dict)
+            and str(r.get("currency") or "").strip().upper() not in ("", base)
+            for r in resources
+        )
+        if not any_foreign:
+            return _position_total_in_base(
+                getattr(pos, "total", "0"),
+                _position_currency(pos)
+                if hasattr(pos, "metadata_") or hasattr(pos, "metadata")
+                else "",
+                fx_rates_map,
+                base_currency,
+            )
+        # Per-unit rate, currency-converted across mixed resource
+        # currencies, then scaled by the position quantity (resources
+        # are per-unit norms — same convention update_position uses to
+        # build unit_rate then total).
+        per_unit_base = _to_decimal(
+            str(_resource_total_in_base(resources, fx_rates_map, base_currency))
+        )
+        qty = _to_decimal(getattr(pos, "quantity", "0"))
+        return per_unit_base * qty
+
+    return _position_total_in_base(
+        getattr(pos, "total", "0"),
+        _position_currency(pos),
+        fx_rates_map,
+        base_currency,
+    )
+
+
 def _build_position_response(pos: Position) -> PositionResponse:
     """Build a PositionResponse from a Position ORM instance."""
     return PositionResponse(
@@ -1635,6 +1735,7 @@ class BOQService:
         self.position_repo = PositionRepository(session)
         self.markup_repo = MarkupRepository(session)
         self.activity_repo = ActivityLogRepository(session)
+        self.quantity_link_repo = QuantityLinkRepository(session)
 
     async def _ensure_not_locked(self, boq_id: uuid.UUID) -> BOQ:
         """Load a BOQ and raise 409 Conflict if it is locked.
@@ -2379,6 +2480,23 @@ class BOQService:
         total = _compute_total(data.quantity, data.unit_rate)
         max_order = await self.position_repo.get_max_sort_order(data.boq_id)
 
+        # ── Issue #139: insert directly below the selected row ────────────
+        # When the client passes ``after_position_id`` (the row the user had
+        # selected when they hit "Add position"), slot the new partida
+        # immediately after that sibling instead of at the end of the
+        # section: open a one-slot gap by bumping every later position down
+        # by one, then take ``target.sort_order + 1``. The target must live
+        # in the SAME BOQ — a stale / cross-BOQ id silently falls back to
+        # the append-at-end behaviour rather than scrambling order.
+        new_sort_order = max_order + 1
+        if data.after_position_id is not None:
+            anchor = await self.position_repo.get_by_id(data.after_position_id)
+            if anchor is not None and anchor.boq_id == data.boq_id:
+                await self.position_repo.shift_sort_order_after(
+                    data.boq_id, int(anchor.sort_order)
+                )
+                new_sort_order = int(anchor.sort_order) + 1
+
         # BUG-B-014: non-blocking boq_quality duplicate-content check.
         _dup_ordinal = await self._find_content_duplicate(
             data.boq_id,
@@ -2421,7 +2539,7 @@ class BOQService:
                 if (_cost_compat_warned or _dup_ordinal is not None)
                 else "pending"
             ),
-            sort_order=max_order + 1,
+            sort_order=new_sort_order,
             reference_code=resolved_reference_code,
             # Standalone: no link group yet. The first reuse promotes this
             # row to 'master' and assigns a group (see _create_reused_position).
@@ -4681,6 +4799,16 @@ class BOQService:
             pos_cad_element_ids = list(pos.cad_element_ids) if pos.cad_element_ids else []
             pos_metadata = dict(pos.metadata_) if pos.metadata_ else {}
             pos_sort_order = pos.sort_order
+            # Preserve the reusable code (Issue #127) so a duplicated BOQ —
+            # the canonical baseline→revision path via create-revision —
+            # keeps a STABLE per-line identity. compare_boqs pairs lines by
+            # ``reference_code`` first; without this every revision line
+            # would look "added/removed" instead of "changed". The new BOQ
+            # is its own scope, so copying the code can never collide. The
+            # cross-position link group (link_group_id / link_role) is
+            # DELIBERATELY NOT carried: a revision instance must not follow
+            # the original BOQ's master definition.
+            pos_reference_code = getattr(pos, "reference_code", None)
 
             captured_positions.append({"id": pos_id, "parent_id": pos_parent_id})
 
@@ -4698,6 +4826,7 @@ class BOQService:
                 confidence=pos_confidence,
                 cad_element_ids=pos_cad_element_ids,
                 validation_status="pending",
+                reference_code=pos_reference_code,
                 metadata_=pos_metadata,
                 sort_order=pos_sort_order,
             )
@@ -5428,9 +5557,11 @@ class BOQService:
         _fx_base, _fx_map = await self._resolve_project_fx(boq_id)
 
         def _leaf_total_base(pos: Position) -> Decimal:
-            return _position_total_in_base(
-                pos.total, _position_currency(pos), _fx_map, _fx_base
-            )
+            # Issue #111 (skolodi follow-up) — resource-currency-aware. A
+            # position with USD-priced resources but no metadata.currency
+            # must still convert into the base before it lands in the
+            # section subtotal / direct cost / grand total.
+            return _leaf_total_base_with_resources(pos, _fx_map, _fx_base)
 
         # Separate sections from items
         section_map: dict[uuid.UUID, Position] = {}
@@ -6438,6 +6569,701 @@ class BOQService:
         await self.session.flush()
         return await self.get_boq_with_positions(boq_id)
 
+    # ── Feature 1: live model→BOQ quantity links ──────────────────────────
+
+    @staticmethod
+    def _aggregate_quantities(
+        values: list[Decimal],
+        aggregation: str,
+    ) -> Decimal:
+        """Combine per-element quantities into one figure.
+
+        Operates on the collected per-element ``Decimal`` values. ``count``
+        is handled by the caller (it counts resolved elements, not parsed
+        magnitudes) and never reaches this helper. An empty list always
+        yields ``Decimal("0")`` so a link to vanished elements degrades to
+        zero rather than raising.
+        """
+        if not values:
+            return Decimal("0")
+        if aggregation == "max":
+            return max(values)
+        if aggregation == "min":
+            return min(values)
+        if aggregation == "first":
+            return values[0]
+        # default + explicit "sum"
+        return sum(values, Decimal("0"))
+
+    async def _resolve_latest_model_id(self, model_id: uuid.UUID) -> tuple[uuid.UUID, str]:
+        """Walk the BIM model revision chain forward to its newest tip.
+
+        When a model is re-imported the BIM Hub inserts a *new*
+        :class:`BIMModel` row whose ``parent_model_id`` points at the
+        prior version. To re-pull quantities we must compare against the
+        latest version, so we follow ``parent_model_id`` links forward
+        (child = row whose ``parent_model_id`` is the current node) until
+        no successor exists. A visited guard prevents an infinite loop on
+        a corrupt self-referential chain.
+
+        Returns:
+            ``(latest_model_id, latest_version)``. When the model has no
+            successors this is the input model itself.
+        """
+        from app.modules.bim_hub.models import BIMModel
+
+        current_id = model_id
+        version = ""
+        seen: set[uuid.UUID] = set()
+        while current_id not in seen:
+            seen.add(current_id)
+            row = (
+                await self.session.execute(
+                    select(BIMModel.version).where(BIMModel.id == current_id)
+                )
+            ).first()
+            if row is not None and row[0]:
+                version = str(row[0])
+            successor = (
+                await self.session.execute(
+                    select(BIMModel.id)
+                    .where(BIMModel.parent_model_id == current_id)
+                    .order_by(BIMModel.created_at.desc())
+                    .limit(1)
+                )
+            ).first()
+            if successor is None:
+                break
+            current_id = successor[0]
+        return current_id, version
+
+    async def _compute_link_quantity(
+        self,
+        *,
+        model_id: uuid.UUID,
+        stable_ids: list[str],
+        quantity_field: str,
+        aggregation: str,
+    ) -> tuple[Decimal, list[str], list[str]]:
+        """Evaluate a link's extraction rule against current model elements.
+
+        Reads the canonical ``quantities`` map off every bound element in
+        the target model, projects ``quantity_field`` out of each, and
+        aggregates. Elements that no longer exist (model revised away) or
+        that lack the requested field are reported as ``missing`` so the
+        caller can surface a precise review message.
+
+        Takes plain primitives (NOT the ORM ``QuantityLink``) so callers
+        can snapshot a link's scalar fields up front and stay correct
+        across ``session.expire_all()`` boundaries — the same
+        MissingGreenlet-avoidance pattern ``duplicate_boq`` uses.
+
+        Args:
+            model_id: The model to read elements from (callers pass the
+                resolved *latest* version).
+            stable_ids: Bound element ``stable_id``s, in order.
+            quantity_field: Canonical quantity key to project per element.
+            aggregation: One of sum / max / min / count / first.
+
+        Returns:
+            ``(aggregated_quantity, contributing_stable_ids, missing_ids)``.
+        """
+        from app.modules.bim_hub.repository import BIMElementRepository
+
+        ids = list(stable_ids or [])
+        elem_repo = BIMElementRepository(self.session)
+        elements = await elem_repo.list_by_stable_ids(model_id, ids)
+        by_sid = {e.stable_id: e for e in elements}
+
+        values: list[Decimal] = []
+        contributing: list[str] = []
+        missing: list[str] = []
+        for sid in ids:
+            elem = by_sid.get(sid)
+            if elem is None:
+                missing.append(sid)
+                continue
+            quantities = elem.quantities if isinstance(elem.quantities, dict) else {}
+            if aggregation == "count":
+                # ``count`` does not need the field present — it counts
+                # resolvable elements. Still record the contribution.
+                contributing.append(sid)
+                continue
+            if quantity_field not in quantities:
+                missing.append(sid)
+                continue
+            raw = quantities.get(quantity_field)
+            values.append(_to_decimal(raw))
+            contributing.append(sid)
+
+        if aggregation == "count":
+            # ``count`` is the number of RESOLVED elements (the classic
+            # "number of doors" takeoff) — independent of any field value.
+            aggregated = Decimal(len(contributing))
+        else:
+            aggregated = self._aggregate_quantities(values, aggregation)
+        return aggregated, contributing, missing
+
+    async def create_quantity_link(
+        self,
+        position_id: uuid.UUID,
+        data: QuantityLinkCreate,
+        *,
+        created_by: uuid.UUID | None = None,
+    ) -> QuantityLinkResponse:
+        """Bind a position numeric field to a set of BIM model elements.
+
+        Creating the link does NOT change the position quantity — it only
+        records the extraction rule + provenance. Validates that the
+        position and model exist and live in the same project so a link
+        can never cross a tenancy boundary.
+
+        Raises:
+            HTTPException 404: position or model not found.
+            HTTPException 400: model belongs to a different project.
+        """
+        position = await self.position_repo.get_by_id(position_id)
+        if position is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Position not found"
+            )
+        boq = await self.get_boq(position.boq_id)
+
+        from app.modules.bim_hub.models import BIMModel
+
+        model = (
+            await self.session.execute(
+                select(BIMModel).where(BIMModel.id == data.model_id)
+            )
+        ).scalar_one_or_none()
+        if model is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="BIM model not found"
+            )
+        if model.project_id != boq.project_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Model belongs to a different project than the BOQ",
+            )
+
+        link = QuantityLink(
+            position_id=position_id,
+            boq_id=position.boq_id,
+            model_id=data.model_id,
+            element_stable_ids=list(data.element_stable_ids),
+            quantity_field=data.quantity_field,
+            target_field=data.target_field,
+            aggregation=data.aggregation,
+            status="active",
+            source_model_version=str(model.version) if model.version else None,
+            created_by=created_by,
+            metadata_={},
+        )
+        link = await self.quantity_link_repo.create(link)
+        await _safe_publish(
+            "boq.quantity_link.created",
+            {
+                "link_id": str(link.id),
+                "position_id": str(position_id),
+                "model_id": str(data.model_id),
+            },
+        )
+        return QuantityLinkResponse.model_validate(link)
+
+    async def list_quantity_links(
+        self, position_id: uuid.UUID
+    ) -> list[QuantityLinkResponse]:
+        """List every quantity link bound to a single position."""
+        links = await self.quantity_link_repo.list_for_position(position_id)
+        return [QuantityLinkResponse.model_validate(link) for link in links]
+
+    async def delete_quantity_link(self, link_id: uuid.UUID) -> None:
+        """Delete a quantity link. Idempotent — 404s an unknown id.
+
+        Deleting a link never touches the position quantity: the value
+        the link last applied stays put, it just stops being tracked.
+        """
+        link = await self.quantity_link_repo.get_by_id(link_id)
+        if link is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Quantity link not found"
+            )
+        await self.quantity_link_repo.delete(link_id)
+
+    async def refresh_quantity_links(
+        self, boq_id: uuid.UUID
+    ) -> QuantityLinkRefreshResponse:
+        """Re-pull every link in a BOQ against the latest model version.
+
+        For each link: resolve the model's newest revision, recompute the
+        bound quantity via the extraction rule, and compare against the
+        position's current stored value. Links whose computed value
+        differs are flipped to ``stale`` (persisted) and surfaced in the
+        review payload. NOTHING is written to the position here — applying
+        the pull is an explicit, human-confirmed second step (the architecture guide
+        §7).
+
+        Returns:
+            A review payload: per link the old/new/delta + the elements
+            that contributed and any that went missing.
+        """
+        await self.get_boq(boq_id)  # 404 guard
+        links = await self.quantity_link_repo.list_for_boq(boq_id)
+
+        # Snapshot every link's scalar fields BEFORE the loop so the
+        # subsequent ``update_fields`` (which calls ``session.expire_all``)
+        # can never make a still-referenced ORM ``link`` lazy-load and
+        # raise MissingGreenlet — the same pattern ``duplicate_boq`` uses.
+        snapshots = [
+            {
+                "id": link.id,
+                "position_id": link.position_id,
+                "model_id": link.model_id,
+                "element_stable_ids": list(link.element_stable_ids or []),
+                "quantity_field": link.quantity_field,
+                "target_field": link.target_field,
+                "aggregation": link.aggregation,
+                "source_model_version": link.source_model_version,
+            }
+            for link in links
+        ]
+
+        rows: list[QuantityLinkRefreshRow] = []
+        stale_count = 0
+        now_iso = datetime.now(UTC).isoformat()
+
+        for snap in snapshots:
+            position = await self.position_repo.get_by_id(snap["position_id"])
+            if position is None:
+                # Position deleted out from under the link — drop the link
+                # so a refresh self-heals (CASCADE normally handles this;
+                # belt-and-braces for any orphan).
+                await self.quantity_link_repo.delete(snap["id"])
+                continue
+
+            latest_model_id, latest_version = await self._resolve_latest_model_id(
+                snap["model_id"]
+            )
+            new_qty, contributing, missing = await self._compute_link_quantity(
+                model_id=latest_model_id,
+                stable_ids=snap["element_stable_ids"],
+                quantity_field=snap["quantity_field"],
+                aggregation=snap["aggregation"],
+            )
+            old_qty = _to_decimal(position.quantity)
+            new_qty_q = _to_decimal(_quantize_money_str(new_qty))
+            delta = new_qty_q - old_qty
+            changed = delta != 0
+
+            if not contributing and missing:
+                new_status = "broken"
+                message = (
+                    "No bound elements resolve in the latest model version"
+                )
+            elif changed:
+                new_status = "stale"
+                message = "Source element quantities changed"
+            else:
+                new_status = "active"
+                message = ""
+
+            pos_ordinal = position.ordinal
+            pos_description = position.description
+            pos_unit = position.unit
+
+            # Persist status + provenance of this probe (never the value).
+            await self.quantity_link_repo.update_fields(
+                snap["id"],
+                status=new_status,
+                last_pulled_at=now_iso,
+                source_model_version=(
+                    latest_version or snap["source_model_version"]
+                ),
+            )
+            if new_status == "stale":
+                stale_count += 1
+
+            rows.append(
+                QuantityLinkRefreshRow(
+                    link_id=snap["id"],
+                    position_id=snap["position_id"],
+                    ordinal=pos_ordinal,
+                    description=pos_description,
+                    quantity_field=snap["quantity_field"],
+                    target_field=snap["target_field"],
+                    aggregation=snap["aggregation"],
+                    unit=pos_unit,
+                    old_quantity=_quantize_money_str(old_qty),
+                    new_quantity=_quantize_money_str(new_qty_q),
+                    delta=_quantize_money_str(delta),
+                    changed=changed,
+                    status=new_status,
+                    contributing_elements=contributing,
+                    missing_element_ids=missing,
+                    message=message,
+                )
+            )
+
+        return QuantityLinkRefreshResponse(
+            boq_id=boq_id,
+            checked=len(rows),
+            stale=stale_count,
+            rows=rows,
+        )
+
+    async def apply_quantity_links(
+        self,
+        boq_id: uuid.UUID,
+        link_ids: list[uuid.UUID],
+        *,
+        applied_by: uuid.UUID | None = None,
+    ) -> QuantityLinkApplyResponse:
+        """Apply re-pulled quantities to the chosen positions (human gate).
+
+        Only the links explicitly listed in ``link_ids`` are applied —
+        this is the confirm step of the propose→review→apply contract.
+        For each, the latest-model quantity is recomputed, written to the
+        position's ``target_field`` (with ``total`` recomputed exactly via
+        ``quantity * unit_rate``), and a provenance record is appended to
+        ``position.metadata.model_quantity_pull`` so the figure's origin
+        is auditable and never silently overwritten.
+
+        Raises:
+            HTTPException 404: BOQ not found.
+            HTTPException 409: the BOQ is locked.
+        """
+        await self._ensure_not_locked(boq_id)
+        # Snapshot link scalar fields up front so the per-iteration
+        # ``update_fields`` (→ ``session.expire_all``) can never make a
+        # still-referenced ORM ``link`` lazy-load and raise
+        # MissingGreenlet (same pattern ``duplicate_boq`` uses).
+        snap_by_id: dict[uuid.UUID, dict] = {
+            link.id: {
+                "id": link.id,
+                "position_id": link.position_id,
+                "model_id": link.model_id,
+                "element_stable_ids": list(link.element_stable_ids or []),
+                "quantity_field": link.quantity_field,
+                "aggregation": link.aggregation,
+                "source_model_version": link.source_model_version,
+            }
+            for link in await self.quantity_link_repo.list_for_boq(boq_id)
+        }
+
+        results: list[QuantityLinkApplyResultRow] = []
+        applied = 0
+        skipped = 0
+        now_iso = datetime.now(UTC).isoformat()
+
+        for link_id in link_ids:
+            snap = snap_by_id.get(link_id)
+            if snap is None:
+                skipped += 1
+                results.append(
+                    QuantityLinkApplyResultRow(
+                        link_id=link_id,
+                        position_id=link_id,  # placeholder; unknown link
+                        ordinal="",
+                        applied=False,
+                        old_quantity="0",
+                        new_quantity="0",
+                        message="Link not found in this BOQ",
+                    )
+                )
+                continue
+
+            position = await self.position_repo.get_by_id(snap["position_id"])
+            if position is None:
+                skipped += 1
+                results.append(
+                    QuantityLinkApplyResultRow(
+                        link_id=link_id,
+                        position_id=snap["position_id"],
+                        ordinal="",
+                        applied=False,
+                        old_quantity="0",
+                        new_quantity="0",
+                        message="Bound position no longer exists",
+                    )
+                )
+                continue
+
+            latest_model_id, latest_version = await self._resolve_latest_model_id(
+                snap["model_id"]
+            )
+            new_qty, contributing, missing = await self._compute_link_quantity(
+                model_id=latest_model_id,
+                stable_ids=snap["element_stable_ids"],
+                quantity_field=snap["quantity_field"],
+                aggregation=snap["aggregation"],
+            )
+            pos_ordinal = position.ordinal
+            if not contributing and missing:
+                skipped += 1
+                results.append(
+                    QuantityLinkApplyResultRow(
+                        link_id=link_id,
+                        position_id=snap["position_id"],
+                        ordinal=pos_ordinal,
+                        applied=False,
+                        old_quantity=_quantize_money_str(position.quantity),
+                        new_quantity=_quantize_money_str(new_qty),
+                        message="No bound elements resolve — not applied",
+                    )
+                )
+                continue
+
+            old_qty_str = _quantize_money_str(position.quantity)
+            new_qty_str = _quantize_money_str(new_qty)
+            new_total = _compute_total(new_qty_str, position.unit_rate)
+
+            # Append (never replace) a provenance record so the history of
+            # model-driven pulls on this position is fully auditable.
+            meta = dict(position.metadata_ or {})
+            history = list(meta.get("model_quantity_pull_history") or [])
+            provenance = {
+                "link_id": str(snap["id"]),
+                "model_id": str(snap["model_id"]),
+                "resolved_model_id": str(latest_model_id),
+                "model_version": latest_version,
+                "quantity_field": snap["quantity_field"],
+                "aggregation": snap["aggregation"],
+                "element_stable_ids": list(snap["element_stable_ids"]),
+                "contributing_elements": contributing,
+                "missing_element_ids": missing,
+                "old_quantity": old_qty_str,
+                "new_quantity": new_qty_str,
+                "applied_at": now_iso,
+                "applied_by": str(applied_by) if applied_by else None,
+            }
+            history.append(provenance)
+            meta["model_quantity_pull"] = provenance
+            meta["model_quantity_pull_history"] = history
+
+            await self.position_repo.update_fields(
+                snap["position_id"],
+                quantity=new_qty_str,
+                total=new_total,
+                metadata_=meta,
+            )
+            await self.quantity_link_repo.update_fields(
+                snap["id"],
+                status="active",
+                last_applied_quantity=new_qty_str,
+                last_applied_at=now_iso,
+                applied_by=applied_by,
+                source_model_version=(
+                    latest_version or snap["source_model_version"]
+                ),
+            )
+            applied += 1
+            results.append(
+                QuantityLinkApplyResultRow(
+                    link_id=link_id,
+                    position_id=snap["position_id"],
+                    ordinal=pos_ordinal,
+                    applied=True,
+                    old_quantity=old_qty_str,
+                    new_quantity=new_qty_str,
+                    message="Applied",
+                )
+            )
+
+        await _safe_publish(
+            "boq.quantity_link.applied",
+            {"boq_id": str(boq_id), "applied": applied, "skipped": skipped},
+        )
+        return QuantityLinkApplyResponse(
+            boq_id=boq_id,
+            applied=applied,
+            skipped=skipped,
+            results=results,
+        )
+
+    # ── Feature 2: estimate baseline / line-level comparison ──────────────
+
+    async def compare_boqs(
+        self,
+        base_boq_id: uuid.UUID,
+        other_boq_id: uuid.UUID,
+    ) -> BOQCompareResponse:
+        """Classify every line difference between two BOQs (pure read).
+
+        Positions are paired by ``reference_code`` first (the stable reuse
+        identity, Issue #127) then by ``ordinal``. Each pair is classified
+        as ``qty_changed`` / ``rate_changed`` / ``changed`` / ``unchanged``;
+        positions only in ``base`` are ``removed``, only in ``other`` are
+        ``added``.
+
+        Money is rebased into the project's base currency via the existing
+        FX table (the same ``_resolve_project_fx`` /
+        ``_position_total_in_base`` path the structured view + exports use)
+        so a multi-currency estimate compares consistently. Section
+        headers (no unit) are skipped — they carry no money.
+
+        Raises:
+            HTTPException 404: either BOQ not found.
+        """
+        base_boq = await self.get_boq(base_boq_id)
+        other_boq = await self.get_boq(other_boq_id)
+
+        base_positions = await self.position_repo.list_all_for_boq(base_boq_id)
+        other_positions = await self.position_repo.list_all_for_boq(other_boq_id)
+
+        # FX context for each side resolved independently — the two BOQs
+        # may even sit in different projects (a baseline imported as a
+        # standalone). Rebase each side with its own project's table.
+        base_fx_ccy, base_fx_map = await self._resolve_project_fx(base_boq_id)
+        other_fx_ccy, other_fx_map = await self._resolve_project_fx(other_boq_id)
+        # The comparison currency is the BASE boq's project currency (the
+        # baseline is the reference frame).
+        compare_ccy = base_fx_ccy or other_fx_ccy
+
+        def _match_key(pos: Position) -> str:
+            rc = (getattr(pos, "reference_code", None) or "").strip()
+            if rc:
+                return f"rc:{rc}"
+            return f"ord:{pos.ordinal.strip()}"
+
+        def _index(positions: list[Position]) -> dict[str, Position]:
+            out: dict[str, Position] = {}
+            for p in positions:
+                if _is_section(p):
+                    continue
+                key = _match_key(p)
+                # First occurrence wins; a duplicate key is a data issue
+                # (boq_quality flags it) — comparing the first is stable.
+                out.setdefault(key, p)
+            return out
+
+        base_idx = _index(base_positions)
+        other_idx = _index(other_positions)
+
+        rows: list[ComparePositionRow] = []
+        summary = CompareSummary(base_currency=compare_ccy)
+
+        old_dc_base = Decimal("0")
+        new_dc_base = Decimal("0")
+
+        all_keys = list(dict.fromkeys([*base_idx.keys(), *other_idx.keys()]))
+        for key in all_keys:
+            b = base_idx.get(key)
+            o = other_idx.get(key)
+
+            if b is not None:
+                # Issue #111 (skolodi) — resource-currency-aware so a
+                # base-budget diff converts USD-resource positions too.
+                b_total_base = _leaf_total_base_with_resources(
+                    b, base_fx_map, base_fx_ccy
+                )
+                old_dc_base += b_total_base
+            else:
+                b_total_base = Decimal("0")
+            if o is not None:
+                o_total_base = _leaf_total_base_with_resources(
+                    o, other_fx_map, other_fx_ccy
+                )
+                new_dc_base += o_total_base
+            else:
+                o_total_base = Decimal("0")
+
+            if b is not None and o is None:
+                summary.removed += 1
+                rows.append(
+                    ComparePositionRow(
+                        change_type="removed",
+                        match_key=key,
+                        reference_code=getattr(b, "reference_code", None),
+                        ordinal=b.ordinal,
+                        description=b.description,
+                        unit=b.unit,
+                        old_quantity=_quantize_money_str(b.quantity),
+                        old_unit_rate=_quantize_money_str(b.unit_rate),
+                        old_total=_quantize_money_str(b.total),
+                        old_total_base=_quantize_money_str(b_total_base),
+                        currency=_position_currency(b),
+                        total_delta_base=_quantize_money_str(-b_total_base),
+                    )
+                )
+                continue
+
+            if b is None and o is not None:
+                summary.added += 1
+                rows.append(
+                    ComparePositionRow(
+                        change_type="added",
+                        match_key=key,
+                        reference_code=getattr(o, "reference_code", None),
+                        ordinal=o.ordinal,
+                        description=o.description,
+                        unit=o.unit,
+                        new_quantity=_quantize_money_str(o.quantity),
+                        new_unit_rate=_quantize_money_str(o.unit_rate),
+                        new_total=_quantize_money_str(o.total),
+                        new_total_base=_quantize_money_str(o_total_base),
+                        currency=_position_currency(o),
+                        total_delta_base=_quantize_money_str(o_total_base),
+                    )
+                )
+                continue
+
+            # Both present — classify what moved using exact Decimal.
+            # (the add/remove branches above already ``continue``d, so
+            # reaching here means both sides resolved a position).
+            qty_changed = _to_decimal(b.quantity) != _to_decimal(o.quantity)
+            rate_changed = _to_decimal(b.unit_rate) != _to_decimal(o.unit_rate)
+            if qty_changed and rate_changed:
+                change_type = "changed"
+                summary.changed += 1
+            elif qty_changed:
+                change_type = "qty_changed"
+                summary.qty_changed += 1
+            elif rate_changed:
+                change_type = "rate_changed"
+                summary.rate_changed += 1
+            else:
+                change_type = "unchanged"
+                summary.unchanged += 1
+
+            rows.append(
+                ComparePositionRow(
+                    change_type=change_type,
+                    match_key=key,
+                    reference_code=getattr(o, "reference_code", None)
+                    or getattr(b, "reference_code", None),
+                    ordinal=o.ordinal,
+                    description=o.description,
+                    unit=o.unit,
+                    old_quantity=_quantize_money_str(b.quantity),
+                    new_quantity=_quantize_money_str(o.quantity),
+                    old_unit_rate=_quantize_money_str(b.unit_rate),
+                    new_unit_rate=_quantize_money_str(o.unit_rate),
+                    old_total=_quantize_money_str(b.total),
+                    new_total=_quantize_money_str(o.total),
+                    old_total_base=_quantize_money_str(b_total_base),
+                    new_total_base=_quantize_money_str(o_total_base),
+                    currency=_position_currency(o),
+                    total_delta_base=_quantize_money_str(
+                        o_total_base - b_total_base
+                    ),
+                )
+            )
+
+        summary.old_direct_cost_base = _quantize_money_str(old_dc_base)
+        summary.new_direct_cost_base = _quantize_money_str(new_dc_base)
+        summary.direct_cost_delta_base = _quantize_money_str(
+            new_dc_base - old_dc_base
+        )
+
+        return BOQCompareResponse(
+            base_boq_id=base_boq_id,
+            other_boq_id=other_boq_id,
+            base_boq_name=base_boq.name,
+            other_boq_name=other_boq.name,
+            summary=summary,
+            rows=rows,
+        )
+
     # ── AI-powered classification ─────────────────────────────────────────
 
     async def classify_position(
@@ -6915,18 +7741,21 @@ class BOQService:
 
     # ── LLM-powered AI features ──────────────────────────────────────────────
 
-    async def _get_ai_client(self, user_id: str) -> tuple[str, str]:
-        """Resolve AI provider and API key for the current user.
+    async def _get_ai_client(self, user_id: str) -> tuple[str, str, str | None]:
+        """Resolve AI provider, API key, and the user's model-id override.
 
         Returns:
-            Tuple of (provider, api_key).
+            Tuple of (provider, api_key, model_override_or_none). The model
+            override (Settings > AI) is honored so a provider like OpenRouter
+            uses the model the user picked rather than a hardcoded default —
+            issue #138.
 
         Raises:
             HTTPException 400: If no API key is configured.
         """
         import uuid as _uuid
 
-        from app.modules.ai.ai_client import resolve_provider_and_key
+        from app.modules.ai.ai_client import resolve_provider_key_model
         from app.modules.ai.repository import AISettingsRepository
 
         settings_repo = AISettingsRepository(self.session)
@@ -6934,7 +7763,7 @@ class BOQService:
         settings = await settings_repo.get_by_user_id(uid)
 
         try:
-            return resolve_provider_and_key(settings)
+            return resolve_provider_key_model(settings)
         except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -6945,13 +7774,14 @@ class BOQService:
         """Call LLM and return (raw_text, provider, tokens_used)."""
         from app.modules.ai.ai_client import call_ai
 
-        provider, api_key = await self._get_ai_client(user_id)
+        provider, api_key, model_override = await self._get_ai_client(user_id)
         raw_text, tokens = await call_ai(
             provider=provider,
             api_key=api_key,
             system=system,
             prompt=prompt,
             max_tokens=2048,
+            model=model_override,
         )
         return raw_text, provider, tokens
 

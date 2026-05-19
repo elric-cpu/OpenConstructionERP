@@ -492,6 +492,76 @@ export function convertToBase(
   return v * fxRate;
 }
 
+/* ── Resource-currency-aware leaf total (Issue #111 — skolodi follow-up) ──
+ * ``convertToBase`` only ever converts when the *position* carries a
+ * ``metadata.currency``. The contributor's real data (``Prueba_2.csv``)
+ * is the shape that path can never catch: a position with NO
+ * ``metadata.currency`` but whose ``metadata.resources`` are priced in a
+ * foreign currency. The stored position ``total`` is built from
+ * ``Σ(r.quantity × r.unit_rate)`` with no FX applied, so a USD 25 000
+ * resource in an ARS project was rolled up as 25 000 ARS in BOTH the
+ * per-position resource subtotal AND the section subtotal.
+ *
+ * This mirrors the backend ``_leaf_total_base_with_resources``:
+ *   - position has priced resources with ≥1 foreign currency →
+ *     per-unit rate = Σ(r.qty × r.rate × fx[r.currency]), then × pos.qty
+ *   - otherwise → fall back to position-level ``convertToBase`` so the
+ *     verified #131 ``metadata.currency`` path is unchanged.
+ */
+export function resourceAwareTotalInBase(
+  position: {
+    total?: number | string | null;
+    quantity?: number | string | null;
+    metadata?: Record<string, unknown> | null;
+    metadata_?: Record<string, unknown> | null;
+  },
+  baseCurrency: string | undefined | null,
+  fxRates: Array<{ currency: string; rate: number }> | undefined | null,
+): number {
+  const meta = (position.metadata ?? position.metadata_ ?? {}) as Record<string, unknown>;
+  const resources = meta.resources;
+  const num = (x: unknown): number => {
+    const n = typeof x === 'number' ? x : Number(x);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const base = (baseCurrency || '').trim().toUpperCase();
+
+  if (Array.isArray(resources) && resources.length > 0) {
+    const anyForeign = resources.some((r) => {
+      if (!r || typeof r !== 'object') return false;
+      const code = String((r as { currency?: unknown }).currency ?? '')
+        .trim()
+        .toUpperCase();
+      return code !== '' && code !== base;
+    });
+    if (anyForeign) {
+      // Per-unit rate, currency-converted across mixed resource
+      // currencies (resources are per-unit norms), then × position qty.
+      let perUnitBase = 0;
+      for (const r of resources) {
+        if (!r || typeof r !== 'object') continue;
+        const rr = r as {
+          quantity?: unknown;
+          unit_rate?: unknown;
+          total?: unknown;
+          currency?: unknown;
+        };
+        const rSub =
+          rr.total != null && Number.isFinite(num(rr.total))
+            ? num(rr.total)
+            : num(rr.quantity) * num(rr.unit_rate);
+        const rCode = String(rr.currency ?? '').trim() || base;
+        perUnitBase += convertToBase(rSub, rCode, base, fxRates);
+      }
+      return perUnitBase * num(position.quantity);
+    }
+  }
+
+  // No priced foreign resources — established position-level path.
+  const src = (meta.currency as string | undefined) || base;
+  return convertToBase(num(position.total), src, base, fxRates);
+}
+
 /* ── Quality Score ───────────────────────────────────────────────────── */
 
 export interface QualityBreakdown {

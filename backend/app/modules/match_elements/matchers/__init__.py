@@ -1,4 +1,4 @@
-"""Matchers — vector + lexical for Phase A; LLM rerank planned.
+"""‌⁠‍Matchers — vector + lexical for Phase A; LLM rerank planned.
 
 Each matcher implements :class:`Matcher` and returns a ranked list of
 :class:`MatchCandidate` for a given :class:`ElementEnvelope`. The

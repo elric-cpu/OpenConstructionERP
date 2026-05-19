@@ -1,4 +1,4 @@
-"""Data access layer for the Service & Maintenance module.
+"""‌⁠‍Data access layer for the Service & Maintenance module.
 
 One repository class per entity. Each class is a thin async-SQLAlchemy wrapper
 that the service layer composes. Kept deliberately dumb — no business logic.
@@ -29,7 +29,7 @@ ModelT = TypeVar("ModelT", bound=Base)
 
 
 class _BaseRepo(Generic[ModelT]):
-    """Tiny shared CRUD base for the service module repositories.
+    """‌⁠‍Tiny shared CRUD base for the service module repositories.
 
     Each subclass declares ``model``; that's enough for the generic helpers.
     """
@@ -64,7 +64,7 @@ class _BaseRepo(Generic[ModelT]):
 
 
 class ContractRepository(_BaseRepo[ServiceContract]):
-    """Data access for ServiceContract."""
+    """‌⁠‍Data access for ServiceContract."""
 
     model = ServiceContract
 

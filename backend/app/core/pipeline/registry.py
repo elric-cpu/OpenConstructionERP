@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Node Capability Registry — the safe binding surface for pipeline nodes.
+"""‌⁠‍Node Capability Registry — the safe binding surface for pipeline nodes.
 
 Each module opts a node *type* in by calling :func:`register_node` from its
 autodiscovered ``pipeline_nodes.py`` (the module loader discovers that file
@@ -32,7 +32,7 @@ type NodeRunner = Callable[["NodeContext"], Awaitable[dict[str, Any]]]
 
 @dataclass
 class NodeContext:
-    """Everything a node runner needs, assembled by the executor.
+    """‌⁠‍Everything a node runner needs, assembled by the executor.
 
     The runner reads ``params`` (validated node params from the graph),
     ``inputs`` (the merged upstream envelopes keyed by source node id), and
@@ -55,7 +55,7 @@ class NodeContext:
     run_id: Any | None = None
 
     def first_input(self) -> dict[str, Any]:
-        """Return the single upstream envelope, or ``{}`` when there is none.
+        """‌⁠‍Return the single upstream envelope, or ``{}`` when there is none.
 
         Phase-1 graphs are linear, so most runners just want "the envelope
         from my one predecessor". When several edges feed a node the runner

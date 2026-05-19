@@ -1,4 +1,4 @@
-"""Install the 7-project localized showcase from the committed snapshot.
+"""‌⁠‍Install the 7-project localized showcase from the committed snapshot.
 
 A fresh install ships ``showcase_snapshot.json.gz`` (built by
 ``export_showcase_snapshot``). When the demo account has no projects yet
@@ -56,7 +56,7 @@ SHOWCASE_PIDS = [
 
 
 def _dec(v: object) -> object:
-    """Reverse ``export_showcase_snapshot._enc``."""
+    """‌⁠‍Reverse ``export_showcase_snapshot._enc``."""
     if isinstance(v, dict) and "__b64__" in v:
         return base64.b64decode(v["__b64__"])
     return v
@@ -71,7 +71,7 @@ def seed_showcase_from_snapshot(
     force: bool = False,
     snapshot_path: Path = SNAPSHOT_PATH,
 ) -> dict:
-    """Bulk-load the showcase snapshot into ``db_path``.
+    """‌⁠‍Bulk-load the showcase snapshot into ``db_path``.
 
     Returns a status dict. ``status`` is one of:
     ``ok`` (loaded), ``already`` (all 7 present, nothing to do),

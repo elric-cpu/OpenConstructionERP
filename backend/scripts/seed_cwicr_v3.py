@@ -1,5 +1,5 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
-"""Seed a fresh OpenConstructionERP install with CWICR v3 catalogues.
+"""‌⁠‍Seed a fresh OpenConstructionERP install with CWICR v3 catalogues.
 
 Solves the "fresh-install needs a human to visit /costs and click
 Install for every region" problem from task #39 in the 2-day match
@@ -68,7 +68,7 @@ _GITHUB_CWICR_BASE_URL = (
 
 
 def _v3_snapshot_cache_path(region: str) -> Path:
-    """Mirror of ``router._v3_snapshot_cache_path``.
+    """‌⁠‍Mirror of ``router._v3_snapshot_cache_path``.
 
     Kept in lockstep so a download issued by this CLI populates the
     same cache the in-app install button reads — repeat installs are
@@ -79,7 +79,7 @@ def _v3_snapshot_cache_path(region: str) -> Path:
 
 
 def _resolve_qdrant_url() -> str | None:
-    """Mirror of ``router._v3_qdrant_url`` — prefers the dedicated v3 setting."""
+    """‌⁠‍Mirror of ``router._v3_qdrant_url`` — prefers the dedicated v3 setting."""
     try:
         from app.config import get_settings
     except Exception as exc:

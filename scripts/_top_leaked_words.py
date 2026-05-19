@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Find the most-common English words still leaking through translation."""
+"""‌⁠‍Find the most-common English words still leaking through translation."""
 import re
 import json
 from pathlib import Path

@@ -20,15 +20,8 @@ export const manifest: ModuleManifest = {
       component: CZExchangeModule,
     },
   ],
-  navItems: [
-    {
-      labelKey: 'nav.cz_boq_exchange',
-      to: '/cz-boq-exchange',
-      icon: Landmark,
-      group: 'regional',
-      advancedOnly: true,
-    },
-  ],
+  // Issue #217 — reached from /boq (regional import/export); no duplicate sidebar entry.
+  navItems: [],
   searchEntries: [
     {
       label: 'Czech URS / TSKP Import / Export',

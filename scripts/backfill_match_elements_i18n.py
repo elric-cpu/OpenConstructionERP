@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Backfill match_elements i18n keys across all 26 locales.
+"""‌⁠‍Backfill match_elements i18n keys across all 26 locales.
 
 Inserts the new keys introduced by the /match-elements UX redesign:
 project-context bar, session resume picker, settings rail, confidence
@@ -539,7 +539,7 @@ def value_for(locale: str, key: str) -> str:
 
 
 def escape_for_ts_double_quoted(s: str) -> str:
-    """Escape backslash and double-quote for TS double-quoted string literal."""
+    """‌⁠‍Escape backslash and double-quote for TS double-quoted string literal."""
     return s.replace("\\", "\\\\").replace('"', '\\"')
 
 

@@ -500,6 +500,21 @@ h4 {
   padding: 0 !important;
 }
 
+/* ── Zero-padding icon-only columns (e.g. _expand resource toggle) ──────
+   AG Grid Quartz applies `.ag-ltr .ag-cell { padding: 0 15px }` whose
+   specificity (0,2,0) beats a Tailwind `p-0` utility (0,1,0), so a 32px
+   icon column is left with ~2px of content box and any fixed-size button
+   inside collapses to its glyph. Mirror `.oe-drag-handle-cell` to reclaim
+   the full column width and center the control. Scoped !important is the
+   correct tool for overriding a vendor theme's hardcoded cell padding on
+   specific utility columns. */
+.oe-icon-cell {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  padding: 0 !important;
+}
+
 /* Row drag handle icon — visible on hover only */
 .ag-theme-quartz .ag-row .ag-drag-handle {
   opacity: 0;

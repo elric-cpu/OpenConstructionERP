@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Group signature normalization.
+"""‌⁠‍Group signature normalization.
 
 A signature is the canonical fingerprint that lets the system recognise
 "the same kind of group" across projects. When the user confirms a
@@ -41,7 +41,7 @@ _UNIT_SUFFIX_RE = re.compile(
 
 
 def _normalize_value(value: Any) -> str:
-    """Lower-case, accent-fold, whitespace-collapse a free-form value."""
+    """‌⁠‍Lower-case, accent-fold, whitespace-collapse a free-form value."""
     if value is None:
         return ""
     text = str(value).strip()
@@ -57,7 +57,7 @@ def _normalize_value(value: Any) -> str:
 def normalize_signature(
     fields: list[str], values: dict[str, Any],
 ) -> tuple[str, str]:
-    """Compute (label, sha1_hex) for a group.
+    """‌⁠‍Compute (label, sha1_hex) for a group.
 
     Args:
         fields: Attribute keys that participate in the signature, in the

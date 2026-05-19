@@ -1,4 +1,4 @@
-"""Supplier Catalogs & Vendor Management module.
+"""‌⁠‍Supplier Catalogs & Vendor Management module.
 
 Extends procurement with:
     - Vendor master + contacts
@@ -13,7 +13,7 @@ Extends procurement with:
 
 
 async def on_startup() -> None:
-    """Module startup hook — register permissions and notification subscribers."""
+    """‌⁠‍Module startup hook — register permissions and notification subscribers."""
     from app.modules.supplier_catalogs.events import register_subscribers
     from app.modules.supplier_catalogs.permissions import (
         register_supplier_catalogs_permissions,

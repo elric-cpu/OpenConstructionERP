@@ -45,6 +45,60 @@ const ORDER: StageName[] = [
   'rollup',
 ];
 
+/**
+ * Read-only advertisement of the full 7-stage journey, shown on
+ * `/match-elements` BEFORE a session exists (the setup wizard hasn't
+ * created one yet). It reuses the exact same `ORDER` + i18n labels as
+ * the live pipeline so the depth of the process is self-evident the
+ * moment the user lands — without mounting a second interactive
+ * stepper (the live `MatchPipeline` still owns the single interactive
+ * rail once a session is created).
+ */
+export function PipelinePreview() {
+  const { t } = useTranslation();
+  return (
+    <section className="mt-2 rounded-xl border border-indigo-200/70 dark:border-indigo-800/50 bg-surface-primary shadow-sm">
+      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border bg-gradient-to-r from-indigo-50/70 via-white to-white dark:from-indigo-950/20 dark:via-surface-primary dark:to-surface-primary">
+        <span className="w-7 h-7 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-200 inline-flex items-center justify-center">
+          <Workflow className="w-4 h-4" />
+        </span>
+        <div className="min-w-0">
+          <h3 className="text-sm font-bold text-content-primary truncate">
+            {t('match_elements.pipeline.title', 'Match pipeline')}
+          </h3>
+          <p className="text-[11px] text-content-tertiary">
+            {t(
+              'match_elements.pipeline.subtitle',
+              'Seven steps from CAD file to priced BoQ — every step is visible and tunable',
+            )}
+          </p>
+        </div>
+      </div>
+      <ol className="flex items-center gap-1.5 flex-wrap px-3 py-2 border-b border-border">
+        {ORDER.map((name, i) => (
+          <li
+            key={name}
+            className="inline-flex items-center gap-1 text-[10px] font-semibold"
+          >
+            <span className="px-1.5 py-0.5 rounded border bg-surface-secondary border-border text-content-tertiary">
+              {i + 1}. {t(`match_elements.pipeline.step_${name}`, name)}
+            </span>
+            {i < ORDER.length - 1 && (
+              <ChevronsRight className="w-2.5 h-2.5 opacity-50 text-content-tertiary" />
+            )}
+          </li>
+        ))}
+      </ol>
+      <p className="px-3 py-2 text-[11px] text-content-tertiary">
+        {t('match_elements.pipeline.preview_hint', {
+          defaultValue:
+            'Pick a project and finish the quick setup below — these seven stages then run here, each visible and tunable.‌⁠‍',
+        })}
+      </p>
+    </section>
+  );
+}
+
 export function MatchPipeline({ sessionId }: Props) {
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -124,7 +178,7 @@ export function MatchPipeline({ sessionId }: Props) {
         if (res.status === 'error') {
           setPipelineError(
             t('match_elements.pipeline.run_all_stopped', {
-              defaultValue: 'Stopped at “{{stage}}” — fix that step, then run again.',
+              defaultValue: 'Stopped at “{{stage}}” — fix that step, then run again.‌⁠‍',
               stage: titleOf(name),
             }),
           );

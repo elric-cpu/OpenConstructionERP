@@ -116,7 +116,8 @@ export interface PipelineRunDetail {
 export interface PipelineRunSummary {
   id: string;
   status?: RunStatus;
-  trigger?: string;
+  /** Backend sends an object, e.g. `{ type: 'manual', actor_id: '…' }`. */
+  trigger?: { type?: string; [k: string]: unknown };
   started_at?: string | null;
   finished_at?: string | null;
   progress_percent?: number;

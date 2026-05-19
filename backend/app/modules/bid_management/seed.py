@@ -1,4 +1,4 @@
-"""Deterministic demo seed for the bid_management module.
+"""‌⁠‍Deterministic demo seed for the bid_management module.
 
 ``seed_bid_management_demo(session, project_ids)`` creates:
     - 10 packages per project (5 closed + 3 open + 2 draft)
@@ -81,7 +81,7 @@ def _iso(dt: datetime) -> str:
 async def _seed_one_project(
     session: AsyncSession, project_id: uuid.UUID, project_index: int
 ) -> dict[str, int]:
-    """Seed a single project's bid_management data.
+    """‌⁠‍Seed a single project's bid_management data.
 
     Returns counts for logging.
     """
@@ -284,7 +284,7 @@ async def _seed_one_project(
 async def seed_bid_management_demo(
     session: AsyncSession, project_ids: Iterable[uuid.UUID]
 ) -> dict[str, int]:
-    """Seed deterministic demo data for the bid_management module.
+    """‌⁠‍Seed deterministic demo data for the bid_management module.
 
     Args:
         session: Open async DB session.

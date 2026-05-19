@@ -21,15 +21,8 @@ export const manifest: ModuleManifest = {
       component: MasterFormatExchangeModule,
     },
   ],
-  navItems: [
-    {
-      labelKey: 'nav.us_masterformat_exchange',
-      to: '/us-masterformat-exchange',
-      icon: DollarSign,
-      group: 'regional',
-      advancedOnly: true,
-    },
-  ],
+  // Issue #217 — reached from /boq (regional import/export); no duplicate sidebar entry.
+  navItems: [],
   searchEntries: [
     {
       label: 'US MasterFormat BOQ Import / Export',

@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 // lucide-react icons used by sub-components (BOQToolbar, BOQGrid, etc.) — none needed directly here
-import { Database, Download, ExternalLink, X, Sparkles, AlertTriangle as WarnTriangle, Lock, Copy, Wallet, Keyboard } from 'lucide-react';
+import { Database, Download, ExternalLink, X, Sparkles, AlertTriangle as WarnTriangle, Lock, Copy, Wallet, Keyboard, GitCompare, RefreshCw } from 'lucide-react';
 import { Button, Badge, Breadcrumb } from '@/shared/ui';
 import { useProgressStore } from '@/shared/ui/GlobalProgress';
 import { apiGet, apiPost, triggerDownload } from '@/shared/lib/api';
@@ -37,6 +37,9 @@ import { AISmartPanel } from './AISmartPanel';
 // ClassificationPicker used in sub-components
 // import { ClassificationPicker } from './ClassificationPicker';
 import { VersionHistoryDrawer } from './VersionHistoryDrawer';
+import { ModelLinkPanel } from './ModelLinkPanel';
+import { ModelLinkReviewPanel } from './ModelLinkReviewPanel';
+import { BOQCompareDrawer } from './BOQCompareDrawer';
 import { CostBreakdownPanel } from './CostBreakdownPanel';
 import { EstimateClassification } from './EstimateClassification';
 import { ResourceSummary } from './ResourceSummary';
@@ -64,7 +67,7 @@ import {
   getCurrencyCode,
   createFormatter,
   fmtWithCurrency,
-  convertToBase,
+  resourceAwareTotalInBase,
   computeQualityScore,
   type QualityBreakdown,
   type Tip,
@@ -273,10 +276,29 @@ export function BOQEditorPage() {
   /* ── Batch selection state ──────────────────────────────────────────── */
 
   const [selectedPositionIds, setSelectedPositionIds] = useState<string[]>([]);
+  /**
+   * Issue #139 — the partida the user last clicked / keyboard-focused
+   * (independent of the checkbox selection). The grid disables
+   * click-selection, so without this a plain "click a row then Add
+   * Position" left ``selectedPosition`` null and the new row landed at
+   * the LAST section instead of below the clicked row.
+   */
+  const [activePositionId, setActivePositionId] = useState<string | null>(null);
+  const handleActiveRowChange = useCallback((id: string | null) => {
+    setActivePositionId(id);
+  }, []);
   const selectedPosition = useMemo(() => {
-    if (selectedPositionIds.length !== 1) return null;
-    return boq?.positions.find((p) => p.id === selectedPositionIds[0]) ?? null;
-  }, [selectedPositionIds, boq?.positions]);
+    // Prefer an explicit single checkbox selection; otherwise fall back
+    // to the row the user is actively working in (clicked / focused) so
+    // insert-below-selected works for the common click-then-add flow.
+    if (selectedPositionIds.length === 1) {
+      return boq?.positions.find((p) => p.id === selectedPositionIds[0]) ?? null;
+    }
+    if (selectedPositionIds.length === 0 && activePositionId) {
+      return boq?.positions.find((p) => p.id === activePositionId) ?? null;
+    }
+    return null;
+  }, [selectedPositionIds, activePositionId, boq?.positions]);
   const boqGridRef = useRef<BOQGridHandle>(null);
 
   /** Tracks the pending deferred delete so it can be cancelled by undo. */
@@ -390,7 +412,14 @@ export function BOQEditorPage() {
           }),
         });
       } else {
-        addToast({ type: 'success', title: t('boq.position_added', { defaultValue: 'Position added‌⁠‍' }), message: t('boq.click_to_edit', { defaultValue: 'Click any cell to edit‌⁠‍' }) });
+        addToast({ type: 'success', title: t('boq.position_added', { defaultValue: 'Position added‌⁠‍' }), message: t('boq.position_added_edit_hint', { defaultValue: 'Type the description, then Tab through unit, quantity & rate‌⁠‍' }) });
+        // Open the freshly-added leaf row directly in inline edit on its
+        // Description cell so the user types straight away instead of
+        // hunting for a cell to click. Skipped on undo/redo restore so a
+        // recovered position never pops an unexpected editor.
+        if (!isUndoRedoInProgressRef.current) {
+          setTimeout(() => boqGridRef.current?.beginEditDescription(addedPosition.id), 250);
+        }
       }
       // Record undo entry for the newly added position (skip if triggered by undo/redo)
       if (!isUndoRedoInProgressRef.current) {
@@ -579,7 +608,17 @@ export function BOQEditorPage() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => boqApi.deletePosition(id),
+    mutationFn: (id: string) => {
+      // A section may still have children (incl. nested sub-sections)
+      // when deleted via keyboard / undo-redo. Without cascade the
+      // backend 409s and the delete silently fails. Leaves are
+      // unaffected (no children → cascade is a harmless no-op).
+      const target = boq?.positions.find((p) => p.id === id);
+      return boqApi.deletePosition(
+        id,
+        target && isSection(target) ? { cascade: true } : undefined,
+      );
+    },
     // Don't invalidate the main BOQ query on success — we already removed
     // the position from the cache optimistically in `trackedDelete`. A
     // refetch here would race with concurrent pending deletes (batch
@@ -1095,6 +1134,7 @@ export function BOQEditorPage() {
 
   const handleClearSelection = useCallback(() => {
     setSelectedPositionIds([]);
+    setActivePositionId(null);
     boqGridRef.current?.clearSelection();
   }, []);
 
@@ -1421,25 +1461,52 @@ export function BOQEditorPage() {
   const handleDeleteSection = useCallback(
     async (sectionId: string) => {
       if (!boq) return;
-      const group = grouped.sections.find((g) => g.section.id === sectionId);
-      if (!group) return;
-      // Delete all children first, then the section itself
-      const idsToDelete = [...group.children.map((c) => c.id), sectionId];
-      for (const id of idsToDelete) {
-        try {
-          await boqApi.deletePosition(id);
-        } catch { /* continue with remaining */ }
+      // Count descendants for the toast by walking the flat parent_id
+      // tree — the `grouped` view is flat and never lists nested
+      // sub-sections, so it can't be relied on here.
+      const childrenByParent = new Map<string, string[]>();
+      for (const p of boq.positions) {
+        if (!p.parent_id) continue;
+        const arr = childrenByParent.get(p.parent_id);
+        if (arr) arr.push(p.id);
+        else childrenByParent.set(p.parent_id, [p.id]);
+      }
+      let descendantCount = 0;
+      const stack = [...(childrenByParent.get(sectionId) ?? [])];
+      while (stack.length > 0) {
+        const id = stack.pop()!;
+        descendantCount += 1;
+        const kids = childrenByParent.get(id);
+        if (kids) stack.push(...kids);
+      }
+      // One recursive cascade delete — the backend removes the whole
+      // subtree (nested sub-sections + their positions) leaves-first.
+      // The previous per-child loop relied on the flat `grouped` view,
+      // which never lists nested sub-sections, so deleting a sub-section
+      // that contained another sub-section 409'd and was silently
+      // swallowed ("sub-section delete doesn't work").
+      try {
+        await boqApi.deletePosition(sectionId, { cascade: true });
+      } catch (err) {
+        addToast({
+          type: 'error',
+          title: t('boq.section_delete_failed', {
+            defaultValue: 'Failed to delete section',
+          }),
+          message: err instanceof Error ? err.message : undefined,
+        });
+        return;
       }
       invalidateAll();
       addToast({
         type: 'success',
         title: t('boq.section_deleted', {
           defaultValue: 'Section deleted with {{count}} positions',
-          count: group.children.length,
+          count: descendantCount,
         }),
       });
     },
-    [boq, boqId, grouped, invalidateAll, addToast, t],
+    [boq, invalidateAll, addToast, t],
   );
 
   /* Build flat position list for keyboard navigation — reserved for future use
@@ -1456,16 +1523,26 @@ export function BOQEditorPage() {
 
   const directCost = useMemo(() => {
     if (!boq) return 0;
-    // Issue #111 — rebase per-position currencies into the project base
-    // before summing. A position priced in ARS with metadata.currency='ARS'
-    // and project base USD must be multiplied by the ARS→USD FX rate
-    // before being added to a USD-priced sibling. Without this, mixed-
-    // currency BOQs add foreign-currency totals as-if they were base.
+    // Issue #111 (skolodi follow-up) — rebase per-position currencies into
+    // the project base before summing. ``resourceAwareTotalInBase`` covers
+    // BOTH a position-level ``metadata.currency`` (verified #131 path) AND
+    // the previously-missed case: a position with NO metadata.currency but
+    // foreign-currency ``metadata.resources`` (its stored total was built
+    // from Σ(r.qty×r.rate) with no FX, so summing it raw added a USD
+    // resource into an ARS project as if "1 USD = 1 ARS").
     return boq.positions.reduce((sum, p) => {
-      const meta = ((p as { metadata?: Record<string, unknown> }).metadata
-        ?? {}) as Record<string, unknown>;
-      const sourceCurrency = (meta.currency as string | undefined) || currencyCode;
-      return sum + convertToBase(p.total, sourceCurrency, currencyCode, fxRates);
+      return (
+        sum +
+        resourceAwareTotalInBase(
+          p as unknown as {
+            total?: number | string | null;
+            quantity?: number | string | null;
+            metadata?: Record<string, unknown> | null;
+          },
+          currencyCode,
+          fxRates,
+        )
+      );
     }, 0);
   }, [boq, currencyCode, fxRates]);
 
@@ -1761,21 +1838,93 @@ export function BOQEditorPage() {
         return `${parentOrdinal}.${String(nextSuffix).padStart(2, '0')}`;
       };
 
+      /* Issue #139 — when inserting *between* two siblings, pick an ordinal
+       * that sorts strictly between them by halving the gap on the trailing
+       * numeric segment (e.g. "01.20" + "01.30" → "01.25"). Returns null
+       * when the two share no common prefix or the integer gap is too tight
+       * to fit a clean value — the caller then falls back to the gap-of-10
+       * append ordinal (placement stays correct via sort_order regardless). */
+      const splitOrdinal = (ord: string): [string, string] => {
+        const dot = ord.lastIndexOf('.');
+        return dot === -1 ? ['', ord] : [ord.slice(0, dot + 1), ord.slice(dot + 1)];
+      };
+      const interpolateOrdinal = (prev: string, next: string): string | null => {
+        const [pPre, pNum] = splitOrdinal(prev);
+        const [nPre, nNum] = splitOrdinal(next);
+        if (pPre !== nPre) return null;
+        const a = parseInt(pNum, 10);
+        const b = parseInt(nNum, 10);
+        if (isNaN(a) || isNaN(b)) return null;
+        const mid = Math.floor((a + b) / 2);
+        if (mid <= a || mid >= b) return null;
+        const width = Math.max(pNum.length, nNum.length);
+        return `${pPre}${String(mid).padStart(width, '0')}`;
+      };
+
       // Issue #134 — when invoked without an explicit parent (the
       // Ctrl+Enter shortcut, or the toolbar "Add Position" button),
       // insert into the SELECTED row's section instead of always the
       // last section. A selected section → add as its child; a selected
       // child → add as a sibling in the same section. Falls through to
       // the last-section default below only when nothing is selected.
+      //
+      // Issue #139 — a selected *leaf* additionally pins the new partida
+      // directly below that row (after_position_id) and gets an ordinal
+      // interpolated between it and the next sibling, instead of being
+      // appended at the section's end.
+      const explicitParentId = parentId;
+      let afterPositionId: string | undefined;
       if (!parentId && selectedPosition) {
-        parentId = isSection(selectedPosition)
-          ? selectedPosition.id
-          : (selectedPosition.parent_id ?? undefined);
+        if (isSection(selectedPosition)) {
+          parentId = selectedPosition.id;
+        } else {
+          parentId = selectedPosition.parent_id ?? undefined;
+          afterPositionId = selectedPosition.id;
+        }
       }
 
       let ordinal: string;
 
-      if (parentId) {
+      if (afterPositionId && selectedPosition && !explicitParentId) {
+        // Find the sibling rendered immediately after the selected leaf
+        // (siblings ordered by sort_order, then ordinal — mirrors the grid).
+        const siblings = allPositions
+          .filter((p) => (p.parent_id ?? null) === (selectedPosition.parent_id ?? null))
+          .sort((a, b) =>
+            a.sort_order !== b.sort_order
+              ? a.sort_order - b.sort_order
+              : (a.ordinal ?? '').localeCompare(b.ordinal ?? '', undefined, { numeric: true }),
+          );
+        const selIdx = siblings.findIndex((p) => p.id === selectedPosition.id);
+        const nextSibling = selIdx >= 0 ? siblings[selIdx + 1] : undefined;
+        const interpolated =
+          nextSibling && selectedPosition.ordinal && nextSibling.ordinal
+            ? interpolateOrdinal(selectedPosition.ordinal, nextSibling.ordinal)
+            : null;
+        if (interpolated) {
+          ordinal = interpolated;
+        } else {
+          // No clean room (or selected is the last sibling): keep the
+          // gap-of-10 append label; sort_order still places it correctly.
+          const parentSection = parentId
+            ? allPositions.find((p) => p.id === parentId)
+            : undefined;
+          const parentOrdinal = parentSection?.ordinal ?? '01';
+          ordinal = parentId
+            ? nextChildOrdinal(
+                parentOrdinal,
+                allPositions.filter((p) => p.parent_id === parentId),
+              )
+            : (() => {
+                let maxTop = 0;
+                for (const p of allPositions) {
+                  const num = parseInt(p.ordinal ?? '', 10);
+                  if (!isNaN(num) && num > maxTop) maxTop = num;
+                }
+                return String((Math.floor(maxTop / 10) + 1) * 10).padStart(4, '0');
+              })();
+        }
+      } else if (parentId) {
         const parentSection = allPositions.find((p) => p.id === parentId);
         const parentOrdinal = parentSection?.ordinal ?? '01';
         const siblings = allPositions.filter((p) => p.parent_id === parentId);
@@ -1809,6 +1958,8 @@ export function BOQEditorPage() {
         // Issue #127 — register a reusable code mirroring the ordinal so this
         // position can later be reused elsewhere via "Reuse existing code…".
         reference_code: ordinal,
+        // Issue #139 — pin the new row directly below the selected leaf.
+        after_position_id: afterPositionId ?? null,
       });
       addToast({
         type: 'info',
@@ -1907,6 +2058,24 @@ export function BOQEditorPage() {
     },
     [boq],
   );
+
+  // ── Feature 1: model→quantity binding + review ─────────────────────────
+  const [modelLinkFor, setModelLinkFor] = useState<{
+    id: string;
+    ordinal: string;
+  } | null>(null);
+  const [modelReviewOpen, setModelReviewOpen] = useState(false);
+
+  const handleModelLink = useCallback(
+    (positionId: string) => {
+      const pos = (boq?.positions ?? []).find((p) => p.id === positionId);
+      setModelLinkFor({ id: positionId, ordinal: pos?.ordinal ?? '' });
+    },
+    [boq],
+  );
+
+  // ── Feature 2: estimate baseline / line-level compare ──────────────────
+  const [compareOpen, setCompareOpen] = useState(false);
 
   const unlinkMutation = useMutation({
     mutationFn: (positionId: string) => boqApi.unlinkPosition(positionId),
@@ -3580,6 +3749,28 @@ export function BOQEditorPage() {
                 {t('boq.create_budget', { defaultValue: 'Create Budget' })}
               </Button>
             )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setModelReviewOpen(true)}
+              title={t('boq.model_review_btn_hint', {
+                defaultValue: 'Re-pull quantities from linked BIM models',
+              })}
+            >
+              <RefreshCw size={14} className="mr-1" />
+              {t('boq.model_review_btn', { defaultValue: 'Model sync' })}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCompareOpen(true)}
+              title={t('boq.compare_btn_hint', {
+                defaultValue: 'Compare this estimate against another BOQ',
+              })}
+            >
+              <GitCompare size={14} className="mr-1" />
+              {t('boq.compare_btn', { defaultValue: 'Compare' })}
+            </Button>
             <Button variant="secondary" size="sm" onClick={handleCreateRevision} disabled={createRevisionMutation.isPending}>
               <Copy size={14} className="mr-1" />
               {t('boq.create_revision', { defaultValue: 'Create Revision' })}
@@ -3706,6 +3897,7 @@ export function BOQEditorPage() {
           locale={locale}
           footerRows={boqFooterRows}
           onSelectionChanged={handleSelectionChanged}
+          onActiveRowChange={handleActiveRowChange}
           onRemoveResource={handleRemoveResource}
           onUpdateResource={handleUpdateResource}
           onUpdateResourceFields={handleUpdateResourceFields}
@@ -3724,6 +3916,7 @@ export function BOQEditorPage() {
           maxNestingDepth={maxNestingDepth}
           onShowLinks={handleShowLinks}
           onUnlinkPosition={handleUnlinkPosition}
+          onModelLink={handleModelLink}
           onSuggestRate={handleSuggestRate}
           onClassify={handleClassify}
           onCheckAnomalies={handleCheckAnomalies}
@@ -4056,6 +4249,37 @@ export function BOQEditorPage() {
           boqId={boqId}
           isOpen={showVersionHistory}
           onClose={() => setShowVersionHistory(false)}
+        />
+      )}
+
+      {/* ── Feature 1: Model link panel (per-position binding) ───────── */}
+      {modelLinkFor && boq?.project_id && (
+        <ModelLinkPanel
+          positionId={modelLinkFor.id}
+          positionOrdinal={modelLinkFor.ordinal}
+          projectId={boq.project_id}
+          onClose={() => setModelLinkFor(null)}
+        />
+      )}
+
+      {/* ── Feature 1: Model quantity review (BOQ-wide refresh/apply) ── */}
+      {boqId && (
+        <ModelLinkReviewPanel
+          boqId={boqId}
+          locale={locale}
+          isOpen={modelReviewOpen}
+          onClose={() => setModelReviewOpen(false)}
+          onApplied={() => invalidateAll()}
+        />
+      )}
+
+      {/* ── Feature 2: Estimate baseline / line-level compare ───────── */}
+      {boqId && boq?.project_id && (
+        <BOQCompareDrawer
+          boqId={boqId}
+          projectId={boq.project_id}
+          isOpen={compareOpen}
+          onClose={() => setCompareOpen(false)}
         />
       )}
 

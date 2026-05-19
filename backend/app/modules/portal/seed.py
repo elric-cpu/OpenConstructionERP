@@ -1,5 +1,5 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
-"""Deterministic seed data for the Customer & Partner Portal.
+"""‌⁠‍Deterministic seed data for the Customer & Partner Portal.
 
 Generates:
     20 portal users — 4 clients, 3 investors, 3 consultants,
@@ -87,7 +87,7 @@ async def seed_portal_demo(
     session: AsyncSession,
     projects_ids: Sequence[uuid.UUID] | None = None,
 ) -> dict[str, int]:
-    """Idempotently populate the portal tables with demo data.
+    """‌⁠‍Idempotently populate the portal tables with demo data.
 
     Args:
         session: an active :class:`AsyncSession`.

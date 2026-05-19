@@ -1,4 +1,4 @@
-"""Property Development ORM models.
+"""‌⁠‍Property Development ORM models.
 
 Tables (all prefixed ``oe_property_dev_``):
     development          — top-level development (1:1 with a Project)
@@ -45,7 +45,7 @@ from app.database import GUID, Base
 
 
 class Development(Base):
-    """A property development — a collection of plots tied to one project."""
+    """‌⁠‍A property development — a collection of plots tied to one project."""
 
     __tablename__ = "oe_property_dev_development"
 
@@ -81,7 +81,7 @@ class Development(Base):
 
 
 class HouseType(Base):
-    """A reusable house type / model within a development."""
+    """‌⁠‍A reusable house type / model within a development."""
 
     __tablename__ = "oe_property_dev_house_type"
     __table_args__ = (

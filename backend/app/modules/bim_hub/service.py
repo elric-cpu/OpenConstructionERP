@@ -1126,31 +1126,75 @@ class BIMHubService:
                 return existing
 
         # Not in DB — try to lazy-create from Parquet.
-        from app.modules.bim_hub.dataframe_store import query_parquet
+        import asyncio
+
+        from app.modules.bim_hub.dataframe_store import query_parquet, read_schema
 
         ref = mesh_ref or stable_id
         if not ref:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "BIM element not found")
 
-        import asyncio
-
+        # The DDC Parquet "id" column is usually literally ``id`` but some
+        # converter versions / IFC exports emit ``Id`` / ``ElementId`` /
+        # ``Element ID``.  Probe the actual schema and pick the first
+        # id-like column that exists so the lookup is converter-agnostic
+        # instead of hard-coding ``id`` (which raised ValueError →
+        # spurious 404 on every snapshot-seeded model).
         try:
-            rows = await asyncio.to_thread(
-                query_parquet,
-                str(model.project_id),
-                str(model_id),
-                columns=None,
-                filters=[{"column": "id", "op": "=", "value": str(ref)}],
-                limit=1,
+            schema = await asyncio.to_thread(
+                read_schema, str(model.project_id), str(model_id)
             )
-        except ValueError:
-            rows = []
+        except (OSError, ValueError):
+            schema = []
+        schema_cols = {c["name"] for c in schema}
+        id_col: str | None = None
+        for cand in ("id", "Id", "ID", "ElementId", "Element ID", "element_id"):
+            if cand in schema_cols:
+                id_col = cand
+                break
+
+        rows: list[dict[str, Any]] = []
+        if id_col is not None:
+            try:
+                rows = await asyncio.to_thread(
+                    query_parquet,
+                    str(model.project_id),
+                    str(model_id),
+                    columns=None,
+                    filters=[{"column": id_col, "op": "=", "value": str(ref)}],
+                    limit=1,
+                )
+            except ValueError:
+                rows = []
 
         if not rows:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"BIM element '{ref}' not found in model",
+            # No Parquet (snapshot-seeded models ship geometry only) or no
+            # matching row: still create a minimal placeholder element so
+            # the mesh the user clicked in the 3D viewer can be linked to a
+            # BOQ position.  This is the whole point of ``ensure_element`` —
+            # "every visible mesh is linkable" — and it must not depend on a
+            # full DDC Parquet extract being present.  IDOR is already
+            # enforced by the caller's ``_verify_model_access`` check.
+            element = BIMElement(
+                model_id=model_id,
+                stable_id=str(ref),
+                mesh_ref=str(ref),
+                element_type="Unmatched",
+                name=f"Element {ref}",
+                properties={},
+                quantities={},
+                metadata_={"source": "viewer_lazy_create"},
             )
+            element = await self.element_repo.create(element)
+            await self.session.flush()
+            logger.info(
+                "Lazy-created placeholder BIMElement id=%s model=%s ref=%s "
+                "(source=viewer, no parquet row)",
+                element.id,
+                model_id,
+                ref,
+            )
+            return element
 
         row = rows[0]
         # Split the Parquet row into canonical quantity / property buckets so

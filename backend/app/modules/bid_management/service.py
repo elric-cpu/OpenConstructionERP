@@ -1,4 +1,4 @@
-"""Bid Management service — business logic, state machines, pure helpers.
+"""‌⁠‍Bid Management service — business logic, state machines, pure helpers.
 
 The pure helpers (``compute_*`` / ``validate_*`` / ``rank_*`` /
 ``recommend_*``) operate on plain dataclass-like objects (anything with
@@ -97,12 +97,12 @@ INVITATION_TRANSITIONS: dict[str, set[str]] = {
 
 
 def allowed_package_transitions(current: str) -> set[str]:
-    """Return the set of legal next statuses for a package."""
+    """‌⁠‍Return the set of legal next statuses for a package."""
     return PACKAGE_TRANSITIONS.get(current, set())
 
 
 def allowed_invitation_transitions(current: str) -> set[str]:
-    """Return the set of legal next statuses for an invitation."""
+    """‌⁠‍Return the set of legal next statuses for an invitation."""
     return INVITATION_TRANSITIONS.get(current, set())
 
 

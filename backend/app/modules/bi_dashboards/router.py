@@ -1,5 +1,5 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
-"""FastAPI router for the BI Dashboards module.
+"""‌⁠‍FastAPI router for the BI Dashboards module.
 
 Mounted by the module loader at ``/api/v1/bi-dashboards/``.
 
@@ -85,7 +85,7 @@ def _not_found(detail: str) -> HTTPException:
 
 
 async def _is_admin(user_id: str, session: SessionDep) -> bool:
-    """Return True if the supplied user is an active admin.
+    """‌⁠‍Return True if the supplied user is an active admin.
 
     Mirrors :func:`app.dependencies.verify_project_access`'s admin
     bypass logic so admins keep their cross-tenant superpowers for
@@ -107,7 +107,7 @@ async def _ensure_dashboard_owner(
     user_id: str,
     session: SessionDep,
 ) -> Dashboard:
-    """Load a dashboard and require the caller is its owner (or admin).
+    """‌⁠‍Load a dashboard and require the caller is its owner (or admin).
 
     Returns the dashboard for downstream use. Raises 404 on miss or
     ownership mismatch to avoid leaking dashboard UUIDs across tenants.

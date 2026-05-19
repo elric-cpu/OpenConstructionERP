@@ -1,4 +1,4 @@
-"""Demo-data seeder for the Service & Maintenance module.
+"""‌⁠‍Demo-data seeder for the Service & Maintenance module.
 
 Function ``seed_service_demo(session)`` populates:
     - 3 SLA definitions (gold / silver / bronze)
@@ -62,7 +62,7 @@ _ROOT_CAUSE_CATEGORIES: list[str] = [
 
 
 async def _customer_id_for(session: AsyncSession, idx: int) -> uuid.UUID:
-    """Resolve the i-th demo customer's ``Contact`` id, creating it on demand.
+    """‌⁠‍Resolve the i-th demo customer's ``Contact`` id, creating it on demand.
 
     Kept tolerant of running outside a fully-bootstrapped DB: when the
     Contact table does not yet contain the seed customer we generate a
@@ -94,7 +94,7 @@ async def _customer_id_for(session: AsyncSession, idx: int) -> uuid.UUID:
 
 
 async def seed_service_demo(session: AsyncSession) -> dict[str, int]:
-    """Populate the database with deterministic demo Service & Maintenance data.
+    """‌⁠‍Populate the database with deterministic demo Service & Maintenance data.
 
     Returns a dict with row counts of each entity created.
     """

@@ -20,15 +20,8 @@ export const manifest: ModuleManifest = {
       component: ESExchangeModule,
     },
   ],
-  navItems: [
-    {
-      labelKey: 'nav.es_pbc_exchange',
-      to: '/es-pbc-exchange',
-      icon: Euro,
-      group: 'regional',
-      advancedOnly: true,
-    },
-  ],
+  // Issue #217 — reached from /boq (regional import/export); no duplicate sidebar entry.
+  navItems: [],
   searchEntries: [
     {
       label: 'Spain PBC Import / Export',

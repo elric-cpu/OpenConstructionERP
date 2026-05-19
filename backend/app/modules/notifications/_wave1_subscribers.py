@@ -1,4 +1,4 @@
-"""Notification subscribers for the 18-modules Wave 1 events.
+"""‌⁠‍Notification subscribers for the 18-modules Wave 1 events.
 
 Wires events emitted by the Wave 1 backend modules (service, subcontractors,
 equipment, portal) into ``NotificationService.create()`` so users get visible
@@ -26,7 +26,7 @@ from app.modules.notifications.service import NotificationService
 
 
 async def _can_open_isolated_session() -> bool:
-    """Return True if the dialect supports concurrent writers safely."""
+    """‌⁠‍Return True if the dialect supports concurrent writers safely."""
     try:
         async with async_session_factory() as probe:
             bind = probe.get_bind()
@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 
 async def _on_service_ticket_dispatched(event: Event) -> None:
-    """``service.ticket.dispatched`` → notify the technician."""
+    """‌⁠‍``service.ticket.dispatched`` → notify the technician."""
     if not await _can_open_isolated_session():
         return
     data = event.data or {}

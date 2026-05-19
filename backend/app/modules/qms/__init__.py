@@ -1,4 +1,4 @@
-"""Quality Management System (QMS) module.
+"""‌⁠‍Quality Management System (QMS) module.
 
 Unified replacement for the legacy ``inspections``, ``ncr`` and
 ``punchlist`` modules with the addition of ITP (Inspection & Test Plan),
@@ -11,7 +11,7 @@ delete or shadow them; cross-references are stored via metadata fields.
 
 
 async def on_startup() -> None:
-    """Module startup hook — register permissions and event subscribers."""
+    """‌⁠‍Module startup hook — register permissions and event subscribers."""
     from app.modules.qms.events import register_subscribers
     from app.modules.qms.permissions import register_qms_permissions
 

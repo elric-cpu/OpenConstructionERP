@@ -1,5 +1,5 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
-"""KPI formula registry — every system KPI as a registered Python function.
+"""‌⁠‍KPI formula registry — every system KPI as a registered Python function.
 
 Each KPI:
     * Is registered with :func:`register_kpi(code)`
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class KPIComputation:
-    """The shape every KPI formula returns."""
+    """‌⁠‍The shape every KPI formula returns."""
 
     value: Decimal = Decimal("0")
     unit: str = "ratio"
@@ -61,7 +61,7 @@ def register_kpi(
     target_default: Decimal | None = None,
     description: str = "",
 ) -> Callable[[KPIFormula], KPIFormula]:
-    """Decorator registering a KPI formula in :data:`KPI_FORMULAS`.
+    """‌⁠‍Decorator registering a KPI formula in :data:`KPI_FORMULAS`.
 
     Also stores metadata used by :func:`bootstrap_system_kpis` when
     seeding the :class:`KPIDefinition` table on startup.

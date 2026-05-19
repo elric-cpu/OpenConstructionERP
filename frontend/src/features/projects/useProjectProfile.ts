@@ -152,6 +152,22 @@ export const ROUTE_TO_MODULE: Record<string, string> = {
   '/cde': 'cde',
 };
 
+/**
+ * App-shell routes that are NEVER project-scoped: they must always be
+ * reachable and never numbered or greyed, even when their slug happens
+ * to collide with a profile `module_name` (e.g. `projects`, `users`).
+ */
+export const NEVER_GATE_ROUTES: ReadonlySet<string> = new Set([
+  '/',
+  '/projects',
+  '/files',
+  '/users',
+  '/modules',
+  '/settings',
+  '/about',
+  '/project-intelligence', // PI is always-on core — never suppress.
+]);
+
 /** Fast lookup: every route that lives in some phase group. */
 export const PHASED_ROUTES: ReadonlySet<string> = new Set(
   PHASE_GROUPS.flatMap((g) => g.routes),
@@ -223,10 +239,22 @@ export function buildModuleGate(
   return {
     active: true,
     byRoute: (route: string) => {
-      const moduleName = ROUTE_TO_MODULE[route];
-      if (!moduleName) return null; // not module-backed → never greyed
+      // App-shell routes are never project-scoped.
+      if (NEVER_GATE_ROUTES.has(route)) return null;
+      const base = route.split('?')[0] ?? route;
+      // Resolve the backing module: explicit overrides first (for the
+      // routes whose slug ≠ module folder, e.g. /5d → costmodel), then
+      // fall back to the route slug with hyphens normalised to the
+      // underscore convention used by `ProjectModule.module_name`
+      // (e.g. /bid-management → bid_management). No per-module list to
+      // maintain — any module-backed route is gated automatically.
+      const moduleName =
+        ROUTE_TO_MODULE[route] ??
+        ROUTE_TO_MODULE[base] ??
+        base.replace(/^\//, '').replace(/-/g, '_');
+      if (!moduleName) return null;
       const row = byName.get(moduleName);
-      if (!row) return null;
+      if (!row) return null; // route not a profile module → neutral
       return { enabled: row.enabled, ordinal: row.ordinal ?? null };
     },
   };

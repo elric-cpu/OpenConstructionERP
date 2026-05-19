@@ -1,4 +1,4 @@
-"""Declarative FSM registry for the six core OpenConstructionERP entities.
+"""‌⁠‍Declarative FSM registry for the six core OpenConstructionERP entities.
 
 Each entity declares its full lifecycle here so auditors and frontend
 developers can read off every legal status move in a single file. Add new
@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 
 async def _publish_status_event(ctx: dict[str, Any], *, event_name: str) -> None:
-    """Fire-and-forget event bus emission for a status change.
+    """‌⁠‍Fire-and-forget event bus emission for a status change.
 
     Detached so SQLite single-writer lock isn't held during fan-out.
     Tests substitute ``publish_detached`` for a synchronous shim, so the
@@ -69,7 +69,7 @@ async def _publish_status_event(ctx: dict[str, Any], *, event_name: str) -> None
 
 
 def _make_event_emitter(event_name: str):
-    """Curry ``_publish_status_event`` so it matches the side-effect signature."""
+    """‌⁠‍Curry ``_publish_status_event`` so it matches the side-effect signature."""
 
     async def _emit(ctx: dict[str, Any]) -> None:
         await _publish_status_event(ctx, event_name=event_name)

@@ -1,5 +1,5 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
-"""Customer & Partner Portal — FastAPI routes.
+"""‌⁠‍Customer & Partner Portal — FastAPI routes.
 
 Two surfaces, mounted under ``/api/v1/portal/``:
 
@@ -95,7 +95,7 @@ async def admin_invite_user(
     _perm: None = Depends(RequirePermission("portal.admin.users.invite")),
     service: PortalService = Depends(_get_service),
 ) -> PortalUserInviteResponse:
-    """Invite a new portal user (idempotent) and return the magic-link once."""
+    """‌⁠‍Invite a new portal user (idempotent) and return the magic-link once."""
     user, plain, expires_at = await service.invite_portal_user(
         email=data.email,
         role=data.portal_role,
@@ -122,7 +122,7 @@ async def admin_list_users(
     portal_role: str | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias="status"),
 ) -> PortalUserList:
-    """List portal users with optional role/status filters."""
+    """‌⁠‍List portal users with optional role/status filters."""
     items, total = await service.list_portal_users(
         offset=offset,
         limit=limit,

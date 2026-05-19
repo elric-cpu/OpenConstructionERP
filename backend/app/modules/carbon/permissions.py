@@ -1,10 +1,10 @@
-"""Carbon module permission definitions."""
+"""‌⁠‍Carbon module permission definitions."""
 
 from app.core.permissions import Role, permission_registry
 
 
 def register_carbon_permissions() -> None:
-    """Register permissions for the Carbon & Sustainability module."""
+    """‌⁠‍Register permissions for the Carbon & Sustainability module."""
     permission_registry.register_module_permissions(
         "carbon",
         {

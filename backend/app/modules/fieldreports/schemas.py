@@ -5,13 +5,15 @@ for field reports.
 """
 
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
 # Bound ints at PostgreSQL INT4 max.
 _INT32_MAX = 2_147_483_647
+
+FieldType = Literal["text", "textarea", "number", "select", "date", "checkbox"]
 
 # ── Workforce entry ────────────────────────────────────────────────────
 
@@ -281,3 +283,77 @@ class SiteEquipmentLogResponse(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict, alias="metadata_")
     created_at: datetime
     updated_at: datetime
+
+
+# ── Report Template schemas ───────────────────────────────────────────
+
+
+class TemplateFieldDefinition(BaseModel):
+    """A single editable field in a report template."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="ignore")
+
+    key: str = Field(..., min_length=1, max_length=80, pattern=r"^[a-zA-Z0-9_]+$")
+    label: str = Field(..., min_length=1, max_length=200)
+    type: FieldType = "text"
+    required: bool = False
+    options: list[str] = Field(default_factory=list, max_length=100)
+    placeholder: str = Field(default="", max_length=300)
+    help_text: str = Field(default="", max_length=500)
+
+
+class FieldReportTemplateCreate(BaseModel):
+    """Create a new (project-scoped) report template."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="ignore")
+
+    project_id: UUID
+    name: str = Field(..., min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=2000)
+    report_type: str = Field(
+        default="daily",
+        pattern=r"^(daily|inspection|safety|concrete_pour)$",
+    )
+    fields: list[TemplateFieldDefinition] = Field(default_factory=list, max_length=100)
+    is_active: bool = True
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class FieldReportTemplateUpdate(BaseModel):
+    """Partial update for a report template."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="ignore")
+
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=2000)
+    report_type: str | None = Field(
+        default=None,
+        pattern=r"^(daily|inspection|safety|concrete_pour)$",
+    )
+    fields: list[TemplateFieldDefinition] | None = Field(default=None, max_length=100)
+    is_active: bool | None = None
+    metadata: dict[str, Any] | None = None
+
+
+class FieldReportTemplateResponse(BaseModel):
+    """Report template returned from the API.
+
+    ``is_builtin`` flags the code-defined defaults — those have a
+    synthetic string id (``builtin:<slug>``), are read-only, and are
+    merged in by the service layer rather than stored as rows.
+    """
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: str
+    project_id: str | None = None
+    name: str
+    description: str | None = None
+    report_type: str = "daily"
+    fields: list[TemplateFieldDefinition] = Field(default_factory=list)
+    is_active: bool = True
+    is_builtin: bool = False
+    created_by: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
+    created_at: datetime | None = None
+    updated_at: datetime | None = None

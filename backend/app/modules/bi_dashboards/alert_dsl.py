@@ -1,4 +1,4 @@
-"""Composite alert-rule expression evaluator.
+"""‌⁠‍Composite alert-rule expression evaluator.
 
 Grammar:
 
@@ -50,7 +50,7 @@ VALID_LOGICAL = ("and", "or", "not")
 
 
 class AlertExpressionError(ValueError):
-    """Raised when an expression node is malformed."""
+    """‌⁠‍Raised when an expression node is malformed."""
 
 
 def _coerce_decimal(v: Any) -> Decimal:
@@ -63,7 +63,7 @@ def _coerce_decimal(v: Any) -> Decimal:
 
 
 def _compare(lhs: Any, op: str, rhs: Any) -> bool:
-    """Comparison primitive — works on numeric + string types."""
+    """‌⁠‍Comparison primitive — works on numeric + string types."""
     # If both look numeric, coerce to Decimal for fair comparison
     if isinstance(lhs, (int, float, Decimal)) or (
         isinstance(rhs, (int, float, Decimal))

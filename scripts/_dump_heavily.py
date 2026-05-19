@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Dump heavily-mixed translations along with their English source."""
+"""‌⁠‍Dump heavily-mixed translations along with their English source."""
 import re
 import json
 from pathlib import Path

@@ -1,5 +1,5 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
-"""Compliance documents tracker module manifest."""
+"""‌⁠‍Compliance documents tracker module manifest."""
 
 from app.core.module_loader import ModuleManifest
 

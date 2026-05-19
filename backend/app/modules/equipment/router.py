@@ -1,4 +1,4 @@
-"""Equipment & Fleet API routes.
+"""‌⁠‍Equipment & Fleet API routes.
 
 Endpoints (mounted at /api/v1/equipment/):
 
@@ -311,7 +311,7 @@ async def generate_due_work_orders(
     _perm: None = Depends(RequirePermission("equipment.update")),
     service: EquipmentService = Depends(_get_service),
 ) -> list[MaintenanceWorkOrderResponse]:
-    """Generate work-order stubs for schedules within `hours` of due."""
+    """‌⁠‍Generate work-order stubs for schedules within `hours` of due."""
     wos = await service.generate_due_work_orders(
         equipment_id=equipment_id,
         lookahead_hours=hours,

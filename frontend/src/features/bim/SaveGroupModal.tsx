@@ -14,9 +14,11 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, Save, Loader2, Bookmark } from 'lucide-react';
 import {
   createElementGroup,
+  resolveElementUUID,
   type BIMGroupFilterCriteria,
   type BIMElementGroup,
 } from './api';
+import type { BIMElementData } from '@/shared/ui/BIMViewer';
 import { GROUP_COLORS } from './BIMGroupsPanel';
 import { useToastStore } from '@/stores/useToastStore';
 
@@ -25,9 +27,12 @@ interface SaveGroupModalProps {
   modelId: string | null;
   /** Filter criteria captured from the current state of BIMFilterPanel. */
   filterCriteria: BIMGroupFilterCriteria;
-  /** Pre-resolved element ids — used as a static snapshot when the user
-   *  chooses "static" mode, ignored in dynamic mode. */
-  elementIds: string[];
+  /** Selected/visible element rows — used as a static snapshot when the
+   *  user chooses "static" mode, ignored in dynamic mode.  Full rows
+   *  (not just ids) so client-side stub ids (`_unmatched_N`) can be
+   *  resolved to real BIMElement UUIDs before the group is persisted —
+   *  storing stub ids verbatim makes the group unresolvable on reload. */
+  elements: BIMElementData[];
   /** Live count of elements that match the filter right now — shown in
    *  the modal so the user knows how many things they're saving. */
   visibleCount: number;
@@ -39,7 +44,7 @@ export default function SaveGroupModal({
   projectId,
   modelId,
   filterCriteria,
-  elementIds,
+  elements,
   visibleCount,
   onClose,
   onSaved,
@@ -62,19 +67,37 @@ export default function SaveGroupModal({
   const [color, setColor] = useState('#2979ff');
 
   const createMut = useMutation({
-    mutationFn: () =>
-      createElementGroup(projectId, {
+    mutationFn: async () => {
+      // Static mode persists explicit element ids.  Resolve every
+      // selected row to a real BIMElement UUID first — the viewer's
+      // selection can carry client-side stub ids (`_unmatched_N`) or raw
+      // Revit numeric ids for meshes the backend never materialised, and
+      // storing those verbatim makes the group's members unresolvable on
+      // reload (the long-standing "group save broken" bug). Dynamic mode
+      // relies on filter criteria, so no id resolution is needed there.
+      let resolvedIds: string[] | undefined;
+      if (!effectiveDynamic) {
+        resolvedIds = [];
+        for (const el of elements) {
+          if (!modelId) {
+            // No active model — fall back to whatever id we have. Static
+            // groups without a model are rare (cross-model selections).
+            resolvedIds.push(el.id);
+            continue;
+          }
+          resolvedIds.push(await resolveElementUUID(modelId, el));
+        }
+      }
+      return createElementGroup(projectId, {
         name: name.trim(),
         description: description.trim() || undefined,
         model_id: modelId,
         is_dynamic: effectiveDynamic,
         filter_criteria: filterCriteria,
-        // Static mode always sends the explicit element ids — dynamic relies
-        // on filter criteria.  We force static when criteria are empty so we
-        // never accidentally save "all elements in the project".
-        element_ids: effectiveDynamic ? undefined : elementIds,
+        element_ids: resolvedIds,
         color,
-      }),
+      });
+    },
     onSuccess: (group) => {
       addToast({
         type: 'success',
@@ -240,7 +263,7 @@ export default function SaveGroupModal({
                   {t('bim.group_static_desc', {
                     defaultValue:
                       'Snapshot the current {{count}} elements. Membership stays frozen even if the model changes.',
-                    count: elementIds.length,
+                    count: elements.length,
                   })}
                 </div>
               </div>
@@ -250,7 +273,7 @@ export default function SaveGroupModal({
           {/* Counts pill — show what will actually be saved */}
           <div className="flex items-center gap-2 text-[11px] text-content-tertiary">
             <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-oe-blue/10 text-oe-blue font-medium">
-              {(effectiveDynamic ? visibleCount : elementIds.length).toLocaleString()}{' '}
+              {(effectiveDynamic ? visibleCount : elements.length).toLocaleString()}{' '}
               {t('bim.elements', { defaultValue: 'elements' })}
             </span>
             {modelId && (

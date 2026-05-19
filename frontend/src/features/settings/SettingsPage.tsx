@@ -5,6 +5,7 @@ import { getIntlLocale } from '@/shared/lib/formatters';
 import { TranslationManager } from './TranslationManager';
 import { BackupRestore } from './BackupRestore';
 import { RegionalSettings } from './RegionalSettings';
+import { WebhookLeads } from './WebhookLeads';
 import VectorStatusCard from './VectorStatusCard';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -1455,21 +1456,24 @@ export function SettingsPage() {
 
           {/* ── INTEGRATIONS ─────────────────────────────────────── */}
           {activeTab === 'integrations' && (
-            <Card className="lg:col-span-2">
-              <CardHeader
-                title={t('integrations.title', { defaultValue: 'Integrations' })}
-                subtitle={t('integrations.desc', { defaultValue: 'Connect Teams, Slack, Telegram, Discord, Webhooks' })}
-              />
-              <CardContent>
-                <Link
-                  to="/integrations"
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full border border-oe-blue/20 bg-oe-blue/[0.04] text-oe-blue text-sm font-medium hover:bg-oe-blue/10 transition-colors"
-                >
-                  <Plug size={14} />
-                  {t('integrations.configure', { defaultValue: 'Configure Integrations' })}
-                </Link>
-              </CardContent>
-            </Card>
+            <div className="lg:col-span-2 space-y-6">
+              <Card>
+                <CardHeader
+                  title={t('integrations.title', { defaultValue: 'Integrations' })}
+                  subtitle={t('integrations.desc', { defaultValue: 'Connect Teams, Slack, Telegram, Discord, Webhooks' })}
+                />
+                <CardContent>
+                  <Link
+                    to="/integrations"
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full border border-oe-blue/20 bg-oe-blue/[0.04] text-oe-blue text-sm font-medium hover:bg-oe-blue/10 transition-colors"
+                  >
+                    <Plug size={14} />
+                    {t('integrations.configure', { defaultValue: 'Configure Integrations' })}
+                  </Link>
+                </CardContent>
+              </Card>
+              <WebhookLeads />
+            </div>
           )}
 
           {/* ── ADVANCED ─────────────────────────────────────────── */}

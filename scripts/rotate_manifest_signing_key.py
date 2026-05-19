@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Rotate the manifest signing key (Audit A1).
+"""‌⁠‍Rotate the manifest signing key (Audit A1).
 
 Emergency-rotation flow:
 
@@ -47,7 +47,7 @@ _SENTINEL_RE = re.compile(
 
 
 def generate_keypair() -> tuple[str, bytes]:
-    """Return (pubkey_hex, private_pem_bytes)."""
+    """‌⁠‍Return (pubkey_hex, private_pem_bytes)."""
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric.ed25519 import (
         Ed25519PrivateKey,
@@ -67,7 +67,7 @@ def generate_keypair() -> tuple[str, bytes]:
 
 
 def write_new_pubkey(pubkey_hex: str) -> None:
-    """Replace the sentinel-marked block with the new pubkey constant.
+    """‌⁠‍Replace the sentinel-marked block with the new pubkey constant.
 
     Preserves surrounding comments so reviewers see context. Aborts
     if the sentinel can't be found — better to fail loudly than to

@@ -1,4 +1,4 @@
-"""QMS API routes (mount point: ``/api/v1/qms/``).
+"""‌⁠‍QMS API routes (mount point: ``/api/v1/qms/``).
 
 All endpoints require an authenticated user via :func:`get_current_user_payload`.
 Per-project access is enforced via :func:`verify_project_access`.
@@ -84,7 +84,7 @@ async def list_itp_plans(
     _perm: None = Depends(RequirePermission("qms.itp.read")),
     service: QMSService = Depends(_get_service),
 ) -> list[ITPPlanRead]:
-    """List ITP plans for a project."""
+    """‌⁠‍List ITP plans for a project."""
     await verify_project_access(project_id, user_id, session)
     plans, _ = await service.repo.list_itp_plans(
         project_id, offset=offset, limit=limit, status=status_filter,
@@ -582,7 +582,7 @@ async def copq_report(
     _perm: None = Depends(RequirePermission("qms.ncr.read")),
     service: QMSService = Depends(_get_service),
 ) -> COPQReport:
-    """Cost of Poor Quality report for a project."""
+    """‌⁠‍Cost of Poor Quality report for a project."""
     await verify_project_access(project_id, user_id, session)
     data = await service.compute_copq(project_id, currency=currency)
     return COPQReport(**data)

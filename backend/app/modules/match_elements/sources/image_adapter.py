@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Image source adapter — single photo / drawing snapshot to /match-elements.
+"""‌⁠‍Image source adapter — single photo / drawing snapshot to /match-elements.
 
 Implements MAPPING_PROCESS.md §3.1 / §4.1.4 — the "Image" source type.
 The estimator uploads one PNG/JPG/WebP (a site photo, a hand-sketched
@@ -108,7 +108,7 @@ _UNIT_TO_QTY_KEY: dict[str, str] = {
 # Vision LLM prompt. Kept as a module constant so the test suite can
 # import and assert on it; updates to the wording need a paired update
 # to the LLM-output fixture.
-IMAGE_EXTRACTION_PROMPT: str = """\
+IMAGE_EXTRACTION_PROMPT: str = """‌⁠‍\
 Return a JSON array. Each item describes one construction element visible
 in the drawing/photo:
 [
@@ -134,7 +134,7 @@ _SYSTEM_PROMPT: str = (
 
 
 def _parse_ai_response(text: str) -> list[dict[str, Any]]:
-    """Parse the LLM's response into a list of element dicts.
+    """‌⁠‍Parse the LLM's response into a list of element dicts.
 
     Tolerates the same shapes :func:`app.modules.ai.ai_client.extract_json`
     handles (markdown code fences, surrounding prose, partial JSON), but

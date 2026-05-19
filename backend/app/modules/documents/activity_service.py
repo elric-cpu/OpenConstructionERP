@@ -1,4 +1,4 @@
-"""Document activity log — write helpers and read helpers.
+"""‌⁠‍Document activity log — write helpers and read helpers.
 
 The audit log itself is intentionally trivial — there is one writer
 (``record_activity``) and one reader (``list_activity``). All callers go
@@ -36,7 +36,7 @@ async def record_activity(
     action: str,
     meta: dict[str, Any] | None = None,
 ) -> DocumentActivity | None:
-    """Append an audit event to ``oe_documents_activity``.
+    """‌⁠‍Append an audit event to ``oe_documents_activity``.
 
     Returns the new row, or ``None`` when the event was deduped (the
     same ``(document_id, user_id, action)`` triple has been written
@@ -113,7 +113,7 @@ async def list_activity(
     *,
     limit: int = 20,
 ) -> list[DocumentActivity]:
-    """Return the newest-first activity rows for a document.
+    """‌⁠‍Return the newest-first activity rows for a document.
 
     The endpoint caps ``limit`` at 100 so an attacker can't pull the
     entire audit table through a single query string.

@@ -20,15 +20,8 @@ export const manifest: ModuleManifest = {
       component: NLExchangeModule,
     },
   ],
-  navItems: [
-    {
-      labelKey: 'nav.nl_stabu_exchange',
-      to: '/nl-stabu-exchange',
-      icon: Building,
-      group: 'regional',
-      advancedOnly: true,
-    },
-  ],
+  // Issue #217 — reached from /boq (regional import/export); no duplicate sidebar entry.
+  navItems: [],
   searchEntries: [
     {
       label: 'Netherlands STABU Import / Export',

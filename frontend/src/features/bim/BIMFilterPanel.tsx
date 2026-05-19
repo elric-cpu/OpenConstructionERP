@@ -109,7 +109,10 @@ interface BIMFilterPanelProps {
   visibleElementCount?: number | null;
   /** When set, the panel shows a "Save as group" button that opens the
    *  SaveGroupModal pre-filled with the current filter criteria. */
-  onSaveAsGroup?: (filter: BIMFilterState, visibleElementIds: string[]) => void;
+  onSaveAsGroup?: (
+    filter: BIMFilterState,
+    visibleElements: BIMElementData[],
+  ) => void;
   /** Saved element groups for the current model — rendered at the top of
    *  the panel as a one-click apply / link / delete row. */
   savedGroups?: BIMElementGroup[];
@@ -886,12 +889,7 @@ export default function BIMFilterPanel({
             {onSaveAsGroup && (
               <button
                 type="button"
-                onClick={() =>
-                  onSaveAsGroup(
-                    state,
-                    visibleElements.map((el) => el.id),
-                  )
-                }
+                onClick={() => onSaveAsGroup(state, visibleElements)}
                 className="inline-flex items-center justify-center gap-1.5 px-2 py-1.5 text-[11px] font-medium rounded-md border border-oe-blue/40 text-oe-blue bg-oe-blue/5 hover:bg-oe-blue/10 transition-colors"
                 title={t('bim.save_as_group_title', {
                   defaultValue: 'Save the current filter as a named group',

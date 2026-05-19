@@ -1,4 +1,4 @@
-"""Import contacts from a CRM-priority spreadsheet into oe_contacts_contact.
+"""‌⁠‍Import contacts from a CRM-priority spreadsheet into oe_contacts_contact.
 
 The expected workbook is the e-mail triage export ``crm_priority.xlsx``,
 which carries five tier sheets:
@@ -101,7 +101,7 @@ COUNTRY_TO_ISO2: dict[str, str] = {
 
 
 def _normalise_country(value: Any) -> str | None:
-    """Return a 2-char ISO country code or None."""
+    """‌⁠‍Return a 2-char ISO country code or None."""
     if value is None:
         return None
     text = str(value).strip()
@@ -163,7 +163,7 @@ def _build_tags(
     topics: list[str],
     inboxes: list[str],
 ) -> list[str]:
-    """Compose the metadata.tags array used by the contacts filter chips."""
+    """‌⁠‍Compose the metadata.tags array used by the contacts filter chips."""
     bag: list[str] = [f"group:{group}"]
     if tier:
         bag.append(f"tier:{tier.lower()}")

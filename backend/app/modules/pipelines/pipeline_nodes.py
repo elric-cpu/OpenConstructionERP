@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Phase-1 node runners for the Pipeline Builder.
+"""‌⁠‍Phase-1 node runners for the Pipeline Builder.
 
 This file is autodiscovered by the module loader (the same mechanism it
 uses for ``hooks.py`` / ``events.py``): importing it at module-load time
@@ -45,7 +45,7 @@ _SAMPLE_LIMIT = 25
 
 
 def _resolve_project_id(ctx: NodeContext) -> uuid.UUID | None:
-    """Resolve the project id from node params or the run scope."""
+    """‌⁠‍Resolve the project id from node params or the run scope."""
     raw = ctx.params.get("project_id") or ctx.project_id
     if raw is None:
         return None
@@ -58,7 +58,7 @@ def _resolve_project_id(ctx: NodeContext) -> uuid.UUID | None:
 
 
 async def _run_trigger_manual(ctx: NodeContext) -> dict[str, Any]:
-    """Entry node — seeds the run with the trigger context. No I/O."""
+    """‌⁠‍Entry node — seeds the run with the trigger context. No I/O."""
     return {
         "trigger": "manual",
         "actor_id": ctx.actor_id,

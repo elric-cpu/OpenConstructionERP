@@ -10,7 +10,6 @@
  *
  * All strings via `t(...)`. Logical props for RTL. Footer: Duplicate / Delete.
  */
-import clsx from 'clsx';
 import { ChevronRight, Copy, Trash2 } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -119,7 +118,7 @@ export function InspectorPanel({
         <button
           type="button"
           aria-label={t('pipeline.inspector.expand', {
-            defaultValue: 'Expand inspector',
+            defaultValue: 'Expand inspector‌⁠‍',
           })}
           onClick={onToggleCollapsed}
           className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-surface-tertiary"
@@ -141,41 +140,28 @@ export function InspectorPanel({
       data-testid={testId ?? 'pipeline-inspector'}
       data-collapsed="false"
       className="flex h-full w-[320px] shrink-0 flex-col border-s border-border bg-surface-secondary"
-      aria-label={t('pipeline.inspector.aria', { defaultValue: 'Inspector' })}
+      aria-label={t('pipeline.inspector.aria', { defaultValue: 'Inspector‌⁠‍' })}
     >
       <header className="flex items-center justify-between border-b border-border px-3 py-2">
-        <div role="tablist" className="flex gap-1">
-          <span
-            role="tab"
-            aria-selected={mode === 'node'}
-            className={clsx(
-              'rounded px-2 py-1 text-xs font-medium',
-              mode === 'node'
-                ? 'bg-oe-blue/10 text-oe-blue'
-                : 'text-content-tertiary',
-            )}
-          >
-            {t('pipeline.inspector.tab_node', { defaultValue: 'Node' })}
-          </span>
-          <span
-            role="tab"
-            aria-selected={mode === 'pipeline'}
-            className={clsx(
-              'rounded px-2 py-1 text-xs font-medium',
-              mode === 'pipeline'
-                ? 'bg-oe-blue/10 text-oe-blue'
-                : 'text-content-tertiary',
-            )}
-          >
-            {t('pipeline.inspector.tab_pipeline', {
-              defaultValue: 'Pipeline',
-            })}
-          </span>
-        </div>
+        {/* Context indicator (NOT a tablist — the mode is driven by the
+            canvas selection, not by clicking here; a non-operable ARIA
+            tablist is an a11y trap, so this is a labelled status). */}
+        <span
+          data-testid="pipeline-inspector-mode"
+          className="inline-flex items-center gap-1.5 rounded bg-oe-blue/10 px-2 py-1 text-xs font-medium text-oe-blue"
+        >
+          {mode === 'node'
+            ? t('pipeline.inspector.context_node', {
+                defaultValue: 'Editing step',
+              })
+            : t('pipeline.inspector.context_pipeline', {
+                defaultValue: 'Editing pipeline',
+              })}
+        </span>
         <button
           type="button"
           aria-label={t('pipeline.inspector.collapse', {
-            defaultValue: 'Collapse inspector',
+            defaultValue: 'Collapse inspector‌⁠‍',
           })}
           onClick={onToggleCollapsed}
           className="flex h-6 w-6 items-center justify-center rounded hover:bg-surface-tertiary"
@@ -218,7 +204,7 @@ export function InspectorPanel({
             {fields.length === 0 ? (
               <p className="text-xs text-content-tertiary">
                 {t('pipeline.inspector.no_params', {
-                  defaultValue: 'This step has no settings to configure.',
+                  defaultValue: 'This step has no settings to configure.‌⁠‍',
                 })}
               </p>
             ) : (

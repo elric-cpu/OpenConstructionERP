@@ -1,4 +1,4 @@
-"""Wave 2 + Wave 3 notification subscribers.
+"""‌⁠‍Wave 2 + Wave 3 notification subscribers.
 
 Wires the highest-signal events from Wave 2 (contracts, crm, resources, carbon)
 and Wave 3 (property_dev, bid_management, variations, schedule_advanced,
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 async def _can_open_isolated_session() -> bool:
-    """Skip the cross-session notification create on SQLite."""
+    """‌⁠‍Skip the cross-session notification create on SQLite."""
     try:
         async with async_session_factory() as probe:
             bind = probe.get_bind()
@@ -49,7 +49,7 @@ async def _notify(
     entity_id: str,
     action_url: str,
 ) -> None:
-    """One-shot in-app notification create; safe to call from any handler."""
+    """‌⁠‍One-shot in-app notification create; safe to call from any handler."""
     try:
         async with async_session_factory() as session:
             svc = NotificationService(session)

@@ -1,4 +1,4 @@
-"""Schedule Advanced Pydantic schemas — request / response models.
+"""‌⁠‍Schedule Advanced Pydantic schemas — request / response models.
 
 Covers all 10 LPS entities plus aggregate response schemas for the
 LPS dashboard, PPC chart, RNC pareto, baseline delta, and look-ahead.
@@ -32,7 +32,7 @@ _RNC_CATEGORY = (
 
 
 class MasterScheduleCreate(BaseModel):
-    """Create a new master schedule for a project."""
+    """‌⁠‍Create a new master schedule for a project."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -46,7 +46,7 @@ class MasterScheduleCreate(BaseModel):
 
 
 class MasterScheduleUpdate(BaseModel):
-    """Patch update for a master schedule."""
+    """‌⁠‍Patch update for a master schedule."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 

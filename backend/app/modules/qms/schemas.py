@@ -1,4 +1,4 @@
-"""QMS Pydantic schemas — request / response models.
+"""‌⁠‍QMS Pydantic schemas — request / response models.
 
 All UUIDs are :class:`uuid.UUID`; cost amounts use :class:`Decimal`.
 Read schemas declare ``from_attributes=True`` so they hydrate directly
@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ITPPlanCreate(BaseModel):
-    """Create an Inspection & Test Plan."""
+    """‌⁠‍Create an Inspection & Test Plan."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -33,7 +33,7 @@ class ITPPlanCreate(BaseModel):
 
 
 class ITPPlanUpdate(BaseModel):
-    """Partial update for an ITP plan."""
+    """‌⁠‍Partial update for an ITP plan."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 

@@ -1,5 +1,5 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
-"""Customer & Partner Portal ORM models.
+"""‌⁠‍Customer & Partner Portal ORM models.
 
 Tables:
     oe_portal_user                   — external portal accounts (clients,
@@ -33,7 +33,7 @@ from app.database import GUID, Base
 
 
 class PortalUser(Base):
-    """An external portal account — client / investor / consultant / sub / etc."""
+    """‌⁠‍An external portal account — client / investor / consultant / sub / etc."""
 
     __tablename__ = "oe_portal_user"
 
@@ -86,7 +86,7 @@ class PortalUser(Base):
 
 
 class PortalAccessRule(Base):
-    """Per-resource access grant for a portal user (row-level security)."""
+    """‌⁠‍Per-resource access grant for a portal user (row-level security)."""
 
     __tablename__ = "oe_portal_access_rule"
 

@@ -155,19 +155,25 @@ class ERPChatService:
     # ── AI provider resolution ───────────────────────────────────────────
 
     async def _resolve_ai(self, user_id: str) -> tuple[str, str, str | None]:
-        """Resolve AI provider, API key, and optional model.
+        """Resolve AI provider, API key, and the user's model-id override.
+
+        ``settings.preferred_model`` stores the *provider id* (e.g.
+        ``"openrouter"``), not a model name — the per-provider model the user
+        actually typed in Settings > AI lives in
+        ``model_overrides[provider]``. Returning that (via
+        ``resolve_provider_key_model``) so the fallback path can pass it to
+        ``call_ai`` is the erp_chat half of the issue #138 fix.
 
         Returns:
-            Tuple of (provider, api_key, model_or_none).
+            Tuple of (provider, api_key, model_override_or_none).
         """
-        from app.modules.ai.ai_client import resolve_provider_and_key
+        from app.modules.ai.ai_client import resolve_provider_key_model
         from app.modules.ai.repository import AISettingsRepository
 
         repo = AISettingsRepository(self.session)
         settings = await repo.get_by_user_id(uuid.UUID(user_id))
-        provider, api_key = resolve_provider_and_key(settings)
-        model = getattr(settings, "preferred_model", None) if settings else None
-        return provider, api_key, model
+        provider, api_key, model_override = resolve_provider_key_model(settings)
+        return provider, api_key, model_override
 
     # ── Main streaming entry point ───────────────────────────────────────
 
@@ -217,7 +223,7 @@ class ERPChatService:
                     else:
                         # Fallback: no tool support — plain text
                         async for chunk in self._call_fallback(
-                            provider, api_key, request.message
+                            provider, api_key, request.message, preferred_model
                         ):
                             yield chunk
                         yield _sse("done", {})
@@ -379,10 +385,10 @@ class ERPChatService:
         """Call Anthropic Messages API with tools."""
         from app.modules.ai.ai_client import ANTHROPIC_MODEL
 
-        model = ANTHROPIC_MODEL
-        if preferred_model and "claude" in preferred_model:
-            # Use preferred model if it looks like a Claude model
-            pass  # Keep default — the preferred_model field is a preference hint
+        # preferred_model is the user's per-provider model id override
+        # (Settings > AI). Honor it verbatim when set; otherwise use the
+        # built-in default. Issue #138.
+        model = preferred_model.strip() if preferred_model and preferred_model.strip() else ANTHROPIC_MODEL
 
         async with httpx.AsyncClient(timeout=AI_TIMEOUT) as client:
             resp = await client.post(
@@ -418,9 +424,9 @@ class ERPChatService:
         """Call OpenAI ChatCompletions API with tools."""
         from app.modules.ai.ai_client import OPENAI_MODEL
 
-        model = OPENAI_MODEL
-        if preferred_model and ("gpt" in preferred_model or "o1" in preferred_model):
-            pass  # Keep default
+        # Honor the user's per-provider model id override verbatim (issue
+        # #138); fall back to the built-in default only when unset.
+        model = preferred_model.strip() if preferred_model and preferred_model.strip() else OPENAI_MODEL
 
         # Convert Anthropic tool format to OpenAI format
         openai_tools = [
@@ -460,9 +466,18 @@ class ERPChatService:
     # ── Fallback (non-tool providers) ────────────────────────────────────
 
     async def _call_fallback(
-        self, provider: str, api_key: str, message: str
+        self,
+        provider: str,
+        api_key: str,
+        message: str,
+        model: str | None = None,
     ) -> AsyncGenerator[str, None]:
-        """Call a provider without tool support — yield SSE text events."""
+        """Call a provider without tool support — yield SSE text events.
+
+        ``model`` is the user's per-provider model id override (issue #138):
+        without it, providers like OpenRouter silently used the hardcoded
+        default model regardless of what the user picked in Settings > AI.
+        """
         from app.modules.ai.ai_client import call_ai
 
         try:
@@ -471,6 +486,7 @@ class ERPChatService:
                 api_key=api_key,
                 system=SYSTEM_PROMPT,
                 prompt=message,
+                model=model,
             )
             chunk_size = 50
             for i in range(0, len(text), chunk_size):

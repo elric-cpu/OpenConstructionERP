@@ -1,6 +1,6 @@
 # DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 # Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
-"""Graph DAG executor — generalises ``match_elements.pipeline.run_stage``.
+"""‌⁠‍Graph DAG executor — generalises ``match_elements.pipeline.run_stage``.
 
 The match-elements pipeline runs a *fixed* seven-stage tuple. This module
 runs a *user-authored DAG*: the node order is a Kahn topological sort (the
@@ -58,7 +58,7 @@ NODE_STATUSES = (
 
 
 class GraphValidationError(ValueError):
-    """Raised when a graph cannot be executed (cycle, unknown type, …).
+    """‌⁠‍Raised when a graph cannot be executed (cycle, unknown type, …).
 
     The router converts this into a 400 so a malformed graph never
     silently produces a half-finished run.
@@ -73,7 +73,7 @@ def _adjacency(graph: dict[str, Any]) -> tuple[
     dict[str, list[str]],
     dict[str, list[str]],
 ]:
-    """Return ``(nodes_by_id, out_edges, in_edges)`` from a graph dict.
+    """‌⁠‍Return ``(nodes_by_id, out_edges, in_edges)`` from a graph dict.
 
     ``out_edges[src] = [dst, …]`` and ``in_edges[dst] = [src, …]``.
     Edges whose endpoints are not declared nodes are dropped (defensive —
@@ -308,10 +308,16 @@ async def run_node(
     state.took_ms = took_ms
 
     if final_status == "done":
-        # Mark downstream done-nodes stale so the UI flags the gap on re-run.
+        # Mark downstream done-nodes stale so the UI flags the gap on a
+        # re-run. Build the node-type index once instead of an O(N) scan
+        # per descendant (was O(N²·E) across a whole run).
+        type_by_id = {
+            str(n.get("id") or ""): str(n.get("type") or "")
+            for n in (graph.get("nodes") or [])
+        }
         for ds_id in descendants(graph, node_id):
             ds = await _get_or_create_node_state(
-                db, run_id, ds_id, _node_type_of(graph, ds_id)
+                db, run_id, ds_id, type_by_id.get(ds_id, "")
             )
             if ds.status == "done":
                 ds.status = "stale"
@@ -325,13 +331,6 @@ async def run_node(
         "error": final_error,
         "took_ms": took_ms,
     }
-
-
-def _node_type_of(graph: dict[str, Any], node_id: str) -> str:
-    for n in graph.get("nodes") or []:
-        if str(n.get("id") or "") == node_id:
-            return str(n.get("type") or "")
-    return ""
 
 
 # ── Whole-run orchestration ──────────────────────────────────────────────
@@ -366,12 +365,36 @@ async def execute_run(
     project_id = run.project_id
     tenant_id = run.tenant_id
     actor_id = str(run.created_by) if run.created_by else None
+    job_run_id = run.job_run_id
+
+    async def _report(done_count: int) -> None:
+        """Push monotonic progress onto the owning JobRun.
+
+        Without this the JobRun's ``progress_percent`` stays 0 for the
+        whole run, so the UI progress bar never moves and the run-detail
+        API always reports 0%. Best-effort: a progress write must never
+        abort the run, and ``update_progress`` is monotonic + tolerates a
+        missing row.
+        """
+        if job_run_id is None or not order:
+            return
+        pct = int(done_count * 100 / len(order))
+        try:
+            from app.core.job_runner import update_progress
+
+            await update_progress(job_run_id, percent=pct)
+        except Exception:  # noqa: BLE001 — progress is advisory only.
+            logger.warning(
+                "pipeline.executor: progress update failed for run %s",
+                run_id,
+                exc_info=True,
+            )
 
     outputs: dict[str, dict[str, Any]] = {}
     failed: set[str] = set()
     statuses: dict[str, str] = {}
 
-    for node_id in order:
+    for idx, node_id in enumerate(order):
         node = nodes_by_id[node_id]
         node_type = str(node.get("type") or "")
         preds = in_edges.get(node_id, [])
@@ -382,10 +405,17 @@ async def execute_run(
                 db, run_id, node_id, node_type
             )
             state.status = "skipped"
-            state.finished_at = _now()
+            # Stamp started_at too: the run-detail read model orders node
+            # states by started_at, so a skipped node with only
+            # finished_at would jump out of topological order in the UI
+            # timeline. Both timestamps = the moment it was evaluated.
+            now = _now()
+            state.started_at = now
+            state.finished_at = now
             await db.commit()
             failed.add(node_id)
             statuses[node_id] = "skipped"
+            await _report(idx + 1)
             continue
 
         upstream = {p: outputs.get(p, {}) for p in preds}
@@ -404,6 +434,7 @@ async def execute_run(
             failed.add(node_id)
         else:
             outputs[node_id] = result["output"]
+        await _report(idx + 1)
 
     n_done = sum(1 for s in statuses.values() if s == "done")
     n_error = sum(1 for s in statuses.values() if s == "error")

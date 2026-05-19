@@ -1,4 +1,4 @@
-"""CRM module manifest."""
+"""‌⁠‍CRM module manifest."""
 
 from app.core.module_loader import ModuleManifest
 

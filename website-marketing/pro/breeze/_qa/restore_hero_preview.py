@@ -1,4 +1,4 @@
-"""Restore the hero-preview section that the v3 dataflow replacement
+"""‌⁠‍Restore the hero-preview section that the v3 dataflow replacement
 accidentally clobbered. Reinsert it right before the dataflow block.
 """
 from pathlib import Path

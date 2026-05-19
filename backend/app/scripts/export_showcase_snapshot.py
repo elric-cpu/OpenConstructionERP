@@ -1,4 +1,4 @@
-"""Export the 7-project localized showcase into a committed snapshot.
+"""‌⁠‍Export the 7-project localized showcase into a committed snapshot.
 
 Dev-only tool. Run it against a database that already holds the fully
 built, audited 7-project showcase (the deterministic-id projects with
@@ -61,7 +61,7 @@ SNAPSHOT_PATH = Path(__file__).resolve().parent / "showcase_snapshot.json.gz"
 
 
 def _enc(v: object) -> object:
-    """JSON-safe encoding of a sqlite cell (bytes -> base64 marker)."""
+    """‌⁠‍JSON-safe encoding of a sqlite cell (bytes -> base64 marker)."""
     if isinstance(v, (bytes, bytearray)):
         return {"__b64__": base64.b64encode(bytes(v)).decode("ascii")}
     return v

@@ -224,3 +224,66 @@ describe('ElementManager.processLoadedScene up-axis handling', () => {
     expect(daeScene.rotation.x).toBe(0);
   });
 });
+
+/**
+ * Ghost mode — non-kept meshes get the shared translucent material; the
+ * original is parked and restored exactly on clearGhost(). Verifies the
+ * clean-state-restore contract the brief requires.
+ */
+describe('ElementManager.ghost / clearGhost', () => {
+  let scene: SceneManager;
+  let mgr: ElementManager;
+
+  beforeEach(() => {
+    scene = makeFakeSceneManager();
+    mgr = new ElementManager(scene);
+    mgr.loadElements(sampleElements(), { skipPlaceholders: false });
+  });
+
+  it('ghosts every element except the kept set', () => {
+    const w1Orig = mgr.getMesh('w1')!.material;
+    mgr.ghost(['w1']);
+    expect(mgr.isGhostActive()).toBe(true);
+    // Kept element keeps its original material.
+    expect(mgr.getMesh('w1')!.material).toBe(w1Orig);
+    // Non-kept share the single ghost material instance.
+    const w2Mat = mgr.getMesh('w2')!.material;
+    const d1Mat = mgr.getMesh('d1')!.material;
+    expect(w2Mat).toBe(d1Mat);
+    expect((w2Mat as THREE.Material).transparent).toBe(true);
+  });
+
+  it('restores every original material on clearGhost()', () => {
+    const w2Orig = mgr.getMesh('w2')!.material;
+    const d1Orig = mgr.getMesh('d1')!.material;
+    mgr.ghost(['w1']);
+    mgr.clearGhost();
+    expect(mgr.isGhostActive()).toBe(false);
+    expect(mgr.getMesh('w2')!.material).toBe(w2Orig);
+    expect(mgr.getMesh('d1')!.material).toBe(d1Orig);
+  });
+
+  it('re-ghosting a new keep set restores the now-kept mesh', () => {
+    const w2Orig = mgr.getMesh('w2')!.material;
+    mgr.ghost(['w1']); // w2 ghosted
+    mgr.ghost(['w2']); // w2 now kept → must be restored, w1 ghosted
+    expect(mgr.getMesh('w2')!.material).toBe(w2Orig);
+    const w1Mat = mgr.getMesh('w1')!.material as THREE.Material;
+    expect(w1Mat.transparent).toBe(true);
+  });
+
+  it('treats an empty keep set as clearGhost (no-op contrast)', () => {
+    const w1Orig = mgr.getMesh('w1')!.material;
+    mgr.ghost([]);
+    expect(mgr.isGhostActive()).toBe(false);
+    expect(mgr.getMesh('w1')!.material).toBe(w1Orig);
+  });
+
+  it('dispose() releases the shared ghost material', () => {
+    mgr.ghost(['w1']);
+    const ghostMat = mgr.getMesh('w2')!.material as THREE.Material;
+    const spy = vi.spyOn(ghostMat, 'dispose');
+    mgr.dispose();
+    expect(spy).toHaveBeenCalled();
+  });
+});

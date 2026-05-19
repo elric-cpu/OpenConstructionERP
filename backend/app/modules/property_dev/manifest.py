@@ -1,4 +1,4 @@
-"""Property Development module manifest."""
+"""‌⁠‍Property Development module manifest."""
 
 from app.core.module_loader import ModuleManifest
 
