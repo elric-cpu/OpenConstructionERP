@@ -333,3 +333,117 @@ export async function importMeetingSummary(
   const response = await _importSummaryRequest(projectId, file, false);
   return response.json();
 }
+
+/* -- Recurring Series ----------------------------------------------------- */
+
+export type RecurrenceFreq = 'DAILY' | 'WEEKLY' | 'MONTHLY';
+
+export const WEEKDAY_TOKENS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'] as const;
+export type WeekdayToken = (typeof WEEKDAY_TOKENS)[number];
+
+export interface RecurrenceSpec {
+  freq: RecurrenceFreq;
+  byday: WeekdayToken[];
+  count: number; // 1..52
+}
+
+export function buildRRule(spec: RecurrenceSpec): string {
+  const parts: string[] = [`FREQ=${spec.freq}`];
+  if (spec.freq === 'WEEKLY' && spec.byday.length > 0) {
+    parts.push(`BYDAY=${spec.byday.join(',')}`);
+  }
+  parts.push(`COUNT=${Math.max(1, Math.min(52, spec.count))}`);
+  return parts.join(';');
+}
+
+export interface CreateSeriesPayload {
+  project_id: string;
+  title: string;
+  meeting_type: MeetingType;
+  meeting_date: string; // YYYY-MM-DD
+  location?: string;
+  chairperson_id?: string;
+  attendees?: { name: string; company?: string; status?: string }[];
+  minutes?: string;
+  document_ids?: string[];
+  status?: MeetingStatus;
+  recurrence_rule: string;
+  materialize_until?: string; // YYYY-MM-DD
+}
+
+export interface MeetingSeriesResponse {
+  series_id: string;
+  master: Meeting;
+  occurrences: Meeting[];
+}
+
+export async function createSeries(
+  data: CreateSeriesPayload,
+): Promise<MeetingSeriesResponse> {
+  const res = await apiPost<{
+    series_id: string;
+    master: MeetingWire;
+    occurrences: MeetingWire[];
+  }>('/v1/meetings/series/', data);
+  return {
+    series_id: res.series_id,
+    master: normaliseMeeting(res.master),
+    occurrences: (res.occurrences ?? []).map(normaliseMeeting),
+  };
+}
+
+export async function materializeSeries(
+  masterId: string,
+  until: string,
+): Promise<MeetingSeriesResponse> {
+  const res = await apiPost<{
+    series_id: string;
+    master: MeetingWire;
+    occurrences: MeetingWire[];
+  }>(`/v1/meetings/series/${masterId}/materialize/`, { until });
+  return {
+    series_id: res.series_id,
+    master: normaliseMeeting(res.master),
+    occurrences: (res.occurrences ?? []).map(normaliseMeeting),
+  };
+}
+
+/* -- Attendance Check-in -------------------------------------------------- */
+
+export interface AttendanceRow {
+  id: string;
+  meeting_id: string;
+  user_id: string | null;
+  external_name: string | null;
+  checked_in_at: string | null;
+  signature_image_path: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function checkIn(
+  meetingId: string,
+  signature_image_data?: string,
+): Promise<AttendanceRow> {
+  return apiPost<AttendanceRow>(`/v1/meetings/${meetingId}/check-in/`, {
+    signature_image_data: signature_image_data ?? null,
+  });
+}
+
+export async function recordExternalAttendee(
+  meetingId: string,
+  name: string,
+  signature_image_data?: string,
+): Promise<AttendanceRow> {
+  return apiPost<AttendanceRow>(
+    `/v1/meetings/${meetingId}/external-attendee/`,
+    {
+      name,
+      signature_image_data: signature_image_data ?? null,
+    },
+  );
+}
+
+export async function getAttendance(meetingId: string): Promise<AttendanceRow[]> {
+  return apiGet<AttendanceRow[]>(`/v1/meetings/${meetingId}/attendance/`);
+}

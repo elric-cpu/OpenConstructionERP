@@ -91,6 +91,28 @@ class SubcontractorRepository(_BaseRepo):
             rows = [r for r in rows if trade_category in (r.trade_categories or [])]
         return rows, total
 
+    async def list_with_insurance_expiry_within(
+        self,
+        *,
+        upper_bound: date,
+        active_only: bool = True,
+    ) -> list[Subcontractor]:
+        """Return subs whose ``insurance_expiry_date`` is on/before ``upper_bound``.
+
+        This includes already-past expiries — the sweep surfaces both
+        "expiring soon" and "already expired" so the GC can chase
+        renewals on a single list.  Subs whose expiry is NULL are NOT
+        included (they need a separate "missing insurance" report).
+        """
+        stmt = select(Subcontractor).where(
+            Subcontractor.insurance_expiry_date.is_not(None),
+            Subcontractor.insurance_expiry_date <= upper_bound,
+        )
+        if active_only:
+            stmt = stmt.where(Subcontractor.is_active.is_(True))
+        stmt = stmt.order_by(Subcontractor.insurance_expiry_date)
+        return list((await self.session.execute(stmt)).scalars().all())
+
 
 class SubcontractorContactRepository(_BaseRepo):
     """CRUD for SubcontractorContact."""

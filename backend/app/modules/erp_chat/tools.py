@@ -190,7 +190,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     },
     {
         "name": "search_cwicr_database",
-        "description": "Search the CWICR construction cost database (55,000+ items) by keyword. Returns matching cost items with codes, descriptions, units, and rates.",
+        "description": "Search the CWICR construction cost database (55,000+ items across 48 regions) by keyword. Returns matching cost items with codes, descriptions, units, and rates.",
         "input_schema": {
             "type": "object",
             "properties": {

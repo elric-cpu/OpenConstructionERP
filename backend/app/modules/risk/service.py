@@ -7,8 +7,9 @@ Stateless service layer. Handles:
 """
 
 import logging
+import random
 import uuid
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,29 +39,23 @@ async def _safe_publish(
     except Exception:
         _logger_events.debug("Event publish skipped: %s", name)
 
+
 # Severity → 1-5 numeric scale. Built from the canonical vocabulary in
 # schemas.py so the request-schema regex and this map are derived from a
 # single source and can never drift (F-PFO-RISK-03). SEVERITY_CANONICAL is
 # ordered very_low→critical, so its index+1 is the 1-5 rank; each legacy
 # alias maps onto the canonical level at the same ordinal position
 # (negligible≈very_low … catastrophic≈critical).
-SEVERITY_NUMERIC: dict[str, int] = {
-    level: rank for rank, level in enumerate(SEVERITY_CANONICAL, start=1)
-}
-SEVERITY_NUMERIC.update(
-    {
-        alias: rank
-        for rank, alias in enumerate(SEVERITY_ALIASES, start=1)
-    }
-)
+SEVERITY_NUMERIC: dict[str, int] = {level: rank for rank, level in enumerate(SEVERITY_CANONICAL, start=1)}
+SEVERITY_NUMERIC.update({alias: rank for rank, alias in enumerate(SEVERITY_ALIASES, start=1)})
 
 # 5x5 matrix scoring: maps probability to a 1-5 score
 PROBABILITY_SCORE_MAP: list[tuple[float, int]] = [
-    (0.2, 1),   # very low
-    (0.4, 2),   # low
-    (0.6, 3),   # medium
-    (0.8, 4),   # high
-    (1.0, 5),   # very high
+    (0.2, 1),  # very low
+    (0.4, 2),  # low
+    (0.6, 3),  # medium
+    (0.8, 4),  # high
+    (1.0, 5),  # very high
 ]
 
 # Impact severity to 1-5 score for the canonical 5x5 PMBOK risk matrix.
@@ -285,11 +280,7 @@ class RiskService:
                 "changes": list(fields.keys()),
             },
         )
-        if (
-            "owner_user_id" in fields
-            and new_owner is not None
-            and str(new_owner) != old_owner
-        ):
+        if "owner_user_id" in fields and new_owner is not None and str(new_owner) != old_owner:
             await _safe_publish(
                 "risk.assigned",
                 {
@@ -375,9 +366,7 @@ class RiskService:
             # (F-PFO-RISK-06). Recomputing makes the average and ranking
             # scale-correct and comparable across seed + runtime data.
             try:
-                score = _compute_risk_score(
-                    float(item.probability), item.impact_severity or "medium"
-                )
+                score = _compute_risk_score(float(item.probability), item.impact_severity or "medium")
                 risk_scores.append(score)
                 scored_items.append((item.title, score))
             except (ValueError, TypeError):
@@ -414,9 +403,7 @@ class RiskService:
             "high_critical_count": high_critical_count,
             "avg_risk_score": avg_risk_score,
             "total_exposure": total_exposure,
-            "exposure_by_currency": {
-                c: round(v, 2) for c, v in exposure_by_currency.items()
-            },
+            "exposure_by_currency": {c: round(v, 2) for c, v in exposure_by_currency.items()},
             "with_mitigation": with_mitigation,
             "without_mitigation": without_mitigation,
             "mitigated_count": mitigated_count,
@@ -484,3 +471,339 @@ class RiskService:
                     break
 
         return cells
+
+    # ── Monte Carlo simulation (v3.11 — T1) ──────────────────────────────
+
+    async def simulate(
+        self,
+        project_id: uuid.UUID,
+        *,
+        iterations: int = 10000,
+        mode: Literal["cost", "schedule", "both"] = "both",
+    ) -> dict[str, Any]:
+        """Run a Monte Carlo simulation across this project's risks.
+
+        Uses ``random.triangular(low, high, mode)`` per risk per iteration
+        — a PERT-style three-point estimate sampling — and multiplies each
+        draw by ``probability_score / 5`` (the qualitative probability
+        scale) to get the probability-weighted contribution. The
+        per-iteration sums form the simulated distribution of project-
+        level contingency, and P50/P80/P95 are read off via
+        ``statistics.quantiles`` (inclusive method).
+
+        ``mode``:
+          * ``"cost"``      — only sample the cost triple.
+          * ``"schedule"``  — only sample the schedule triple.
+          * ``"both"``      — sample both (independent draws).
+
+        Risks with no PERT triple in the requested mode contribute zero
+        — the qualitative 5x5 path keeps working untouched. Each risk
+        gets its ``last_simulation`` JSON updated with the full result
+        snapshot so the drill-down survives a page refresh.
+
+        Returns a dict matching :class:`RiskSimulationResult`.
+        """
+        # Bound iterations defensively even though the schema already
+        # enforces 1000 ≤ iterations ≤ 100 000.
+        iterations = max(1, min(int(iterations), 100_000))
+
+        # ── One query, no N+1: load every risk for the project once. ──
+        items = await self.repo.all_for_project(project_id)
+        currency = await self._get_project_currency(project_id)
+
+        # Empty project — return an empty (but well-formed) result. The
+        # frontend's "Last run" chips render as "—" and the histogram
+        # / tornado simply hide.
+        if not items:
+            return {
+                "iterations": iterations,
+                "risk_count": 0,
+                "mode": mode,
+                "p50_cost": None,
+                "p80_cost": None,
+                "p95_cost": None,
+                "p50_schedule_days": None,
+                "p80_schedule_days": None,
+                "p95_schedule_days": None,
+                "histogram_bins": [],
+                "tornado": [],
+                "currency": currency,
+            }
+
+        # Build per-risk PERT triples. Where a triple is incomplete we
+        # fall back to (impact_cost, impact_cost, impact_cost) — i.e. a
+        # zero-variance point estimate that still folds the risk into
+        # the simulation when only the qualitative path is populated.
+        cost_triples: list[tuple[float, float, float]] = []
+        schedule_triples: list[tuple[float, float, float]] = []
+        prob_weights: list[float] = []
+        item_meta: list[tuple[uuid.UUID, str]] = []
+
+        for item in items:
+            # Probability weight on a 0..1 scale. Prefer the 1-5 PMBOK
+            # score (probability_score) — it's already discretised — and
+            # fall back to the raw ``probability`` string if missing.
+            if item.probability_score is not None:
+                weight = max(0.0, min(float(item.probability_score) / 5.0, 1.0))
+            else:
+                try:
+                    weight = max(0.0, min(float(item.probability), 1.0))
+                except (ValueError, TypeError):
+                    weight = 0.0
+            prob_weights.append(weight)
+            item_meta.append((item.id, item.code))
+
+            cost_triples.append(
+                _pert_triple_or_point(
+                    item.cost_p10,
+                    item.cost_p50,
+                    item.cost_p90,
+                    fallback=_safe_float(item.impact_cost),
+                )
+            )
+            schedule_triples.append(
+                _pert_triple_or_point(
+                    item.schedule_p10,
+                    item.schedule_p50,
+                    item.schedule_p90,
+                    fallback=float(item.impact_schedule_days or 0),
+                )
+            )
+
+        sample_cost = mode in ("cost", "both")
+        sample_schedule = mode in ("schedule", "both")
+
+        # Per-iteration sums for the contingency distribution.
+        cost_totals: list[float] = []
+        schedule_totals: list[float] = []
+        # Per-risk running sum so we can compute the mean contribution
+        # afterwards for the tornado chart. Combined (cost + schedule
+        # cast to "days as currency-equivalent" is meaningless), so we
+        # tornado on whichever signal was sampled, preferring cost.
+        per_risk_cost_sum = [0.0] * len(items)
+        per_risk_schedule_sum = [0.0] * len(items)
+
+        for _ in range(iterations):
+            c_total = 0.0
+            s_total = 0.0
+            for idx in range(len(items)):
+                weight = prob_weights[idx]
+                if weight <= 0.0:
+                    continue
+                if sample_cost:
+                    lo, mid, hi = cost_triples[idx]
+                    # random.triangular(low, high, mode) — note the
+                    # argument order is (low, high, mode), NOT
+                    # (low, mode, high). Easy off-by-one to make.
+                    draw = random.triangular(lo, hi, mid) if hi > lo else mid
+                    contrib = draw * weight
+                    c_total += contrib
+                    per_risk_cost_sum[idx] += contrib
+                if sample_schedule:
+                    lo, mid, hi = schedule_triples[idx]
+                    draw = random.triangular(lo, hi, mid) if hi > lo else mid
+                    contrib = draw * weight
+                    s_total += contrib
+                    per_risk_schedule_sum[idx] += contrib
+            if sample_cost:
+                cost_totals.append(c_total)
+            if sample_schedule:
+                schedule_totals.append(s_total)
+
+        # ── Percentile read-out ─────────────────────────────────────
+        p50_cost, p80_cost, p95_cost = _percentiles(cost_totals) if sample_cost else (None, None, None)
+        if sample_schedule:
+            ps50, ps80, ps95 = _percentiles(schedule_totals)
+            p50_sched = int(round(ps50)) if ps50 is not None else None
+            p80_sched = int(round(ps80)) if ps80 is not None else None
+            p95_sched = int(round(ps95)) if ps95 is not None else None
+        else:
+            p50_sched = p80_sched = p95_sched = None
+
+        # ── Histogram: 10 equal-width bins over the cost distribution
+        # (or schedule if cost wasn't sampled). The frontend draws this
+        # as a bar chart.
+        histogram_source = cost_totals if sample_cost else schedule_totals
+        histogram_bins = _histogram(histogram_source, bins=10)
+
+        # ── Tornado: top contributors by mean probability-weighted
+        # contribution. Sort descending so the frontend can slice [:N]
+        # without re-sorting.
+        if sample_cost:
+            contribs = per_risk_cost_sum
+        else:
+            contribs = per_risk_schedule_sum
+        tornado_entries: list[dict[str, Any]] = []
+        if iterations > 0:
+            for idx, (risk_id, code) in enumerate(item_meta):
+                mean_contrib = contribs[idx] / iterations
+                if mean_contrib <= 0.0:
+                    continue
+                tornado_entries.append(
+                    {
+                        "risk_id": str(risk_id),
+                        "code": code,
+                        "contribution": round(mean_contrib, 2),
+                    }
+                )
+            tornado_entries.sort(key=lambda e: float(e["contribution"]), reverse=True)
+
+        # JSON-serialisable result. Pydantic widens floats to Decimal on
+        # the response schema, but the persisted ``last_simulation`` JSON
+        # blob has to round-trip through json.dumps (SQLAlchemy's default
+        # serializer rejects Decimal), so we keep floats here and let
+        # Pydantic do the float→Decimal lift at response time.
+        result: dict[str, Any] = {
+            "iterations": iterations,
+            "risk_count": len(items),
+            "mode": mode,
+            "p50_cost": _round_or_none(p50_cost),
+            "p80_cost": _round_or_none(p80_cost),
+            "p95_cost": _round_or_none(p95_cost),
+            "p50_schedule_days": p50_sched,
+            "p80_schedule_days": p80_sched,
+            "p95_schedule_days": p95_sched,
+            "histogram_bins": histogram_bins,
+            "tornado": tornado_entries,
+            "currency": currency,
+        }
+
+        # Persist the snapshot on every risk so a page refresh keeps the
+        # last-run drill-down. We read IDs into a Python list BEFORE the
+        # first update — RiskRepository.update_fields calls
+        # ``session.expire_all()`` (see repo.py), which would otherwise
+        # force a lazy-load of ``item.id`` on the second loop iteration
+        # and trip MissingGreenlet on SQLAlchemy's sync cursor path.
+        item_ids_to_stamp = [item.id for item in items]
+        for risk_id in item_ids_to_stamp:
+            await self.repo.update_fields(risk_id, last_simulation=result)
+
+        logger.info(
+            "Risk MC simulation: project=%s iterations=%d mode=%s risks=%d",
+            project_id,
+            iterations,
+            mode,
+            len(items),
+        )
+        await _safe_publish(
+            "risk.simulation.completed",
+            {
+                "project_id": str(project_id),
+                "iterations": iterations,
+                "mode": mode,
+                "risk_count": len(items),
+            },
+        )
+        return result
+
+
+# ── Monte Carlo helpers (module-level, pure) ──────────────────────────────
+
+
+def _safe_float(value: object, default: float = 0.0) -> float:
+    """‌⁠‍Coerce a stored string/Decimal/None numeric to float safely."""
+    if value is None or value == "":
+        return default
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+
+
+def _pert_triple_or_point(
+    p10: object,
+    p50: object,
+    p90: object,
+    *,
+    fallback: float,
+) -> tuple[float, float, float]:
+    """Return a (low, mode, high) PERT triple, with safe fallbacks.
+
+    * If all three are present and well-ordered, return them as floats.
+    * If any are missing/unparseable, treat ``fallback`` as a zero-
+      variance point estimate (lo == mid == hi == fallback) — folds the
+      risk into the simulation without inventing data.
+    * If the triple is mis-ordered (e.g. p10 > p90) we clamp it so
+      ``random.triangular`` never raises.
+    """
+    lo = _safe_float(p10, fallback)
+    mid = _safe_float(p50, fallback)
+    hi = _safe_float(p90, fallback)
+    # Clamp ordering: lo ≤ mid ≤ hi. random.triangular requires lo ≤ hi
+    # and the mode in [lo, hi], so a swapped triple would otherwise raise.
+    if hi < lo:
+        lo, hi = hi, lo
+    if mid < lo:
+        mid = lo
+    if mid > hi:
+        mid = hi
+    return lo, mid, hi
+
+
+def _percentiles(
+    samples: list[float],
+) -> tuple[float | None, float | None, float | None]:
+    """Return (P50, P80, P95) — inclusive method, no numpy dependency.
+
+    We sort once and index by rank; this matches
+    ``statistics.quantiles(..., n=100, method='inclusive')[k-1]`` for
+    integer percentile k, and avoids the overhead of building a 100-bin
+    list when we only want three points.
+    """
+    if not samples:
+        return None, None, None
+    sorted_samples = sorted(samples)
+    n = len(sorted_samples)
+
+    def _q(p: float) -> float:
+        if n == 1:
+            return sorted_samples[0]
+        # Inclusive method: rank h = p * (n - 1).
+        h = p * (n - 1)
+        lo = int(h)
+        hi = min(lo + 1, n - 1)
+        frac = h - lo
+        return sorted_samples[lo] + (sorted_samples[hi] - sorted_samples[lo]) * frac
+
+    return _q(0.50), _q(0.80), _q(0.95)
+
+
+def _histogram(samples: list[float], *, bins: int = 10) -> list[dict[str, Any]]:
+    """Build a ``bins``-wide equal-width histogram. Empty → []."""
+    if not samples:
+        return []
+    lo = min(samples)
+    hi = max(samples)
+    if hi <= lo:
+        # All samples identical — collapse to a single point bin so the
+        # chart still has something to render.
+        return [{"lower": round(lo, 2), "upper": round(hi, 2), "count": len(samples)}]
+    width = (hi - lo) / bins
+    counts = [0] * bins
+    for s in samples:
+        idx = int((s - lo) / width)
+        if idx >= bins:
+            idx = bins - 1
+        counts[idx] += 1
+    return [
+        {
+            "lower": round(lo + i * width, 2),
+            "upper": round(lo + (i + 1) * width, 2),
+            "count": counts[i],
+        }
+        for i in range(bins)
+    ]
+
+
+def _round_or_none(value: float | None) -> float | None:
+    """Round a float total to 2 dp, preserving None.
+
+    Stays as a float (not Decimal) so the result dict round-trips through
+    SQLAlchemy's default JSON serializer when we persist it on each
+    risk's ``last_simulation`` column. Pydantic v2 lifts float → Decimal
+    automatically on the response schema, so callers see well-typed
+    Decimals at the API boundary without needing pre-coercion here.
+    """
+    if value is None:
+        return None
+    return round(value, 2)

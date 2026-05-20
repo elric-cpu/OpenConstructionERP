@@ -91,6 +91,7 @@ class PunchItemResponse(BaseModel):
     verified_by: str | None = None
     created_by: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
+    reopen_history: list[dict[str, Any]] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -121,6 +122,34 @@ class PunchListSummary(BaseModel):
     by_priority: dict[str, int] = Field(default_factory=dict)
     overdue: int = 0
     avg_days_to_close: float | None = None
+
+
+# ── Bulk close schema ──────────────────────────────────────────────────
+
+
+class PunchBulkCloseRequest(BaseModel):
+    """Request body for bulk-closing multiple punch items at once."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    project_id: UUID
+    ids: list[UUID] = Field(..., min_length=1, max_length=500)
+    comment: str | None = Field(default=None, max_length=2000)
+
+
+class PunchBulkCloseError(BaseModel):
+    """Per-item error entry returned by the bulk-close endpoint."""
+
+    id: UUID
+    error: str
+
+
+class PunchBulkCloseResponse(BaseModel):
+    """Response summary from the bulk-close endpoint."""
+
+    closed: int = 0
+    skipped: int = 0
+    errors: list[PunchBulkCloseError] = Field(default_factory=list)
 
 
 # ── Pin-to-sheet schema ────────────────────────────────────────────────

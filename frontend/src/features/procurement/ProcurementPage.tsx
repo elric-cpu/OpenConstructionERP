@@ -33,6 +33,8 @@ import { apiGet, apiPost, apiPatch } from '@/shared/lib/api';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { getPOMatchStatus, type POLineMatchTag } from './api';
+import { SupplierScorecardModal } from './SupplierScorecardModal';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -285,6 +287,14 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
   const addToast = useToastStore((s) => s.addToast);
   const userRole = useAuthStore((s) => s.userRole);
   const isManager = userRole === 'admin' || userRole === 'manager';
+
+  // 3-way match: rows hovered or focused fetch their match status on demand
+  // (we never bulk-fetch on list load to avoid N×fetch on big projects).
+  const [matchActive, setMatchActive] = useState<Record<string, boolean>>({});
+  // Supplier scorecard modal — opened from the supplier name link in a row.
+  const [scorecardOpen, setScorecardOpen] = useState<
+    { contactId: string; name?: string | null } | null
+  >(null);
 
   // Resolve the project's currency from the finance dashboard so new POs
   // default to it instead of a hardcoded EUR (task #217). Empty string when
@@ -951,12 +961,32 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
               <tr
                 key={po.id}
                 className="border-b border-border-light hover:bg-surface-secondary/30 transition-colors"
+                onMouseEnter={() => setMatchActive((m) => ({ ...m, [po.id]: true }))}
+                onFocus={() => setMatchActive((m) => ({ ...m, [po.id]: true }))}
               >
                 <td className="px-4 py-3 font-mono text-xs text-content-primary">
                   {po.po_number}
                 </td>
                 <td className="px-4 py-3 text-content-secondary">
-                  {po.vendor_name}
+                  {po.vendor_contact_id ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setScorecardOpen({
+                          contactId: po.vendor_contact_id as string,
+                          name: po.vendor_name,
+                        })
+                      }
+                      className="text-left text-oe-blue hover:underline focus:underline focus:outline-none"
+                      title={t('procurement.open_scorecard', {
+                        defaultValue: 'Open supplier scorecard',
+                      })}
+                    >
+                      {po.vendor_name}
+                    </button>
+                  ) : (
+                    po.vendor_name
+                  )}
                 </td>
                 <td className="px-4 py-3 text-content-secondary">
                   <DateDisplay value={po.issue_date} />
@@ -968,14 +998,20 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
                   <MoneyDisplay amount={po.total_amount} currency={po.currency} />
                 </td>
                 <td className="px-4 py-3 text-center">
-                  <Badge
-                    variant={PO_STATUS_COLORS[po.status] ?? 'neutral'}
-                    size="sm"
-                  >
-                    {t(`procurement.po_status_${po.status}`, {
-                      defaultValue: po.status,
-                    })}
-                  </Badge>
+                  <div className="flex items-center justify-center gap-1.5">
+                    <Badge
+                      variant={PO_STATUS_COLORS[po.status] ?? 'neutral'}
+                      size="sm"
+                    >
+                      {t(`procurement.po_status_${po.status}`, {
+                        defaultValue: po.status,
+                      })}
+                    </Badge>
+                    <MatchStatusBadge
+                      poId={po.id}
+                      active={Boolean(matchActive[po.id])}
+                    />
+                  </div>
                 </td>
                 <td className="px-4 py-3 text-right">
                   {isManager && (
@@ -1016,7 +1052,54 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
 
     {/* PO Create Modal */}
     {showCreate && renderPOModal()}
+
+    {/* Supplier scorecard modal */}
+    {scorecardOpen && (
+      <SupplierScorecardModal
+        open
+        onClose={() => setScorecardOpen(null)}
+        contactId={scorecardOpen.contactId}
+        contactName={scorecardOpen.name ?? undefined}
+        projectId={projectId}
+      />
+    )}
     </>
+  );
+}
+
+/* ── Match status badge (lazy fetch per row) ──────────────────────────── */
+
+const MATCH_BADGE_VARIANT: Record<POLineMatchTag, 'neutral' | 'success' | 'warning' | 'error'> = {
+  ok: 'success',
+  partial: 'warning',
+  unmatched: 'neutral',
+  over_received: 'warning',
+  over_invoiced: 'error',
+};
+
+function MatchStatusBadge({ poId, active }: { poId: string; active: boolean }) {
+  const { t } = useTranslation();
+  const { data, isLoading } = useQuery({
+    queryKey: ['procurement-match', poId],
+    queryFn: () => getPOMatchStatus(poId),
+    enabled: active,
+    staleTime: 30_000,
+  });
+
+  if (!active && !data) return null;
+  if (isLoading || !data) {
+    return (
+      <span className="inline-flex items-center text-2xs text-content-tertiary">
+        <Loader2 size={10} className="animate-spin" />
+      </span>
+    );
+  }
+
+  const tag = data.overall_status;
+  return (
+    <Badge variant={MATCH_BADGE_VARIANT[tag] ?? 'neutral'} size="sm" dot>
+      {t(`procurement.match_${tag}`, { defaultValue: tag.replace('_', ' ') })}
+    </Badge>
   );
 }
 

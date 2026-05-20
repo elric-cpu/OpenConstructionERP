@@ -30,7 +30,15 @@ from sqlalchemy import select
 
 from app.dependencies import CurrentUserId, RequirePermission, SessionDep, verify_project_access
 from app.modules.requirements.schemas import (
+    DeliverableCoverage,
+    DeliverableCreate,
+    DeliverableResponse,
+    DeliverableTypeCoverage,
+    DeliverableUpdate,
     GateResultResponse,
+    MatrixCell,
+    MatrixResponse,
+    MatrixRow,
     RequirementBulkDeleteRequest,
     RequirementBulkDeleteResult,
     RequirementCreate,
@@ -975,6 +983,183 @@ async def requirement_similar(
         "cross_project": cross_project,
         "hits": [h.to_dict() for h in hits],
     }
+
+
+# ── ISO 19650 EIR deliverables (T13) ─────────────────────────────────────
+
+
+def _deliverable_to_response(item: object) -> DeliverableResponse:
+    """Build a DeliverableResponse from a RequirementDeliverable ORM row."""
+    accepted_at = getattr(item, "accepted_at", None)
+    submitted_at = getattr(item, "submitted_at", None)
+    if accepted_at is not None:
+        derived_status = "accepted"
+    elif submitted_at is not None:
+        derived_status = "submitted"
+    else:
+        derived_status = "missing"
+    return DeliverableResponse(
+        id=item.id,  # type: ignore[attr-defined]
+        requirement_id=item.requirement_id,  # type: ignore[attr-defined]
+        deliverable_type=item.deliverable_type,  # type: ignore[attr-defined]
+        lod=item.lod,  # type: ignore[attr-defined]
+        loi=item.loi,  # type: ignore[attr-defined]
+        due_milestone_id=item.due_milestone_id,  # type: ignore[attr-defined]
+        submitted_at=submitted_at,
+        accepted_at=accepted_at,
+        notes=getattr(item, "notes", "") or "",
+        status=derived_status,
+        created_at=item.created_at,  # type: ignore[attr-defined]
+        updated_at=item.updated_at,  # type: ignore[attr-defined]
+    )
+
+
+@router.get(
+    "/requirements/{requirement_id}/deliverables/",
+    response_model=list[DeliverableResponse],
+)
+async def list_requirement_deliverables(
+    requirement_id: uuid.UUID,
+    _user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("requirements.read")),
+    deliverable_type: str | None = Query(default=None, max_length=64),
+    service: RequirementsService = Depends(_get_service),
+) -> list[DeliverableResponse]:
+    """List EIR deliverables attached to a requirement."""
+    items = await service.list_deliverables(
+        requirement_id, deliverable_type=deliverable_type
+    )
+    return [_deliverable_to_response(i) for i in items]
+
+
+@router.post(
+    "/requirements/{requirement_id}/deliverables/",
+    response_model=DeliverableResponse,
+    status_code=201,
+)
+async def create_requirement_deliverable(
+    requirement_id: uuid.UUID,
+    data: DeliverableCreate,
+    _user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("requirements.update")),
+    service: RequirementsService = Depends(_get_service),
+) -> DeliverableResponse:
+    """Attach a new EIR deliverable to a requirement."""
+    try:
+        item = await service.add_deliverable(requirement_id, data)
+        return _deliverable_to_response(item)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception(
+            "Failed to add deliverable for requirement %s", requirement_id
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to add deliverable",
+        )
+
+
+@router.patch(
+    "/requirements/{requirement_id}/deliverables/{deliverable_id}",
+    response_model=DeliverableResponse,
+)
+async def update_requirement_deliverable(
+    requirement_id: uuid.UUID,
+    deliverable_id: uuid.UUID,
+    data: DeliverableUpdate,
+    _user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("requirements.update")),
+    service: RequirementsService = Depends(_get_service),
+) -> DeliverableResponse:
+    """Patch fields on an EIR deliverable row."""
+    item = await service.update_deliverable(requirement_id, deliverable_id, data)
+    return _deliverable_to_response(item)
+
+
+@router.delete(
+    "/requirements/{requirement_id}/deliverables/{deliverable_id}",
+    status_code=204,
+)
+async def delete_requirement_deliverable(
+    requirement_id: uuid.UUID,
+    deliverable_id: uuid.UUID,
+    _user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("requirements.delete")),
+    service: RequirementsService = Depends(_get_service),
+) -> None:
+    """Hard delete an EIR deliverable row."""
+    await service.delete_deliverable(requirement_id, deliverable_id)
+
+
+@router.get(
+    "/requirements/{requirement_id}/deliverables/coverage/",
+    response_model=DeliverableCoverage,
+)
+async def get_requirement_deliverable_coverage(
+    requirement_id: uuid.UUID,
+    _user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("requirements.read")),
+    service: RequirementsService = Depends(_get_service),
+) -> DeliverableCoverage:
+    """Coverage % roll-up for one requirement's EIR deliverables."""
+    payload = await service.get_deliverable_coverage(requirement_id)
+    by_type = {
+        t: DeliverableTypeCoverage(**bucket)
+        for t, bucket in payload.get("by_type", {}).items()
+    }
+    return DeliverableCoverage(
+        requirement_id=payload["requirement_id"] or requirement_id,
+        total=payload["total"],
+        submitted=payload["submitted"],
+        accepted=payload["accepted"],
+        missing=payload["missing"],
+        coverage_pct=payload["coverage_pct"],
+        by_type=by_type,
+    )
+
+
+@router.get(
+    "/projects/{project_id}/matrix/",
+    response_model=MatrixResponse,
+)
+async def get_project_eir_matrix(
+    project_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    _perm: None = Depends(RequirePermission("requirements.read")),
+    deliverable_type: str | None = Query(default=None, max_length=64),
+    service: RequirementsService = Depends(_get_service),
+) -> MatrixResponse:
+    """Return the full project EIR matrix.
+
+    Rows are requirements (one per row, paired with their parent set so
+    the UI can group), columns are deliverable types (model, drawing,
+    schedule, report, cobie, pset, plus any custom ones present in the
+    project's rows), cells carry the LOD/LOI/status triplet.
+    """
+    await verify_project_access(project_id, str(user_id), session)
+    payload = await service.get_project_matrix(
+        project_id, deliverable_type=deliverable_type
+    )
+    rows = [
+        MatrixRow(
+            requirement_id=row["requirement_id"],
+            requirement_set_id=row["requirement_set_id"],
+            entity=row["entity"],
+            attribute=row["attribute"],
+            priority=row["priority"],
+            cells={k: MatrixCell(**v) for k, v in row["cells"].items()},
+            coverage_pct=row["coverage_pct"],
+        )
+        for row in payload["rows"]
+    ]
+    return MatrixResponse(
+        project_id=project_id,
+        deliverable_types=payload["deliverable_types"],
+        rows=rows,
+        coverage_pct=payload["coverage_pct"],
+    )
 
 
 # ── Mount vector status + reindex via the shared factory ────────────────

@@ -526,7 +526,7 @@ function StepWelcome({
         })}
       </p>
 
-      {/* Language grid — 21 languages, flag + native name. */}
+      {/* Language grid — 24 languages, flag + native name. */}
       <div className="mt-5 w-full">
         <div className="mb-2 flex items-center justify-center gap-2 text-xs font-medium text-content-tertiary uppercase tracking-wider">
           <span className="h-px w-8 bg-border-light" aria-hidden />

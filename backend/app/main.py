@@ -1737,7 +1737,7 @@ def create_app() -> FastAPI:
             if "localhost" in settings.database_url:
                 logger.warning("DATABASE_URL points to localhost in production")
 
-        # Load translations (20 languages)
+        # Load translations (24 languages)
         _section("i18n")
         from app.core.i18n import load_translations
 

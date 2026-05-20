@@ -2106,18 +2106,20 @@ export function ProjectDetailPage() {
                   )}
                 </Card>
 
-                {/* Quick Actions */}
-                <Card padding="md">
+                {/* Quick Actions — flex column so the card stretches to match
+                    Recent Activity height; Documents stats are pushed to the
+                    bottom via mt-auto. */}
+                <Card padding="md" className="h-full flex flex-col">
                   <div className="flex items-center gap-2 mb-3">
                     <Sparkles size={16} className="text-content-tertiary" />
                     <h3 className="text-sm font-semibold text-content-primary">
                       {t('projects.dash_quick_actions', { defaultValue: 'Quick Actions' })}
                     </h3>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-2.5">
                     <Button
                       variant="secondary"
-                      size="sm"
+                      size="md"
                       className="w-full justify-start"
                       icon={<Plus size={14} />}
                       onClick={() => navigate(`/projects/${projectId}/boq/new`)}
@@ -2126,7 +2128,7 @@ export function ProjectDetailPage() {
                     </Button>
                     <Button
                       variant="secondary"
-                      size="sm"
+                      size="md"
                       className="w-full justify-start"
                       icon={<MessageSquare size={14} />}
                       onClick={() => navigate('/rfi')}
@@ -2135,7 +2137,7 @@ export function ProjectDetailPage() {
                     </Button>
                     <Button
                       variant="secondary"
-                      size="sm"
+                      size="md"
                       className="w-full justify-start"
                       icon={<ClipboardList size={14} />}
                       onClick={() => navigate('/tasks')}
@@ -2144,7 +2146,7 @@ export function ProjectDetailPage() {
                     </Button>
                     <Button
                       variant="secondary"
-                      size="sm"
+                      size="md"
                       className="w-full justify-start"
                       icon={<ShieldCheck size={14} />}
                       onClick={() => navigate('/validation')}
@@ -2153,7 +2155,7 @@ export function ProjectDetailPage() {
                     </Button>
                     <Button
                       variant="secondary"
-                      size="sm"
+                      size="md"
                       className="w-full justify-start"
                       icon={<FileSpreadsheet size={14} />}
                       onClick={() => navigate('/reports')}
@@ -2162,7 +2164,7 @@ export function ProjectDetailPage() {
                     </Button>
                     <Button
                       variant="secondary"
-                      size="sm"
+                      size="md"
                       className="w-full justify-start"
                       icon={<FolderOpen size={14} />}
                       onClick={() => navigate('/documents')}
@@ -2171,7 +2173,7 @@ export function ProjectDetailPage() {
                     </Button>
                     <Button
                       variant="secondary"
-                      size="sm"
+                      size="md"
                       className="w-full justify-start"
                       icon={<Calendar size={14} />}
                       onClick={() => navigate('/schedule')}
@@ -2180,7 +2182,7 @@ export function ProjectDetailPage() {
                     </Button>
                     <Button
                       variant="secondary"
-                      size="sm"
+                      size="md"
                       className="w-full justify-start"
                       icon={<Wallet size={14} />}
                       onClick={() => navigate('/finance')}
@@ -2189,7 +2191,7 @@ export function ProjectDetailPage() {
                     </Button>
                     <Button
                       variant="secondary"
-                      size="sm"
+                      size="md"
                       className="w-full justify-start"
                       icon={<HardHat size={14} />}
                       onClick={() => navigate('/safety')}
@@ -2198,7 +2200,7 @@ export function ProjectDetailPage() {
                     </Button>
                     <Button
                       variant="secondary"
-                      size="sm"
+                      size="md"
                       className="w-full justify-start"
                       icon={<Package size={14} />}
                       onClick={() => navigate('/procurement')}
@@ -2206,23 +2208,34 @@ export function ProjectDetailPage() {
                       {t('projects.dash_procurement_link', { defaultValue: 'Procurement' })}
                     </Button>
                   </div>
-                  {/* Document stats */}
-                  <div className="mt-4 pt-3 border-t border-border-light">
+                  {/* Document stats — pushed to the bottom via mt-auto so the
+                      Quick Actions card visually balances against Recent
+                      Activity height. Numbers promoted to text-lg for parity
+                      with the activity-feed weight. */}
+                  <div className="mt-auto pt-4">
                     <button
                       type="button"
                       onClick={() => navigate('/files')}
-                      className="block w-full text-left rounded-md transition-colors hover:bg-surface-secondary -mx-2 px-2 py-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
+                      className="block w-full text-left rounded-lg border border-border-light bg-surface-secondary/40 transition-colors hover:bg-surface-secondary hover:border-border px-3 py-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
                       aria-label={t('projects.dash_documents', { defaultValue: 'Documents' })}
                     >
-                      <p className="text-2xs font-medium text-content-tertiary uppercase tracking-wider mb-2">
+                      <p className="text-2xs font-medium text-content-tertiary uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                        <FolderOpen size={12} className="text-content-quaternary" />
                         {t('projects.dash_documents', { defaultValue: 'Documents' })}
                       </p>
-                      <div className="flex items-center gap-3 text-xs text-content-secondary">
-                        <span><strong className="text-content-primary">{dashboardData.documents.total}</strong> {t('projects.dash_total', { defaultValue: 'total' })}</span>
-                        <span><strong className="text-content-primary">{dashboardData.documents.published}</strong> {t('projects.dash_published', { defaultValue: 'published' })}</span>
+                      <div className="flex items-center gap-4 text-xs text-content-secondary">
+                        <span className="flex flex-col">
+                          <strong className="text-lg leading-none text-content-primary">{dashboardData.documents.total}</strong>
+                          <span className="mt-0.5 text-2xs text-content-tertiary uppercase tracking-wide">{t('projects.dash_total', { defaultValue: 'total' })}</span>
+                        </span>
+                        <span className="flex flex-col">
+                          <strong className="text-lg leading-none text-content-primary">{dashboardData.documents.published}</strong>
+                          <span className="mt-0.5 text-2xs text-content-tertiary uppercase tracking-wide">{t('projects.dash_published', { defaultValue: 'published' })}</span>
+                        </span>
                         {dashboardData.documents.pending_transmittals > 0 && (
-                          <span className="text-amber-600">
-                            <strong>{dashboardData.documents.pending_transmittals}</strong> {t('projects.dash_pending', { defaultValue: 'pending' })}
+                          <span className="flex flex-col">
+                            <strong className="text-lg leading-none text-amber-600">{dashboardData.documents.pending_transmittals}</strong>
+                            <span className="mt-0.5 text-2xs text-amber-700/80 uppercase tracking-wide">{t('projects.dash_pending', { defaultValue: 'pending' })}</span>
                           </span>
                         )}
                       </div>

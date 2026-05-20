@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import Response
+from sqlalchemy import select
 
 from app.dependencies import (
     CurrentUserId,
@@ -26,9 +29,12 @@ from app.modules.hse_advanced.schemas import (
     CAPAResponse,
     CAPAUpdate,
     CAPAVerificationPayload,
+    CATransitionRequest,
     CertificationCreate,
     CertificationResponse,
     CertificationUpdate,
+    CorrectiveActionCreate,
+    CorrectiveActionResponse,
     HSEDashboardResponse,
     IncidentEscalationMatrix,
     InvestigationCreate,
@@ -1243,3 +1249,156 @@ async def get_incident_escalation_matrix(
 ) -> IncidentEscalationMatrix:
     """Return the severity → role → SLA matrix for a regulatory regime."""
     return incident_escalation_matrix(regime)
+
+
+# ── OSHA Form 300 CSV export + slim corrective-action FSM (v3086) ────────
+
+
+_SLUG_RE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _project_slug(project_id: uuid.UUID, name: str | None) -> str:
+    """Render a filename-safe slug, falling back to the UUID."""
+    base = (name or "").strip().lower()
+    base = _SLUG_RE.sub("-", base).strip("-")
+    return base or str(project_id)
+
+
+@router.get("/osha-300-log.csv", include_in_schema=True)
+async def osha_300_log_csv(
+    session: SessionDep,
+    project_id: uuid.UUID = Query(...),
+    year: int = Query(..., ge=1900, le=2100),
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("hse_advanced.read")),
+    service: HSEAdvancedService = Depends(_get_service),
+) -> Response:
+    """OSHA Form 300 incident log CSV for a project + calendar year.
+
+    See OSHA 29 CFR 1904.7 for the recordable-incident definition. We
+    include only rows flagged ``osha_recordable=True``; rows whose
+    ``incident_date`` does not fall in the requested year are skipped.
+    """
+    await verify_project_access(project_id, user_id, session)
+
+    # Look up the project's name for a friendly download filename.
+    from app.modules.projects.models import Project
+    proj = (
+        await session.execute(select(Project).where(Project.id == project_id))
+    ).scalar_one_or_none()
+    project_name = getattr(proj, "name", None) if proj is not None else None
+    slug = _project_slug(project_id, project_name)
+
+    body = await service.generate_osha_300_csv(project_id, year)
+    filename = f"osha-300-{slug}-{year}.csv"
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
+
+
+@router.get(
+    "/corrective-actions/",
+    response_model=list[CorrectiveActionResponse],
+)
+async def list_corrective_actions(
+    session: SessionDep,
+    user_id: CurrentUserId,
+    project_id: uuid.UUID | None = Query(default=None),
+    incident_id: uuid.UUID | None = Query(default=None),
+    status_filter: str | None = Query(default=None, alias="status"),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+    _perm: None = Depends(RequirePermission("hse_advanced.read")),
+    service: HSEAdvancedService = Depends(_get_service),
+) -> list[CorrectiveActionResponse]:
+    """List slim incident-scoped corrective actions.
+
+    Scope precedence: ``incident_id`` (single-incident drill-down) >
+    ``project_id`` (project-wide view, resolved via the safety module's
+    incident table). With neither, returns an empty list rather than a
+    422 so the dashboard renders cleanly when no project is active.
+    """
+    if incident_id is None and project_id is None:
+        return []
+
+    if project_id is not None and incident_id is None:
+        await verify_project_access(project_id, user_id, session)
+        # Resolve project-scope by joining via incident_id ∈ project's
+        # incidents — cheaper than a SQL join in this slim model.
+        from app.modules.safety.models import SafetyIncident
+        inc_ids = list(
+            (
+                await session.execute(
+                    select(SafetyIncident.id).where(
+                        SafetyIncident.project_id == project_id
+                    )
+                )
+            ).scalars().all()
+        )
+        if not inc_ids:
+            return []
+        from app.modules.safety.models import HSECorrectiveAction
+        stmt = select(HSECorrectiveAction).where(
+            HSECorrectiveAction.incident_id.in_(inc_ids)
+        )
+        if status_filter is not None:
+            stmt = stmt.where(HSECorrectiveAction.status == status_filter)
+        stmt = stmt.offset(offset).limit(limit)
+        rows = list((await session.execute(stmt)).scalars().all())
+    else:
+        rows = await service.list_corrective_actions(
+            incident_id=incident_id,
+            status_filter=status_filter,
+            offset=offset,
+            limit=limit,
+        )
+    return [CorrectiveActionResponse.model_validate(r) for r in rows]
+
+
+@router.post(
+    "/corrective-actions/",
+    response_model=CorrectiveActionResponse,
+    status_code=201,
+)
+async def create_corrective_action(
+    data: CorrectiveActionCreate,
+    _perm: None = Depends(RequirePermission("hse_advanced.create")),
+    service: HSEAdvancedService = Depends(_get_service),
+) -> CorrectiveActionResponse:
+    """Open a new corrective action against an incident (status=pending)."""
+    obj = await service.create_corrective_action(
+        incident_id=data.incident_id,
+        description=data.description,
+        assigned_to_user_id=data.assigned_to_user_id,
+        due_date=data.due_date,
+    )
+    return CorrectiveActionResponse.model_validate(obj)
+
+
+@router.post(
+    "/corrective-actions/{ca_id}/transition",
+    response_model=CorrectiveActionResponse,
+)
+async def transition_corrective_action(
+    ca_id: uuid.UUID,
+    payload: CATransitionRequest,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("hse_advanced.update")),
+    service: HSEAdvancedService = Depends(_get_service),
+) -> CorrectiveActionResponse:
+    """Advance a corrective action along the FSM.
+
+    Allowed: ``pending → in_progress → verified → closed``. Any other
+    transition is rejected with HTTP 409.
+    """
+    obj = await service.transition_corrective_action(
+        ca_id,
+        to_status=payload.to_status,
+        user_id=user_id,
+        verification_notes=payload.verification_notes,
+    )
+    return CorrectiveActionResponse.model_validate(obj)

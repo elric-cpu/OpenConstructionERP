@@ -100,8 +100,44 @@ export interface Dashboard {
   layout_json: Record<string, unknown>;
   is_default: boolean;
   refresh_interval_seconds: number;
+  /**
+   * Wave 4 / T11 — opt-in flag. When true the dashboard's evaluate endpoint
+   * propagates click-driven filters into every widget. False (the default)
+   * keeps the v3.x static-render behaviour.
+   */
+  cross_filter_enabled: boolean;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * Describes how a click on a widget propagates a filter to the rest of the
+ * dashboard. ``filter_value_from`` is a lightweight expression — currently
+ * either a literal value or ``"row.<field>"`` to pull a per-row value out
+ * of the clicked table/chart record.
+ */
+export interface DrillPath {
+  filter_field: string;
+  filter_value_from?: string;
+}
+
+export interface WidgetEvaluateResult {
+  id: string;
+  kpi_code: string | null;
+  widget_type: WidgetType | string;
+  value: number | string | null;
+  unit: string | null;
+  series: Array<Record<string, unknown>>;
+  drill_path: DrillPath | null;
+  breakdown: Record<string, unknown>;
+}
+
+export interface DashboardEvaluateResponse {
+  dashboard_id: string;
+  cross_filter_enabled: boolean;
+  applied_filters: Record<string, unknown>;
+  widgets: WidgetEvaluateResult[];
+  evaluated_at: string;
 }
 
 export interface WidgetRead {
@@ -115,6 +151,7 @@ export interface WidgetRead {
   width: number;
   height: number;
   order_seq: number;
+  drill_path: DrillPath | null;
   created_at: string;
   updated_at: string;
 }
@@ -199,6 +236,7 @@ export interface CreateDashboardPayload {
   role_ref?: string | null;
   project_id?: string | null;
   refresh_interval_seconds?: number;
+  cross_filter_enabled?: boolean;
 }
 
 export interface CreateReportPayload {
@@ -283,6 +321,24 @@ export function deleteDashboard(id: string): Promise<void> {
 
 export function renderDashboard(id: string): Promise<DashboardRenderResponse> {
   return apiGet<DashboardRenderResponse>(`${BASE}/dashboards/${id}/render`);
+}
+
+/**
+ * Cross-filter evaluate (Wave 4 / T11).
+ *
+ * Re-evaluates every widget on the dashboard against the supplied filter
+ * dict. When the dashboard's ``cross_filter_enabled`` flag is false the
+ * filters are dropped server-side and each widget returns its static
+ * aggregate — safe to call either way.
+ */
+export function evaluateDashboard(
+  id: string,
+  filters: Record<string, unknown> = {},
+): Promise<DashboardEvaluateResponse> {
+  return apiPost<DashboardEvaluateResponse>(
+    `${BASE}/dashboards/${id}/evaluate`,
+    { filters },
+  );
 }
 
 /* ── Reports ──────────────────────────────────────────────────────────── */

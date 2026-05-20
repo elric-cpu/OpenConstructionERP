@@ -6,8 +6,9 @@ Tables:
 """
 
 import uuid
+from datetime import date, datetime
 
-from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import GUID, Base
@@ -63,8 +64,68 @@ class SafetyIncident(Base):
         server_default="{}",
     )
 
+    # ── OSHA Form 300 recordable-incident bookkeeping ────────────────────
+    # Added by v3086_hse_osha_corrective_fsm. ``osha_recordable`` is the
+    # gate that filters incidents into the OSHA 300 log export.
+    osha_recordable: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, index=True,
+    )
+    osha_case_number: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    days_away: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    days_restricted: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 5_whys / fishbone / tap_root / other — kept free-form (validated in
+    # the service layer) so we can extend the taxonomy without a migration.
+    root_cause_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    root_cause_tags: Mapped[list] = mapped_column(  # type: ignore[assignment]
+        JSON, nullable=True, default=list, server_default="[]",
+    )
+
     def __repr__(self) -> str:
         return f"<SafetyIncident {self.incident_number} ({self.incident_type}/{self.status})>"
+
+
+class HSECorrectiveAction(Base):
+    """‌⁠‍Slim incident-scoped corrective action with a strict FSM.
+
+    Distinct from :class:`app.modules.hse_advanced.models.CorrectiveAction`
+    (which is the audit/JSA/observation-scoped CAPA carrying 5-Whys and
+    effectiveness verification). This table is the lightweight Procore /
+    Sphera-style "open a CA off an incident" record with a single
+    pending → in_progress → verified → closed lifecycle.
+    """
+
+    __tablename__ = "oe_hse_corrective_action"
+
+    # Plain UUID — references oe_safety_incident.id, no FK to avoid
+    # cross-module coupling (mirrors HSEIncidentInvestigation.incident_ref).
+    incident_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(), nullable=False, index=True,
+    )
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    assigned_to_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(),
+        ForeignKey("oe_users_user.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    due_date: Mapped[date | None] = mapped_column(Date(), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="pending", index=True,
+    )
+    verified_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(),
+        ForeignKey("oe_users_user.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+    verification_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    def __repr__(self) -> str:
+        return (
+            f"<HSECorrectiveAction incident={self.incident_id} "
+            f"status={self.status}>"
+        )
 
 
 class SafetyObservation(Base):

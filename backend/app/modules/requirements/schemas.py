@@ -240,3 +240,126 @@ class TextImportRequest(BaseModel):
         default="must",
         pattern=r"^(must|should|may)$",
     )
+
+
+# ── EIR Deliverable schemas (T13) ──────────────────────────────────────────
+
+
+# BIMForum LOD vocabulary + the ISO 19650 LOI vocabulary. Stored as
+# free strings under the hood (label "LOD 350" vs raw "350" varies by
+# template) but validated here so the matrix view doesn't need to
+# render "LOD undefined" cells.
+_LOD_PATTERN = r"^(100|200|300|350|400|500)$"
+_LOI_PATTERN = r"^[1-5]$"
+_DELIVERABLE_TYPE_PATTERN = r"^(model|drawing|schedule|report|cobie|pset|other)$"
+
+
+class DeliverableCreate(BaseModel):
+    """Create a new EIR deliverable row for a requirement."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    deliverable_type: str = Field(
+        ..., pattern=_DELIVERABLE_TYPE_PATTERN, max_length=64
+    )
+    lod: str | None = Field(default=None, pattern=_LOD_PATTERN)
+    loi: str | None = Field(default=None, pattern=_LOI_PATTERN)
+    due_milestone_id: UUID | None = None
+    submitted_at: datetime | None = None
+    accepted_at: datetime | None = None
+    notes: str = ""
+
+
+class DeliverableUpdate(BaseModel):
+    """Partial update for an EIR deliverable row."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    deliverable_type: str | None = Field(
+        default=None, pattern=_DELIVERABLE_TYPE_PATTERN, max_length=64
+    )
+    lod: str | None = Field(default=None, pattern=_LOD_PATTERN)
+    loi: str | None = Field(default=None, pattern=_LOI_PATTERN)
+    due_milestone_id: UUID | None = None
+    submitted_at: datetime | None = None
+    accepted_at: datetime | None = None
+    notes: str | None = None
+
+
+class DeliverableResponse(BaseModel):
+    """EIR deliverable row returned from the API.
+
+    The ``status`` field is derived server-side from the timestamps
+    (``accepted`` if ``accepted_at`` is set, else ``submitted`` if
+    ``submitted_at`` is set, else ``missing``) — the matrix view's
+    cell colouring reads it directly.
+    """
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    requirement_id: UUID
+    deliverable_type: str
+    lod: str | None = None
+    loi: str | None = None
+    due_milestone_id: UUID | None = None
+    submitted_at: datetime | None = None
+    accepted_at: datetime | None = None
+    notes: str = ""
+    status: str = "missing"
+    created_at: datetime
+    updated_at: datetime
+
+
+class DeliverableTypeCoverage(BaseModel):
+    """Per-type coverage breakdown returned inside the coverage summary."""
+
+    total: int = 0
+    submitted: int = 0
+    accepted: int = 0
+    missing: int = 0
+
+
+class DeliverableCoverage(BaseModel):
+    """Coverage summary for one requirement's deliverables."""
+
+    requirement_id: UUID
+    total: int = 0
+    submitted: int = 0
+    accepted: int = 0
+    missing: int = 0
+    coverage_pct: float = 0.0
+    by_type: dict[str, DeliverableTypeCoverage] = Field(default_factory=dict)
+
+
+class MatrixCell(BaseModel):
+    """A single (requirement × deliverable-type) cell in the EIR matrix."""
+
+    deliverable_id: UUID | None = None
+    lod: str | None = None
+    loi: str | None = None
+    status: str = "missing"
+    due_milestone_id: UUID | None = None
+    submitted_at: datetime | None = None
+    accepted_at: datetime | None = None
+
+
+class MatrixRow(BaseModel):
+    """A single row of the EIR matrix — one requirement + its cells."""
+
+    requirement_id: UUID
+    requirement_set_id: UUID
+    entity: str
+    attribute: str
+    priority: str = "must"
+    cells: dict[str, MatrixCell] = Field(default_factory=dict)
+    coverage_pct: float = 0.0
+
+
+class MatrixResponse(BaseModel):
+    """Full project EIR matrix returned from the API."""
+
+    project_id: UUID
+    deliverable_types: list[str] = Field(default_factory=list)
+    rows: list[MatrixRow] = Field(default_factory=list)
+    coverage_pct: float = 0.0

@@ -7,18 +7,25 @@ Stateless service layer. Handles:
 - Action item -> Task creation on meeting completion
 """
 
+import base64
+import binascii
 import logging
+import re
 import uuid
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
-from app.modules.meetings.models import Meeting
+from app.modules.meetings.models import Meeting, MeetingAttendance
 from app.modules.meetings.repository import MeetingRepository
 from app.modules.meetings.schemas import (
     MeetingCreate,
+    MeetingSeriesCreate,
     MeetingStatsResponse,
     MeetingUpdate,
     OpenActionItemResponse,
@@ -438,3 +445,417 @@ class MeetingService:
                         )
                     )
         return result
+
+    # ── Recurring series ─────────────────────────────────────────────────
+
+    async def create_series(
+        self,
+        data: MeetingSeriesCreate,
+        user_id: str | None = None,
+    ) -> tuple[Meeting, list[Meeting]]:
+        """Create a series master and (optionally) materialise occurrences.
+
+        The master meeting carries the ``recurrence_rule`` and stamps its
+        own id into ``series_id``. Occurrences (non-master) share the same
+        ``series_id`` but have no rule of their own.
+
+        Returns:
+            Tuple of (master Meeting, list of occurrence Meetings).
+        """
+        # Build a one-off Meeting first via the regular path so we reuse
+        # auto-numbering, audit, and attendee/agenda coercion.
+        base_create = MeetingCreate(
+            project_id=data.project_id,
+            meeting_type=data.meeting_type,
+            title=data.title,
+            meeting_date=data.meeting_date,
+            location=data.location,
+            chairperson_id=data.chairperson_id,
+            attendees=data.attendees,
+            agenda_items=data.agenda_items,
+            action_items=data.action_items,
+            minutes=data.minutes,
+            status=data.status,
+            document_ids=data.document_ids,
+            metadata=data.metadata,
+        )
+        master = await self.create_meeting(base_create, user_id=user_id)
+
+        # Stamp master with series fields. Using update_fields keeps the
+        # repo as the single mutator and reuses its transaction handling.
+        await self.repo.update_fields(
+            master.id,
+            series_id=str(master.id),
+            recurrence_rule=data.recurrence_rule,
+            is_series_master=True,
+        )
+        await self.session.refresh(master)
+
+        occurrences: list[Meeting] = []
+        if data.materialize_until:
+            until_dt = datetime.strptime(
+                data.materialize_until, "%Y-%m-%d",
+            ).replace(tzinfo=UTC)
+            occurrences = await self.generate_occurrences(
+                str(master.id), until_dt, user_id=user_id,
+            )
+
+        return master, occurrences
+
+    async def generate_occurrences(
+        self,
+        series_id: str,
+        until: datetime,
+        *,
+        user_id: str | None = None,
+    ) -> list[Meeting]:
+        """Materialise non-master occurrences up to ``until``.
+
+        Idempotent: meetings whose ``meeting_date`` already exists in the
+        series are skipped. Returns only newly-created occurrences (not
+        master, not pre-existing rows).
+        """
+        # Load master + existing occurrences in one query.
+        result = await self.session.execute(
+            select(Meeting).where(Meeting.series_id == series_id)
+        )
+        existing = result.scalars().all()
+        master = next((m for m in existing if m.is_series_master), None)
+        if master is None or not master.recurrence_rule:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=(
+                    "Series master not found or has no recurrence_rule "
+                    f"(series_id={series_id})"
+                ),
+            )
+
+        already_have_dates: set[str] = {m.meeting_date for m in existing}
+
+        # Anchor at the master meeting_date so DTSTART is implicit.
+        try:
+            start_dt = datetime.strptime(
+                master.meeting_date, "%Y-%m-%d",
+            ).replace(tzinfo=UTC)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Master meeting_date is not ISO format: {master.meeting_date}",
+            ) from exc
+
+        try:
+            occurrence_dates = _expand_rrule(master.recurrence_rule, start_dt, until)
+        except _RRuleError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid recurrence_rule: {exc}",
+            ) from exc
+
+        new_occurrences: list[Meeting] = []
+        for dt in occurrence_dates:
+            date_str = dt.strftime("%Y-%m-%d")
+            # Skip the master's own date (it represents the first occurrence
+            # already) and any pre-existing occurrences.
+            if date_str in already_have_dates:
+                continue
+            occ_create = MeetingCreate(
+                project_id=master.project_id,
+                meeting_type=master.meeting_type,
+                title=master.title,
+                meeting_date=date_str,
+                location=master.location,
+                chairperson_id=master.chairperson_id,
+                attendees=[],   # occurrences start with empty rolls
+                agenda_items=[],
+                action_items=[],
+                minutes=None,
+                status="scheduled",
+                document_ids=[uuid.UUID(d) for d in (master.document_ids or [])],
+                metadata={"materialized_from_series": str(series_id)},
+            )
+            occ = await self.create_meeting(occ_create, user_id=user_id)
+            await self.repo.update_fields(
+                occ.id,
+                series_id=str(series_id),
+                is_series_master=False,
+            )
+            await self.session.refresh(occ)
+            already_have_dates.add(date_str)
+            new_occurrences.append(occ)
+
+        logger.info(
+            "Series %s materialised %d new occurrences (until=%s)",
+            series_id, len(new_occurrences), until.date(),
+        )
+        return new_occurrences
+
+    # ── Attendance check-in ──────────────────────────────────────────────
+
+    async def check_in(
+        self,
+        meeting_id: uuid.UUID,
+        user_id: str,
+        signature_image_data: str | None = None,
+    ) -> MeetingAttendance:
+        """Create or update an attendance row for the given user.
+
+        Re-checking-in updates the existing row (single row per
+        (meeting, user)) instead of creating a duplicate.
+        """
+        # Verify the meeting exists.
+        await self.get_meeting(meeting_id)
+
+        result = await self.session.execute(
+            select(MeetingAttendance).where(
+                MeetingAttendance.meeting_id == meeting_id,
+                MeetingAttendance.user_id == user_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+
+        sig_path: str | None = None
+        if signature_image_data:
+            sig_path = await _save_signature_image(
+                meeting_id, signature_image_data,
+            )
+
+        now = datetime.now(UTC)
+        if row is None:
+            row = MeetingAttendance(
+                meeting_id=meeting_id,
+                user_id=user_id,
+                external_name=None,
+                checked_in_at=now,
+                signature_image_path=sig_path,
+            )
+            self.session.add(row)
+        else:
+            row.checked_in_at = now
+            if sig_path:
+                row.signature_image_path = sig_path
+        await self.session.flush()
+        await self.session.refresh(row)
+        logger.info("Attendance check-in: meeting=%s user=%s", meeting_id, user_id)
+        return row
+
+    async def record_external_attendee(
+        self,
+        meeting_id: uuid.UUID,
+        name: str,
+        signature_image_data: str | None = None,
+    ) -> MeetingAttendance:
+        """Record a walk-in / non-system attendee by name only.
+
+        Multiple rows with the same ``external_name`` are allowed — the
+        unique constraint only fires on ``(meeting_id, user_id)`` with
+        non-NULL user_id.
+        """
+        await self.get_meeting(meeting_id)
+
+        sig_path: str | None = None
+        if signature_image_data:
+            sig_path = await _save_signature_image(
+                meeting_id, signature_image_data,
+            )
+
+        row = MeetingAttendance(
+            meeting_id=meeting_id,
+            user_id=None,
+            external_name=name.strip(),
+            checked_in_at=datetime.now(UTC),
+            signature_image_path=sig_path,
+        )
+        self.session.add(row)
+        await self.session.flush()
+        await self.session.refresh(row)
+        logger.info("External attendee recorded: meeting=%s name=%s", meeting_id, name)
+        return row
+
+    async def list_attendance(
+        self,
+        meeting_id: uuid.UUID,
+    ) -> list[MeetingAttendance]:
+        """List all attendance rows for a meeting (ordered by created_at)."""
+        await self.get_meeting(meeting_id)
+        result = await self.session.execute(
+            select(MeetingAttendance)
+            .where(MeetingAttendance.meeting_id == meeting_id)
+            .order_by(MeetingAttendance.created_at.asc())
+        )
+        return list(result.scalars().all())
+
+
+# ── RRULE parser (subset of RFC 5545) ─────────────────────────────────────
+
+
+class _RRuleError(ValueError):
+    """Raised when a recurrence_rule string cannot be parsed."""
+
+
+_WEEKDAY_MAP = {"MO": 0, "TU": 1, "WE": 2, "TH": 3, "FR": 4, "SA": 5, "SU": 6}
+
+
+def _expand_rrule(
+    rule: str, start: datetime, until: datetime,
+) -> list[datetime]:
+    """Expand an RRULE string into a list of datetimes ≤ ``until``.
+
+    Prefers ``dateutil.rrule.rrulestr`` when available; falls back to a
+    minimal hand-rolled parser for FREQ=DAILY/WEEKLY/MONTHLY + BYDAY +
+    COUNT/UNTIL so the feature still works on stripped-down deploys.
+
+    Includes the start datetime itself only if the RRULE would emit it
+    (e.g. WEEKLY BYDAY containing the start's weekday).
+    """
+    # ── Fast path: python-dateutil is present in transitive deps. ───────
+    try:
+        from dateutil.rrule import rrulestr  # type: ignore[import-untyped]
+
+        rs = rrulestr(rule, dtstart=start)
+        out: list[datetime] = []
+        for occ in rs:
+            # rrulestr yields naive or tz-aware depending on dtstart; we
+            # always feed it tz-aware so occurrences are tz-aware too.
+            if occ.tzinfo is None:
+                occ = occ.replace(tzinfo=UTC)
+            if occ > until:
+                break
+            out.append(occ)
+        return out
+    except ImportError:
+        pass  # fall through to hand-rolled parser
+    except Exception as exc:  # noqa: BLE001 — surface as RRuleError for the router
+        raise _RRuleError(str(exc)) from exc
+
+    # ── Fallback parser ─────────────────────────────────────────────────
+    parts = dict(_parse_rrule_parts(rule))
+    freq = parts.get("FREQ", "")
+    count = int(parts["COUNT"]) if "COUNT" in parts else None
+    rule_until: datetime | None = None
+    if "UNTIL" in parts:
+        try:
+            rule_until = datetime.strptime(
+                parts["UNTIL"][:8], "%Y%m%d",
+            ).replace(tzinfo=UTC)
+        except ValueError as exc:
+            raise _RRuleError(f"bad UNTIL: {parts['UNTIL']}") from exc
+
+    bydays = (
+        [_WEEKDAY_MAP[d] for d in parts["BYDAY"].split(",") if d in _WEEKDAY_MAP]
+        if "BYDAY" in parts
+        else []
+    )
+
+    horizon = until if rule_until is None else min(until, rule_until)
+    results: list[datetime] = []
+
+    if freq == "DAILY":
+        cur = start
+        while cur <= horizon:
+            results.append(cur)
+            if count is not None and len(results) >= count:
+                break
+            cur = cur + timedelta(days=1)
+
+    elif freq == "WEEKLY":
+        cur = start
+        while cur <= horizon:
+            if not bydays or cur.weekday() in bydays:
+                results.append(cur)
+                if count is not None and len(results) >= count:
+                    break
+            cur = cur + timedelta(days=1)
+
+    elif freq == "MONTHLY":
+        cur = start
+        while cur <= horizon:
+            results.append(cur)
+            if count is not None and len(results) >= count:
+                break
+            # naive month-add: bump month, clamp day
+            month = cur.month + 1
+            year = cur.year + (month - 1) // 12
+            month = ((month - 1) % 12) + 1
+            day = min(cur.day, _days_in_month(year, month))
+            cur = cur.replace(year=year, month=month, day=day)
+
+    else:
+        raise _RRuleError(f"unsupported FREQ={freq!r}")
+
+    return results
+
+
+def _parse_rrule_parts(rule: str) -> list[tuple[str, str]]:
+    out: list[tuple[str, str]] = []
+    for chunk in rule.split(";"):
+        if "=" not in chunk:
+            continue
+        k, v = chunk.split("=", 1)
+        out.append((k.strip().upper(), v.strip()))
+    return out
+
+
+def _days_in_month(year: int, month: int) -> int:
+    if month == 2:
+        leap = (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0)
+        return 29 if leap else 28
+    if month in (4, 6, 9, 11):
+        return 30
+    return 31
+
+
+# ── Signature image storage ──────────────────────────────────────────────
+
+
+_SIGNATURE_DIR_ENV = "MEETING_SIGNATURE_DIR"
+
+
+def _signature_dir() -> Path:
+    import os
+    base = os.environ.get(_SIGNATURE_DIR_ENV)
+    if base:
+        return Path(base)
+    # Default to <home>/.openestimator/meetings/signatures (matches the
+    # uploads scheme in router.py's transcript cross-link).
+    return Path.home() / ".openestimator" / "meetings" / "signatures"
+
+
+async def _save_signature_image(
+    meeting_id: uuid.UUID, data: str,
+) -> str:
+    """Decode + persist a signature image, return the saved file path.
+
+    Accepts either a ``data:image/png;base64,...`` URL or bare base64
+    bytes. Caps payload at 2MB (enforced upstream by the schema) and
+    silently strips anything that's not a PNG/JPEG by inspecting the
+    decoded magic bytes.
+    """
+    raw = data.strip()
+    m = re.match(r"^data:image/(png|jpeg|jpg);base64,(.+)$", raw, re.IGNORECASE)
+    payload = m.group(2) if m else raw
+
+    try:
+        blob = base64.b64decode(payload, validate=False)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="signature_image_data is not valid base64",
+        ) from exc
+
+    # Magic-byte check: 89 50 4E 47 = PNG, FF D8 FF = JPEG.
+    ext: str
+    if blob[:4] == b"\x89PNG":
+        ext = "png"
+    elif blob[:3] == b"\xff\xd8\xff":
+        ext = "jpg"
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="signature_image_data must be PNG or JPEG",
+        )
+
+    out_dir = _signature_dir()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"{meeting_id}_{uuid.uuid4().hex[:12]}.{ext}"
+    out_path.write_bytes(blob)
+    return str(out_path)

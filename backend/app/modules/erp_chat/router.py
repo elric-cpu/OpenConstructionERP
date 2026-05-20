@@ -16,12 +16,21 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 
-from app.dependencies import CurrentUserId, SessionDep, check_ai_rate_limit, verify_project_access
+from app.dependencies import (
+    CurrentUserId,
+    RequirePermission,
+    SessionDep,
+    check_ai_rate_limit,
+    verify_project_access,
+)
 from app.modules.erp_chat.models import ChatMessage, ChatSession
 from app.modules.erp_chat.schemas import (
+    AdminStatsResponse,
     ChatMessageResponse,
     ChatSessionCreate,
     ChatSessionResponse,
+    FeedbackRequest,
+    FeedbackResponse,
     SessionListResponse,
     StreamChatRequest,
 )
@@ -233,6 +242,74 @@ async def chat_message_similar(
         "cross_project": cross_project,
         "hits": [h.to_dict() for h in hits],
     }
+
+
+# ── T8: Per-turn feedback + admin observability ──────────────────────────
+
+
+@router.post(
+    "/messages/{message_id}/feedback/",
+    response_model=FeedbackResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def submit_message_feedback(
+    message_id: uuid.UUID,
+    body: FeedbackRequest,
+    user_id: CurrentUserId,
+    session: SessionDep,
+) -> FeedbackResponse:
+    """‌⁠‍Record a thumbs up/down on a single assistant message.
+
+    Idempotent per ``(message_id, user_id)`` — re-submitting flips the
+    rating in place. The IDOR guard inside the service treats messages
+    owned by another user as 404 to avoid leaking existence.
+    """
+    service = ERPChatService(session)
+    try:
+        row = await service.submit_feedback(
+            message_id=message_id,
+            user_id=user_id,
+            rating=body.rating,
+            comment=body.comment,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc),
+        ) from exc
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc),
+        ) from exc
+
+    return FeedbackResponse(
+        id=row.id,
+        message_id=row.message_id,
+        user_id=row.user_id,
+        rating=row.rating,
+        comment=row.comment,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+@router.get(
+    "/admin/stats/",
+    response_model=AdminStatsResponse,
+    dependencies=[Depends(RequirePermission("erp_chat.admin"))],
+)
+async def admin_stats(
+    session: SessionDep,
+    window_days: int = Query(default=30, ge=1, le=365),
+) -> AdminStatsResponse:
+    """‌⁠‍Return the T8 observability dashboard rollup.
+
+    Manager+ only (admin role bypasses all permission checks). Covers
+    token spend, prompt-cache hit rate, thumbs feedback totals, top-5
+    user prompts that received thumbs-down, and a per-day breakdown.
+    """
+    service = ERPChatService(session)
+    stats = await service.get_admin_stats(window_days=window_days)
+    return AdminStatsResponse(**stats)
 
 
 # ── Mount vector status + reindex via the shared factory ────────────────

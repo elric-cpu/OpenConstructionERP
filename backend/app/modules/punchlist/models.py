@@ -53,6 +53,12 @@ class PunchItem(Base):
         default=dict,
         server_default="{}",
     )
+    reopen_history: Mapped[list] = mapped_column(  # type: ignore[assignment]
+        JSON,
+        nullable=False,
+        default=list,
+        server_default="[]",
+    )
 
     def __repr__(self) -> str:
         return f"<PunchItem {self.title[:40]} ({self.status}/{self.priority})>"

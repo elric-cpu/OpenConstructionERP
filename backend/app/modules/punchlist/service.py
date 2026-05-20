@@ -12,6 +12,7 @@ Stateless service layer. Handles:
 import logging
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -24,6 +25,39 @@ from app.modules.punchlist.schemas import PunchItemCreate, PunchItemUpdate, Punc
 
 logger = logging.getLogger(__name__)
 _logger_ev = logging.getLogger(__name__ + ".events")
+
+# Hoist heavy optional imports to module top so we pay the import cost once.
+# openpyxl is a soft dependency — the Excel export falls back to CSV when
+# it isn't available.
+try:  # pragma: no cover - exercised in production paths
+    import openpyxl as _openpyxl  # type: ignore[import-not-found]
+    from openpyxl.styles import Font as _OpenpyxlFont  # type: ignore[import-not-found]
+
+    _OPENPYXL_AVAILABLE: bool = True
+except ImportError:  # pragma: no cover - fallback path
+    _openpyxl = None  # type: ignore[assignment]
+    _OpenpyxlFont = None  # type: ignore[assignment,misc]
+    _OPENPYXL_AVAILABLE = False
+
+# ReportLab is a soft dependency. When it's missing we fall back to the
+# minimal hand-rolled PDF writer below so the export still works on slim
+# installs. The actual `from reportlab...` statements stay inside the
+# builder so module import remains cheap (~no cost beyond the probe).
+try:  # pragma: no cover - exercised in production paths
+    import reportlab as _reportlab  # noqa: F401  type: ignore[import-not-found]
+
+    _REPORTLAB_AVAILABLE: bool = True
+except ImportError:  # pragma: no cover - fallback path
+    _REPORTLAB_AVAILABLE = False
+
+# Terminal statuses — any transition FROM one of these back to an active
+# status counts as a "reopen" and is appended to ``reopen_history``.
+_TERMINAL_STATUSES: frozenset[str] = frozenset({"closed", "verified"})
+_ACTIVE_STATUSES: frozenset[str] = frozenset({"open", "in_progress"})
+
+# Where punchlist photos live on disk. Mirrors the path in router.py — we
+# resolve photo_path entries against this base when embedding into PDFs.
+_PHOTOS_BASE = Path("uploads")
 
 
 async def _safe_publish(name: str, data: dict, source_module: str = "oe_punchlist") -> None:
@@ -206,6 +240,10 @@ class PunchListService:
             update_fields: dict[str, Any] = {"status": "open"}
             if transition.notes:
                 update_fields["resolution_notes"] = transition.notes
+            self._record_reopen_if_needed(
+                item, new_status="open", user=user_id, reason=transition.notes,
+                update_fields=update_fields,
+            )
             await self.repo.update_fields(item_id, **update_fields)
             await self.session.refresh(item)
 
@@ -266,6 +304,14 @@ class PunchListService:
                     ),
                 )
 
+        # Record reopen audit for the rare path where an allowed transition
+        # moves a terminal item back to an active status without going via
+        # the explicit "open" reopen branch above (defence in depth).
+        self._record_reopen_if_needed(
+            item, new_status=target, user=user_id, reason=transition.notes,
+            update_fields=update_fields,
+        )
+
         await self.repo.update_fields(item_id, **update_fields)
         await self.session.refresh(item)
 
@@ -288,6 +334,120 @@ class PunchListService:
             user_id,
         )
         return item
+
+    # ── Reopen audit ──────────────────────────────────────────────────────
+
+    def _record_reopen_if_needed(
+        self,
+        item: PunchItem,
+        *,
+        new_status: str,
+        user: str | None,
+        reason: str | None,
+        update_fields: dict[str, Any],
+    ) -> None:
+        """Append a reopen-history entry when transitioning from terminal -> active.
+
+        Mutates ``update_fields`` in place so the new ``reopen_history`` list
+        is persisted alongside the status change in a single update.
+        """
+        previous = item.status
+        if previous not in _TERMINAL_STATUSES or new_status not in _ACTIVE_STATUSES:
+            return
+
+        existing = list(getattr(item, "reopen_history", None) or [])
+        entry: dict[str, Any] = {
+            "reopened_at": datetime.now(UTC).isoformat(),
+            "reopened_by": user,
+            "previous_status": previous,
+        }
+        if reason:
+            entry["reason"] = reason
+        existing.append(entry)
+        update_fields["reopen_history"] = existing
+
+    # ── Bulk close ────────────────────────────────────────────────────────
+
+    async def bulk_close(
+        self,
+        project_id: uuid.UUID,
+        item_ids: list[uuid.UUID],
+        *,
+        user_id: str,
+        comment: str | None = None,
+    ) -> dict[str, Any]:
+        """Close many punch items at once.
+
+        - Items already ``closed`` are counted as ``skipped``.
+        - Items not found, owned by another project, or violating close rules
+          (e.g. critical items with open peers) are returned in ``errors``.
+        - Successful closes emit ``punchlist.item.status_changed`` events.
+        """
+        closed = 0
+        skipped = 0
+        errors: list[dict[str, Any]] = []
+
+        for item_id in item_ids:
+            try:
+                item = await self.repo.get_by_id(item_id)
+                if item is None:
+                    errors.append({"id": str(item_id), "error": "not_found"})
+                    continue
+                if item.project_id != project_id:
+                    errors.append({"id": str(item_id), "error": "project_mismatch"})
+                    continue
+                if item.status == "closed":
+                    skipped += 1
+                    continue
+
+                # Critical-with-open-peers guard mirrors transition_status().
+                if item.priority == "critical":
+                    open_critical = await self.repo.count_open_critical(
+                        project_id, exclude_id=item_id
+                    )
+                    if open_critical > 0:
+                        errors.append(
+                            {
+                                "id": str(item_id),
+                                "error": (
+                                    f"critical_blocked:{open_critical}_other_open"
+                                ),
+                            }
+                        )
+                        continue
+
+                update_fields: dict[str, Any] = {"status": "closed"}
+                if comment:
+                    update_fields["resolution_notes"] = comment
+
+                await self.repo.update_fields(item_id, **update_fields)
+                closed += 1
+
+                await _safe_publish(
+                    "punchlist.item.status_changed",
+                    {
+                        "item_id": str(item_id),
+                        "project_id": str(project_id),
+                        "from_status": item.status,
+                        "to_status": "closed",
+                        "user_id": user_id,
+                        "bulk": True,
+                    },
+                )
+            except HTTPException as exc:
+                errors.append({"id": str(item_id), "error": str(exc.detail)})
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Bulk-close failed for punch item %s", item_id)
+                errors.append({"id": str(item_id), "error": exc.__class__.__name__})
+
+        logger.info(
+            "Bulk-closed punch items for project %s: %d closed, %d skipped, %d errors",
+            project_id,
+            closed,
+            skipped,
+            len(errors),
+        )
+        return {"closed": closed, "skipped": skipped, "errors": errors}
 
     # ── Pin to sheet ──────────────────────────────────────────────────────
 
@@ -405,62 +565,45 @@ class PunchListService:
     # ── PDF Export ────────────────────────────────────────────────────────
 
     async def export_pdf(self, project_id: uuid.UUID) -> bytes:
-        """Generate a simple PDF report with all punch list items.
+        """Generate a rich PDF report with all punch list items.
 
-        Uses a minimal text-based PDF approach (no heavy dependencies).
-        Returns raw PDF bytes.
+        Uses ReportLab when available (cover page, per-item cards, embedded
+        photo thumbnails, sheet-pin captions). Falls back to the minimal
+        hand-rolled PDF writer when ReportLab is not installed so the
+        endpoint always returns a valid ``application/pdf``.
         """
         items = await self.repo.all_for_project(project_id)
 
-        # Minimal PDF generation without external dependencies
-        lines: list[str] = []
-        lines.append("PUNCH LIST REPORT")
-        lines.append(f"Project: {project_id}")
-        lines.append(f"Generated: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}")
-        lines.append(f"Total Items: {len(items)}")
-        lines.append("")
-        lines.append("-" * 80)
+        if _REPORTLAB_AVAILABLE:
+            pdf = _build_reportlab_pdf(project_id, items)
+        else:
+            pdf = _build_minimal_pdf(_render_punchlist_text(project_id, items))
 
-        for idx, item in enumerate(items, 1):
-            lines.append(f"\n{idx}. {item.title}")
-            lines.append(f"   Status: {item.status} | Priority: {item.priority}")
-            if item.category:
-                lines.append(f"   Category: {item.category}")
-            if item.trade:
-                lines.append(f"   Trade: {item.trade}")
-            if item.assigned_to:
-                lines.append(f"   Assigned to: {item.assigned_to}")
-            if item.due_date:
-                lines.append(f"   Due: {item.due_date}")
-            if item.description:
-                lines.append(f"   Description: {item.description[:200]}")
-            if item.resolution_notes:
-                lines.append(f"   Resolution: {item.resolution_notes[:200]}")
-            lines.append(f"   Created: {item.created_at}")
-
-        content = "\n".join(lines)
-
-        # Build a minimal valid PDF
-        pdf = _build_minimal_pdf(content)
-        logger.info("Punch list PDF exported for project %s (%d items)", project_id, len(items))
+        logger.info(
+            "Punch list PDF exported for project %s (%d items, reportlab=%s)",
+            project_id,
+            len(items),
+            _REPORTLAB_AVAILABLE,
+        )
         return pdf
 
 
     async def export_excel(self, project_id: uuid.UUID) -> bytes:
         """Generate an Excel report with all punch list items.
 
-        Returns raw xlsx bytes. Uses openpyxl if available, falls back to CSV
-        bytes wrapped in a minimal xlsx-compatible format.
+        Returns raw xlsx bytes when ``openpyxl`` is available, otherwise
+        falls back to UTF-8 CSV bytes. The ``openpyxl`` import is resolved
+        once at module load — :data:`_OPENPYXL_AVAILABLE` tells us which
+        branch to take without repeatedly catching ``ImportError``.
         """
         items = await self.repo.all_for_project(project_id)
 
-        try:
+        if _OPENPYXL_AVAILABLE:
             import io
 
-            import openpyxl
-            from openpyxl.styles import Font
-
-            wb = openpyxl.Workbook()
+            assert _openpyxl is not None  # for type-checkers
+            assert _OpenpyxlFont is not None
+            wb = _openpyxl.Workbook()
             ws = wb.active
             ws.title = "Punch List"
 
@@ -478,7 +621,7 @@ class PunchListService:
                 "Created",
             ]
 
-            bold = Font(bold=True)
+            bold = _OpenpyxlFont(bold=True)
             for col_idx, header in enumerate(headers, 1):
                 cell = ws.cell(row=1, column=col_idx, value=header)
                 cell.font = bold
@@ -505,37 +648,36 @@ class PunchListService:
             )
             return excel_bytes
 
-        except ImportError:
-            # Fallback: return CSV bytes if openpyxl is not installed
-            import csv
-            import io as _io
+        # Fallback: return CSV bytes if openpyxl is not installed
+        import csv
+        import io as _io
 
-            output = _io.StringIO()
-            writer = csv.writer(output)
+        output = _io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow([
+            "No.", "Title", "Status", "Priority", "Category", "Trade",
+            "Assigned To", "Due Date", "Description", "Resolution Notes", "Created",
+        ])
+        for idx, item in enumerate(items, 1):
             writer.writerow([
-                "No.", "Title", "Status", "Priority", "Category", "Trade",
-                "Assigned To", "Due Date", "Description", "Resolution Notes", "Created",
+                idx,
+                item.title,
+                item.status,
+                item.priority,
+                item.category or "",
+                item.trade or "",
+                item.assigned_to or "",
+                str(item.due_date) if item.due_date else "",
+                (item.description or "")[:500],
+                (item.resolution_notes or "")[:500],
+                str(item.created_at) if item.created_at else "",
             ])
-            for idx, item in enumerate(items, 1):
-                writer.writerow([
-                    idx,
-                    item.title,
-                    item.status,
-                    item.priority,
-                    item.category or "",
-                    item.trade or "",
-                    item.assigned_to or "",
-                    str(item.due_date) if item.due_date else "",
-                    (item.description or "")[:500],
-                    (item.resolution_notes or "")[:500],
-                    str(item.created_at) if item.created_at else "",
-                ])
-            logger.info(
-                "Punch list CSV exported (openpyxl not available) for project %s (%d items)",
-                project_id,
-                len(items),
-            )
-            return output.getvalue().encode("utf-8")
+        logger.info(
+            "Punch list CSV exported (openpyxl not available) for project %s (%d items)",
+            project_id,
+            len(items),
+        )
+        return output.getvalue().encode("utf-8")
 
 
 def _build_minimal_pdf(text: str) -> bytes:
@@ -597,3 +739,242 @@ def _build_minimal_pdf(text: str) -> bytes:
     parts.append(f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF")
 
     return "\n".join(parts).encode("latin-1")
+
+
+def _render_punchlist_text(project_id: uuid.UUID, items: list[PunchItem]) -> str:
+    """Render a flat text view of the punch list — used by the minimal-PDF fallback."""
+    lines: list[str] = []
+    lines.append("PUNCH LIST REPORT")
+    lines.append(f"Project: {project_id}")
+    lines.append(f"Generated: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}")
+    lines.append(f"Total Items: {len(items)}")
+    lines.append("")
+    lines.append("-" * 80)
+
+    for idx, item in enumerate(items, 1):
+        lines.append(f"\n{idx}. {item.title}")
+        lines.append(f"   Status: {item.status} | Priority: {item.priority}")
+        if item.category:
+            lines.append(f"   Category: {item.category}")
+        if item.trade:
+            lines.append(f"   Trade: {item.trade}")
+        if item.assigned_to:
+            lines.append(f"   Assigned to: {item.assigned_to}")
+        if item.due_date:
+            lines.append(f"   Due: {item.due_date}")
+        if item.description:
+            lines.append(f"   Description: {item.description[:200]}")
+        if item.resolution_notes:
+            lines.append(f"   Resolution: {item.resolution_notes[:200]}")
+        lines.append(f"   Created: {item.created_at}")
+
+    return "\n".join(lines)
+
+
+def _resolve_photo_path(rel_or_abs: str) -> Path | None:
+    """Resolve a stored photo path to a readable file or return None.
+
+    Photos are persisted as relative paths like ``punchlist/photos/<uuid>.jpg``
+    underneath the ``uploads/`` directory (see ``router.upload_photo``).
+    Defensive: any error => return None so the PDF builder simply skips the
+    thumbnail without breaking export.
+    """
+    if not rel_or_abs:
+        return None
+    try:
+        p = Path(rel_or_abs)
+        if not p.is_absolute():
+            p = _PHOTOS_BASE / p
+        return p if p.is_file() else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _build_reportlab_pdf(project_id: uuid.UUID, items: list[PunchItem]) -> bytes:
+    """Build a styled PDF using ReportLab.
+
+    Layout:
+        * Cover page — title, project id, generated date, open / closed totals.
+        * One block per item — code, title, location, assignee, status,
+          severity, due date.
+        * If the item has a photo on disk, the first photo is embedded as
+          an 80×80 px thumbnail.
+        * If the item has sheet-pin coordinates (``document_id`` / ``page``
+          / ``location_x``+ ``location_y``) a small caption is rendered.
+    """
+    # Lazy-import — only paid when ReportLab is actually used.
+    import io
+
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import (
+        Image as RLImage,
+        PageBreak,
+        Paragraph,
+        SimpleDocTemplate,
+        Spacer,
+        Table,
+        TableStyle,
+    )
+    from reportlab.lib import colors
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=18 * mm,
+        rightMargin=18 * mm,
+        topMargin=18 * mm,
+        bottomMargin=18 * mm,
+        title=f"Punch List {project_id}",
+    )
+
+    styles = getSampleStyleSheet()
+    h1 = styles["Heading1"]
+    h2 = styles["Heading2"]
+    body = styles["BodyText"]
+    small = ParagraphStyle(
+        "punch_small",
+        parent=body,
+        fontSize=8,
+        leading=10,
+        textColor=colors.grey,
+    )
+    caption = ParagraphStyle(
+        "punch_caption",
+        parent=body,
+        fontSize=8,
+        leading=10,
+        textColor=colors.HexColor("#1f3a8a"),
+    )
+
+    open_count = sum(1 for it in items if it.status not in ("closed", "verified"))
+    closed_count = len(items) - open_count
+
+    story: list = []
+    story.append(Paragraph("Punch List Report", h1))
+    story.append(Spacer(1, 4 * mm))
+    story.append(Paragraph(f"<b>Project:</b> {project_id}", body))
+    story.append(
+        Paragraph(
+            f"<b>Generated:</b> {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}",
+            body,
+        )
+    )
+    story.append(Paragraph(f"<b>Total Items:</b> {len(items)}", body))
+    story.append(Paragraph(f"<b>Open:</b> {open_count}", body))
+    story.append(Paragraph(f"<b>Closed:</b> {closed_count}", body))
+    story.append(PageBreak())
+
+    for idx, item in enumerate(items, 1):
+        code = (item.metadata_ or {}).get("code") if hasattr(item, "metadata_") else None
+        heading = f"#{idx} — {item.title}"
+        if code:
+            heading = f"#{idx} · {code} — {item.title}"
+        story.append(Paragraph(heading, h2))
+
+        meta_rows = [
+            ["Status", item.status or "-", "Priority", item.priority or "-"],
+            [
+                "Assignee",
+                item.assigned_to or "-",
+                "Due Date",
+                item.due_date.strftime("%Y-%m-%d") if item.due_date else "-",
+            ],
+            [
+                "Category",
+                item.category or "-",
+                "Trade",
+                item.trade or "-",
+            ],
+        ]
+        meta_table = Table(meta_rows, colWidths=[26 * mm, 55 * mm, 26 * mm, 55 * mm])
+        meta_table.setStyle(
+            TableStyle(
+                [
+                    ("FONT", (0, 0), (-1, -1), "Helvetica", 9),
+                    ("FONT", (0, 0), (0, -1), "Helvetica-Bold", 9),
+                    ("FONT", (2, 0), (2, -1), "Helvetica-Bold", 9),
+                    ("TEXTCOLOR", (0, 0), (0, -1), colors.HexColor("#444444")),
+                    ("TEXTCOLOR", (2, 0), (2, -1), colors.HexColor("#444444")),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                    ("TOPPADDING", (0, 0), (-1, -1), 1),
+                    (
+                        "ROWBACKGROUNDS",
+                        (0, 0),
+                        (-1, -1),
+                        [colors.white, colors.HexColor("#f6f7f9")],
+                    ),
+                ]
+            )
+        )
+        story.append(meta_table)
+        story.append(Spacer(1, 2 * mm))
+
+        if item.description:
+            story.append(Paragraph(item.description[:1000], body))
+
+        # Sheet-pin caption (PlanGrid-style).
+        sheet_ref = getattr(item, "document_id", None) or (item.metadata_ or {}).get("sheet_id")
+        pin_x = item.location_x
+        pin_y = item.location_y
+        if sheet_ref and pin_x is not None and pin_y is not None:
+            story.append(
+                Paragraph(
+                    f"&#128205; ({pin_x:.3f}, {pin_y:.3f}) on sheet {sheet_ref}"
+                    + (f" · page {item.page}" if item.page else ""),
+                    caption,
+                )
+            )
+
+        # First photo as 80×80 thumbnail when available on disk.
+        photos = list(item.photos or [])
+        # Also accept legacy single ``photo_path`` attribute for forward-compat.
+        legacy_photo = getattr(item, "photo_path", None)
+        if legacy_photo:
+            photos.insert(0, legacy_photo)
+        for raw in photos[:1]:
+            disk_path = _resolve_photo_path(raw)
+            if disk_path is None:
+                continue
+            try:
+                img = RLImage(str(disk_path), width=80, height=80)
+                story.append(Spacer(1, 1 * mm))
+                story.append(img)
+            except Exception:  # noqa: BLE001 - defensive
+                # If reportlab can't decode the image we silently skip it.
+                story.append(
+                    Paragraph(
+                        f"[photo {disk_path.name} could not be embedded]", small
+                    )
+                )
+
+        if item.resolution_notes:
+            story.append(Spacer(1, 1 * mm))
+            story.append(
+                Paragraph(f"<b>Resolution:</b> {item.resolution_notes[:500]}", small)
+            )
+
+        # Reopen-history chronology (defensive: schema may not yet be migrated).
+        history = list(getattr(item, "reopen_history", None) or [])
+        if history:
+            story.append(Spacer(1, 1 * mm))
+            for entry in history[-3:]:  # last 3 reopens at most
+                ts = entry.get("reopened_at", "?")
+                prev = entry.get("previous_status", "?")
+                by = entry.get("reopened_by", "?")
+                story.append(
+                    Paragraph(
+                        f"&#8634; reopened from <b>{prev}</b> by {by} at {ts}",
+                        small,
+                    )
+                )
+
+        story.append(Spacer(1, 6 * mm))
+
+    if not items:
+        story.append(Paragraph("No punch list items recorded for this project.", body))
+
+    doc.build(story)
+    return buffer.getvalue()

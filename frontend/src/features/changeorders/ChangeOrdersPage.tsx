@@ -28,6 +28,13 @@ import { getIntlLocale } from '@/shared/lib/formatters';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { ApprovalTimeline } from './ApprovalTimeline';
+import {
+  advanceApproval,
+  getApprovals,
+  startApprovalChain,
+  type ApprovalRow,
+} from './api';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -73,6 +80,31 @@ interface ChangeOrder {
   item_count: number;
   created_at: string;
   updated_at: string;
+  // T3: Procore-style approval chain + commitment / RFI links.
+  linked_po_ids?: string[];
+  linked_rfi_ids?: string[];
+  current_approval_step?: number | null;
+}
+
+/**
+ * ‌⁠‍Decode the ``sub`` (subject / user id) claim from a JWT access token.
+ *
+ * Backend ``CurrentUserId`` reads the same claim, so matching against it
+ * client-side is the cleanest way to tell whether the logged-in user is
+ * the active approver. Returns ``null`` on any decoding error.
+ */
+function decodeUserIdFromToken(token: string | null): string | null {
+  if (!token) return null;
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payload = parts[1]!.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = payload + '='.repeat((4 - (payload.length % 4)) % 4);
+    const json = JSON.parse(atob(padded)) as { sub?: string };
+    return typeof json.sub === 'string' ? json.sub : null;
+  } catch {
+    return null;
+  }
 }
 
 interface ChangeOrderWithItems extends ChangeOrder {
@@ -483,6 +515,97 @@ function AddItemDialog({
   );
 }
 
+/* ── Approval Chain Builder ────────────────────────────────────────────── */
+
+/**
+ * ‌⁠‍Minimal approver-id picker — accepts one UUID per line so an admin can
+ * paste a list of user ids without needing the full users-directory
+ * search-and-select widget. The full picker can replace this textarea
+ * later without changing the API surface.
+ */
+function ApprovalChainBuilderDialog({
+  onClose,
+  onConfirm,
+  busy,
+}: {
+  onClose: () => void;
+  onConfirm: (approverUserIds: string[]) => void;
+  busy: boolean;
+}) {
+  const { t } = useTranslation();
+  const [raw, setRaw] = useState('');
+  const ids = useMemo(
+    () =>
+      raw
+        .split(/[\s,;]+/)
+        .map((x) => x.trim())
+        .filter((x) => x.length > 0),
+    [raw],
+  );
+  // Permissive UUID check — back-end Pydantic will reject malformed
+  // ones anyway; we just want to catch typos early.
+  const looksValid =
+    ids.length > 0 &&
+    ids.length <= 20 &&
+    ids.every((id) => /^[0-9a-f-]{32,36}$/i.test(id));
+
+  return (
+    <WideModal
+      open
+      onClose={onClose}
+      title={t('changeorders.approval_chain_builder_title', {
+        defaultValue: 'Start approval chain',
+      })}
+      size="md"
+      busy={busy}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
+            {t('common.cancel', { defaultValue: 'Cancel' })}
+          </Button>
+          <Button
+            variant="primary"
+            disabled={!looksValid || busy}
+            onClick={() => onConfirm(ids)}
+          >
+            {busy
+              ? t('common.saving', { defaultValue: 'Saving…' })
+              : t('changeorders.approval_chain_start_action', {
+                  defaultValue: 'Start chain',
+                })}
+          </Button>
+        </>
+      }
+    >
+      <WideModalSection columns={1}>
+        <WideModalField
+          label={t('changeorders.approver_user_ids_label', {
+            defaultValue: 'Approver user ids (one per line, in step order)',
+          })}
+          htmlFor="approver-user-ids"
+          span={1}
+        >
+          <textarea
+            id="approver-user-ids"
+            value={raw}
+            onChange={(e) => setRaw(e.target.value)}
+            rows={5}
+            disabled={busy}
+            placeholder={'b1f7e8e2-…\n5c0a9d1f-…\n8e4f1a32-…'}
+            className="w-full rounded-lg border border-border bg-surface-primary p-2 font-mono text-xs focus:border-oe-blue focus:outline-none focus:ring-2 focus:ring-oe-blue/30"
+          />
+        </WideModalField>
+        <p className="text-xs text-content-tertiary">
+          {t('changeorders.approver_user_ids_hint', {
+            defaultValue:
+              'Steps run sequentially: step 1 acts first, then step 2, etc. Each approver only sees the change order when their step becomes active.',
+          })}
+        </p>
+      </WideModalSection>
+    </WideModal>
+  );
+}
+
 /* ── Workflow Stepper ─────────────────────────────────────────────────── */
 
 function WorkflowStepper({ status, t }: { status: string; t: (key: string, opts?: Record<string, unknown>) => string }) {
@@ -550,13 +673,19 @@ function DetailView({
   const queryClient = useQueryClient();
   const addToast = useToastStore((s) => s.addToast);
   const userRole = useAuthStore((s) => s.userRole);
+  const accessToken = useAuthStore((s) => s.accessToken);
   const { confirm, ...confirmProps } = useConfirm();
   const [showAddItem, setShowAddItem] = useState(false);
+  const [showChainBuilder, setShowChainBuilder] = useState(false);
 
   // Only admins and managers can approve/reject change orders. Backend
   // permission `changeorders.approve` enforces this server-side; we hide
   // the buttons in the UI to give a better experience than 403 errors.
   const canApprove = userRole === 'admin' || userRole === 'manager';
+  const currentUserId = useMemo(
+    () => decodeUserIdFromToken(accessToken),
+    [accessToken],
+  );
 
   const { data: order, isLoading, isError } = useQuery({
     queryKey: ['changeorder', orderId],
@@ -601,6 +730,73 @@ function DetailView({
       addToast({ type: 'success', title: t('changeorders.item_deleted', { defaultValue: 'Item deleted' }) });
     },
     onError: (err: Error) => addToast({ type: 'error', title: t('common.error', { defaultValue: 'Error' }), message: err.message }),
+  });
+
+  // ── T3: Procore-style approval chain ───────────────────────────────────
+  // Fetched alongside the order detail so the timeline is always in sync
+  // with the cursor. Cheap query — typically 1-5 rows.
+  const { data: approvals = [] } = useQuery<ApprovalRow[]>({
+    queryKey: ['changeorder-approvals', orderId],
+    queryFn: () => getApprovals(orderId),
+  });
+
+  const startChainMut = useMutation({
+    mutationFn: (approverUserIds: string[]) =>
+      startApprovalChain(orderId, approverUserIds),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['changeorder', orderId] });
+      queryClient.invalidateQueries({
+        queryKey: ['changeorder-approvals', orderId],
+      });
+      setShowChainBuilder(false);
+      addToast({
+        type: 'success',
+        title: t('changeorders.approval_chain_started', {
+          defaultValue: 'Approval chain started',
+        }),
+      });
+    },
+    onError: (err: Error) =>
+      addToast({
+        type: 'error',
+        title: t('common.error', { defaultValue: 'Error' }),
+        message: err.message,
+      }),
+  });
+
+  const advanceMut = useMutation({
+    mutationFn: (input: {
+      decision: 'approved' | 'rejected';
+      comments: string;
+    }) =>
+      advanceApproval(orderId, {
+        decision: input.decision,
+        comments: input.comments || undefined,
+      }),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['changeorder', orderId] });
+      queryClient.invalidateQueries({
+        queryKey: ['changeorder-approvals', orderId],
+      });
+      queryClient.invalidateQueries({ queryKey: ['changeorders'] });
+      addToast({
+        type: 'success',
+        title:
+          variables.decision === 'approved'
+            ? t('changeorders.approval_step_approved', {
+                defaultValue: 'Step approved',
+              })
+            : t('changeorders.approval_step_rejected', {
+                defaultValue: 'Change order rejected',
+              }),
+      });
+    },
+    onError: (err: Error) =>
+      addToast({
+        type: 'error',
+        title: t('common.error', { defaultValue: 'Error' }),
+        message: err.message,
+      }),
   });
 
   if (isLoading || (!order && !isError)) {
@@ -799,6 +995,54 @@ function DetailView({
             </Card>
           )}
         </div>
+      )}
+
+      {/* T3: Procore-style approval chain. Shown when the CO has either
+          a chain already or is in 'submitted' state (so an admin/manager
+          can start one). Hidden on plain draft/approved/rejected COs with
+          no chain to avoid cluttering simple workflows. */}
+      {(approvals.length > 0 ||
+        (order.status === 'submitted' && canApprove)) && (
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-base font-semibold text-content-primary">
+              {t('changeorders.approvals_section', {
+                defaultValue: 'Approvals',
+              })}
+            </h3>
+            {approvals.length === 0 &&
+              order.status === 'submitted' &&
+              canApprove && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setShowChainBuilder(true)}
+                  disabled={startChainMut.isPending}
+                >
+                  {t('changeorders.start_approval_chain', {
+                    defaultValue: 'Start approval chain',
+                  })}
+                </Button>
+              )}
+          </div>
+          <ApprovalTimeline
+            rows={approvals}
+            currentApprovalStep={order.current_approval_step ?? null}
+            currentUserId={currentUserId}
+            busy={advanceMut.isPending}
+            onDecide={(decision, comments) =>
+              advanceMut.mutate({ decision, comments })
+            }
+          />
+        </div>
+      )}
+
+      {showChainBuilder && (
+        <ApprovalChainBuilderDialog
+          onClose={() => setShowChainBuilder(false)}
+          onConfirm={(ids) => startChainMut.mutate(ids)}
+          busy={startChainMut.isPending}
+        />
       )}
 
       {/* Items */}

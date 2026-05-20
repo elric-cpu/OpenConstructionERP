@@ -77,10 +77,54 @@ class SubcontractorResponse(BaseModel):
     website: str | None = None
     notes: str | None = None
     is_active: bool = True
+    # ── Wave 4 / T12: BuildingConnected-style prequal + insurance tracking ──
+    prequal_score: int | None = None
+    insurance_expiry_date: date | None = None
+    insurance_doc_id: UUID | None = None
+    prequal_questionnaire: dict[str, Any] | None = None
+    prequal_completed_at: datetime | None = None
+    blocked_reason: str | None = None
+    is_blocked: bool = False
     created_by: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
     created_at: datetime
     updated_at: datetime
+
+
+class PrequalRequest(BaseModel):
+    """Submit a prequalification questionnaire for a subcontractor.
+
+    ``questionnaire`` carries the raw Yes/No / multi-choice answers as a
+    plain ``dict[str, Any]`` — the questionnaire shape is intentionally
+    loose so individual GCs can author their own forms without a schema
+    migration. If ``score`` is None the service computes it from the
+    answers (sum of truthy values / total non-null answers, x 100).
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    questionnaire: dict[str, Any] = Field(default_factory=dict)
+    score: int | None = Field(default=None, ge=0, le=100)
+
+
+class BlockRequest(BaseModel):
+    """Hard-block a subcontractor from bidding / payment with a reason."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+
+class InsuranceExpiryEntry(BaseModel):
+    """One subcontractor flagged by ``check_insurance_expiry``."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    legal_name: str
+    insurance_expiry_date: date | None = None
+    days_until_expiry: int  # negative if already past
+    is_blocked: bool = False
 
 
 # ── SubcontractorContact ─────────────────────────────────────────────────

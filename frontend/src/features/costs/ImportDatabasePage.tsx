@@ -1650,7 +1650,7 @@ export function ImportDatabasePage() {
                 CWICR Construction Cost Database
               </h3>
               <p className="text-xs text-content-tertiary">
-                55,719 items per region &middot; 85 fields &middot; 11 databases &middot; by
+                55,719 items per region &middot; 85 fields &middot; 48 databases &middot; by
                 Data Driven Construction
               </p>
             </div>

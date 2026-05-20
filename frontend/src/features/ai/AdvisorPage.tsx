@@ -470,7 +470,7 @@ export function AdvisorPage() {
               <div className="flex flex-wrap justify-center gap-2 mb-4 max-w-md">
                 {[
                   { icon: Database, label: t('ai.advisor_cap_db', { defaultValue: '55K+ cost items (CWICR)' }) },
-                  { icon: Globe, label: t('ai.advisor_cap_regions', { defaultValue: '11 regional databases' }) },
+                  { icon: Globe, label: t('ai.advisor_cap_regions', { defaultValue: '48 regional databases' }) },
                   { icon: Sparkles, label: t('ai.advisor_cap_ai', { defaultValue: 'AI-powered answers' }) },
                 ].map((cap, i) => (
                   <span key={i} className="inline-flex items-center gap-1.5 rounded-full bg-surface-secondary px-3 py-1 text-2xs text-content-tertiary">

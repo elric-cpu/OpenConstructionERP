@@ -39,10 +39,26 @@ export interface Subcontractor {
   website?: string | null;
   notes?: string | null;
   is_active: boolean;
+  // ── Wave 4 / T12: BuildingConnected-style prequal + insurance tracking ──
+  prequal_score?: number | null;
+  insurance_expiry_date?: string | null; // ISO date (yyyy-mm-dd)
+  insurance_doc_id?: string | null;
+  prequal_questionnaire?: Record<string, unknown> | null;
+  prequal_completed_at?: string | null;
+  blocked_reason?: string | null;
+  is_blocked?: boolean;
   created_by?: string | null;
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+}
+
+export interface InsuranceExpiryEntry {
+  id: string;
+  legal_name: string;
+  insurance_expiry_date?: string | null;
+  days_until_expiry: number;
+  is_blocked: boolean;
 }
 
 export interface SubcontractorContact {
@@ -292,4 +308,48 @@ export function listCertificates(subcontractorId: string): Promise<Certificate[]
 export function listRatings(subcontractorId: string): Promise<Rating[]> {
   const qs = new URLSearchParams({ subcontractor_id: subcontractorId });
   return apiGet<Rating[]>(`/v1/subcontractors/ratings/?${qs.toString()}`);
+}
+
+/* ── Wave 4 / T12: Prequal + block + insurance ─────────────────────────── */
+
+export interface PrequalRequestPayload {
+  questionnaire: Record<string, unknown>;
+  score?: number | null;
+}
+
+export function submitPrequal(
+  subId: string,
+  payload: PrequalRequestPayload,
+): Promise<Subcontractor> {
+  return apiPost<Subcontractor>(
+    `/v1/subcontractors/subcontractors/${subId}/prequal`,
+    payload,
+  );
+}
+
+export function checkInsuranceExpiry(
+  daysAhead: number = 30,
+): Promise<InsuranceExpiryEntry[]> {
+  const qs = new URLSearchParams({ days_ahead: String(daysAhead) });
+  return apiPost<InsuranceExpiryEntry[]>(
+    `/v1/subcontractors/subcontractors/check-insurance-expiry?${qs.toString()}`,
+    {},
+  );
+}
+
+export function blockSubcontractor(
+  subId: string,
+  reason: string,
+): Promise<Subcontractor> {
+  return apiPost<Subcontractor>(
+    `/v1/subcontractors/subcontractors/${subId}/block`,
+    { reason },
+  );
+}
+
+export function unblockSubcontractor(subId: string): Promise<Subcontractor> {
+  return apiPost<Subcontractor>(
+    `/v1/subcontractors/subcontractors/${subId}/unblock`,
+    {},
+  );
 }

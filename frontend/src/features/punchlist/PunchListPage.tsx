@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -43,6 +43,7 @@ import {
   createPunchItem,
   deletePunchItem,
   transitionPunchStatus,
+  bulkClose,
 } from './api';
 import type {
   PunchItem,
@@ -647,6 +648,7 @@ export function PunchListPage() {
   const [filterCategory, setFilterCategory] = useState<PunchCategory | ''>('');
   const [filterAssignee, setFilterAssignee] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Data queries
   const { data: projects = [] } = useQuery({
@@ -692,6 +694,11 @@ export function PunchListPage() {
         (item.assigned_to && item.assigned_to.toLowerCase().includes(q)),
     );
   }, [punchItems, searchQuery]);
+
+  // Clear stale selection whenever the project switches
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [projectId]);
 
   // Invalidation
   const invalidateAll = useCallback(() => {
@@ -755,6 +762,64 @@ export function PunchListPage() {
         message: e.message,
       }),
   });
+
+  const bulkCloseMut = useMutation({
+    mutationFn: (ids: string[]) => bulkClose(ids, projectId),
+    onSuccess: (data) => {
+      invalidateAll();
+      setSelectedIds(new Set());
+      addToast({
+        type: data.errors.length > 0 ? 'warning' : 'success',
+        title: t('punch.bulk_close_done', {
+          defaultValue: 'Closed {{closed}} item(s)',
+          closed: data.closed,
+        }),
+        message:
+          data.skipped || data.errors.length
+            ? t('punch.bulk_close_detail', {
+                defaultValue: '{{skipped}} skipped, {{errors}} error(s)',
+                skipped: data.skipped,
+                errors: data.errors.length,
+              })
+            : undefined,
+      });
+    },
+    onError: (e: Error) =>
+      addToast({
+        type: 'error',
+        title: t('common.error', { defaultValue: 'Error' }),
+        message: e.message,
+      }),
+  });
+
+  // Selection helpers
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+
+  const handleBulkClose = useCallback(async () => {
+    if (selectedIds.size === 0) return;
+    const ok = await confirm({
+      title: t('punch.confirm_bulk_close_title', {
+        defaultValue: 'Close selected items?',
+      }),
+      message: t('punch.confirm_bulk_close_message', {
+        defaultValue:
+          'Mark {{count}} punch item(s) as closed? Items already closed will be skipped.',
+        count: selectedIds.size,
+      }),
+      confirmLabel: t('punch.action_close', { defaultValue: 'Close' }),
+      variant: 'warning',
+    });
+    if (ok) bulkCloseMut.mutate(Array.from(selectedIds));
+  }, [selectedIds, bulkCloseMut, confirm, t]);
 
   // Handlers
   const handleCreateSubmit = useCallback(
@@ -1074,10 +1139,63 @@ export function PunchListPage() {
           />
         ) : (
           <Card className="overflow-hidden">
+            {/* Bulk-action bar — visible only when items are selected. */}
+            {selectedIds.size > 0 && (
+              <div className="flex items-center justify-between gap-3 px-4 py-2 border-b border-border-light bg-oe-blue/5">
+                <span className="text-sm text-content-secondary">
+                  {t('punch.selection_count', {
+                    defaultValue: '{{count}} selected',
+                    count: selectedIds.size,
+                  })}
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearSelection}
+                    disabled={bulkCloseMut.isPending}
+                  >
+                    {t('common.cancel', { defaultValue: 'Cancel' })}
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={handleBulkClose}
+                    disabled={bulkCloseMut.isPending}
+                    icon={<CheckCircle2 size={14} />}
+                  >
+                    {bulkCloseMut.isPending
+                      ? t('punch.bulk_closing', { defaultValue: 'Closing...' })
+                      : t('punch.bulk_close', {
+                          defaultValue: 'Close selected ({{count}})',
+                          count: selectedIds.size,
+                        })}
+                  </Button>
+                </div>
+              </div>
+            )}
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border-light bg-surface-secondary/50">
+                    <th className="px-3 py-3 text-left w-8">
+                      <input
+                        type="checkbox"
+                        aria-label={t('punch.select_all', { defaultValue: 'Select all' })}
+                        checked={
+                          filteredItems.length > 0 &&
+                          filteredItems.every((it) => selectedIds.has(it.id))
+                        }
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedIds(new Set(filteredItems.map((it) => it.id)));
+                          } else {
+                            setSelectedIds(new Set());
+                          }
+                        }}
+                        className="h-4 w-4 rounded border-border accent-oe-blue cursor-pointer"
+                      />
+                    </th>
                     <th className="px-4 py-3 text-left text-2xs font-semibold uppercase tracking-wider text-content-tertiary">
                       {t('punch.col_title', { defaultValue: 'Title' })}
                     </th>
@@ -1111,6 +1229,8 @@ export function PunchListPage() {
                       item={item}
                       onTransition={handleTransition}
                       onDelete={handleDelete}
+                      selected={selectedIds.has(item.id)}
+                      onToggleSelect={toggleSelect}
                     />
                   ))}
                 </tbody>
@@ -1141,10 +1261,14 @@ const PunchTableRow = React.memo(function PunchTableRow({
   item,
   onTransition,
   onDelete,
+  selected,
+  onToggleSelect,
 }: {
   item: PunchItem;
   onTransition: (id: string, status: PunchStatus) => void;
   onDelete: (id: string) => void;
+  selected: boolean;
+  onToggleSelect: (id: string) => void;
 }) {
   const { t } = useTranslation();
   const transitions = STATUS_TRANSITION[item.status] ?? [];
@@ -1171,10 +1295,21 @@ const PunchTableRow = React.memo(function PunchTableRow({
   return (
     <tr className={clsx(
       'transition-colors',
-      isOverdue
+      selected
+        ? 'bg-oe-blue/5 hover:bg-oe-blue/10'
+        : isOverdue
         ? 'bg-red-50/40 hover:bg-red-50/70 dark:bg-red-950/10 dark:hover:bg-red-950/20'
         : 'hover:bg-surface-secondary/50',
     )}>
+      <td className="px-3 py-3 w-8">
+        <input
+          type="checkbox"
+          aria-label={t('punch.select_row', { defaultValue: 'Select row' })}
+          checked={selected}
+          onChange={() => onToggleSelect(item.id)}
+          className="h-4 w-4 rounded border-border accent-oe-blue cursor-pointer"
+        />
+      </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
           {isOverdue && (

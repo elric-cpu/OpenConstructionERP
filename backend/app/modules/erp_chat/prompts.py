@@ -13,8 +13,8 @@ You have access to live tools that query real project data:
 - **Schedule**: fetch Gantt data, activities, critical path info.
 - **Risk Register**: list risks, scores, mitigation strategies, exposure totals.
 - **Validation**: retrieve validation reports, compliance scores, rule results.
-- **Cost Database (CWICR)**: search 55,000+ construction cost items by keyword \
-  and region.
+- **Cost Database (CWICR)**: search 55,000+ construction cost items across 48 \
+  regions by keyword and region.
 - **Cost Model**: get cost summaries, markups, and grand totals for a project.
 - **Comparisons**: compare key metrics across multiple projects.
 

@@ -701,6 +701,292 @@ class ProcurementService:
             pending_delivery_count=raw["pending_delivery_count"],
         )
 
+    # ── 3-way match status (Wave 2 / T4) ────────────────────────────────
+
+    async def get_match_status(self, po_id: uuid.UUID) -> dict:
+        """Return per-line 3-way match status for a PO.
+
+        Aggregates confirmed goods-receipt quantities and any payable
+        invoice line totals tagged with ``metadata_.po_id == po_id`` (the
+        link the existing ``create-invoice`` endpoint stamps onto each
+        invoice).
+
+        Avoids N+1 by issuing exactly:
+
+        * one PO+items eager-load (via ``po_repo.get``),
+        * one GR-items aggregate (SUM grouped by ``po_item_id``),
+        * one invoice line-items pull (filtered by metadata-derived ids).
+
+        ``po_item_id`` is the join key for GRs. Invoices do NOT carry a
+        direct ``po_item_id`` FK, so we match by ``sort_order`` to the PO
+        line: ``create-invoice`` copies items in order and stamps the same
+        ``sort_order`` for each line, which is unique within an invoice.
+        """
+        from sqlalchemy import func as _func
+        from sqlalchemy import select as _select
+
+        po = await self.get_po(po_id)  # 404 if missing
+
+        # ── Received quantities (confirmed GRs only) — one query ─────────
+        gr_stmt = (
+            _select(
+                GoodsReceiptItem.po_item_id,
+                _func.coalesce(_func.sum(GoodsReceiptItem.quantity_received), "0"),
+            )
+            .join(GoodsReceipt, GoodsReceipt.id == GoodsReceiptItem.receipt_id)
+            .where(GoodsReceipt.po_id == po_id)
+            .where(GoodsReceipt.status == "confirmed")
+            .where(GoodsReceiptItem.po_item_id.is_not(None))
+            .group_by(GoodsReceiptItem.po_item_id)
+        )
+        gr_rows = (await self.session.execute(gr_stmt)).all()
+        # SUM of String columns returns the raw string of the first row on
+        # SQLite — convert to Decimal defensively.
+        received_by_item: dict[uuid.UUID, Decimal] = {
+            row[0]: _to_decimal(row[1]) for row in gr_rows
+        }
+
+        # ── Invoiced quantities — best-effort, optional finance module ──
+        invoiced_by_sort: dict[int, Decimal] = {}
+        try:
+            from app.modules.finance.models import Invoice, InvoiceLineItem
+
+            # Find invoices whose JSON metadata.po_id == this PO id. Plain
+            # equality on the JSON-rendered string is SQLite-portable.
+            inv_stmt = _select(Invoice.id).where(
+                Invoice.project_id == po.project_id,
+                Invoice.invoice_direction == "payable",
+            )
+            inv_ids = [row[0] for row in (await self.session.execute(inv_stmt)).all()]
+            if inv_ids:
+                line_stmt = _select(
+                    InvoiceLineItem.invoice_id,
+                    InvoiceLineItem.sort_order,
+                    InvoiceLineItem.quantity,
+                ).where(InvoiceLineItem.invoice_id.in_(inv_ids))
+                line_rows = (await self.session.execute(line_stmt)).all()
+
+                # Filter invoices that explicitly link to this PO via metadata.
+                # We re-fetch the metadata_ column in bulk to avoid loading
+                # full Invoice objects.
+                meta_stmt = _select(Invoice.id, Invoice.metadata_).where(
+                    Invoice.id.in_(inv_ids),
+                )
+                meta_rows = (await self.session.execute(meta_stmt)).all()
+                linked_invoice_ids: set[uuid.UUID] = set()
+                for inv_id, meta in meta_rows:
+                    if isinstance(meta, dict) and str(meta.get("po_id")) == str(po_id):
+                        linked_invoice_ids.add(inv_id)
+
+                for inv_id, sort_order, qty in line_rows:
+                    if inv_id not in linked_invoice_ids:
+                        continue
+                    invoiced_by_sort[sort_order] = (
+                        invoiced_by_sort.get(sort_order, Decimal("0"))
+                        + _to_decimal(qty)
+                    )
+        except Exception:  # noqa: BLE001 — finance is optional
+            logger.debug("Finance lookup skipped for PO %s match-status", po_id)
+
+        # ── Compose per-line statuses ───────────────────────────────────
+        lines: list[dict] = []
+        overall_kinds: set[str] = set()
+        for po_item in sorted(po.items or [], key=lambda it: it.sort_order):
+            ordered = _to_decimal(po_item.quantity)
+            received = received_by_item.get(po_item.id, Decimal("0"))
+            invoiced = invoiced_by_sort.get(po_item.sort_order, Decimal("0"))
+
+            status_tag = self._classify_line_match(ordered, received, invoiced)
+            overall_kinds.add(status_tag)
+            lines.append({
+                "line_id": po_item.id,
+                "description": po_item.description,
+                "ordered_qty": str(ordered),
+                "received_qty": str(received),
+                "invoiced_qty": str(invoiced),
+                "match_status": status_tag,
+            })
+
+        # Overall: worst case wins (over_invoiced > over_received >
+        # unmatched > partial > ok).
+        precedence = ("over_invoiced", "over_received", "unmatched", "partial", "ok")
+        overall = next((p for p in precedence if p in overall_kinds), "ok")
+        if not lines:
+            overall = "unmatched"
+
+        return {
+            "po_id": po_id,
+            "po_number": po.po_number,
+            "overall_status": overall,
+            "lines": lines,
+        }
+
+    @staticmethod
+    def _classify_line_match(
+        ordered: Decimal, received: Decimal, invoiced: Decimal,
+    ) -> str:
+        """Collapse three quantities into a single PO-line match tag."""
+        zero = Decimal("0")
+        if invoiced > received and invoiced > zero:
+            return "over_invoiced"
+        if received > ordered and ordered > zero:
+            return "over_received"
+        if received <= zero and invoiced <= zero:
+            return "unmatched"
+        if received >= ordered and invoiced >= ordered and ordered > zero:
+            return "ok"
+        return "partial"
+
+    # ── Supplier scorecard (Wave 2 / T4) ─────────────────────────────────
+
+    async def get_supplier_scorecard(
+        self,
+        supplier_contact_id: str,
+        project_id: uuid.UUID | None = None,
+        period_days: int = 365,
+    ) -> dict:
+        """Return supplier KPIs for the trailing window.
+
+        Returns a dict shaped like :class:`SupplierScorecardResponse`. All
+        rates are 0.0–1.0; a supplier with zero POs gets all-zero fields
+        instead of raising (no division-by-zero crash).
+
+        ``project_id`` scopes the query to a single project (used by the
+        UI when the user opens a scorecard from a project's PO list).
+        """
+        from datetime import UTC, datetime, timedelta
+
+        from sqlalchemy import and_ as _and
+        from sqlalchemy import func as _func
+        from sqlalchemy import select as _select
+
+        cutoff = (datetime.now(UTC) - timedelta(days=period_days)).isoformat()
+
+        # ── PO aggregates ────────────────────────────────────────────────
+        po_filters = [PurchaseOrder.vendor_contact_id == supplier_contact_id]
+        if project_id is not None:
+            po_filters.append(PurchaseOrder.project_id == project_id)
+        # Trailing window: filter by created_at (PO ``issue_date`` is a
+        # free-form string and may be NULL).
+        po_filters.append(PurchaseOrder.created_at >= datetime.fromisoformat(cutoff))
+
+        po_count_stmt = (
+            _select(_func.count())
+            .select_from(PurchaseOrder)
+            .where(_and(*po_filters))
+        )
+        total_po_count = (await self.session.execute(po_count_stmt)).scalar_one() or 0
+
+        # SUM amount_total as Python Decimal (string column).
+        po_value_stmt = _select(PurchaseOrder.amount_total, PurchaseOrder.currency_code).where(
+            _and(*po_filters)
+        )
+        po_value_rows = (await self.session.execute(po_value_stmt)).all()
+        total_po_value = Decimal("0")
+        currency = ""
+        for amt, cur in po_value_rows:
+            total_po_value += _to_decimal(amt)
+            if not currency and cur:
+                currency = cur
+
+        # PO ids in scope — drives the GR + line-variance queries.
+        po_ids_stmt = _select(PurchaseOrder.id).where(_and(*po_filters))
+        po_ids = [row[0] for row in (await self.session.execute(po_ids_stmt)).all()]
+
+        # ── GR aggregates (on-time + rejection) ─────────────────────────
+        total_gr_count = 0
+        on_time_count = 0
+        rejected_count = 0
+        if po_ids:
+            gr_stmt = (
+                _select(
+                    GoodsReceipt.id,
+                    GoodsReceipt.po_id,
+                    GoodsReceipt.receipt_date,
+                    GoodsReceipt.status,
+                )
+                .where(GoodsReceipt.po_id.in_(po_ids))
+            )
+            gr_rows = (await self.session.execute(gr_stmt)).all()
+
+            # Build PO delivery-date lookup once (string ISO dates compare
+            # lexicographically when both are YYYY-MM-DD).
+            po_deliveries_stmt = _select(
+                PurchaseOrder.id, PurchaseOrder.delivery_date
+            ).where(PurchaseOrder.id.in_(po_ids))
+            po_delivery_map = {
+                row[0]: row[1]
+                for row in (await self.session.execute(po_deliveries_stmt)).all()
+            }
+
+            for _gr_id, gr_po_id, receipt_date, gr_status in gr_rows:
+                total_gr_count += 1
+                if gr_status == "rejected":
+                    rejected_count += 1
+                expected = po_delivery_map.get(gr_po_id)
+                if expected and receipt_date and receipt_date <= expected:
+                    on_time_count += 1
+                elif not expected:
+                    # No expected date → cannot be late.
+                    on_time_count += 1
+
+        # ── Quantity-variance across PO line items ───────────────────────
+        qty_variance_pct = 0.0
+        if po_ids:
+            line_stmt = _select(
+                PurchaseOrderItem.id,
+                PurchaseOrderItem.quantity,
+            ).where(PurchaseOrderItem.po_id.in_(po_ids))
+            line_rows = (await self.session.execute(line_stmt)).all()
+
+            # SUM(received) per po_item_id across confirmed GRs.
+            recv_stmt = (
+                _select(
+                    GoodsReceiptItem.po_item_id,
+                    _func.coalesce(_func.sum(GoodsReceiptItem.quantity_received), "0"),
+                )
+                .join(GoodsReceipt, GoodsReceipt.id == GoodsReceiptItem.receipt_id)
+                .where(GoodsReceipt.po_id.in_(po_ids))
+                .where(GoodsReceipt.status == "confirmed")
+                .where(GoodsReceiptItem.po_item_id.is_not(None))
+                .group_by(GoodsReceiptItem.po_item_id)
+            )
+            recv_map = {
+                row[0]: _to_decimal(row[1])
+                for row in (await self.session.execute(recv_stmt)).all()
+            }
+
+            line_variances: list[Decimal] = []
+            for line_id, ordered_raw in line_rows:
+                ordered = _to_decimal(ordered_raw)
+                if ordered <= Decimal("0"):
+                    continue
+                received = recv_map.get(line_id, Decimal("0"))
+                line_variances.append(
+                    abs((received - ordered) / ordered)
+                )
+            if line_variances:
+                qty_variance_pct = float(
+                    sum(line_variances) / Decimal(len(line_variances))
+                )
+
+        on_time_pct = (on_time_count / total_gr_count) if total_gr_count else 0.0
+        rejection_rate = (rejected_count / total_gr_count) if total_gr_count else 0.0
+
+        return {
+            "supplier_contact_id": supplier_contact_id,
+            "supplier_name": None,
+            "project_id": project_id,
+            "period_days": period_days,
+            "total_po_count": total_po_count,
+            "total_po_value": str(total_po_value),
+            "currency": currency,
+            "on_time_delivery_pct": on_time_pct,
+            "qty_variance_pct": qty_variance_pct,
+            "gr_rejection_rate": rejection_rate,
+            "total_gr_count": total_gr_count,
+        }
+
     @staticmethod
     def _check_po_fully_received(po: PurchaseOrder) -> bool:
         """Check if all PO items have been fully received across confirmed GRs."""

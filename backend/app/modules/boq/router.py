@@ -2396,6 +2396,120 @@ def _build_rule_sets(
     return rule_sets
 
 
+async def _run_import_validation(
+    boq_id: uuid.UUID,
+    service: BOQService,
+    session: Any,
+) -> dict[str, Any] | None:
+    """‌⁠‍Run the configured validation rule packs against a freshly-imported BOQ.
+
+    Wired into every import path (Excel / CSV / GAEB X83/X84) so DIN276 +
+    NRM + GAEB + MasterFormat + DPGF + boq_quality rules fire AT import
+    time instead of only via the later ``POST /boqs/{id}/validate/`` call.
+    The OpenEstimate philosophy treats validation as a first-class citizen
+    of the core workflow — it must not be opt-in.
+
+    Returns ``None`` when the ``IMPORT_INLINE_VALIDATION`` feature flag is
+    off (so the caller can skip the field entirely in the response). On
+    error the helper logs and returns ``None`` rather than failing the
+    import — the user's positions are already persisted, validation is a
+    secondary diagnostic and must never roll back a successful import.
+
+    The returned dict matches the ``/validate/`` endpoint's response shape
+    (``status``, ``score``, ``counts``, ``rule_sets``, ``duration_ms``,
+    ``results``) so the frontend can render the same validation dashboard
+    inline on the import-success toast/modal.
+    """
+    from app.config import get_settings
+    from app.core.validation.engine import validation_engine
+    from app.modules.projects.repository import ProjectRepository
+
+    settings = get_settings()
+    if not settings.import_inline_validation:
+        return None
+
+    try:
+        boq_data = await service.get_boq_with_positions(boq_id)
+        project_repo = ProjectRepository(session)
+        project = await project_repo.get_by_id(boq_data.project_id)
+        if project is None:
+            logger.warning(
+                "Inline import validation skipped: project missing for BOQ %s",
+                boq_id,
+            )
+            return None
+
+        # Mirror the /validate/ endpoint's position-dict shape (BUG-011).
+        # Without these keys the boq_quality.* leaf rules read ``None`` for
+        # unit/total/parent_id and false-positively error on every row.
+        def _row_type(p: object) -> str:
+            unit = (getattr(p, "unit", "") or "").strip().lower()
+            try:
+                qty = float(getattr(p, "quantity", 0) or 0)
+                rate = float(getattr(p, "unit_rate", 0) or 0)
+            except (TypeError, ValueError):
+                qty = rate = 0.0
+            if unit in ("", "section") and qty == 0.0 and rate == 0.0:
+                return "section"
+            return "position"
+
+        positions_data = [
+            {
+                "id": str(pos.id),
+                "parent_id": (str(pos.parent_id) if pos.parent_id else None),
+                "ordinal": pos.ordinal,
+                "description": pos.description,
+                "unit": pos.unit,
+                "quantity": float(pos.quantity),
+                "unit_rate": float(pos.unit_rate),
+                "total": float(pos.total),
+                "classification": pos.classification,
+                "source": getattr(pos, "source", None),
+                "type": _row_type(pos),
+            }
+            for pos in boq_data.positions
+        ]
+
+        rule_sets = _build_rule_sets(
+            project_rule_sets=project.validation_rule_sets or ["boq_quality"],
+            classification_standard=project.classification_standard or "",
+            region=project.region or "",
+        )
+
+        report = await validation_engine.validate(
+            data={"positions": positions_data},
+            rule_sets=rule_sets,
+            target_type="boq_import",
+            target_id=str(boq_id),
+            project_id=str(boq_data.project_id),
+            region=project.region,
+            standard=project.classification_standard,
+        )
+
+        summary = report.summary()
+        summary["results"] = [
+            {
+                "rule_id": r.rule_id,
+                "rule_name": r.rule_name,
+                "severity": r.severity.value,
+                "passed": r.passed,
+                "message": r.message,
+                "element_ref": r.element_ref,
+                "suggestion": r.suggestion,
+            }
+            for r in report.results
+        ]
+        return summary
+    except Exception as exc:  # noqa: BLE001 — diagnostics, never block import
+        logger.warning(
+            "Inline import validation failed for BOQ %s: %s",
+            boq_id,
+            exc,
+            exc_info=True,
+        )
+        return None
+
+
 @router.post(
     "/boqs/{boq_id}/recalculate-rates/",
     summary="Recalculate rates from resources",
@@ -3540,19 +3654,42 @@ async def export_boq_pdf(
 )
 @router.get(
     "/boqs/{boq_id}/export/gaeb/",
-    summary="Export BOQ as GAEB XML 3.3",
+    summary="Export BOQ as GAEB XML 3.3 (X83 default, ?format=x84 for Nebenangebot)",
     dependencies=[Depends(RequirePermission("boq.read"))],
 )
 async def export_boq_gaeb(
     boq_id: uuid.UUID,
     session: SessionDep,
     service: BOQService = Depends(_get_service),
+    # NB: query-string alias is still ``?format=x84`` for backward-compat with
+    # the documented URL; the Python parameter is ``gaeb_format`` because
+    # ``format`` shadows the stdlib builtin used by ``_fmt_qty`` further down.
+    gaeb_format: Literal["x83", "x84"] = Query(
+        "x83",
+        alias="format",
+        description=(
+            "GAEB DA phase to emit. ``x83`` = Angebotsabgabe (main bid, DP 83). "
+            "``x84`` = Nebenangebot (alternate bid, DP 84) — adds per-position "
+            "BoQBkUp / BoQBkUpRef alternate markers and an Award/Recommendation "
+            "element listing positions flagged as recommended."
+        ),
+    ),
 ) -> StreamingResponse:
-    """Export BOQ as a GAEB XML 3.3 file (DP 83 — Angebotsabgabe / Bid Submission).
+    """Export BOQ as a GAEB XML 3.3 file.
+
+    Phases:
+    - **DP 83 — Angebotsabgabe / Bid Submission** (default, ``?format=x83``).
+    - **DP 84 — Nebenangebot / Alternate Bid** (``?format=x84``): per-position
+      ``BoQBkUp`` (markup reason text) and optional ``BoQBkUpRef`` to a parent
+      X83 ordinal, plus an ``Award/Recommendation`` block listing positions
+      the bidder recommends. Position alternate metadata is read from
+      ``position.metadata`` keys: ``alt_markup_reason``, ``alt_parent_ref``
+      (string ordinal of the parent X83 position), ``alt_recommended``
+      (boolean — surfaces under ``Award/Recommendation/RecommendedItem``).
 
     Generates a valid GAEB DA XML document containing:
     - GAEBInfo header with version and program identification
-    - Award block with DP 83 (bid submission phase)
+    - Award block with DP 83 or DP 84 (bid phase)
     - BoQ with sections mapped to BoQCtgy elements
     - Positions mapped to Item elements with quantities, units, rates, and totals
     - Grand total in the trailing BoQInfo block
@@ -3607,9 +3744,13 @@ async def export_boq_gaeb(
     if project:
         project_currency = (project.currency or "").strip()[:3].upper()
 
-    # Award
+    # Award. DP code selects the GAEB phase: 83 = Angebotsabgabe (main bid),
+    # 84 = Nebenangebot (alternate / side bid). X84 layers a few extra
+    # per-position fields (BoQBkUp / BoQBkUpRef) and an optional
+    # Award/Recommendation block over the otherwise-identical X83 envelope.
+    dp_code = "84" if gaeb_format == "x84" else "83"
     award = ET.SubElement(gaeb, "Award")
-    ET.SubElement(award, "DP").text = "83"
+    ET.SubElement(award, "DP").text = dp_code
     ET.SubElement(award, "Cur").text = project_currency
     ET.SubElement(award, "CurLbl").text = project_currency
 
@@ -3796,6 +3937,45 @@ async def export_boq_gaeb(
             return mapped
         return unit.strip()
 
+    # ── X84 alternate-bid helpers ──────────────────────────────────────────
+    # Track positions flagged as recommended so we can emit them in a single
+    # Award/Recommendation block once every Item is written. List of
+    # (ordinal, description) tuples in document order — empty for X83.
+    recommended_alternates: list[tuple[str, str]] = []
+
+    def _apply_x84_alternate_fields(item: ET.Element, pos: Any) -> None:
+        """Stamp X84-specific alternate fields onto an Item element.
+
+        No-op for X83. For X84, reads from ``pos.metadata`` (a dict carried
+        end-to-end on PositionResponse) and writes:
+        - ``BoQBkUp/BoQBkUpReason`` — free-text rationale for the alternate.
+          Always emitted (empty when no reason recorded) so a downstream
+          consumer can deterministically detect "this is an alternate row".
+        - ``BoQBkUpRef`` — ordinal of the parent X83 position this alternate
+          replaces (optional; omitted when not provided).
+
+        Also collects the ordinal+description of any position marked
+        ``alt_recommended`` for the trailing Award/Recommendation block.
+        """
+        if gaeb_format != "x84":
+            return
+        meta = getattr(pos, "metadata", None) or {}
+        reason = ""
+        parent_ref = ""
+        recommended = False
+        if isinstance(meta, dict):
+            reason = str(meta.get("alt_markup_reason") or "")
+            parent_ref = str(meta.get("alt_parent_ref") or "")
+            recommended = bool(meta.get("alt_recommended"))
+        bkup = ET.SubElement(item, "BoQBkUp")
+        ET.SubElement(bkup, "BoQBkUpReason").text = reason
+        if parent_ref:
+            ET.SubElement(item, "BoQBkUpRef").text = parent_ref
+        if recommended:
+            recommended_alternates.append(
+                (str(getattr(pos, "ordinal", "") or ""), str(getattr(pos, "description", "") or ""))
+            )
+
     # ── Sections → BoQCtgy ────────────────────────────────────────────────
     for section in boq_data.sections:
         ctgy = ET.SubElement(
@@ -3828,6 +4008,8 @@ async def export_boq_gaeb(
             ET.SubElement(item, "UP").text = _up
             ET.SubElement(item, "IT").text = _it
 
+            _apply_x84_alternate_fields(item, pos)
+
     # ── Ungrouped positions → directly in root BoQBody (ENH-097) ──────────
     # GAEB 3.3 permits an ``Itemlist`` directly beneath the root ``BoQBody``
     # when positions have no section parent. Prior implementation wrapped
@@ -3855,6 +4037,21 @@ async def export_boq_gaeb(
             ET.SubElement(item, "UP").text = _up
             ET.SubElement(item, "IT").text = _it
 
+            _apply_x84_alternate_fields(item, pos)
+
+    # ── X84: Award/Recommendation block (bidder's recommended alternates) ──
+    # GAEB DA 3.3 places <Recommendation> under <Award> alongside <BoQ>. We
+    # write it after the BoQ tree to keep the streaming order stable; XML
+    # element ordering inside <Award> is not significant for any conformant
+    # importer. Only emitted when at least one position is recommended —
+    # an empty <Recommendation> tag is technically valid but adds noise.
+    if gaeb_format == "x84" and recommended_alternates:
+        recommendation = ET.SubElement(award, "Recommendation")
+        for ord_, desc_text in recommended_alternates:
+            rec_item = ET.SubElement(recommendation, "RecommendedItem")
+            ET.SubElement(rec_item, "RNoPart").text = ord_
+            ET.SubElement(rec_item, "LblTx").text = desc_text
+
     # ── Trailing BoQInfo with grand total ─────────────────────────────────
     boq_info_total = ET.SubElement(boq_el, "BoQInfo")
     ET.SubElement(boq_info_total, "TotPr").text = _fmt_price(boq_data.grand_total)
@@ -3871,7 +4068,8 @@ async def export_boq_gaeb(
     xml_content = xml_declaration + xml_provenance + xml_body
 
     safe_name = boq_data.name.encode("ascii", errors="replace").decode("ascii").replace('"', "'")
-    filename = f"{safe_name}.X83"
+    ext = "X84" if gaeb_format == "x84" else "X83"
+    filename = f"{safe_name}.{ext}"
 
     return StreamingResponse(
         iter([xml_content]),
@@ -4517,6 +4715,14 @@ async def import_boq_excel(
             ),
         )
 
+    # Run validation inline so DIN276 / NRM / GAEB / MasterFormat / DPGF /
+    # boq_quality issues surface in the import response instead of only
+    # via the later /validate/ call (philosophy: validation is a first-
+    # class citizen of the core workflow). Gated by IMPORT_INLINE_VALIDATION.
+    validation_report = None
+    if imported > 0:
+        validation_report = await _run_import_validation(boq_id, service, service.session)
+
     return {
         "imported": imported,
         "skipped": skipped,
@@ -4525,6 +4731,7 @@ async def import_boq_excel(
         "total_rows": len(rows),
         "source_format": import_meta.get("source_format", "unknown") if import_meta else "unknown",
         "original_columns": import_meta.get("original_columns", []) if import_meta else [],
+        "validation_report": validation_report,
     }
 
 
@@ -4865,6 +5072,15 @@ async def import_boq_gaeb(
         len(sections_seen),
     )
 
+    # Run validation inline against the freshly-imported GAEB BOQ so
+    # DIN276 / GAEB / boq_quality rule packs fire AT import time, not
+    # later via the standalone /validate/ endpoint. For DACH GAEB files
+    # the project region is almost always DE/AT/CH so _build_rule_sets
+    # selects the gaeb + din276 rule packs automatically.
+    validation_report = None
+    if imported > 0:
+        validation_report = await _run_import_validation(boq_id, service, service.session)
+
     return {
         "imported": imported,
         "skipped": skipped,
@@ -4872,6 +5088,7 @@ async def import_boq_gaeb(
         "sections": sections_seen,
         "source_format": "gaeb",
         "currency": currency,
+        "validation_report": validation_report,
     }
 
 

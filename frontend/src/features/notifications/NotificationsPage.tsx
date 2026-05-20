@@ -36,6 +36,9 @@ import {
 import clsx from 'clsx';
 import { Button, Breadcrumb, EmptyState } from '@/shared/ui';
 import { apiGet, apiPost, apiDelete } from '@/shared/lib/api';
+import { PreferencesTab } from './PreferencesTab';
+
+type Tab = 'inbox' | 'preferences';
 
 type IconCategory =
   | 'success'
@@ -130,6 +133,7 @@ export function NotificationsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
+  const [activeTab, setActiveTab] = useState<Tab>('inbox');
   const [filter, setFilter] = useState<Filter>('all');
   const [page, setPage] = useState(0);
 
@@ -150,6 +154,7 @@ export function NotificationsPage() {
     },
     staleTime: 10_000,
     refetchOnWindowFocus: true,
+    enabled: activeTab === 'inbox',
   });
 
   const items: Notification[] = useMemo(() => data?.items ?? [], [data]);
@@ -202,6 +207,41 @@ export function NotificationsPage() {
         className="mb-3"
       />
 
+      {/* Tab bar — Inbox vs Preferences.  The preferences tab houses the
+          per-event-type × per-channel routing matrix added in Wave 3 / T9. */}
+      <div className="mb-3 border-b border-border-light flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => setActiveTab('inbox')}
+          className={clsx(
+            'px-3 py-1.5 text-sm font-medium border-b-2 -mb-px transition-colors',
+            activeTab === 'inbox'
+              ? 'border-oe-blue text-oe-blue'
+              : 'border-transparent text-content-secondary hover:text-content-primary',
+          )}
+          aria-current={activeTab === 'inbox' ? 'page' : undefined}
+        >
+          {t('notifications.tab_inbox', { defaultValue: 'Inbox' })}
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('preferences')}
+          className={clsx(
+            'px-3 py-1.5 text-sm font-medium border-b-2 -mb-px transition-colors',
+            activeTab === 'preferences'
+              ? 'border-oe-blue text-oe-blue'
+              : 'border-transparent text-content-secondary hover:text-content-primary',
+          )}
+          aria-current={activeTab === 'preferences' ? 'page' : undefined}
+        >
+          {t('notifications.tab_preferences', { defaultValue: 'Preferences' })}
+        </button>
+      </div>
+
+      {activeTab === 'preferences' ? (
+        <PreferencesTab />
+      ) : (
+      <>
       {/* Page header — compact: icon + title + unread chip + filter dropdown
           + Mark-all-read. Mirrors the bell's style so the user lands on a
           familiar visual. */}
@@ -419,6 +459,8 @@ export function NotificationsPage() {
             </button>
           </div>
         </div>
+      )}
+      </>
       )}
     </div>
   );

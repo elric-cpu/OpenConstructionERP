@@ -9,6 +9,7 @@ Tables:
     oe_service_debrief                — P-C-S report after a visit
     oe_service_sla_definition         — reusable SLA tier
     oe_service_schedule               — PPM (recurring inspection) schedule
+    oe_service_recurring_schedule     — RRULE-driven recurring ticket template
     oe_service_checklist              — reusable inspection checklist template
 """
 
@@ -180,6 +181,21 @@ class ServiceTicket(Base):
     # for the same ticket on every scan tick.
     sla_breach_notified_at: Mapped[str | None] = mapped_column(
         String(40), nullable=True,
+    )
+    # ISO timestamp of when ``check_breaches()`` first observed this ticket
+    # as breached. Distinct from sla_breach_notified_at because notification
+    # delivery (events, email) may fail or be retried — sla_breached_at is the
+    # ground-truth "breach happened" marker the dashboard uses.
+    sla_breached_at: Mapped[str | None] = mapped_column(
+        String(40), nullable=True,
+    )
+    # Optional FK to a recurring schedule (RRULE-driven). NULL ⇒ ad-hoc ticket.
+    # No DB-level FK declared so dropping a schedule never cascades into
+    # historical ticket loss — recurring schedules can be retired safely.
+    recurring_schedule_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(),
+        nullable=True,
+        index=True,
     )
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         "metadata", JSON, nullable=False, default=dict, server_default="{}",
@@ -400,3 +416,65 @@ class AssetInspectionChecklist(Base):
 
     def __repr__(self) -> str:
         return f"<AssetInspectionChecklist {self.name} ({len(self.items or [])} items)>"
+
+
+# ── Recurring schedule (RRULE-driven ticket template) ────────────────────
+
+
+class ServiceRecurringSchedule(Base):
+    """‌⁠‍RRULE-driven schedule that materialises ServiceTicket rows on a cadence.
+
+    Distinct from ``ServiceSchedule`` (asset-scoped PPM with a fixed frequency
+    enum) — this row is project-scoped and uses iCalendar RFC 5545 RRULE
+    syntax (e.g. ``FREQ=MONTHLY;BYMONTHDAY=1``). The cron worker scans for
+    ``enabled & next_run_at < now`` and materialises one ticket per overdue
+    occurrence, advancing ``next_run_at`` via the RRULE.
+
+    ``template_ticket_data`` carries a ServiceTicketCreate-shaped payload (at
+    minimum ``contract_id`` + ``title`` + ``priority``) which the
+    materialiser uses verbatim when stamping each new ticket.
+    """
+
+    __tablename__ = "oe_service_recurring_schedule"
+
+    # Scope. ``project_id`` is the canonical link; ``contract_id`` is used
+    # when materialising the ticket and is therefore stored too so the cron
+    # worker does not need a second lookup. Both nullable: tenant-wide
+    # schedules are valid for fleet maintenance.
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(),
+        nullable=True,
+        index=True,
+    )
+    contract_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(),
+        nullable=True,
+        index=True,
+    )
+
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    # RRULE (RFC 5545) without the ``RRULE:`` prefix.
+    rrule: Mapped[str] = mapped_column(String(200), nullable=False)
+    # JSON payload used as the template for each materialised occurrence.
+    template_ticket_data: Mapped[dict] = mapped_column(
+        JSON, nullable=False, default=dict, server_default="{}",
+    )
+    # ISO datetime strings (matches the existing service-module convention).
+    next_run_at: Mapped[str | None] = mapped_column(
+        String(40), nullable=True, index=True,
+    )
+    last_run_at: Mapped[str | None] = mapped_column(
+        String(40), nullable=True,
+    )
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, index=True,
+    )
+    metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        "metadata", JSON, nullable=False, default=dict, server_default="{}",
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<ServiceRecurringSchedule {self.name} rrule={self.rrule} "
+            f"enabled={self.enabled}>"
+        )

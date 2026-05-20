@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+import io
 import logging
 import uuid
 from datetime import UTC, date, datetime
@@ -9,6 +11,7 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
@@ -26,6 +29,7 @@ from app.modules.hse_advanced.models import (
     ToolboxTalk,
     ToolboxTopic,
 )
+from app.modules.safety.models import HSECorrectiveAction, SafetyIncident
 from app.modules.hse_advanced.repository import (
     AuditFindingRepository,
     AuditRepository,
@@ -499,6 +503,23 @@ def allowed_capa_transitions(current: str) -> list[str]:
         "overdue": ["in_progress", "completed", "cancelled"],
         "completed": [],
         "cancelled": [],
+    }
+    return mapping.get(current, [])
+
+
+def allowed_corrective_action_transitions(current: str) -> list[str]:
+    """‌⁠‍Pure slim CorrectiveAction FSM (incident-scoped).
+
+    Strict linear lifecycle modelled on Procore Quality & Safety + Sphera
+    SafetyStratus: ``pending → in_progress → verified → closed``. Any other
+    transition (e.g. ``pending → verified`` or ``closed → in_progress``)
+    is rejected by :meth:`HSEAdvancedService.transition_corrective_action`.
+    """
+    mapping = {
+        "pending": ["in_progress"],
+        "in_progress": ["verified"],
+        "verified": ["closed"],
+        "closed": [],
     }
     return mapping.get(current, [])
 
@@ -1503,3 +1524,191 @@ class HSEAdvancedService:
             },
         )
         return jsa
+
+    # ── OSHA Form 300 export ────────────────────────────────────────────
+
+    # The official Form 300 carries many descriptive columns; this export
+    # ships the subset that's load-bearing for the recordable-incident
+    # audit trail. It is *not* a direct OSHA submission file — for that
+    # employers file Form 300A through OSHA's ITA portal.
+    _OSHA_300_HEADER: tuple[str, ...] = (
+        "case_no",
+        "employee_name",
+        "job_title",
+        "date_of_injury",
+        "location",
+        "description_of_injury",
+        "days_away",
+        "days_restricted",
+        "death_yes_no",
+        "other_recordable_yes_no",
+    )
+
+    async def generate_osha_300_csv(
+        self, project_id: uuid.UUID, year: int,
+    ) -> str:
+        """‌⁠‍Render the OSHA 300 incident log for one project + year.
+
+        Filters to ``SafetyIncident.osha_recordable=True`` and incidents
+        whose ``incident_date`` (stored as ``YYYY-MM-DD`` string) starts
+        with the requested year. Empty cells render as empty strings
+        (Form 300 leaves blank fields blank). Uses the stdlib :mod:`csv`
+        module so quoting follows RFC 4180.
+        """
+        stmt = (
+            select(SafetyIncident)
+            .where(SafetyIncident.project_id == project_id)
+            .where(SafetyIncident.osha_recordable.is_(True))
+        )
+        rows = list((await self.session.execute(stmt)).scalars().all())
+
+        year_prefix = f"{int(year):04d}-"
+        rows = [r for r in rows if (r.incident_date or "").startswith(year_prefix)]
+
+        buf = io.StringIO()
+        writer = csv.writer(buf, quoting=csv.QUOTE_MINIMAL)
+        writer.writerow(self._OSHA_300_HEADER)
+
+        for r in rows:
+            ipd = r.injured_person_details or {}
+            employee_name = (
+                ipd.get("name") if isinstance(ipd, dict) else None
+            ) or ""
+            job_title = (
+                ipd.get("role") if isinstance(ipd, dict) else None
+            ) or ""
+            # OSHA 1904.7 — fatality wins over "other recordable".
+            is_fatality = (r.treatment_type or "").lower() == "fatality"
+            death_yes_no = "Y" if is_fatality else "N"
+            # "Other recordable" = recordable AND neither death nor
+            # days_away nor days_restricted nor job-transfer (we collapse
+            # the latter two into the days_restricted column).
+            other_recordable = (
+                not is_fatality
+                and not (r.days_away or 0)
+                and not (r.days_restricted or 0)
+            )
+            writer.writerow(
+                [
+                    r.osha_case_number or r.incident_number or "",
+                    employee_name,
+                    job_title,
+                    r.incident_date or "",
+                    r.location or "",
+                    (r.description or "").replace("\r\n", " ").replace("\n", " "),
+                    str(r.days_away) if r.days_away is not None else "",
+                    str(r.days_restricted) if r.days_restricted is not None else "",
+                    death_yes_no,
+                    "Y" if other_recordable else "N",
+                ]
+            )
+
+        return buf.getvalue()
+
+    # ── Slim CorrectiveAction FSM (incident-scoped) ─────────────────────
+
+    async def create_corrective_action(
+        self,
+        incident_id: uuid.UUID,
+        description: str,
+        assigned_to_user_id: uuid.UUID | None = None,
+        due_date: date | None = None,
+    ) -> HSECorrectiveAction:
+        """‌⁠‍Open a new corrective action on an incident in status=pending."""
+        obj = HSECorrectiveAction(
+            incident_id=incident_id,
+            description=description,
+            assigned_to_user_id=assigned_to_user_id,
+            due_date=due_date,
+            status="pending",
+        )
+        self.session.add(obj)
+        await self.session.flush()
+        return obj
+
+    async def get_corrective_action(
+        self, ca_id: uuid.UUID,
+    ) -> HSECorrectiveAction:
+        obj = (
+            await self.session.execute(
+                select(HSECorrectiveAction).where(HSECorrectiveAction.id == ca_id)
+            )
+        ).scalar_one_or_none()
+        if obj is None:
+            raise HTTPException(404, "Corrective action not found")
+        return obj
+
+    async def list_corrective_actions(
+        self,
+        *,
+        incident_id: uuid.UUID | None = None,
+        status_filter: str | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> list[HSECorrectiveAction]:
+        stmt = select(HSECorrectiveAction)
+        if incident_id is not None:
+            stmt = stmt.where(HSECorrectiveAction.incident_id == incident_id)
+        if status_filter is not None:
+            stmt = stmt.where(HSECorrectiveAction.status == status_filter)
+        stmt = stmt.offset(offset).limit(limit)
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def transition_corrective_action(
+        self,
+        ca_id: uuid.UUID,
+        to_status: str,
+        user_id: uuid.UUID | str | None,
+        verification_notes: str | None = None,
+    ) -> HSECorrectiveAction:
+        """‌⁠‍Strict FSM transition.
+
+        Allowed: ``pending → in_progress → verified → closed``. Any other
+        target raises HTTP 409 with a message naming the rejected hop, so
+        the UI can surface a clear actionable error.
+
+        When entering ``verified`` we stamp ``verified_by_user_id`` +
+        ``verified_at``. ``verification_notes`` is *appended* (preserving
+        history) when provided — not overwritten — so the audit trail is
+        not silently lost on subsequent transitions.
+        """
+        obj = await self.get_corrective_action(ca_id)
+        if to_status not in allowed_corrective_action_transitions(obj.status):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"Invalid corrective-action transition "
+                f"{obj.status} → {to_status} "
+                f"(allowed: {allowed_corrective_action_transitions(obj.status) or 'none'})",
+            )
+
+        obj.status = to_status
+        if to_status == "verified":
+            verifier_uuid: uuid.UUID | None = None
+            if user_id is not None:
+                try:
+                    verifier_uuid = (
+                        user_id if isinstance(user_id, uuid.UUID) else uuid.UUID(str(user_id))
+                    )
+                except (TypeError, ValueError):
+                    verifier_uuid = None
+            obj.verified_by_user_id = verifier_uuid
+            obj.verified_at = datetime.now(UTC)
+        if verification_notes:
+            stamp = datetime.now(UTC).isoformat(timespec="seconds")
+            entry = f"[{stamp} {to_status}] {verification_notes}"
+            obj.verification_notes = (
+                f"{obj.verification_notes}\n{entry}"
+                if obj.verification_notes else entry
+            )
+
+        await self.session.flush()
+        _safe_publish(
+            "hse.corrective_action.transitioned",
+            {
+                "corrective_action_id": str(ca_id),
+                "incident_id": str(obj.incident_id),
+                "to_status": to_status,
+                "verifier_id": str(user_id) if user_id else None,
+            },
+        )
+        return obj

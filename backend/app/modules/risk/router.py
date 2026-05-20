@@ -23,6 +23,8 @@ from app.modules.risk.schemas import (
     RiskMatrixCell,
     RiskMatrixResponse,
     RiskResponse,
+    RiskSimulateRequest,
+    RiskSimulationResult,
     RiskSummary,
     RiskUpdate,
 )
@@ -163,9 +165,7 @@ async def list_risks(
     status_filter: str | None = Query(default=None, alias="status"),
     category: str | None = Query(default=None),
     severity: str | None = Query(default=None),
-    sort_by: str | None = Query(
-        default=None, description="Sort field: risk_score, probability, created_at"
-    ),
+    sort_by: str | None = Query(default=None, description="Sort field: risk_score, probability, created_at"),
     sort_order: str = Query(default="desc", pattern="^(asc|desc)$"),
     service: RiskService = Depends(_get_service),
 ) -> list[RiskResponse]:
@@ -182,6 +182,46 @@ async def list_risks(
         sort_order=sort_order,
     )
     return [_risk_to_response(i) for i in items]
+
+
+# ── Monte Carlo simulation (v3.11 — T1) ──────────────────────────────────
+#
+# Mounted under ``/projects/{project_id}/simulate`` (not the bare
+# ``/{risk_id}`` parametric) so the parametric-collision rule does not
+# apply — FastAPI/Starlette's path router has no ambiguity between
+# ``/projects/.../simulate`` and ``/{risk_id}``.
+
+
+@router.post(
+    "/projects/{project_id}/simulate",
+    response_model=RiskSimulationResult,
+    dependencies=[Depends(RequirePermission("risk.read"))],
+)
+async def simulate_risks(
+    project_id: uuid.UUID,
+    body: RiskSimulateRequest,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: RiskService = Depends(_get_service),
+) -> RiskSimulationResult:
+    """‌⁠‍Run a Monte Carlo simulation across this project's risks.
+
+    Samples a PERT (triangular) distribution on each risk's
+    (p10, p50, p90) triple and weights each draw by
+    ``probability_score / 5`` to form the project-level contingency
+    distribution. Returns P50/P80/P95 percentiles, a 10-bin histogram
+    and a tornado-chart sensitivity ranking.
+
+    Persisted on every risk row's ``last_simulation`` field so a refresh
+    keeps the drill-down without re-running.
+    """
+    await verify_project_access(project_id, user_id, session)
+    data = await service.simulate(
+        project_id,
+        iterations=body.iterations,
+        mode=body.mode,
+    )
+    return RiskSimulationResult(**data)
 
 
 # ── Bulk operations (must come BEFORE parametric /{risk_id}) ─────────
@@ -204,14 +244,10 @@ async def batch_delete_risks(
     from app.modules.risk.models import RiskItem
 
     proj_repo = ProjectRepository(session)
-    owned_projects, _ = await proj_repo.list_for_user(
-        owner_id=user_id, offset=0, limit=10000, exclude_archived=False
-    )
+    owned_projects, _ = await proj_repo.list_for_user(owner_id=user_id, offset=0, limit=10000, exclude_archived=False)
     owned_project_ids = {str(p.id) for p in owned_projects}
 
-    rows = (await session.execute(
-        _select(RiskItem.id, RiskItem.project_id).where(RiskItem.id.in_(body.ids))
-    )).all()
+    rows = (await session.execute(_select(RiskItem.id, RiskItem.project_id).where(RiskItem.id.in_(body.ids)))).all()
     allowed = [r[0] for r in rows if str(r[1]) in owned_project_ids]
 
     deleted = await bulk_delete(session, RiskItem, allowed)
@@ -242,19 +278,13 @@ async def batch_update_risk_status(
         )
 
     proj_repo = ProjectRepository(session)
-    owned_projects, _ = await proj_repo.list_for_user(
-        owner_id=user_id, offset=0, limit=10000, exclude_archived=False
-    )
+    owned_projects, _ = await proj_repo.list_for_user(owner_id=user_id, offset=0, limit=10000, exclude_archived=False)
     owned_project_ids = {str(p.id) for p in owned_projects}
 
-    rows = (await session.execute(
-        _select(RiskItem.id, RiskItem.project_id).where(RiskItem.id.in_(body.ids))
-    )).all()
+    rows = (await session.execute(_select(RiskItem.id, RiskItem.project_id).where(RiskItem.id.in_(body.ids)))).all()
     allowed_ids = [r[0] for r in rows if str(r[1]) in owned_project_ids]
 
-    updated = await bulk_update_status(
-        session, RiskItem, allowed_ids, body.status, allowed_statuses=allowed_statuses
-    )
+    updated = await bulk_update_status(session, RiskItem, allowed_ids, body.status, allowed_statuses=allowed_statuses)
     return {"requested": len(body.ids), "updated": updated, "status": body.status}
 
 

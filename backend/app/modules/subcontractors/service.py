@@ -1386,3 +1386,179 @@ class SubcontractorService:
             source_module="subcontractors",
         )
         return entity
+
+    # ── Wave 4 / T12 — BuildingConnected-style prequal + insurance ─────
+
+    async def submit_prequal(
+        self,
+        sub_id: uuid.UUID,
+        questionnaire_data: dict[str, Any],
+        score: int | None = None,
+    ) -> Subcontractor:
+        """Persist a questionnaire payload + computed/explicit score.
+
+        If ``score`` is ``None`` the service derives a value from the
+        questionnaire answers. The default scorer is simple-on-purpose so
+        third-party questionnaires don't need to ship a custom evaluator
+        upfront: every truthy answer (``True`` / ``"yes"`` / ``"Yes"``) is
+        worth one point and the total is normalised to a 0-100 integer.
+
+        ``prequal_completed_at`` is stamped to UTC now and rolls up onto
+        the subcontractor row for cheap list-view rendering.
+        """
+        await self.get_subcontractor(sub_id)
+        computed = score if score is not None else _compute_prequal_score(questionnaire_data)
+        completed_at = datetime.now(UTC)
+        await self.subs.update_fields(
+            sub_id,
+            prequal_questionnaire=questionnaire_data,
+            prequal_score=computed,
+            prequal_completed_at=completed_at,
+        )
+        event_bus.publish_detached(
+            "subcontractors.prequal.submitted",
+            {
+                "subcontractor_id": str(sub_id),
+                "score": computed,
+            },
+            source_module="subcontractors",
+        )
+        # Re-fetch so the response carries the freshly written values
+        # rather than the stale pre-update row.
+        return await self.get_subcontractor(sub_id)
+
+    async def flag_expiring_insurance(
+        self,
+        days_ahead: int = 30,
+        *,
+        today: date | None = None,
+    ) -> list[Subcontractor]:
+        """Return subcontractors with insurance expiring within ``days_ahead``.
+
+        Past-expiry rows are also surfaced — once expired the cert keeps
+        showing on the report until the sub re-uploads. Subs whose
+        ``insurance_expiry_date`` is NULL are NOT surfaced here (use a
+        separate "missing insurance" report for that — emitting both in
+        one list would conflate two distinct workflows).
+
+        Emits ``subcontractors.insurance.expiring`` per flagged sub so
+        notifications / digest queues can fan out per-sub.
+        """
+        ref = today or date.today()
+        upper_bound = ref + timedelta(days=max(0, days_ahead))
+        rows = await self.subs.list_with_insurance_expiry_within(
+            upper_bound=upper_bound,
+        )
+        for sub in rows:
+            event_bus.publish_detached(
+                "subcontractors.insurance.expiring",
+                {
+                    "subcontractor_id": str(sub.id),
+                    "legal_name": sub.legal_name,
+                    "insurance_expiry_date": (
+                        sub.insurance_expiry_date.isoformat()
+                        if sub.insurance_expiry_date
+                        else None
+                    ),
+                    "days_until_expiry": (
+                        (sub.insurance_expiry_date - ref).days
+                        if sub.insurance_expiry_date
+                        else None
+                    ),
+                },
+                source_module="subcontractors",
+            )
+        return rows
+
+    async def block_subcontractor(
+        self,
+        sub_id: uuid.UUID,
+        reason: str,
+        by_user_id: str | None = None,
+    ) -> Subcontractor:
+        """Hard-block a subcontractor from bidding / payment.
+
+        Sets ``is_blocked=True`` and stores the human-readable
+        ``blocked_reason``. The reason is required so audit logs and the
+        UI can surface "why" without spelunking through the event bus.
+        """
+        await self.get_subcontractor(sub_id)
+        await self.subs.update_fields(
+            sub_id, is_blocked=True, blocked_reason=reason,
+        )
+        event_bus.publish_detached(
+            "subcontractors.blocked",
+            {
+                "subcontractor_id": str(sub_id),
+                "reason": reason,
+                "by_user_id": by_user_id,
+            },
+            source_module="subcontractors",
+        )
+        return await self.get_subcontractor(sub_id)
+
+    async def unblock_subcontractor(
+        self,
+        sub_id: uuid.UUID,
+        by_user_id: str | None = None,
+    ) -> Subcontractor:
+        """Clear the block flag + reason on a subcontractor."""
+        await self.get_subcontractor(sub_id)
+        await self.subs.update_fields(
+            sub_id, is_blocked=False, blocked_reason=None,
+        )
+        event_bus.publish_detached(
+            "subcontractors.unblocked",
+            {
+                "subcontractor_id": str(sub_id),
+                "by_user_id": by_user_id,
+            },
+            source_module="subcontractors",
+        )
+        return await self.get_subcontractor(sub_id)
+
+
+# ── Prequal score helper ─────────────────────────────────────────────────
+
+
+_PREQUAL_TRUTHY: frozenset[str] = frozenset({
+    "yes", "true", "y", "1", "ok", "pass", "passed", "compliant",
+})
+_PREQUAL_NEGATIVE: frozenset[str] = frozenset({
+    "no", "false", "n", "0", "fail", "failed", "non-compliant", "noncompliant",
+})
+
+
+def _compute_prequal_score(answers: dict[str, Any]) -> int:
+    """Generic Yes/No questionnaire scorer.
+
+    Walks every value in the answers dict; truthy strings (``"yes"`` /
+    ``"true"``) and Python ``True`` count as 1, negative strings
+    (``"no"`` / ``"false"``) and Python ``False`` count as 0; anything
+    else (numeric scales, text answers) is ignored so it doesn't poison
+    the denominator. If no recognisable Yes/No answers exist the score
+    is 0 — better than dividing by zero.
+    """
+    yes = 0
+    counted = 0
+    for value in answers.values():
+        if isinstance(value, bool):
+            counted += 1
+            if value:
+                yes += 1
+            continue
+        if isinstance(value, str):
+            normalised = value.strip().lower()
+            if normalised in _PREQUAL_TRUTHY:
+                counted += 1
+                yes += 1
+                continue
+            if normalised in _PREQUAL_NEGATIVE:
+                counted += 1
+                continue
+        # Numeric / non-Yes-No answers are intentionally skipped so a
+        # mixed questionnaire (some scales, some Yes/No) doesn't double-
+        # count the scale slots as zeros.
+    if counted == 0:
+        return 0
+    return int(round((yes / counted) * 100))

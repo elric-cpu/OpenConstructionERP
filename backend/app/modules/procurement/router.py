@@ -30,9 +30,11 @@ from app.modules.procurement.schemas import (
     GRResponse,
     POCreate,
     POListResponse,
+    POMatchStatusResponse,
     POResponse,
     POUpdate,
     ProcurementStatsResponse,
+    SupplierScorecardResponse,
 )
 from app.modules.procurement.service import ProcurementService, _validate_3way_match
 
@@ -221,6 +223,45 @@ async def confirm_goods_receipt(
     return GRResponse.model_validate(gr)
 
 
+# ── Supplier scorecard (fixed path — MUST be before /{po_id}) ───────────────
+
+
+@router.get(
+    "/suppliers/{contact_id}/scorecard/",
+    response_model=SupplierScorecardResponse,
+    dependencies=[Depends(RequirePermission("procurement.read"))],
+)
+async def get_supplier_scorecard(
+    contact_id: str,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    project_id: uuid.UUID | None = Query(default=None),
+    period_days: int = Query(default=365, ge=1, le=3650),
+    service: ProcurementService = Depends(_get_service),
+) -> SupplierScorecardResponse:
+    """Trailing-window KPIs for one supplier.
+
+    When ``project_id`` is provided the access check enforces project-scope
+    IDOR (the same gate the PO list uses). Without ``project_id`` the
+    caller must already hold ``procurement.read`` globally; cross-project
+    aggregation is intended for the supplier-overview screen.
+    """
+    if project_id is not None:
+        await verify_project_access(project_id, str(user_id), session)
+
+    data = await service.get_supplier_scorecard(
+        supplier_contact_id=contact_id,
+        project_id=project_id,
+        period_days=period_days,
+    )
+
+    # Best-effort vendor display name — same lookup the PO list uses so
+    # the scorecard modal can label the chart without a second round-trip.
+    name_map = await _fetch_vendor_names(session, [contact_id])
+    data["supplier_name"] = name_map.get(contact_id)
+    return SupplierScorecardResponse.model_validate(data)
+
+
 # ── PO by ID (parametric routes LAST) ───────────────────────────────────────
 
 
@@ -404,6 +445,24 @@ async def create_invoice_from_po(
             status_code=500,
             detail="Failed to create invoice from purchase order.",
         )
+
+
+@router.get(
+    "/{po_id}/match-status/",
+    response_model=POMatchStatusResponse,
+    dependencies=[Depends(RequirePermission("procurement.read"))],
+)
+async def get_po_match_status(
+    po_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: ProcurementService = Depends(_get_service),
+) -> POMatchStatusResponse:
+    """3-way match summary (PO ↔ GR ↔ Invoice) per PO line."""
+    po = await service.get_po(po_id)
+    await verify_project_access(po.project_id, str(user_id), session)
+    payload = await service.get_match_status(po_id)
+    return POMatchStatusResponse.model_validate(payload)
 
 
 @router.post(

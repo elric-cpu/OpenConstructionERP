@@ -293,6 +293,77 @@ export const fetchCertifications = (projectId: string) =>
     `${BASE}/certifications/?project_id=${projectId}`,
   );
 
+/* -- OSHA 300 CSV + slim corrective-action FSM (T6 / v3086) --------------- */
+
+/** Strict FSM target states for the slim incident-scoped CorrectiveAction. */
+export type CATargetStatus = 'pending' | 'in_progress' | 'verified' | 'closed';
+
+export interface CATransitionRequest {
+  to_status: CATargetStatus;
+  verification_notes?: string;
+}
+
+export interface CorrectiveActionRow {
+  id: string;
+  incident_id: string;
+  description: string;
+  assigned_to_user_id?: string | null;
+  due_date?: string | null;
+  status: CATargetStatus;
+  verified_by_user_id?: string | null;
+  verified_at?: string | null;
+  verification_notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Trigger an OSHA Form 300 CSV download for a project + calendar year.
+ *
+ * The endpoint streams ``text/csv; charset=utf-8`` with a
+ * ``Content-Disposition: attachment`` header, so we hand the URL to the
+ * browser via a synthetic ``<a download>`` click rather than going
+ * through ``apiGet``: that lets the browser show its own save dialog and
+ * respect the server-supplied filename.
+ */
+export function downloadOsha300Csv(projectId: string, year: number): void {
+  const url = `/api${BASE}/osha-300-log.csv?project_id=${encodeURIComponent(
+    projectId,
+  )}&year=${encodeURIComponent(String(year))}`;
+  const a = document.createElement('a');
+  a.href = url;
+  a.rel = 'noopener';
+  // Suggested filename — the server's Content-Disposition wins when the
+  // browser honours it, but this keeps in-page text readable.
+  a.download = `osha-300-${year}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+export const fetchCorrectiveActions = (params: {
+  projectId?: string;
+  incidentId?: string;
+  status?: CATargetStatus;
+}) => {
+  const qs = new URLSearchParams();
+  if (params.projectId) qs.set('project_id', params.projectId);
+  if (params.incidentId) qs.set('incident_id', params.incidentId);
+  if (params.status) qs.set('status', params.status);
+  return apiGet<CorrectiveActionRow[] | { items: CorrectiveActionRow[] }>(
+    `${BASE}/corrective-actions/?${qs.toString()}`,
+  );
+};
+
+export const transitionCorrectiveAction = (
+  caId: string,
+  body: CATransitionRequest,
+) =>
+  apiPost<CorrectiveActionRow>(
+    `${BASE}/corrective-actions/${caId}/transition`,
+    body,
+  );
+
 /* -- Helpers -------------------------------------------------------------- */
 
 /** Days between today and a target date string (YYYY-MM-DD or ISO). Negative if past. */

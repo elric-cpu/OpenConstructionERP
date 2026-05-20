@@ -102,7 +102,7 @@ export default function DataPanelEmpty({ onSuggestion }: DataPanelEmptyProps) {
       title: t('chat.cat_costs_title', { defaultValue: 'Cost Database (CWICR)' }),
       desc: t('chat.cat_costs_desc', {
         defaultValue:
-          'Search 55,000+ construction cost items across 9 regions and 21 languages.',
+          'Search 55,000+ construction cost items across 48 regions and 24 languages.',
       }),
       examples: [
         t('chat.ex_search_concrete', { defaultValue: 'Search CWICR for concrete C30/37' }),

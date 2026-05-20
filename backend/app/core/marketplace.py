@@ -980,7 +980,7 @@ def get_marketplace_catalog(
         coming_soon = False
 
         if mod.category == "language":
-            # All 20 languages are bundled with the app
+            # All 24 languages are bundled with the app
             installed = True
         elif mod.category == "converter":
             # All converters are built-in

@@ -1,11 +1,17 @@
 """‌⁠‍Notification API routes.
 
 Endpoints:
-    GET    /                        — list current user's notifications
-    GET    /unread-count            — unread count for current user
-    POST   /{notification_id}/read  — mark single as read
-    POST   /read-all                — mark all as read
-    DELETE /{notification_id}       — delete single notification
+    GET    /                              — list current user's notifications
+    GET    /unread-count                  — unread count for current user
+    POST   /{notification_id}/read        — mark single as read
+    POST   /read-all                      — mark all as read
+    DELETE /{notification_id}             — delete single notification
+
+Preferences + digest (Wave 3 / T9):
+    GET    /preferences/                  — current user's prefs
+    POST   /preferences/                  — upsert a pref row
+    POST   /digest/flush                  — admin manual digest flush
+    GET    /event-types/                  — known event-type catalogue
 """
 
 import logging
@@ -13,9 +19,23 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.dependencies import CurrentUserId, SessionDep
-from app.modules.notifications.schemas import NotificationListResponse, NotificationResponse
-from app.modules.notifications.service import NotificationService
+from app.dependencies import (
+    CurrentUserId,
+    CurrentUserPayload,
+    SessionDep,
+)
+from app.modules.notifications.schemas import (
+    EventTypeCatalogEntry,
+    NotificationListResponse,
+    NotificationResponse,
+    PreferenceRequest,
+    PreferenceResponse,
+)
+from app.modules.notifications.service import (
+    _DIGEST_FLUSHER,
+    KNOWN_EVENT_TYPES,
+    NotificationService,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -127,3 +147,78 @@ async def delete_notification(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Notification not found",
         )
+
+
+# ── Preferences + digest (Wave 3 / T9) ─────────────────────────────────────
+
+
+def _pref_to_response(p: object) -> PreferenceResponse:
+    return PreferenceResponse(
+        id=p.id,  # type: ignore[attr-defined]
+        user_id=p.user_id,  # type: ignore[attr-defined]
+        event_type=p.event_type,  # type: ignore[attr-defined]
+        channel=p.channel,  # type: ignore[attr-defined]
+        enabled=p.enabled,  # type: ignore[attr-defined]
+        digest=p.digest,  # type: ignore[attr-defined]
+        created_at=p.created_at,  # type: ignore[attr-defined]
+        updated_at=p.updated_at,  # type: ignore[attr-defined]
+    )
+
+
+@router.get("/preferences/", response_model=list[PreferenceResponse])
+async def list_preferences(
+    user_id: CurrentUserId,
+    service: NotificationService = Depends(_get_service),
+) -> list[PreferenceResponse]:
+    """‌⁠‍Return all notification preferences for the current user."""
+    prefs = await service.get_preferences(user_id)
+    return [_pref_to_response(p) for p in prefs]
+
+
+@router.post("/preferences/", response_model=PreferenceResponse)
+async def upsert_preference(
+    body: PreferenceRequest,
+    user_id: CurrentUserId,
+    service: NotificationService = Depends(_get_service),
+) -> PreferenceResponse:
+    """‌⁠‍Upsert a single (event_type, channel) preference for the current user."""
+    pref = await service.set_preference(
+        user_id,
+        event_type=body.event_type,
+        channel=body.channel,
+        enabled=body.enabled,
+        digest=body.digest,
+    )
+    return _pref_to_response(pref)
+
+
+@router.get("/event-types/", response_model=list[EventTypeCatalogEntry])
+async def list_event_types(
+    user_id: CurrentUserId,  # noqa: ARG001 — auth gate only
+) -> list[EventTypeCatalogEntry]:
+    """‌⁠‍Return the catalogue of known event-types the platform may emit."""
+    return [EventTypeCatalogEntry(**entry) for entry in KNOWN_EVENT_TYPES]
+
+
+@router.post("/digest/flush/")
+async def flush_digest(
+    payload: CurrentUserPayload,
+    channel: str = Query(default="email", pattern=r"^(email|inapp|webhook)$"),
+) -> dict[str, int | str]:
+    """‌⁠‍Manually trigger a digest flush for the given channel.
+
+    Admin-only — guarded inline because ``notifications.admin`` is not yet
+    registered with the global permission registry; falling back to the
+    ``role == 'admin'`` check matches the pattern used by
+    :class:`RequirePermission` for the admin role bypass.
+    """
+    role = payload.get("role", "")
+    permissions = payload.get("permissions", []) or []
+    if role != "admin" and "notifications.admin" not in permissions:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin permission required",
+        )
+
+    count = await _DIGEST_FLUSHER(channel)
+    return {"channel": channel, "rows_sent": count}

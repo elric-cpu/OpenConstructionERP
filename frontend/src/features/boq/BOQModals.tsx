@@ -1849,7 +1849,7 @@ export function CostDatabaseSearchModal({
                     <p className="mx-auto mb-4 max-w-sm text-xs text-content-tertiary">
                       {t('boq.no_databases_help', {
                         defaultValue:
-                          "There's no cost-rate database on this server, so search has nothing to show. Import a free CWICR pack — 30 regional databases are one click away.",
+                          "There's no cost-rate database on this server, so search has nothing to show. Import a free CWICR pack — 48 regional databases are one click away.",
                       })}
                     </p>
                     <Button

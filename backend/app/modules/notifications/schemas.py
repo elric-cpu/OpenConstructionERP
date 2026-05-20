@@ -158,3 +158,60 @@ class MarkReadRequest(BaseModel):
         default_factory=list,
         description="Optional list of IDs to mark as read. Empty = mark all.",
     )
+
+
+# ── Preferences + digest (Wave 3 / T9) ───────────────────────────────────
+
+
+class PreferenceRequest(BaseModel):
+    """Upsert payload for ``POST /v1/notifications/preferences/``.
+
+    A pref is a per-user, per-(event_type, channel) decision: whether the
+    user wants this kind of event on this channel at all, and if so, on
+    what cadence (immediate vs hourly vs daily digest).
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    event_type: str = Field(
+        min_length=1,
+        max_length=80,
+        description="Event-bus dot-notation key, e.g. 'boq.position.created'.",
+    )
+    channel: str = Field(
+        pattern=r"^(email|inapp|webhook|none)$",
+        description="Delivery channel.",
+    )
+    enabled: bool = Field(default=True)
+    digest: str = Field(
+        default="realtime",
+        pattern=r"^(realtime|hourly|daily)$",
+        description="Realtime fires immediately; hourly/daily queue for batch.",
+    )
+
+
+class PreferenceResponse(BaseModel):
+    """Single notification preference row."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    user_id: UUID
+    event_type: str
+    channel: str
+    enabled: bool
+    digest: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class EventTypeCatalogEntry(BaseModel):
+    """One entry in the known-event-types catalogue.
+
+    Surfaced to the frontend so the Preferences tab can render the matrix
+    of event-type × channel cells without hardcoding the list there.
+    """
+
+    event_type: str
+    module: str
+    description: str

@@ -23,6 +23,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.core.rate_limiter import approval_limiter
 from app.dependencies import CurrentUserId, RequirePermission, SessionDep, verify_project_access
 from app.modules.changeorders.schemas import (
+    ApprovalAdvanceRequest,
+    ApprovalRow,
+    ApprovalStartRequest,
     ChangeOrderCreate,
     ChangeOrderItemCreate,
     ChangeOrderItemResponse,
@@ -75,6 +78,13 @@ def _order_to_response(order: object) -> ChangeOrderResponse:
         created_at=order.created_at,  # type: ignore[attr-defined]
         updated_at=order.updated_at,  # type: ignore[attr-defined]
         item_count=len(items),
+        linked_po_ids=[
+            str(x) for x in (getattr(order, "linked_po_ids", None) or [])
+        ],
+        linked_rfi_ids=[
+            str(x) for x in (getattr(order, "linked_rfi_ids", None) or [])
+        ],
+        current_approval_step=getattr(order, "current_approval_step", None),
     )
 
 
@@ -103,6 +113,13 @@ def _order_to_with_items(order: object) -> ChangeOrderWithItems:
         created_at=order.created_at,  # type: ignore[attr-defined]
         updated_at=order.updated_at,  # type: ignore[attr-defined]
         item_count=len(items),
+        linked_po_ids=[
+            str(x) for x in (getattr(order, "linked_po_ids", None) or [])
+        ],
+        linked_rfi_ids=[
+            str(x) for x in (getattr(order, "linked_rfi_ids", None) or [])
+        ],
+        current_approval_step=getattr(order, "current_approval_step", None),
         items=[
             ChangeOrderItemResponse(
                 id=item.id,
@@ -382,3 +399,94 @@ async def reject_order(
     await verify_project_access(existing.project_id, str(user_id), session)
     order = await service.reject_order(order_id, user_id)
     return _order_to_response(order)
+
+
+# ── T3: Procore-style multi-step approval chain ─────────────────────────────
+
+
+def _approval_to_response(row: object) -> ApprovalRow:
+    """Build an :class:`ApprovalRow` from a ChangeOrderApproval ORM object."""
+    return ApprovalRow(
+        id=row.id,  # type: ignore[attr-defined]
+        change_order_id=row.change_order_id,  # type: ignore[attr-defined]
+        step_order=row.step_order,  # type: ignore[attr-defined]
+        approver_user_id=row.approver_user_id,  # type: ignore[attr-defined]
+        decision=row.decision,  # type: ignore[attr-defined]
+        decided_at=row.decided_at,  # type: ignore[attr-defined]
+        comments=row.comments,  # type: ignore[attr-defined]
+        created_at=row.created_at,  # type: ignore[attr-defined]
+    )
+
+
+@router.post(
+    "/{order_id}/approval-chain",
+    response_model=list[ApprovalRow],
+    status_code=201,
+)
+async def start_approval_chain(
+    order_id: uuid.UUID,
+    data: ApprovalStartRequest,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    _perm: None = Depends(RequirePermission("changeorders.approve")),
+    service: ChangeOrderService = Depends(_get_service),
+) -> list[ApprovalRow]:
+    """Start a sequential Procore-style approval chain on a change order.
+
+    Requires ``changeorders.approve`` so that an arbitrary editor can't
+    hand-pick their own approver list and shortcut the four-eyes
+    principle. The chain can only be started on a CO that has already
+    been submitted; see ``ChangeOrderService.start_approval_chain``
+    for the full state model.
+    """
+    existing = await service.get_order(order_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
+    rows = await service.start_approval_chain(
+        order_id, list(data.approver_user_ids)
+    )
+    return [_approval_to_response(r) for r in rows]
+
+
+@router.post(
+    "/{order_id}/advance-approval",
+    response_model=ApprovalRow,
+)
+async def advance_approval(
+    order_id: uuid.UUID,
+    data: ApprovalAdvanceRequest,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: ChangeOrderService = Depends(_get_service),
+) -> ApprovalRow:
+    """Record the calling user's decision on the active chain step.
+
+    The caller is identified from the JWT and must be the approver
+    assigned to the step pointed at by ``co.current_approval_step``;
+    any other user gets 403. No additional ``changeorders.approve``
+    role check is applied — being named as an approver in a chain
+    is itself the authorisation.
+    """
+    existing = await service.get_order(order_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
+    row = await service.advance_approval(
+        order_id, str(user_id), data.decision, data.comments
+    )
+    return _approval_to_response(row)
+
+
+@router.get(
+    "/{order_id}/approvals",
+    response_model=list[ApprovalRow],
+    dependencies=[Depends(RequirePermission("changeorders.read"))],
+)
+async def get_approvals(
+    order_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: ChangeOrderService = Depends(_get_service),
+) -> list[ApprovalRow]:
+    """Return the approval-chain rows for a change order in step order."""
+    existing = await service.get_order(order_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
+    rows = await service.list_approvals(order_id)
+    return [_approval_to_response(r) for r in rows]

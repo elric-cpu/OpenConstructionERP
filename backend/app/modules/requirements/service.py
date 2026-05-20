@@ -19,13 +19,22 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
-from app.modules.requirements.models import GateResult, Requirement, RequirementSet
+from app.modules.requirements.evaluator import compute_deliverable_coverage
+from app.modules.requirements.models import (
+    GateResult,
+    Requirement,
+    RequirementDeliverable,
+    RequirementSet,
+)
 from app.modules.requirements.repository import (
     GateResultRepository,
+    RequirementDeliverableRepository,
     RequirementRepository,
     RequirementSetRepository,
 )
 from app.modules.requirements.schemas import (
+    DeliverableCreate,
+    DeliverableUpdate,
     RequirementCreate,
     RequirementSetCreate,
     RequirementUpdate,
@@ -65,6 +74,7 @@ class RequirementsService:
         self.set_repo = RequirementSetRepository(session)
         self.req_repo = RequirementRepository(session)
         self.gate_repo = GateResultRepository(session)
+        self.deliverable_repo = RequirementDeliverableRepository(session)
 
     # ── RequirementSet CRUD ──────────────────────────────────────────────
 
@@ -1022,4 +1032,222 @@ class RequirementsService:
             "by_priority": by_priority,
             "linked_count": linked_count,
             "unlinked_count": unlinked_count,
+        }
+
+    # ── ISO 19650 EIR deliverables (T13) ─────────────────────────────────
+
+    async def add_deliverable(
+        self,
+        requirement_id: uuid.UUID,
+        data: DeliverableCreate,
+    ) -> RequirementDeliverable:
+        """Attach a new EIR deliverable row to a requirement."""
+        req = await self.req_repo.get_by_id(requirement_id)
+        if req is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Requirement not found",
+            )
+        item = RequirementDeliverable(
+            requirement_id=requirement_id,
+            deliverable_type=data.deliverable_type,
+            lod=data.lod,
+            loi=data.loi,
+            due_milestone_id=data.due_milestone_id,
+            submitted_at=data.submitted_at,
+            accepted_at=data.accepted_at,
+            notes=data.notes or "",
+        )
+        item = await self.deliverable_repo.create(item)
+        await self.session.commit()
+        await self.session.refresh(item)
+        logger.info(
+            "Deliverable %s added to requirement %s (LOD=%s, LOI=%s)",
+            item.deliverable_type,
+            requirement_id,
+            item.lod,
+            item.loi,
+        )
+        return item
+
+    async def list_deliverables(
+        self,
+        requirement_id: uuid.UUID,
+        *,
+        deliverable_type: str | None = None,
+    ) -> list[RequirementDeliverable]:
+        """List deliverables for a requirement, optionally filtered by type."""
+        req = await self.req_repo.get_by_id(requirement_id)
+        if req is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Requirement not found",
+            )
+        return await self.deliverable_repo.list_for_requirement(
+            requirement_id, deliverable_type=deliverable_type
+        )
+
+    async def update_deliverable(
+        self,
+        requirement_id: uuid.UUID,
+        deliverable_id: uuid.UUID,
+        data: DeliverableUpdate,
+    ) -> RequirementDeliverable:
+        """Patch fields on an existing deliverable row."""
+        item = await self.deliverable_repo.get_by_id(deliverable_id)
+        if item is None or item.requirement_id != requirement_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Deliverable not found for this requirement",
+            )
+        updates = data.model_dump(exclude_unset=True)
+        if updates:
+            await self.deliverable_repo.update_fields(deliverable_id, **updates)
+            await self.session.commit()
+        return await self.deliverable_repo.get_by_id(deliverable_id)
+
+    async def delete_deliverable(
+        self,
+        requirement_id: uuid.UUID,
+        deliverable_id: uuid.UUID,
+    ) -> None:
+        """Hard delete a deliverable row."""
+        item = await self.deliverable_repo.get_by_id(deliverable_id)
+        if item is None or item.requirement_id != requirement_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Deliverable not found for this requirement",
+            )
+        await self.deliverable_repo.delete(deliverable_id)
+        await self.session.commit()
+
+    async def get_deliverable_coverage(
+        self, requirement_id: uuid.UUID,
+    ) -> dict[str, Any]:
+        """Roll up coverage % for one requirement's deliverables."""
+        req = await self.req_repo.get_by_id(requirement_id)
+        if req is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Requirement not found",
+            )
+        rows = await self.deliverable_repo.list_for_requirement(requirement_id)
+        return compute_deliverable_coverage(rows, requirement_id=requirement_id)
+
+    async def get_project_matrix(
+        self,
+        project_id: uuid.UUID,
+        *,
+        deliverable_type: str | None = None,
+    ) -> dict[str, Any]:
+        """Build the project EIR matrix.
+
+        Rows = requirements (with their parent set + entity/attribute);
+        cols = deliverable types; cells = the most relevant deliverable
+        for that cell (the accepted one if any, else the submitted one,
+        else any missing one). When ``deliverable_type`` is supplied
+        only that column is materialised.
+        """
+        requirements = await self.deliverable_repo.all_requirements_for_project(
+            project_id
+        )
+
+        # Collect deliverable types present in the project so the UI can
+        # render dynamic columns. Always include the canonical set so the
+        # matrix has stable column ordering even on an empty project.
+        canonical_types: list[str] = [
+            "model",
+            "drawing",
+            "schedule",
+            "report",
+            "cobie",
+            "pset",
+        ]
+        seen_types: set[str] = set()
+        for req in requirements:
+            for d in (req.deliverables or []):
+                seen_types.add(d.deliverable_type)
+        all_types = list(canonical_types) + sorted(seen_types - set(canonical_types))
+        if deliverable_type is not None:
+            all_types = [t for t in all_types if t == deliverable_type]
+
+        rows: list[dict[str, Any]] = []
+        project_total = 0
+        project_accepted = 0
+
+        for req in requirements:
+            deliverables = list(req.deliverables or [])
+            if deliverable_type is not None:
+                deliverables = [
+                    d for d in deliverables if d.deliverable_type == deliverable_type
+                ]
+
+            cells: dict[str, dict[str, Any]] = {}
+
+            # Group deliverables by type and pick the most relevant row.
+            grouped: dict[str, list[RequirementDeliverable]] = {}
+            for d in deliverables:
+                grouped.setdefault(d.deliverable_type, []).append(d)
+
+            for col in all_types:
+                bucket = grouped.get(col, [])
+                if not bucket:
+                    cells[col] = {
+                        "deliverable_id": None,
+                        "lod": None,
+                        "loi": None,
+                        "status": "missing",
+                        "due_milestone_id": None,
+                        "submitted_at": None,
+                        "accepted_at": None,
+                    }
+                    continue
+                # Status priority: accepted > submitted > missing.
+                bucket.sort(
+                    key=lambda d: (
+                        0 if d.accepted_at is not None
+                        else 1 if d.submitted_at is not None
+                        else 2
+                    )
+                )
+                cell = bucket[0]
+                cells[col] = {
+                    "deliverable_id": cell.id,
+                    "lod": cell.lod,
+                    "loi": cell.loi,
+                    "status": cell.status,
+                    "due_milestone_id": cell.due_milestone_id,
+                    "submitted_at": cell.submitted_at,
+                    "accepted_at": cell.accepted_at,
+                }
+
+            coverage = compute_deliverable_coverage(
+                deliverables, requirement_id=req.id
+            )
+            project_total += coverage["total"]
+            project_accepted += coverage["accepted"]
+
+            rows.append(
+                {
+                    "requirement_id": req.id,
+                    "requirement_set_id": req.requirement_set_id,
+                    "entity": req.entity,
+                    "attribute": req.attribute,
+                    "priority": req.priority,
+                    "cells": cells,
+                    "coverage_pct": coverage["coverage_pct"],
+                }
+            )
+
+        project_pct = (
+            round((project_accepted / project_total) * 100.0, 2)
+            if project_total
+            else 0.0
+        )
+
+        return {
+            "project_id": project_id,
+            "deliverable_types": all_types,
+            "rows": rows,
+            "coverage_pct": project_pct,
         }

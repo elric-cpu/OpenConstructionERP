@@ -104,6 +104,12 @@ class Dashboard(Base):
     refresh_interval_seconds: Mapped[int] = mapped_column(
         Integer, nullable=False, default=300, server_default="300",
     )
+    # Wave 4 / T11 — cross-filter opt-in flag. When True the evaluate
+    # endpoint propagates a caller-supplied filter dict into every widget.
+    # Default False keeps the v3.x static-render contract for existing rows.
+    cross_filter_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0",
+    )
 
 
 class DashboardWidget(Base):
@@ -143,6 +149,13 @@ class DashboardWidget(Base):
     )
     order_seq: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0",
+    )
+    # Wave 4 / T11 — drill-path JSON describes how a click on this widget
+    # propagates a filter to the rest of the dashboard. None means the
+    # widget is not clickable for cross-filter purposes. Shape:
+    # ``{"filter_field": "project_id", "filter_value_from": "row.project_id"}``.
+    drill_path: Mapped[dict | None] = mapped_column(  # type: ignore[type-arg]
+        JSON, nullable=True, default=None,
     )
 
 

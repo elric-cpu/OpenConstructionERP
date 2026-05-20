@@ -1,5 +1,7 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { ThumbsUp, ThumbsDown } from 'lucide-react';
 import type { ChatMessage } from '../../types';
+import { submitFeedback } from '../../api';
 import ToolCallCard from './ToolCallCard';
 import StreamingCursor from './StreamingCursor';
 
@@ -116,8 +118,87 @@ interface MessageBubbleProps {
   isStreaming?: boolean;
 }
 
+/**
+ * T8 thumbs-up / thumbs-down on assistant messages. Optimistically toggles
+ * locally, fires `submitFeedback` against the backend, and rolls back on
+ * failure so a network error doesn't leave the UI lying.
+ */
+function FeedbackBar({ messageId }: { messageId: string }) {
+  const [rating, setRating] = useState<1 | -1 | 0>(0);
+  const [busy, setBusy] = useState(false);
+
+  async function click(next: 1 | -1) {
+    if (busy) return;
+    const prior = rating;
+    // Tap again on the active thumb → no change (we don't support
+    // un-rating server-side yet, so just no-op rather than lie).
+    if (prior === next) return;
+    setBusy(true);
+    setRating(next);
+    try {
+      await submitFeedback(messageId, next);
+    } catch {
+      setRating(prior);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const baseStyle: React.CSSProperties = {
+    background: 'transparent',
+    border: 'none',
+    cursor: busy ? 'wait' : 'pointer',
+    padding: 2,
+    color: 'var(--chat-text-tertiary)',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 4,
+    transition: 'color 0.15s ease, background 0.15s ease',
+  };
+  const activeStyle: React.CSSProperties = {
+    ...baseStyle,
+    color: 'var(--chat-accent, #3b82f6)',
+    background: 'var(--chat-surface-3, rgba(0,0,0,.06))',
+  };
+
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        gap: 4,
+        marginLeft: 8,
+        verticalAlign: 'middle',
+      }}
+      title="Was this helpful?"
+      aria-label="Feedback on this answer"
+    >
+      <button
+        type="button"
+        onClick={() => void click(1)}
+        style={rating === 1 ? activeStyle : baseStyle}
+        aria-label="Thumbs up"
+        aria-pressed={rating === 1}
+        disabled={busy}
+      >
+        <ThumbsUp size={13} />
+      </button>
+      <button
+        type="button"
+        onClick={() => void click(-1)}
+        style={rating === -1 ? activeStyle : baseStyle}
+        aria-label="Thumbs down"
+        aria-pressed={rating === -1}
+        disabled={busy}
+      >
+        <ThumbsDown size={13} />
+      </button>
+    </span>
+  );
+}
+
 export default function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
-  const { role, content, toolCalls, ts } = message;
+  const { id, role, content, toolCalls, ts } = message;
   const renderedHtml = useMemo(() => (content ? renderMarkdown(content) : ''), [content]);
 
   if (role === 'system') {
@@ -231,9 +312,17 @@ export default function MessageBubble({ message, isStreaming }: MessageBubblePro
           fontFamily: 'var(--chat-font-mono)',
           marginTop: 3,
           paddingLeft: 14,
+          display: 'inline-flex',
+          alignItems: 'center',
         }}
       >
         {formatTime(ts)}
+        {/* Show thumbs only after streaming completes. The bubble id is a
+            client-generated UUID during the stream and gets reconciled
+            against the backend row when the session is re-fetched; if the
+            user thumbs an unreconciled id the backend returns 404 and
+            FeedbackBar quietly rolls the optimistic state back. */}
+        {!isStreaming && content && id && <FeedbackBar messageId={id} />}
       </span>
     </div>
   );

@@ -1288,21 +1288,66 @@ async def _process_cad_in_background(
                     )
             else:
                 meta = dict(model.metadata_ or {})
+
+                # Pull the structured failure context the DDC subprocess
+                # recorded (RVT version, converter version, stderr tail).
+                # If it's present, we can build a much more specific error
+                # message than the legacy "converter not installed" boilerplate.
+                from app.modules.bim_hub.ifc_processor import last_ddc_failure
+
+                ddc_failure = last_ddc_failure()
+                rvt_info = ddc_failure.get("rvt_info") or {}
+                conv_info = ddc_failure.get("converter_info") or {}
+                rvt_app = rvt_info.get("app_name")  # e.g. "Revit 2024"
+                conv_version = conv_info.get("version")  # e.g. "18.0.0.0"
+                stderr_tail = (ddc_failure.get("stderr") or "").strip()
+
                 if ext == ".rvt":
                     model.status = "needs_converter"
-                    model.error_message = (
-                        "The Revit (RVT) converter could not extract any elements "
-                        "from this file. The most common causes are: the converter "
-                        "isn't installed (Settings → BIM Converters), the RVT was "
-                        "saved with a Revit version newer than the converter, or "
-                        "the file is corrupt. Try installing/updating the RVT "
-                        "converter and clicking Retry."
+
+                    # Compose the message in pieces — every clause is added
+                    # only when its underlying datum is non-empty so we never
+                    # ship "File saved with Revit None".
+                    parts: list[str] = []
+                    if rvt_app:
+                        parts.append(
+                            f"File saved with {rvt_app}"
+                            + (f" (format {rvt_info['format']})." if rvt_info.get("format") else ".")
+                        )
+                    if conv_version:
+                        parts.append(f"Installed RVT converter: {conv_version}.")
+                    parts.append(
+                        "The converter produced no elements from this file. "
+                        "Most common causes: the RVT was saved with a Revit "
+                        "version newer than the converter supports, the file "
+                        "is corrupt, or a converter dependency is missing."
                     )
+                    if stderr_tail:
+                        # Trim to a single line for the headline message;
+                        # the full stderr tail goes into metadata_ below.
+                        first_line = stderr_tail.splitlines()[0][:200]
+                        if first_line:
+                            parts.append(f"Converter said: {first_line}")
+                    parts.append(
+                        "Try updating the RVT converter (Settings → BIM "
+                        "Converters → Reinstall) and clicking Retry."
+                    )
+                    model.error_message = " ".join(parts)
+
                     meta["error_code"] = "ddc_failed"
                     meta["converter_id"] = "rvt"
                     meta["install_endpoint"] = (
                         "/api/v1/takeoff/converters/rvt/install/"
                     )
+                    # Structured diagnostic info for the frontend to render
+                    # a dedicated "version mismatch" panel if it wants to.
+                    meta["diagnostics"] = {
+                        "rvt_info": rvt_info,
+                        "converter_info": conv_info,
+                        "reason": ddc_failure.get("reason"),
+                        "exit_code": ddc_failure.get("exit_code"),
+                        "stderr_tail": stderr_tail,
+                    }
                 else:
                     model.status = "error"
                     model.error_message = (
@@ -1311,6 +1356,13 @@ async def _process_cad_in_background(
                         "confirm it isn't empty, then click Retry."
                     )
                     meta["error_code"] = "zero_elements"
+                    if stderr_tail or conv_version:
+                        meta["diagnostics"] = {
+                            "converter_info": conv_info,
+                            "reason": ddc_failure.get("reason"),
+                            "exit_code": ddc_failure.get("exit_code"),
+                            "stderr_tail": stderr_tail,
+                        }
                 model.metadata_ = meta
                 logger.warning(
                     "Background CAD processed but no elements found for model %s",

@@ -18,6 +18,7 @@ from app.modules.service.models import (
     DebriefReport,
     ServiceAsset,
     ServiceContract,
+    ServiceRecurringSchedule,
     ServiceSchedule,
     ServiceTicket,
     ServiceWorkOrder,
@@ -425,3 +426,56 @@ class ChecklistRepository(_BaseRepo[AssetInspectionChecklist]):
         stmt = base.order_by(AssetInspectionChecklist.name).offset(offset).limit(limit)
         rows = (await self.session.execute(stmt)).scalars().all()
         return list(rows), int(total)
+
+
+# ── Recurring schedule repository ─────────────────────────────────────────
+
+
+class RecurringScheduleRepository(_BaseRepo[ServiceRecurringSchedule]):
+    """‌⁠‍Data access for the RRULE-driven recurring-ticket schedule (T10)."""
+
+    model = ServiceRecurringSchedule
+
+    async def list_for_project(
+        self,
+        project_id: uuid.UUID | None,
+        *,
+        offset: int = 0,
+        limit: int = 100,
+        enabled: bool | None = None,
+    ) -> tuple[list[ServiceRecurringSchedule], int]:
+        base = select(ServiceRecurringSchedule)
+        if project_id is not None:
+            base = base.where(ServiceRecurringSchedule.project_id == project_id)
+        if enabled is not None:
+            base = base.where(ServiceRecurringSchedule.enabled.is_(enabled))
+        total = (
+            await self.session.execute(select(func.count()).select_from(base.subquery()))
+        ).scalar_one()
+        stmt = (
+            base.order_by(ServiceRecurringSchedule.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        rows = (await self.session.execute(stmt)).scalars().all()
+        return list(rows), int(total)
+
+    async def list_due(
+        self,
+        *,
+        now_iso: str,
+        limit: int = 100,
+    ) -> list[ServiceRecurringSchedule]:
+        """Schedules ready to be materialised (enabled + next_run_at <= now)."""
+        stmt = (
+            select(ServiceRecurringSchedule)
+            .where(
+                ServiceRecurringSchedule.enabled.is_(True),
+                ServiceRecurringSchedule.next_run_at.isnot(None),
+                ServiceRecurringSchedule.next_run_at <= now_iso,
+            )
+            .order_by(ServiceRecurringSchedule.next_run_at)
+            .limit(limit)
+        )
+        rows = (await self.session.execute(stmt)).scalars().all()
+        return list(rows)

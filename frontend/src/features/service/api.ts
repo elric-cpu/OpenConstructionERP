@@ -74,6 +74,10 @@ export interface ServiceTicket {
   assigned_to?: string | null;
   resolved_at?: string | null;
   closed_at?: string | null;
+  // T10: SLA breach + recurring-schedule fields.
+  sla_breach_notified_at?: string | null;
+  sla_breached_at?: string | null;
+  recurring_schedule_id?: string | null;
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
@@ -321,4 +325,116 @@ export function completeWorkOrder(
   return apiPost<WorkOrder>(`/v1/service/work-orders/${id}/complete`, {
     debrief,
   });
+}
+
+/* ── T10: SLA breach check + recurring schedules ─────────────────────── */
+
+export interface SLABreachCheckResponse {
+  checked_at: string;
+  newly_breached: number;
+  total_breached: number;
+  breached_ticket_ids: string[];
+}
+
+export interface RecurringSchedule {
+  id: string;
+  project_id?: string | null;
+  contract_id?: string | null;
+  name: string;
+  rrule: string;
+  template_ticket_data: Record<string, unknown>;
+  next_run_at?: string | null;
+  last_run_at?: string | null;
+  enabled: boolean;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateRecurringSchedulePayload {
+  name: string;
+  rrule: string;
+  project_id?: string | null;
+  contract_id?: string | null;
+  template_ticket_data?: Record<string, unknown>;
+  next_run_at?: string | null;
+  enabled?: boolean;
+}
+
+export interface UpdateRecurringSchedulePayload {
+  name?: string;
+  rrule?: string;
+  project_id?: string | null;
+  contract_id?: string | null;
+  template_ticket_data?: Record<string, unknown>;
+  next_run_at?: string | null;
+  enabled?: boolean;
+}
+
+export interface MaterializeResponse {
+  schedule_id: string;
+  ticket_id?: string | null;
+  ticket_number?: string | null;
+  next_run_at?: string | null;
+  materialized: boolean;
+  reason?: string | null;
+}
+
+export function checkTicketBreaches(params?: {
+  contract_id?: string;
+}): Promise<SLABreachCheckResponse> {
+  const qs = new URLSearchParams();
+  if (params?.contract_id) qs.set('contract_id', params.contract_id);
+  const q = qs.toString();
+  return apiPost<SLABreachCheckResponse>(
+    `/v1/service/tickets/check-breaches${q ? `?${q}` : ''}`,
+    {},
+  );
+}
+
+export function listRecurringSchedules(params?: {
+  project_id?: string;
+  enabled?: boolean;
+  offset?: number;
+  limit?: number;
+}): Promise<RecurringSchedule[]> {
+  const qs = new URLSearchParams();
+  if (params?.project_id) qs.set('project_id', params.project_id);
+  if (params?.enabled !== undefined) qs.set('enabled', String(params.enabled));
+  if (params?.offset !== undefined) qs.set('offset', String(params.offset));
+  if (params?.limit !== undefined) qs.set('limit', String(params.limit));
+  const q = qs.toString();
+  return apiGet<RecurringSchedule[]>(
+    `/v1/service/recurring-schedules/${q ? `?${q}` : ''}`,
+  );
+}
+
+export function createRecurringSchedule(
+  data: CreateRecurringSchedulePayload,
+): Promise<RecurringSchedule> {
+  return apiPost<RecurringSchedule>('/v1/service/recurring-schedules/', data);
+}
+
+export function updateRecurringSchedule(
+  id: string,
+  data: UpdateRecurringSchedulePayload,
+): Promise<RecurringSchedule> {
+  return apiPatch<RecurringSchedule>(`/v1/service/recurring-schedules/${id}`, data);
+}
+
+export function deleteRecurringSchedule(id: string): Promise<void> {
+  return apiDelete(`/v1/service/recurring-schedules/${id}`);
+}
+
+export function materializeRecurringSchedule(
+  id: string,
+  options?: { force?: boolean },
+): Promise<MaterializeResponse> {
+  const qs = new URLSearchParams();
+  if (options?.force) qs.set('force', 'true');
+  const q = qs.toString();
+  return apiPost<MaterializeResponse>(
+    `/v1/service/recurring-schedules/${id}/materialize${q ? `?${q}` : ''}`,
+    {},
+  );
 }

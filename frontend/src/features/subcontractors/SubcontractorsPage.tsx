@@ -18,6 +18,10 @@ import {
   Trash2,
   ShieldAlert,
   Save,
+  Shield,
+  Ban,
+  CheckCircle2,
+  ClipboardCheck,
 } from 'lucide-react';
 import {
   Button,
@@ -34,6 +38,7 @@ import {
 import { MoneyDisplay } from '@/shared/ui/MoneyDisplay';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { PipelineBanner } from './PipelineBanner';
+import { PrequalModal } from './PrequalModal';
 import { useToastStore } from '@/stores/useToastStore';
 import { getErrorMessage } from '@/shared/lib/api';
 import {
@@ -49,6 +54,8 @@ import {
   listRetentionLedger,
   listRatings,
   listCertificates,
+  blockSubcontractor,
+  unblockSubcontractor,
   type Subcontractor,
   type PrequalStatus,
   type Agreement,
@@ -94,6 +101,73 @@ const inputCls =
 function toNum(n: number | string | null | undefined): number {
   if (n === null || n === undefined) return 0;
   return typeof n === 'number' ? n : Number(n) || 0;
+}
+
+/**
+ * Derive a 3-state insurance traffic-light from the expiry date.
+ *
+ * - ``red``    : expired (past), or missing entirely
+ * - ``amber``  : within 1-30 days of expiry
+ * - ``green``  : more than 30 days away
+ *
+ * Mirrors the server-side ``flag_expiring_insurance`` behaviour so the
+ * UI stays consistent with the nightly sweep report.
+ */
+function insuranceStatus(
+  expiry: string | null | undefined,
+): 'red' | 'amber' | 'green' {
+  if (!expiry) return 'red';
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const exp = new Date(expiry);
+  if (Number.isNaN(exp.getTime())) return 'red';
+  const diffDays = Math.floor((exp.getTime() - today.getTime()) / 86_400_000);
+  if (diffDays < 0) return 'red';
+  if (diffDays <= 30) return 'amber';
+  return 'green';
+}
+
+function InsuranceChip({
+  expiry,
+}: {
+  expiry: string | null | undefined;
+}) {
+  const { t } = useTranslation();
+  const state = insuranceStatus(expiry);
+  const cfg: Record<
+    'red' | 'amber' | 'green',
+    { variant: 'success' | 'warning' | 'error'; label: string }
+  > = {
+    green: {
+      variant: 'success',
+      label: t('subcontractors.insurance_ok', {
+        defaultValue: 'Insurance OK',
+      }),
+    },
+    amber: {
+      variant: 'warning',
+      label: t('subcontractors.insurance_soon', {
+        defaultValue: 'Insurance soon',
+      }),
+    },
+    red: {
+      variant: 'error',
+      label: expiry
+        ? t('subcontractors.insurance_expired', {
+            defaultValue: 'Insurance expired',
+          })
+        : t('subcontractors.insurance_missing', {
+            defaultValue: 'No insurance',
+          }),
+    },
+  };
+  const c = cfg[state];
+  return (
+    <Badge variant={c.variant} dot>
+      {c.label}
+      {expiry && state !== 'green' ? ` · ${expiry}` : ''}
+    </Badge>
+  );
 }
 
 function RatingStars({ score }: { score: number | string }) {
@@ -336,6 +410,9 @@ function SubcontractorTable({
               {t('subcontractors.col_status', { defaultValue: 'Status' })}
             </th>
             <th className="px-4 py-2.5 text-left">
+              {t('subcontractors.col_insurance', { defaultValue: 'Insurance' })}
+            </th>
+            <th className="px-4 py-2.5 text-left">
               {t('subcontractors.col_rating', { defaultValue: 'Rating' })}
             </th>
             <th className="px-4 py-2.5 text-left">
@@ -351,8 +428,18 @@ function SubcontractorTable({
               className="border-t border-border-light hover:bg-surface-secondary cursor-pointer"
             >
               <td className="px-4 py-2">
-                <div className="font-medium text-content-primary truncate max-w-[280px]">
-                  {r.legal_name}
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="font-medium text-content-primary truncate max-w-[260px]">
+                    {r.legal_name}
+                  </div>
+                  {r.is_blocked && (
+                    <Badge variant="error" size="sm">
+                      <Ban size={10} className="mr-0.5 inline" />
+                      {t('subcontractors.blocked_badge', {
+                        defaultValue: 'Blocked',
+                      })}
+                    </Badge>
+                  )}
                 </div>
                 {r.trade_name && (
                   <div className="text-xs text-content-tertiary truncate max-w-[280px]">
@@ -383,6 +470,9 @@ function SubcontractorTable({
                 </Badge>
               </td>
               <td className="px-4 py-2">
+                <InsuranceChip expiry={r.insurance_expiry_date} />
+              </td>
+              <td className="px-4 py-2">
                 <RatingStars score={r.rating_score} />
               </td>
               <td className="px-4 py-2 text-content-secondary text-xs">
@@ -408,6 +498,12 @@ function DetailDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Prequal modal + block-action state (Wave 4 / T12). The block toggle
+  // optimistically refetches `getSubcontractor` rather than mutating local
+  // state so the rest of the drawer (dashboard banner, insurance chip)
+  // picks up the new is_blocked value automatically.
+  const [prequalOpen, setPrequalOpen] = useState(false);
+  const [blockBusy, setBlockBusy] = useState(false);
 
   const subQ = useQuery({
     queryKey: ['subcontractors', 'detail', id],
@@ -471,6 +567,54 @@ function DetailDrawer({ id, onClose }: { id: string; onClose: () => void }) {
     }
   };
 
+  /**
+   * Block / unblock handler — single function, dispatches by current
+   * is_blocked state. Prompts for a reason on block; clears the flag on
+   * unblock. Invalidates the subcontractors cache so the row in the
+   * background table refreshes its blocked badge.
+   */
+  const handleBlockToggle = async () => {
+    if (!sub) return;
+    setBlockBusy(true);
+    try {
+      if (sub.is_blocked) {
+        await unblockSubcontractor(sub.id);
+        addToast({
+          type: 'success',
+          title: t('subcontractors.unblocked_toast', {
+            defaultValue: '{{name}} unblocked',
+            name: sub.legal_name,
+          }),
+        });
+      } else {
+        // Plain prompt() keeps the change scoped — a richer modal can come
+        // later if the audit log shows recurring patterns of reasons.
+        const reason = window.prompt(
+          t('subcontractors.block_prompt', {
+            defaultValue: 'Reason for blocking this subcontractor?',
+          }) as string,
+        );
+        if (!reason || !reason.trim()) {
+          setBlockBusy(false);
+          return;
+        }
+        await blockSubcontractor(sub.id, reason.trim());
+        addToast({
+          type: 'success',
+          title: t('subcontractors.blocked_toast', {
+            defaultValue: '{{name}} blocked',
+            name: sub.legal_name,
+          }),
+        });
+      }
+      qc.invalidateQueries({ queryKey: ['subcontractors'] });
+    } catch (err) {
+      addToast({ type: 'error', title: getErrorMessage(err) });
+    } finally {
+      setBlockBusy(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30" />
@@ -492,6 +636,45 @@ function DetailDrawer({ id, onClose }: { id: string; onClose: () => void }) {
               fire against an undefined id. Edit reopens the form modal in
               edit mode; Delete is danger-confirmed. */}
           <div className="flex items-center gap-1 shrink-0">
+            {/* Prequalify — opens the questionnaire modal. Available regardless
+                of the current prequalification_status so the user can re-run
+                the assessment and update the score over time. */}
+            <button
+              type="button"
+              onClick={() => setPrequalOpen(true)}
+              disabled={!sub}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border-light bg-surface-primary px-2.5 py-1.5 text-xs font-medium text-content-secondary hover:text-oe-blue hover:border-oe-blue hover:bg-oe-blue-subtle transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label={t('subcontractors.prequalify', {
+                defaultValue: 'Prequalify',
+              })}
+            >
+              <ClipboardCheck size={12} />
+              {t('subcontractors.prequalify', { defaultValue: 'Prequalify' })}
+              {typeof sub?.prequal_score === 'number' && (
+                <span className="ml-0.5 tabular-nums text-content-tertiary">
+                  ({sub.prequal_score})
+                </span>
+              )}
+            </button>
+            {/* Block / Unblock — single button, label flips by current state.
+                Block prompts for a reason; unblock clears. Both invalidate
+                the subcontractors query so the row badge refreshes. */}
+            <button
+              type="button"
+              onClick={handleBlockToggle}
+              disabled={!sub || blockBusy}
+              className={clsx(
+                'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
+                sub?.is_blocked
+                  ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:border-emerald-900/40 dark:text-emerald-200'
+                  : 'border-border-light bg-surface-primary text-content-secondary hover:text-rose-600 hover:border-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/30',
+              )}
+            >
+              {sub?.is_blocked ? <CheckCircle2 size={12} /> : <Ban size={12} />}
+              {sub?.is_blocked
+                ? t('subcontractors.unblock_button', { defaultValue: 'Unblock' })
+                : t('subcontractors.block_button', { defaultValue: 'Block' })}
+            </button>
             <button
               type="button"
               onClick={() => setEditOpen(true)}
@@ -606,6 +789,27 @@ function DetailDrawer({ id, onClose }: { id: string; onClose: () => void }) {
                 value={<RatingStars score={sub.rating_score} />}
               />
               <KV
+                label={t('subcontractors.col_insurance', {
+                  defaultValue: 'Insurance',
+                })}
+                value={<InsuranceChip expiry={sub.insurance_expiry_date} />}
+              />
+              <KV
+                label={t('subcontractors.prequal_score_label', {
+                  defaultValue: 'Prequal score',
+                })}
+                value={
+                  typeof sub.prequal_score === 'number' ? (
+                    <span className="inline-flex items-center gap-1">
+                      <Shield size={12} className="text-content-tertiary" />
+                      <span className="tabular-nums">{sub.prequal_score}</span>
+                    </span>
+                  ) : (
+                    <span className="text-content-tertiary">—</span>
+                  )
+                }
+              />
+              <KV
                 label={t('subcontractors.col_country', { defaultValue: 'Country' })}
                 value={sub.country || '—'}
               />
@@ -614,6 +818,16 @@ function DetailDrawer({ id, onClose }: { id: string; onClose: () => void }) {
                 value={sub.tax_id || '—'}
               />
             </div>
+            {sub.is_blocked && sub.blocked_reason && (
+              <div className="border-b border-rose-200 bg-rose-50 px-5 py-2.5 text-xs text-rose-800 dark:border-rose-900/40 dark:bg-rose-950/20 dark:text-rose-200">
+                <span className="font-semibold">
+                  {t('subcontractors.blocked_label', {
+                    defaultValue: 'Blocked:',
+                  })}
+                </span>{' '}
+                {sub.blocked_reason}
+              </div>
+            )}
 
             <div className="flex flex-wrap items-center gap-2 px-5 py-3 text-xs border-b border-border-light">
               <span className="text-content-tertiary">
@@ -765,6 +979,11 @@ function DetailDrawer({ id, onClose }: { id: string; onClose: () => void }) {
           existing={sub}
           onClose={() => setEditOpen(false)}
         />
+      )}
+      {/* Prequal modal — re-runnable; seeds itself from the prior
+          questionnaire so the user can iterate on answers. */}
+      {prequalOpen && sub && (
+        <PrequalModal subcontractor={sub} onClose={() => setPrequalOpen(false)} />
       )}
       {/* Delete confirmation — destructive action, intentionally requires
           a second click. The danger-variant ConfirmDialog already handles

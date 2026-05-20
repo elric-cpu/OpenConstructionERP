@@ -16,13 +16,16 @@ from app.modules.subcontractors.schemas import (
     AgreementCreate,
     AgreementResponse,
     AgreementUpdate,
+    BlockRequest,
     CertificateCreate,
     CertificateResponse,
     CertificateUpdate,
     ExpiryAlert,
+    InsuranceExpiryEntry,
     PaymentApplicationCreate,
     PaymentApplicationResponse,
     PaymentApplicationUpdate,
+    PrequalRequest,
     PrequalificationCreate,
     PrequalificationResponse,
     PrequalificationUpdate,
@@ -782,3 +785,101 @@ async def validate_tax_id_endpoint(
     the standard the value was matched against.
     """
     return validate_tax_id(body.country, body.tax_id)
+
+
+# ── Wave 4 / T12 — BuildingConnected-style prequal + insurance + block ──
+
+
+@router.post(
+    "/subcontractors/{sub_id}/prequal",
+    response_model=SubcontractorResponse,
+)
+async def submit_prequal(
+    sub_id: uuid.UUID,
+    body: PrequalRequest,
+    session: SessionDep,
+    _user: CurrentUserId,
+    _perm: None = Depends(RequirePermission("subcontractors.update")),
+) -> SubcontractorResponse:
+    """Submit a prequalification questionnaire + score.
+
+    The questionnaire payload is stored verbatim on the subcontractor;
+    the (optional) caller-supplied score wins over the auto-computed
+    value when present. Stamps ``prequal_completed_at`` to now.
+    """
+    svc = SubcontractorService(session)
+    entity = await svc.submit_prequal(
+        sub_id, questionnaire_data=body.questionnaire, score=body.score,
+    )
+    return SubcontractorResponse.model_validate(entity)
+
+
+@router.post(
+    "/subcontractors/check-insurance-expiry",
+    response_model=list[InsuranceExpiryEntry],
+)
+async def check_insurance_expiry(
+    session: SessionDep,
+    _user: CurrentUserId,
+    days_ahead: int = Query(default=30, ge=0, le=365),
+    _perm: None = Depends(RequirePermission("subcontractors.read")),
+) -> list[InsuranceExpiryEntry]:
+    """Surface subcontractors whose insurance expires within ``days_ahead``.
+
+    Already-past expiries are also surfaced so dispatcher sees both
+    "renew soon" and "renew now". Emits a
+    ``subcontractors.insurance.expiring`` event per flagged sub for the
+    notification pipeline.
+    """
+    from datetime import date as _date  # local import to keep module load light
+
+    svc = SubcontractorService(session)
+    today = _date.today()
+    rows = await svc.flag_expiring_insurance(days_ahead=days_ahead, today=today)
+    return [
+        InsuranceExpiryEntry(
+            id=r.id,
+            legal_name=r.legal_name,
+            insurance_expiry_date=r.insurance_expiry_date,
+            days_until_expiry=(
+                (r.insurance_expiry_date - today).days
+                if r.insurance_expiry_date
+                else 0
+            ),
+            is_blocked=bool(r.is_blocked),
+        )
+        for r in rows
+    ]
+
+
+@router.post(
+    "/subcontractors/{sub_id}/block",
+    response_model=SubcontractorResponse,
+)
+async def block_subcontractor_endpoint(
+    sub_id: uuid.UUID,
+    body: BlockRequest,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    _perm: None = Depends(RequirePermission("subcontractors.update")),
+) -> SubcontractorResponse:
+    """Hard-block a subcontractor from bidding / payment with a reason."""
+    svc = SubcontractorService(session)
+    entity = await svc.block_subcontractor(sub_id, reason=body.reason, by_user_id=user_id)
+    return SubcontractorResponse.model_validate(entity)
+
+
+@router.post(
+    "/subcontractors/{sub_id}/unblock",
+    response_model=SubcontractorResponse,
+)
+async def unblock_subcontractor_endpoint(
+    sub_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    _perm: None = Depends(RequirePermission("subcontractors.update")),
+) -> SubcontractorResponse:
+    """Clear the block flag + reason on a subcontractor."""
+    svc = SubcontractorService(session)
+    entity = await svc.unblock_subcontractor(sub_id, by_user_id=user_id)
+    return SubcontractorResponse.model_validate(entity)

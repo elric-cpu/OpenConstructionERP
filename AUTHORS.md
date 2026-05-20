@@ -2,7 +2,7 @@
 
 OpenConstructionERP is created and maintained by **Artem Boiko**, founder of
 [DataDrivenConstruction](https://datadrivenconstruction.io) — author of the CWICR
-cost database (55,000+ items, 9 languages), with 10+ years in construction cost
+cost database (55,000+ items, 24 languages), with 10+ years in construction cost
 estimation.
 
 ## Maintainer

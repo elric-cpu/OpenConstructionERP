@@ -135,7 +135,6 @@ export function LoginPageNext() {
 
   const demoAccounts = [
     { email: 'demo@openestimator.io', name: 'Admin', role: t('auth.demo_role_admin', 'Administrator'), color: 'bg-blue-500', letter: 'A' },
-    { email: 'estimator@openestimator.io', name: 'Anna Musterfrau', role: t('auth.demo_role_estimator', 'Estimator'), color: 'bg-emerald-500', letter: 'A' },
     { email: 'manager@openestimator.io', name: 'Thomas Müller', role: t('auth.demo_role_manager', 'Manager'), color: 'bg-amber-500', letter: 'M' },
   ];
 

@@ -100,7 +100,7 @@ const STEP_DEFAULTS: Record<string, { title: string; description: string }> = {
   'onboarding.step4.title': {
     title: 'Cost Databases',
     description:
-      'Browse and manage cost rate databases including the built-in CWICR with 55 000+ positions across 9 languages.',
+      'Browse and manage cost rate databases including the built-in CWICR with 55 000+ positions across 24 languages.',
   },
   'onboarding.step5.title': {
     title: 'Simple / Advanced Mode',

@@ -245,3 +245,66 @@ class ProcurementStatsResponse(BaseModel):
     total_committed: str = "0"
     total_received: int = 0
     pending_delivery_count: int = 0
+
+
+# ── 3-way match status (Wave 2 / T4) ─────────────────────────────────────
+
+
+class POLineMatchStatus(BaseModel):
+    """‌⁠‍Per-PO-line 3-way match summary.
+
+    ``match_status`` collapses the PO/GR/Invoice quantity comparison into
+    one tag the UI badge consumes:
+
+    * ``ok``             — invoiced and received quantities cover the order.
+    * ``partial``        — some quantity received or invoiced, more pending.
+    * ``unmatched``      — nothing received or invoiced yet.
+    * ``over_received``  — confirmed GR quantity exceeds the PO line.
+    * ``over_invoiced``  — invoiced quantity exceeds received quantity.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    line_id: UUID
+    description: str
+    ordered_qty: str = "0"
+    received_qty: str = "0"
+    invoiced_qty: str = "0"
+    match_status: str = "unmatched"
+
+
+class POMatchStatusResponse(BaseModel):
+    """Aggregate 3-way match envelope for a single PO."""
+
+    po_id: UUID
+    po_number: str
+    overall_status: str = "unmatched"
+    lines: list[POLineMatchStatus] = Field(default_factory=list)
+
+
+# ── Supplier scorecard (Wave 2 / T4) ─────────────────────────────────────
+
+
+class SupplierScorecardResponse(BaseModel):
+    """Trailing-window supplier performance KPIs.
+
+    ``on_time_delivery_pct`` / ``qty_variance_pct`` / ``gr_rejection_rate``
+    are decimals in 0.0–1.0 (frontend renders as ``× 100`` percentages).
+    ``total_po_value`` is summed across the trailing window in the supplier
+    or project currency, returned as a string-Decimal for compatibility
+    with the PO ``amount_total`` model field.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    supplier_contact_id: str
+    supplier_name: str | None = None
+    project_id: UUID | None = None
+    period_days: int = 365
+    total_po_count: int = 0
+    total_po_value: str = "0"
+    currency: str = ""
+    on_time_delivery_pct: float = 0.0
+    qty_variance_pct: float = 0.0
+    gr_rejection_rate: float = 0.0
+    total_gr_count: int = 0

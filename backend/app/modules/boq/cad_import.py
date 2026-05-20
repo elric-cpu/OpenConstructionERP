@@ -450,6 +450,123 @@ def smoke_test_converter(extension: str, force: bool = False) -> ConverterHealth
     return result
 
 
+# ── Version detection — RVT file + installed converter ────────────────────
+#
+# Why this exists: the smoke test verifies the binary LOADS, not that it can
+# parse the user's file. A user can have a perfectly installed converter that
+# is simply OLDER than the Revit version that saved their .rvt file — and the
+# DDC converter then silently writes an empty Excel. Detecting both versions
+# upfront lets us surface the actual reason ("Your RVT is from Revit 2025
+# but the installed converter only supports up to 2023") instead of the
+# generic "Converter Required" message.
+
+
+def read_rvt_revit_version(path: Path, *, max_scan_bytes: int = 262144) -> dict[str, str | None]:
+    """‌⁠‍Extract Revit version metadata from a .rvt file header.
+
+    RVT files are OLE Compound Documents. The ``BasicFileInfo`` stream
+    near the start contains UTF-16-LE text like ``Format: 2024`` and
+    ``Revit Build: 24.0.11.21``. We don't parse the full OLE structure
+    (would add a dependency) — we just scan the first 256 KB for the
+    well-known marker strings, which are reliably present in the leading
+    sectors for files saved by Revit 2018+.
+
+    Returns a dict with optional ``format``, ``build``, ``app_name``
+    fields. All values are strings or ``None`` if the marker wasn't found.
+    Never raises — IO errors return all-None.
+    """
+    info: dict[str, str | None] = {"format": None, "build": None, "app_name": None}
+    try:
+        with path.open("rb") as fh:
+            header = fh.read(max_scan_bytes)
+    except OSError as exc:
+        logger.debug("Could not read RVT header from %s: %s", path, exc)
+        return info
+
+    # OLE/CFB header starts with the magic D0CF11E0A1B11AE1. Bail early if
+    # the file isn't a Compound File (e.g. corrupted upload or wrong ext).
+    if not header.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"):
+        logger.debug("File %s is not a valid OLE Compound File", path.name)
+        return info
+
+    # Decode the scanned region as UTF-16-LE (Revit's chosen encoding for
+    # BasicFileInfo). errors='replace' so a stray byte doesn't kill the
+    # whole scan.
+    try:
+        text = header.decode("utf-16-le", errors="replace")
+    except UnicodeError:
+        return info
+
+    import re as _re
+
+    # Examples of strings we want to capture:
+    #   "Format: 2024"
+    #   "Revit Build: (Autodesk Revit 2024 (ENU))"
+    #   "Revit Build: 24.0.11.21"
+    fmt = _re.search(r"Format:\s*([0-9]{4})", text)
+    if fmt:
+        info["format"] = fmt.group(1)
+
+    build = _re.search(r"Revit Build:\s*([^\r\n]+)", text)
+    if build:
+        info["build"] = build.group(1).strip()
+        # If the build line contains "Revit YYYY", lift it as app_name.
+        app = _re.search(r"Revit\s+([0-9]{4})", build.group(1))
+        if app:
+            info["app_name"] = f"Revit {app.group(1)}"
+
+    return info
+
+
+def detect_converter_version(extension: str) -> dict[str, str | None]:
+    """‌⁠‍Detect the installed DDC converter's version.
+
+    On Linux: uses ``dpkg-query -f '${Version}\\n' -W ddc-<ext>converter``
+    to read the apt-installed package version.
+
+    On Windows: returns the converter binary's file size as a weak
+    fingerprint plus the parent-dir name (per-format install dir often
+    carries the version, e.g. ``rvt_windows_v18.0.0``).
+
+    Returns a dict ``{"version": str | None, "source": str | None,
+    "binary_path": str | None}``. Never raises.
+    """
+    result: dict[str, str | None] = {"version": None, "source": None, "binary_path": None}
+    exe = find_converter(extension)
+    if exe is None:
+        return result
+    result["binary_path"] = str(exe)
+
+    # Linux: ask dpkg about the apt package.
+    if sys.platform.startswith("linux"):
+        try:
+            import subprocess
+
+            for pkg in (f"ddc-{extension}converter", f"ddc-{extension}-converter"):
+                proc = subprocess.run(
+                    ["dpkg-query", "-f", "${Version}", "-W", pkg],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=4,
+                )
+                if proc.returncode == 0 and proc.stdout:
+                    version_str = proc.stdout.decode("utf-8", errors="replace").strip()
+                    if version_str:
+                        result["version"] = version_str
+                        result["source"] = f"dpkg:{pkg}"
+                        return result
+        except (FileNotFoundError, OSError, Exception) as exc:  # noqa: BLE001
+            logger.debug("dpkg-query unavailable or failed: %s", exc)
+
+    # Windows or dpkg fallback: parent-dir name often encodes the version,
+    # e.g. ~/.openestimator/converters/rvt_windows -> "rvt_windows".
+    result["source"] = "binary_metadata"
+    parent_name = exe.parent.name
+    if parent_name and parent_name not in {"bin", "usr"}:
+        result["version"] = parent_name
+    return result
+
+
 def invalidate_converter_health(extension: str | None = None) -> None:
     """Drop cached health for one or all converters.
 

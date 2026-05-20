@@ -7,15 +7,18 @@ Other providers fall back to plain text via the shared ai_client.call_ai().
 import asyncio
 import json
 import logging
+import time
 import uuid
 from collections.abc import AsyncGenerator
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import case, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.erp_chat.models import ChatMessage, ChatSession
+from app.modules.erp_chat.models import ChatMessage, ChatSession, ChatTurnFeedback
 from app.modules.erp_chat.prompts import SYSTEM_PROMPT
 from app.modules.erp_chat.schemas import StreamChatRequest
 from app.modules.erp_chat.tools import TOOL_DEFINITIONS, TOOL_HANDLER_MAP
@@ -79,6 +82,48 @@ class ERPChatService:
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
+        # Per-stream observability accumulator. ``_call_anthropic`` /
+        # ``_call_openai`` push the per-round split here; ``_persist_messages``
+        # rolls it up onto the assistant ChatMessage row so we have the
+        # T8 dashboard's token/cache/latency signal without storing one
+        # ChatMessage per provider call.
+        self._last_turn: dict[str, Any] = {
+            "tokens_input": 0,
+            "tokens_output": 0,
+            "cache_hit": None,
+            "latency_ms": 0,
+        }
+
+    def _record_turn_metrics(
+        self,
+        *,
+        tokens_in: int,
+        tokens_out: int,
+        cache_hit: bool,
+        latency_ms: int,
+    ) -> None:
+        """Accumulate per-round metrics onto the in-flight assistant turn.
+
+        Multi-round agent loops produce several provider calls per assistant
+        message; we sum tokens + latency and OR the cache-hit signal so a
+        single round serving from cache marks the whole turn as a hit.
+        """
+        self._last_turn["tokens_input"] = (
+            (self._last_turn.get("tokens_input") or 0) + tokens_in
+        )
+        self._last_turn["tokens_output"] = (
+            (self._last_turn.get("tokens_output") or 0) + tokens_out
+        )
+        prior_hit = self._last_turn.get("cache_hit")
+        if cache_hit:
+            self._last_turn["cache_hit"] = True
+        elif prior_hit is None:
+            # First round reported a definite miss — record it; later True
+            # wins via the branch above.
+            self._last_turn["cache_hit"] = False
+        self._last_turn["latency_ms"] = (
+            (self._last_turn.get("latency_ms") or 0) + latency_ms
+        )
 
     # ── Session management ───────────────────────────────────────────────
 
@@ -382,7 +427,14 @@ class ERPChatService:
         messages: list[dict[str, Any]],
         preferred_model: str | None,
     ) -> tuple[dict[str, Any], int]:
-        """Call Anthropic Messages API with tools."""
+        """Call Anthropic Messages API with tools.
+
+        Side effect (T8 observability): the per-turn token split, prompt-cache
+        hit flag, and wall-clock latency are stashed on ``self._last_turn``
+        so :meth:`_persist_messages` can write them to ``ChatMessage``
+        without changing the existing return-tuple shape every caller relies
+        on.
+        """
         from app.modules.ai.ai_client import ANTHROPIC_MODEL
 
         # preferred_model is the user's per-provider model id override
@@ -390,6 +442,7 @@ class ERPChatService:
         # built-in default. Issue #138.
         model = preferred_model.strip() if preferred_model and preferred_model.strip() else ANTHROPIC_MODEL
 
+        t0 = time.perf_counter()
         async with httpx.AsyncClient(timeout=AI_TIMEOUT) as client:
             resp = await client.post(
                 "https://api.anthropic.com/v1/messages",
@@ -408,10 +461,22 @@ class ERPChatService:
             )
             resp.raise_for_status()
             data = resp.json()
+        latency_ms = int((time.perf_counter() - t0) * 1000)
 
         usage = data.get("usage", {})
-        tokens = usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
-        return data, tokens
+        tokens_in = int(usage.get("input_tokens", 0) or 0)
+        tokens_out = int(usage.get("output_tokens", 0) or 0)
+        # Anthropic reports cache reads on ``cache_read_input_tokens``;
+        # any non-zero value means at least part of the prompt was served
+        # from the prefix cache.
+        cache_read = int(usage.get("cache_read_input_tokens", 0) or 0)
+        self._record_turn_metrics(
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            cache_hit=cache_read > 0,
+            latency_ms=latency_ms,
+        )
+        return data, tokens_in + tokens_out
 
     # ── OpenAI API ───────────────────────────────────────────────────────
 
@@ -421,7 +486,10 @@ class ERPChatService:
         messages: list[dict[str, Any]],
         preferred_model: str | None,
     ) -> tuple[dict[str, Any], int]:
-        """Call OpenAI ChatCompletions API with tools."""
+        """Call OpenAI ChatCompletions API with tools.
+
+        Side effect (T8 observability) — see :meth:`_call_anthropic`.
+        """
         from app.modules.ai.ai_client import OPENAI_MODEL
 
         # Honor the user's per-provider model id override verbatim (issue
@@ -443,6 +511,7 @@ class ERPChatService:
 
         openai_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
 
+        t0 = time.perf_counter()
         async with httpx.AsyncClient(timeout=AI_TIMEOUT) as client:
             resp = await client.post(
                 "https://api.openai.com/v1/chat/completions",
@@ -459,9 +528,22 @@ class ERPChatService:
             )
             resp.raise_for_status()
             data = resp.json()
+        latency_ms = int((time.perf_counter() - t0) * 1000)
 
-        tokens = data.get("usage", {}).get("total_tokens", 0)
-        return data, tokens
+        usage = data.get("usage", {})
+        tokens_in = int(usage.get("prompt_tokens", 0) or 0)
+        tokens_out = int(usage.get("completion_tokens", 0) or 0)
+        total = int(usage.get("total_tokens", tokens_in + tokens_out) or 0)
+        # OpenAI surfaces cache reads inside ``prompt_tokens_details``.
+        details = usage.get("prompt_tokens_details") or {}
+        cached = int(details.get("cached_tokens", 0) or 0)
+        self._record_turn_metrics(
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            cache_hit=cached > 0,
+            latency_ms=latency_ms,
+        )
+        return data, total
 
     # ── Fallback (non-tool providers) ────────────────────────────────────
 
@@ -613,7 +695,7 @@ class ERPChatService:
                         renderer_data = result.get("data")
                         break
 
-            # Save assistant message
+            # Save assistant message (with T8 observability split)
             assistant_msg = ChatMessage(
                 session_id=chat_session.id,
                 role="assistant",
@@ -623,6 +705,10 @@ class ERPChatService:
                 renderer=renderer,
                 renderer_data=renderer_data,
                 tokens_used=tokens_used,
+                tokens_input=self._last_turn.get("tokens_input") or None,
+                tokens_output=self._last_turn.get("tokens_output") or None,
+                cache_hit=self._last_turn.get("cache_hit"),
+                latency_ms=self._last_turn.get("latency_ms") or None,
             )
             self.session.add(assistant_msg)
             await asyncio.shield(self.session.flush())
@@ -662,3 +748,284 @@ class ERPChatService:
                 )
         except Exception:
             logger.exception("Failed to persist chat messages")
+
+    # ── T8: Per-turn feedback + admin observability ─────────────────────
+
+    async def submit_feedback(
+        self,
+        message_id: uuid.UUID,
+        user_id: str,
+        rating: int,
+        comment: str | None = None,
+    ) -> ChatTurnFeedback:
+        """Upsert a thumbs up/down feedback row for ``(message_id, user_id)``.
+
+        Re-submitting on the same pair flips the rating in place — there
+        is at most one feedback row per user per message.
+
+        Raises:
+            ValueError: rating is outside {-1, +1}.
+            LookupError: ``message_id`` does not exist or the requesting
+                user doesn't own its parent session (IDOR guard).
+        """
+        if rating not in (-1, 1):
+            raise ValueError("rating must be -1 or +1")
+
+        try:
+            uid = uuid.UUID(user_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("user_id is not a valid UUID") from exc
+
+        # IDOR guard: the message must belong to a session owned by the
+        # current user. Treat ownership mismatch as 404 — same convention as
+        # the ``/messages/{id}/similar`` endpoint.
+        from sqlalchemy.orm import selectinload as _selectinload
+
+        msg_stmt = (
+            select(ChatMessage)
+            .options(_selectinload(ChatMessage.session))
+            .where(ChatMessage.id == message_id)
+        )
+        message = (await self.session.execute(msg_stmt)).scalar_one_or_none()
+        if message is None or message.session is None:
+            raise LookupError("Chat message not found")
+        if str(message.session.user_id) != str(uid):
+            raise LookupError("Chat message not found")
+
+        # Look up an existing row first; if present, flip the rating.
+        stmt = select(ChatTurnFeedback).where(
+            ChatTurnFeedback.message_id == message_id,
+            ChatTurnFeedback.user_id == uid,
+        )
+        row = (await self.session.execute(stmt)).scalar_one_or_none()
+        if row is not None:
+            row.rating = rating
+            row.comment = comment
+            await asyncio.shield(self.session.flush())
+            return row
+
+        row = ChatTurnFeedback(
+            message_id=message_id,
+            user_id=uid,
+            rating=rating,
+            comment=comment,
+        )
+        self.session.add(row)
+        try:
+            await asyncio.shield(self.session.flush())
+        except IntegrityError:
+            # Lost a race against a concurrent submit — fetch + update.
+            await self.session.rollback()
+            row = (await self.session.execute(stmt)).scalar_one()
+            row.rating = rating
+            row.comment = comment
+            await asyncio.shield(self.session.flush())
+        return row
+
+    async def get_admin_stats(self, window_days: int = 30) -> dict[str, Any]:
+        """Roll up T8 observability metrics over the last ``window_days``.
+
+        Counts only assistant messages — user prompts are counted via the
+        ``top_negative_prompts`` join. ``feedback_rate_pct`` is the
+        percentage of assistant messages that received any rating (up OR
+        down). ``cache_hit_rate_pct`` is computed over assistant messages
+        with a non-NULL ``cache_hit`` so old un-instrumented rows don't
+        skew the denominator to zero.
+        """
+        window = max(1, int(window_days))
+        cutoff = datetime.now(timezone.utc) - timedelta(days=window)
+
+        # ── Aggregate counts ────────────────────────────────────────────
+        assistant_q = select(func.count(ChatMessage.id)).where(
+            ChatMessage.role == "assistant",
+            ChatMessage.created_at >= cutoff,
+        )
+        total_messages = int(
+            (await self.session.execute(assistant_q)).scalar_one() or 0
+        )
+
+        tokens_q = select(
+            func.coalesce(func.sum(ChatMessage.tokens_input), 0),
+            func.coalesce(func.sum(ChatMessage.tokens_output), 0),
+        ).where(
+            ChatMessage.role == "assistant",
+            ChatMessage.created_at >= cutoff,
+        )
+        tin, tout = (await self.session.execute(tokens_q)).one()
+
+        # Cache hit rate — denominator = rows with non-NULL cache_hit.
+        cache_q = select(
+            func.coalesce(
+                func.sum(case((ChatMessage.cache_hit.is_(True), 1), else_=0)),
+                0,
+            ),
+            func.coalesce(
+                func.sum(case((ChatMessage.cache_hit.isnot(None), 1), else_=0)),
+                0,
+            ),
+        ).where(
+            ChatMessage.role == "assistant",
+            ChatMessage.created_at >= cutoff,
+        )
+        cache_hits, cache_denom = (await self.session.execute(cache_q)).one()
+        cache_hits = int(cache_hits or 0)
+        cache_denom = int(cache_denom or 0)
+        cache_hit_rate_pct = (
+            round(100.0 * cache_hits / cache_denom, 2) if cache_denom else 0.0
+        )
+
+        # ── Feedback split ──────────────────────────────────────────────
+        fb_q = select(
+            func.coalesce(
+                func.sum(case((ChatTurnFeedback.rating == 1, 1), else_=0)),
+                0,
+            ),
+            func.coalesce(
+                func.sum(case((ChatTurnFeedback.rating == -1, 1), else_=0)),
+                0,
+            ),
+            func.count(func.distinct(ChatTurnFeedback.message_id)),
+        ).join(
+            ChatMessage, ChatTurnFeedback.message_id == ChatMessage.id,
+        ).where(
+            ChatMessage.created_at >= cutoff,
+        )
+        thumbs_up, thumbs_down, rated_messages = (
+            await self.session.execute(fb_q)
+        ).one()
+        thumbs_up = int(thumbs_up or 0)
+        thumbs_down = int(thumbs_down or 0)
+        rated_messages = int(rated_messages or 0)
+        feedback_rate_pct = (
+            round(100.0 * rated_messages / total_messages, 2)
+            if total_messages
+            else 0.0
+        )
+
+        # ── Top negative prompts ───────────────────────────────────────
+        # The user-prompt that immediately *precedes* a thumbs-down
+        # assistant turn is what we surface. We join the feedback row to
+        # the assistant message, then look up the preceding user message
+        # in the same session.
+        neg_assistant = (
+            select(
+                ChatTurnFeedback.message_id.label("assistant_id"),
+                func.count(ChatTurnFeedback.id).label("downs"),
+            )
+            .where(ChatTurnFeedback.rating == -1)
+            .group_by(ChatTurnFeedback.message_id)
+            .subquery()
+        )
+        neg_q = (
+            select(
+                ChatMessage.id,
+                ChatMessage.session_id,
+                ChatMessage.created_at,
+                neg_assistant.c.downs,
+            )
+            .join(neg_assistant, neg_assistant.c.assistant_id == ChatMessage.id)
+            .where(ChatMessage.created_at >= cutoff)
+            .order_by(neg_assistant.c.downs.desc(), ChatMessage.created_at.desc())
+            .limit(5)
+        )
+        neg_rows = (await self.session.execute(neg_q)).all()
+        top_negative_prompts: list[dict[str, Any]] = []
+        for asst_id, sess_id, ts, downs in neg_rows:
+            # Find the most-recent user message in the same session that
+            # precedes this assistant message.
+            preceding = (
+                await self.session.execute(
+                    select(ChatMessage)
+                    .where(
+                        ChatMessage.session_id == sess_id,
+                        ChatMessage.role == "user",
+                        ChatMessage.created_at <= ts,
+                    )
+                    .order_by(ChatMessage.created_at.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            snippet = ""
+            if preceding is not None and preceding.content:
+                snippet = preceding.content.strip()[:120]
+            top_negative_prompts.append(
+                {
+                    "snippet": snippet or "(no prompt text)",
+                    "thumbs_down": int(downs or 0),
+                    "message_id": asst_id,
+                }
+            )
+
+        # ── Daily breakdown ─────────────────────────────────────────────
+        # We use a portable Python-side rollup rather than func.date() so
+        # the same SQL works on SQLite + Postgres without dialect branches.
+        daily: dict[str, dict[str, int]] = {}
+        # seed every day in the window so the chart isn't gappy
+        for offset in range(window):
+            day = (
+                datetime.now(timezone.utc) - timedelta(days=window - 1 - offset)
+            ).date().isoformat()
+            daily[day] = {
+                "messages": 0,
+                "thumbs_up": 0,
+                "thumbs_down": 0,
+                "tokens": 0,
+            }
+
+        msgs_q = select(
+            ChatMessage.created_at,
+            func.coalesce(ChatMessage.tokens_input, 0)
+            + func.coalesce(ChatMessage.tokens_output, 0),
+        ).where(
+            ChatMessage.role == "assistant",
+            ChatMessage.created_at >= cutoff,
+        )
+        for created_at, total_t in (await self.session.execute(msgs_q)).all():
+            if created_at is None:
+                continue
+            d = created_at.date().isoformat()
+            bucket = daily.setdefault(
+                d,
+                {"messages": 0, "thumbs_up": 0, "thumbs_down": 0, "tokens": 0},
+            )
+            bucket["messages"] += 1
+            bucket["tokens"] += int(total_t or 0)
+
+        fb_daily_q = (
+            select(ChatMessage.created_at, ChatTurnFeedback.rating)
+            .join(
+                ChatTurnFeedback,
+                ChatTurnFeedback.message_id == ChatMessage.id,
+            )
+            .where(ChatMessage.created_at >= cutoff)
+        )
+        for created_at, rating in (await self.session.execute(fb_daily_q)).all():
+            if created_at is None:
+                continue
+            d = created_at.date().isoformat()
+            bucket = daily.setdefault(
+                d,
+                {"messages": 0, "thumbs_up": 0, "thumbs_down": 0, "tokens": 0},
+            )
+            if rating == 1:
+                bucket["thumbs_up"] += 1
+            elif rating == -1:
+                bucket["thumbs_down"] += 1
+
+        daily_breakdown = [
+            {"date": d, **values}
+            for d, values in sorted(daily.items())
+        ]
+
+        return {
+            "window_days": window,
+            "total_messages": total_messages,
+            "total_thumbs_up": thumbs_up,
+            "total_thumbs_down": thumbs_down,
+            "feedback_rate_pct": feedback_rate_pct,
+            "total_tokens_input": int(tin or 0),
+            "total_tokens_output": int(tout or 0),
+            "cache_hit_rate_pct": cache_hit_rate_pct,
+            "top_negative_prompts": top_negative_prompts,
+            "daily_breakdown": daily_breakdown,
+        }

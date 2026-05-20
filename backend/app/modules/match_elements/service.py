@@ -634,7 +634,7 @@ def _split_unit_multiplier(unit: str | None) -> tuple[float, str]:
     return 1.0, s
 
 
-# Cross-locale unit aliases. CWICR ships in 9 languages, so the unit
+# Cross-locale unit aliases. CWICR ships in 24 languages, so the unit
 # column carries Cyrillic (м3, шт, т), Bulgarian (брой, бр), German
 # (Stück, Stk), French (pcs, ml), Spanish (ud, m), etc. Without this
 # map the dimensional gate in apply_to_boq mis-classifies cyrillic

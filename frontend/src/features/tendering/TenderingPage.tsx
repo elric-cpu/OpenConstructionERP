@@ -30,6 +30,8 @@ import { apiGet, apiPost, apiPatch } from '@/shared/lib/api';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { BidComparisonChart } from './BidComparisonChart';
+import { AddendumList } from './AddendumList';
+import { LevelingMatrix } from './LevelingMatrix';
 import { getIntlLocale } from '@/shared/lib/formatters';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
@@ -730,6 +732,12 @@ function PackageDetail({
   const addToast = useToastStore((s) => s.addToast);
   const { confirm, ...confirmProps } = useConfirm();
   const [showAddBid, setShowAddBid] = useState(false);
+  // Sub-tab on the package detail view — bids/comparison ↔ addenda ↔
+  // leveling matrix. Defaults to "bids" so existing muscle memory keeps
+  // working; the two new tabs are additive.
+  const [activeTab, setActiveTab] = useState<'bids' | 'addenda' | 'leveling'>(
+    'bids',
+  );
 
   // Fetch package with bids
   const { data: pkg, isLoading: pkgLoading, isError: pkgError } = useQuery({
@@ -937,8 +945,30 @@ function PackageDetail({
         </div>
       </Card>
 
+      {/* Sub-tab strip — RIB iTWO-style: bids ↔ addenda ↔ leveling */}
+      <div className="flex items-center gap-1 border-b border-border-light">
+        {([
+          { id: 'bids', label: t('tendering.tab_bids', 'Bids & Comparison') },
+          { id: 'addenda', label: t('tendering.tab_addenda', 'Addenda') },
+          { id: 'leveling', label: t('tendering.tab_leveling', 'Leveling') },
+        ] as const).map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveTab(tab.id)}
+            className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+              activeTab === tab.id
+                ? 'border-oe-blue text-oe-blue'
+                : 'border-transparent text-content-secondary hover:text-content-primary'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       {/* Bids list */}
-      {pkg.bids.length > 0 && (
+      {activeTab === 'bids' && pkg.bids.length > 0 && (
         <div className="space-y-2">
           <h4 className="text-sm font-semibold text-content-primary">
             {t('tendering.bids_received', 'Bids Received')}
@@ -992,6 +1022,7 @@ function PackageDetail({
       )}
 
       {/* Comparison chart + table */}
+      {activeTab === 'bids' && (
       <Card>
         <div className="flex items-center justify-between mb-4">
           <h4 className="text-sm font-semibold text-content-primary flex items-center gap-2">
@@ -1023,9 +1054,18 @@ function PackageDetail({
           </>
         ) : null}
       </Card>
+      )}
+
+      {/* Addenda sub-tab */}
+      {activeTab === 'addenda' && <AddendumList packageId={packageId} />}
+
+      {/* Leveling matrix sub-tab */}
+      {activeTab === 'leveling' && (
+        <LevelingMatrix packageId={packageId} currency={currency} />
+      )}
 
       {/* Award recommendation */}
-      {lowestBid && comparison && comparison.bid_count >= 2 && (
+      {activeTab === 'bids' && lowestBid && comparison && comparison.bid_count >= 2 && (
         <Card className="border-semantic-success/20 bg-semantic-success-bg/30">
           <div className="flex items-center gap-3">
             <Award size={20} className="text-semantic-success" />

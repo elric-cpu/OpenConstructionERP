@@ -38,6 +38,8 @@ from app.modules.bi_dashboards.schemas import (
     AlertRuleCreate,
     AlertRuleRead,
     DashboardCreate,
+    DashboardEvaluateRequest,
+    DashboardEvaluateResponse,
     DashboardRead,
     DashboardRenderResponse,
     DashboardUpdate,
@@ -370,6 +372,49 @@ async def render_dashboard(
 ) -> DashboardRenderResponse:
     await _ensure_dashboard_owner(dashboard_id, user_id, session)
     result = await service.render_dashboard(dashboard_id)
+    if result is None:
+        raise _not_found("Dashboard not found")
+    return result
+
+
+@router.post(
+    "/dashboards/{dashboard_id}/evaluate",
+    response_model=DashboardEvaluateResponse,
+    dependencies=[Depends(RequirePermission("bi.dashboard.read"))],
+)
+async def evaluate_dashboard(
+    dashboard_id: uuid.UUID,
+    payload: DashboardEvaluateRequest,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: BIDashboardsService = Depends(_service),
+) -> DashboardEvaluateResponse:
+    """Cross-filter evaluate (Wave 4 / T11).
+
+    Re-evaluates every widget on the dashboard against the supplied
+    filter dict, returning per-widget values + drill_path. When the
+    dashboard's ``cross_filter_enabled`` flag is False the filter dict
+    is ignored and widgets return their static aggregate.
+
+    If ``filters['project_id']`` is supplied we also verify the caller
+    can access that project — same IDOR pattern as the KPI endpoints.
+    """
+    await _ensure_dashboard_owner(dashboard_id, user_id, session)
+    filters = payload.filters or {}
+    project_filter = filters.get("project_id")
+    if project_filter:
+        try:
+            project_uuid = (
+                project_filter if isinstance(project_filter, uuid.UUID)
+                else uuid.UUID(str(project_filter))
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="filters.project_id must be a UUID",
+            ) from exc
+        await verify_project_access(project_uuid, user_id, session)
+    result = await service.evaluate_dashboard(dashboard_id, filters=filters)
     if result is None:
         raise _not_found("Dashboard not found")
     return result

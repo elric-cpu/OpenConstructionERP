@@ -5,8 +5,9 @@ Tables:
 """
 
 import uuid
+from decimal import Decimal
 
-from sqlalchemy import JSON, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import GUID, Base
@@ -53,6 +54,28 @@ class RiskItem(Base):
 
     # Mitigation actions: [{description, responsible_id, due_date, status}]
     mitigation_actions: Mapped[list | None] = mapped_column(  # type: ignore[assignment]
+        JSON,
+        nullable=True,
+    )
+
+    # ── Monte Carlo / PERT three-point estimate (v3.11 — T1) ───────────
+    # Optional triples (optimistic / most-likely / pessimistic) used by
+    # the quantitative Monte Carlo simulation. When unset the risk
+    # contributes zero to the simulated distribution; the qualitative
+    # 5x5 scoring path keeps working unchanged.
+    cost_p10: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    cost_p50: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    cost_p90: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    schedule_p10: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    schedule_p50: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    schedule_p90: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Snapshot of the last Monte Carlo run that touched this risk.
+    # Shape:
+    #   {iterations, p50_cost, p80_cost, p95_cost,
+    #    p50_schedule_days, p80_schedule_days, p95_schedule_days,
+    #    histogram_bins: [...], tornado: [{risk_id, code, contribution}, ...]}
+    last_simulation: Mapped[dict | None] = mapped_column(  # type: ignore[assignment]
         JSON,
         nullable=True,
     )

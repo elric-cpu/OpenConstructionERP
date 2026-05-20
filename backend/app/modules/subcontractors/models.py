@@ -19,7 +19,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Numeric, String, Text
+from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import GUID, Base
@@ -57,6 +57,25 @@ class Subcontractor(Base):
     website: Mapped[str | None] = mapped_column(String(500), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # ── Wave 4 / T12: BuildingConnected-style prequal + insurance tracking ──
+    # All nullable so legacy rows (created before v3093) still load.
+    prequal_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    insurance_expiry_date: Mapped[date | None] = mapped_column(
+        Date, nullable=True, index=True,
+    )
+    insurance_doc_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(), nullable=True,
+    )
+    prequal_questionnaire: Mapped[dict | None] = mapped_column(  # type: ignore[assignment]
+        JSON, nullable=True,
+    )
+    prequal_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+    blocked_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_blocked: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0",
+    )
     created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         "metadata", JSON, nullable=False, default=dict, server_default="{}",

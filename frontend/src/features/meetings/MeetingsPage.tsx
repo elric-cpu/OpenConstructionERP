@@ -56,6 +56,7 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import {
   fetchMeetings,
   createMeeting,
+  createSeries,
   updateMeeting,
   deleteMeeting,
   completeMeeting,
@@ -68,6 +69,7 @@ import {
   type MeetingType,
   type MeetingStatus,
   type CreateMeetingPayload,
+  type CreateSeriesPayload,
   type UpdateMeetingPayload,
   type AttendeeStatus,
   type ImportPreviewResponse,
@@ -75,6 +77,8 @@ import {
   type ImportPreviewActionItem,
   type MeetingAttachment,
 } from './api';
+import { AttendanceSection } from './AttendanceSection';
+import { RecurringSeriesDialog } from './RecurringSeriesDialog';
 
 /* -- Constants ------------------------------------------------------------- */
 
@@ -1595,6 +1599,9 @@ const MeetingRow = React.memo(function MeetingRow({
       {/* Expanded detail */}
       {expanded && (
         <div className="px-4 pb-4 pl-12 space-y-3 animate-fade-in">
+          {/* Attendance check-in (Newforma-style) */}
+          <AttendanceSection meetingId={meeting.id} />
+
           {/* Attendees */}
           {meeting.attendees && meeting.attendees.length > 0 && (
             <div className="rounded-lg bg-surface-secondary p-3">
@@ -1831,6 +1838,7 @@ export function MeetingsPage() {
   // State
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showSeriesModal, setShowSeriesModal] = useState(false);
   const [editingMeeting, setEditingMeeting] = useState<Meeting | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<MeetingType | ''>('');
@@ -1911,6 +1919,31 @@ export function MeetingsPage() {
       addToast({
         type: 'error',
         title: t('meetings.create_failed', { defaultValue: 'Failed to create meeting' }),
+        message: e.message,
+      }),
+  });
+
+  // Newforma-style recurring series.
+  const createSeriesMut = useMutation({
+    mutationFn: (data: CreateSeriesPayload) => createSeries(data),
+    onSuccess: (res) => {
+      invalidateAll();
+      setShowSeriesModal(false);
+      const count = 1 + (res.occurrences?.length ?? 0);
+      addToast({
+        type: 'success',
+        title: t('meetings.series_created', {
+          defaultValue: 'Recurring series created — {{count}} meetings',
+          count,
+        }),
+      });
+    },
+    onError: (e: Error) =>
+      addToast({
+        type: 'error',
+        title: t('meetings.series_create_failed', {
+          defaultValue: 'Failed to create series',
+        }),
         message: e.message,
       }),
   });
@@ -2156,6 +2189,18 @@ export function MeetingsPage() {
             icon={<FileUp size={16} />}
           >
             {t('meetings.import_summary', { defaultValue: 'Import Summary' })}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowSeriesModal(true)}
+            disabled={!projectId}
+            icon={<CalendarDays size={14} />}
+            data-testid="meetings-new-series"
+          >
+            {t('meetings.create_recurring_series', {
+              defaultValue: 'Create recurring series',
+            })}
           </Button>
           <Button
             variant="primary"
@@ -2414,6 +2459,15 @@ export function MeetingsPage() {
           projectId={projectId}
         />
       )}
+
+      {/* Recurring Series Modal */}
+      <RecurringSeriesDialog
+        open={showSeriesModal && !!projectId}
+        onClose={() => setShowSeriesModal(false)}
+        projectId={projectId}
+        isPending={createSeriesMut.isPending}
+        onSubmit={(payload) => createSeriesMut.mutate(payload)}
+      />
 
       {/* Edit Modal */}
       {editingMeeting && (

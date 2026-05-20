@@ -6,7 +6,8 @@ as floats in the API but stored as strings in SQLite-compatible models.
 """
 
 from datetime import datetime
-from typing import Any
+from decimal import Decimal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -212,3 +213,63 @@ class RiskMatrixResponse(BaseModel):
     """5x5 risk matrix data."""
 
     cells: list[RiskMatrixCell] = Field(default_factory=list)
+
+
+# ── Monte Carlo simulation (v3.11 — T1) ──────────────────────────────────
+
+
+class RiskSimulateRequest(BaseModel):
+    """‌⁠‍Request body for ``POST /v1/risk/projects/{id}/simulate``.
+
+    ``iterations`` is bounded so a misconfigured client can't accidentally
+    DoS the worker; 100 000 samples per risk is plenty for stable
+    P50/P80/P95 estimates and finishes in well under a second on a typical
+    project (fewer than ~50 risks).
+    """
+
+    iterations: int = Field(default=10000, ge=1000, le=100000)
+    mode: Literal["cost", "schedule", "both"] = "both"
+
+
+class RiskTornadoEntry(BaseModel):
+    """One bar in the tornado / sensitivity chart.
+
+    ``contribution`` is the mean probability-weighted impact this risk
+    contributed across the simulation — i.e. the expected value the risk
+    adds to the project's contingency. Sorted descending in the response
+    so the frontend can take the top N for the chart without re-sorting.
+    """
+
+    risk_id: UUID
+    code: str
+    contribution: Decimal
+
+
+class RiskHistogramBin(BaseModel):
+    """One bin in the 10-bin contingency histogram."""
+
+    lower: Decimal
+    upper: Decimal
+    count: int
+
+
+class RiskSimulationResult(BaseModel):
+    """Persisted-style Monte Carlo result for a project.
+
+    ``currency`` is data-driven (resolved from the owning project) — the
+    UI must render currency-less totals when this is empty rather than
+    silently mislabelling, e.g., AED exposure as EUR.
+    """
+
+    iterations: int
+    risk_count: int
+    mode: Literal["cost", "schedule", "both"]
+    p50_cost: Decimal | None = None
+    p80_cost: Decimal | None = None
+    p95_cost: Decimal | None = None
+    p50_schedule_days: int | None = None
+    p80_schedule_days: int | None = None
+    p95_schedule_days: int | None = None
+    histogram_bins: list[RiskHistogramBin] = Field(default_factory=list)
+    tornado: list[RiskTornadoEntry] = Field(default_factory=list)
+    currency: str = ""

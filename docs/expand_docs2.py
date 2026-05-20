@@ -46,7 +46,7 @@ projects_section = '''</section>
 <li><strong>Quantity</strong> &mdash; How much (e.g., 86.4)</li>
 <li><strong>Unit Rate</strong> &mdash; Price per unit (e.g., 295.00 EUR)</li>
 </ul>
-<p>The <strong>Total</strong> column calculates automatically (Quantity x Unit Rate). You can also search the cost database by clicking the database icon next to any position to find and apply a rate from the 55,000+ CWICR items.</p>
+<p>The <strong>Total</strong> column calculates automatically (Quantity x Unit Rate). You can also search the cost database by clicking the database icon next to any position to find and apply a rate from the 55,000+ CWICR items across 48 regions in 24 languages.</p>
 </section>
 
 <section id="install">'''
@@ -139,7 +139,7 @@ costs_extra = '''<h3 id="costs-howto">How to Use the Cost Database</h3>
 <p>Each cost item contains:</p>
 <ul>
 <li><strong>Code</strong> &mdash; Unique identifier (e.g., KADX_KAME_KAKAME_KAME)</li>
-<li><strong>Description</strong> &mdash; Work item name in up to 9 languages</li>
+<li><strong>Description</strong> &mdash; Work item name in up to 24 languages</li>
 <li><strong>Unit</strong> &mdash; Unit of measurement (m2, m3, t, pcs, etc.)</li>
 <li><strong>Rate</strong> &mdash; Price per unit in the regional currency</li>
 <li><strong>Components</strong> &mdash; Breakdown into materials, labor, equipment (when available)</li>
@@ -255,7 +255,7 @@ settings_extra = '''<h3 id="settings-profile">Profile Settings</h3>
 <p>Enable or disable individual modules from Settings &rarr; Modules. You can install additional modules from the Module Marketplace including regional standards, converters, and analytics tools.</p>
 
 <h3 id="settings-language">Language &amp; Regional Settings</h3>
-<p>Change your interface language at any time from the language selector in the header. The system supports 21 languages including right-to-left (Arabic). Regional settings affect date formats, number formatting, and default classification standards.</p>
+<p>Change your interface language at any time from the language selector in the header. The system supports 24 languages including right-to-left (Arabic). Regional settings affect date formats, number formatting, and default classification standards.</p>
 
 <h3 id="settings-backup">Backup &amp; Restore</h3>
 <p>Export your entire database as a backup file (JSON format). This includes all projects, BOQs, positions, settings, and user data. Restore from a backup file to recover data or migrate to a new server.</p>

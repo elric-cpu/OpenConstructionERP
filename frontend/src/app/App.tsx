@@ -78,6 +78,9 @@ const AdvisorPage = lazy(() =>
 const ERPChatPage = lazy(() =>
   import('@/features/erp-chat/full-page/ChatFullPage')
 );
+const ERPChatAdminStatsPage = lazy(() =>
+  import('@/features/erp-chat/AdminStatsPage')
+);
 const ChangeOrdersPage = lazy(() =>
   import('@/features/changeorders/ChangeOrdersPage').then((m) => ({ default: m.ChangeOrdersPage }))
 );
@@ -97,6 +100,12 @@ const PhotoGalleryPage = lazy(() =>
 // const RequirementsPage = lazy(() =>
 //   import('@/features/requirements/RequirementsPage').then((m) => ({ default: m.RequirementsPage }))
 // );
+// Wave 4 / T13 — ISO 19650 EIR (Employer Information Requirements) matrix.
+const RequirementsMatrixPage = lazy(() =>
+  import('@/features/requirements/RequirementsMatrixPage').then((m) => ({
+    default: m.RequirementsMatrixPage,
+  })),
+);
 const MarkupsPage = lazy(() =>
   import('@/features/markups/MarkupsPage').then((m) => ({ default: m.MarkupsPage }))
 );
@@ -483,6 +492,7 @@ export default function App() {
         <Route path="/ai-estimate" element={<P title="AI Quick Estimate"><QuickEstimatePage /></P>} />
         <Route path="/advisor" element={<P title="AI Cost Advisor"><AdvisorPage /></P>} />
         <Route path="/chat" element={<P title="AI Chat"><ERPChatPage /></P>} />
+        <Route path="/chat/admin" element={<P title="Chat Observability"><ERPChatAdminStatsPage /></P>} />
         <Route path="/cad-takeoff" element={<Navigate to="/data-explorer" replace />} />
         <Route path="/data-explorer" element={<P title="Data Explorer"><CadDataExplorerPage /></P>} />
         <Route path="/match-elements" element={<P title="Match Elements"><MatchElementsPage /></P>} />
@@ -551,6 +561,10 @@ export default function App() {
 
         {/* Requirements merged into BIM Rules page */}
         <Route path="/requirements" element={<Navigate to="/bim/rules" replace />} />
+        <Route
+          path="/requirements/matrix"
+          element={<P title="EIR Matrix"><RequirementsMatrixPage /></P>}
+        />
 
         <Route path="/markups" element={<P title="Markups"><MarkupsPage /></P>} />
         <Route path="/markups/compare" element={<P title="Compare Revisions"><PdfComparePage /></P>} />

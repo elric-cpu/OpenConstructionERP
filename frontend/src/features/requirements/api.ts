@@ -379,3 +379,137 @@ export async function exportRequirementsJSON(
   return JSON.stringify(data, null, 2);
 }
 
+/* ── ISO 19650 EIR deliverables (T13) ────────────────────────────────────── */
+
+export type DeliverableStatus = 'accepted' | 'submitted' | 'missing';
+
+export type DeliverableType =
+  | 'model'
+  | 'drawing'
+  | 'schedule'
+  | 'report'
+  | 'cobie'
+  | 'pset'
+  | 'other';
+
+export interface Deliverable {
+  id: string;
+  requirement_id: string;
+  deliverable_type: string;
+  lod: string | null;
+  loi: string | null;
+  due_milestone_id: string | null;
+  submitted_at: string | null;
+  accepted_at: string | null;
+  notes: string;
+  status: DeliverableStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateDeliverablePayload {
+  deliverable_type: DeliverableType | string;
+  lod?: string | null;
+  loi?: string | null;
+  due_milestone_id?: string | null;
+  submitted_at?: string | null;
+  accepted_at?: string | null;
+  notes?: string;
+}
+
+export interface UpdateDeliverablePayload {
+  deliverable_type?: DeliverableType | string;
+  lod?: string | null;
+  loi?: string | null;
+  due_milestone_id?: string | null;
+  submitted_at?: string | null;
+  accepted_at?: string | null;
+  notes?: string;
+}
+
+export interface MatrixCell {
+  deliverable_id: string | null;
+  lod: string | null;
+  loi: string | null;
+  status: DeliverableStatus;
+  due_milestone_id: string | null;
+  submitted_at: string | null;
+  accepted_at: string | null;
+}
+
+export interface MatrixRow {
+  requirement_id: string;
+  requirement_set_id: string;
+  entity: string;
+  attribute: string;
+  priority: string;
+  cells: Record<string, MatrixCell>;
+  coverage_pct: number;
+}
+
+export interface MatrixResponse {
+  project_id: string;
+  deliverable_types: string[];
+  rows: MatrixRow[];
+  coverage_pct: number;
+}
+
+/** List EIR deliverables attached to a requirement. */
+export async function listDeliverables(
+  requirementId: string,
+  deliverableType?: string,
+): Promise<Deliverable[]> {
+  const qs = deliverableType
+    ? `?deliverable_type=${encodeURIComponent(deliverableType)}`
+    : '';
+  return apiGet<Deliverable[]>(
+    `/v1/requirements/requirements/${requirementId}/deliverables/${qs}`,
+  );
+}
+
+/** Attach a new deliverable row to a requirement. */
+export async function createDeliverable(
+  requirementId: string,
+  data: CreateDeliverablePayload,
+): Promise<Deliverable> {
+  return apiPost<Deliverable>(
+    `/v1/requirements/requirements/${requirementId}/deliverables/`,
+    data,
+  );
+}
+
+/** Patch fields on an existing deliverable row. */
+export async function updateDeliverable(
+  requirementId: string,
+  deliverableId: string,
+  data: UpdateDeliverablePayload,
+): Promise<Deliverable> {
+  return apiPatch<Deliverable>(
+    `/v1/requirements/requirements/${requirementId}/deliverables/${deliverableId}`,
+    data,
+  );
+}
+
+/** Hard delete a deliverable row. */
+export async function deleteDeliverable(
+  requirementId: string,
+  deliverableId: string,
+): Promise<void> {
+  return apiDelete(
+    `/v1/requirements/requirements/${requirementId}/deliverables/${deliverableId}`,
+  );
+}
+
+/** Fetch the project EIR matrix (rows × deliverable-type columns). */
+export async function getMatrix(
+  projectId: string,
+  deliverableType?: string,
+): Promise<MatrixResponse> {
+  const qs = deliverableType
+    ? `?deliverable_type=${encodeURIComponent(deliverableType)}`
+    : '';
+  return apiGet<MatrixResponse>(
+    `/v1/requirements/projects/${projectId}/matrix/${qs}`,
+  );
+}
+

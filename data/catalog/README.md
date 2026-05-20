@@ -81,7 +81,7 @@ POST /api/v1/catalog/extract
 ## Source
 
 Data Driven Construction (DDC) CWICR Database
-- 11 regional databases
+- 48 regional databases
 - 55,719 work items per region
 - 900,225 resource component rows
 - https://github.com/datadrivenconstruction/OpenConstructionEstimate-DDC-CWICR

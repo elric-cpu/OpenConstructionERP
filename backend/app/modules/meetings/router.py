@@ -24,10 +24,16 @@ from app.dependencies import CurrentUserId, RequirePermission, SessionDep, verif
 from app.modules.meetings.schemas import (
     ActionItemEntry,
     AgendaItemEntry,
+    AttendanceRow,
     AttendeeEntry,
+    CheckInRequest,
+    ExternalAttendeeRequest,
     ImportPreviewResponse,
+    MaterializeRequest,
     MeetingCreate,
     MeetingResponse,
+    MeetingSeriesCreate,
+    MeetingSeriesResponse,
     MeetingStatsResponse,
     MeetingUpdate,
     OpenActionItemResponse,
@@ -1107,6 +1113,178 @@ async def complete_meeting(
     """
     meeting = await service.complete_meeting(meeting_id, user_id=user_id)
     return _meeting_to_response(meeting)
+
+
+# ── Recurring Series ─────────────────────────────────────────────────────────
+
+
+def _attendance_to_row(att: object) -> AttendanceRow:
+    """Build an AttendanceRow response from an ORM record."""
+    return AttendanceRow(
+        id=att.id,  # type: ignore[attr-defined]
+        meeting_id=att.meeting_id,  # type: ignore[attr-defined]
+        user_id=att.user_id,  # type: ignore[attr-defined]
+        external_name=att.external_name,  # type: ignore[attr-defined]
+        checked_in_at=att.checked_in_at,  # type: ignore[attr-defined]
+        signature_image_path=att.signature_image_path,  # type: ignore[attr-defined]
+        created_at=att.created_at,  # type: ignore[attr-defined]
+        updated_at=att.updated_at,  # type: ignore[attr-defined]
+    )
+
+
+@router.post(
+    "/series/",
+    response_model=MeetingSeriesResponse,
+    status_code=201,
+)
+async def create_meeting_series(
+    data: MeetingSeriesCreate,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    _perm: None = Depends(RequirePermission("meetings.create")),
+    service: MeetingService = Depends(_get_service),
+) -> MeetingSeriesResponse:
+    """Create a recurring meeting series (master + optional first occurrences).
+
+    Body carries the master-meeting fields plus an RFC 5545 ``recurrence_rule``
+    (``FREQ=WEEKLY;BYDAY=MO;COUNT=12``).  If ``materialize_until`` is set,
+    occurrences are pre-created up to that date in the same call.
+    """
+    await verify_project_access(data.project_id, user_id, session)
+    master, occurrences = await service.create_series(data, user_id=user_id)
+    return MeetingSeriesResponse(
+        series_id=master.id,
+        master=_meeting_to_response(master),
+        occurrences=[_meeting_to_response(o) for o in occurrences],
+    )
+
+
+@router.post(
+    "/series/{master_id}/materialize/",
+    response_model=MeetingSeriesResponse,
+)
+async def materialize_meeting_series(
+    master_id: uuid.UUID,
+    body: MaterializeRequest,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("meetings.create")),
+    service: MeetingService = Depends(_get_service),
+) -> MeetingSeriesResponse:
+    """Materialise series occurrences up to the ``until`` date.
+
+    Idempotent — already-existing occurrences are not duplicated.
+    """
+    master = await service.get_meeting(master_id)
+    await verify_project_access(master.project_id, str(user_id), session)
+    if not master.is_series_master:
+        raise HTTPException(
+            status_code=400,
+            detail="Meeting is not a series master",
+        )
+    until_dt = datetime.strptime(body.until, "%Y-%m-%d").replace(tzinfo=UTC)
+    new_occurrences = await service.generate_occurrences(
+        str(master.id), until_dt, user_id=str(user_id) if user_id else None,
+    )
+    return MeetingSeriesResponse(
+        series_id=master.id,
+        master=_meeting_to_response(master),
+        occurrences=[_meeting_to_response(o) for o in new_occurrences],
+    )
+
+
+# Underscore mirror — module convention is to expose hyphen + underscore.
+@router.post("/series/{master_id}/materialize", include_in_schema=False)
+async def materialize_meeting_series_no_slash(
+    master_id: uuid.UUID,
+    body: MaterializeRequest,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("meetings.create")),
+    service: MeetingService = Depends(_get_service),
+) -> MeetingSeriesResponse:
+    return await materialize_meeting_series(  # type: ignore[return-value]
+        master_id=master_id,
+        body=body,
+        session=session,
+        user_id=user_id,
+        _perm=None,
+        service=service,
+    )
+
+
+# ── Attendance Check-in ──────────────────────────────────────────────────────
+
+
+@router.post(
+    "/{meeting_id}/check-in/",
+    response_model=AttendanceRow,
+)
+async def check_in_attendee(
+    meeting_id: uuid.UUID,
+    body: CheckInRequest,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("meetings.update")),
+    service: MeetingService = Depends(_get_service),
+) -> AttendanceRow:
+    """Check the current user in for the given meeting.
+
+    Idempotent: re-checking-in updates the existing row (single row per
+    (meeting, user)).  Optional ``signature_image_data`` (base64 PNG or
+    JPEG, or a ``data:image/...`` URL) is decoded and persisted on disk.
+    """
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    meeting = await service.get_meeting(meeting_id)
+    await verify_project_access(meeting.project_id, str(user_id), session)
+    row = await service.check_in(
+        meeting_id,
+        str(user_id),
+        signature_image_data=body.signature_image_data,
+    )
+    return _attendance_to_row(row)
+
+
+@router.post(
+    "/{meeting_id}/external-attendee/",
+    response_model=AttendanceRow,
+    status_code=201,
+)
+async def record_external_attendee(
+    meeting_id: uuid.UUID,
+    body: ExternalAttendeeRequest,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("meetings.update")),
+    service: MeetingService = Depends(_get_service),
+) -> AttendanceRow:
+    """Record a walk-in / non-system attendee by name only."""
+    meeting = await service.get_meeting(meeting_id)
+    await verify_project_access(meeting.project_id, str(user_id), session)
+    row = await service.record_external_attendee(
+        meeting_id, body.name,
+        signature_image_data=body.signature_image_data,
+    )
+    return _attendance_to_row(row)
+
+
+@router.get(
+    "/{meeting_id}/attendance/",
+    response_model=list[AttendanceRow],
+    dependencies=[Depends(RequirePermission("meetings.read"))],
+)
+async def list_attendance(
+    meeting_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    service: MeetingService = Depends(_get_service),
+) -> list[AttendanceRow]:
+    """List all attendance rows for a meeting (system users + walk-ins)."""
+    meeting = await service.get_meeting(meeting_id)
+    await verify_project_access(meeting.project_id, str(user_id), session)
+    rows = await service.list_attendance(meeting_id)
+    return [_attendance_to_row(r) for r in rows]
 
 
 # ── PDF Export ───────────────────────────────────────────────────────────────

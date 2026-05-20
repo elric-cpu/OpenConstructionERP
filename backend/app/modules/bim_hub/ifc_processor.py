@@ -118,6 +118,87 @@ def _decode_step_string(s: str) -> str:
     return s
 
 
+# ── Last-conversion failure context ───────────────────────────────────────
+#
+# The DDC subprocess can fail for many reasons (Wine crash, RVT version too
+# new, license probe failed). When that happens, ``_try_cad2data`` returns
+# None — and historically the caller had no way to know WHY. The router
+# then shipped a generic "Converter Required" message that didn't help the
+# user diagnose anything.
+#
+# We now stash the last failure's structured context here so the router can
+# pick it up and surface it to the frontend (in ``model.error_message`` and
+# ``model.metadata_``). Module-level state is fine because conversions are
+# serialised per upload — the data is consumed immediately after the call.
+_LAST_DDC_FAILURE: dict[str, Any] = {}
+
+
+def last_ddc_failure() -> dict[str, Any]:
+    """‌⁠‍Return the most recent DDC conversion failure context, if any.
+
+    Keys are best-effort and may be missing:
+      * ``reason`` — short tag: ``timeout`` / ``nonzero_exit`` / ``empty_output``
+      * ``exit_code`` — int from the subprocess (may be missing on timeout)
+      * ``stderr`` — last ~2 KB of stderr from the converter (decoded utf-8)
+      * ``rvt_info`` — dict from ``read_rvt_revit_version`` (RVT only)
+      * ``converter_info`` — dict from ``detect_converter_version``
+      * ``extension`` — the file ext that failed (``rvt`` / ``ifc`` / …)
+
+    Returns an empty dict if there has been no failure since startup.
+    """
+    return dict(_LAST_DDC_FAILURE)
+
+
+def _record_ddc_failure(
+    extension: str,
+    reason: str,
+    *,
+    exit_code: int | None = None,
+    stderr: bytes | str = b"",
+    ifc_path: Path | None = None,
+) -> None:
+    """‌⁠‍Update the module-level failure record with everything the router
+    needs to render an actionable error message."""
+    try:
+        from app.modules.boq.cad_import import (
+            detect_converter_version as _detect,
+            read_rvt_revit_version as _read_rvt,
+        )
+
+        rvt_info: dict[str, str | None] = {}
+        if extension == "rvt" and ifc_path is not None and ifc_path.exists():
+            rvt_info = _read_rvt(ifc_path)
+        conv_info = _detect(extension)
+    except Exception:  # noqa: BLE001 — diagnostics must never raise
+        rvt_info = {}
+        conv_info = {}
+
+    stderr_text = (
+        stderr.decode("utf-8", errors="replace")
+        if isinstance(stderr, (bytes, bytearray))
+        else str(stderr)
+    )
+    # Keep the tail (where the actual error usually lives, not the boot
+    # noise) up to 2 KB.
+    stderr_tail = stderr_text[-2048:].strip()
+
+    _LAST_DDC_FAILURE.clear()
+    _LAST_DDC_FAILURE.update(
+        extension=extension,
+        reason=reason,
+        exit_code=exit_code,
+        stderr=stderr_tail,
+        rvt_info=rvt_info,
+        converter_info=conv_info,
+    )
+    logger.warning(
+        "DDC failure recorded: ext=%s reason=%s rc=%s rvt=%s converter=%s",
+        extension, reason, exit_code,
+        rvt_info.get("app_name") or rvt_info.get("format"),
+        conv_info.get("version"),
+    )
+
+
 def _try_cad2data(ifc_path: Path, output_dir: Path, *, conversion_depth: str = "standard") -> dict[str, Any] | None:
     """‌⁠‍Try to convert CAD files using DDC converters.
 
@@ -198,11 +279,16 @@ def _try_cad2data(ifc_path: Path, output_dir: Path, *, conversion_depth: str = "
                     rc, _stdout, stderr = fut_xlsx.result()
                 except subprocess.TimeoutExpired:
                     logger.error("DDC Excel pass timed out for %s", ifc_path.name)
+                    _record_ddc_failure(ext, "timeout", ifc_path=ifc_path)
                     return None
                 if rc != 0:
                     logger.warning(
                         "DDC Excel pass exit %d: %s",
                         rc, stderr.decode(errors="replace")[:300],
+                    )
+                    _record_ddc_failure(
+                        ext, "nonzero_exit",
+                        exit_code=rc, stderr=stderr, ifc_path=ifc_path,
                     )
                     return None
 
@@ -216,11 +302,19 @@ def _try_cad2data(ifc_path: Path, output_dir: Path, *, conversion_depth: str = "
                             break
                 if not excel_path:
                     logger.warning("DDC Excel pass produced no output file in %s", output_dir)
+                    _record_ddc_failure(
+                        ext, "no_output_file",
+                        exit_code=rc, stderr=stderr, ifc_path=ifc_path,
+                    )
                     return None
 
                 raw_elements = parse_cad_excel(excel_path)
                 if not raw_elements:
                     logger.warning("DDC Excel pass produced empty file")
+                    _record_ddc_failure(
+                        ext, "empty_output",
+                        exit_code=rc, stderr=stderr, ifc_path=ifc_path,
+                    )
                     return None
                 logger.info(
                     "DDC converter extracted %d raw rows from %s",

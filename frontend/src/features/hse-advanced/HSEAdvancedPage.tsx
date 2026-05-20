@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   Clock,
   CheckCircle2,
+  Download,
 } from 'lucide-react';
 import {
   Button,
@@ -48,6 +49,9 @@ import {
   createAudit,
   createCAPA,
   daysUntil,
+  downloadOsha300Csv,
+  fetchCorrectiveActions,
+  transitionCorrectiveAction,
   type IncidentInvestigation,
   type JobSafetyAnalysis,
   type PermitToWork,
@@ -58,6 +62,8 @@ import {
   type IncidentSeverity,
   type PermitStatus,
   type CAPAStatus,
+  type CATargetStatus,
+  type CorrectiveActionRow,
   type FiveWhys,
 } from './api';
 
@@ -157,16 +163,19 @@ export function HSEAdvancedPage() {
         className="mb-4"
       />
 
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-content-primary">
-          {t('hse_advanced.title', { defaultValue: 'HSE Advanced' })}
-        </h1>
-        <p className="mt-1 text-sm text-content-secondary">
-          {t('hse_advanced.subtitle', {
-            defaultValue:
-              'Investigate incidents, run JSAs, manage permits, deliver toolbox talks, issue PPE, audit the site and close CAPAs.',
-          })}
-        </p>
+      <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-content-primary">
+            {t('hse_advanced.title', { defaultValue: 'HSE Advanced' })}
+          </h1>
+          <p className="mt-1 text-sm text-content-secondary">
+            {t('hse_advanced.subtitle', {
+              defaultValue:
+                'Investigate incidents, run JSAs, manage permits, deliver toolbox talks, issue PPE, audit the site and close CAPAs.',
+            })}
+          </p>
+        </div>
+        {projectId && <Osha300Download projectId={projectId} />}
       </div>
 
       <SectionIntro
@@ -302,6 +311,83 @@ function FilterChips<T extends string>({
           )}
         </button>
       ))}
+    </div>
+  );
+}
+
+/* ── OSHA Form 300 CSV download ─────────────────────────────────────── */
+
+/**
+ * Renders the year selector + download button that triggers an OSHA 300
+ * incident-log CSV export. Surfaces high in the page header so it is one
+ * click away from any tab — matches Procore / Sphera placement.
+ */
+function Osha300Download({ projectId }: { projectId: string }) {
+  const { t } = useTranslation();
+  const currentYear = new Date().getFullYear();
+  const [year, setYear] = useState(currentYear);
+  const addToast = useToastStore((s) => s.addToast);
+
+  // Six-year window — OSHA 1904.33 requires five years of retention; we
+  // give one extra leading year so mid-January exports of the prior year
+  // are always available.
+  const years = useMemo(() => {
+    const out: number[] = [];
+    for (let y = currentYear; y >= currentYear - 5; y -= 1) {
+      out.push(y);
+    }
+    return out;
+  }, [currentYear]);
+
+  return (
+    <div className="flex items-center gap-2 shrink-0">
+      <label
+        htmlFor="osha-300-year"
+        className="text-xs font-medium text-content-tertiary"
+      >
+        {t('hse.advanced.osha_year_label', { defaultValue: 'Year' })}
+      </label>
+      <select
+        id="osha-300-year"
+        value={year}
+        onChange={(e) => setYear(Number.parseInt(e.target.value, 10))}
+        className="h-9 rounded-lg border border-border bg-surface-primary px-2 text-sm focus:outline-none focus:ring-2 focus:ring-oe-blue/30 focus:border-oe-blue"
+        aria-label={t('hse.advanced.osha_year_label', { defaultValue: 'Year' })}
+      >
+        {years.map((y) => (
+          <option key={y} value={y}>
+            {y}
+          </option>
+        ))}
+      </select>
+      <Button
+        variant="secondary"
+        size="sm"
+        icon={<Download size={14} />}
+        onClick={() => {
+          try {
+            downloadOsha300Csv(projectId, year);
+            addToast({
+              type: 'success',
+              title: t('hse.advanced.osha_download_started', {
+                defaultValue: 'OSHA 300 CSV download started',
+              }),
+            });
+          } catch (err) {
+            addToast({
+              type: 'error',
+              title: t('hse.advanced.osha_download_failed', {
+                defaultValue: 'Could not start OSHA 300 download',
+              }),
+              message: getErrorMessage(err),
+            });
+          }
+        }}
+      >
+        {t('hse.advanced.download_osha_300', {
+          defaultValue: 'Download OSHA 300 (CSV)',
+        })}
+      </Button>
     </div>
   );
 }
@@ -2277,6 +2363,48 @@ function AuditsTab({ projectId }: { projectId: string }) {
 
 function CAPATab({ projectId }: { projectId: string }) {
   const { t } = useTranslation();
+  const [subTab, setSubTab] = useState<'capa' | 'corrective_actions'>('capa');
+  return (
+    <>
+      <div className="flex items-center gap-1 mb-4" role="tablist">
+        <button
+          role="tab"
+          aria-selected={subTab === 'capa'}
+          onClick={() => setSubTab('capa')}
+          className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+            subTab === 'capa'
+              ? 'bg-oe-blue-subtle text-oe-blue'
+              : 'text-content-tertiary hover:bg-surface-secondary'
+          }`}
+        >
+          {t('hse.advanced.subtab_capa', { defaultValue: 'CAPAs' })}
+        </button>
+        <button
+          role="tab"
+          aria-selected={subTab === 'corrective_actions'}
+          onClick={() => setSubTab('corrective_actions')}
+          className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+            subTab === 'corrective_actions'
+              ? 'bg-oe-blue-subtle text-oe-blue'
+              : 'text-content-tertiary hover:bg-surface-secondary'
+          }`}
+        >
+          {t('hse.advanced.subtab_corrective_actions', {
+            defaultValue: 'Corrective actions (FSM)',
+          })}
+        </button>
+      </div>
+      {subTab === 'capa' ? (
+        <CAPALegacyTab projectId={projectId} />
+      ) : (
+        <CorrectiveActionsFSMTab projectId={projectId} />
+      )}
+    </>
+  );
+}
+
+function CAPALegacyTab({ projectId }: { projectId: string }) {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const addToast = useToastStore((s) => s.addToast);
   const [search, setSearch] = useState('');
@@ -2568,5 +2696,183 @@ function CAPATab({ projectId }: { projectId: string }) {
         </ModalShell>
       )}
     </>
+  );
+}
+
+/* ── Corrective Actions (slim FSM) sub-tab ─────────────────────────── */
+
+/** Map FSM state to the visible-text label so the dropdown is i18n-aware. */
+function fsmLabel(t: ReturnType<typeof useTranslation>['t'], s: CATargetStatus): string {
+  switch (s) {
+    case 'pending':
+      return t('hse.advanced.ca_status_pending', { defaultValue: 'Pending' });
+    case 'in_progress':
+      return t('hse.advanced.ca_status_in_progress', { defaultValue: 'In progress' });
+    case 'verified':
+      return t('hse.advanced.ca_status_verified', { defaultValue: 'Verified' });
+    case 'closed':
+      return t('hse.advanced.ca_status_closed', { defaultValue: 'Closed' });
+  }
+}
+
+const FSM_NEXT: Record<CATargetStatus, CATargetStatus | null> = {
+  pending: 'in_progress',
+  in_progress: 'verified',
+  verified: 'closed',
+  closed: null,
+};
+
+const FSM_BADGE: Record<CATargetStatus, BadgeVariant> = {
+  pending: 'warning',
+  in_progress: 'blue',
+  verified: 'success',
+  closed: 'neutral',
+};
+
+function CorrectiveActionsFSMTab({ projectId }: { projectId: string }) {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const addToast = useToastStore((s) => s.addToast);
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['hse-corrective-actions', projectId],
+    queryFn: () => fetchCorrectiveActions({ projectId }),
+    select: (d) => normalizeListResponse<CorrectiveActionRow>(d),
+  });
+
+  const transitionMut = useMutation({
+    mutationFn: (args: { caId: string; to: CATargetStatus; notes?: string }) =>
+      transitionCorrectiveAction(args.caId, {
+        to_status: args.to,
+        verification_notes: args.notes,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['hse-corrective-actions', projectId] });
+      addToast({
+        type: 'success',
+        title: t('hse.advanced.ca_transition_ok', {
+          defaultValue: 'Corrective action advanced',
+        }),
+      });
+    },
+    onError: (e) =>
+      addToast({
+        type: 'error',
+        title: t('hse.advanced.ca_transition_failed', {
+          defaultValue: 'Could not advance corrective action',
+        }),
+        message: getErrorMessage(e),
+      }),
+  });
+
+  if (isLoading) return <SkeletonTable rows={4} columns={5} />;
+  if (isError) {
+    return (
+      <Card className="py-12">
+        <EmptyState
+          icon={<AlertTriangle size={28} strokeWidth={1.5} />}
+          title={t('common.error', { defaultValue: 'Error' })}
+          description={t('hse.advanced.ca_load_error', {
+            defaultValue: 'Failed to load corrective actions. Please try again.',
+          })}
+        />
+      </Card>
+    );
+  }
+  if (!data || data.length === 0) {
+    return (
+      <EmptyState
+        icon={<CheckCircle2 size={28} strokeWidth={1.5} />}
+        title={t('hse.advanced.no_corrective_actions', {
+          defaultValue: 'No corrective actions yet',
+        })}
+        description={t('hse.advanced.no_corrective_actions_desc', {
+          defaultValue:
+            'Slim corrective actions are opened off an incident and walk a strict pending → in_progress → verified → closed lifecycle. They appear here once an incident has at least one CA assigned.',
+        })}
+      />
+    );
+  }
+
+  return (
+    <Card padding="none">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border-light bg-surface-secondary/50">
+              <th className="px-4 py-3 text-left font-medium text-content-tertiary">
+                {t('hse.advanced.ca_col_description', { defaultValue: 'Description' })}
+              </th>
+              <th className="px-4 py-3 text-left font-medium text-content-tertiary">
+                {t('hse.advanced.ca_col_due', { defaultValue: 'Due' })}
+              </th>
+              <th className="px-4 py-3 text-center font-medium text-content-tertiary">
+                {t('common.status', { defaultValue: 'Status' })}
+              </th>
+              <th className="px-4 py-3 text-left font-medium text-content-tertiary">
+                {t('hse.advanced.ca_col_verified_at', { defaultValue: 'Verified at' })}
+              </th>
+              <th className="px-4 py-3 text-center font-medium text-content-tertiary">
+                {t('hse.advanced.ca_col_advance', { defaultValue: 'Advance' })}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.map((row) => {
+              const next = FSM_NEXT[row.status];
+              return (
+                <tr
+                  key={row.id}
+                  className="border-b border-border-light hover:bg-surface-secondary/30"
+                >
+                  <td className="px-4 py-3 text-content-primary max-w-[28rem] truncate">
+                    {row.description}
+                  </td>
+                  <td className="px-4 py-3 text-content-secondary">
+                    {row.due_date ? <DateDisplay value={row.due_date} /> : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <Badge variant={FSM_BADGE[row.status]} size="sm">
+                      {fsmLabel(t, row.status)}
+                    </Badge>
+                  </td>
+                  <td className="px-4 py-3 text-content-secondary">
+                    {row.verified_at ? <DateDisplay value={row.verified_at} /> : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    {next ? (
+                      <select
+                        aria-label={t('hse.advanced.ca_col_advance', {
+                          defaultValue: 'Advance',
+                        })}
+                        value=""
+                        disabled={transitionMut.isPending}
+                        onChange={(e) => {
+                          const to = e.target.value as CATargetStatus;
+                          if (!to) return;
+                          transitionMut.mutate({ caId: row.id, to });
+                        }}
+                        className="h-8 rounded-md border border-border bg-surface-primary px-2 text-xs focus:outline-none focus:ring-2 focus:ring-oe-blue/30 focus:border-oe-blue"
+                      >
+                        <option value="">
+                          {t('hse.advanced.ca_choose_next', {
+                            defaultValue: 'Advance to…',
+                          })}
+                        </option>
+                        <option value={next}>{fsmLabel(t, next)}</option>
+                      </select>
+                    ) : (
+                      <span className="text-xs text-content-tertiary">
+                        {t('hse.advanced.ca_terminal', { defaultValue: 'Closed' })}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }

@@ -99,7 +99,6 @@ export function LoginPage() {
 
   const demoAccounts = [
     { email: 'demo@openestimator.io', name: 'Admin', role: t('auth.demo_role_admin', 'Administrator'), color: 'bg-blue-500', letter: 'A' },
-    { email: 'estimator@openestimator.io', name: 'Anna Musterfrau', role: t('auth.demo_role_estimator', 'Estimator'), color: 'bg-emerald-500', letter: 'A' },
     { email: 'manager@openestimator.io', name: 'Thomas Müller', role: t('auth.demo_role_manager', 'Manager'), color: 'bg-amber-500', letter: 'M' },
   ];
 
@@ -178,7 +177,7 @@ export function LoginPage() {
   const benefits = [
     { icon: HardDrive, color: 'text-emerald-500 bg-emerald-500/10', title: t('login.benefit.local', 'Your data stays on your computer'), desc: t('login.benefit.local_desc', 'No cloud. No third-party servers. Full control.') },
     { icon: ShieldCheck, color: 'text-blue-500 bg-blue-500/10', title: t('login.benefit.open_source', '100% open source'), desc: t('login.benefit.open_source_desc', 'Transparent code. No vendor lock-in.') },
-    { icon: Globe2, color: 'text-violet-500 bg-violet-500/10', title: t('login.benefit.standards', 'International standards'), desc: t('login.benefit.standards_desc', '55,000+ cost items across 11 regional databases worldwide.') },
+    { icon: Globe2, color: 'text-violet-500 bg-violet-500/10', title: t('login.benefit.standards', 'International standards'), desc: t('login.benefit.standards_desc', '55,000+ cost items across 48 regional databases worldwide.') },
     { icon: Brain, color: 'text-amber-500 bg-amber-500/10', title: t('login.benefit.ai', 'AI-assisted estimation'), desc: t('login.benefit.ai_desc', 'Smart suggestions. You decide, AI assists.') },
     { icon: Zap, color: 'text-rose-500 bg-rose-500/10', title: t('login.benefit.allinone', 'BOQ + 4D + 5D + Tendering'), desc: t('login.benefit.allinone_desc', 'Full workflow in one tool.') },
     { icon: Users, color: 'text-cyan-500 bg-cyan-500/10', title: t('login.benefit.free', 'Free for everyone'), desc: t('login.benefit.free_desc', 'No fees. No limits. By estimators.') },
@@ -370,9 +369,11 @@ export function LoginPage() {
         <div className="mt-5 flex items-center gap-5 animate-stagger-in" style={{ animationDelay: '180ms' }}>
           {[
             { value: '55K+', label: t('login.stat_costs', { defaultValue: 'cost items‌⁠‍' }) },
-            { value: '20', label: t('login.stat_langs', { defaultValue: 'languages‌⁠‍' }) },
-            { value: '30', label: t('login.stat_regions', { defaultValue: 'regions‌⁠‍' }) },
-            { value: '4', label: t('login.stat_cad', { defaultValue: 'CAD formats‌⁠‍' }) },
+            { value: '24', label: t('login.stat_langs', { defaultValue: 'languages‌⁠‍' }) },
+            { value: '48', label: t('login.stat_regions', { defaultValue: 'regions‌⁠‍' }) },
+            { value: '6', label: t('login.stat_cad', { defaultValue: 'CAD formats‌⁠‍' }) },
+            { value: '100+', label: t('login.stat_modules', { defaultValue: 'modules‌⁠‍' }) },
+            { value: '12', label: t('login.stat_sections', { defaultValue: 'sections‌⁠‍' }) },
           ].map((s) => (
             <div key={s.label} className="text-center">
               <div className="text-[22px] font-semibold text-content-primary tracking-tight">{s.value}</div>
@@ -759,7 +760,7 @@ export function LoginPage() {
               />
             </a>
             <a
-              href="https://github.com/datadrivenconstruction/OpenConstructionERP/discussions"
+              href="https://t.me/datadrivenconstruction"
               target="_blank"
               rel="noopener noreferrer"
               aria-label={`${t('login.community', { defaultValue: 'Community' })} — ${t('login.community_sub', { defaultValue: 'Get help & discuss' })}`}
@@ -815,7 +816,7 @@ export function LoginPage() {
                 {t('about.title', 'Professional construction cost estimation — free and open source')}
               </h3>
               <p className="text-[13px] text-content-secondary leading-relaxed">
-                {t('about.intro', 'OpenConstructionERP is a modern platform for construction cost management. It covers the full estimation workflow — from creating a bill of quantities to tendering and bid comparison. Designed for professionals worldwide, it supports international standards and works in 20 languages.')}
+                {t('about.intro', 'OpenConstructionERP is a modern platform for construction cost management. It covers the full estimation workflow — from creating a bill of quantities to tendering and bid comparison. Designed for professionals worldwide, it supports international standards and works in 24 languages.')}
               </p>
               <p className="mt-2 text-[13px] text-content-secondary leading-relaxed">
                 {t('about.intro2', 'Unlike traditional commercial solutions, OpenConstructionERP runs entirely on your computer. Your project data never leaves your machine — you have full ownership and control. The source code is open and auditable, so you always know exactly what the software does.')}
@@ -830,7 +831,7 @@ export function LoginPage() {
               <div className="grid grid-cols-2 gap-2.5">
                 {[
                   { icon: FileSpreadsheet, color: 'text-emerald-500 bg-emerald-500/10', title: t('about.cap.boq', 'Bill of Quantities'), desc: t('about.cap.boq_desc', 'Create detailed BOQ with hierarchical sections, positions, assemblies, markups (overhead, profit, VAT), and automatic totals. Works with regional classification systems or your own custom schema.') },
-                  { icon: Database, color: 'text-blue-500 bg-blue-500/10', title: t('about.cap.costs', 'Cost Databases'), desc: t('about.cap.costs_desc', '55,000+ cost items across 30 regional databases worldwide. Add your own rates, import from Excel, or build a custom database from scratch.') },
+                  { icon: Database, color: 'text-blue-500 bg-blue-500/10', title: t('about.cap.costs', 'Cost Databases'), desc: t('about.cap.costs_desc', '55,000+ cost items across 48 regional databases worldwide. Add your own rates, import from Excel, or build a custom database from scratch.') },
                   { icon: CalendarClock, color: 'text-amber-500 bg-amber-500/10', title: t('about.cap.schedule', '4D Scheduling'), desc: t('about.cap.schedule_desc', 'Create project schedules with CPM critical path calculation, interactive Gantt charts, Monte Carlo risk analysis, resource assignment, and auto-generation of activities from your BOQ.') },
                   { icon: TrendingUp, color: 'text-violet-500 bg-violet-500/10', title: t('about.cap.costmodel', '5D Cost Model'), desc: t('about.cap.costmodel_desc', 'Track budgets over time with Earned Value Management (SPI, CPI), S-curve visualization, cash flow projections, cost snapshots, and what-if scenario modeling for informed decision-making.') },
                   { icon: Boxes, color: 'text-rose-500 bg-rose-500/10', title: t('about.cap.catalog', 'Resource Catalog'), desc: t('about.cap.catalog_desc', '7,000+ resources — materials, equipment, labor, operators, and utilities. Build reusable assemblies (composite rates) from catalog items and apply them directly to BOQ positions.') },
@@ -902,8 +903,8 @@ export function LoginPage() {
               <div className="grid grid-cols-4 gap-3 text-center">
                 {[
                   { value: '55,719', label: t('about.stat.costs', 'Cost items') },
-                  { value: '30', label: t('about.stat.regions', 'Regional databases') },
-                  { value: '20', label: t('about.stat.languages', 'Languages') },
+                  { value: '48', label: t('about.stat.regions', 'Regional databases') },
+                  { value: '24', label: t('about.stat.languages', 'Languages') },
                   { value: '100%', label: t('about.stat.free', 'Free & open source') },
                 ].map((stat) => (
                   <div key={stat.label} className="rounded-lg bg-surface-secondary/50 py-2.5">

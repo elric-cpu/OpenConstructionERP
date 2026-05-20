@@ -4,11 +4,13 @@ Tables:
     oe_requirements_set — container linking requirements to a project
     oe_requirements_item — individual EAC (Entity-Attribute-Constraint) triplets
     oe_requirements_gate_result — results of running quality gates
+    oe_requirement_deliverable — ISO 19650 EIR deliverable rows per requirement
 """
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import JSON, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import GUID, Base
@@ -109,6 +111,12 @@ class Requirement(Base):
     requirement_set: Mapped[RequirementSet] = relationship(
         back_populates="requirements",
     )
+    deliverables: Mapped[list["RequirementDeliverable"]] = relationship(
+        back_populates="requirement",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        order_by="RequirementDeliverable.created_at",
+    )
 
     def __repr__(self) -> str:
         return (
@@ -156,3 +164,63 @@ class GateResult(Base):
 
     def __repr__(self) -> str:
         return f"<GateResult gate={self.gate_number} ({self.status})>"
+
+
+class RequirementDeliverable(Base):
+    """‌⁠‍ISO 19650 Employer Information Requirements (EIR) deliverable row.
+
+    Each requirement may demand one or more information deliverables —
+    a 3D model at LOD 300, a schedule, a COBie export, a property-set
+    submittal. The matrix view (rows = requirements, cols = deliverable
+    types) is reconstructed by grouping rows of this table.
+
+    States are derived from the timestamps:
+        * ``accepted_at IS NOT NULL`` → ``accepted``
+        * ``submitted_at IS NOT NULL`` → ``submitted``
+        * else → ``missing``
+    """
+
+    __tablename__ = "oe_requirement_deliverable"
+
+    requirement_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_requirements_item.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # model | drawing | schedule | report | cobie | pset | other
+    deliverable_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    # BIMForum LOD: 100 | 200 | 300 | 350 | 400 | 500
+    lod: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    # ISO 19650 LOI: 1 | 2 | 3 | 4 | 5
+    loi: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    due_milestone_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(), nullable=True
+    )
+    submitted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    accepted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    # Relationships
+    requirement: Mapped[Requirement] = relationship(
+        back_populates="deliverables",
+    )
+
+    @property
+    def status(self) -> str:
+        """Derived status (accepted → submitted → missing)."""
+        if self.accepted_at is not None:
+            return "accepted"
+        if self.submitted_at is not None:
+            return "submitted"
+        return "missing"
+
+    def __repr__(self) -> str:
+        return (
+            f"<RequirementDeliverable {self.deliverable_type} "
+            f"LOD={self.lod} LOI={self.loi} ({self.status})>"
+        )

@@ -68,6 +68,9 @@ class ChangeOrderUpdate(BaseModel):
     currency: str | None = Field(default=None, max_length=10)
     cost_impact: str | None = Field(default=None, max_length=50)
     metadata: dict[str, Any] | None = None
+    # T3: commitment / RFI links are mutable while the CO is in draft.
+    linked_po_ids: list[UUID] | None = Field(default=None, max_length=50)
+    linked_rfi_ids: list[UUID] | None = Field(default=None, max_length=50)
     status: str | None = Field(
         default=None,
         description="Reserved — use /submit, /approve, /reject to change status.",
@@ -128,6 +131,12 @@ class ChangeOrderResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     item_count: int = 0
+    # T3: Procore-style commitment / RFI links + approval-chain cursor.
+    # Normalised to ``[]`` on read so legacy COs that pre-date v3082
+    # (where the columns are physically NULL) still serialize cleanly.
+    linked_po_ids: list[str] = Field(default_factory=list)
+    linked_rfi_ids: list[str] = Field(default_factory=list)
+    current_approval_step: int | None = None
 
 
 class ChangeOrderWithItems(ChangeOrderResponse):
@@ -175,6 +184,47 @@ class ChangeOrderItemUpdate(BaseModel):
     unit: str | None = Field(default=None, max_length=20)
     sort_order: int | None = Field(default=None, ge=0, le=_INT32_MAX)
     metadata: dict[str, Any] | None = None
+
+
+# ── Approval-chain schemas (T3 — Procore-style multi-step approval) ──────────
+
+
+class ApprovalStartRequest(BaseModel):
+    """Start a multi-step approval chain on a change order.
+
+    ``approver_user_ids`` is the ordered list of approvers (step 1 acts
+    first, then step 2, etc.). Duplicates are allowed in case the same
+    user must sign off twice at different stages; the service enforces
+    a minimum of one approver.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="ignore")
+
+    approver_user_ids: list[UUID] = Field(..., min_length=1, max_length=20)
+
+
+class ApprovalAdvanceRequest(BaseModel):
+    """Record the current approver's decision on a chain step."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="ignore")
+
+    decision: str = Field(..., pattern=r"^(approved|rejected)$")
+    comments: str | None = Field(default=None, max_length=2000)
+
+
+class ApprovalRow(BaseModel):
+    """One row in a change order's approval chain."""
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    change_order_id: UUID
+    step_order: int
+    approver_user_id: UUID | None = None
+    decision: str
+    decided_at: datetime | None = None
+    comments: str | None = None
+    created_at: datetime
 
 
 # ── Summary schema ───────────────────────────────────────────────────────────

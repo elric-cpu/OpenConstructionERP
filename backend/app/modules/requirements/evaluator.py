@@ -7,13 +7,17 @@ the validate-against-BIM-model endpoint and by the consistency gate.
 The evaluator is deliberately string-first: ``constraint_value`` is
 stored as text (Excel- and CSV-friendly), and the operator decides how
 to coerce. ``range`` accepts ``"a..b" | "a-b" | "a,b" | "a;b"``.
+
+Also exposes :func:`compute_deliverable_coverage` — a pure-function
+roll-up of ISO 19650 EIR deliverable rows used by the matrix view.
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Final
+from typing import Any, Final
 
 # Operators considered in the unified contract.
 OPERATORS: Final[tuple[str, ...]] = (
@@ -179,3 +183,102 @@ def evaluate(
 
     # Should be unreachable thanks to the OPERATORS membership check.
     return EvalResult(False, f"Operator '{op}' not implemented")
+
+
+# ── ISO 19650 EIR deliverable coverage ──────────────────────────────────────
+
+
+def _deliverable_status(deliverable: Any) -> str:
+    """Return the derived status of a deliverable row.
+
+    Mirrors :pyattr:`RequirementDeliverable.status` but stays pure so
+    plain dicts (e.g. test fixtures) and ORM rows can be mixed.
+    """
+    accepted = (
+        deliverable.get("accepted_at")
+        if isinstance(deliverable, dict)
+        else getattr(deliverable, "accepted_at", None)
+    )
+    submitted = (
+        deliverable.get("submitted_at")
+        if isinstance(deliverable, dict)
+        else getattr(deliverable, "submitted_at", None)
+    )
+    if accepted is not None:
+        return "accepted"
+    if submitted is not None:
+        return "submitted"
+    return "missing"
+
+
+def _deliverable_type(deliverable: Any) -> str:
+    if isinstance(deliverable, dict):
+        return str(deliverable.get("deliverable_type") or "other")
+    return str(getattr(deliverable, "deliverable_type", "other") or "other")
+
+
+def compute_deliverable_coverage(
+    deliverables: Iterable[Any],
+    *,
+    requirement_id: Any | None = None,
+) -> dict[str, Any]:
+    """Roll up a requirement's deliverable rows into a coverage summary.
+
+    The ``coverage_pct`` is ``accepted / total * 100`` — i.e. how much
+    of the EIR has been *signed off*. Submitted-but-not-accepted rows
+    surface separately so the UI can flag "in review" tiles.
+
+    Returns a plain ``dict`` (not a Pydantic model) so the evaluator
+    stays pure and dependency-free; the router maps it to
+    :class:`DeliverableCoverage` for the HTTP layer.
+    """
+    rows = list(deliverables)
+    total = len(rows)
+
+    if total == 0:
+        return {
+            "requirement_id": requirement_id,
+            "total": 0,
+            "submitted": 0,
+            "accepted": 0,
+            "missing": 0,
+            "coverage_pct": 0.0,
+            "by_type": {},
+        }
+
+    submitted = 0
+    accepted = 0
+    missing = 0
+    by_type: dict[str, dict[str, int]] = {}
+
+    for row in rows:
+        dtype = _deliverable_type(row)
+        status = _deliverable_status(row)
+
+        bucket = by_type.setdefault(
+            dtype,
+            {"total": 0, "submitted": 0, "accepted": 0, "missing": 0},
+        )
+        bucket["total"] += 1
+
+        if status == "accepted":
+            accepted += 1
+            bucket["accepted"] += 1
+        elif status == "submitted":
+            submitted += 1
+            bucket["submitted"] += 1
+        else:
+            missing += 1
+            bucket["missing"] += 1
+
+    coverage_pct = round((accepted / total) * 100.0, 2) if total else 0.0
+
+    return {
+        "requirement_id": requirement_id,
+        "total": total,
+        "submitted": submitted,
+        "accepted": accepted,
+        "missing": missing,
+        "coverage_pct": coverage_pct,
+        "by_type": by_type,
+    }

@@ -36,6 +36,7 @@ import {
   getKpiHistory,
   listDashboards,
   renderDashboard,
+  evaluateDashboard,
   createDashboard,
   listReports,
   runReport,
@@ -48,10 +49,13 @@ import {
   type AlertSeverity,
   type Dashboard,
   type DashboardScope,
+  type DrillPath,
   type KpiDefinition,
   type ReportDefinition,
+  type WidgetEvaluateResult,
   type WidgetRenderResult,
 } from './api';
+import { useDashboardFilters } from '@/stores/useDashboardFilters';
 
 type Tab = 'dashboards' | 'kpis' | 'reports' | 'schedules' | 'alerts';
 
@@ -731,11 +735,54 @@ function DashboardRenderPanel({
 }) {
   const { t } = useTranslation();
   useEscapeToClose(onClose);
+
+  // Wave 4 / T11 — cross-filter wiring. The store is keyed by the active
+  // dashboard so opening a different board starts with a clean slate.
+  const { activeDashboardId, filters, setActiveDashboard, setFilter, removeFilter, clearFilters } =
+    useDashboardFilters();
+  useEffect(() => {
+    setActiveDashboard(dashboardId);
+    // Wipe on unmount so closing the drawer doesn't leak filters into the next open.
+    return () => setActiveDashboard(null);
+  }, [dashboardId, setActiveDashboard]);
+
+  // Two query paths:
+  //  * /render — the legacy static path, used for the dashboard header
+  //    (name + cross_filter_enabled flag).
+  //  * /evaluate — the new path that honours cross-filter chips. Keyed on
+  //    the active filter dict so React Query re-fetches whenever the user
+  //    adds / removes a chip.
   const renderQ = useQuery({
     queryKey: ['bi', 'dashboard-render', dashboardId],
     queryFn: () => renderDashboard(dashboardId),
   });
+
+  const filtersForQuery = activeDashboardId === dashboardId ? filters : {};
+  const filterKeysJson = JSON.stringify(
+    Object.keys(filtersForQuery).sort().reduce<Record<string, unknown>>((acc, k) => {
+      acc[k] = filtersForQuery[k];
+      return acc;
+    }, {}),
+  );
+  const evaluateQ = useQuery({
+    queryKey: ['bi', 'dashboard-evaluate', dashboardId, filterKeysJson],
+    queryFn: () => evaluateDashboard(dashboardId, filtersForQuery),
+    enabled: Boolean(renderQ.data),
+  });
+
   const data = renderQ.data;
+  const evalData = evaluateQ.data;
+  const widgetMap = new Map(data?.widgets.map((w) => [w.widget.id, w.widget]) ?? []);
+  const evaluatedWidgets = evalData?.widgets ?? [];
+
+  const handleCellClick = (widget: WidgetEvaluateResult, row?: Record<string, unknown>) => {
+    if (!data?.dashboard.cross_filter_enabled || !widget.drill_path) return;
+    const path = widget.drill_path;
+    const value = resolveDrillValue(path, row, widget);
+    if (value == null || value === '') return;
+    setFilter(path.filter_field, value);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30" />
@@ -767,9 +814,19 @@ function DashboardRenderPanel({
           </button>
         </div>
         <div className="space-y-3 p-5">
+          {data?.dashboard.cross_filter_enabled && Object.keys(filtersForQuery).length > 0 && (
+            <CrossFilterChips
+              filters={filtersForQuery}
+              onRemove={removeFilter}
+              onClear={clearFilters}
+            />
+          )}
           {renderQ.isLoading && <SkeletonTable rows={4} columns={3} />}
           {renderQ.isError && (
             <p className="text-sm text-rose-600">{getErrorMessage(renderQ.error)}</p>
+          )}
+          {evaluateQ.isError && !renderQ.isError && (
+            <p className="text-sm text-rose-600">{getErrorMessage(evaluateQ.error)}</p>
           )}
           {data && data.widgets.length === 0 && (
             <EmptyState
@@ -782,9 +839,38 @@ function DashboardRenderPanel({
           )}
           {data && data.widgets.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {data.widgets.map((w) => (
-                <WidgetCard key={w.widget.id} widget={w} />
-              ))}
+              {evaluatedWidgets.length > 0
+                ? evaluatedWidgets.map((w) => {
+                    const widgetMeta = widgetMap.get(w.id);
+                    if (!widgetMeta) return null;
+                    // Map evaluate result to the WidgetRenderResult shape the
+                    // existing <WidgetCard> understands so we don't fork the
+                    // chart rendering code.
+                    const mapped: WidgetRenderResult = {
+                      widget: widgetMeta,
+                      value: w.value,
+                      unit: w.unit,
+                      breakdown: {
+                        ...w.breakdown,
+                        // Inject the series into ``trend`` so the line/bar
+                        // charts pick it up via their existing extraction.
+                        ...(w.series.length > 0 ? { trend: w.series } : {}),
+                      },
+                      from_cache: false,
+                    };
+                    return (
+                      <WidgetCard
+                        key={w.id}
+                        widget={mapped}
+                        crossFilterEnabled={data.dashboard.cross_filter_enabled}
+                        drillPath={w.drill_path}
+                        onCellClick={(row) => handleCellClick(w, row)}
+                      />
+                    );
+                  })
+                : data.widgets.map((w) => (
+                    <WidgetCard key={w.widget.id} widget={w} />
+                  ))}
             </div>
           )}
         </div>
@@ -793,7 +879,82 @@ function DashboardRenderPanel({
   );
 }
 
-function WidgetCard({ widget }: { widget: WidgetRenderResult }) {
+/**
+ * Pull the per-click value off either the row (table/chart row click) or a
+ * literal value the widget config carries. ``filter_value_from`` is a
+ * lightweight expression — ``"row.<field>"`` reaches into the clicked row,
+ * any other string is treated as a literal.
+ */
+function resolveDrillValue(
+  path: DrillPath,
+  row: Record<string, unknown> | undefined,
+  widget: WidgetEvaluateResult,
+): unknown {
+  const expr = path.filter_value_from;
+  if (!expr) {
+    // No expression — fall back to the widget's kpi_code so a card click
+    // can at least filter "this KPI" out of the dashboard.
+    return widget.kpi_code ?? widget.id;
+  }
+  if (expr.startsWith('row.') && row) {
+    const key = expr.slice(4);
+    return row[key];
+  }
+  return expr;
+}
+
+function CrossFilterChips({
+  filters,
+  onRemove,
+  onClear,
+}: {
+  filters: Record<string, unknown>;
+  onRemove: (key: string) => void;
+  onClear: () => void;
+}) {
+  const { t } = useTranslation();
+  const entries = Object.entries(filters);
+  if (entries.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border-light bg-surface-secondary/40 px-3 py-2">
+      <span className="text-xs font-medium uppercase tracking-wide text-content-tertiary">
+        {t('bi.active_filters', { defaultValue: 'Active filters' })}
+      </span>
+      {entries.map(([key, value]) => (
+        <button
+          key={key}
+          type="button"
+          onClick={() => onRemove(key)}
+          className="inline-flex items-center gap-1 rounded-full bg-oe-blue/10 px-2.5 py-1 text-xs font-medium text-oe-blue hover:bg-oe-blue/20"
+        >
+          <span>{key}: {String(value)}</span>
+          <X size={10} />
+        </button>
+      ))}
+      {entries.length > 1 && (
+        <button
+          type="button"
+          onClick={onClear}
+          className="ml-auto text-xs text-content-tertiary hover:text-content-primary"
+        >
+          {t('bi.clear_filters', { defaultValue: 'Clear all' })}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function WidgetCard({
+  widget,
+  crossFilterEnabled = false,
+  drillPath = null,
+  onCellClick,
+}: {
+  widget: WidgetRenderResult;
+  crossFilterEnabled?: boolean;
+  drillPath?: DrillPath | null;
+  onCellClick?: (row?: Record<string, unknown>) => void;
+}) {
   const { t } = useTranslation();
   const type = widget.widget.widget_type;
   const value = toNumber(widget.value);
@@ -803,13 +964,25 @@ function WidgetCard({ widget }: { widget: WidgetRenderResult }) {
     : [];
   const tableRows = (widget.breakdown?.['rows'] as unknown[]) || [];
 
+  // A widget is "drillable" only when the dashboard is opted in and the
+  // widget defines a drill_path. Otherwise we render the static card so
+  // we don't bait the user with a clickable cursor for nothing.
+  const drillable = crossFilterEnabled && !!drillPath;
+  const cardClickable = drillable && Boolean(onCellClick);
+  const cardOnClick = cardClickable ? () => onCellClick?.() : undefined;
+
   if (type === 'kpi_card') {
     const prev =
       trendValues.length > 1 ? trendValues[trendValues.length - 2] : null;
     const delta =
       prev != null && prev !== 0 ? ((value - prev) / Math.abs(prev)) * 100 : null;
     return (
-      <Card padding="md">
+      <Card
+        padding="md"
+        hoverable={cardClickable || undefined}
+        onClick={cardOnClick}
+        className={cardClickable ? 'cursor-pointer' : undefined}
+      >
         <p className="text-xs uppercase tracking-wide text-content-tertiary">
           {widget.widget.kpi_code || t('bi.kpi', { defaultValue: 'KPI' })}
         </p>
@@ -826,7 +999,12 @@ function WidgetCard({ widget }: { widget: WidgetRenderResult }) {
 
   if (type === 'line_chart' || type === 'bar_chart') {
     return (
-      <Card padding="md">
+      <Card
+        padding="md"
+        hoverable={cardClickable || undefined}
+        onClick={cardOnClick}
+        className={cardClickable ? 'cursor-pointer' : undefined}
+      >
         <p className="text-xs uppercase tracking-wide text-content-tertiary">
           {widget.widget.kpi_code || t('bi.chart', { defaultValue: 'Chart' })}
         </p>
@@ -844,7 +1022,12 @@ function WidgetCard({ widget }: { widget: WidgetRenderResult }) {
   if (type === 'gauge') {
     const threshold = toNumber(widget.breakdown?.['threshold'] as number | string);
     return (
-      <Card padding="md">
+      <Card
+        padding="md"
+        hoverable={cardClickable || undefined}
+        onClick={cardOnClick}
+        className={cardClickable ? 'cursor-pointer' : undefined}
+      >
         <p className="text-xs uppercase tracking-wide text-content-tertiary">
           {widget.widget.kpi_code || t('bi.gauge', { defaultValue: 'Gauge' })}
         </p>
@@ -859,6 +1042,7 @@ function WidgetCard({ widget }: { widget: WidgetRenderResult }) {
   if (type === 'table') {
     const rows = Array.isArray(tableRows) ? (tableRows as Array<Record<string, unknown>>) : [];
     const cols = rows.length > 0 ? Object.keys(rows[0] ?? {}) : [];
+    const rowClickable = drillable && Boolean(onCellClick);
     return (
       <Card padding="md" className="md:col-span-2">
         <p className="text-xs uppercase tracking-wide text-content-tertiary mb-2">
@@ -880,7 +1064,14 @@ function WidgetCard({ widget }: { widget: WidgetRenderResult }) {
               </thead>
               <tbody>
                 {rows.slice(0, 10).map((row, i) => (
-                  <tr key={i} className="border-t border-border-light">
+                  <tr
+                    key={i}
+                    onClick={rowClickable ? () => onCellClick?.(row) : undefined}
+                    className={clsx(
+                      'border-t border-border-light',
+                      rowClickable && 'cursor-pointer hover:bg-surface-secondary/60',
+                    )}
+                  >
                     {cols.map((c) => (
                       <td key={c} className="px-2 py-1">{String(row[c] ?? '')}</td>
                     ))}
@@ -895,7 +1086,12 @@ function WidgetCard({ widget }: { widget: WidgetRenderResult }) {
   }
 
   return (
-    <Card padding="md">
+    <Card
+      padding="md"
+      hoverable={cardClickable || undefined}
+      onClick={cardOnClick}
+      className={cardClickable ? 'cursor-pointer' : undefined}
+    >
       <p className="text-xs uppercase tracking-wide text-content-tertiary">{type}</p>
       <p className="mt-2 text-lg font-semibold">{formatValue(value, widget.unit ?? null)}</p>
     </Card>
@@ -985,6 +1181,7 @@ function CreateModal({
     name: '',
     description: '',
     scope: 'personal' as DashboardScope,
+    cross_filter_enabled: false,
   });
   const [reportForm, setReportForm] = useState({
     code: '',
@@ -1125,6 +1322,28 @@ function CreateModal({
               <option value="project">{t('bi.scope_project', { defaultValue: 'Project — project members' })}</option>
               <option value="global">{t('bi.scope_global', { defaultValue: 'Global — entire company' })}</option>
             </select>
+          </WideModalField>
+          <WideModalField
+            label={t('bi.cross_filter', { defaultValue: 'Cross-filter on click' })}
+            hint={t('bi.cross_filter_hint', {
+              defaultValue:
+                'Power BI-style. When a tile defines a drill-path, clicking it scopes every other tile on the board to the clicked value.',
+            })}
+            span={2}
+          >
+            <label className="inline-flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={dashForm.cross_filter_enabled}
+                onChange={(e) =>
+                  setDashForm({ ...dashForm, cross_filter_enabled: e.target.checked })
+                }
+                className="h-4 w-4 rounded border-border accent-oe-blue"
+              />
+              {t('bi.cross_filter_enable', {
+                defaultValue: 'Enable click-to-filter for this dashboard',
+              })}
+            </label>
           </WideModalField>
         </WideModalSection>
       )}

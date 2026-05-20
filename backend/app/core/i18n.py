@@ -1,6 +1,6 @@
 """‌⁠‍Internationalization system.
 
-20 languages built into core. Zero hardcoded strings.
+24 languages built into core. Zero hardcoded strings.
 New language = add a JSON file to locales/.
 
 Backend: returns translation keys or resolved strings.
@@ -334,7 +334,7 @@ def _generate_default_locales(locales_dir: Path) -> None:
             "analytics": "Analytics",
             "project_overview": "Project Overview",
             "step_load_db": "Load Cost Database",
-            "step_load_db_desc": "Import regional pricing data with 55,000+ items",
+            "step_load_db_desc": "Import regional pricing data with 55,000+ items across 48 regions",
             "step_ai_search": "Enable AI Search",
             "step_ai_search_desc": "Generate vector embeddings for semantic cost matching",
             "step_connect_ai": "Connect AI",
@@ -668,7 +668,7 @@ def _generate_default_locales(locales_dir: Path) -> None:
             "project_overview": "\u041e\u0431\u0437\u043e\u0440 \u043f\u0440\u043e\u0435\u043a\u0442\u043e\u0432",
             "continue_estimate": "\u041f\u0440\u043e\u0434\u043e\u043b\u0436\u0438\u0442\u044c \u0441\u043c\u0435\u0442\u0443",
             "step_load_db": "\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u0431\u0430\u0437\u0443 \u0440\u0430\u0441\u0446\u0435\u043d\u043e\u043a",
-            "step_load_db_desc": "\u0418\u043c\u043f\u043e\u0440\u0442\u0438\u0440\u0443\u0439\u0442\u0435 \u0440\u0435\u0433\u0438\u043e\u043d\u0430\u043b\u044c\u043d\u0443\u044e \u0431\u0430\u0437\u0443 \u0441 55 000+ \u043f\u043e\u0437\u0438\u0446\u0438\u044f\u043c\u0438",
+            "step_load_db_desc": "\u0418\u043c\u043f\u043e\u0440\u0442\u0438\u0440\u0443\u0439\u0442\u0435 \u0440\u0435\u0433\u0438\u043e\u043d\u0430\u043b\u044c\u043d\u0443\u044e \u0431\u0430\u0437\u0443 \u0441 55 000+ \u043f\u043e\u0437\u0438\u0446\u0438\u044f\u043c\u0438 \u043f\u043e 48 \u0440\u0435\u0433\u0438\u043e\u043d\u0430\u043c",
             "step_ai_search": "\u0412\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0418\u0418-\u043f\u043e\u0438\u0441\u043a",
             "step_ai_search_desc": "\u0421\u043e\u0437\u0434\u0430\u0439\u0442\u0435 \u0432\u0435\u043a\u0442\u043e\u0440\u043d\u044b\u0435 \u044d\u043c\u0431\u0435\u0434\u0434\u0438\u043d\u0433\u0438 \u0434\u043b\u044f \u0441\u0435\u043c\u0430\u043d\u0442\u0438\u0447\u0435\u0441\u043a\u043e\u0433\u043e \u043f\u043e\u0438\u0441\u043a\u0430",
             "step_connect_ai": "\u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0438\u0442\u044c \u0418\u0418",
@@ -2584,7 +2584,7 @@ def _generate_default_locales(locales_dir: Path) -> None:
             "analytics": "\u0627\u0644\u062a\u062d\u0644\u064a\u0644\u0627\u062a",
             "project_overview": "\u0646\u0638\u0631\u0629 \u0639\u0627\u0645\u0629 \u0639\u0644\u0649 \u0627\u0644\u0645\u0634\u0631\u0648\u0639",
             "step_load_db": "\u062a\u062d\u0645\u064a\u0644 \u0642\u0627\u0639\u062f\u0629 \u0627\u0644\u0623\u0633\u0639\u0627\u0631",
-            "step_load_db_desc": "\u0627\u0633\u062a\u064a\u0631\u0627\u062f \u0628\u064a\u0627\u0646\u0627\u062a \u0627\u0644\u0623\u0633\u0639\u0627\u0631 \u0627\u0644\u0625\u0642\u0644\u064a\u0645\u064a\u0629 \u0645\u0639 55,000+ \u0639\u0646\u0635\u0631",
+            "step_load_db_desc": "\u0627\u0633\u062a\u064a\u0631\u0627\u062f \u0628\u064a\u0627\u0646\u0627\u062a \u0627\u0644\u0623\u0633\u0639\u0627\u0631 \u0627\u0644\u0625\u0642\u0644\u064a\u0645\u064a\u0629 \u0645\u0639 55,000+ \u0639\u0646\u0635\u0631 \u0639\u0628\u0631 48 \u0645\u0646\u0637\u0642\u0629",
             "step_ai_search": "\u062a\u0641\u0639\u064a\u0644 \u0627\u0644\u0628\u062d\u062b \u0627\u0644\u0630\u0643\u064a",
             "step_ai_search_desc": "\u0625\u0646\u0634\u0627\u0621 \u062a\u0636\u0645\u064a\u0646\u0627\u062a \u0645\u062a\u062c\u0647\u064a\u0629 \u0644\u0644\u0645\u0637\u0627\u0628\u0642\u0629 \u0627\u0644\u062f\u0644\u0627\u0644\u064a\u0629 \u0644\u0644\u062a\u0643\u0627\u0644\u064a\u0641",
             "step_connect_ai": "\u0631\u0628\u0637 \u0627\u0644\u0630\u0643\u0627\u0621 \u0627\u0644\u0627\u0635\u0637\u0646\u0627\u0639\u064a",

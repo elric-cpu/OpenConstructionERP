@@ -40,6 +40,7 @@ from app.modules.bi_dashboards.repository import BIDashboardsRepository
 from app.modules.bi_dashboards.schemas import (
     AlertRuleCreate,
     DashboardCreate,
+    DashboardEvaluateResponse,
     DashboardRenderResponse,
     DashboardUpdate,
     KPIComputeResponse,
@@ -51,6 +52,7 @@ from app.modules.bi_dashboards.schemas import (
     ReportScheduleUpdate,
     SavedFilterCreate,
     WidgetCreate,
+    WidgetEvaluateResult,
     WidgetRead,
     WidgetRenderResult,
     WidgetUpdate,
@@ -301,6 +303,7 @@ class BIDashboardsService:
             layout_json=payload.layout_json,
             is_default=payload.is_default,
             refresh_interval_seconds=payload.refresh_interval_seconds,
+            cross_filter_enabled=payload.cross_filter_enabled,
         )
         return await self.repo.create_dashboard(dashboard)
 
@@ -343,6 +346,7 @@ class BIDashboardsService:
             width=payload.width,
             height=payload.height,
             order_seq=payload.order_seq,
+            drill_path=payload.drill_path,
         )
         return await self.repo.create_widget(widget)
 
@@ -482,6 +486,174 @@ class BIDashboardsService:
             dashboard=DashboardRead.model_validate(dashboard),
             widgets=results,
             rendered_at=now,
+        )
+
+    # ── Cross-filter evaluate (Wave 4 / T11) ──────────────────────
+
+    async def evaluate_dashboard(
+        self,
+        dashboard_id: uuid.UUID,
+        *,
+        filters: dict[str, Any] | None = None,
+    ) -> DashboardEvaluateResponse | None:
+        """Evaluate every widget on a dashboard, optionally cross-filtered.
+
+        When ``cross_filter_enabled`` is False on the dashboard the
+        ``filters`` argument is ignored — every widget returns its
+        unfiltered headline KPI value, matching :meth:`render_dashboard`'s
+        existing static contract.
+
+        When ``cross_filter_enabled`` is True the filter dict is
+        propagated to each widget's KPI call. ``project_id`` and
+        ``period_start`` / ``period_end`` are first-class — anything else
+        is forwarded as ``filters=`` to the KPI formula (each KPI ignores
+        keys it doesn't recognise, so unknown keys degrade gracefully).
+        """
+        dashboard = await self.repo.get_dashboard(dashboard_id)
+        if dashboard is None:
+            return None
+        widgets = await self.repo.list_widgets(dashboard_id)
+        cross_filter = bool(getattr(dashboard, "cross_filter_enabled", False))
+        # Snapshot the inputs honestly: the response only echoes filters
+        # we actually applied so the UI doesn't show a chip the backend
+        # silently ignored.
+        applied: dict[str, Any] = (
+            dict(filters or {}) if cross_filter and filters else {}
+        )
+
+        # Pull project_id / period bounds out as first-class kwargs to
+        # ``_kpis.compute`` so they hit the KPI's typed signature rather
+        # than the catch-all ``filters`` bag.
+        project_id_val: uuid.UUID | None = None
+        period_start_val: _date | None = None
+        period_end_val: _date | None = None
+        kpi_filters: dict[str, Any] = {}
+        if applied:
+            for key, value in applied.items():
+                if key == "project_id" and value:
+                    try:
+                        project_id_val = (
+                            value if isinstance(value, uuid.UUID)
+                            else uuid.UUID(str(value))
+                        )
+                    except Exception:
+                        # Unparseable project_id is treated like any other
+                        # unknown key — silently dropped, not 500'd.
+                        pass
+                elif key == "period_start" and value:
+                    try:
+                        period_start_val = (
+                            value if isinstance(value, _date)
+                            else _date.fromisoformat(str(value))
+                        )
+                    except Exception:
+                        pass
+                elif key == "period_end" and value:
+                    try:
+                        period_end_val = (
+                            value if isinstance(value, _date)
+                            else _date.fromisoformat(str(value))
+                        )
+                    except Exception:
+                        pass
+                else:
+                    kpi_filters[key] = value
+
+        now = _now()
+        results: list[WidgetEvaluateResult] = []
+        for widget in widgets:
+            value: Decimal | None = None
+            unit: str | None = None
+            breakdown: dict[str, Any] = {}
+            if widget.kpi_code is not None:
+                # When cross-filter is OFF we deliberately call compute
+                # with NO project/period/filter args. That mirrors the
+                # static render path byte-for-byte — important for the
+                # forward-compat contract: dashboards that haven't opted
+                # in must keep returning today's values.
+                if cross_filter:
+                    # Fall back to widget.config_json["project_id"] when the
+                    # caller didn't supply one — preserves the per-widget
+                    # default project binding used by render_dashboard.
+                    effective_project = project_id_val
+                    if effective_project is None and isinstance(
+                        widget.config_json, dict,
+                    ):
+                        cfg_pid = widget.config_json.get("project_id")
+                        if cfg_pid:
+                            try:
+                                effective_project = (
+                                    cfg_pid if isinstance(cfg_pid, uuid.UUID)
+                                    else uuid.UUID(str(cfg_pid))
+                                )
+                            except Exception:
+                                effective_project = None
+                    computation = await _kpis.compute(
+                        widget.kpi_code,
+                        self.session,
+                        project_id=effective_project,
+                        period_start=period_start_val,
+                        period_end=period_end_val,
+                        filters=kpi_filters or None,
+                    )
+                else:
+                    computation = await _kpis.compute(
+                        widget.kpi_code, self.session,
+                    )
+                value = computation.value
+                unit = computation.unit
+                breakdown = computation.breakdown or {}
+
+            # Optional ``series`` for line/bar charts — pulled from the
+            # KPI history (cheapest source of a time-axis). For non-
+            # chart widgets we omit it to keep the payload light.
+            series: list[dict[str, Any]] = []
+            if (
+                widget.kpi_code is not None
+                and widget.widget_type in ("line_chart", "bar_chart")
+            ):
+                history = await self.repo.list_kpi_values(
+                    widget.kpi_code,
+                    project_id=project_id_val,
+                    limit=12,
+                )
+                series = [
+                    {
+                        "period_start": h.period_start.isoformat(),
+                        "period_end": h.period_end.isoformat(),
+                        "value": str(h.value),
+                    }
+                    for h in history
+                ]
+
+            results.append(
+                WidgetEvaluateResult(
+                    id=widget.id,
+                    kpi_code=widget.kpi_code,
+                    widget_type=widget.widget_type,
+                    value=value,
+                    unit=unit,
+                    series=series,
+                    drill_path=widget.drill_path,
+                    breakdown=breakdown,
+                ),
+            )
+
+        _safe_publish(
+            "bi.dashboard.evaluated",
+            {
+                "dashboard_id": str(dashboard.id),
+                "cross_filter_enabled": cross_filter,
+                "applied_filter_keys": list(applied.keys()),
+            },
+        )
+
+        return DashboardEvaluateResponse(
+            dashboard_id=dashboard.id,
+            cross_filter_enabled=cross_filter,
+            applied_filters=applied,
+            widgets=results,
+            evaluated_at=now,
         )
 
     # ── Reports ───────────────────────────────────────────────────

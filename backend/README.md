@@ -49,7 +49,7 @@ openestimate welcome         # re-print the welcome screen + support links
 ## Features
 
 - **BOQ Editor** — Hierarchical Bill of Quantities with AG Grid, markups, validation, export (PDF/Excel/CSV/GAEB)
-- **55,000+ Cost Items** — CWICR database across 11 regions with resource breakdown
+- **55,000+ Cost Items** — CWICR database across 48 regions with resource breakdown
 - **7,000+ Resource Catalog** — Materials, labor, equipment with prices
 - **AI Estimation** — Generate BOQ from text, photo, PDF, Excel, or CAD/BIM (7 LLM providers)
 - **4D Schedule** — Gantt chart with CPM, dependencies, auto-generate from BOQ

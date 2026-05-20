@@ -203,6 +203,10 @@ class ServiceTicketResponse(BaseModel):
     resolved_at: str | None = None
     closed_at: str | None = None
     sla_breach_notified_at: str | None = None
+    # T10: ground-truth breach marker (set by check_breaches()) + link to
+    # the recurring schedule that materialised this ticket (NULL ⇒ ad-hoc).
+    sla_breached_at: str | None = None
+    recurring_schedule_id: UUID | None = None
     metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
     created_at: datetime
     updated_at: datetime
@@ -512,3 +516,93 @@ class NCRFromWorkOrderResponse(BaseModel):
     ncr_number: str
     project_id: UUID
     work_order_id: UUID
+
+
+# ── Recurring schedules (RRULE-driven) ─────────────────────────────────────
+
+
+# Loose RRULE pattern: must contain FREQ= and use only RFC 5545-ish tokens
+# (no surrounding RRULE: prefix, no line folds). Strict parsing happens in
+# the service layer where we already iterate the RRULE.
+RRULE_PATTERN = r"^[A-Z][A-Z0-9=;,+\-:/ TZ]{2,199}$"
+
+
+class RecurringScheduleCreate(BaseModel):
+    """Payload for POST /service/recurring-schedules/."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    name: str = Field(..., min_length=1, max_length=200)
+    rrule: str = Field(..., pattern=RRULE_PATTERN)
+    # Project / contract scope — both optional so tenant-wide fleet schedules
+    # work too. The materialiser requires ``contract_id`` either here OR in
+    # ``template_ticket_data`` to create a ticket.
+    project_id: UUID | None = None
+    contract_id: UUID | None = None
+    # ServiceTicketCreate-shaped JSON. Required key: ``contract_id`` (unless
+    # set at the schedule level). Optional: title, description, priority,
+    # asset_id, metadata. Strict validation deferred to materialise time so
+    # callers can iterate templates without re-validating an empty draft.
+    template_ticket_data: dict[str, Any] = Field(default_factory=dict)
+    # Optional first-run override. If omitted, computed from RRULE.
+    next_run_at: str | None = Field(default=None, pattern=ISO_DATETIME_PATTERN)
+    enabled: bool = True
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RecurringScheduleUpdate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    name: str | None = Field(default=None, max_length=200)
+    rrule: str | None = Field(default=None, pattern=RRULE_PATTERN)
+    project_id: UUID | None = None
+    contract_id: UUID | None = None
+    template_ticket_data: dict[str, Any] | None = None
+    next_run_at: str | None = Field(default=None, pattern=ISO_DATETIME_PATTERN)
+    enabled: bool | None = None
+    metadata: dict[str, Any] | None = None
+
+
+class RecurringScheduleResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    project_id: UUID | None = None
+    contract_id: UUID | None = None
+    name: str
+    rrule: str
+    template_ticket_data: dict[str, Any] = Field(default_factory=dict)
+    next_run_at: str | None = None
+    last_run_at: str | None = None
+    enabled: bool = True
+    metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
+    created_at: datetime
+    updated_at: datetime
+
+
+class RecurringScheduleMaterializeResponse(BaseModel):
+    """Result of POST /service/recurring-schedules/{id}/materialize."""
+
+    schedule_id: UUID
+    ticket_id: UUID | None = None
+    ticket_number: str | None = None
+    next_run_at: str | None = None
+    materialized: bool = False
+    reason: str | None = None
+
+
+# ── SLA-breach check (T10) ────────────────────────────────────────────────
+
+
+class SLABreachCheckResponse(BaseModel):
+    """Result of POST /service/tickets/check-breaches.
+
+    Distinct from ``SLABreachScanResponse`` (the long-running scan that also
+    emits events) — this one is the simple admin trigger that flips
+    ``sla_breached_at`` for every now-overdue ticket and returns the count.
+    """
+
+    checked_at: str
+    newly_breached: int = 0
+    total_breached: int = 0
+    breached_ticket_ids: list[UUID] = Field(default_factory=list)

@@ -1,6 +1,7 @@
 """‌⁠‍ERP Chat Pydantic schemas — request/response models."""
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -63,3 +64,71 @@ class SessionListResponse(BaseModel):
 
     items: list[ChatSessionResponse]
     total: int
+
+
+# ── T8: feedback + admin observability ─────────────────────────────────────
+
+
+class FeedbackRequest(BaseModel):
+    """‌⁠‍Body for ``POST /v1/erp_chat/messages/{id}/feedback``."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    # +1 = thumbs up, -1 = thumbs down. We deliberately do *not* accept 0 —
+    # to clear feedback the frontend should DELETE (future) or just leave
+    # the row in place; "no rating" is the absence of a row.
+    rating: Literal[-1, 1]
+    comment: str | None = Field(default=None, max_length=2000)
+
+
+class FeedbackResponse(BaseModel):
+    """‌⁠‍Echo of the persisted feedback row."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    message_id: UUID
+    user_id: UUID | None = None
+    rating: int
+    comment: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class DailyChatStat(BaseModel):
+    """‌⁠‍One row of the admin-stats daily breakdown."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    date: str  # ISO date "YYYY-MM-DD"
+    messages: int
+    thumbs_up: int
+    thumbs_down: int
+    tokens: int
+
+
+class NegativePromptSnippet(BaseModel):
+    """‌⁠‍One of the top user-prompts that received a thumbs-down."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    snippet: str          # First 120 chars of the user-prompt
+    thumbs_down: int      # How many distinct downvotes the linked turn drew
+    message_id: UUID | None = None
+
+
+class AdminStatsResponse(BaseModel):
+    """‌⁠‍Admin observability rollup over a ``window_days`` window."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    window_days: int
+    total_messages: int
+    total_thumbs_up: int
+    total_thumbs_down: int
+    feedback_rate_pct: float        # % of assistant messages with any rating
+    total_tokens_input: int
+    total_tokens_output: int
+    cache_hit_rate_pct: float       # % of turns where provider reported cache_hit=True
+    top_negative_prompts: list[NegativePromptSnippet]
+    daily_breakdown: list[DailyChatStat]

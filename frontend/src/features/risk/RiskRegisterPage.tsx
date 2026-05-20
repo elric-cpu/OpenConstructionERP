@@ -6,6 +6,7 @@ import { normalizeListResponse } from '@/shared/lib/apiHelpers';
 import {
   ShieldAlert, Plus, ChevronRight, ArrowLeft, DollarSign,
   AlertTriangle, Shield, Trash2, X, Search, Filter, CalendarDays, TrendingUp,
+  LayoutGrid, Activity,
 } from 'lucide-react';
 import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, InfoHint } from '@/shared/ui';
 import { PlanningCrossLinks } from '@/features/schedule/PlanningCrossLinks';
@@ -15,6 +16,9 @@ import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/lib/api';
 import { getIntlLocale } from '@/shared/lib/formatters';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
+import { MonteCarloTab } from './MonteCarloTab';
+
+type RiskTab = 'register' | 'montecarlo';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -492,6 +496,10 @@ export function RiskRegisterPage() {
   const [filterCategory, setFilterCategory] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  // Quantitative Monte Carlo lives in its own tab next to the existing
+  // qualitative register so the 5x5 matrix view stays the default — most
+  // users land here to triage and edit risks, not to re-run simulations.
+  const [activeTab, setActiveTab] = useState<RiskTab>('register');
 
   // Deep-link auto-select: Cmd+Shift+K global search lands here with
   // ?id=<risk_id> — open the matching risk detail view immediately and
@@ -619,16 +627,64 @@ export function RiskRegisterPage() {
         </div>
       )}
 
+      {/* ── Tabs: Register (qualitative) vs Monte Carlo (quantitative) ──
+          The register tab keeps the existing 5x5 matrix + heatmap +
+          filter table. The Monte Carlo tab adds Primavera-style PERT
+          simulation with P50/P80/P95 confidence bands. */}
+      {projectId && (
+        <div
+          role="tablist"
+          aria-label={t('risk.tabs_aria', { defaultValue: 'Risk register tabs' })}
+          className="mt-6 flex items-center gap-1 border-b border-border-light"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'register'}
+            onClick={() => setActiveTab('register')}
+            className={`inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium ${
+              activeTab === 'register'
+                ? 'border-oe-blue text-content-primary'
+                : 'border-transparent text-content-tertiary hover:text-content-secondary'
+            }`}
+          >
+            <LayoutGrid className="h-4 w-4" />
+            {t('risk.tab_register', { defaultValue: 'Register' })}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'montecarlo'}
+            onClick={() => setActiveTab('montecarlo')}
+            className={`inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium ${
+              activeTab === 'montecarlo'
+                ? 'border-oe-blue text-content-primary'
+                : 'border-transparent text-content-tertiary hover:text-content-secondary'
+            }`}
+          >
+            <Activity className="h-4 w-4" />
+            {t('risk.tab_montecarlo', { defaultValue: 'Monte Carlo' })}
+          </button>
+        </div>
+      )}
+
+      {/* Monte Carlo tab content — render and stop here. */}
+      {projectId && activeTab === 'montecarlo' && (
+        <div className="mt-4">
+          <MonteCarloTab projectId={projectId} currency={currency} />
+        </div>
+      )}
+
       {/* Only show matrix when there are actual risks */}
-      {hasRisks && matrixData?.cells && <div className="mt-6"><RiskMatrix cells={matrixData.cells} /></div>}
+      {activeTab === 'register' && hasRisks && matrixData?.cells && <div className="mt-6"><RiskMatrix cells={matrixData.cells} /></div>}
 
       {/* 5x5 Risk Heatmap (client-side, based on probability_score × impact_score_cost) */}
-      {risks.length > 0 && risks.some((r) => r.probability_score != null && r.impact_score_cost != null) && (
+      {activeTab === 'register' && risks.length > 0 && risks.some((r) => r.probability_score != null && r.impact_score_cost != null) && (
         <div className="mt-6"><RiskMatrixHeatmap risks={risks} /></div>
       )}
 
       {/* Search & filter bar (only when there are risks) */}
-      {risks.length > 0 && (
+      {activeTab === 'register' && risks.length > 0 && (
         <div className="mt-4 flex items-center gap-2 flex-wrap">
           <div className="relative flex-1 min-w-[200px] max-w-xs">
             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-content-tertiary" />
@@ -646,7 +702,7 @@ export function RiskRegisterPage() {
         </div>
       )}
 
-      {showFilters && (
+      {activeTab === 'register' && showFilters && (
         <div className="mt-2 flex items-center gap-2 flex-wrap animate-fade-in">
           <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)} aria-label={t('risk.filter_category', { defaultValue: 'Filter by category' })} className={selectCls + ' max-w-[150px]'}>
             <option value="">{t('risk.all_categories', { defaultValue: 'All Categories' })}</option>
@@ -664,7 +720,7 @@ export function RiskRegisterPage() {
         </div>
       )}
 
-      <div className="mt-4">
+      {activeTab === 'register' && <div className="mt-4">
         {!projectId ? (
           <Card><EmptyState
             icon={<ShieldAlert size={28} strokeWidth={1.5} />}
@@ -720,7 +776,7 @@ export function RiskRegisterPage() {
             </div>
           </Card>
         )}
-      </div>
+      </div>}
 
       {showCreate && projectId && <CreateDialog projectId={projectId} currency={currency} onClose={() => setShowCreate(false)} onCreated={refresh} />}
 

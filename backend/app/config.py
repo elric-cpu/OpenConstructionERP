@@ -191,7 +191,7 @@ class Settings(BaseSettings):
     qdrant_url: str | None = "http://localhost:6333"
     vector_data_dir: str = ""  # LanceDB storage path, default: ~/.openestimator/data/vectors
     # Embedding model used by the multi-collection semantic memory layer.
-    # Default is multilingual so the CWICR cost database (9 languages) and
+    # Default is multilingual so the CWICR cost database (24 languages) and
     # cross-module collections (BOQ, documents, tasks, risks, BIM elements,
     # etc.) all rank correctly across English, German, Russian, Lithuanian,
     # French, Spanish, Italian, Polish and Portuguese.  All-MiniLM-L6-v2 is
@@ -334,6 +334,23 @@ class Settings(BaseSettings):
     default_validation_rule_sets: list[str] = Field(
         default=["boq_quality"],
         description="Default validation rule sets applied to all projects",
+    )
+    # Per the OpenEstimate philosophy ("validation is a first-class citizen
+    # — not optional, part of core workflow") every BOQ import (Excel / CSV
+    # / GAEB X83 / X84) runs the configured rule packs before the response
+    # is returned, so DIN276 / NRM / GAEB / MasterFormat / DPGF violations
+    # surface AT import time — not later when a user is staring at row 452
+    # of the BOQ wondering where the bad quantity came from. Set to
+    # ``False`` on very large imports if the inline sweep is too slow; the
+    # standalone ``POST /boqs/{id}/validate/`` endpoint remains available
+    # regardless. Env: ``IMPORT_INLINE_VALIDATION``.
+    import_inline_validation: bool = Field(
+        default=True,
+        description=(
+            "Run validation rule packs inline during BOQ import so issues are "
+            "reported in the import response instead of only via a later "
+            "/validate call."
+        ),
     )
 
     # ── BIM storage policy ──────────────────────────────────────────────

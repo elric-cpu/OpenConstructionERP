@@ -8,8 +8,14 @@ import uuid
 
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from app.modules.requirements.models import GateResult, Requirement, RequirementSet
+from app.modules.requirements.models import (
+    GateResult,
+    Requirement,
+    RequirementDeliverable,
+    RequirementSet,
+)
 
 
 class RequirementSetRepository:
@@ -223,3 +229,112 @@ class GateResultRepository:
         self.session.add(item)
         await self.session.flush()
         return item
+
+
+class RequirementDeliverableRepository:
+    """Data access for ISO 19650 EIR deliverable rows (T13)."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def get_by_id(
+        self, deliverable_id: uuid.UUID,
+    ) -> RequirementDeliverable | None:
+        """Get a deliverable row by ID."""
+        return await self.session.get(RequirementDeliverable, deliverable_id)
+
+    async def list_for_requirement(
+        self,
+        requirement_id: uuid.UUID,
+        *,
+        deliverable_type: str | None = None,
+    ) -> list[RequirementDeliverable]:
+        """List deliverables for one requirement, optionally filtered by type."""
+        stmt = select(RequirementDeliverable).where(
+            RequirementDeliverable.requirement_id == requirement_id
+        )
+        if deliverable_type is not None:
+            stmt = stmt.where(
+                RequirementDeliverable.deliverable_type == deliverable_type
+            )
+        stmt = stmt.order_by(RequirementDeliverable.created_at)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_for_project(
+        self,
+        project_id: uuid.UUID,
+        *,
+        deliverable_type: str | None = None,
+    ) -> list[RequirementDeliverable]:
+        """List every deliverable in the project (matrix view)."""
+        stmt = (
+            select(RequirementDeliverable)
+            .join(
+                Requirement,
+                RequirementDeliverable.requirement_id == Requirement.id,
+            )
+            .join(
+                RequirementSet,
+                Requirement.requirement_set_id == RequirementSet.id,
+            )
+            .where(RequirementSet.project_id == project_id)
+        )
+        if deliverable_type is not None:
+            stmt = stmt.where(
+                RequirementDeliverable.deliverable_type == deliverable_type
+            )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def all_requirements_for_project(
+        self, project_id: uuid.UUID,
+    ) -> list[Requirement]:
+        """Return every requirement in a project with deliverables eager-loaded.
+
+        Expires the identity map first so freshly-attached deliverables
+        (e.g. a deliverable added via the same session right before this
+        call) are reflected in the loaded relationship rather than
+        served from a stale cached row.
+        """
+        self.session.expire_all()
+        stmt = (
+            select(Requirement)
+            .join(
+                RequirementSet,
+                Requirement.requirement_set_id == RequirementSet.id,
+            )
+            .where(RequirementSet.project_id == project_id)
+            .options(selectinload(Requirement.deliverables))
+            .order_by(Requirement.created_at)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def create(
+        self, item: RequirementDeliverable,
+    ) -> RequirementDeliverable:
+        """Insert a new deliverable row."""
+        self.session.add(item)
+        await self.session.flush()
+        return item
+
+    async def update_fields(
+        self, deliverable_id: uuid.UUID, **fields: object,
+    ) -> None:
+        """Update specific fields on a deliverable row."""
+        stmt = (
+            update(RequirementDeliverable)
+            .where(RequirementDeliverable.id == deliverable_id)
+            .values(**fields)
+        )
+        await self.session.execute(stmt)
+        await self.session.flush()
+        self.session.expire_all()
+
+    async def delete(self, deliverable_id: uuid.UUID) -> None:
+        """Hard delete a deliverable row."""
+        item = await self.get_by_id(deliverable_id)
+        if item is not None:
+            await self.session.delete(item)
+            await self.session.flush()

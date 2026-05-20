@@ -18,6 +18,8 @@ import {
   Trash2,
   ShieldAlert,
   ArrowRight,
+  Repeat,
+  AlarmClock,
 } from 'lucide-react';
 import {
   Button,
@@ -64,8 +66,9 @@ import {
   type ContractStatus,
   type WorkOrderStatus,
 } from './api';
+import { RecurringSchedulesTab } from './RecurringSchedulesTab';
 
-type Tab = 'tickets' | 'work_orders' | 'contracts' | 'assets';
+type Tab = 'tickets' | 'work_orders' | 'contracts' | 'assets' | 'recurring';
 
 const TICKET_STATUS_VARIANT: Record<TicketStatus, 'neutral' | 'blue' | 'success' | 'warning' | 'error'> = {
   new: 'blue',
@@ -110,6 +113,45 @@ const inputCls =
 // const labelCls = 'block text-xs font-medium text-content-secondary mb-1';
 
 /* ─── helpers ─── */
+
+/**
+ * SLA countdown chip state for a ticket. The dashboard shows:
+ *   green  — more than 1h headroom until breach
+ *   amber  — under 1h headroom (warning band)
+ *   red    — sla_breached_at is set OR sla_due_at is already in the past
+ *
+ * Returns `null` when no SLA was configured for this ticket (no chip).
+ */
+type SLAChipState = {
+  variant: 'success' | 'warning' | 'error';
+  label: string;
+  minutes: number;
+} | null;
+
+function computeSlaChip(t: ServiceTicket, nowMs: number): SLAChipState {
+  if (t.sla_breached_at) {
+    return { variant: 'error', label: 'Breached', minutes: 0 };
+  }
+  if (!t.sla_due_at) return null;
+  const dueMs = Date.parse(t.sla_due_at);
+  if (Number.isNaN(dueMs)) return null;
+  // Tickets in terminal states should not flash as overdue forever.
+  if (t.status === 'resolved' || t.status === 'closed' || t.status === 'cancelled') {
+    return null;
+  }
+  const minutes = Math.round((dueMs - nowMs) / 60000);
+  if (minutes <= 0) {
+    return { variant: 'error', label: `${Math.abs(minutes)}m late`, minutes };
+  }
+  const variant: 'success' | 'warning' = minutes < 60 ? 'warning' : 'success';
+  const label =
+    minutes >= 1440
+      ? `${Math.round(minutes / 60 / 24)}d`
+      : minutes >= 60
+        ? `${Math.round(minutes / 60)}h`
+        : `${minutes}m`;
+  return { variant, label, minutes };
+}
 
 function todayIso(offsetDays = 0): string {
   const d = new Date();
@@ -224,6 +266,7 @@ export function ServicePage() {
   const [tab, setTab] = useState<Tab>('tickets');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
+  const [overdueOnly, setOverdueOnly] = useState(false);
   const [selected, setSelected] = useState<{ kind: Tab; id: string } | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -260,8 +303,21 @@ export function ServicePage() {
   const filteredTickets = useMemo(() => {
     const items = ticketsQ.data ?? [];
     const s = search.toLowerCase();
+    const nowMs = Date.now();
     return items.filter((it) => {
       if (statusFilter && it.status !== statusFilter) return false;
+      if (overdueOnly) {
+        // A ticket is "overdue" if it carries the explicit breach stamp OR
+        // its sla_due_at has already passed and it's still actionable.
+        const isBreached =
+          !!it.sla_breached_at ||
+          (!!it.sla_due_at &&
+            Date.parse(it.sla_due_at) < nowMs &&
+            it.status !== 'resolved' &&
+            it.status !== 'closed' &&
+            it.status !== 'cancelled');
+        if (!isBreached) return false;
+      }
       if (!s) return true;
       return (
         it.ticket_number.toLowerCase().includes(s) ||
@@ -269,7 +325,7 @@ export function ServicePage() {
         (it.description || '').toLowerCase().includes(s)
       );
     });
-  }, [ticketsQ.data, search, statusFilter]);
+  }, [ticketsQ.data, search, statusFilter, overdueOnly]);
 
   const filteredWOs = useMemo(() => {
     const items = workOrdersQ.data ?? [];
@@ -315,6 +371,7 @@ export function ServicePage() {
     (tab === 'work_orders' && workOrdersQ.isLoading) ||
     (tab === 'contracts' && contractsQ.isLoading) ||
     (tab === 'assets' && (contractsQ.isLoading || assetsQ.isLoading));
+  // ``recurring`` tab manages its own query — it's not surfaced here.
 
   // Surface load failures honestly instead of rendering the "no data yet"
   // empty state over a server/network error.
@@ -325,9 +382,11 @@ export function ServicePage() {
         ? workOrdersQ
         : tab === 'contracts'
           ? contractsQ
-          : assetsQ.isError || !effectiveContractId
-            ? contractsQ
-            : assetsQ;
+          : tab === 'recurring'
+            ? contractsQ  // recurring tab self-loads; this is just a placeholder for the error shell
+            : assetsQ.isError || !effectiveContractId
+              ? contractsQ
+              : assetsQ;
   const isError = !isLoading && activeQuery.isError;
 
   return (
@@ -349,19 +408,21 @@ export function ServicePage() {
             })}
           </p>
         </div>
-        <Button
-          variant="primary"
-          icon={<Plus size={14} />}
-          onClick={() => setCreateOpen(true)}
-        >
-          {tab === 'tickets'
-            ? t('service.new_ticket', { defaultValue: 'New Ticket' })
-            : tab === 'work_orders'
-              ? t('service.new_work_order', { defaultValue: 'New Work Order' })
-              : tab === 'contracts'
-                ? t('service.new_contract', { defaultValue: 'New Contract' })
-                : t('service.new_asset', { defaultValue: 'New Asset' })}
-        </Button>
+        {tab !== 'recurring' && (
+          <Button
+            variant="primary"
+            icon={<Plus size={14} />}
+            onClick={() => setCreateOpen(true)}
+          >
+            {tab === 'tickets'
+              ? t('service.new_ticket', { defaultValue: 'New Ticket' })
+              : tab === 'work_orders'
+                ? t('service.new_work_order', { defaultValue: 'New Work Order' })
+                : tab === 'contracts'
+                  ? t('service.new_contract', { defaultValue: 'New Contract' })
+                  : t('service.new_asset', { defaultValue: 'New Asset' })}
+          </Button>
+        )}
       </div>
 
       <WorkflowIntro />
@@ -375,6 +436,7 @@ export function ServicePage() {
               { id: 'work_orders', label: t('service.work_orders', { defaultValue: 'Work Orders' }), icon: ClipboardList },
               { id: 'contracts', label: t('service.contracts', { defaultValue: 'Contracts' }), icon: FileText },
               { id: 'assets', label: t('service.assets', { defaultValue: 'Assets' }), icon: Box },
+              { id: 'recurring', label: t('service.recurring_tab', { defaultValue: 'Recurring' }), icon: Repeat },
             ] as { id: Tab; label: string; icon: React.ElementType }[]
           ).map((tabItem) => {
             const Icon = tabItem.icon;
@@ -449,9 +511,28 @@ export function ServicePage() {
             <option key={s} value={s}>{s}</option>
           ))}
         </select>
+        {tab === 'tickets' && (
+          <button
+            type="button"
+            onClick={() => setOverdueOnly((v) => !v)}
+            className={clsx(
+              'inline-flex items-center gap-1.5 rounded-lg border px-3 h-9 text-sm font-medium transition-colors',
+              overdueOnly
+                ? 'border-status-error/40 bg-status-error/10 text-status-error'
+                : 'border-border bg-surface-primary text-content-secondary hover:text-content-primary',
+            )}
+            aria-pressed={overdueOnly}
+          >
+            <AlarmClock size={14} />
+            {t('service.overdue_only', { defaultValue: 'Overdue only' })}
+          </button>
+        )}
       </div>
 
       {/* Body */}
+      {tab === 'recurring' ? (
+        <RecurringSchedulesTab contracts={contracts} />
+      ) : (
       <Card padding="none">
         {isLoading ? (
           <div className="p-4"><SkeletonTable rows={8} columns={5} /></div>
@@ -496,6 +577,7 @@ export function ServicePage() {
           />
         )}
       </Card>
+      )}
 
       {/* Detail Drawer */}
       {selected && (
@@ -510,8 +592,8 @@ export function ServicePage() {
         />
       )}
 
-      {/* Create modal */}
-      {createOpen && (
+      {/* Create modal — recurring tab has its own scheduling modal */}
+      {createOpen && tab !== 'recurring' && (
         <CreateModal
           kind={tab}
           contracts={contracts}
@@ -551,6 +633,10 @@ function TicketTable({
       />
     );
   }
+  // Drive the SLA-chip refresh once a minute so a row reading "12m" does not
+  // sit there for an hour after navigation. Stored as ms so computeSlaChip
+  // sees a stable nowMs across the render's rows.
+  const nowMs = useNowMs(60_000);
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
@@ -560,11 +646,14 @@ function TicketTable({
             <th className="px-4 py-2.5 text-left">{t('service.title_col', { defaultValue: 'Title' })}</th>
             <th className="px-4 py-2.5 text-left">{t('service.priority', { defaultValue: 'Priority' })}</th>
             <th className="px-4 py-2.5 text-left">{t('service.status', { defaultValue: 'Status' })}</th>
+            <th className="px-4 py-2.5 text-left">{t('service.sla_chip', { defaultValue: 'SLA' })}</th>
             <th className="px-4 py-2.5 text-left">{t('service.reported_at', { defaultValue: 'Reported' })}</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
+          {rows.map((r) => {
+            const chip = computeSlaChip(r, nowMs);
+            return (
             <tr
               key={r.id}
               onClick={() => onSelect(r.id)}
@@ -578,15 +667,35 @@ function TicketTable({
               <td className="px-4 py-2">
                 <Badge variant={TICKET_STATUS_VARIANT[r.status]} dot>{r.status}</Badge>
               </td>
+              <td className="px-4 py-2">
+                {chip ? (
+                  <Badge variant={chip.variant} dot>
+                    {chip.label}
+                  </Badge>
+                ) : (
+                  <span className="text-content-tertiary text-xs">—</span>
+                )}
+              </td>
               <td className="px-4 py-2 text-content-secondary text-xs">
                 <DateDisplay value={r.reported_at} />
               </td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>
   );
+}
+
+/** Returns Date.now() refreshed on a periodic tick (default 60s). */
+function useNowMs(intervalMs = 60_000): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), intervalMs);
+    return () => window.clearInterval(id);
+  }, [intervalMs]);
+  return now;
 }
 
 function WorkOrderTable({
@@ -1435,11 +1544,15 @@ function CreateModal({
   ];
 
   const modalSize = kind === 'contracts' ? 'xl' : 'lg';
+  // ``recurring`` is unreachable here — the page-level guard short-circuits
+  // before this modal ever mounts on the recurring tab — but TypeScript
+  // needs the key present in the Record<Tab,…> so we add a placeholder.
   const titleByKind: Record<Tab, string> = {
     tickets: t('service.new_ticket', { defaultValue: 'New service ticket' }),
     work_orders: t('service.new_work_order', { defaultValue: 'New work order' }),
     contracts: t('service.new_contract', { defaultValue: 'New service contract' }),
     assets: t('service.new_asset', { defaultValue: 'New serviced asset' }),
+    recurring: '',
   };
   const subtitleByKind: Record<Tab, string> = {
     tickets: t('service.new_ticket_subtitle', {
@@ -1455,6 +1568,7 @@ function CreateModal({
     assets: t('service.new_asset_subtitle', {
       defaultValue: 'Register a piece of equipment that this contract covers.',
     }),
+    recurring: '',
   };
 
   return (

@@ -47,6 +47,20 @@ export interface PunchItem {
   updated_at: string;
   resolved_at: string | null;
   verified_at: string | null;
+  reopen_history?: ReopenHistoryEntry[];
+}
+
+export interface ReopenHistoryEntry {
+  reopened_at: string;
+  reopened_by: string | null;
+  previous_status: string;
+  reason?: string;
+}
+
+export interface BulkCloseResponse {
+  closed: number;
+  skipped: number;
+  errors: { id: string; error: string }[];
 }
 
 export interface PunchSummary {
@@ -136,6 +150,18 @@ export async function transitionPunchStatus(
   newStatus: PunchStatus,
 ): Promise<PunchItem> {
   return apiPost<PunchItem>(`/v1/punchlist/items/${id}/transition/`, { new_status: newStatus });
+}
+
+export async function bulkClose(
+  ids: string[],
+  projectId: string,
+  comment?: string,
+): Promise<BulkCloseResponse> {
+  return apiPost<BulkCloseResponse>('/v1/punchlist/bulk-close/', {
+    ids,
+    project_id: projectId,
+    comment,
+  });
 }
 
 export async function uploadPunchPhoto(id: string, file: File): Promise<PunchItem> {

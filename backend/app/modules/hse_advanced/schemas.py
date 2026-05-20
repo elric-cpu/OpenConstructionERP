@@ -859,3 +859,71 @@ class HSEDashboardResponse(BaseModel):
     toolbox_talks_this_month: int = 0
     expiring_certs_30d: int = 0
     avg_audit_score: float | None = None
+
+
+# ── OSHA 300 + slim CorrectiveAction FSM (T6 / v3086) ───────────────────────
+
+
+class OshaLogQuery(BaseModel):
+    """Query parameters for the OSHA Form 300 CSV export."""
+
+    project_id: UUID
+    year: int = Field(..., ge=1900, le=2100)
+
+
+class CorrectiveActionCreate(BaseModel):
+    """Create a slim incident-scoped corrective action."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    incident_id: UUID
+    description: str = Field(..., min_length=1, max_length=10000)
+    assigned_to_user_id: UUID | None = None
+    due_date: date | None = None
+    status: str = Field(
+        default="pending",
+        pattern=r"^(pending|in_progress|verified|closed)$",
+    )
+
+
+class CorrectiveActionUpdate(BaseModel):
+    """Partial update for a slim corrective action (no status changes)."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    description: str | None = Field(default=None, min_length=1, max_length=10000)
+    assigned_to_user_id: UUID | None = None
+    due_date: date | None = None
+
+
+class CATransitionRequest(BaseModel):
+    """Body for ``POST /corrective-actions/{id}/transition``.
+
+    The FSM is intentionally strict — ``pending → in_progress → verified
+    → closed`` — so any other ``to_status`` is rejected with a 409.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    to_status: str = Field(
+        ..., pattern=r"^(pending|in_progress|verified|closed)$",
+    )
+    verification_notes: str | None = Field(default=None, max_length=10000)
+
+
+class CorrectiveActionResponse(BaseModel):
+    """Slim corrective action returned from the API."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    incident_id: UUID
+    description: str
+    assigned_to_user_id: UUID | None = None
+    due_date: date | None = None
+    status: str
+    verified_by_user_id: UUID | None = None
+    verified_at: datetime | None = None
+    verification_notes: str | None = None
+    created_at: datetime
+    updated_at: datetime

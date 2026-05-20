@@ -22,6 +22,8 @@ from fastapi.responses import Response
 from app.dependencies import CurrentUserId, RequirePermission, SessionDep, verify_project_access
 from app.modules.punchlist.schemas import (
     PinToSheetRequest,
+    PunchBulkCloseRequest,
+    PunchBulkCloseResponse,
     PunchItemCreate,
     PunchItemResponse,
     PunchItemUpdate,
@@ -65,6 +67,7 @@ def _item_to_response(item: object) -> PunchItemResponse:
         verified_by=item.verified_by,  # type: ignore[attr-defined]
         created_by=item.created_by,  # type: ignore[attr-defined]
         metadata=getattr(item, "metadata_", {}),  # type: ignore[attr-defined]
+        reopen_history=getattr(item, "reopen_history", None) or [],  # type: ignore[attr-defined]
         created_at=item.created_at,  # type: ignore[attr-defined]
         updated_at=item.updated_at,  # type: ignore[attr-defined]
     )
@@ -407,6 +410,34 @@ async def remove_photo(
 ) -> None:
     """Remove a photo by index from a punch item."""
     await service.remove_photo(item_id, index)
+
+
+# ── Bulk close ───────────────────────────────────────────────────────────────
+
+
+@router.post("/bulk-close/", response_model=PunchBulkCloseResponse)
+async def bulk_close(
+    data: PunchBulkCloseRequest,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    _perm: None = Depends(RequirePermission("punchlist.update")),
+    service: PunchListService = Depends(_get_service),
+) -> PunchBulkCloseResponse:
+    """‌⁠‍Close many punch items at once.
+
+    Per-id outcomes are summarised: ``closed`` (now closed), ``skipped``
+    (already closed) and ``errors`` (not found, project mismatch, critical
+    items still blocked by open peers, etc.). Successful closes emit the
+    standard ``punchlist.item.status_changed`` event.
+    """
+    await verify_project_access(data.project_id, user_id, session)
+    summary = await service.bulk_close(
+        data.project_id,
+        list(data.ids),
+        user_id=str(user_id) if user_id else "",
+        comment=data.comment,
+    )
+    return PunchBulkCloseResponse(**summary)
 
 
 # ── PDF Export ───────────────────────────────────────────────────────────────

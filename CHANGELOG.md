@@ -5,6 +5,28 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.11.0] — 2026-05-20 · Wave 3/4 modules + Validation@Import + X84 export + /about redesign
+
+### Added
+
+- **Wave 3 modules** — `service` SLA breach scan + RRULE-based recurring contracts (alembic `v3091`), `meetings` recurring attendance, `erp_chat` feedback, `notifications` preferences (alembic `v3088`-`v3090`).
+- **Wave 4 modules** — `bi_dashboards` cross-filter + click-to-drill (`v3092`), `subcontractors` prequal scoring + insurance-expiry sweep (`v3093`), `requirements` ISO 19650 EIR matrix with LOD/LOI deliverables (`v3094`), `file_favorites` star + pin module.
+- Single merge migration `v3095_merge_wave34_heads` consolidates the 7 sibling heads into one.
+- **Validation @ Import** — GAEB X81/X83/X84/Excel/CSV import endpoints now run DIN276 + GAEB + boq_quality (or NRM / MasterFormat per locale) rule packs inline and surface a `validation_report` field on the response. Feature-flagged via `IMPORT_INLINE_VALIDATION` (default ON).
+- **GAEB X84 export (Nebenangebot)** — new `?format=x84` mode on the GAEB export route emits `DP=84` + `BoQBkUp/BoQBkUpReason` per item + optional `BoQBkUpRef` parent ref + `Award/Recommendation` block for marked alternates.
+- **Module scaffolding** — `make module-new NAME=oe_foo` + `modules/oe-module-template/` skeleton (manifest + models + schemas + repository + service + router + migration + tests) + `docs/module-development/quickstart.md`. Makes the "vibe-coding" plugin claim real.
+- **BIM/RVT converter diagnostics** — new `read_rvt_revit_version()` extracts Format/Build/App from the OLE header; `detect_converter_version()` queries `dpkg` on Linux or parent-dir fingerprint on Windows; conversion failures now record the structured context (RVT version vs. converter version vs. stderr tail) and the router composes an actionable error message ("File saved with Revit 2024. Installed RVT converter: 18.0.0.0. Converter said: ...") shipped to the UI overlay.
+
+### Changed
+
+- **/about page redesign** — full-width 1600px container; 6-tile Platform Capabilities stat grid (`55K+ / 24 / 48 / 6 / 100+ / 12`) split into 2 separate Cards next to a dedicated Community Card with matched heights; "About the project" Card switched to 3:2 grid with bio + blockquote on the left and the marketing-site DDC Ecosystem block on the right (Flagship products / Open-source on GitHub / Find us across the network); Consulting & Services rebuilt as the marketing site's 3 numbered offerings (Build 01 / Workshops 02 / Consulting 03) with trusted-by chip list (Drees & Sommer · Lindner Group · OTWB · ShapeMaker · TUM · Bauindustrie Bayern · …); Support OpenConstructionERP compacted into 2-col (3 stacked action cards left + "Your support enables" backlog right); Free Guidebook reshaped into small cover + 10-part real chapter list of the Data-Driven Construction book; Documentation + License grouped into matched-height 2-col band; header itself 2-col with identity left + UpdateNotification right; deduped LinkedIn/YouTube/Website/GitHub social row.
+- **Project dashboard /Quick Actions** — buttons bumped `sm` → `md` (28 → 32 px) with `space-y-2.5`; card stretches via `h-full flex flex-col` to match Recent Activity height; Documents stats block redesigned with prominent number tiles in a bordered area pushed to the bottom via `mt-auto`.
+- **Stale-count sweep** — 12 files refreshed to 24 languages / 48 regional databases (was scattered 9/11/20/21/30) across `AUTHORS.md`, `backend/pyproject.toml` (description), `backend/README.md`, `backend/app/config.py`, `backend/app/core/i18n.py` (EN/RU/AR onboarding strings), `backend/app/core/marketplace.py`, `backend/app/main.py`, `backend/app/modules/erp_chat/{prompts,tools}.py`, `backend/app/modules/match_elements/service.py`, `data/catalog/README.md`, `docs/expand_docs2.py`.
+
+### Fixed
+
+- `file_favorites/__init__.py` was importing a non-existent `permissions.py` — added the missing permission registration so the lifespan startup no longer aborts.
+
 ## [3.10.1] — 2026-05-19 · Match-elements "how it works" collapsed by default
 
 ### Changed

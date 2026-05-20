@@ -196,3 +196,102 @@ class ImportPreviewResponse(BaseModel):
     minutes: str = ""
     ai_enhanced: bool = False
     segments_parsed: int = 0
+
+
+# ── Recurring Series ──────────────────────────────────────────────────────
+
+
+# RFC 5545 RRULE pattern — we accept FREQ=DAILY|WEEKLY|MONTHLY, BYDAY tokens,
+# COUNT or UNTIL terminators. Validation is intentionally loose because
+# python-dateutil.rrule.rrulestr does the real parse downstream.
+_RRULE_PATTERN = r"^FREQ=(DAILY|WEEKLY|MONTHLY)(;[A-Z]+=[A-Z0-9,]+)*$"
+
+
+class MeetingSeriesCreate(BaseModel):
+    """Create a recurring meeting series (master + first occurrences).
+
+    Mirrors :class:`MeetingCreate` but requires ``recurrence_rule`` and
+    accepts an optional ``materialize_until`` so the caller can pre-create
+    occurrences in the same round-trip.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    project_id: UUID
+    meeting_type: str = Field(
+        ...,
+        pattern=r"^(progress|design|safety|subcontractor|kickoff|closeout)$",
+    )
+    title: str = Field(..., min_length=1, max_length=500)
+    meeting_date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
+    location: str | None = Field(default=None, max_length=500)
+    chairperson_id: str | None = Field(default=None, max_length=36)
+    attendees: list[AttendeeEntry] = Field(default_factory=list)
+    agenda_items: list[AgendaItemEntry] = Field(default_factory=list)
+    action_items: list[ActionItemEntry] = Field(default_factory=list)
+    minutes: str | None = Field(default=None, max_length=50000)
+    status: str = Field(
+        default="scheduled",
+        pattern=r"^(draft|scheduled|in_progress|completed|cancelled)$",
+    )
+    document_ids: list[UUID] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    # RFC 5545 RRULE — required for a series.
+    recurrence_rule: str = Field(..., min_length=5, max_length=200, pattern=_RRULE_PATTERN)
+    # Optional ISO 8601 date; if provided, materialise occurrences up to it.
+    materialize_until: str | None = Field(
+        default=None, pattern=r"^\d{4}-\d{2}-\d{2}$",
+    )
+
+
+class MaterializeRequest(BaseModel):
+    """Request to materialise series occurrences up to a given date."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    until: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
+
+
+class MeetingSeriesResponse(BaseModel):
+    """Response from a series-create or materialise call."""
+
+    series_id: UUID
+    master: MeetingResponse
+    occurrences: list[MeetingResponse] = Field(default_factory=list)
+
+
+# ── Attendance ────────────────────────────────────────────────────────────
+
+
+class CheckInRequest(BaseModel):
+    """User check-in. The JWT identifies the user; signature is optional."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    # data: URL or bare base64 PNG/JPEG bytes. None = no signature captured.
+    signature_image_data: str | None = Field(default=None, max_length=2_000_000)
+
+
+class ExternalAttendeeRequest(BaseModel):
+    """Walk-in / external attendee — name only, no system user_id."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    name: str = Field(..., min_length=1, max_length=200)
+    signature_image_data: str | None = Field(default=None, max_length=2_000_000)
+
+
+class AttendanceRow(BaseModel):
+    """Attendance record returned by the list endpoint."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    meeting_id: UUID
+    user_id: str | None = None
+    external_name: str | None = None
+    checked_in_at: datetime | None = None
+    signature_image_path: str | None = None
+    created_at: datetime
+    updated_at: datetime

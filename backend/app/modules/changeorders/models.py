@@ -1,14 +1,24 @@
 """‌⁠‍Change Order ORM models.
 
 Tables:
-    oe_changeorders_order — change order header with status, cost/schedule impact
-    oe_changeorders_item  — individual line items within a change order
+    oe_changeorders_order   — change order header with status, cost/schedule impact
+    oe_changeorders_item    — individual line items within a change order
+    oe_changeorder_approval — ordered per-approver decisions (Procore-style chain)
 """
 
 import uuid
+from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import JSON, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db_types import MoneyType
@@ -78,12 +88,45 @@ class ChangeOrder(Base):
         server_default="{}",
     )
 
+    # T3: Procore-style commitment / RFI links. Stored as JSON arrays of
+    # UUID strings rather than association tables — the cardinality is
+    # tiny (typically <10 entries per CO) and the data is read-heavy /
+    # display-only, so the indirection isn't worth a join. The column is
+    # nullable for backward compat with COs created before v3082; the
+    # service / API layer normalises ``None`` to ``[]`` on read.
+    linked_po_ids: Mapped[list | None] = mapped_column(  # type: ignore[assignment]
+        JSON,
+        nullable=True,
+        default=list,
+        server_default="[]",
+    )
+    linked_rfi_ids: Mapped[list | None] = mapped_column(  # type: ignore[assignment]
+        JSON,
+        nullable=True,
+        default=list,
+        server_default="[]",
+    )
+    # Cursor into ``approvals`` — points at the active ``step_order`` of
+    # the in-flight chain. ``None`` means no chain has been started (a
+    # legacy CO using the single-step ``approve`` endpoint). Indexed so
+    # "pending my approval" boards can scan it cheaply without joining
+    # the approval table.
+    current_approval_step: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, index=True,
+    )
+
     # Relationships
     items: Mapped[list["ChangeOrderItem"]] = relationship(
         back_populates="change_order",
         cascade="all, delete-orphan",
         lazy="selectin",
         order_by="ChangeOrderItem.sort_order",
+    )
+    approvals: Mapped[list["ChangeOrderApproval"]] = relationship(
+        back_populates="change_order",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+        order_by="ChangeOrderApproval.step_order",
     )
 
     def __repr__(self) -> str:
@@ -135,3 +178,65 @@ class ChangeOrderItem(Base):
 
     def __repr__(self) -> str:
         return f"<ChangeOrderItem {self.description[:40]} ({self.change_type})>"
+
+
+# Per-step decision vocabulary for a Procore-style approval chain.
+APPROVAL_DECISIONS: tuple[str, ...] = ("pending", "approved", "rejected")
+
+
+class ChangeOrderApproval(Base):
+    """‌⁠‍One ordered step in a change order's multi-approver chain.
+
+    A change order's chain is a list of these rows keyed by ``step_order``
+    (1, 2, 3, …). The :class:`ChangeOrder` carries a ``current_approval_step``
+    cursor pointing at the row that is currently in ``pending`` and is
+    expected to act next; the service advances the cursor on each
+    ``approve`` decision and short-circuits the chain on a ``reject``.
+
+    The FK to ``oe_users_user`` is ``SET NULL`` rather than ``CASCADE``
+    because we want the audit trail of who decided what to survive a
+    user being removed — the row becomes "decision recorded, decider
+    deleted" instead of vanishing.
+    """
+
+    __tablename__ = "oe_changeorder_approval"
+    __table_args__ = (
+        UniqueConstraint(
+            "change_order_id",
+            "step_order",
+            name="uq_oe_changeorder_approval_change_order_id_step_order",
+        ),
+    )
+
+    change_order_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_changeorders_order.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    step_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    approver_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(),
+        ForeignKey("oe_users_user.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    decision: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="pending",
+        server_default="pending",
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+    comments: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+
+    # Relationships
+    change_order: Mapped[ChangeOrder] = relationship(back_populates="approvals")
+
+    def __repr__(self) -> str:
+        return (
+            f"<ChangeOrderApproval step={self.step_order} "
+            f"approver={self.approver_user_id} decision={self.decision}>"
+        )
