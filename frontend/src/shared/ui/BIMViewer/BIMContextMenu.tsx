@@ -22,6 +22,7 @@ import {
   Palette,
   SlidersHorizontal,
   Search,
+  RotateCcw,
 } from 'lucide-react';
 import type { BIMElementData } from './ElementManager';
 
@@ -47,9 +48,16 @@ export interface BIMContextMenuActions {
   onCreateTask?: () => void;
   onIsolate?: () => void;
   onHide?: () => void;
+  /** W6.6 — restore visibility of all elements that were hidden via
+   *  `Hide selected` or `Isolate selection`. Disabled in the menu when
+   *  nothing is hidden. */
+  onShowAll?: () => void;
   onColorByCategory?: () => void;
   onShowInFilterPanel?: () => void;
   onShowSimilar?: () => void;
+  /** W6.6 — true when at least one element is currently hidden by
+   *  hide/isolate. Used to enable/disable the "Show all" menu item. */
+  hasHidden?: boolean;
 }
 
 interface BIMContextMenuProps {
@@ -236,7 +244,11 @@ export function BIMContextMenu({ menu, actions, onClose }: BIMContextMenuProps) 
 
         <MenuDivider />
 
-        {/* Group 3: Visibility */}
+        {/* Group 3: Visibility — labelled "Solo Mode" (W6.6 Stream C) so the
+            hide / isolate / show-all triad reads as one feature. */}
+        <MenuGroupHeader
+          label={t('bim.solo_mode.group_header', { defaultValue: 'Solo Mode' })}
+        />
         <MenuItem
           icon={Eye}
           label={
@@ -245,6 +257,7 @@ export function BIMContextMenu({ menu, actions, onClose }: BIMContextMenuProps) 
               : t('bim.ctx_isolate', { defaultValue: 'Isolate (hide all others)' })
           }
           onClick={() => { actions.onIsolate?.(); onClose(); }}
+          testId="bim-ctx-isolate"
         />
         <MenuItem
           icon={EyeOff}
@@ -254,6 +267,7 @@ export function BIMContextMenu({ menu, actions, onClose }: BIMContextMenuProps) 
               : t('bim.ctx_hide', { defaultValue: 'Hide element' })
           }
           onClick={() => { actions.onHide?.(); onClose(); }}
+          testId="bim-ctx-hide"
         />
         <MenuItem
           icon={Palette}
@@ -263,6 +277,15 @@ export function BIMContextMenu({ menu, actions, onClose }: BIMContextMenuProps) 
               : t('bim.ctx_color_category', { defaultValue: 'Color by category' })
           }
           onClick={() => { actions.onColorByCategory?.(); onClose(); }}
+        />
+        {/* W6.6 — restore visibility of all hidden elements. Disabled when
+            nothing is hidden so the menu doesn't lie. */}
+        <MenuItem
+          icon={RotateCcw}
+          label={t('bim.ctx_show_all', { defaultValue: 'Show all‌⁠‍' })}
+          onClick={() => { actions.onShowAll?.(); onClose(); }}
+          disabled={!actions.hasHidden}
+          testId="bim-ctx-show-all"
         />
 
         <MenuDivider />
@@ -292,17 +315,21 @@ function MenuItem({
   label,
   onClick,
   disabled = false,
+  testId,
 }: {
   icon: React.ElementType;
   label: string;
   onClick: () => void;
   disabled?: boolean;
+  testId?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
+      aria-disabled={disabled || undefined}
+      data-testid={testId}
       className="flex items-center gap-2.5 w-full px-3 py-1.5 text-xs text-content-secondary hover:bg-surface-secondary hover:text-content-primary transition-colors disabled:opacity-40 disabled:pointer-events-none"
     >
       <Icon size={13} className="shrink-0 text-content-tertiary" />
@@ -313,6 +340,17 @@ function MenuItem({
 
 function MenuDivider() {
   return <div className="my-1 mx-2 border-t border-border-light" />;
+}
+
+/** Small section header rendered between groups (e.g. "Solo Mode"). Uses
+ *  the same tiny-uppercase styling as the right-panel section headers so
+ *  the menu reads as one design language. */
+function MenuGroupHeader({ label }: { label: string }) {
+  return (
+    <div className="px-3 pt-1.5 pb-0.5 text-[9px] font-semibold uppercase tracking-wider text-content-tertiary">
+      {label}
+    </div>
+  );
 }
 
 /* ── Position hook ────────────────────────────────────────────────────── */

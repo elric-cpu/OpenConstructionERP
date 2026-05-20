@@ -99,7 +99,7 @@ export function LoginPage() {
 
   const demoAccounts = [
     { email: 'demo@openestimator.io', name: 'Admin', role: t('auth.demo_role_admin', 'Administrator'), color: 'bg-blue-500', letter: 'A' },
-    { email: 'manager@openestimator.io', name: 'Thomas Müller', role: t('auth.demo_role_manager', 'Manager'), color: 'bg-amber-500', letter: 'M' },
+    { email: 'manager@openestimator.io', name: 'Thomas Müller', role: t('auth.demo_role_manager', 'Manager'), color: 'bg-[#7cd0ff]', letter: 'M' },
   ];
 
   const handleDemoLogin = async (demoEmail: string) => {
@@ -472,9 +472,9 @@ export function LoginPage() {
             typography (no boxed icon backgrounds, accent rule above each
             title) so the marketing column lands on something concrete
             after the honeycomb. */}
-        <div className="mt-2 grid grid-cols-2 gap-x-7 gap-y-1 animate-stagger-in" style={{ animationDelay: '320ms' }}>
+        <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 animate-stagger-in" style={{ animationDelay: '320ms' }}>
           {[
-            { icon: ShieldCheck, title: t('login.feat_local_title', { defaultValue: 'Your data, your machine' }), desc: t('login.feat_local', { defaultValue: 'Nothing leaves your computer. Full ownership, zero cloud dependency.' }) },
+            { icon: ShieldCheck, title: t('login.feat_local_title', { defaultValue: 'Your data, your machine' }), desc: t('login.feat_local', { defaultValue: 'Nothing leaves your computer. Full ownership,\nzero cloud dependency.' }) },
             { icon: Brain,       title: t('login.feat_ai_title',    { defaultValue: 'AI-assisted, human-confirmed' }), desc: t('login.feat_ai',    { defaultValue: 'Smart suggestions with confidence scores. You always have the final say.' }) },
           ].map((feat) => {
             const Icon = feat.icon;
@@ -487,7 +487,7 @@ export function LoginPage() {
                     {feat.title}
                   </span>
                 </div>
-                <p className="mt-1 text-[11.5px] leading-[1.55] text-content-tertiary tracking-[-0.005em]">
+                <p className="mt-1 text-[11.5px] leading-[1.55] text-content-tertiary tracking-[-0.005em] whitespace-pre-line">
                   {feat.desc}
                 </p>
               </div>
@@ -526,63 +526,69 @@ export function LoginPage() {
               small "by OpenConstructionERP" attribution stays visible in
               customised modes (AGPL-3.0 requirement). */}
           <div className="relative mb-5 flex flex-col items-center animate-stagger-in" style={{ animationDelay: '0ms' }}>
-            {brandCustomised ? (
-              <>
-                {brandMode === 'logo' && brandLogo ? (
-                  <img
-                    src={brandLogo}
-                    alt={brandName || 'Custom logo'}
-                    className="block max-h-16 w-auto max-w-full object-contain"
-                    draggable={false}
-                  />
-                ) : (
+            {/* Brand + edit-pencil row — grouped together and visually
+                centered in the form column (previously the pencil was
+                pinned to the far right edge which made the brand block
+                look off-centre relative to the form below). */}
+            <div className="flex items-center gap-2">
+              {brandCustomised ? (
+                <div className="flex flex-col items-center">
+                  {brandMode === 'logo' && brandLogo ? (
+                    <img
+                      src={brandLogo}
+                      alt={brandName || 'Custom logo'}
+                      className="block max-h-16 w-auto max-w-full object-contain"
+                      draggable={false}
+                    />
+                  ) : (
+                    <span
+                      className="block max-w-full truncate text-center text-3xl font-extrabold text-content-primary leading-none"
+                      style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", letterSpacing: '-0.02em' }}
+                      title={brandName}
+                    >
+                      {brandName}
+                    </span>
+                  )}
+                  {/* "by OpenConstructionERP" — subordinate attribution that
+                      stays visible (AGPL-3.0). Mirrors CustomBranding.tsx. */}
                   <span
-                    className="block max-w-full truncate text-center text-3xl font-extrabold text-content-primary leading-none"
-                    style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", letterSpacing: '-0.02em' }}
-                    title={brandName}
+                    className="mt-2 block text-[11px] leading-none text-content-tertiary"
+                    style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", letterSpacing: '0.02em' }}
                   >
-                    {brandName}
+                    by{' '}
+                    <span className="font-semibold tracking-tight">
+                      Open<span className="text-oe-blue/80">Construction</span>
+                      <span className="text-content-quaternary">ERP</span>
+                    </span>
                   </span>
-                )}
-                {/* "by OpenConstructionERP" — subordinate attribution that
-                    stays visible (AGPL-3.0). Mirrors CustomBranding.tsx. */}
-                <span
-                  className="mt-2 block text-[11px] leading-none text-content-tertiary"
-                  style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", letterSpacing: '0.02em' }}
-                >
-                  by{' '}
-                  <span className="font-semibold tracking-tight">
-                    Open<span className="text-oe-blue/80">Construction</span>
-                    <span className="text-content-quaternary">ERP</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2.5">
+                  <Logo size="md" animate />
+                  <span
+                    className="text-2xl font-extrabold text-content-primary whitespace-nowrap"
+                    style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", letterSpacing: '-0.02em' }}
+                  >
+                    Open<span className="text-oe-blue">Construction</span><span className="text-content-quaternary font-semibold">ERP</span>
                   </span>
-                </span>
-              </>
-            ) : (
-              <div className="flex items-center gap-2.5">
-                <Logo size="md" animate />
-                <span
-                  className="text-2xl font-extrabold text-content-primary whitespace-nowrap"
-                  style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", letterSpacing: '-0.02em' }}
-                >
-                  Open<span className="text-oe-blue">Construction</span><span className="text-content-quaternary font-semibold">ERP</span>
-                </span>
-              </div>
-            )}
+                </div>
+              )}
+              {/* White-label trigger — same editor as the in-app sidebar
+                  brand control, available pre-auth so a tenant can put
+                  their own logo on the sign-in screen. */}
+              <button
+                type="button"
+                onClick={() => setBrandOpen(true)}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-border-light bg-surface-elevated/60 text-content-tertiary backdrop-blur-sm transition-colors hover:border-oe-blue/40 hover:bg-oe-blue/5 hover:text-oe-blue focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
+                aria-label={t('login.brand_edit', { defaultValue: 'Customize logo' })}
+                title={t('login.brand_edit', { defaultValue: 'Customize logo' })}
+              >
+                <Pencil size={13} strokeWidth={2.25} />
+              </button>
+            </div>
             <p className="mt-2 text-sm text-content-tertiary">
               {t('login.workspace_tagline', { defaultValue: 'Professional construction project workspace' })}
             </p>
-            {/* White-label trigger — same editor as the in-app sidebar
-                brand control, available pre-auth so a tenant can put
-                their own logo on the sign-in screen. */}
-            <button
-              type="button"
-              onClick={() => setBrandOpen(true)}
-              className="absolute right-0 top-0 inline-flex h-10 w-10 items-center justify-center rounded-xl border border-border-light bg-surface-elevated/60 text-content-tertiary backdrop-blur-sm transition-colors hover:border-oe-blue/40 hover:bg-oe-blue/5 hover:text-oe-blue focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
-              aria-label={t('login.brand_edit', { defaultValue: 'Customize logo' })}
-              title={t('login.brand_edit', { defaultValue: 'Customize logo' })}
-            >
-              <Pencil size={18} strokeWidth={2.25} />
-            </button>
           </div>
 
           {/* Open-source banner (mobile) */}

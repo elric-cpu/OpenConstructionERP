@@ -616,16 +616,12 @@ export function AboutPage() {
             </div>
           </div>
 
-          {/* CTA row — bigger contact button + reply-time SLA + secondary case-studies link */}
+          {/* CTA row — primary contact button (case-studies link removed per
+              user request 2026-05-20). */}
           <div className="mt-5 flex flex-wrap items-center gap-3">
             <a href="https://datadrivenconstruction.io/contact-support/" target="_blank" rel="noopener noreferrer">
               <Button variant="primary" size="md" icon={<Mail size={15} />}>
                 {t('about.contact_us', { defaultValue: 'Contact Us' })}
-              </Button>
-            </a>
-            <a href="https://datadrivenconstruction.io/case-studies/" target="_blank" rel="noopener noreferrer">
-              <Button variant="secondary" size="md" icon={<BookOpen size={15} />} iconPosition="left">
-                {t('about.svc_case_studies', { defaultValue: 'Browse case studies' })}
               </Button>
             </a>
           </div>

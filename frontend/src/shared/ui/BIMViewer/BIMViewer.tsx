@@ -61,6 +61,7 @@ import { ClipManager } from './ClipManager';
 import { deriveGeometry, deriveRelations } from './canonicalElementDetails';
 import { BIMContextMenu } from './BIMContextMenu';
 import type { BIMContextMenuState } from './BIMContextMenu';
+import BIMViewCube from './BIMViewCube';
 import {
   colorForRate,
   DEFAULT_5D_GRADIENT,
@@ -653,6 +654,17 @@ export function BIMViewer({
   const [selectionSummary, setSelectionSummary] = useState('');
   /** Whether the viewer is in isolation mode (double-click). */
   const [isIsolated, setIsIsolated] = useState(false);
+  /** W6.6 Stream B — track the live SceneManager in React state so the
+   *  Site Compass (`<BIMViewCube>`) can mount after the scene initialises.
+   *  Using a state mirror (rather than the ref directly) means the cube
+   *  re-renders the moment the scene becomes available without polling. */
+  const [sceneManagerReady, setSceneManagerReady] = useState<SceneManager | null>(
+    null,
+  );
+  /** W6.6 Stream C — hidden element count driven by ElementManager's
+   *  ``onHiddenCountChange`` subscription. Powers the floating "{n} hidden"
+   *  badge in the upper-left corner and the "Show all" affordance. */
+  const [hiddenCount, setHiddenCount] = useState(0);
 
   /** 4D timeline state — fetches schedule + activities for the project
    *  and manages the playable cursor.  Enabled only when the user
@@ -728,9 +740,20 @@ export function BIMViewer({
 
     const scene = new SceneManager(canvas);
     sceneRef.current = scene;
+    // W6.6 Stream B — surface the scene manager to React state so the
+    // Site Compass (BIMViewCube) and any sibling consumers can mount after
+    // the scene initialises.
+    setSceneManagerReady(scene);
 
     const elementMgr = new ElementManager(scene);
     elementMgrRef.current = elementMgr;
+    // W6.6 Stream C — subscribe to hidden-count changes so the floating
+    // "{n} hidden · Show all" badge stays in sync with hide / isolate /
+    // show-all actions wherever they originate. The subscription is torn
+    // down with the rest of the scene below.
+    const unsubscribeHiddenCount = elementMgr.onHiddenCountChange((count) => {
+      setHiddenCount(count);
+    });
 
     const selectionMgr = new SelectionManager(scene, elementMgr, {
       onElementSelect: (id) => {
@@ -868,6 +891,11 @@ export function BIMViewer({
     measureMgrRef.current = measureMgr;
 
     const clipMgr = new ClipManager(scene);
+    // W6.6 Stream A "Section Stamp" — make sure the hatched cap renders on
+    // every section cut by default. The flag is on by default in the
+    // manager itself; we re-affirm here so this call site is the single
+    // source of truth in case the default ever flips.
+    clipMgr.setCapEnabled(true);
     clipMgrRef.current = clipMgr;
 
     // Track mouse position for hover tooltip
@@ -884,6 +912,7 @@ export function BIMViewer({
 
     return () => {
       canvas.removeEventListener('mousemove', handleMouseMoveForTooltip);
+      unsubscribeHiddenCount();
       clipMgr.dispose();
       measureMgr.dispose();
       selectionMgr.dispose();
@@ -894,6 +923,7 @@ export function BIMViewer({
       selectionMgrRef.current = null;
       measureMgrRef.current = null;
       clipMgrRef.current = null;
+      setSceneManagerReady(null);
     };
     // Intentionally only run on mount — stable refs
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1516,6 +1546,30 @@ export function BIMViewer({
           pos: { x: number; y: number; z: number },
           target: { x: number; y: number; z: number },
         ) => void;
+        /** W6.6 Stream B — tween the camera to ``target`` over ``durationMs``
+         *  (default 600). Resolves when the tween completes and rejects with
+         *  ``Error('flyTo cancelled')`` if a newer tween overtakes it. */
+        flyTo: (
+          target: {
+            position: [number, number, number] | { x: number; y: number; z: number };
+            target: [number, number, number] | { x: number; y: number; z: number };
+          },
+          durationMs?: number,
+        ) => Promise<void>;
+        /** W6.6 Stream B — fly the camera to one of the cube presets
+         *  (top / bottom / front / back / left / right / iso). Same promise
+         *  semantics as ``flyTo``. */
+        setViewPreset: (
+          name:
+            | 'top'
+            | 'bottom'
+            | 'front'
+            | 'back'
+            | 'left'
+            | 'right'
+            | 'iso',
+          durationMs?: number,
+        ) => Promise<void>;
         getScreenshot: (opts?: { width?: number; height?: number }) => string | null;
         getClipState: () => {
           mode: 'none' | 'box' | 'plane';
@@ -1531,11 +1585,44 @@ export function BIMViewer({
         clearMeasurements: () => void;
         setMeasurementVisible: (id: string, visible: boolean) => void;
         focusMeasurement: (id: string) => void;
+        /** W6.6 — live manager handles for sibling panels (Trait Lens,
+         *  Element Bundles) and Playwright scripts. ``null`` while the
+         *  scene is still mounting; consumers should re-read on demand. */
+        sceneManager: SceneManager | null;
+        elementManager: ElementManager | null;
+        selectionManager: SelectionManager | null;
       };
     };
     w.__oeBim = {
       getViewpoint: () => sceneRef.current?.getViewpoint() ?? null,
       setViewpoint: (pos, target) => sceneRef.current?.setViewpoint(pos, target),
+      flyTo: (target, durationMs) => {
+        const scene = sceneRef.current;
+        if (!scene) return Promise.resolve();
+        // Coerce ``{x,y,z}`` into tuples to match SceneManager.flyTo's
+        // CameraState signature without forcing callers to know that detail.
+        const toTuple = (
+          v: [number, number, number] | { x: number; y: number; z: number },
+        ): [number, number, number] =>
+          Array.isArray(v) ? v : [v.x, v.y, v.z];
+        return scene.flyTo(
+          {
+            position: toTuple(target.position),
+            target: toTuple(target.target),
+          },
+          durationMs ?? 600,
+        );
+      },
+      setViewPreset: (name, durationMs) => {
+        const scene = sceneRef.current;
+        if (!scene) return Promise.resolve();
+        // The window-bridge accepts the friendly alias 'iso' to keep
+        // calling code simple; SceneManager's canonical ViewPreset uses
+        // the four-quadrant variants. NE is the conventional default
+        // (top-down NE-looking isometric).
+        const canonical = name === 'iso' ? 'iso_ne' : name;
+        return scene.setViewPreset(canonical, durationMs ?? 600);
+      },
       getScreenshot: (opts) => sceneRef.current?.getScreenshot(opts) ?? null,
       getClipState: () => {
         const mgr = clipMgrRef.current;
@@ -1559,11 +1646,14 @@ export function BIMViewer({
       setMeasurementVisible: (id, visible) =>
         measureMgrRef.current?.setMeasurementVisible(id, visible),
       focusMeasurement: (id) => measureMgrRef.current?.focusMeasurement(id),
+      sceneManager: sceneManagerReady,
+      elementManager: elementMgrRef.current,
+      selectionManager: selectionMgrRef.current,
     };
     return () => {
       if (w.__oeBim) delete w.__oeBim;
     };
-  }, [setClipBox, setClipPlane, setClipMode]);
+  }, [setClipBox, setClipPlane, setClipMode, sceneManagerReady]);
 
   // Sync selection from parent — ONLY when the parent explicitly changes
   // selection (e.g. clicking a row in the filter panel). Skip when the
@@ -2238,6 +2328,46 @@ export function BIMViewer({
   return (
     <div ref={containerRef} className={clsx('relative w-full h-full min-h-[400px] bg-surface-secondary rounded-lg overflow-hidden', className)}>
       <canvas ref={canvasRef} className="w-full h-full block" />
+
+      {/* W6.6 Stream B — Site Compass. Mounts only after the SceneManager
+          is alive so the cube never tries to read from a null ref. The
+          cube is purely an indicator + cheap raycast target; positioning
+          here (top-3 right-3 z-20) keeps it above the canvas and the
+          placeholder banner. */}
+      {sceneManagerReady && (
+        <div
+          className="absolute top-3 right-3 z-20"
+          aria-label={t('bim.site_compass.aria_label', {
+            defaultValue: 'Site Compass — 3D navigation cube',
+          })}
+        >
+          <BIMViewCube sceneManager={sceneManagerReady} size={80} />
+        </div>
+      )}
+
+      {/* W6.6 Stream C — Solo Mode hidden-count badge. Visible only when
+          at least one element is currently hidden by hide / isolate.
+          Click to call ElementManager.showAll() — the same hook the
+          context menu uses, so the badge and menu stay in lock-step. */}
+      {hiddenCount > 0 && (
+        <button
+          type="button"
+          onClick={handleShowAll}
+          data-testid="bim-hidden-count-badge"
+          className="absolute top-3 left-3 z-20 inline-flex items-center gap-1.5 rounded-full bg-yellow-100/95 backdrop-blur px-3 py-1 text-xs font-semibold text-yellow-900 border border-yellow-300 shadow hover:bg-yellow-200/95 transition cursor-pointer"
+          title={t('bim.solo_mode.show_all', { defaultValue: 'Show all' })}
+        >
+          <EyeOff size={12} className="shrink-0" />
+          <span>
+            {t('bim.solo_mode.hidden_badge', {
+              defaultValue: '{{count}} hidden',
+              count: hiddenCount,
+            })}
+            <span className="mx-1 text-yellow-700">·</span>
+            {t('bim.solo_mode.show_all', { defaultValue: 'Show all' })}
+          </span>
+        </button>
+      )}
 
       {/* Placeholder geometry warning — shown when the backend used the
           text-IFC fallback (DDC cad2data unavailable) and the on-screen
@@ -4255,6 +4385,11 @@ export function BIMViewer({
             onCreateTask: onCreateTask ? handleCtxCreateTask : undefined,
             onIsolate: handleCtxIsolate,
             onHide: handleCtxHide,
+            // W6.6 Stream C — Solo Mode: surface "Show all" in the context
+            // menu and gate it on whether anything is actually hidden.
+            hasHidden:
+              elementMgrRef.current?.hasHidden() ?? hiddenCount > 0,
+            onShowAll: handleShowAll,
           }}
         />
       )}

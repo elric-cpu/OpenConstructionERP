@@ -372,6 +372,35 @@ export class SelectionManager {
     }
   }
 
+  /**
+   * Programmatic batched selection used by W6.6 "Named Selection Sets".
+   *
+   * When ``options.exclusive`` is true (or omitted), behaves identically to
+   * ``setSelection`` — it clears the current selection first, then adds each
+   * of ``ids``. When ``exclusive`` is false, the ids are *added* to the
+   * existing selection (duplicates are no-ops).
+   *
+   * After the batch we fire a single ``onSelectionChange`` callback so the
+   * floating toolbar / right-panel listeners observe one update instead of
+   * one-per-element. The single ``onElementSelect`` argument tracks the LAST
+   * id in the batch (matches the click-flow contract: "most recently clicked
+   * element"); pass an empty list with ``exclusive=true`` to deselect all.
+   */
+  selectByIds(ids: string[], options?: { exclusive?: boolean }): void {
+    const exclusive = options?.exclusive !== false;
+    if (exclusive) {
+      this.clearSelection();
+    }
+    for (const id of ids) {
+      if (!this.selectedIds.has(id)) {
+        this.selectElement(id);
+      }
+    }
+    const last = ids.length > 0 ? ids[ids.length - 1] : null;
+    this.callbacks.onElementSelect?.(last ?? null);
+    this.notifySelectionChange();
+  }
+
   /** Get currently selected element IDs. */
   getSelectedIds(): string[] {
     return Array.from(this.selectedIds);

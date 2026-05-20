@@ -7,11 +7,26 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CameraTween, type CameraState } from './CameraTween';
 
 export interface Viewpoint {
   position: { x: number; y: number; z: number };
   target: { x: number; y: number; z: number };
 }
+
+/** Canonical orientations driven by the View Cube (W6.6). */
+export type ViewPreset =
+  | 'top'
+  | 'bottom'
+  | 'front'
+  | 'back'
+  | 'left'
+  | 'right'
+  | 'iso_ne'
+  | 'iso_nw'
+  | 'iso_se'
+  | 'iso_sw'
+  | 'fit';
 
 export class SceneManager {
   readonly scene: THREE.Scene;
@@ -25,6 +40,18 @@ export class SceneManager {
   private gridHelper: THREE.GridHelper | null = null;
   /** On-demand rendering flag — drops idle CPU from 60 FPS to ~0%. */
   private _needsRender = true;
+  /** Active camera tween (W6.6) — null when the camera is at rest. */
+  private _tween: CameraTween | null = null;
+  /** Reject the pending flyTo() promise when a new tween cancels it. */
+  private _tweenReject: ((err: Error) => void) | null = null;
+  /** Subscribers to camera-change events (used by the View Cube widget). */
+  private _cameraChangeListeners = new Set<() => void>();
+  /**
+   * Last preset name + accumulated 90° rotation applied when the user
+   * re-clicks the same View Cube face (Revit-style "snap-and-spin").
+   */
+  private _lastPreset: ViewPreset | null = null;
+  private _lastPresetRotationSteps = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     const parent = canvas.parentElement;
@@ -132,6 +159,7 @@ export class SceneManager {
     // constant rendering to ~0%.
     this.controls.addEventListener('change', () => {
       this._needsRender = true;
+      this._emitCameraChange();
     });
 
     // Lighting
@@ -568,12 +596,279 @@ export class SceneManager {
     this._needsRender = true;
   }
 
+  /**
+   * Subscribe to camera-orientation changes (W6.6).
+   *
+   * The View Cube widget uses this to keep its 3-D cube synchronised with
+   * the main camera. Returns an unsubscribe function for cleanup.
+   */
+  onCameraChange(cb: () => void): () => void {
+    this._cameraChangeListeners.add(cb);
+    return () => {
+      this._cameraChangeListeners.delete(cb);
+    };
+  }
+
+  private _emitCameraChange(): void {
+    for (const listener of this._cameraChangeListeners) {
+      try {
+        listener();
+      } catch {
+        // A throwing subscriber must not break the OrbitControls loop.
+      }
+    }
+  }
+
+  /**
+   * Smoothly fly the camera from its current pose to the requested
+   * `target` over `durationMs` ms (default 600). Resolves on completion
+   * and rejects with `Error('flyTo cancelled')` when a newer tween (or
+   * an explicit cancellation) supersedes the current animation.
+   *
+   * While the tween is running OrbitControls.enabled is set to false so
+   * mouse interaction can't fight the animation; it is restored on
+   * completion or abort.
+   */
+  flyTo(target: CameraState, durationMs = 600): Promise<void> {
+    // Abort any previously-running tween: reject its promise + stop rAF.
+    if (this._tween) {
+      this._tween.cancel();
+      this._tween = null;
+    }
+    if (this._tweenReject) {
+      const reject = this._tweenReject;
+      this._tweenReject = null;
+      reject(new Error('flyTo cancelled'));
+    }
+
+    const from: CameraState = {
+      position: [
+        this.camera.position.x,
+        this.camera.position.y,
+        this.camera.position.z,
+      ],
+      target: [
+        this.controls.target.x,
+        this.controls.target.y,
+        this.controls.target.z,
+      ],
+      up: [this.camera.up.x, this.camera.up.y, this.camera.up.z],
+    };
+
+    return new Promise<void>((resolve, reject) => {
+      const tween = new CameraTween();
+      this._tween = tween;
+      this._tweenReject = reject;
+      const wasEnabled = this.controls.enabled;
+      this.controls.enabled = false;
+
+      tween.start(
+        from,
+        target,
+        durationMs,
+        (state) => {
+          this.camera.position.set(
+            state.position[0],
+            state.position[1],
+            state.position[2],
+          );
+          this.controls.target.set(
+            state.target[0],
+            state.target[1],
+            state.target[2],
+          );
+          if (state.up) {
+            this.camera.up.set(state.up[0], state.up[1], state.up[2]);
+          }
+          this.camera.lookAt(this.controls.target);
+          this._needsRender = true;
+          this._emitCameraChange();
+        },
+        () => {
+          this.controls.enabled = wasEnabled;
+          this.controls.update();
+          this._needsRender = true;
+          this._tween = null;
+          this._tweenReject = null;
+          resolve();
+        },
+      );
+    });
+  }
+
+  /**
+   * Snap the camera to one of the canonical View Cube orientations
+   * around the current scene bounding box (W6.6).
+   *
+   * Re-clicking the SAME face rotates the camera by an additional 90°
+   * around the view axis, matching Revit's View Cube behaviour.
+   */
+  setViewPreset(name: ViewPreset, durationMs = 600): Promise<void> {
+    const box = this._computeContentBoundingBox();
+    if (box.isEmpty()) {
+      return Promise.resolve();
+    }
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    if (!Number.isFinite(maxDim) || maxDim <= 0) {
+      return Promise.resolve();
+    }
+
+    if (name === 'fit') {
+      // For "fit" we keep the current direction but reframe distance.
+      const fov = this.camera.fov * (Math.PI / 180);
+      const dist = (maxDim / (2 * Math.tan(fov / 2))) * 1.05;
+      const dir = this.camera.position
+        .clone()
+        .sub(this.controls.target)
+        .normalize();
+      const newPos = center.clone().add(dir.multiplyScalar(dist));
+      return this.flyTo(
+        {
+          position: [newPos.x, newPos.y, newPos.z],
+          target: [center.x, center.y, center.z],
+          up: [0, 1, 0],
+        },
+        durationMs,
+      );
+    }
+
+    // Track Revit-style re-click rotation: only orth + iso presets rotate.
+    let rotationSteps = 0;
+    if (this._lastPreset === name) {
+      rotationSteps = (this._lastPresetRotationSteps + 1) % 4;
+    }
+    this._lastPreset = name;
+    this._lastPresetRotationSteps = rotationSteps;
+    const rollAngle = (rotationSteps * Math.PI) / 2;
+
+    const fov = this.camera.fov * (Math.PI / 180);
+    const dist = (maxDim / (2 * Math.tan(fov / 2))) * 1.2;
+
+    // The SceneManager's convention is Y-up. The bottom view needs a
+    // flipped up vector so the camera doesn't look "upside-down".
+    let position = new THREE.Vector3();
+    let up = new THREE.Vector3(0, 1, 0);
+    switch (name) {
+      case 'top':
+        position.set(center.x, center.y + dist, center.z);
+        // Z-down so the model's "north" reads correctly looking down.
+        up.set(0, 0, -1);
+        break;
+      case 'bottom':
+        position.set(center.x, center.y - dist, center.z);
+        up.set(0, 0, 1);
+        break;
+      case 'front':
+        position.set(center.x, center.y, center.z + dist);
+        up.set(0, 1, 0);
+        break;
+      case 'back':
+        position.set(center.x, center.y, center.z - dist);
+        up.set(0, 1, 0);
+        break;
+      case 'right':
+        position.set(center.x + dist, center.y, center.z);
+        up.set(0, 1, 0);
+        break;
+      case 'left':
+        position.set(center.x - dist, center.y, center.z);
+        up.set(0, 1, 0);
+        break;
+      case 'iso_ne':
+      case 'iso_nw':
+      case 'iso_se':
+      case 'iso_sw': {
+        // 45° elevation, azimuth chosen per corner. Y-up scene means
+        // the iso direction is in the XZ-plane plus a Y component.
+        const elev = Math.PI / 4; // 45° up from the horizon
+        const azimuthMap: Record<string, number> = {
+          iso_ne: Math.PI / 4, // +X / +Z
+          iso_nw: (3 * Math.PI) / 4, // -X / +Z
+          iso_se: -Math.PI / 4, // +X / -Z
+          iso_sw: (-3 * Math.PI) / 4, // -X / -Z
+        };
+        const az = azimuthMap[name] ?? Math.PI / 4;
+        const r = dist;
+        position.set(
+          center.x + r * Math.cos(elev) * Math.sin(az),
+          center.y + r * Math.sin(elev),
+          center.z + r * Math.cos(elev) * Math.cos(az),
+        );
+        up.set(0, 1, 0);
+        break;
+      }
+    }
+
+    // Apply the re-click roll: rotate `up` around the view axis (the
+    // vector from target to camera). 0/90/180/270° steps.
+    if (rollAngle !== 0) {
+      const viewAxis = position.clone().sub(center).normalize();
+      up.applyAxisAngle(viewAxis, rollAngle);
+    }
+
+    return this.flyTo(
+      {
+        position: [position.x, position.y, position.z],
+        target: [center.x, center.y, center.z],
+        up: [up.x, up.y, up.z],
+      },
+      durationMs,
+    );
+  }
+
+  /**
+   * Walk the scene graph and union all real-content mesh bounding boxes.
+   * Mirrors the helper inside zoomToFit() / setCameraPreset() so the
+   * View Cube presets always frame what the user actually loaded.
+   */
+  private _computeContentBoundingBox(): THREE.Box3 {
+    this.scene.updateMatrixWorld(true);
+    const box = new THREE.Box3();
+    const tmp = new THREE.Box3();
+    this.scene.traverse((obj) => {
+      if (
+        obj instanceof THREE.GridHelper ||
+        obj instanceof THREE.AxesHelper ||
+        obj instanceof THREE.Light ||
+        obj instanceof THREE.Camera
+      ) {
+        return;
+      }
+      if (obj instanceof THREE.Mesh && obj.geometry) {
+        if (!obj.geometry.boundingBox) obj.geometry.computeBoundingBox();
+        tmp.setFromObject(obj);
+        if (!tmp.isEmpty() && Number.isFinite(tmp.min.x)) {
+          box.union(tmp);
+        }
+      }
+    });
+    return box;
+  }
+
   /** Dispose all Three.js resources. */
   dispose(): void {
     if (this.animationId !== null) {
       cancelAnimationFrame(this.animationId);
       this.animationId = null;
     }
+    // Abort any in-flight camera tween before tearing the renderer down,
+    // so the rAF callback can't fire against a disposed camera.
+    if (this._tween) {
+      this._tween.cancel();
+      this._tween = null;
+    }
+    if (this._tweenReject) {
+      const reject = this._tweenReject;
+      this._tweenReject = null;
+      try {
+        reject(new Error('flyTo cancelled'));
+      } catch {
+        // Swallow — caller might not have attached a .catch().
+      }
+    }
+    this._cameraChangeListeners.clear();
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
 

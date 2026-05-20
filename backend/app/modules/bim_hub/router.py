@@ -106,6 +106,82 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _quick_validate_geometry_bytes(blob: bytes, ext: str) -> tuple[bool, str]:
+    """Fast, magic-byte / structural pre-check for served geometry.
+
+    Mirrors the heavier ``_validate_geometry_file`` (which runs on ingest
+    against a Path) but works on an already-in-memory byte buffer. We
+    keep it cheap: only the first ~4 KB are inspected. Returns
+    ``(ok, reason)``; the caller raises 422 with the reason when ok is
+    False so the BIM viewer surfaces an actionable error instead of
+    feeding garbage to Three.js loaders.
+
+    Bug context: external user (Downtown Medical Center / Projet1, RVT)
+    reported "Impossible de charger la géométrie 3D" with magic bytes
+    ``3c 3f 78 6d 6c`` (``<?xml``) — the stored ``geometry.dae`` was
+    XML but not COLLADA. Ingest-time validation existed but only for
+    *new* uploads; old corrupt blobs kept streaming. This guard closes
+    that gap for every read.
+    """
+    if not blob:
+        return False, "empty buffer"
+    if len(blob) < 200:
+        return False, f"file suspiciously small ({len(blob)} bytes)"
+
+    ext_norm = ext.lower()
+    if ext_norm == ".glb":
+        if blob[:4] != b"glTF":
+            return False, (
+                f"GLB magic mismatch — first 4 bytes are {blob[:4]!r}, expected b'glTF'"
+            )
+        # Version is the 4-byte LE integer at offset 4.
+        if len(blob) >= 12:
+            version = int.from_bytes(blob[4:8], "little", signed=False)
+            if version != 2:
+                return False, f"unsupported GLB version {version} (expected 2)"
+        return True, "ok"
+
+    if ext_norm == ".dae":
+        # Peek at the first 4 KB and verify a COLLADA root tag exists.
+        # We deliberately do NOT do a full XML parse here — we trust
+        # the in-memory tax of a 4 KB head scan and let the browser do
+        # the heavy lifting once the file is known-good shape.
+        head = blob[:4096]
+        try:
+            head_text = head.decode("utf-8", errors="replace")
+        except Exception as exc:  # pragma: no cover — utf-8 with errors='replace' can't raise
+            return False, f"DAE head undecodable: {exc}"
+        head_lower = head_text.lower()
+        if "<collada" not in head_lower:
+            # Surface what we DID find so the user/admin can recognise it
+            # (e.g. "<ifcxml", "<gbxml", "<!doctype html").
+            import re as _re
+
+            first_tag_match = _re.search(r"<([a-zA-Z_:][\w:.-]{0,40})", head_text)
+            first_tag = (
+                f"<{first_tag_match.group(1)}>" if first_tag_match else "no root tag"
+            )
+            return False, (
+                f"DAE has no <COLLADA> root in first 4 KB (first tag found: {first_tag})"
+            )
+        return True, "ok"
+
+    if ext_norm == ".gltf":
+        # gltf JSON — must parse as JSON object with an "asset" key.
+        try:
+            head = blob[: min(len(blob), 16384)]
+            obj = json.loads(head.decode("utf-8", errors="replace"))
+        except Exception as exc:
+            return False, f"glTF JSON parse failed: {exc}"
+        if not isinstance(obj, dict) or "asset" not in obj:
+            return False, "glTF JSON missing required 'asset' field"
+        return True, "ok"
+
+    # Unknown extension — let it through (preserves prior behaviour for
+    # any future extension we add without remembering to update this).
+    return True, f"unknown extension {ext_norm}; skipped checks"
+
+
 def _to_qty_float(val: object) -> float:
     """Best-effort numeric coercion for quantity-presence checks.
 
@@ -2117,6 +2193,34 @@ async def get_model_geometry(
         from app.core.storage import get_storage_backend
 
         _geo_bytes = await get_storage_backend().get(key)
+
+        # Serve-time integrity check — closes the gap where geometry written
+        # by an older converter (before _validate_geometry_file existed on
+        # ingest) keeps streaming bad bytes to the viewer. The browser
+        # surfaces this as an opaque "Cannot read properties of undefined
+        # (reading 'getAttribute')" deep inside Three.js. We re-check the
+        # first ~4 KB of the blob and 422 with a precise diagnostic if it
+        # doesn't match the format the extension promises.
+        ok_serve, reason_serve = _quick_validate_geometry_bytes(_geo_bytes, ext)
+        if not ok_serve:
+            head_hex = " ".join(f"{b:02x}" for b in _geo_bytes[:8])
+            logger.warning(
+                "BIM geometry served from %s failed serve-time validation: %s "
+                "(model_id=%s, size=%d, head=%s)",
+                key, reason_serve, model_id, len(_geo_bytes), head_hex,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"Geometry file stored for this model is not a valid {ext} payload "
+                    f"({reason_serve}; head={head_hex}). This usually means the CAD "
+                    "converter ran with an older version or the source format does not "
+                    "produce 3D geometry. Delete the model and re-upload the source CAD "
+                    "file with the latest DDC cad2data converter (v0.3+), or contact "
+                    "support if the issue persists across re-uploads."
+                ),
+            )
+
         compressed = _gzip.compress(_geo_bytes, compresslevel=6)
         # RFC 5987 encoding so non-ASCII model names (Cyrillic / Arabic / …)
         # don't blow up the latin-1 HTTP header encoder. Without this the

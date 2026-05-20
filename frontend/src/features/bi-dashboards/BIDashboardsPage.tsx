@@ -16,6 +16,7 @@ import {
   Minus,
   Loader2,
   AlertOctagon,
+  Sparkles,
 } from 'lucide-react';
 import {
   Button,
@@ -38,6 +39,7 @@ import {
   renderDashboard,
   evaluateDashboard,
   createDashboard,
+  installStarterPack,
   listReports,
   runReport,
   createReport,
@@ -102,6 +104,8 @@ function formatValue(value: number, unit: string | null | undefined): string {
 
 export function BIDashboardsPage() {
   const { t } = useTranslation();
+  const qc = useQueryClient();
+  const addToast = useToastStore((s) => s.addToast);
   const [tab, setTab] = useState<Tab>('dashboards');
   const [createOpen, setCreateOpen] = useState(false);
   const [activeDashboardId, setActiveDashboardId] = useState<string | null>(null);
@@ -110,6 +114,39 @@ export function BIDashboardsPage() {
     queryKey: ['bi', 'dashboards'],
     queryFn: listDashboards,
     enabled: tab === 'dashboards',
+  });
+
+  // Wave 1 — one-click starter pack install for fresh tenants. Wired
+  // into the DashboardsGrid empty-state CTA so the user can go from "no
+  // dashboards yet" to 5 role-based dashboards with widgets + KPI
+  // history without leaving the page.
+  const installStarterM = useMutation({
+    mutationFn: installStarterPack,
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ['bi'] });
+      addToast({
+        type: 'success',
+        title: t('bi.starter_installed_title', {
+          defaultValue: 'Starter pack installed',
+        }),
+        message: t('bi.starter_installed_body', {
+          defaultValue:
+            '{{d}} dashboards · {{k}} KPIs · {{r}} reports · {{a}} alerts',
+          d: r.dashboards,
+          k: r.kpi_definitions,
+          r: r.reports,
+          a: r.alerts,
+        }),
+      });
+    },
+    onError: (e: Error) =>
+      addToast({
+        type: 'error',
+        title: t('bi.starter_failed', {
+          defaultValue: 'Could not install starter pack',
+        }),
+        message: getErrorMessage(e),
+      }),
   });
   const kpisQ = useQuery({
     queryKey: ['bi', 'kpis'],
@@ -233,6 +270,8 @@ export function BIDashboardsPage() {
           rows={dashboardsQ.data ?? []}
           onOpen={(id) => setActiveDashboardId(id)}
           onCreate={() => setCreateOpen(true)}
+          onInstallStarter={() => installStarterM.mutate()}
+          installingStarter={installStarterM.isPending}
         />
       ) : tab === 'kpis' ? (
         <KpiLibrary rows={kpisQ.data ?? []} />
@@ -270,27 +309,62 @@ function DashboardsGrid({
   rows,
   onOpen,
   onCreate,
+  onInstallStarter,
+  installingStarter,
 }: {
   rows: Dashboard[];
   onOpen: (id: string) => void;
   onCreate: () => void;
+  onInstallStarter: () => void;
+  installingStarter: boolean;
 }) {
   const { t } = useTranslation();
   if (rows.length === 0) {
     return (
       <Card padding="md">
-        <EmptyState
-          icon={<LayoutDashboard size={22} />}
-          title={t('bi.empty_dashboards', { defaultValue: 'No dashboards yet' })}
-          description={t('bi.empty_dashboards_desc', {
-            defaultValue:
-              'Create a dashboard for your role or project — pin KPI cards, charts and gauges.',
-          })}
-          action={{
-            label: t('bi.new_dashboard', { defaultValue: 'New Dashboard' }),
-            onClick: onCreate,
-          }}
-        />
+        <div className="flex flex-col items-center text-center py-8 px-4 max-w-lg mx-auto">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-600 dark:bg-sky-900/30 dark:text-sky-300">
+            <Sparkles size={22} />
+          </div>
+          <h3 className="mt-3 text-base font-semibold text-content-primary">
+            {t('bi.starter_title', {
+              defaultValue: 'Install the starter pack to see your data live',
+            })}
+          </h3>
+          <p className="mt-1.5 text-sm text-content-secondary">
+            {t('bi.starter_desc', {
+              defaultValue:
+                'One click installs 5 role-based dashboards (CEO · CFO · PM · Site · Safety), 14 system KPIs with 12-week history, 3 reports, 2 schedules and 4 alert rules. Idempotent — safe to re-run.',
+            })}
+          </p>
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+            <Button
+              variant="primary"
+              icon={
+                installingStarter ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Sparkles size={14} />
+                )
+              }
+              onClick={onInstallStarter}
+              disabled={installingStarter}
+            >
+              {installingStarter
+                ? t('bi.starter_installing', { defaultValue: 'Installing…' })
+                : t('bi.starter_install_cta', {
+                    defaultValue: 'Install starter pack',
+                  })}
+            </Button>
+            <Button
+              variant="secondary"
+              icon={<Plus size={14} />}
+              onClick={onCreate}
+            >
+              {t('bi.new_dashboard', { defaultValue: 'New Dashboard' })}
+            </Button>
+          </div>
+        </div>
       </Card>
     );
   }

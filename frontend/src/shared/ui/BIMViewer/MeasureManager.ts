@@ -20,6 +20,7 @@ import {
   polygonArea3,
   polygonPerimeter3,
 } from './measureMath';
+import { SnapDetector, type SnapKind } from './SnapDetector';
 
 export type MeasureState = 'idle' | 'awaiting-first' | 'awaiting-second' | 'done';
 
@@ -83,9 +84,8 @@ export class MeasureManager {
   private _pendingPoint: THREE.Vector3 | null = null;
   /** Accumulated points for the multi-click kinds (area / angle). */
   private _polyPoints: THREE.Vector3[] = [];
-  /** Snap to the nearest geometry vertex within this screen-radius (px). */
-  private snapPx = 12;
-  /** Whether vertex snapping is enabled (toggled from the UI). */
+  /** Whether vertex/edge snapping is enabled (toggled from the UI). The
+   *  per-feature radius lives on the SnapDetector instance. */
   private _snapEnabled = true;
   private measurements: Measurement[] = [];
 
@@ -95,6 +95,18 @@ export class MeasureManager {
   private polyMarkers: THREE.Mesh[] = [];
   /** Live rubber-band line shown while collecting polygon / angle points. */
   private rubberLine: THREE.Line | null = null;
+  /** Snap refiner — converts raw raycaster hits into vertex / edge-mid /
+   *  edge-perp snap points within a 12 px screen-space radius. */
+  private snapDetector = new SnapDetector();
+  /** Last snap kind picked by the most recent raycastPoint() call — used
+   *  by the hover glyph to draw a square (vertex), circle (edge mid) or
+   *  diamond (edge perp). */
+  private lastSnapKind: SnapKind = 'none';
+  /** Sprite that visualises the current snap target while the mouse moves
+   *  over geometry with the tool active. Lazily created. */
+  private snapGlyph: THREE.Sprite | null = null;
+  /** PointerEvent handler — drives the live snap-glyph preview. */
+  private boundOnPointerMove: (e: PointerEvent) => void;
 
   private canvas: HTMLCanvasElement;
   private boundOnPointerDown: (e: PointerEvent) => void;
@@ -122,6 +134,7 @@ export class MeasureManager {
     this.boundOnPointerDown = this.onPointerDown.bind(this);
     this.boundOnPointerUp = this.onPointerUp.bind(this);
     this.boundOnDblClick = this.onDblClick.bind(this);
+    this.boundOnPointerMove = this.onPointerMove.bind(this);
 
     // Overlay host for labels — absolute, full-bleed, pointer-events none so
     // clicks still reach the canvas underneath.
@@ -169,14 +182,17 @@ export class MeasureManager {
     if (active) {
       this.canvas.addEventListener('pointerdown', this.boundOnPointerDown);
       this.canvas.addEventListener('pointerup', this.boundOnPointerUp);
+      this.canvas.addEventListener('pointermove', this.boundOnPointerMove);
       this.canvas.addEventListener('dblclick', this.boundOnDblClick);
       this.setState('awaiting-first');
       this.canvas.style.cursor = 'crosshair';
     } else {
       this.canvas.removeEventListener('pointerdown', this.boundOnPointerDown);
       this.canvas.removeEventListener('pointerup', this.boundOnPointerUp);
+      this.canvas.removeEventListener('pointermove', this.boundOnPointerMove);
       this.canvas.removeEventListener('dblclick', this.boundOnDblClick);
       this.cancelPending();
+      this.hideSnapGlyph();
       this.setState('idle');
       this.canvas.style.cursor = '';
     }
@@ -312,6 +328,21 @@ export class MeasureManager {
       this.overlayHost.remove();
       this.overlayHost = null;
     }
+    if (this.snapGlyph) {
+      this.sceneManager.scene.remove(this.snapGlyph);
+      const mat = this.snapGlyph.material as THREE.SpriteMaterial;
+      mat.map?.dispose();
+      mat.dispose();
+      this.snapGlyph = null;
+    }
+    this.snapDetector.clearCache();
+  }
+
+  /** Public: drop cached snap triangles. Callers (BIMViewer) should invoke
+   *  this after a geometry reload so the next refine() rebuilds against the
+   *  new mesh data. */
+  invalidateSnapCache(): void {
+    this.snapDetector.clearCache();
   }
 
   /* ── Internals ─────────────────────────────────────────────────────── */
@@ -443,55 +474,139 @@ export class MeasureManager {
     for (const h of hits) {
       if (!(h.object instanceof THREE.Mesh)) continue;
       const surface = h.point.clone();
-      const snapped = this._snapEnabled
-        ? this.snapToVertex(h, e)
-        : null;
-      return snapped ?? surface;
+      if (!this._snapEnabled || !h.face) {
+        this.lastSnapKind = 'none';
+        return surface;
+      }
+      const result = this.snapDetector.refine(
+        surface,
+        h.face,
+        h.object,
+        this.sceneManager.camera,
+        this.canvas,
+        // THREE.Intersection.faceIndex is nullable when the geometry has no
+        // index buffer; in that case we fall back to the synthesized key
+        // inside SnapDetector.
+        h.faceIndex ?? undefined,
+      );
+      this.lastSnapKind = result.kind;
+      return result.point;
     }
+    this.lastSnapKind = 'none';
     return null;
   }
 
-  /**
-   * If a triangle vertex of the hit face projects to within `snapPx` of the
-   * cursor, snap the picked point to it. This reuses the same picking path
-   * the existing code already supports (raycast intersection + face index)
-   * — we just inspect the three vertices of the hit triangle and pick the
-   * closest one in screen space. Returns null when nothing is close enough.
+  /** Hover handler — runs the snap pipeline against the geometry under the
+   *  cursor and draws a small glyph (square = vertex, circle = edge midpoint,
+   *  diamond = edge perpendicular) at the snap point so the user sees what
+   *  they will get on click. No state mutation here — clicks still drive the
+   *  pending-point machinery via raycastPoint(). */
+  private onPointerMove(e: PointerEvent): void {
+    if (!this._active) return;
+    const snapped = this.raycastPoint(e);
+    if (!snapped || this.lastSnapKind === 'none') {
+      this.hideSnapGlyph();
+      return;
+    }
+    this.showSnapGlyph(snapped, this.lastSnapKind);
+  }
+
+  /** Lazily build a single sprite-based glyph and reuse its texture across
+   *  kinds by repainting the offscreen canvas. The sprite is parented to the
+   *  scene so it inherits the same world coordinates as the geometry under
+   *  the cursor — no DOM overlay math needed. */
+  private showSnapGlyph(point: THREE.Vector3, kind: SnapKind): void {
+    if (kind === 'none') {
+      this.hideSnapGlyph();
+      return;
+    }
+    if (!this.snapGlyph) {
+      const tex = this.makeSnapGlyphTexture('vertex');
+      const mat = new THREE.SpriteMaterial({
+        map: tex,
+        depthTest: false,
+        transparent: true,
+        sizeAttenuation: false,
+      });
+      const sprite = new THREE.Sprite(mat);
+      // sizeAttenuation:false → scale interpreted as NDC. 0.04 ≈ 12 px on a
+      // 600-px-tall canvas; the integrator can fine-tune later.
+      sprite.scale.set(0.04, 0.04, 0.04);
+      sprite.renderOrder = 1000;
+      sprite.userData.kind = 'vertex';
+      // TODO(W6.6 integration): expects an "overlay" group on SceneManager —
+      // until then we attach directly to the scene root.
+      this.sceneManager.scene.add(sprite);
+      this.snapGlyph = sprite;
+    }
+    // Repaint texture only when the glyph kind actually changes.
+    if (this.snapGlyph.userData.kind !== kind) {
+      const tex = this.makeSnapGlyphTexture(kind);
+      const mat = this.snapGlyph.material as THREE.SpriteMaterial;
+      mat.map?.dispose();
+      mat.map = tex;
+      mat.needsUpdate = true;
+      this.snapGlyph.userData.kind = kind;
+    }
+    this.snapGlyph.position.copy(point);
+    this.snapGlyph.visible = true;
+    this.sceneManager.requestRender();
+  }
+
+  private hideSnapGlyph(): void {
+    if (!this.snapGlyph) return;
+    if (this.snapGlyph.visible) {
+      this.snapGlyph.visible = false;
+      this.sceneManager.requestRender();
+    }
+  }
+
+  /** Paint a 32×32 glyph for the given snap kind onto an offscreen canvas
+   *  and wrap it in a CanvasTexture. The three kinds use distinct shapes so
+   *  experienced users can identify snap type at a glance:
+   *    - vertex        → filled square
+   *    - edge_midpoint → filled circle
+   *    - edge_perp     → diamond (square rotated 45°)
    */
-  private snapToVertex(
-    hit: THREE.Intersection,
-    e: MouseEvent,
-  ): THREE.Vector3 | null {
-    const obj = hit.object;
-    if (!(obj instanceof THREE.Mesh) || !obj.geometry) return null;
-    const face = hit.face;
-    if (!face) return null;
-    const pos = obj.geometry.getAttribute('position') as
-      | THREE.BufferAttribute
-      | undefined;
-    if (!pos) return null;
-
-    const rect = this.canvas.getBoundingClientRect();
-    const camera = this.sceneManager.camera;
-    const cursorX = e.clientX - rect.left;
-    const cursorY = e.clientY - rect.top;
-
-    let best: THREE.Vector3 | null = null;
-    let bestDistSq = this.snapPx * this.snapPx;
-    for (const idx of [face.a, face.b, face.c]) {
-      const local = new THREE.Vector3().fromBufferAttribute(pos, idx);
-      const world = local.applyMatrix4(obj.matrixWorld);
-      const projected = world.clone().project(camera);
-      if (projected.z < -1 || projected.z > 1) continue;
-      const sx = (projected.x * 0.5 + 0.5) * rect.width;
-      const sy = (1 - (projected.y * 0.5 + 0.5)) * rect.height;
-      const dsq = (sx - cursorX) ** 2 + (sy - cursorY) ** 2;
-      if (dsq < bestDistSq) {
-        bestDistSq = dsq;
-        best = world;
+  private makeSnapGlyphTexture(kind: SnapKind): THREE.CanvasTexture {
+    const size = 32;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    // jsdom-friendly fallback: if 2D context is unavailable (rare in browsers,
+    // common in jest-style environments) build an empty texture anyway —
+    // tests don't exercise the glyph rendering.
+    if (ctx) {
+      ctx.clearRect(0, 0, size, size);
+      ctx.fillStyle = 'rgba(255, 212, 0, 0.95)';
+      ctx.strokeStyle = 'rgba(17, 24, 39, 0.95)';
+      ctx.lineWidth = 2;
+      const cx = size / 2;
+      const cy = size / 2;
+      const r = size / 2 - 4;
+      if (kind === 'vertex') {
+        ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+        ctx.strokeRect(cx - r, cy - r, r * 2, r * 2);
+      } else if (kind === 'edge_midpoint') {
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      } else if (kind === 'edge_perp') {
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - r);
+        ctx.lineTo(cx + r, cy);
+        ctx.lineTo(cx, cy + r);
+        ctx.lineTo(cx - r, cy);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
       }
     }
-    return best;
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.needsUpdate = true;
+    return texture;
   }
 
   private placePendingMarker(point: THREE.Vector3): void {

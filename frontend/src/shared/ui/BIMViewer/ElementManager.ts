@@ -137,6 +137,46 @@ export interface BIMValidationSummary {
   message: string;
 }
 
+/* ── Color-by-property types (W6.6) ──────────────────────────────────────── */
+
+/**
+ * Palette identifiers supported by `ElementManager.setColorByProperty`.
+ *
+ *   - categorical-12       — distinct colors for up to 12 unique values
+ *   - sequential-blue      — light → dark blue for numeric ranges
+ *   - sequential-red-blue  — diverging red ← white → blue
+ *   - fire-rating          — domain-specific lookup (F30/F60/F90/F120 → fixed hues)
+ */
+export type ColorByPropertyPalette =
+  | 'categorical-12'
+  | 'sequential-blue'
+  | 'sequential-red-blue'
+  | 'fire-rating';
+
+/** Configuration object passed to `setColorByProperty`. */
+export interface ColorByPropertyConfig {
+  /** Property key to colour by — e.g. ``fire_rating``, ``level``, ``category``,
+   *  ``volume``.  Read from `element.properties[key]` first, falling back to
+   *  the well-known top-level fields (`element_type`, `discipline`, `storey`,
+   *  `category`) so users get sensible results for both raw IFC psets and
+   *  the canonical-format keys. */
+  propertyKey: string;
+  /** Which palette to apply. */
+  palette: ColorByPropertyPalette;
+  /** Required when palette is `sequential-*`; ignored otherwise. */
+  numericRange?: [number, number];
+  /** Hex string used for elements whose property is missing (or non-numeric
+   *  in a sequential palette). Default `#888888`. */
+  unknownColor?: string;
+}
+
+/** A distinct value + occurrence count for a property — returned by
+ *  `getDistinctPropertyValues` for legend / range UI. */
+export interface PropertyValueCount {
+  value: string | number;
+  count: number;
+}
+
 export interface BIMElementData {
   id: string;
   /** Revit UniqueId / IFC GlobalId — stable across re-uploads. */
@@ -314,6 +354,167 @@ export function getCategoryColor(elementType: string): number {
   return CATEGORY_COLORS[elementType] ?? 0xdd8833; // default warm orange
 }
 
+/* ── Color-by-property palettes (W6.6) ───────────────────────────────────── */
+
+/** 12 visually distinct hues, ColorBrewer-derived. Ordered roughly by
+ *  hue so adjacent indices read as different categories.  Used by the
+ *  ``categorical-12`` palette in `setColorByProperty`. */
+export const CATEGORICAL_12: readonly string[] = [
+  '#1f77b4', // blue
+  '#ff7f0e', // orange
+  '#2ca02c', // green
+  '#d62728', // red
+  '#9467bd', // purple
+  '#8c564b', // brown
+  '#e377c2', // pink
+  '#7f7f7f', // grey
+  '#bcbd22', // olive
+  '#17becf', // teal
+  '#aec7e8', // light blue
+  '#ffbb78', // peach
+] as const;
+
+/** Fire-rating lookup table.  Keys are the lowercase property value
+ *  (so ``F90`` is matched as ``f90``).  Anything not in this map falls
+ *  back to `unknownColor`. */
+export const FIRE_RATING_PALETTE: Readonly<Record<string, string>> = {
+  f30: '#fde047',  // yellow
+  f60: '#f97316',  // orange
+  f90: '#dc2626',  // red
+  f120: '#7c3aed', // purple
+  f180: '#1e3a8a', // dark blue (very rare, kept for completeness)
+} as const;
+
+const SEQ_BLUE_LOW = '#e0f2fe';
+const SEQ_BLUE_HIGH = '#0c4a6e';
+const DIVERGING_LOW = '#b91c1c';   // red (low)
+const DIVERGING_MID = '#ffffff';   // white (mid)
+const DIVERGING_HIGH = '#1d4ed8';  // blue (high)
+
+/** Parse a CSS-hex string into a THREE.Color (no #-less or rgb() support). */
+function hexToColor(hex: string): THREE.Color {
+  return new THREE.Color(hex);
+}
+
+/** Linear interpolation between two hex colours at fraction t ∈ [0, 1]. */
+function lerpHex(low: string, high: string, t: number): THREE.Color {
+  const a = hexToColor(low);
+  const b = hexToColor(high);
+  const clamped = Math.max(0, Math.min(1, t));
+  return new THREE.Color(
+    a.r + (b.r - a.r) * clamped,
+    a.g + (b.g - a.g) * clamped,
+    a.b + (b.b - a.b) * clamped,
+  );
+}
+
+/** Three-stop interpolation used for `sequential-red-blue`. */
+function lerpHex3(low: string, mid: string, high: string, t: number): THREE.Color {
+  const clamped = Math.max(0, Math.min(1, t));
+  if (clamped < 0.5) {
+    return lerpHex(low, mid, clamped / 0.5);
+  }
+  return lerpHex(mid, high, (clamped - 0.5) / 0.5);
+}
+
+/**
+ * Resolve a property value off an element. Looks first in
+ * `element.properties[key]`, then in the well-known top-level fields. Numbers
+ * (e.g. ``volume``) are returned as-is; everything else is coerced to string.
+ * Returns `undefined` when no value is present.
+ *
+ * Exported for tests and for `ColorByPropertyPanel` (so its preview legend
+ * uses the exact same lookup as the colouring).
+ */
+export function resolveElementProperty(
+  el: BIMElementData,
+  key: string,
+): string | number | undefined {
+  const props = el.properties;
+  if (props && Object.prototype.hasOwnProperty.call(props, key)) {
+    const v = props[key];
+    if (typeof v === 'number') return v;
+    if (v === null || v === undefined) return undefined;
+    return String(v);
+  }
+  // Convenience fall-throughs for canonical-format top-level fields.
+  switch (key) {
+    case 'element_type':
+    case 'category':
+      return el.element_type || el.category;
+    case 'discipline':
+      return el.discipline;
+    case 'storey':
+    case 'level':
+      return el.storey;
+    case 'name':
+      return el.name;
+    default:
+      break;
+  }
+  // Last resort: numeric quantities (volume / area / length).
+  const q = el.quantities;
+  if (q && Object.prototype.hasOwnProperty.call(q, key)) {
+    const v = q[key];
+    return typeof v === 'number' ? v : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * Pure helper: compute the hex color a config would assign to a given value.
+ * Centralised so the legend in `ColorByPropertyPanel` and the runtime
+ * material colouring stay in lock-step.
+ *
+ *  - `valueOrderIndex` is the rank of the value among the distinct keys
+ *    (most-common first); used only by `categorical-12`.
+ *  - `unknownColor` is returned for sequential palettes when the value
+ *    is not numeric.
+ */
+export function colorForPropertyValue(
+  config: ColorByPropertyConfig,
+  value: string | number | undefined,
+  valueOrderIndex: number,
+): string {
+  const unknown = config.unknownColor ?? '#888888';
+  if (value === undefined || value === null || value === '') return unknown;
+
+  if (config.palette === 'fire-rating') {
+    const key = String(value).toLowerCase().replace(/\s+/g, '');
+    // Try exact key match first, then a "f30 in f30-min" style partial
+    // (some converters emit "F30 (REI)" or "REI 90").
+    if (FIRE_RATING_PALETTE[key]) return FIRE_RATING_PALETTE[key]!;
+    for (const fkey of Object.keys(FIRE_RATING_PALETTE)) {
+      if (key.includes(fkey)) return FIRE_RATING_PALETTE[fkey]!;
+    }
+    // Numeric fall-through: bare "30" / "90" → f30 / f90.
+    const numMatch = key.match(/(\d+)/);
+    if (numMatch) {
+      const fkey = `f${numMatch[1]}`;
+      if (FIRE_RATING_PALETTE[fkey]) return FIRE_RATING_PALETTE[fkey]!;
+    }
+    return unknown;
+  }
+
+  if (config.palette === 'categorical-12') {
+    if (valueOrderIndex < 0) return unknown;
+    return CATEGORICAL_12[valueOrderIndex % CATEGORICAL_12.length]!;
+  }
+
+  // Sequential palettes — value must be numeric.
+  const num = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(num)) return unknown;
+  const range = config.numericRange ?? [0, 1];
+  const [lo, hi] = range;
+  const span = hi - lo;
+  const t = span === 0 ? 0 : (num - lo) / span;
+  if (config.palette === 'sequential-blue') {
+    return `#${lerpHex(SEQ_BLUE_LOW, SEQ_BLUE_HIGH, t).getHexString()}`;
+  }
+  // sequential-red-blue
+  return `#${lerpHex3(DIVERGING_LOW, DIVERGING_MID, DIVERGING_HIGH, t).getHexString()}`;
+}
+
 /* ── Glass detection ──────────────────────────────────────────────────────
  *
  * Cheap, allocation-free heuristic: a glass-like element is recognised by
@@ -415,6 +616,23 @@ export class ElementManager {
    * per-element filters don't affect the viewport.
    */
   private meshMatchRatio = 0;
+
+  /* ── W6.6 color-by-property + hide/isolate state ────────────────────── */
+
+  /** Current color-by-property overlay, or null when off. Replaces the
+   *  legacy `colorBy()` rainbow when set. */
+  private colorByPropertyConfig: ColorByPropertyConfig | null = null;
+  /** Element IDs the user has explicitly hidden via `hide()` / `isolate()`.
+   *  Separate from filter-driven visibility (which uses `applyFilter`) so
+   *  the two systems don't fight. */
+  private hiddenElementIds = new Set<string>();
+  /** True after the most recent `isolate()` call; cleared by `showAll()`.
+   *  Used so `hasHidden()` returns the intuitive answer when "everything
+   *  but X" is the current state. */
+  private isolateActive = false;
+  /** Subscribers for hidden-count changes — wired by BIMViewer to drive a
+   *  small "{n} hidden — Show all" badge above the canvas. */
+  private hiddenCountSubscribers = new Set<(count: number) => void>();
 
   constructor(sceneManager: SceneManager) {
     this.sceneManager = sceneManager;
@@ -677,12 +895,41 @@ export class ElementManager {
     // Both parsers failed — surface the first few bytes (hex) so the
     // user / bug report has a fingerprint of what the server returned
     // even when the file is no longer available (cache eviction, etc.).
-    const head = Array.from(new Uint8Array(buffer.slice(0, 8)))
+    const headBytes = new Uint8Array(buffer.slice(0, 8));
+    const head = Array.from(headBytes)
       .map((b) => b.toString(16).padStart(2, '0'))
       .join(' ');
     const aggregate = errors.map((e) => e.message).join(' | ');
+
+    // Sniff common non-geometry payloads and give the user actionable
+    // advice instead of raw hex. Most external bug reports we have seen
+    // fall into one of these buckets — the server delivered something
+    // that isn't COLLADA / GLB / glTF.
+    const asAscii = new TextDecoder('ascii', { fatal: false })
+      .decode(buffer.slice(0, 1024))
+      .trimStart()
+      .toLowerCase();
+
+    let hint = '';
+    if (asAscii.startsWith('<?xml')) {
+      // Generic XML — most common cause is an .ifcXML / gbXML / wrapper
+      // file the converter wrote next to the model, picked up because
+      // it shares the same prefix. The viewer needs COLLADA DAE (which
+      // is also XML but with a <COLLADA root) or a GLB binary.
+      hint =
+        ' — The file is XML but not COLLADA. This usually means the DDC cad2data converter did not emit 3D geometry for this model (an older converter version, or a source format without geometry — e.g. .ifcXML / gbXML). Try re-running the conversion with the latest DDC cad2data (v0.3+) or upload the source as RVT/IFC/DWG/DGN to trigger geometry export.';
+    } else if (asAscii.startsWith('<!doctype') || asAscii.startsWith('<html')) {
+      // HTML — almost always an auth/redirect or error page.
+      hint =
+        " — The geometry URL returned an HTML page (likely an auth redirect, a 404, or a proxy/CDN error). Reload the page to refresh credentials; if it persists, check that your session hasn't expired.";
+    } else if (asAscii.startsWith('{')) {
+      // JSON — server sent an error envelope instead of binary.
+      hint =
+        ' — The geometry URL returned a JSON response, not 3D geometry. Open the browser network panel to see the server message — common causes are expired presigned URLs or a converter still running in the background.';
+    }
+
     throw new Error(
-      `Geometry parse failed (${buffer.byteLength} bytes, head=${head}): ${aggregate}`,
+      `Geometry parse failed (${buffer.byteLength} bytes, head=${head}): ${aggregate}${hint}`,
     );
   }
 
@@ -1817,7 +2064,10 @@ export class ElementManager {
   }
 
   /** Hide specific elements by ID. Sets mesh.visible = false for each.
-   *  Other elements remain unaffected. */
+   *  Other elements remain unaffected.
+   *
+   *  Tracks the hidden set internally so `hasHidden()` / the W6.6
+   *  hidden-count badge can react. */
   hideElements(ids: Set<string>): void {
     for (const id of ids) {
       const mesh = this.meshMap.get(id);
@@ -1828,11 +2078,14 @@ export class ElementManager {
       } else {
         mesh.visible = false;
       }
+      this.hiddenElementIds.add(id);
     }
+    this.notifyHiddenCount();
     this.sceneManager.requestRender();
   }
 
-  /** Reset all element visibility to visible. */
+  /** Reset all element visibility to visible. Also clears the hide/isolate
+   *  state so `hasHidden()` returns false until the next hide call. */
   showAll(): void {
     for (const mesh of this.meshMap.values()) {
       const handle = (mesh.userData as { batchHandle?: { batched: THREE.BatchedMesh; instanceId: number } }).batchHandle;
@@ -1849,6 +2102,9 @@ export class ElementManager {
       });
       this.daeGroup.visible = true;
     }
+    this.hiddenElementIds.clear();
+    this.isolateActive = false;
+    this.notifyHiddenCount();
     this.sceneManager.requestRender();
   }
 
@@ -1893,9 +2149,14 @@ export class ElementManager {
     this.sceneManager.requestRender();
   }
 
-  /** Isolate given element IDs — hide everything else. */
+  /** Isolate given element IDs — hide everything else.
+   *
+   *  Tracks the hidden set internally so `hasHidden()` / the W6.6
+   *  hidden-count badge can surface a "Show all" affordance. */
   isolate(elementIds: string[]): void {
     const keep = new Set(elementIds);
+    // Reset state: an isolate completely replaces any previous hide/isolate.
+    this.hiddenElementIds.clear();
     for (const [id, mesh] of this.meshMap) {
       const v = keep.has(id);
       const handle = (mesh.userData as { batchHandle?: { batched: THREE.BatchedMesh; instanceId: number } }).batchHandle;
@@ -1904,6 +2165,7 @@ export class ElementManager {
       } else {
         mesh.visible = v;
       }
+      if (!v) this.hiddenElementIds.add(id);
     }
     // When isolating specific elements, hide unmatched DAE background so the
     // isolated part actually stands out. If no meshes are matched at all we
@@ -1920,6 +2182,8 @@ export class ElementManager {
         }
       }
     }
+    this.isolateActive = keep.size > 0;
+    this.notifyHiddenCount();
     this.sceneManager.requestRender();
   }
 
@@ -2019,6 +2283,204 @@ export class ElementManager {
   /** Whether any element is currently ghosted. */
   isGhostActive(): boolean {
     return this.ghostedIds.size > 0;
+  }
+
+  /* ── W6.6 hide / isolate (selection-aware wrappers) ─────────────────── */
+
+  /** Active selection seen from the parent UI. Settable so callers can
+   *  resolve `'selected'` shorthand without reaching back into BIMViewer
+   *  state. Kept tiny — no events. */
+  private activeSelectionIds: string[] = [];
+
+  /** Set the active selection — used by `hide('selected')` /
+   *  `isolate('selected')` so the parent UI can keep its own selection
+   *  state while ElementManager remains the source of truth for what's
+   *  actually visible. */
+  setActiveSelection(ids: readonly string[]): void {
+    this.activeSelectionIds = [...ids];
+  }
+
+  /**
+   * Hide one or more elements. Pass `'selected'` to hide whatever was last
+   * passed to `setActiveSelection`. Other elements stay visible.
+   */
+  hide(elementIds: string[] | 'selected'): void {
+    const ids =
+      elementIds === 'selected' ? this.activeSelectionIds : elementIds;
+    if (ids.length === 0) return;
+    this.hideElements(new Set(ids));
+  }
+
+  /** Returns true when at least one element is hidden by `hide()`
+   *  or `isolate()`. Used to gate the "Show all" affordance. */
+  hasHidden(): boolean {
+    return this.hiddenElementIds.size > 0 || this.isolateActive;
+  }
+
+  /** Current count of hidden elements (driven by hide/isolate, not by
+   *  filter or layer toggles). */
+  hiddenCount(): number {
+    return this.hiddenElementIds.size;
+  }
+
+  /** Subscribe to hidden-count changes. Returns an unsubscribe callback.
+   *
+   *  TODO(W6.6 integration): wire hidden-count badge in BIMViewer.tsx —
+   *  render a small "{n} hidden — Show all" pill above the canvas while
+   *  `hasHidden()` is true. The pill should call `elementMgr.showAll()`
+   *  when clicked. */
+  onHiddenCountChange(cb: (count: number) => void): () => void {
+    this.hiddenCountSubscribers.add(cb);
+    // Fire once with the current value so subscribers can render synchronously.
+    cb(this.hiddenCount());
+    return () => {
+      this.hiddenCountSubscribers.delete(cb);
+    };
+  }
+
+  /** Internal — push the current hidden count to every subscriber. */
+  private notifyHiddenCount(): void {
+    if (this.hiddenCountSubscribers.size === 0) return;
+    const count = this.hiddenCount();
+    for (const cb of this.hiddenCountSubscribers) {
+      try {
+        cb(count);
+      } catch (err) {
+        if (typeof import.meta !== 'undefined' && import.meta.env?.DEV) {
+          console.warn('[BIM] hidden-count subscriber threw', err);
+        }
+      }
+    }
+  }
+
+  /* ── W6.6 color-by-property ─────────────────────────────────────────── */
+
+  /** Every unique property key found across loaded elements, sorted with
+   *  the well-known top-level fields first (so they're easy to find in a
+   *  picker UI). */
+  getAvailablePropertyKeys(): string[] {
+    const fromProps = new Set<string>();
+    for (const el of this.elementDataMap.values()) {
+      if (el.properties) {
+        for (const k of Object.keys(el.properties)) fromProps.add(k);
+      }
+      if (el.quantities) {
+        for (const k of Object.keys(el.quantities)) fromProps.add(k);
+      }
+    }
+    // Always offer canonical-format top-level fields, even when no element
+    // has the key in its `properties` bag.
+    const wellKnown = ['element_type', 'discipline', 'storey', 'category'];
+    const out: string[] = [];
+    for (const k of wellKnown) {
+      if (this.hasAnyValueForCanonicalKey(k)) {
+        out.push(k);
+        fromProps.delete(k); // avoid duplicate when the key also sits in properties
+      }
+    }
+    for (const k of Array.from(fromProps).sort()) {
+      out.push(k);
+    }
+    return out;
+  }
+
+  private hasAnyValueForCanonicalKey(k: string): boolean {
+    for (const el of this.elementDataMap.values()) {
+      if (resolveElementProperty(el, k) !== undefined) return true;
+    }
+    return false;
+  }
+
+  /** Every distinct value for a property, with element counts, sorted
+   *  most-frequent-first. Used to drive the legend in
+   *  `ColorByPropertyPanel` and to assign categorical-12 ordering. */
+  getDistinctPropertyValues(key: string): PropertyValueCount[] {
+    const counts = new Map<string | number, number>();
+    for (const el of this.elementDataMap.values()) {
+      const v = resolveElementProperty(el, key);
+      if (v === undefined || v === '') continue;
+      counts.set(v, (counts.get(v) ?? 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([value, count]) => ({ value, count }))
+      .sort((a, b) => b.count - a.count);
+  }
+
+  /**
+   * Apply a property-based colouring overlay. Replaces any previous overlay.
+   * Pass null to restore base materials.
+   *
+   * Implementation notes:
+   *  - Materials are cloned per mesh (matching the pattern used by every
+   *    other colorBy* path) and tracked in `createdMaterials` for disposal.
+   *  - Selection highlighting (a separate emissive/outline pass owned by
+   *    SelectionManager) sits on top of the base diffuse colour, so this
+   *    overlay does NOT interfere with selection visuals.
+   *  - For `categorical-12` the value-to-color order is by frequency,
+   *    most-common first.  For sequential palettes, the value is clamped
+   *    to `numericRange` and linearly interpolated.
+   */
+  setColorByProperty(config: ColorByPropertyConfig | null): void {
+    // Off → restore originals.
+    if (config === null) {
+      this.colorByPropertyConfig = null;
+      this.resetColors();
+      return;
+    }
+
+    this.colorByPropertyConfig = config;
+
+    // Pre-compute the value→rank map (only meaningful for categorical-12,
+    // but cheap enough to compute unconditionally so the code path is one).
+    const distinct = this.getDistinctPropertyValues(config.propertyKey);
+    const rank = new Map<string | number, number>();
+    distinct.forEach((d, i) => rank.set(d.value, i));
+
+    // Dispose previous overlay materials before applying new ones.
+    this.disposeCreatedMaterials();
+
+    for (const [elementId, mesh] of this.meshMap) {
+      const el = this.elementDataMap.get(elementId);
+      if (!el) continue;
+      const value = resolveElementProperty(el, config.propertyKey);
+      const idx = value !== undefined ? rank.get(value) ?? -1 : -1;
+      const hex = colorForPropertyValue(config, value, idx);
+      const colour = new THREE.Color(hex);
+
+      const ud = mesh.userData as {
+        customMaterial?: boolean;
+        originalMaterial?: THREE.Material | THREE.Material[];
+      };
+
+      if (!ud.customMaterial) {
+        const base = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+        if (base && 'clone' in base) {
+          // Record the base material so resetColors() / disposeCreatedMaterials()
+          // can put it back when the overlay is cleared. Box-placeholder meshes
+          // (no DAE geometry) never had originalMaterial set during load — we
+          // set it here, the first time we replace their material, so the
+          // off-overlay path restores the shared per-category material.
+          if (!ud.originalMaterial) ud.originalMaterial = mesh.material;
+          const cloned = (
+            base as THREE.Material & { clone(): THREE.Material }
+          ).clone();
+          mesh.material = cloned;
+          this.createdMaterials.add(cloned);
+          ud.customMaterial = true;
+        }
+      }
+      const mat = mesh.material as THREE.MeshStandardMaterial | THREE.MeshPhongMaterial;
+      if (mat && 'color' in mat && mat.color) {
+        mat.color.copy(colour);
+      }
+    }
+    this.sceneManager.requestRender();
+  }
+
+  /** Active color-by-property config (or null when off). Read-only — for
+   *  the integrator to render the legend / "X" close button. */
+  getColorByPropertyConfig(): ColorByPropertyConfig | null {
+    return this.colorByPropertyConfig;
   }
 
   /**
@@ -2231,6 +2693,10 @@ export class ElementManager {
   resetColors(): void {
     // Dispose all cloned materials and restore originals in one pass.
     this.disposeCreatedMaterials();
+    // Clear any color-by-property overlay so the next callsite gets a
+    // clean baseline (otherwise getColorByPropertyConfig() would still
+    // report an active overlay even though the meshes are at base colour).
+    this.colorByPropertyConfig = null;
     // For meshes that had no originalMaterial cached, fall back to the
     // flat discipline material so they stay visible.
     for (const [elementId, mesh] of this.meshMap) {
@@ -2277,6 +2743,14 @@ export class ElementManager {
     // Ghost references point at meshes that were just disposed above —
     // drop them so a fresh model doesn't try to restore stale materials.
     this.ghostedIds.clear();
+    // W6.6: hidden / isolate / color-by-property state is per-model — wipe.
+    if (this.hiddenElementIds.size > 0 || this.isolateActive) {
+      this.hiddenElementIds.clear();
+      this.isolateActive = false;
+      this.notifyHiddenCount();
+    }
+    this.colorByPropertyConfig = null;
+    this.activeSelectionIds = [];
     // Materials are reused — dispose them only on full destroy
   }
 
@@ -2305,6 +2779,8 @@ export class ElementManager {
       this.ghostMaterial = null;
     }
     this.ghostedIds.clear();
+    // W6.6: drop hidden-count subscribers so the next mount starts clean.
+    this.hiddenCountSubscribers.clear();
     this.sceneManager.scene.remove(this.elementGroup);
   }
 }

@@ -293,6 +293,34 @@ async def drill_down(
 # ── Dashboards ─────────────────────────────────────────────────────────
 
 
+# v3.12.1 Wave 1 — fresh-install dashboards bootstrap. The page used
+# to render an empty grid on every new tenant because the seed_all()
+# helper that materialises the 5 role-based starter dashboards was only
+# called from tests. Exposing it as an idempotent POST lets the FE
+# offer a one-click "Install starter pack" CTA from the empty state
+# instead of asking the user to wire dashboards by hand before they
+# see anything render.
+@router.post(
+    "/install-starter-pack",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(RequirePermission("bi.dashboard.write"))],
+)
+async def install_starter_pack(
+    session: SessionDep,
+) -> dict[str, int]:
+    """Seed system KPIs, 5 role-based dashboards, 3 reports, 2 schedules
+    and 4 alert rules. Idempotent — re-running is safe and only inserts
+    rows that don't already exist. Returns per-step row counts so the
+    UI can toast a meaningful result.
+    """
+    from app.modules.bi_dashboards.seed import seed_all
+
+    counts = await seed_all(session)
+    await session.commit()
+    logger.info("BI starter pack installed: %s", counts)
+    return counts
+
+
 @router.get(
     "/dashboards",
     response_model=list[DashboardRead],

@@ -3922,6 +3922,182 @@
     }
 
     /* ================================================================ */
+    /* MODULE OVERVIEW GRID — full inventory of in-app modules           */
+    /* Mirrors the in-app sidebar (same lucide icons, same labels, same  */
+    /* order). Lives directly under the demo player so a visitor who    */
+    /* wants to know "what's in the box" can scroll past the carousel   */
+    /* and see every module without booking a call.                      */
+    /* ================================================================ */
+    .mod-overview {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: clamp(36px, 4vw, 64px) clamp(24px, 5vw, 80px) clamp(20px, 3vw, 40px);
+      position: relative;
+      z-index: 4;
+    }
+    .mod-overview-head {
+      text-align: center;
+      margin: 0 auto clamp(20px, 2.4vw, 32px);
+      max-width: 720px;
+    }
+    .mod-overview-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: 'JetBrains Mono', ui-monospace, monospace;
+      font-size: 10px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--accent);
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: color-mix(in oklab, var(--accent) 8%, transparent);
+      border: 1px solid color-mix(in oklab, var(--accent) 22%, var(--line-1));
+    }
+    .mod-overview-title {
+      font-family: 'Inter Tight', sans-serif;
+      font-weight: 500;
+      font-size: clamp(22px, 2.2vw, 30px);
+      letter-spacing: -0.02em;
+      color: var(--ink-0);
+      margin: 14px 0 8px;
+      line-height: 1.2;
+    }
+    .mod-overview-title em {
+      font-family: 'Fraunces', serif;
+      font-style: italic;
+      font-weight: 300;
+      color: var(--accent-3);
+    }
+    .mod-overview-sub {
+      font-size: clamp(13.5px, 1.05vw, 15px);
+      color: var(--ink-2);
+      line-height: 1.55;
+      margin: 0;
+    }
+    .mod-group { margin-top: clamp(18px, 2vw, 30px); }
+    .mod-group-label {
+      font-family: 'JetBrains Mono', ui-monospace, monospace;
+      font-size: 10.5px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--ink-3);
+      margin: 0 0 10px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .mod-group-label::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(90deg, var(--line-1), transparent);
+    }
+    .mod-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+    @media (max-width: 960px) {
+      .mod-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 580px) {
+      .mod-grid { grid-template-columns: 1fr; }
+    }
+    .mod-cell {
+      display: grid;
+      grid-template-columns: 36px 1fr;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 14px 14px 14px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--line-1);
+      background: color-mix(in oklab, #ffffff 56%, transparent);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease, background 0.22s ease;
+      outline: none;
+      cursor: default;
+    }
+    .mod-cell:hover,
+    .mod-cell:focus-visible {
+      transform: translateY(-2px);
+      border-color: color-mix(in oklab, var(--tint, var(--accent)) 50%, var(--line-1));
+      background: color-mix(in oklab, #ffffff 72%, transparent);
+      box-shadow:
+        0 1px 0 color-mix(in oklab, var(--tint, var(--accent)) 6%, transparent),
+        0 12px 28px -16px color-mix(in oklab, var(--tint, var(--accent)) 40%, transparent);
+    }
+    .mod-cell:focus-visible {
+      box-shadow:
+        0 0 0 3px color-mix(in oklab, var(--tint, var(--accent)) 22%, transparent),
+        0 12px 28px -16px color-mix(in oklab, var(--tint, var(--accent)) 40%, transparent);
+    }
+    .mod-cell-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      flex-shrink: 0;
+      background:
+        linear-gradient(140deg,
+          color-mix(in oklab, var(--tint, var(--accent)) 20%, transparent) 0%,
+          color-mix(in oklab, var(--tint, var(--accent)) 8%, transparent) 100%);
+      border: 1px solid color-mix(in oklab, var(--tint, var(--accent)) 26%, var(--line-1));
+      color: var(--tint, var(--accent));
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow:
+        inset 0 1px 0 color-mix(in oklab, #ffffff 34%, transparent),
+        0 3px 8px -5px color-mix(in oklab, var(--tint, var(--accent)) 35%, transparent);
+    }
+    .mod-cell-icon svg {
+      width: 16px;
+      height: 16px;
+      display: block;
+    }
+    .mod-cell-body { min-width: 0; }
+    .mod-cell-name {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: 'Inter Tight', sans-serif;
+      font-weight: 500;
+      font-size: 13.5px;
+      color: var(--ink-0);
+      margin: 1px 0 3px;
+      letter-spacing: -0.005em;
+    }
+    .mod-cell-beta {
+      font-family: 'JetBrains Mono', ui-monospace, monospace;
+      font-size: 8.5px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--accent);
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: color-mix(in oklab, var(--accent) 10%, transparent);
+      border: 1px solid color-mix(in oklab, var(--accent) 24%, transparent);
+      line-height: 1;
+    }
+    .mod-cell-desc {
+      font-size: 12px;
+      color: var(--ink-2);
+      line-height: 1.45;
+      margin: 0;
+    }
+    [data-theme="dark"] .mod-cell {
+      background: color-mix(in oklab, #141d30 72%, transparent);
+    }
+    [data-theme="dark"] .mod-cell-icon {
+      background:
+        linear-gradient(140deg,
+          color-mix(in oklab, var(--tint, var(--accent)) 28%, transparent) 0%,
+          color-mix(in oklab, var(--tint, var(--accent)) 12%, transparent) 100%);
+      border-color: color-mix(in oklab, var(--tint, var(--accent)) 36%, transparent);
+    }
+
+    /* ================================================================ */
     /* FLOW STRIP — 5 USPs                                               */
     /* ================================================================ */
     .flow-strip {
@@ -12138,6 +12314,651 @@
           </p>
         </div>
       </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- MODULE OVERVIEW — full inventory of in-app modules            -->
+    <!-- Mirrors the in-app sidebar 1:1 (same lucide icons, same       -->
+    <!-- labels, same order). Cards are keyboard-focusable but not     -->
+    <!-- yet wired to routes — this is a "what's in the box" reveal,   -->
+    <!-- not a navigator. SVG icons are inlined (no CDN dependency).   -->
+    <!-- ============================================================ -->
+    <div class="mod-overview reveal" id="modules-overview" aria-label="Module overview">
+      <div class="mod-overview-head">
+        <span class="mod-overview-eyebrow" data-i18n="modgrid.eyebrow">Every module, on one screen</span>
+        <h3 class="mod-overview-title" data-i18n-html="modgrid.title">
+          Sixty&#8209;plus modules ship in the same install. <em>No add-on store.</em>
+        </h3>
+        <p class="mod-overview-sub" data-i18n="modgrid.sub">
+          Same icons, same names you'll see inside the app. Hover any card for a one-line read on what it does.
+        </p>
+      </div>
+
+      <!-- ── OVERVIEW ───────────────────────────────────────────────── -->
+      <section class="mod-group" aria-labelledby="modgroup-overview-h">
+        <h4 id="modgroup-overview-h" class="mod-group-label" data-i18n="modgrid.group_overview">Overview</h4>
+        <div class="mod-grid">
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.dashboard_title">Dashboard</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.dashboard_desc">Live KPIs, open work, recent activity. Customizable tiles per role.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-3);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.projects_title">Projects</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.projects_desc">Create projects, set scope and currency, invite the team. The home base for every other module.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-4);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" x2="2" y1="12" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" x2="6.01" y1="16" y2="16"/><line x1="10" x2="10.01" y1="16" y2="16"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.files_title">Project files</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.files_desc">One unified file tree for documents, photos, BIM and CAD. Drag, drop, version, share.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── ESTIMATION ─────────────────────────────────────────────── -->
+      <section class="mod-group" aria-labelledby="modgroup-estimation-h">
+        <h4 id="modgroup-estimation-h" class="mod-group-label" data-i18n="modgrid.group_estimation">Estimation</h4>
+        <div class="mod-grid">
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.boq_title">BOQ</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.boq_desc">Hierarchical bill of quantities with assemblies, formulas, multi-currency, and live cost rollup.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-3);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.costs_title">Cost database</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.costs_desc">Tens of thousands of priced positions across regions, with semantic search and rate history.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-4);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.match_title">Match elements</span><span class="mod-cell-beta">beta</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.match_desc">AI-ranked cost-code candidates per element group, with confidence scores and human review.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-5);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.assemblies_title">Assemblies</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.assemblies_desc">Reusable recipes: bundle materials, labor and equipment into one priced line you reuse across projects.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-6);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42Z"/><path d="m7 16.5-4.74-2.85"/><path d="m7 16.5 5-3"/><path d="M7 16.5v5.17"/><path d="M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5l-5 3Z"/><path d="m17 16.5-5-3"/><path d="m17 16.5 4.74-2.85"/><path d="M17 16.5v5.17"/><path d="M7.97 4.42A2 2 0 0 0 7 6.13v4.37l5 3 5-3V6.13a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0l-3 1.8Z"/><path d="M12 8 7.26 5.15"/><path d="m12 8 4.74-2.85"/><path d="M12 13.5V8"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.catalog_title">Catalog</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.catalog_desc">Master library of materials, products and SKUs across suppliers and regions, ready to drop into any BOQ.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.qrules_title">Quantity rules</span><span class="mod-cell-beta">beta</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.qrules_desc">Define how takeoff numbers turn into priced BOQ lines, then auto-apply to every model and drawing.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── TAKEOFF ────────────────────────────────────────────────── -->
+      <section class="mod-group" aria-labelledby="modgroup-takeoff-h">
+        <h4 id="modgroup-takeoff-h" class="mod-group-label" data-i18n="modgrid.group_takeoff">Takeoff &amp; BIM</h4>
+        <div class="mod-grid">
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-3);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.pdftakeoff_title">PDF takeoff</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.pdftakeoff_desc">Click-to-measure on PDF drawings. Lengths, areas, counts push straight into the BOQ.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-4);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 7 8.7 2.7a2.41 2.41 0 0 0-3.4 0L2.7 5.3a2.41 2.41 0 0 0 0 3.4L7 13"/><path d="m8 6 2-2"/><path d="m18 16 2-2"/><path d="m17 11 4.3 4.3c.94.94.94 2.46 0 3.4l-2.6 2.6c-.94.94-2.46.94-3.4 0L11 17"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.dwgtakeoff_title">DWG takeoff</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.dwgtakeoff_desc">Import DWG drawings, isolate layers, count blocks and measure polylines without leaving the browser.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-5);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3v18"/><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M21 9H3"/><path d="M21 15H3"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.dataexplorer_title">CAD/BIM data explorer</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.dataexplorer_desc">Spreadsheet view over every element in your model. Filter, group, pivot, export as if it were a database.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-6);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.bim_title">BIM viewer</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.bim_desc">Upload IFC, RVT, DWG. View, slice, color by property, and link elements straight to the BOQ.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.07 4.93A10 10 0 0 0 6.99 3.34"/><path d="M4 6h.01"/><path d="M2.29 9.62A10 10 0 1 0 21.31 8.35"/><path d="M16.24 7.76A6 6 0 1 0 8.23 16.67"/><path d="M12 18h.01"/><path d="M17.99 11.66A6 6 0 0 1 15.77 16.67"/><circle cx="12" cy="12" r="2"/><path d="m13.41 10.59 5.66-5.66"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.clash_title">Clash detection</span><span class="mod-cell-beta">beta</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.clash_desc">Find geometric collisions across federated models with depth-aware clustering and issue tracking.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-3);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.bimrules_title">BIM rules</span><span class="mod-cell-beta">beta</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.bimrules_desc">Declare what your model must contain — required properties, value ranges — and validate every upload automatically.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── AI ESTIMATION ──────────────────────────────────────────── -->
+      <section class="mod-group" aria-labelledby="modgroup-ai-h">
+        <h4 id="modgroup-ai-h" class="mod-group-label" data-i18n="modgrid.group_ai">AI estimation</h4>
+        <div class="mod-grid">
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-4);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.aiest_title">AI estimate</span><span class="mod-cell-beta">beta</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.aiest_desc">Photo, sketch or document in, first-pass priced estimate out. You review and adjust before saving.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.advisor_title">AI advisor</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.advisor_desc">Ask questions about your estimate in plain English. Get cited answers, not vague chatter.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-3);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M9 13a4.5 4.5 0 0 0 3-4"/><path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/><path d="M3.477 10.896a4 4 0 0 1 .585-.396"/><path d="M6 18a4 4 0 0 1-1.967-.516"/><path d="M12 13h4"/><path d="M12 18h6a2 2 0 0 1 2 2v1"/><path d="M12 8h8"/><path d="M16 8V5a2 2 0 0 1 2-2"/><circle cx="16" cy="13" r=".5"/><circle cx="18" cy="3" r=".5"/><circle cx="20" cy="21" r=".5"/><circle cx="20" cy="8" r=".5"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.pi_title">Estimation dashboard</span><span class="mod-cell-beta">beta</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.pi_desc">Project intelligence: completeness, cost benchmarks, anomalies and risks at a glance.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-4);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.chat_title">ERP chat</span><span class="mod-cell-beta">beta</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.chat_desc">Conversational interface across all your project data. "What's my exposure on lot 4?" works.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── PLANNING & CONTROL ─────────────────────────────────────── -->
+      <section class="mod-group" aria-labelledby="modgroup-planning-h">
+        <h4 id="modgroup-planning-h" class="mod-group-label" data-i18n="modgrid.group_planning">Planning &amp; control</h4>
+        <div class="mod-grid">
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.schedule_title">Schedule</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.schedule_desc">Build the project timeline with dependencies, milestones and a draggable Gantt view.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-3);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.scheduleadv_title">Schedule (advanced)</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.scheduleadv_desc">Critical path, resource leveling, baselines, what-if scenarios for planners who need the full kit.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-4);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.tasks_title">Tasks</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.tasks_desc">Lightweight task tracker tied to projects, BOQ lines, drawings and people. Kanban or list view.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-5);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.fived_title">5D cost model</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.fived_desc">Time-phased cashflow: see budget burn week-by-week as the schedule slides or scope changes.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-6);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.risk_title">Risk register</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.risk_desc">Log risks, score impact and likelihood, assign owners, track mitigation through to closeout.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── FIELD OPERATIONS ───────────────────────────────────────── -->
+      <section class="mod-group" aria-labelledby="modgroup-ops-h">
+        <h4 id="modgroup-ops-h" class="mod-group-label" data-i18n="modgrid.group_operations">Field operations</h4>
+        <div class="mod-grid">
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.diary_title">Daily diary</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.diary_desc">Site log per day: crews on site, weather, deliveries, delays. Becomes the official record.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-3);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.equipment_title">Equipment</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.equipment_desc">Track machines, hours, fuel, service intervals. Move equipment between sites with full history.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-4);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.resources_title">Resources</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.resources_desc">Plan and assign crews, skills and rates. Match the right team to the right task without spreadsheets.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-5);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.service_title">Service</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.service_desc">Maintenance tickets, callouts, recurring inspections. Close the loop from request to sign-off.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-6);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.portal_title">Portal</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.portal_desc">Lightweight outside-facing workspace for subcontractors, clients and inspectors. Share only what they need.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── FINANCE ────────────────────────────────────────────────── -->
+      <section class="mod-group" aria-labelledby="modgroup-finance-h">
+        <h4 id="modgroup-finance-h" class="mod-group-label" data-i18n="modgrid.group_finance">Finance</h4>
+        <div class="mod-grid">
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.finance_title">Finance</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.finance_desc">Budgets, invoices, payments and cashflow per project. Multi-currency with frozen FX appendix on every export.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-3);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="M12 22V12"/><path d="m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7"/><path d="m7.5 4.27 9 5.15"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.procurement_title">Procurement</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.procurement_desc">Purchase orders, three-way invoice match, supplier scoring. From RFQ to delivery to payable, in one flow.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-4);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.tendering_title">Tendering</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.tendering_desc">Package a tender, send to suppliers, collect bids, compare side-by-side, award and convert to contract.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-5);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.5 22H18a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v9.5"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M13.378 15.626a1 1 0 1 0-3.004-3.004l-5.01 5.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.co_title">Change orders</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.co_desc">Track scope changes from request through approval. Roll the delta back into the BOQ and budget automatically.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── COMMERCIAL ─────────────────────────────────────────────── -->
+      <section class="mod-group" aria-labelledby="modgroup-commercial-h">
+        <h4 id="modgroup-commercial-h" class="mod-group-label" data-i18n="modgrid.group_commercial">Commercial</h4>
+        <div class="mod-grid">
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.crm_title">CRM</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.crm_desc">Pipeline of leads and opportunities, tied to estimates. Win-loss reasons feed back into your bid library.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-3);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 5-2.414-2.414A2 2 0 0 0 14.172 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2"/><path d="M21.378 12.626a1 1 0 0 0-3.004-3.004l-4.01 4.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z"/><path d="M8 18h1"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.contracts_title">Contracts</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.contracts_desc">Master and subcontracts with their clauses, milestones, retentions and signatures all in one place.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-4);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 10V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5"/><path d="M14 6a6 6 0 0 1 6 6v3"/><path d="M4 15v-3a6 6 0 0 1 6-6"/><rect x="2" y="15" width="20" height="4" rx="1"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.subs_title">Subcontractors</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.subs_desc">Roster of trades with rates, insurance, performance scores. Pull them into bids in a couple of clicks.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-5);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.bidmgmt_title">Bid management</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.bidmgmt_desc">Track every bid you've sent and received, with status, leveling, anomalies, and award recommendations.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-6);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.variations_title">Variations</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.variations_desc">Branch a contract version, price the variation, get sign-off, merge back. The same way you handle code, for scope.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.suppliers_title">Supplier catalogs</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.suppliers_desc">Live price lists from your suppliers, mapped to your catalog. Refreshable without breaking historic estimates.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-3);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.propdev_title">Property development</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.propdev_desc">Track lots, units and assets across a development. Sales, leasing, handover dates and warranty in one view.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── COMMUNICATION ──────────────────────────────────────────── -->
+      <section class="mod-group" aria-labelledby="modgroup-comm-h">
+        <h4 id="modgroup-comm-h" class="mod-group-label" data-i18n="modgrid.group_communication">Communication</h4>
+        <div class="mod-grid">
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-4);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.contacts_title">Contacts</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.contacts_desc">Address book for every company and person on a project. Linked to bids, contracts and correspondence.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-5);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.meetings_title">Meetings</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.meetings_desc">Schedule, agenda, attendees, minutes, action items. Linked to the decisions they produce.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-6);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.rfi_title">RFI</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.rfi_desc">Requests for information with deadlines, attachments and a clear answer trail. No more lost email threads.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m9 15 2 2 4-4"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.submittals_title">Submittals</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.submittals_desc">Materials and product approvals tracked from submission to acceptance, with reviewer comments.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-3);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.transmittals_title">Transmittals</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.transmittals_desc">Send drawings and documents with a proper paper trail: who got what, when, and which revision.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-4);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.corr_title">Correspondence</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.corr_desc">Project email and letters logged against the work they touch. Searchable years later.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── DOCUMENTS ──────────────────────────────────────────────── -->
+      <section class="mod-group" aria-labelledby="modgroup-docs-h">
+        <h4 id="modgroup-docs-h" class="mod-group-label" data-i18n="modgrid.group_documentation">Documents &amp; reports</h4>
+        <div class="mod-grid">
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-5);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="M12 22V12"/><path d="m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7"/><path d="m7.5 4.27 9 5.15"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.assets_title">Assets</span><span class="mod-cell-beta">beta</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.assets_desc">Inventory of physical and digital assets handed over to the client, with warranty and service info.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-6);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.cde_title">CDE</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.cde_desc">Common data environment for drawings, models and specs. Status, revision, ownership, all visible.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.photos_title">Photos</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.photos_desc">Site photos with date, location and the BOQ line or drawing they relate to. Filter by anything.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-3);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.707 21.293a1 1 0 0 1-1.414 0l-1.586-1.586a1 1 0 0 1 0-1.414l5.586-5.586a1 1 0 0 1 1.414 0l1.586 1.586a1 1 0 0 1 0 1.414z"/><path d="m18 13-1.375-6.874a1 1 0 0 0-.746-.776L3.235 2.028a1 1 0 0 0-1.207 1.207L5.35 15.879a1 1 0 0 0 .776.746L13 18"/><path d="m2.3 2.3 7.286 7.286"/><circle cx="11" cy="11" r="2"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.markups_title">Markups</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.markups_desc">Annotate drawings, PDFs and models. Comments, callouts and clouds saved against the source file.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-4);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.fieldreports_title">Field reports</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.fieldreports_desc">Structured site reports — progress, issues, photos — sent from the field, ready to share with stakeholders.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-5);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 18v-2"/><path d="M12 18v-4"/><path d="M16 18v-6"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.reports_title">Reports</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.reports_desc">Pre-built and custom report templates. Export to PDF, Excel and JSON. Schedulable.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-6);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.bi_title">BI dashboards</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.bi_desc">Build your own dashboards over project, cost and operational data. Drag, drop, drill down.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── QUALITY & SAFETY ───────────────────────────────────────── -->
+      <section class="mod-group" aria-labelledby="modgroup-quality-h">
+        <h4 id="modgroup-quality-h" class="mod-group-label" data-i18n="modgrid.group_quality">Quality &amp; safety</h4>
+        <div class="mod-grid">
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.validation_title">Validation</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.validation_desc">Run rule sets against any import — BOQ, drawings, models — and get a traffic-light report you can act on.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-3);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.inspections_title">Inspections</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.inspections_desc">Walk-the-site checklists with pass/fail items, photos and electronic sign-off, online or offline.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-4);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16h.01"/><path d="M12 8v4"/><path d="M15.312 2a2 2 0 0 1 1.414.586l4.688 4.688A2 2 0 0 1 22 8.688v6.624a2 2 0 0 1-.586 1.414l-4.688 4.688a2 2 0 0 1-1.414.586H8.688a2 2 0 0 1-1.414-.586l-4.688-4.688A2 2 0 0 1 2 15.312V8.688a2 2 0 0 1 .586-1.414l4.688-4.688A2 2 0 0 1 8.688 2z"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.ncr_title">Non-conformance</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.ncr_desc">Log defects and deviations, assign root cause, track corrective action through to closeout.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-5);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 10V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5"/><path d="M14 6a6 6 0 0 1 6 6v3"/><path d="M4 15v-3a6 6 0 0 1 6-6"/><rect x="2" y="15" width="20" height="4" rx="1"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.safety_title">Safety</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.safety_desc">Toolbox talks, incident logs, near-miss reports and corrective actions tied to the work where they happened.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-6);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.punch_title">Punchlist</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.punch_desc">Closeout snag list per area, trade or unit. Photo, owner, due date, status — visible to the whole team.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"/><path d="m9 12 2 2 4-4"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.qms_title">Quality management</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.qms_desc">Document control, ITP plans, audits and certifications, ready for client and third-party reviews.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-3);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.hse_title">HSE (advanced)</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.hse_desc">Health, safety and environment compliance with hazard registers, JSAs and statutory reporting.</p>
+            </div>
+          </div>
+          <div class="mod-cell" tabindex="0" style="--tint: var(--accent-5);">
+            <span class="mod-cell-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></svg>
+            </span>
+            <div class="mod-cell-body">
+              <div class="mod-cell-name"><span data-i18n="modgrid.carbon_title">Carbon</span></div>
+              <p class="mod-cell-desc" data-i18n="modgrid.carbon_desc">Embodied and operational carbon per project. Compare design options before they're built.</p>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
 
   </section>

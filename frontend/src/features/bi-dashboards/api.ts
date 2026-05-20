@@ -300,6 +300,24 @@ export function computeKpi(
 
 /* ── Dashboards ───────────────────────────────────────────────────────── */
 
+export interface StarterPackResult {
+  kpi_definitions: number;
+  dashboards: number;
+  reports: number;
+  schedules: number;
+  alerts: number;
+  kpi_history_rows: number;
+}
+
+/** Idempotent fresh-install bootstrap. Materialises 5 role-based
+ *  dashboards + their widgets + system KPIs + reports + schedules +
+ *  alert rules so a brand-new tenant sees actual charts on /bi-dashboards
+ *  instead of an empty grid. Re-running is safe — only missing rows are
+ *  inserted. v3.12.1 / Wave 1. */
+export function installStarterPack(): Promise<StarterPackResult> {
+  return apiPost<StarterPackResult>(`${BASE}/install-starter-pack`, {});
+}
+
 export function listDashboards(): Promise<Dashboard[]> {
   return apiGet<Dashboard[]>(`${BASE}/dashboards`);
 }

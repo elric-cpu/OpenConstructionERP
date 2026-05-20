@@ -8,11 +8,28 @@
  *   - Tools: measure tool + saved views
  *   - Groups: saved element groups
  */
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { X, ClipboardList, Layers, Wrench, Folders, Sparkles } from 'lucide-react';
-import type { BIMElementData } from '@/shared/ui/BIMViewer';
+import {
+  X,
+  ClipboardList,
+  Layers,
+  Wrench,
+  Folders,
+  Sparkles,
+  Palette,
+  Bookmark,
+} from 'lucide-react';
+import type {
+  BIMElementData,
+  ElementManager,
+  SelectionManager,
+} from '@/shared/ui/BIMViewer';
+import {
+  restoreView,
+  type SceneManager,
+} from '@/shared/ui/BIMViewer';
 import {
   useBIMViewerStore,
   type BIMRightPanelTab,
@@ -26,6 +43,8 @@ import BIMLinkedBOQPanel from './BIMLinkedBOQPanel';
 import BIMGroupsPanel from './BIMGroupsPanel';
 import BIMLayersPanel from './BIMLayersPanel';
 import BIMToolsPanel from './BIMToolsPanel';
+import ColorByPropertyPanel from './ColorByPropertyPanel';
+import SelectionSetsPanel from './SelectionSetsPanel';
 import { MatchSuggestionsPanel, useAcceptMatch } from '@/features/match';
 import type { MatchCandidate } from '@/features/match';
 import { boqApi, type BOQ } from '@/features/boq/api';
@@ -95,6 +114,12 @@ export default function BIMRightPanelTabs({
     getScreenshot(opts?: { width?: number; height?: number }): string | null;
     getClipState(): BIMClipState | null;
     setClipState(state: BIMClipState): void;
+    /** W6.6 — live manager handles surfaced for sibling panels (Trait Lens,
+     *  Element Bundles) and Playwright scripts. Null until the viewer scene
+     *  is fully mounted. */
+    sceneManager?: SceneManager | null;
+    elementManager?: ElementManager | null;
+    selectionManager?: SelectionManager | null;
   };
   type FilterBridge = {
     get(): {
@@ -114,6 +139,46 @@ export default function BIMRightPanelTabs({
     (window as unknown as { __oeBim?: BIMBridge }).__oeBim ?? null;
   const getFilterBridge = (): FilterBridge | null =>
     (window as unknown as { __oeBimFilter?: FilterBridge }).__oeBimFilter ?? null;
+
+  // W6.6 — pull the live manager handles off the bridge so the Trait Lens
+  // and Element Bundles tabs can stay reactive. The BIMViewer publishes the
+  // managers on `window.__oeBim` after the scene mounts, which can lag a
+  // few frames behind this component's first render — we poll every 250 ms
+  // until they're available, then stop. This is the same back-off pattern
+  // BIMPage uses for the initial URL-state hydration.
+  const [bridgeManagers, setBridgeManagers] = useState<{
+    sceneManager: SceneManager | null;
+    elementManager: ElementManager | null;
+    selectionManager: SelectionManager | null;
+  }>({ sceneManager: null, elementManager: null, selectionManager: null });
+  useEffect(() => {
+    let cancelled = false;
+    const poll = () => {
+      if (cancelled) return;
+      const bridge = getBridge();
+      const next = {
+        sceneManager: bridge?.sceneManager ?? null,
+        elementManager: bridge?.elementManager ?? null,
+        selectionManager: bridge?.selectionManager ?? null,
+      };
+      setBridgeManagers((prev) =>
+        prev.sceneManager === next.sceneManager &&
+        prev.elementManager === next.elementManager &&
+        prev.selectionManager === next.selectionManager
+          ? prev
+          : next,
+      );
+    };
+    poll();
+    const interval = window.setInterval(poll, 250);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [modelId]);
+  const sceneManager = bridgeManagers.sceneManager;
+  const elementManager = bridgeManagers.elementManager;
+  const selectionManager = bridgeManagers.selectionManager;
 
   const getCurrentViewpoint = useCallback(() => {
     return getBridge()?.getViewpoint() ?? null;
@@ -141,30 +206,46 @@ export default function BIMRightPanelTabs({
     [],
   );
 
-  const onApplyViewpoint = useCallback((vp: SavedViewpoint) => {
-    const bridge = getBridge();
-    if (!bridge) return;
-    bridge.setViewpoint(
-      { x: vp.cameraPos[0], y: vp.cameraPos[1], z: vp.cameraPos[2] },
-      { x: vp.target[0], y: vp.target[1], z: vp.target[2] },
-    );
-    // Restore the rest of the view context when the viewpoint carries it.
-    // Older entries (pre-v3.12.0) only have camera + target; we leave the
-    // current filter / clip state untouched in that case to avoid a
-    // surprising wipe.
-    if (vp.clipState) {
-      bridge.setClipState(vp.clipState);
-    }
-    if (vp.filterState) {
-      const fb = getFilterBridge();
-      fb?.set({
-        search: vp.filterState.search,
-        storeys: vp.filterState.storeys,
-        types: vp.filterState.types,
-        buildingsOnly: vp.filterState.buildingsOnly,
-      });
-    }
-  }, []);
+  const onApplyViewpoint = useCallback(
+    (vp: SavedViewpoint) => {
+      // W6.6 Stream B "Smooth Glide" — when a SceneManager handle is
+      // available, restore the camera with a 600 ms tween instead of an
+      // instant snap. Filter + clip state still go through the existing
+      // window-bound bridge because those don't tween.
+      if (sceneManager) {
+        restoreView(modelId, vp.id, sceneManager, { durationMs: 600 }).catch(
+          () => {
+            // Tween cancelled (a newer flyTo overtook us) — silently ignore.
+          },
+        );
+      } else {
+        const bridge = getBridge();
+        if (!bridge) return;
+        bridge.setViewpoint(
+          { x: vp.cameraPos[0], y: vp.cameraPos[1], z: vp.cameraPos[2] },
+          { x: vp.target[0], y: vp.target[1], z: vp.target[2] },
+        );
+      }
+      // Restore the rest of the view context when the viewpoint carries it.
+      // Older entries (pre-v3.12.0) only have camera + target; we leave the
+      // current filter / clip state untouched in that case to avoid a
+      // surprising wipe.
+      const bridge = getBridge();
+      if (vp.clipState && bridge) {
+        bridge.setClipState(vp.clipState);
+      }
+      if (vp.filterState) {
+        const fb = getFilterBridge();
+        fb?.set({
+          search: vp.filterState.search,
+          storeys: vp.filterState.storeys,
+          types: vp.filterState.types,
+          buildingsOnly: vp.filterState.buildingsOnly,
+        });
+      }
+    },
+    [modelId, sceneManager],
+  );
 
   const tabs: {
     id: BIMRightPanelTab;
@@ -185,6 +266,16 @@ export default function BIMRightPanelTabs({
       id: 'tools',
       label: t('bim.tab_tools', { defaultValue: 'Tools' }),
       icon: Wrench,
+    },
+    {
+      id: 'trait-lens',
+      label: t('bim.trait_lens.tab', { defaultValue: 'Trait Lens' }),
+      icon: Palette,
+    },
+    {
+      id: 'bundles',
+      label: t('bim.element_bundles.tab', { defaultValue: 'Element Bundles' }),
+      icon: Bookmark,
     },
     {
       id: 'groups',
@@ -260,6 +351,37 @@ export default function BIMRightPanelTabs({
             getCurrentScreenshot={getCurrentScreenshot}
             onApplyViewpoint={onApplyViewpoint}
           />
+        )}
+        {activeTab === 'trait-lens' && (
+          <div className="p-2">
+            <h3 className="px-1 text-[11px] font-semibold uppercase tracking-wide text-content-tertiary mb-1">
+              {t('bim.trait_lens.heading', { defaultValue: 'Trait Lens' })}
+            </h3>
+            <p className="px-1 text-[10px] text-content-tertiary mb-2">
+              {t('bim.trait_lens.subtitle', {
+                defaultValue:
+                  'Color all elements by one property to spot patterns',
+              })}
+            </p>
+            <ColorByPropertyPanel elementManager={elementManager} />
+          </div>
+        )}
+        {activeTab === 'bundles' && (
+          <div className="p-2">
+            <h3 className="px-1 text-[11px] font-semibold uppercase tracking-wide text-content-tertiary mb-1">
+              {t('bim.element_bundles.heading', { defaultValue: 'Element Bundles' })}
+            </h3>
+            <p className="px-1 text-[10px] text-content-tertiary mb-2">
+              {t('bim.element_bundles.subtitle', {
+                defaultValue:
+                  'Save named selections you reuse across clash, BOQ link, and color-by',
+              })}
+            </p>
+            <SelectionSetsPanel
+              modelId={modelId}
+              selectionManager={selectionManager}
+            />
+          </div>
         )}
         {activeTab === 'groups' && (
           <div className="p-2">

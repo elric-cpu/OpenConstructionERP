@@ -64,6 +64,7 @@ import { QdrantHealthCard } from './QdrantHealthCard';
 import { MatchProgressCard, type MatchProgressStatus } from './MatchProgressCard';
 import { MatchDetailPanel } from './MatchDetailPanel';
 import { GroupingPanel } from './GroupingPanel';
+import { fetchCatalogues, type Catalogue } from './CataloguesPanelCard';
 
 // ─────────────────────────────────────────────────────────────────────────
 //  Stage model — the single source of truth for the one-and-only rail
@@ -305,6 +306,13 @@ export function MatchWizardFlow() {
   const [useNet, setUseNet] = useState(true);
   const [autoThreshold, setAutoThreshold] = useState(0.88);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  // Stage-3 user overrides for the bound cost catalogue + display currency.
+  // ``catalogueId`` is a CWICR-v3 region string (e.g. "de", "us") OR null
+  // to fall back to the project-region auto-bind. ``displayCurrency`` is
+  // the ISO-4217 code the wizard renders rollup totals in — purely a
+  // presentation override, conversion still happens at the rate-layer.
+  const [catalogueId, setCatalogueId] = useState<string | null>(null);
+  const [displayCurrency, setDisplayCurrency] = useState<string | null>(null);
   const [matchStatus, setMatchStatus] = useState<MatchProgressStatus>('running');
   const [matchError, setMatchError] = useState<string | null>(null);
   const [matchStarted, setMatchStarted] = useState(false);
@@ -363,6 +371,41 @@ export function MatchWizardFlow() {
     queryFn: () => matchElementsApi.listBIMModels(projectId!),
   });
 
+  // Catalogues feed the stage-3 picker. We only let users pick from
+  // ``loaded`` catalogues — picking ``available`` would queue a match
+  // against an empty Qdrant collection and fail at run time. The user
+  // installs missing catalogues via the existing CataloguesPanelCard
+  // before the picker can offer them.
+  const cataloguesQ = useQuery({
+    queryKey: ['match-catalogues-v3'],
+    queryFn: fetchCatalogues,
+    staleTime: 60_000,
+  });
+  const loadedCatalogues: Catalogue[] = useMemo(
+    () => (cataloguesQ.data?.catalogues ?? []).filter((c) => c.install_status === 'loaded'),
+    [cataloguesQ.data],
+  );
+
+  // Auto-pre-select the catalogue whose region matches the project's
+  // region (case-insensitive) the first time we have both lists. Without
+  // this the dropdown would show "—" until the user manually picks one,
+  // even though auto_bind would have used the same row anyway.
+  useEffect(() => {
+    if (catalogueId || !project?.region || loadedCatalogues.length === 0) return;
+    const want = String(project.region).toLowerCase();
+    const hit = loadedCatalogues.find(
+      (c) =>
+        c.region.toLowerCase() === want ||
+        c.country_iso.toLowerCase() === want,
+    );
+    if (hit) setCatalogueId(hit.region);
+  }, [catalogueId, project?.region, loadedCatalogues]);
+
+  useEffect(() => {
+    if (displayCurrency || !project?.currency) return;
+    setDisplayCurrency(project.currency);
+  }, [displayCurrency, project?.currency]);
+
 
   const groupsQ = useQuery({
     enabled: !!sessionId && (stage === 'grouping' || stage === 'review'),
@@ -382,6 +425,7 @@ export function MatchWizardFlow() {
         construction_stage: stageHint || null,
         use_net_quantities: useNet,
         auto_confirm_threshold: autoThreshold,
+        catalogue_id: catalogueId,
       }),
     onSuccess: (s: MatchSession) => {
       setSessionId(s.id);
@@ -490,6 +534,7 @@ export function MatchWizardFlow() {
         construction_stage: stageHint || null,
         use_net_quantities: useNet,
         auto_confirm_threshold: autoThreshold,
+        catalogue_id: catalogueId,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['match-groups'] });
@@ -861,24 +906,123 @@ export function MatchWizardFlow() {
                   <p className="text-sm text-content-secondary">
                     {t('match.wizard.catalogueHelp', {
                       defaultValue:
-                        'Matching ranks every group against a cost catalogue using a multilingual semantic search. The catalogue is auto-selected from the project region; the vector database must be running.',
+                        'Matching ranks every group against a cost catalogue using a multilingual semantic search. Pick the catalogue and display currency; the project region pre-selects a sensible default.',
                     })}
                   </p>
+
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <StatTile
-                      label={t('match.wizard.region', { defaultValue: 'Project region' })}
-                      value={project?.region || '—'}
-                    />
-                    <StatTile
-                      label={t('match.wizard.currency', { defaultValue: 'Currency' })}
-                      value={project?.currency || '—'}
-                    />
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-content-primary">
+                        {t('match.wizard.catalogueLabel', { defaultValue: 'Cost catalogue' })}
+                      </label>
+                      <select
+                        value={catalogueId ?? ''}
+                        disabled={cataloguesQ.isLoading}
+                        onChange={(e) => setCatalogueId(e.target.value || null)}
+                        className="w-full rounded-lg border border-border-light bg-surface-elevated px-3 py-2 text-sm disabled:opacity-60"
+                      >
+                        <option value="">
+                          {t('match.wizard.catalogueAuto', {
+                            defaultValue: 'Auto (from project region: {{region}})',
+                            region: project?.region || '—',
+                          })}
+                        </option>
+                        {loadedCatalogues.map((c) => (
+                          <option key={c.collection} value={c.region}>
+                            {c.city ? `${c.city}, ` : ''}
+                            {c.region.toUpperCase()} — {c.language} · {c.currency}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-1 text-xs text-content-tertiary">
+                        {cataloguesQ.isError
+                          ? t('match.wizard.catalogueLoadError', {
+                              defaultValue:
+                                'Could not list catalogues. Check that the cost service is reachable.',
+                            })
+                          : loadedCatalogues.length === 0
+                            ? t('match.wizard.catalogueNoneLoaded', {
+                                defaultValue:
+                                  'No catalogues loaded yet — install one from the Cost catalogues panel on /match-elements home.',
+                              })
+                            : t('match.wizard.catalogueHelpInline', {
+                                defaultValue:
+                                  'Only loaded catalogues are listed. Install more from the catalogues panel.',
+                              })}
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="mb-1.5 block text-sm font-medium text-content-primary">
+                        {t('match.wizard.displayCurrencyLabel', {
+                          defaultValue: 'Display currency',
+                        })}
+                      </label>
+                      <select
+                        value={displayCurrency ?? ''}
+                        onChange={(e) => setDisplayCurrency(e.target.value || null)}
+                        className="w-full rounded-lg border border-border-light bg-surface-elevated px-3 py-2 text-sm"
+                      >
+                        {(() => {
+                          // Build a de-duplicated currency menu: the
+                          // project's own currency, every loaded
+                          // catalogue's currency, then a short list of
+                          // common globals. ``Set`` preserves the order
+                          // we add in, so the first occurrence wins.
+                          const opts: string[] = [];
+                          const seen = new Set<string>();
+                          const push = (cur: string | null | undefined) => {
+                            if (!cur) return;
+                            const k = cur.trim().toUpperCase();
+                            if (!k || seen.has(k)) return;
+                            seen.add(k);
+                            opts.push(k);
+                          };
+                          push(project?.currency);
+                          loadedCatalogues.forEach((c) => push(c.currency));
+                          [
+                            'EUR',
+                            'USD',
+                            'GBP',
+                            'CHF',
+                            'PLN',
+                            'CZK',
+                            'CAD',
+                            'AUD',
+                            'JPY',
+                            'CNY',
+                            'BRL',
+                            'INR',
+                            'ZAR',
+                            'TRY',
+                            'AED',
+                            'SAR',
+                            'NOK',
+                            'SEK',
+                            'DKK',
+                          ].forEach(push);
+                          return opts.map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ));
+                        })()}
+                      </select>
+                      <p className="mt-1 text-xs text-content-tertiary">
+                        {t('match.wizard.displayCurrencyHelp', {
+                          defaultValue:
+                            'Rollup totals are shown in this currency. The match itself runs against the catalogue native currency.',
+                        })}
+                      </p>
+                    </div>
                   </div>
+
                   <QdrantHealthCard alwaysShow />
+
                   <div className="rounded-lg border border-border-light bg-surface-muted p-4 text-sm text-content-secondary">
                     {t('match.wizard.catalogueNote', {
                       defaultValue:
-                        'If your region has no dedicated catalogue, an English catalogue is used automatically — the search model is multilingual, so you still get real candidates.',
+                        'If your region has no dedicated catalogue, pick a multilingual one (e.g. EN) — the search model is multilingual and still returns real candidates.',
                     })}
                   </div>
                 </div>

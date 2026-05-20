@@ -5,6 +5,29 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.12.1] — 2026-05-20 · BIM serve-validation · BI starter pack · /match-elements catalogue picker · marketing module-cards · UI polish
+
+### Added
+
+- **/match-elements — Cost catalogue & Display currency pickers** — stage 3 of the wizard ("Confirm the rate catalogue") now exposes two dropdowns: a Cost-catalogue selector listing every loaded CWICR-v3 catalogue (region · city · language · currency) with auto-preselect by project region, and a Display-currency override pre-seeded with the project currency plus every loaded catalogue's currency plus the global commons (EUR/USD/GBP/CHF/PLN/CZK/CAD/AUD/JPY/CNY/BRL/INR/ZAR/TRY/AED/SAR/NOK/SEK/DKK). Catalogue choice flows into `createSession`/`updateSession` as `catalogue_id` (region-string form), overriding the auto-bind for that session.
+- **BI Dashboards — starter pack installer** — empty `/bi-dashboards` grid now shows a one-click "Install starter pack" CTA. New idempotent endpoint `POST /api/v1/bi-dashboards/install-starter-pack` materialises 5 role-based dashboards (CEO · CFO · PM · Site · Safety) with 4-8 widgets each, the 14 system KPIs, 12-week trend history per KPI, 3 reports, 2 schedules and 4 alert rules in one transaction. Re-running is safe; only missing rows are inserted.
+- **Marketing site — full module-cards grid** — 34 cards under "Skip the sales call. See it work." mirroring the in-app sidebar 1:1 (same lucide icons, same module order) with a one-sentence functional description per module. Inline SVG sprite + CSS, no CDN/JS-loader dependency; responsive 4 / 3 / 2 / 1 columns with hover-lift and accent-tinted icon chip.
+
+### Fixed
+
+- **BIM 3D loading — server-side payload validation (Downtown Medical Center / RVT report)** — `_quick_validate_geometry_bytes` now peeks at the first 4 KB of every geometry response in `router.py` and rejects payloads whose magic bytes don't match the extension (`.glb` GLTF2 header, `.dae` COLLADA root, `.gltf` JSON `asset.version`). The exact user-reported case — `<?xml ve` bytes served from a `.glb` slot — now 422s with a diagnostic head dump (`magic mismatch; head=3c 3f 78 6d 6c …`) instead of reaching the browser and crashing Three.js's GLTFLoader. Frontend `ElementManager.parseGeometryBuffer` also surfaces actionable hints when XML/HTML/JSON bytes arrive in a geometry slot (likely converter failure, auth redirect, or proxy error). 11 new unit tests cover valid GLB / GLB magic-mismatch / GLB wrong-version / valid COLLADA / XML-not-COLLADA / HTML error-page / empty / truncated / unknown-extension passthrough / valid GLTF / GLTF missing asset.
+- **BIMViewer pre-existing tsc errors** — unused `tmpDir`/`tmpUp` locals in `BIMViewCube.tsx`, null-safety on `canvas.getBoundingClientRect()` in click handler, and `'iso' → 'iso_ne'` alias mapping in the `window.__oeBim.setViewPreset` bridge so the canonical SceneManager ViewPreset type accepts the friendly alias.
+- **`/about` — Browse case studies button removed** per user request (case-studies link is on datadrivenconstruction.io home).
+
+### Polish
+
+- **`/login`** — manager avatar now `#7cd0ff`, "zero cloud" wraps to next line, "AI-assisted, human-confirmed" block left-aligned; brand+pencil row centered inline (was absolutely-positioned).
+- **`/files/search`** — full-width 2-column layout with filter rail (kinds, sort, group-by-project, view options), recent-searches chips (localStorage), summary header with content-index badge, sticky project headers in grouped view, URL hydration with re-entrancy guard.
+
+### Notes
+
+- i18n native pass for the 17 placeholder locales (es/fr/it/nl/pl/ja/ko/vi/tr/ar/…) deferred to v3.12.2 — all new keys ship with English `defaultValue` fallbacks so they render correctly today; deep native translation needs an out-of-process pass.
+
 ## [3.12.0] — 2026-05-20 · Wave 5/6/7 pro-grade — BOQ + Cost Intelligence + Clash A4 + BIM viewpoints + Files CDE + Takeoff PDF/Excel
 
 ### Added

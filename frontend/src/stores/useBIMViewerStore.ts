@@ -11,6 +11,8 @@ export type BIMRightPanelTab =
   | 'properties'
   | 'layers'
   | 'tools'
+  | 'trait-lens'
+  | 'bundles'
   | 'groups'
   | 'match';
 

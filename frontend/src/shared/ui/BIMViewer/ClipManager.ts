@@ -31,6 +31,18 @@ import type { SceneManager } from './SceneManager';
 export type ClipMode = 'none' | 'box' | 'plane';
 export type ClipAxis = 'x' | 'y' | 'z';
 
+/** Adjustable hatching cap appearance.
+ *
+ *   - `density` — stripe cycles per world unit (default 8).
+ *   - `angleDeg` — rotation of the stripe pattern within the cap plane (0–360).
+ *   - `alpha`    — opacity of the hatch fill in [0, 1].
+ */
+export interface ClipCapStyle {
+  density?: number;
+  angleDeg?: number;
+  alpha?: number;
+}
+
 /** Normalised box extent in [0, 1] per face (1 = full model on that face). */
 export interface ClipBoxExtent {
   minX: number;
@@ -95,6 +107,30 @@ export class ClipManager {
 
   /** Live wireframe box that visualises the section volume. */
   private boxHelper: THREE.LineSegments | null = null;
+
+  /** Section cap state. One mesh per active clip plane is reused across
+   *  updates; in `plane` mode there is exactly one cap, in `box` mode there
+   *  are up to six (one per face). We do not render box caps yet — the box
+   *  helper itself is a sufficient readability cue — but the array is keyed
+   *  by plane index to make a future extension trivial.
+   *
+   *  Implementation note (re: the brief): three.js' material clipping uses
+   *  `gl.clipDistance`, not the stencil buffer; a true stencil cap would
+   *  require us to monkey-patch the renderer's render-list to inject the
+   *  back/front face passes per material, which is brittle across three.js
+   *  releases. We therefore went with the "translucent finite quad on the
+   *  plane with a hatch shader" approach the brief explicitly allows as the
+   *  simpler fallback — it reads as an engineering section because the cut
+   *  interior behind the quad is invisible.
+   */
+  private capMeshes: THREE.Mesh[] = [];
+  private _capEnabled = true;
+  private _capColor = new THREE.Color(0x2979ff);
+  private _capStyle: Required<ClipCapStyle> = {
+    density: 8,
+    angleDeg: 45,
+    alpha: 0.5,
+  };
 
   constructor(sceneManager: SceneManager, callbacks: ClipManagerCallbacks = {}) {
     this.sceneManager = sceneManager;
@@ -193,6 +229,69 @@ export class ClipManager {
     if (this._mode === 'box') this.apply();
   }
 
+  /** Toggle the hatched section cap. When disabled the cap mesh is disposed
+   *  immediately; re-enabling rebuilds it on the next apply(). */
+  setCapEnabled(enabled: boolean): void {
+    if (this._capEnabled === enabled) return;
+    this._capEnabled = enabled;
+    if (!enabled) {
+      this.disposeCapMeshes();
+      this.sceneManager.requestRender();
+    } else if (this._mode !== 'none') {
+      this.apply();
+    }
+  }
+
+  /** Whether the section cap is currently enabled. */
+  get capEnabled(): boolean {
+    return this._capEnabled;
+  }
+
+  /** Update the hatch fill colour. Accepts anything THREE.Color accepts
+   *  (hex number, CSS string, Color instance). Updates live materials in
+   *  place so the change is visible without a full re-apply. */
+  setCapColor(color: THREE.ColorRepresentation): void {
+    this._capColor.set(color);
+    for (const m of this.capMeshes) {
+      const mat = m.material as THREE.ShaderMaterial;
+      const uColor = mat.uniforms['uColor'];
+      if (uColor) uColor.value.copy(this._capColor);
+    }
+    this.sceneManager.requestRender();
+  }
+
+  /** Update one or more hatch style fields. Out-of-range values are clamped
+   *  silently (density ≥ 1e-4, alpha into [0, 1], angle mod 360) so the UI
+   *  layer can wire sliders directly without pre-validating. */
+  setCapStyle(style: ClipCapStyle): void {
+    if (style.density !== undefined && Number.isFinite(style.density)) {
+      this._capStyle.density = Math.max(1e-4, style.density);
+    }
+    if (style.angleDeg !== undefined && Number.isFinite(style.angleDeg)) {
+      let a = style.angleDeg % 360;
+      if (a < 0) a += 360;
+      this._capStyle.angleDeg = a;
+    }
+    if (style.alpha !== undefined && Number.isFinite(style.alpha)) {
+      this._capStyle.alpha = Math.min(1, Math.max(0, style.alpha));
+    }
+    for (const m of this.capMeshes) {
+      const mat = m.material as THREE.ShaderMaterial;
+      const uDensity = mat.uniforms['uDensity'];
+      const uAngle = mat.uniforms['uAngleRad'];
+      const uAlpha = mat.uniforms['uAlpha'];
+      if (uDensity) uDensity.value = this._capStyle.density;
+      if (uAngle) uAngle.value = (this._capStyle.angleDeg * Math.PI) / 180;
+      if (uAlpha) uAlpha.value = this._capStyle.alpha;
+    }
+    this.sceneManager.requestRender();
+  }
+
+  /** Current cap appearance — useful for round-tripping into Saved Views. */
+  getCapStyle(): Required<ClipCapStyle> {
+    return { ...this._capStyle };
+  }
+
   /** Update the single-plane state (axis / offset / flipped). */
   setPlaneState(patch: Partial<ClipPlaneState>): void {
     this._plane = {
@@ -212,6 +311,7 @@ export class ClipManager {
     if (this._mode === 'none' || !this.modelBoxValid) {
       this.assignPlanes(null);
       this.removeBoxHelper();
+      this.disposeCapMeshes();
       this.sceneManager.requestRender();
       return;
     }
@@ -247,6 +347,11 @@ export class ClipManager {
           new THREE.Vector3(x1, y1, z1),
         ),
       );
+      // Section caps for the box are intentionally omitted — the live wireframe
+      // already disambiguates the clip volume and stacking six hatch quads
+      // (one per face) clutters the view. Leave the array empty so the
+      // box-mode render path stays cap-free.
+      this.disposeCapMeshes();
     } else {
       // Single plane.
       const axis = this._plane.axis;
@@ -265,15 +370,126 @@ export class ClipManager {
       this.singlePlane.set(normal, constant);
       this.assignPlanes([this.singlePlane]);
       this.removeBoxHelper();
+      if (this._capEnabled) {
+        this.updateSinglePlaneCap();
+      } else {
+        this.disposeCapMeshes();
+      }
     }
 
     this.sceneManager.requestRender();
   }
 
-  /** Walk every mesh and set (or clear) its material clippingPlanes. */
+  /** Build (or refresh) the single hatched cap quad for the active clip plane.
+   *
+   *  Sized to the current model bounding box so the hatch covers the entire
+   *  visible cross-section regardless of how the user pans the plane. The
+   *  quad is placed exactly on the plane and oriented so its +Z normal
+   *  matches the plane's normal — that puts the hatched face toward the
+   *  retained half-space, which is what an engineer expects to see when
+   *  looking AT the cut.
+   */
+  private updateSinglePlaneCap(): void {
+    const plane = this.singlePlane;
+    const normal = plane.normal.clone().normalize();
+    // Point on the plane: project the model centre onto the plane.
+    const centre = this.modelBox.getCenter(new THREE.Vector3());
+    const distance = plane.distanceToPoint(centre);
+    const origin = centre.clone().sub(normal.clone().multiplyScalar(distance));
+
+    // Quad sized to slightly exceed the model bounding-sphere diameter so
+    // the cap covers any rotated cross-section.
+    const size = this.modelBox.getSize(new THREE.Vector3());
+    const diag = size.length();
+    const quadSize = Math.max(diag * 1.05, 1);
+
+    let cap = this.capMeshes[0];
+    if (!cap) {
+      cap = this.makeCapMesh();
+      this.sceneManager.scene.add(cap);
+      this.capMeshes = [cap];
+    }
+    cap.scale.set(quadSize, quadSize, 1);
+    cap.position.copy(origin);
+    cap.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+    cap.visible = true;
+    const mat = cap.material as THREE.ShaderMaterial;
+    const uColor = mat.uniforms['uColor'];
+    if (uColor) uColor.value.copy(this._capColor);
+  }
+
+  /** Build a 1×1 quad mesh on Z=0 with the hatching ShaderMaterial. The
+   *  caller scales / positions / orients it per-frame. */
+  private makeCapMesh(): THREE.Mesh {
+    const geom = new THREE.PlaneGeometry(1, 1);
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        uColor: { value: this._capColor.clone() },
+        uAlpha: { value: this._capStyle.alpha },
+        uDensity: { value: this._capStyle.density },
+        uAngleRad: { value: (this._capStyle.angleDeg * Math.PI) / 180 },
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        precision mediump float;
+        varying vec2 vUv;
+        uniform vec3 uColor;
+        uniform float uAlpha;
+        uniform float uDensity;
+        uniform float uAngleRad;
+        void main() {
+          // Rotate the UV inside the quad plane so the stripes can be tilted
+          // independently of the clip-plane orientation.
+          float c = cos(uAngleRad);
+          float s = sin(uAngleRad);
+          vec2 uv = vUv - 0.5;
+          vec2 rotated = vec2(c * uv.x - s * uv.y, s * uv.x + c * uv.y);
+          float coord = (rotated.x - rotated.y);
+          float h = step(0.5, fract(coord * uDensity));
+          // Mix the stripe band with the background so the cap is hatched,
+          // not solid: alpha rides only on the stripe.
+          gl_FragColor = vec4(uColor, h * uAlpha);
+        }
+      `,
+      transparent: true,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      depthTest: true,
+    });
+    // The cap itself must NEVER be clipped by the plane it visualises —
+    // otherwise it disappears the instant the user activates clipping.
+    mat.clippingPlanes = null;
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.renderOrder = 1001;
+    mesh.userData.isClipCap = true;
+    return mesh;
+  }
+
+  /** Detach + dispose every cap mesh. Safe to call from any state. */
+  private disposeCapMeshes(): void {
+    for (const m of this.capMeshes) {
+      this.sceneManager.scene.remove(m);
+      m.geometry.dispose();
+      const mat = m.material as THREE.Material | THREE.Material[];
+      if (Array.isArray(mat)) mat.forEach((mm) => mm.dispose());
+      else mat.dispose();
+    }
+    this.capMeshes = [];
+  }
+
+  /** Walk every mesh and set (or clear) its material clippingPlanes. The
+   *  box helper and the section cap meshes are excluded — both visualise the
+   *  clip itself and must never be clipped by their own planes. */
   private assignPlanes(planes: THREE.Plane[] | null): void {
     this.sceneManager.scene.traverse((obj) => {
       if (obj === this.boxHelper) return;
+      if (obj.userData && obj.userData.isClipCap) return;
       if (!(obj instanceof THREE.Mesh) && !(obj instanceof THREE.BatchedMesh)) {
         return;
       }
@@ -335,5 +551,6 @@ export class ClipManager {
       (this.boxHelper.material as THREE.Material).dispose();
       this.boxHelper = null;
     }
+    this.disposeCapMeshes();
   }
 }

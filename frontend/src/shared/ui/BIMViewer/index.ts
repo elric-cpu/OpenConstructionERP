@@ -2,10 +2,29 @@ export { BIMViewer, DisciplineToggle } from './BIMViewer';
 export type { BIMViewerProps, BIMViewMode } from './BIMViewer';
 
 export { SceneManager } from './SceneManager';
-export type { Viewpoint as SceneViewpoint } from './SceneManager';
+export type { Viewpoint as SceneViewpoint, ViewPreset } from './SceneManager';
 
-export { ElementManager } from './ElementManager';
-export type { BIMElementData, BIMModelData, BIMBoundingBox } from './ElementManager';
+export { CameraTween, easeInOutCubic } from './CameraTween';
+export type { CameraState } from './CameraTween';
+
+export { default as BIMViewCube } from './BIMViewCube';
+export type { BIMViewCubeProps } from './BIMViewCube';
+
+export {
+  ElementManager,
+  CATEGORICAL_12,
+  FIRE_RATING_PALETTE,
+  colorForPropertyValue,
+  resolveElementProperty,
+} from './ElementManager';
+export type {
+  BIMElementData,
+  BIMModelData,
+  BIMBoundingBox,
+  ColorByPropertyConfig,
+  ColorByPropertyPalette,
+  PropertyValueCount,
+} from './ElementManager';
 
 export { SelectionManager } from './SelectionManager';
 export type { SelectionCallbacks } from './SelectionManager';
@@ -47,6 +66,8 @@ export {
   renameViewpoint,
   getViewpoint,
   setViewpointScreenshot,
+  restoreView,
+  DEFAULT_RESTORE_DURATION_MS,
 } from './SavedViewsStore';
 export type {
   Viewpoint,

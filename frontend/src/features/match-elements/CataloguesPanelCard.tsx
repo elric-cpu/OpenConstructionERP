@@ -66,7 +66,7 @@ interface CataloguesResponse {
 
 // ── API helpers ──────────────────────────────────────────────────────────
 
-async function fetchCatalogues(): Promise<CataloguesResponse> {
+export async function fetchCatalogues(): Promise<CataloguesResponse> {
   const token = useAuthStore.getState().accessToken;
   const res = await fetch('/api/v1/costs/catalogues-v3/', {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -74,6 +74,8 @@ async function fetchCatalogues(): Promise<CataloguesResponse> {
   if (!res.ok) throw new Error(`catalogues-v3 ${res.status}`);
   return res.json();
 }
+
+export type { Catalogue, CataloguesResponse, InstallStatus };
 
 // ── Sub-components ───────────────────────────────────────────────────────
 

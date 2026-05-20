@@ -25,7 +25,12 @@
  * Stream D. The localStorage path is the source of truth until then.
  */
 
+import type { SceneManager } from './SceneManager';
+
 const MAX_VIEWS_PER_MODEL = 100;
+
+/** Default tween duration when restoring a saved view (W6.6). */
+export const DEFAULT_RESTORE_DURATION_MS = 600;
 
 /**
  * Snapshot of the BIM filter panel state, serialised for storage.
@@ -219,6 +224,49 @@ export function setViewpointScreenshot(
   }
   writeAll(modelId, next);
   return true;
+}
+
+/**
+ * Restore a stored viewpoint by flying the camera into it (W6.6).
+ *
+ * Previously the consumer (`BIMRightPanelTabs.onApplyViewpoint`) snapped
+ * the camera instantly via `SceneManager.setViewpoint`. This helper
+ * delegates to `SceneManager.flyTo` so the restore is animated unless
+ * the caller opts in to an instant snap via ``options.instant``.
+ *
+ * Filter + clip restoration are intentionally NOT touched here — those
+ * are owned by the parent (it carries direct handles on the filter
+ * panel + ClipManager). Callers can still hook the filter/clip apply
+ * after the returned promise resolves.
+ *
+ * Returns the located viewpoint on success, or null when the id wasn't
+ * found in storage. Rejects if the tween is cancelled by a newer one.
+ */
+export async function restoreView(
+  modelId: string,
+  viewpointId: string,
+  sceneManager: SceneManager,
+  options?: { instant?: boolean; durationMs?: number },
+): Promise<Viewpoint | null> {
+  const vp = getViewpoint(modelId, viewpointId);
+  if (!vp) return null;
+  const instant = options?.instant === true;
+  if (instant) {
+    sceneManager.setViewpoint(
+      { x: vp.cameraPos[0], y: vp.cameraPos[1], z: vp.cameraPos[2] },
+      { x: vp.target[0], y: vp.target[1], z: vp.target[2] },
+    );
+    return vp;
+  }
+  const duration = options?.durationMs ?? DEFAULT_RESTORE_DURATION_MS;
+  await sceneManager.flyTo(
+    {
+      position: vp.cameraPos,
+      target: vp.target,
+    },
+    duration,
+  );
+  return vp;
 }
 
 export const __test__ = {
