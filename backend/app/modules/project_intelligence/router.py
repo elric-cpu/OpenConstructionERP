@@ -120,12 +120,17 @@ async def _verify_project_access(
         )
 
 
-# ── Simple in-memory cache (keyed by user + project to avoid leakage) ─────
-
-_state_cache: dict[tuple[str, str], tuple[float, Any]] = {}
+# ── Bounded in-memory cache (keyed by user + project to avoid leakage) ────
 # RFC 25 — reduced from 300 s to 60 s so the Estimation Dashboard reflects
 # sibling-module edits within one minute of a save.
+# v4.2.2 — wrapped in an LRU bound so a long-lived process cannot leak
+# memory by accumulating per-(user, project) keys for ever.
+
+from collections import OrderedDict  # noqa: E402
+
 CACHE_TTL_SECONDS = 60
+STATE_CACHE_MAX_ENTRIES = 512
+_state_cache: "OrderedDict[tuple[str, str], tuple[float, Any]]" = OrderedDict()
 
 
 def _cache_key(user_id: str | None, project_id: str) -> tuple[str, str]:
@@ -135,15 +140,24 @@ def _cache_key(user_id: str | None, project_id: str) -> tuple[str, str]:
 
 def _get_cached_state(user_id: str | None, project_id: str) -> Any | None:
     """Return cached state if still valid."""
-    entry = _state_cache.get(_cache_key(user_id, project_id))
+    key = _cache_key(user_id, project_id)
+    entry = _state_cache.get(key)
     if entry and (time.time() - entry[0]) < CACHE_TTL_SECONDS:
+        _state_cache.move_to_end(key)
         return entry[1]
+    if entry:
+        # Expired — drop it so the LRU is honest about freshness.
+        _state_cache.pop(key, None)
     return None
 
 
 def _set_cached_state(user_id: str | None, project_id: str, state: Any) -> None:
-    """Cache a project state for the given user."""
-    _state_cache[_cache_key(user_id, project_id)] = (time.time(), state)
+    """Cache a project state for the given user (bounded LRU)."""
+    key = _cache_key(user_id, project_id)
+    _state_cache[key] = (time.time(), state)
+    _state_cache.move_to_end(key)
+    while len(_state_cache) > STATE_CACHE_MAX_ENTRIES:
+        _state_cache.popitem(last=False)
 
 
 def _invalidate_cache(user_id: str | None, project_id: str) -> None:

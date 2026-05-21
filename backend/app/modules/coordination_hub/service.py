@@ -73,6 +73,12 @@ _DASHBOARD_CACHE: dict[uuid.UUID, tuple[CoordinationDashboardResponse, float]] =
 #: drops off a cliff. Bigger windows are unioned + truncated server-side.
 _TIMELINE_MAX_EVENTS = 50
 
+#: Look-back window (in days) for the BCF activity rollup. Mirrors the
+#: ``topics_*_30d`` schema field name; promoted to a named constant so a
+#: future BCF tuning sprint can change the window without grepping for
+#: literal ``30`` across the service.
+_BCF_ACTIVITY_WINDOW_DAYS = 30
+
 
 # ── Discipline normalisation ────────────────────────────────────────────────
 
@@ -510,7 +516,9 @@ class CoordinationHubService:
             logger.warning("coordination_hub: bcf unavailable")
             return BCFActivityStats()
 
-        thirty_days_ago = datetime.now(UTC) - timedelta(days=30)
+        thirty_days_ago = datetime.now(UTC) - timedelta(
+            days=_BCF_ACTIVITY_WINDOW_DAYS
+        )
         # BCF tracks an authoring metadata.modified_date + a server
         # created_at. The hub treats Base.created_at as the canonical
         # "exported from OCERP" timestamp (the row was written on
@@ -981,16 +989,21 @@ class CoordinationHubService:
         return await self._existing_thresholds(project_id)
 
     async def get_or_seed_thresholds(
-        self, project_id: uuid.UUID
+        self, project_id: uuid.UUID, *, allow_seed: bool = True
     ) -> list[CoordinationThreshold]:
         """Return the project's thresholds; seed defaults on first call.
 
         The seeding path is best-effort: if the DB rejects the writes
         (e.g. a read-only replica) we still return ephemeral default
         rows so the caller can render a working dashboard.
+
+        ``allow_seed=False`` skips the DB insert entirely and falls
+        through to ephemeral defaults — used when the caller only holds
+        ``coordination.read`` so a VIEWER never silently triggers DB
+        writes by polling the dashboard.
         """
         existing = await self._existing_thresholds(project_id)
-        if len(existing) < len(DEFAULT_THRESHOLDS):
+        if allow_seed and len(existing) < len(DEFAULT_THRESHOLDS):
             existing = await self._seed_default_thresholds(
                 project_id, existing
             )
@@ -1047,6 +1060,21 @@ class CoordinationHubService:
                     self.session.add(target)
                     break
         assert target is not None  # KNOWN_METRICS guarantees a default
+        # Compute the post-patch values so we can sanity-check the pair
+        # BEFORE touching the row. An inverted warn/error pair (warn >
+        # error) breaks the evaluator's elif-cascade silently — the
+        # error tier would never trigger because the warn comparison
+        # would always be hit first. Reject explicitly with a 422-able
+        # ValueError so the operator sees the mistake.
+        new_warn = warn_value if warn_value is not None else target.warn_value
+        new_error = (
+            error_value if error_value is not None else target.error_value
+        )
+        if new_warn is not None and new_error is not None and new_warn > new_error:
+            raise ValueError(
+                "warn_value must be less than or equal to error_value "
+                f"(got warn={new_warn}, error={new_error})"
+            )
         if warn_value is not None:
             target.warn_value = warn_value
         if error_value is not None:
@@ -1055,6 +1083,18 @@ class CoordinationHubService:
             target.enabled = enabled
         await self.session.commit()
         await self.session.refresh(target)
+        # Structured audit-style log line — threshold edits change the
+        # project's alarm bar and should be traceable post-hoc without
+        # diff-ing the DB.
+        logger.info(
+            "coordination_hub: threshold updated project=%s metric=%s "
+            "warn=%s error=%s enabled=%s",
+            project_id,
+            metric,
+            target.warn_value,
+            target.error_value,
+            target.enabled,
+        )
         # Invalidate the dashboard cache so the new threshold takes
         # effect on the very next poll.
         self.invalidate_cache(project_id)
@@ -1164,10 +1204,18 @@ class CoordinationHubService:
         return Decimal(str(max(0, delta.days)))
 
     async def evaluate_thresholds(
-        self, project_id: uuid.UUID
+        self, project_id: uuid.UUID, *, allow_seed: bool = True
     ) -> CoordinationThresholdsResponse:
-        """Compute current metric values + tag each row warn / error / ok."""
-        rows = await self.get_or_seed_thresholds(project_id)
+        """Compute current metric values + tag each row warn / error / ok.
+
+        ``allow_seed=False`` lets read-only callers (VIEWER role hitting
+        the GET endpoint) get a working evaluation without triggering
+        the default-threshold DB seed — that write is reserved for
+        callers holding ``coordination.write``.
+        """
+        rows = await self.get_or_seed_thresholds(
+            project_id, allow_seed=allow_seed
+        )
 
         # Compute every metric once so we never run an N×N query.
         open_total = Decimal(

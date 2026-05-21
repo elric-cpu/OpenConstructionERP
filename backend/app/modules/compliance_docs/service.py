@@ -14,6 +14,7 @@ from fastapi import status as http_status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.events import event_bus
 from app.modules.compliance_docs.models import ComplianceDoc
 from app.modules.compliance_docs.repository import ComplianceDocRepository
 from app.modules.compliance_docs.schemas import (
@@ -22,6 +23,11 @@ from app.modules.compliance_docs.schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Status values that should fire a ``compliance_docs.expiry.alert`` event
+# whenever a write transitions a doc INTO them. ``active`` → no alert.
+# ``cancelled`` / ``void`` → no alert (manual close, not a deadline).
+_ALERT_STATUSES: frozenset[str] = frozenset({"expiring_soon", "expired"})
 
 # ── Status set (kept in sync with schemas.STATUSES) ────────────────────
 
@@ -83,6 +89,51 @@ class ComplianceDocService:
     @staticmethod
     def _today() -> _date:
         return datetime.now(UTC).date()
+
+    @staticmethod
+    def _publish_expiry_alert(
+        doc: ComplianceDoc,
+        *,
+        previous_status: str | None,
+    ) -> None:
+        """Fire ``compliance_docs.expiry.alert`` on a status transition.
+
+        Only the *transition* into ``expiring_soon`` / ``expired`` fires
+        the event — repeated PATCHes that leave a doc inside the same
+        alert bucket don't re-spam subscribers. ``previous_status=None``
+        is treated as "no prior state" (create path).
+        """
+        if doc.status not in _ALERT_STATUSES:
+            return
+        if previous_status == doc.status:
+            return  # No transition — already in this bucket.
+
+        try:
+            today = datetime.now(UTC).date()
+            days = (doc.expires_at - today).days if doc.expires_at else 0
+        except TypeError:  # pragma: no cover — defensive
+            days = 0
+
+        # Detached publish so SQLite's single-writer constraint isn't
+        # hit by a notifications subscriber opening a second session
+        # while we still hold the request's write lock.
+        event_bus.publish_detached(
+            "compliance_docs.expiry.alert",
+            {
+                "doc_id": str(doc.id),
+                "project_id": str(doc.project_id),
+                "doc_type": doc.doc_type,
+                "name": doc.name,
+                "status": doc.status,
+                "expires_at": (
+                    doc.expires_at.isoformat() if doc.expires_at else None
+                ),
+                "days_until_expiry": days,
+                "notify_days_before": doc.notify_days_before,
+                "previous_status": previous_status,
+            },
+            source_module="compliance_docs",
+        )
 
     async def _check_attachment(
         self,
@@ -168,6 +219,10 @@ class ComplianceDocService:
             "Compliance doc created: %s (%s) for project %s",
             doc.id, doc.doc_type, doc.project_id,
         )
+        # Fire expiry alert if the doc was created already-expiring.
+        # ``previous_status=None`` → unconditional fire when current
+        # status is in the alert set.
+        self._publish_expiry_alert(doc, previous_status=None)
         return doc
 
     async def get_doc(self, doc_id: uuid.UUID) -> ComplianceDoc:
@@ -202,8 +257,11 @@ class ComplianceDocService:
         self,
         doc_id: uuid.UUID,
         data: ComplianceDocUpdate,
+        *,
+        user_id: str | None = None,
     ) -> ComplianceDoc:
         doc = await self.get_doc(doc_id)
+        previous_status = doc.status
 
         fields: dict[str, Any] = data.model_dump(exclude_unset=True)
         if "metadata" in fields:
@@ -239,17 +297,70 @@ class ComplianceDocService:
                 current_status=doc.status,
             )
 
+        # Audit: track who applied the patch inside ``metadata_`` so we
+        # don't need an alembic migration for a new column. Caller may
+        # have also patched ``metadata`` itself — merge instead of
+        # clobber.
+        if user_id is not None:
+            merged_meta = dict(fields.get("metadata_") or doc.metadata_ or {})
+            merged_meta["updated_by"] = user_id
+            merged_meta["updated_at"] = datetime.now(UTC).isoformat()
+            fields["metadata_"] = merged_meta
+
         if not fields:
             return doc
 
         await self.repo.update_fields(doc_id, **fields)
         fresh = await self.repo.get_by_id(doc_id)
-        return fresh or doc
+        result = fresh or doc
+        # Emit alert only if the patch *moved* the doc into an alerting
+        # bucket — same bucket → no event (avoids subscriber re-spam).
+        self._publish_expiry_alert(result, previous_status=previous_status)
+        return result
 
     async def delete_doc(self, doc_id: uuid.UUID) -> None:
         await self.get_doc(doc_id)
         await self.repo.delete(doc_id)
         logger.info("Compliance doc deleted: %s", doc_id)
+
+    async def attach_file(
+        self,
+        doc_id: uuid.UUID,
+        *,
+        relative_path: str,
+        detected_mime: str,
+        size_bytes: int,
+        user_id: str | None = None,
+    ) -> ComplianceDoc:
+        """Record a magic-byte-validated upload against a compliance doc.
+
+        Caller (the router) is responsible for the magic-byte gate and
+        for actually writing the bytes to disk — this method just
+        persists the metadata. Stored under ``metadata_["attachment"]``
+        to avoid an alembic migration; readers should treat the dict
+        as opaque.
+        """
+        doc = await self.get_doc(doc_id)
+
+        merged_meta = dict(doc.metadata_ or {})
+        merged_meta["attachment"] = {
+            "path": relative_path,
+            "mime": detected_mime,
+            "size": int(size_bytes),
+            "uploaded_at": datetime.now(UTC).isoformat(),
+            "uploaded_by": user_id,
+        }
+        if user_id is not None:
+            merged_meta["updated_by"] = user_id
+            merged_meta["updated_at"] = datetime.now(UTC).isoformat()
+
+        await self.repo.update_fields(doc_id, metadata_=merged_meta)
+        fresh = await self.repo.get_by_id(doc_id)
+        logger.info(
+            "Compliance doc %s attachment recorded (%s, %d bytes)",
+            doc_id, detected_mime, size_bytes,
+        )
+        return fresh or doc
 
 
 __all__ = ["ComplianceDocService", "recompute_status"]

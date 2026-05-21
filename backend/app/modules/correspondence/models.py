@@ -52,6 +52,16 @@ class Correspondence(Base):
     linked_rfi_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+    # Stored attachment paths (validated magic-byte uploads). Server-derived
+    # filenames only — the client never controls the path on disk, so we
+    # never serve attacker-named extensions back. See router upload handler.
+    attachments: Mapped[list] = mapped_column(  # type: ignore[assignment]
+        JSON,
+        nullable=False,
+        default=list,
+        server_default="[]",
+    )
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         "metadata",
         JSON,

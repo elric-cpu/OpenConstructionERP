@@ -8,11 +8,16 @@ Tables:
 """
 
 import uuid
+from decimal import Decimal
 
-from sqlalchemy import JSON, Boolean, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Float, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import GUID, Base
+
+# Calibration & measurement values land in BOQ quantities → keep DECIMAL precision.
+# Scale=6 matches the platform takeoff/finance convention (Phase 2e money_numeric).
+_MEASUREMENT = Numeric(precision=18, scale=6)
 
 
 class Markup(Base):
@@ -39,7 +44,7 @@ class Markup(Base):
     author_id: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="active")
     label: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    measurement_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    measurement_value: Mapped[Decimal | None] = mapped_column(_MEASUREMENT, nullable=True)
     measurement_unit: Mapped[str | None] = mapped_column(String(20), nullable=True)
     stamp_template_id: Mapped[uuid.UUID | None] = mapped_column(
         GUID(),
@@ -69,12 +74,12 @@ class ScaleConfig(Base):
 
     document_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     page: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    pixels_per_unit: Mapped[float] = mapped_column(Float, nullable=False)
+    pixels_per_unit: Mapped[Decimal] = mapped_column(_MEASUREMENT, nullable=False)
     unit_label: Mapped[str] = mapped_column(String(20), nullable=False, default="m")
     calibration_points: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         JSON, nullable=False, default=dict, server_default="{}"
     )
-    real_distance: Mapped[float] = mapped_column(Float, nullable=False)
+    real_distance: Mapped[Decimal] = mapped_column(_MEASUREMENT, nullable=False)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False, default="")
 
     def __repr__(self) -> str:

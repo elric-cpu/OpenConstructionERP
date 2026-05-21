@@ -2,9 +2,19 @@
 
 Reuses the existing AI client from app.modules.ai.ai_client.
 Falls back to rule-based recommendations when no LLM is configured.
+
+Cost discipline (v4.2.2+):
+    * Every LLM call is structured-logged with (provider, model, operation,
+      tokens, duration_ms, outcome) so cost runaway is observable.
+    * Recommendations / chat / gap explanations are de-duplicated through a
+      bounded TTL cache (key = sha256 of system+prompt+model+max_tokens),
+      so refresh-spam from the dashboard can't fan out to fresh LLM calls.
 """
 
+import hashlib
 import logging
+import time
+from collections import OrderedDict
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +23,134 @@ from app.modules.project_intelligence.collector import ProjectState
 from app.modules.project_intelligence.scorer import CriticalGap, ProjectScore
 
 logger = logging.getLogger(__name__)
+
+# ── Bounded LLM-response cache (debounce refresh-spam) ────────────────────
+# Identical prompt + system + model + max_tokens → cached for LLM_CACHE_TTL.
+# Bounded LRU so memory can't leak. Keys are sha256 hashes; values are
+# (timestamp, response_text). Multi-user safe: the key is derived from the
+# fully-rendered prompt which already includes the per-project context, so
+# cross-project replies cannot mix.
+LLM_CACHE_TTL_SECONDS = 60
+LLM_CACHE_MAX_ENTRIES = 256
+_llm_cache: "OrderedDict[str, tuple[float, str]]" = OrderedDict()
+
+
+def _llm_cache_key(*, provider: str, model: str | None, system: str,
+                   prompt: str, max_tokens: int) -> str:
+    """Stable cache key for (provider, model, system, prompt, max_tokens)."""
+    h = hashlib.sha256()
+    h.update(provider.encode("utf-8"))
+    h.update(b"|")
+    h.update((model or "").encode("utf-8"))
+    h.update(b"|")
+    h.update(str(max_tokens).encode("utf-8"))
+    h.update(b"|")
+    h.update(system.encode("utf-8"))
+    h.update(b"|")
+    h.update(prompt.encode("utf-8"))
+    return h.hexdigest()
+
+
+def _llm_cache_get(key: str) -> str | None:
+    entry = _llm_cache.get(key)
+    if entry is None:
+        return None
+    ts, value = entry
+    if (time.time() - ts) > LLM_CACHE_TTL_SECONDS:
+        _llm_cache.pop(key, None)
+        return None
+    # Refresh LRU order on hit
+    _llm_cache.move_to_end(key)
+    return value
+
+
+def _llm_cache_put(key: str, value: str) -> None:
+    _llm_cache[key] = (time.time(), value)
+    _llm_cache.move_to_end(key)
+    while len(_llm_cache) > LLM_CACHE_MAX_ENTRIES:
+        _llm_cache.popitem(last=False)
+
+
+async def _call_ai_logged(
+    *,
+    operation: str,
+    provider: str,
+    api_key: str,
+    model: str | None,
+    system: str,
+    prompt: str,
+    max_tokens: int,
+) -> str:
+    """Wrap ``call_ai`` with cache + structured cost/outcome logging.
+
+    Logs one record per call with provider, model, operation, tokens used,
+    duration, and cache_hit/error flags so an operator can chart LLM spend.
+    Raises whatever ``call_ai`` raises so the caller's existing
+    try/except → rule-based-fallback path keeps working.
+    """
+    from app.modules.ai.ai_client import call_ai
+
+    cache_key = _llm_cache_key(
+        provider=provider, model=model, system=system,
+        prompt=prompt, max_tokens=max_tokens,
+    )
+    cached = _llm_cache_get(cache_key)
+    if cached is not None:
+        logger.info(
+            "project_intelligence.llm_call",
+            extra={
+                "operation": operation,
+                "provider": provider,
+                "model": model or "default",
+                "tokens": 0,
+                "duration_ms": 0,
+                "cache_hit": True,
+                "outcome": "ok",
+            },
+        )
+        return cached
+
+    started = time.monotonic()
+    try:
+        text_response, tokens = await call_ai(
+            provider=provider,
+            api_key=api_key,
+            model=model,
+            system=system,
+            prompt=prompt,
+            max_tokens=max_tokens,
+        )
+    except Exception as exc:  # noqa: BLE001 — observability point, re-raised
+        logger.info(
+            "project_intelligence.llm_call",
+            extra={
+                "operation": operation,
+                "provider": provider,
+                "model": model or "default",
+                "tokens": 0,
+                "duration_ms": int((time.monotonic() - started) * 1000),
+                "cache_hit": False,
+                "outcome": "error",
+                "error_type": type(exc).__name__,
+            },
+        )
+        raise
+
+    duration_ms = int((time.monotonic() - started) * 1000)
+    logger.info(
+        "project_intelligence.llm_call",
+        extra={
+            "operation": operation,
+            "provider": provider,
+            "model": model or "default",
+            "tokens": int(tokens or 0),
+            "duration_ms": duration_ms,
+            "cache_hit": False,
+            "outcome": "ok",
+        },
+    )
+    _llm_cache_put(cache_key, text_response)
+    return text_response
 
 
 # ── System prompts per role ────────────────────────────────────────────────
@@ -178,8 +316,6 @@ async def generate_recommendations(
     provider_info = await _resolve_provider(session)
     if provider_info:
         try:
-            from app.modules.ai.ai_client import call_ai
-
             provider, api_key, model_override = provider_info
             system = _build_system_prompt(role, language, state.standard)
             context = _build_context_prompt(state, score)
@@ -189,7 +325,8 @@ async def generate_recommendations(
                 f"Give me your top 5 recommendations for improving this project."
             )
 
-            text_response, _tokens = await call_ai(
+            return await _call_ai_logged(
+                operation="recommendations",
                 provider=provider,
                 api_key=api_key,
                 model=model_override,
@@ -197,7 +334,6 @@ async def generate_recommendations(
                 prompt=prompt,
                 max_tokens=2048,
             )
-            return text_response
         except Exception:
             logger.warning("LLM call failed, falling back to rule-based", exc_info=True)
 
@@ -225,8 +361,6 @@ async def explain_gap(
     provider_info = await _resolve_provider(session)
     if provider_info:
         try:
-            from app.modules.ai.ai_client import call_ai
-
             provider, api_key, model_override = provider_info
             system = (
                 f"You are a construction ERP expert explaining a project issue. "
@@ -244,7 +378,8 @@ async def explain_gap(
                 f"3) Step-by-step how to fix it in OpenConstructionERP."
             )
 
-            text_response, _tokens = await call_ai(
+            return await _call_ai_logged(
+                operation="explain_gap",
                 provider=provider,
                 api_key=api_key,
                 model=model_override,
@@ -252,7 +387,6 @@ async def explain_gap(
                 prompt=prompt,
                 max_tokens=1024,
             )
-            return text_response
         except Exception:
             logger.warning("LLM gap explanation failed", exc_info=True)
 
@@ -331,8 +465,6 @@ async def answer_question(
     provider_info = await _resolve_provider(session)
     if provider_info:
         try:
-            from app.modules.ai.ai_client import call_ai
-
             provider, api_key, model_override = provider_info
             system = _build_system_prompt(role, language, state.standard)
             context = _build_context_prompt(state, score)
@@ -356,7 +488,8 @@ async def answer_question(
             )
             prompt = "\n\n".join(prompt_parts)
 
-            text_response, _tokens = await call_ai(
+            return await _call_ai_logged(
+                operation="chat",
                 provider=provider,
                 api_key=api_key,
                 model=model_override,
@@ -364,7 +497,6 @@ async def answer_question(
                 prompt=prompt,
                 max_tokens=1024,
             )
-            return text_response
         except Exception:
             logger.warning("LLM question answering failed", exc_info=True)
 

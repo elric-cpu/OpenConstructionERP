@@ -71,7 +71,11 @@ async def _load_project_currency(
     stmt = select(Project.currency).where(Project.id == project_id)
     result = await session.execute(stmt)
     currency = result.scalar()
-    return currency or "EUR"
+    # Empty-string fallback (not a hard-coded "EUR") — the project row's
+    # currency is authoritative; absent that we surface the absence so
+    # the UI can render unitless rather than mis-label totals.
+    # See feedback/v3_db_eur_defaults_killed.
+    return currency or ""
 
 
 @router.get(
@@ -148,13 +152,33 @@ async def list_thresholds(
 ) -> CoordinationThresholdsResponse:
     """Return the project's thresholds + their current evaluated state.
 
-    Defaults seed on first access so the response is never empty —
-    operators always see something they can edit, and the alert banner
-    has data to render against.
+    Defaults seed on first access **for callers holding
+    ``coordination.write``** so operators always see something they can
+    edit and the alert banner has data to render against. A plain
+    ``coordination.read`` caller (VIEWER) gets ephemeral defaults so a
+    GET never triggers a DB write — the seed runs the first time an
+    EDITOR / MANAGER / ADMIN touches the threshold view.
     """
     user_id = payload.get("sub", "")
     await verify_project_access(project_id, user_id, session)
-    return await service.evaluate_thresholds(project_id)
+    # Determine seed authority from the caller's live permissions /
+    # role. Mirrors the same check ``RequirePermission("coordination.write")``
+    # would do — but inline because the surrounding gate is the coarser
+    # ``coordination.read``.
+    perms: list[str] = payload.get("permissions", []) or []
+    role: str = payload.get("role", "") or ""
+    can_seed = role == "admin" or "coordination.write" in perms
+    if not can_seed:
+        # Fall through to the live registry so a stale JWT (issued
+        # before a role-permission map change) still honours the
+        # current mapping — same pattern as RequirePermission uses.
+        try:
+            from app.core.permissions import permission_registry as _reg
+
+            can_seed = _reg.role_has_permission(role, "coordination.write")
+        except Exception:  # noqa: BLE001 — registry is best-effort here
+            can_seed = False
+    return await service.evaluate_thresholds(project_id, allow_seed=can_seed)
 
 
 @router.put(

@@ -13,13 +13,39 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 _CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
+# ── Team-role whitelist (single source of truth) ─────────────────────────
+# Previously this list was inline-encoded in the AddMemberRequest regex,
+# which let it drift from the RBAC check in service.py. Keep both in sync
+# by importing this tuple anywhere the whitelist is consulted.
+#
+# Two tiers:
+#   BASIC_TEAM_ROLES   — assignable by any project-admin/member
+#   ELEVATED_TEAM_ROLES — assignable ONLY by a project owner / system admin
+#                        (these inherit higher-effective-permission)
+BASIC_TEAM_ROLES: tuple[str, ...] = ("member", "lead", "estimator", "viewer")
+ELEVATED_TEAM_ROLES: tuple[str, ...] = ("owner", "project_manager")
+ALL_TEAM_ROLES: tuple[str, ...] = BASIC_TEAM_ROLES + ELEVATED_TEAM_ROLES
+_TEAM_ROLE_PATTERN = r"^(" + "|".join(ALL_TEAM_ROLES) + r")$"
+
+
 def _reject_unsafe_string(value: str, field: str) -> str:
-    """‌⁠‍Strip/validate free-text strings; raise on control-character junk."""
+    """‌⁠‍Strip/validate free-text strings; raise on control-character junk.
+
+    Error messages embed a stable ``teams.validation.*`` i18n key in the
+    rendered text so the frontend can localise them without re-parsing the
+    human suffix. Schema-validation error messages still surface in English
+    via FastAPI's 422 envelope; localisation happens client-side.
+    """
     if _CONTROL_CHAR_RE.search(value):
-        raise ValueError(f"{field} contains control characters")
+        raise ValueError(
+            f"[teams.validation.{field}.control_characters] "
+            f"{field} contains control characters"
+        )
     cleaned = value.strip()
     if not cleaned:
-        raise ValueError(f"{field} must not be blank")
+        raise ValueError(
+            f"[teams.validation.{field}.blank] {field} must not be blank"
+        )
     return cleaned
 
 # ── Team ─────────────────────────────────────────────────────────────────
@@ -111,7 +137,7 @@ class AddMemberRequest(BaseModel):
     user_id: UUID
     role: str = Field(
         default="member",
-        pattern=r"^(member|lead|owner|estimator|viewer|project_manager)$",
+        pattern=_TEAM_ROLE_PATTERN,
     )
 
 

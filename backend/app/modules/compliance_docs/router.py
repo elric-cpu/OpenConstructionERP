@@ -13,9 +13,18 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import status as http_status
 
+from app.core.file_signature import (
+    ALLOWED_DOCUMENT_TYPES,
+    SIGNATURE_BYTES_REQUIRED,
+    FileSignatureMismatch,
+    mime_for_signature,
+)
+from app.core.file_signature import require as require_signature
 from app.dependencies import (
     CurrentUserId,
     RequirePermission,
@@ -28,6 +37,21 @@ from app.modules.compliance_docs.schemas import (
     ComplianceDocUpdate,
 )
 from app.modules.compliance_docs.service import ComplianceDocService
+
+# Compliance evidence is typically a scanned PDF / image; we accept the
+# project-wide document allow-list (PDF / PNG / JPEG / GIF / WebP /
+# Office-ZIP / OLE / XML). Tightening further (e.g. PDF-only) is a
+# per-tenant policy decision and lives outside this base module.
+_ALLOWED_ATTACHMENT_TYPES = ALLOWED_DOCUMENT_TYPES
+
+# Hard cap to keep a runaway upload from filling the disk before the
+# request body limit on the reverse proxy catches it. 50 MiB matches the
+# documents-module ceiling.
+_MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
+
+# Local storage root for direct uploads. Service-level metadata stores
+# the relative path; absolute path lives only inside this router.
+_ATTACHMENTS_DIR = Path("data") / "compliance_docs" / "attachments"
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -144,7 +168,7 @@ async def update_compliance_doc(
     """Patch a compliance document. Status is recomputed unless overridden."""
     existing = await service.get_doc(doc_id)
     await verify_project_access(existing.project_id, user_id, session)
-    doc = await service.update_doc(doc_id, data)
+    doc = await service.update_doc(doc_id, data, user_id=user_id)
     return _to_response(doc)
 
 
@@ -163,6 +187,99 @@ async def delete_compliance_doc(
     existing = await service.get_doc(doc_id)
     await verify_project_access(existing.project_id, user_id, session)
     await service.delete_doc(doc_id)
+
+
+@router.post(
+    "/{doc_id}/attachment/",
+    response_model=ComplianceDocResponse,
+)
+async def upload_attachment(
+    doc_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    file: UploadFile = File(...),
+    _perm: None = Depends(RequirePermission("compliance_docs.update")),
+    service: ComplianceDocService = Depends(_get_service),
+) -> ComplianceDocResponse:
+    """Upload an evidence file (PDF / image / Office) for a compliance doc.
+
+    The Content-Type header is attacker-controlled, so we ignore it and
+    validate the file's leading bytes against
+    :data:`_ALLOWED_ATTACHMENT_TYPES` (PDF, PNG, JPEG, GIF, WebP, Office
+    ZIP, OLE, XML). Mismatches return 415. The stored MIME is derived
+    from the detected signature — never from the uploader's header — so
+    later GETs can't be coerced into serving HTML / SVG / script.
+    """
+    # Project scoping: we must resolve the doc first so we can route
+    # through ``verify_project_access`` before reading any bytes.
+    existing = await service.get_doc(doc_id)
+    await verify_project_access(existing.project_id, user_id, session)
+
+    try:
+        content = await file.read()
+    except Exception:
+        logger.exception(
+            "Unable to read attachment upload for compliance doc %s", doc_id,
+        )
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to read uploaded file",
+        )
+
+    if not content:
+        raise HTTPException(
+            status_code=http_status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded file is empty",
+        )
+    if len(content) > _MAX_ATTACHMENT_BYTES:
+        raise HTTPException(
+            status_code=http_status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=(
+                f"Uploaded file exceeds the {_MAX_ATTACHMENT_BYTES} byte limit"
+            ),
+        )
+
+    # Magic-byte gate — reject anything outside the allow-list.
+    try:
+        detected = require_signature(
+            content[:SIGNATURE_BYTES_REQUIRED],
+            _ALLOWED_ATTACHMENT_TYPES,
+            filename=file.filename,
+        )
+    except FileSignatureMismatch as exc:
+        raise HTTPException(
+            status_code=http_status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=str(exc),
+        )
+    safe_mime = mime_for_signature(detected)
+
+    # Persist bytes to disk. Filename is derived from the doc id +
+    # random suffix to keep collisions impossible across re-uploads;
+    # the original filename is logged but not used as a path.
+    _ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
+    ext = Path(file.filename or "evidence.bin").suffix or f".{detected}"
+    stored_filename = f"{doc_id}_{uuid.uuid4().hex[:8]}{ext}"
+    filepath = _ATTACHMENTS_DIR / stored_filename
+    try:
+        filepath.write_bytes(content)
+    except Exception:
+        logger.exception(
+            "Unable to save attachment for compliance doc %s", doc_id,
+        )
+        raise HTTPException(
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to save file — storage error",
+        )
+
+    relative_path = f"compliance_docs/attachments/{stored_filename}"
+    doc = await service.attach_file(
+        doc_id,
+        relative_path=relative_path,
+        detected_mime=safe_mime,
+        size_bytes=len(content),
+        user_id=user_id,
+    )
+    return _to_response(doc)
 
 
 __all__ = ["router"]

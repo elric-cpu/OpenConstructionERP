@@ -103,6 +103,89 @@ def _sniff_dwg_version(path: str) -> tuple[str | None, str]:
     return text, label
 
 
+def _looks_like_dxf(head: bytes) -> bool:
+    """Return True if a 64-byte header looks like an ASCII or binary DXF.
+
+    Binary DXF files start with the literal ``AutoCAD Binary DXF\\r\\n``
+    sentinel (22 bytes, per the DXF reference). ASCII DXF files always
+    begin with a group code line — the very first non-whitespace token
+    is ``0`` followed by the line break and the ``SECTION`` keyword. We
+    accept the broader ``0\\r?\\n\\s*SECTION`` shape because some CAD
+    exporters use ``LF`` line endings on Linux and pad with spaces.
+
+    A renamed PDF (``%PDF-``), ZIP (``PK\\x03\\x04``) or DWG (``AC####``)
+    will fail this check, so the upload endpoint can return a clean 400
+    instead of writing garbage to disk and waiting for the parse failure.
+    """
+    if not head:
+        return False
+    # Binary DXF sentinel — case-sensitive per the spec.
+    if head.startswith(b"AutoCAD Binary DXF"):
+        return True
+    # ASCII DXF: skip leading whitespace, then group code "0", newline,
+    # then "SECTION" within the first ~60 bytes. ezdxf is more lenient
+    # than this but we only need to disambiguate from "this is clearly
+    # something else" (PDF / ZIP / DWG / random text).
+    stripped = head.lstrip()
+    if not stripped.startswith(b"0"):
+        return False
+    # Scan a small window for the SECTION keyword to handle whitespace /
+    # comment variations without bringing in a real DXF parser.
+    return b"SECTION" in head[:128]
+
+
+def _validate_cad_magic_bytes(content: bytes, file_format: str) -> tuple[bool, str]:
+    """Sniff the first bytes of an upload and confirm the declared format.
+
+    Returns ``(True, "")`` if the content matches the declared format, or
+    ``(False, reason)`` with a user-friendly message otherwise. The upload
+    endpoint surfaces this as a 400 so renamed PDFs / ZIPs / images never
+    reach disk or the DDC subprocess.
+
+    No i18n here — the message is consumed by the existing error wrapper
+    which translates at render time.
+    """
+    head = content[:128] if content else b""
+    if file_format == "dwg":
+        code, _ = _sniff_dwg_version_bytes(head)
+        if code is None:
+            return False, (
+                "This file does not look like a valid DWG. If you renamed "
+                "a PDF / ZIP / image to .dwg, please upload the original "
+                "CAD file instead."
+            )
+        return True, ""
+    if file_format == "dxf":
+        if not _looks_like_dxf(head):
+            return False, (
+                "This file does not look like a valid DXF. The file must "
+                "start with a DXF group code (ASCII) or the "
+                "'AutoCAD Binary DXF' sentinel."
+            )
+        return True, ""
+    # Unknown format slips through — caller has already rejected by
+    # extension by the time we get here.
+    return True, ""
+
+
+def _sniff_dwg_version_bytes(head: bytes) -> tuple[str | None, str]:
+    """In-memory variant of :func:`_sniff_dwg_version` for upload streams.
+
+    Operates on already-read bytes so we don't have to write the file to
+    disk before deciding whether to accept it.
+    """
+    if len(head) < 6:
+        return None, ""
+    try:
+        text = head[:6].decode("ascii")
+    except UnicodeDecodeError:
+        return None, ""
+    if not (text.startswith("AC") and text[2:].isdigit()):
+        return None, ""
+    label = _DWG_VERSION_LABELS.get(text, f"DWG ({text})")
+    return text, label
+
+
 def _dwg_version_too_old(code: str | None) -> bool:
     """Return True if a sniffed DWG version code predates R18 (2010).
 
@@ -280,6 +363,19 @@ class DwgTakeoffService:
         file_format = ext.lstrip(".")
         content = await file.read()
         size_bytes = len(content)
+
+        # Magic-byte validation — reject renamed PDFs/ZIPs/images BEFORE
+        # writing them to disk or burning a DB row. The extension check
+        # above only confirms the user typed ``.dwg`` / ``.dxf``; this
+        # confirms the bytes match. Closes the class of "90+s DDC chew
+        # on garbage input" reports from the 2026-05-13 stability ticket
+        # for the DXF path too (the previous sniff fired only on DWG).
+        ok, reason = _validate_cad_magic_bytes(content, file_format)
+        if not ok:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=reason,
+            )
 
         # Create drawing record FIRST (before writing file to disk)
         upload_dir = _get_upload_dir()

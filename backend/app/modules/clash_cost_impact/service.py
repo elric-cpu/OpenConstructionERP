@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 import uuid
 from collections import defaultdict
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
 from sqlalchemy import select
@@ -153,10 +153,19 @@ def _to_decimal(value: Any) -> Decimal:
         return Decimal("0")
 
 
+def _money_quantise(value: Decimal) -> Decimal:
+    """Quantise to 2 dp with conventional half-up money rounding.
+
+    Decimal's default rounding is ROUND_HALF_EVEN ("banker's rounding"),
+    which is wrong for money totals — a QS expects 0.125 → 0.13, not 0.12.
+    Internal arithmetic stays exact; this is only applied at the boundary.
+    """
+    return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
 def _money_round(value: Decimal) -> float:
     """Round to 2 dp at the wire boundary; internal arithmetic stays exact."""
-    quantised = value.quantize(Decimal("0.01"))
-    return float(quantised)
+    return float(_money_quantise(value))
 
 
 def _project_cost_config(project: Project) -> tuple[Decimal, Decimal]:
@@ -318,7 +327,12 @@ class ClashCostImpactService:
         out: list[Position] = []
         for pos in positions:
             ids = pos.cad_element_ids or []
-            if not ids:
+            # ``cad_element_ids`` is a JSON column; defend against the
+            # rare bad row that stored a non-list (older importer bugs
+            # have shipped strings / dicts in this slot). Iterating a
+            # string would otherwise match by-character against the
+            # ``wanted`` set and silently corrupt the rework subtotal.
+            if not isinstance(ids, list) or not ids:
                 continue
             for raw in ids:
                 if str(raw).strip() in wanted:
@@ -331,12 +345,17 @@ class ClashCostImpactService:
         clash: ClashResult,
         project: Project,
         affected: list[Position],
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], Decimal]:
         """Pure arithmetic kernel — no I/O, easy to unit-test.
 
-        Returns a dict ready to be turned into a Pydantic response
-        (currency, components, total, confidence, affected). All ``Decimal``
-        bookkeeping happens here; floats only appear at the boundary.
+        Returns ``(payload, total_decimal)`` where ``payload`` is the
+        Pydantic-ready response dict (floats at the boundary, matching
+        the BOQ wire convention) and ``total_decimal`` is the exact
+        ``Decimal`` total before the 2-dp narrowing. The rollup loop
+        uses ``total_decimal`` so per-clash rounding does NOT accumulate
+        into the project-level total (otherwise the rollup is off by up
+        to ``0.005 × clash_count`` currency units, which is real money
+        on a 10⁴-clash mega-project).
         """
         rework_factor, blended_rate = _project_cost_config(project)
 
@@ -371,18 +390,20 @@ class ClashCostImpactService:
         else:
             confidence = "low"
 
-        return {
-            "currency": project.currency or "EUR",
+        payload: dict[str, Any] = {
+            # ``project.currency`` is the authoritative source of truth;
+            # falling back to a hard-coded "EUR" would silently mislabel
+            # a project that was created without a currency set (per
+            # ``v3_db_eur_defaults_killed.md`` — no DB-level EUR defaults).
+            "currency": project.currency or "",
             "components": {
                 "rework_positions_total": _money_round(rework_total),
                 "rework_factor_pct": float(
-                    (rework_factor * Decimal("100")).quantize(Decimal("0.01"))
+                    _money_quantise(rework_factor * Decimal("100"))
                 ),
                 "rework_subtotal": _money_round(rework_subtotal),
                 "labour_hours": float(labour_hours),
-                "blended_rate": float(
-                    blended_rate.quantize(Decimal("0.01"))
-                ),
+                "blended_rate": float(_money_quantise(blended_rate)),
                 "labour_subtotal": _money_round(labour_subtotal),
             },
             "total_estimate": _money_round(total),
@@ -397,6 +418,7 @@ class ClashCostImpactService:
                 for p in affected
             ],
         }
+        return payload, total
 
     async def impact_for_clash(
         self, clash_id: uuid.UUID
@@ -420,7 +442,7 @@ class ClashCostImpactService:
 
         positions = await self._positions_for_project(run.project_id)
         affected = self._affected_positions(clash, positions)
-        payload = self._compute_impact(clash, project, affected)
+        payload, _ = self._compute_impact(clash, project, affected)
         payload["clash_id"] = clash.id
         return payload, run.project_id
 
@@ -448,7 +470,7 @@ class ClashCostImpactService:
         if not clashes:
             return {
                 "project_id": project.id,
-                "currency": project.currency or "EUR",
+                "currency": project.currency or "",
                 "total_open_impact": 0.0,
                 "clash_count": 0,
                 "by_trade_pair": [],
@@ -466,8 +488,11 @@ class ClashCostImpactService:
 
         for clash in clashes:
             affected = self._affected_positions(clash, positions)
-            payload = self._compute_impact(clash, project, affected)
-            clash_total = Decimal(str(payload["total_estimate"]))
+            # Use the EXACT Decimal total (not the rounded float) so
+            # per-clash 2-dp rounding does not accumulate into the
+            # project rollup. Otherwise a 10⁴-clash mega-project drifts
+            # by up to ``0.005 × N`` currency units — real money.
+            _, clash_total = self._compute_impact(clash, project, affected)
             total += clash_total
             key = _pair_key(clash.a_discipline, clash.b_discipline)
             by_pair_total[key] += clash_total
@@ -489,7 +514,7 @@ class ClashCostImpactService:
 
         return {
             "project_id": project.id,
-            "currency": project.currency or "EUR",
+            "currency": project.currency or "",
             "total_open_impact": _money_round(total),
             "clash_count": len(clashes),
             "by_trade_pair": by_trade_pair,

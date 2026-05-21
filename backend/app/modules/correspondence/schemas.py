@@ -4,7 +4,28 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+def _sanitize_email_header_value(value: str) -> str:
+    """Strip CR/LF and other control chars from a string destined for an
+    email header (Subject) or HTML-rendered field.
+
+    Email-header injection: an attacker who can insert ``\\r\\n`` into a
+    subject can append arbitrary headers ("Bcc: ...", "Content-Type: ...")
+    or even break the header / body boundary and inject a forged body. We
+    forbid every C0 control character except TAB so the model layer can't
+    produce an unsafe outgoing message regardless of what the SMTP sender
+    does. The same scrubbing makes the value safe for raw textContent
+    rendering on the frontend (no HTML tag here means no XSS via subject).
+    """
+    if not value:
+        return value
+    # Remove CR, LF, NUL and the rest of the C0 range except TAB (\x09).
+    cleaned = "".join(ch for ch in value if ch == "\t" or ord(ch) >= 0x20)
+    # Collapse any internal whitespace runs left by the strip — email
+    # subjects with embedded ``\r\n`` would otherwise become double-space.
+    return " ".join(cleaned.split())
 
 
 class CorrespondenceCreate(BaseModel):
@@ -29,6 +50,14 @@ class CorrespondenceCreate(BaseModel):
     notes: str | None = Field(default=None, max_length=5000)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    @field_validator("subject")
+    @classmethod
+    def _subject_no_header_injection(cls, value: str) -> str:
+        cleaned = _sanitize_email_header_value(value)
+        if not cleaned:
+            raise ValueError("subject is empty after sanitisation")
+        return cleaned
+
 
 class CorrespondenceUpdate(BaseModel):
     """‌⁠‍Partial update for a correspondence record."""
@@ -51,6 +80,16 @@ class CorrespondenceUpdate(BaseModel):
     notes: str | None = Field(default=None, max_length=5000)
     metadata: dict[str, Any] | None = None
 
+    @field_validator("subject")
+    @classmethod
+    def _subject_no_header_injection(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = _sanitize_email_header_value(value)
+        if not cleaned:
+            raise ValueError("subject is empty after sanitisation")
+        return cleaned
+
 
 class CorrespondenceResponse(BaseModel):
     """Correspondence returned from the API."""
@@ -72,6 +111,7 @@ class CorrespondenceResponse(BaseModel):
     linked_rfi_id: str | None = None
     notes: str | None = None
     created_by: str | None = None
+    attachments: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
     created_at: datetime
     updated_at: datetime

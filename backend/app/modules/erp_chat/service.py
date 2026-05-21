@@ -36,6 +36,23 @@ AI_TIMEOUT = 120.0
 # context window on large `get_boq_items`/list-style tool returns.
 MAX_TOOL_RESULT_CHARS = 8000
 
+# ── Conversation-history hardening ────────────────────────────────────────
+# The frontend can submit ``conversation_history`` verbatim. We MUST cap it
+# before re-feeding to the LLM, otherwise (a) prompt injection via stuffed
+# history grows unbounded, (b) cost explodes on a single request, and
+# (c) the provider rejects/truncates the request unpredictably.
+MAX_HISTORY_MESSAGES = 20           # keep most-recent N turns only
+MAX_HISTORY_MESSAGE_CHARS = 4000    # truncate each individual message
+ALLOWED_HISTORY_ROLES = ("user", "assistant")
+
+# Per-user 24h soft token budget. When exceeded, the chat endpoint refuses
+# further requests until the window rolls over. Default ~500K tokens / day
+# is generous for legitimate ERP-chat usage and caps runaway spend from a
+# single compromised account or buggy client.
+import os as _os
+
+DAILY_TOKEN_BUDGET = int(_os.environ.get("ERPCHAT_DAILY_TOKEN_BUDGET", "500000"))
+
 
 def _truncate_tool_result(result: Any) -> Any:
     """‌⁠‍Trim tool output to a safe size before re-injecting into the LLM context.
@@ -236,6 +253,24 @@ class ERPChatService:
             )
             yield _sse("session_id", {"session_id": str(chat_session.id)})
 
+            # 1b. Enforce per-user 24h token budget. Rate-limit handles
+            # request frequency; this is the LLM-cost guardrail.
+            within_budget, tokens_used_24h = await self.check_daily_token_budget(user_id)
+            if not within_budget:
+                logger.warning(
+                    "erp_chat budget exceeded: user=%s used_24h=%d limit=%d",
+                    user_id, tokens_used_24h, DAILY_TOKEN_BUDGET,
+                )
+                yield _sse("error", {
+                    "message": (
+                        "Daily AI token budget exceeded "
+                        f"({tokens_used_24h:,} / {DAILY_TOKEN_BUDGET:,}). "
+                        "Try again tomorrow or contact your administrator."
+                    )
+                })
+                yield _sse("done", {})
+                return
+
             # 2. Build messages from history
             messages = await self._build_messages(
                 chat_session.id, user_id, request.message, request.conversation_history
@@ -371,6 +406,25 @@ class ERPChatService:
                 )
             )
 
+            # Structured cost log — one INFO line per chat turn carries the
+            # full per-turn observability split. Operators tail this for
+                # billing / abuse-detection without joining DB tables.
+            logger.info(
+                "erp_chat.turn user=%s session=%s project=%s provider=%s "
+                "tokens_in=%d tokens_out=%d total=%d cache_hit=%s latency_ms=%d "
+                "tool_calls=%d",
+                user_id,
+                str(chat_session.id),
+                str(chat_session.project_id) if chat_session.project_id else "-",
+                provider,
+                self._last_turn.get("tokens_input") or 0,
+                self._last_turn.get("tokens_output") or 0,
+                total_tokens,
+                self._last_turn.get("cache_hit"),
+                self._last_turn.get("latency_ms") or 0,
+                len(all_tool_calls),
+            )
+
             # Auto-title from first user message
             if chat_session.title == "New Chat" and request.message:
                 title = request.message[:80]
@@ -403,21 +457,66 @@ class ERPChatService:
         messages: list[dict[str, Any]] = []
 
         if conversation_history:
-            for msg in conversation_history:
+            # Hardening: client-supplied history is untrusted. Cap count,
+            # per-message length, and reject roles outside the allow-list
+            # so a malicious client can't smuggle a fake "system" turn or
+            # blow the context window with a 1 MB message.
+            trimmed = list(conversation_history)[-MAX_HISTORY_MESSAGES:]
+            for msg in trimmed:
+                if not isinstance(msg, dict):
+                    continue
                 role = msg.get("role", "user")
                 content = msg.get("content", "")
-                if role in ("user", "assistant") and content:
-                    messages.append({"role": role, "content": content})
+                if role not in ALLOWED_HISTORY_ROLES or not content:
+                    continue
+                if not isinstance(content, str):
+                    content = str(content)
+                if len(content) > MAX_HISTORY_MESSAGE_CHARS:
+                    content = content[:MAX_HISTORY_MESSAGE_CHARS] + "…[truncated]"
+                messages.append({"role": role, "content": content})
         else:
             # Load last messages from DB
             db_messages = await self.get_session_messages(session_id, user_id)
-            for msg in db_messages[-20:]:  # Last 20 messages for context
-                if msg.role in ("user", "assistant") and msg.content:
-                    messages.append({"role": msg.role, "content": msg.content})
+            for msg in db_messages[-MAX_HISTORY_MESSAGES:]:
+                if msg.role in ALLOWED_HISTORY_ROLES and msg.content:
+                    content = msg.content
+                    if len(content) > MAX_HISTORY_MESSAGE_CHARS:
+                        content = content[:MAX_HISTORY_MESSAGE_CHARS] + "…[truncated]"
+                    messages.append({"role": msg.role, "content": content})
 
-        # Add new user message
-        messages.append({"role": "user", "content": new_message})
+        # Add new user message (capped)
+        new_capped = new_message
+        if len(new_capped) > MAX_HISTORY_MESSAGE_CHARS:
+            new_capped = new_capped[:MAX_HISTORY_MESSAGE_CHARS] + "…[truncated]"
+        messages.append({"role": "user", "content": new_capped})
         return messages
+
+    # ── Per-user daily token budget ──────────────────────────────────────
+
+    async def check_daily_token_budget(self, user_id: str) -> tuple[bool, int]:
+        """Return ``(within_budget, tokens_used_24h)`` for a user.
+
+        Counts persisted assistant-message ``tokens_used`` over the last
+        24h. Cheap single-row aggregate on an indexed column. The caller
+        is expected to short-circuit with a user-visible error when the
+        budget is exceeded — see :meth:`stream_response`.
+        """
+        try:
+            uid = uuid.UUID(user_id)
+        except (TypeError, ValueError):
+            return True, 0
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+        stmt = (
+            select(func.coalesce(func.sum(ChatMessage.tokens_used), 0))
+            .join(ChatSession, ChatMessage.session_id == ChatSession.id)
+            .where(
+                ChatSession.user_id == uid,
+                ChatMessage.role == "assistant",
+                ChatMessage.created_at >= cutoff,
+            )
+        )
+        used = int((await self.session.execute(stmt)).scalar_one() or 0)
+        return used < DAILY_TOKEN_BUDGET, used
 
     # ── Anthropic API ────────────────────────────────────────────────────
 

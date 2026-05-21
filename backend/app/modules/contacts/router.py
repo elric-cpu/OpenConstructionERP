@@ -393,6 +393,61 @@ _ALLOWED_CONTACT_TYPES = {
 _ALLOWED_PREQUAL = {"pending", "approved", "rejected", "expired"}
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
+# Magic-byte signatures for the formats we actually accept on
+# ``POST /import/file/``. Trusting ``filename.endswith()`` alone lets a
+# caller upload an arbitrary binary renamed to ``payload.xlsx`` and have
+# us hand the bytes straight to ``openpyxl`` / ``csv.reader``. The
+# downstream parsers then either crash (best case) or accidentally honour
+# embedded macros / external entities in some future libxml-backed
+# branch. Reject anything whose first bytes don't match the declared
+# extension up front.
+_XLSX_MAGIC = b"PK\x03\x04"  # .xlsx is a zip
+_XLS_MAGIC = b"\xd0\xcf\x11\xe0"  # legacy OLE compound document
+_CSV_BANNED_PREFIXES = (b"MZ", b"\x7fELF", b"\xca\xfe\xba\xbe", b"PK\x03\x04")
+
+
+def _sniff_upload_content(filename: str, content: bytes) -> str:
+    """Return the canonical content kind (``xlsx`` / ``xls`` / ``csv``).
+
+    Raises ``HTTPException(400)`` when the declared extension does not
+    line up with the file's magic bytes. CSV has no canonical signature
+    so we use a denylist of known-binary prefixes instead.
+    """
+    head = content[:8]
+    if filename.endswith(".xlsx"):
+        if not head.startswith(_XLSX_MAGIC):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File does not look like a valid .xlsx (missing ZIP signature).",
+            )
+        return "xlsx"
+    if filename.endswith(".xls"):
+        if not head.startswith(_XLS_MAGIC):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File does not look like a valid .xls (missing OLE signature).",
+            )
+        return "xls"
+    # CSV: reject obvious binaries up front.
+    for sig in _CSV_BANNED_PREFIXES:
+        if head.startswith(sig):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File does not look like CSV (binary signature detected).",
+            )
+    return "csv"
+
+
+def _redact_row_for_log(row: dict[str, Any]) -> dict[str, str]:
+    """Drop e-mail / phone / personal-name fields from a row before logging.
+
+    Errors during bulk import need enough context for the operator to
+    locate the offending row (its index + which fields were present)
+    without spraying PII into the log pipeline.
+    """
+    safe_keys = {"company_name", "country_code", "contact_type", "vat_number"}
+    return {k: str(row.get(k, ""))[:80] for k in safe_keys if row.get(k)}
+
 
 def _match_contact_column(header: str) -> str | None:
     """Match a header string to a canonical column name using the alias map."""
@@ -525,12 +580,16 @@ async def import_contacts_file(
             detail="Uploaded file is empty.",
         )
 
+    # Magic-byte sniff — the extension is hostile-supplied, so verify the
+    # declared format before we hand the bytes to openpyxl / csv.reader.
+    kind = _sniff_upload_content(filename, content)
+
     # Zip-bomb guard: reject .xlsx whose uncompressed sheets exceed 50 MB.
     reject_if_xlsx_bomb(content)
 
-    # Parse rows based on file type
+    # Parse rows based on the sniffed format (not the extension alone).
     try:
-        if filename.endswith(".xlsx") or filename.endswith(".xls"):
+        if kind in ("xlsx", "xls"):
             rows = _parse_contact_rows_from_excel(content)
         else:
             rows = _parse_contact_rows_from_csv(content)
@@ -539,8 +598,10 @@ async def import_contacts_file(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Failed to parse file: {exc}",
         )
-    except Exception as exc:
-        logger.exception("Unexpected error parsing contact import file: %s", exc)
+    except Exception:
+        # Don't echo the original exception text — it can include cell
+        # contents (including PII) from openpyxl / csv parser errors.
+        logger.exception("Unexpected error parsing contact import file")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Failed to parse file. Please check the format and try again.",
@@ -576,10 +637,14 @@ async def import_contacts_file(
             # Validate email
             primary_email = str(row.get("primary_email", "")).strip() or None
             if primary_email and not _EMAIL_RE.match(primary_email):
+                # Caller already knows the email they uploaded — echoing
+                # it back to *their own* error response is fine. Don't
+                # widen ``data`` to the full row though: that broadcasts
+                # phone / notes / other PII alongside.
                 errors.append({
                     "row": row_idx,
                     "error": f"Invalid email format: {primary_email}",
-                    "data": {k: str(v)[:100] for k, v in row.items()},
+                    "data": _redact_row_for_log(row),
                 })
                 continue
 
@@ -589,7 +654,7 @@ async def import_contacts_file(
                 errors.append({
                     "row": row_idx,
                     "error": f"Country code must be 2 characters, got: {country_code}",
-                    "data": {k: str(v)[:100] for k, v in row.items()},
+                    "data": _redact_row_for_log(row),
                 })
                 continue
 
@@ -621,12 +686,23 @@ async def import_contacts_file(
             imported_count += 1
 
         except Exception as exc:
+            # ``str(exc)`` on Pydantic ValidationError embeds the *input*
+            # value — for primary_email / primary_phone rows that means
+            # PII lands in both the JSON response and the log line.
+            # Replace the message with the exception class name and log a
+            # PII-stripped row dict instead.
+            err_kind = type(exc).__name__
             errors.append({
                 "row": row_idx,
-                "error": str(exc),
-                "data": {k: str(v)[:100] for k, v in row.items()},
+                "error": f"Row rejected ({err_kind})",
+                "data": _redact_row_for_log(row),
             })
-            logger.warning("Contact import error at row %d: %s", row_idx, exc)
+            logger.warning(
+                "Contact import error at row %d: %s (fields=%s)",
+                row_idx,
+                err_kind,
+                sorted(_redact_row_for_log(row).keys()),
+            )
 
     logger.info(
         "Contact file import complete: imported=%d, skipped=%d, errors=%d",
@@ -919,7 +995,7 @@ async def update_contact(
 ) -> ContactResponse:
     """Update a contact."""
     await _require_contact_access(session, contact_id, user_id)
-    contact = await service.update_contact(contact_id, data)
+    contact = await service.update_contact(contact_id, data, user_id=user_id)
     return ContactResponse.model_validate(contact)
 
 
@@ -942,4 +1018,4 @@ async def delete_contact(
 ) -> None:
     """Soft-delete a contact (set is_active=False)."""
     await _require_contact_access(session, contact_id, user_id)
-    await service.deactivate_contact(contact_id)
+    await service.deactivate_contact(contact_id, user_id=user_id)

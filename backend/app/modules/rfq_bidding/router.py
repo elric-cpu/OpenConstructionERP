@@ -233,7 +233,11 @@ async def issue_rfq(
 ) -> RFQResponse:
     """Issue an RFQ to vendors. Verifies project ownership."""
     await _verify_rfq_access(session, rfq_id, user_id, payload)
-    rfq = await service.issue_rfq(rfq_id)
+    rfq = await service.issue_rfq(
+        rfq_id,
+        actor_id=user_id,
+        reason=(payload.get("reason") if isinstance(payload, dict) else None),
+    )
     return RFQResponse.model_validate(rfq)
 
 
@@ -331,7 +335,15 @@ async def award_bid(
     session: SessionDep,
     service: RFQService = Depends(_get_service),
 ) -> RFQBidResponse:
-    """Award a bid. Verifies project access via parent RFQ."""
+    """Award a bid. Verifies project access via parent RFQ AND requires
+    admin / manager / owner role (matches FSM ``bids_received → awarded``
+    ``required_roles=("admin", "manager")``). EDITORs with ``rfq.update``
+    permission are intentionally rejected here.
+    """
     await _verify_bid_access(session, bid_id, user_id, payload)
-    bid = await service.award_bid(bid_id)
+    bid = await service.award_bid(
+        bid_id,
+        actor_id=user_id,
+        actor_role=(payload.get("role") if isinstance(payload, dict) else None),
+    )
     return RFQBidResponse.model_validate(bid)

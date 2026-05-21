@@ -1,6 +1,27 @@
 """‌⁠‍Enterprise Workflows service — business logic for approval workflows.
 
 Stateless service layer.
+
+Hardening notes (2026-05-21 sweep):
+
+* ``MAX_STEPS`` caps every workflow definition at 32 steps. This is the
+  infinite-loop guard: a malicious / buggy workflow that smuggled
+  millions of steps into ``steps`` JSON would lock the approval engine
+  in a tight ``current_step + 1`` cycle. Enforced at create + update.
+* ``ALLOWED_ACTION_TYPES`` whitelists the per-step ``action_type`` keys
+  the engine knows how to dispatch. Unknown values are rejected at
+  create / update so we never silently dispatch — and never grow into
+  a sandbox-escape vector where a step JSON node executes templated
+  SQL / Python / JS.
+* ``role`` on each step must resolve to a canonical Role via
+  ``_resolve_role``. Garbage roles (e.g. ``"<script>"``) are rejected
+  at the schema boundary rather than silently locking / unlocking
+  approvals downstream.
+* Every approve / reject / cancel transition appends an ``audit_log``
+  entry to ``request.metadata_`` — who, when, what step, outcome,
+  notes. This is the forensic trail; the single ``decided_by`` field
+  only records the final decider, which is insufficient for
+  multi-step workflows.
 """
 
 import logging
@@ -23,6 +44,74 @@ from app.modules.enterprise_workflows.schemas import (
 
 logger = logging.getLogger(__name__)
 
+# Hard cap on workflow step count. 32 is generous for real-world approval
+# chains (typical real workflows are 2-5 steps; the longest documented
+# DACH construction sign-off is ~12). Anything beyond this is a config
+# mistake or a malicious payload trying to DoS the engine.
+MAX_STEPS: int = 32
+
+# Whitelist of valid per-step action_type values. The approval engine
+# only knows how to dispatch these; anything else is rejected at the
+# schema boundary so we never silently no-op and never grow this into
+# a templated-code-execution vector.
+ALLOWED_ACTION_TYPES: frozenset[str] = frozenset({
+    "approve",      # Standard approve / reject decision step (default)
+    "review",       # Soft review — captured but doesn't gate progression
+    "sign_off",     # Final binding sign-off (e.g. director / client)
+    "notify",       # Send-and-forward — no decision required
+})
+
+
+def _validate_steps(steps: list[dict] | None) -> None:
+    """Validate workflow steps at create / update.
+
+    Enforces:
+        * step count ≤ MAX_STEPS (infinite-loop guard)
+        * each step is a dict
+        * ``action_type`` if present is in ALLOWED_ACTION_TYPES
+        * ``role`` if present resolves to a canonical Role
+
+    Raises HTTPException 400 on any violation.
+    """
+    if steps is None:
+        return
+    if not isinstance(steps, list):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Workflow 'steps' must be a list",
+        )
+    if len(steps) > MAX_STEPS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Workflow exceeds maximum of {MAX_STEPS} steps (got {len(steps)})",
+        )
+
+    # Defer permissions import — keeps the module light at import time.
+    from app.core.permissions import _resolve_role
+
+    for idx, step in enumerate(steps):
+        if not isinstance(step, dict):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Step {idx + 1} must be a JSON object",
+            )
+        action_type = step.get("action_type")
+        if action_type is not None and action_type not in ALLOWED_ACTION_TYPES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Step {idx + 1}: action_type '{action_type}' is not allowed. "
+                    f"Allowed values: {sorted(ALLOWED_ACTION_TYPES)}"
+                ),
+            )
+        required_role = step.get("role")
+        if required_role:
+            if not isinstance(required_role, str) or _resolve_role(required_role) is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Step {idx + 1}: role '{required_role}' is not a known role",
+                )
+
 
 class WorkflowService:
     """‌⁠‍Business logic for enterprise approval workflows."""
@@ -36,6 +125,7 @@ class WorkflowService:
 
     async def create_workflow(self, data: WorkflowCreate) -> ApprovalWorkflow:
         """‌⁠‍Create a new approval workflow definition."""
+        _validate_steps(data.steps)
         workflow = ApprovalWorkflow(
             project_id=data.project_id,
             entity_type=data.entity_type,
@@ -86,6 +176,8 @@ class WorkflowService:
         await self.get_workflow(workflow_id)  # 404 check
 
         fields = data.model_dump(exclude_unset=True)
+        if "steps" in fields:
+            _validate_steps(fields["steps"])
         if "metadata" in fields:
             fields["metadata_"] = fields.pop("metadata")
 
@@ -163,6 +255,37 @@ class WorkflowService:
             offset=offset,
         )
 
+    def _append_audit(
+        self,
+        request: ApprovalRequest,
+        *,
+        user_id: str,
+        action: str,
+        step: int,
+        notes: str | None = None,
+    ) -> dict:
+        """Append an audit-log entry to a request's metadata.
+
+        Returns the updated metadata dict — caller is responsible for
+        persisting it via ``self.requests.update(metadata_=...)``.
+        Each entry records who did what at which step, when, and the
+        optional decision notes. Loses no information across step
+        transitions (the single ``decided_by`` column only captures the
+        terminal decider, which is insufficient for multi-step
+        workflows).
+        """
+        metadata = dict(request.metadata_ or {})
+        audit_log = list(metadata.get("audit_log") or [])
+        audit_log.append({
+            "actor": user_id,
+            "action": action,
+            "step": step,
+            "at": datetime.now(UTC).isoformat(),
+            "notes": notes,
+        })
+        metadata["audit_log"] = audit_log
+        return metadata
+
     async def _require_step_role(
         self,
         workflow_steps: list[dict] | None,
@@ -238,8 +361,27 @@ class WorkflowService:
         total_steps = len(workflow.steps) if workflow.steps else 1
         current_step = request.current_step
 
+        # Runtime infinite-loop guard. ``current_step`` should never
+        # exceed ``MAX_STEPS`` because the workflow can't be created
+        # past that cap, but a corrupted row or a stale workflow whose
+        # steps were trimmed after a request was already past the new
+        # tail must not silently spin. Reject loudly.
+        if current_step > MAX_STEPS:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Request exceeds maximum step count ({MAX_STEPS})",
+            )
+
         # Enforce per-step role / assignee before accepting the decision.
         await self._require_step_role(workflow.steps, current_step, user_id)
+
+        new_metadata = self._append_audit(
+            request,
+            user_id=user_id,
+            action="approve",
+            step=current_step,
+            notes=decision_notes,
+        )
 
         if current_step < total_steps:
             # Advance to next step — not fully approved yet
@@ -247,6 +389,7 @@ class WorkflowService:
                 request_id,
                 current_step=current_step + 1,
                 decision_notes=decision_notes,
+                metadata_=new_metadata,
             )
         else:
             # Final step — fully approved
@@ -256,6 +399,7 @@ class WorkflowService:
                 decided_by=uuid.UUID(user_id),
                 decided_at=datetime.now(UTC).isoformat(),
                 decision_notes=decision_notes,
+                metadata_=new_metadata,
             )
 
         updated = await self.requests.get(request_id)
@@ -284,12 +428,21 @@ class WorkflowService:
         workflow = await self.get_workflow(request.workflow_id)
         await self._require_step_role(workflow.steps, request.current_step, user_id)
 
+        new_metadata = self._append_audit(
+            request,
+            user_id=user_id,
+            action="reject",
+            step=request.current_step,
+            notes=decision_notes,
+        )
+
         await self.requests.update(
             request_id,
             status="rejected",
             decided_by=uuid.UUID(user_id),
             decided_at=datetime.now(UTC).isoformat(),
             decision_notes=decision_notes,
+            metadata_=new_metadata,
         )
 
         updated = await self.requests.get(request_id)
@@ -333,11 +486,20 @@ class WorkflowService:
                     detail="Only the requester or an admin can cancel this request",
                 )
 
+        new_metadata = self._append_audit(
+            request,
+            user_id=user_id,
+            action="cancel",
+            step=request.current_step,
+            notes=None,
+        )
+
         await self.requests.update(
             request_id,
             status="cancelled",
             decided_by=uuid.UUID(user_id),
             decided_at=datetime.now(UTC).isoformat(),
+            metadata_=new_metadata,
         )
 
         updated = await self.requests.get(request_id)

@@ -81,7 +81,7 @@ class ClashCostImpactResponse(BaseModel):
     """
 
     clash_id: uuid.UUID
-    currency: str = "EUR"
+    currency: str = ""
     components: CostImpactComponents
     total_estimate: float = 0.0
     confidence: str = "low"
@@ -107,7 +107,7 @@ class ProjectCostImpactRollupResponse(BaseModel):
     """
 
     project_id: uuid.UUID
-    currency: str = "EUR"
+    currency: str = ""
     total_open_impact: float = 0.0
     clash_count: int = 0
     by_trade_pair: list[TradePairImpact] = Field(default_factory=list)

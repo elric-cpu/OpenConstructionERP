@@ -101,6 +101,11 @@ class ComplianceDoc(Base):
     created_by: Mapped[str | None] = mapped_column(
         String(36), nullable=True,
     )
+    # ``updated_by`` is recorded on every PATCH inside ``metadata_``
+    # under the ``"updated_by"`` key — kept off the SQL schema so this
+    # bug-fix doesn't require an alembic migration. The local upload
+    # (path / mime / size) lives in ``metadata_["attachment"]`` for the
+    # same reason; see :mod:`service` for the read/write helpers.
 
     def __repr__(self) -> str:  # pragma: no cover — debug only
         return (

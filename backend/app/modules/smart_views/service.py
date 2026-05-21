@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.core.events import event_bus
 from app.modules.bim_hub.models import BIMFederation, BIMModel
 from app.modules.projects.models import Project
 from app.modules.smart_views.evaluator import evaluate_smart_view
@@ -210,17 +211,86 @@ class SmartViewService:
             return view.scope_id == user_id
         if view.scope_type == "project":
             return view.scope_id in accessible_project_ids
-        # Federation visibility goes through the project; a cheap
-        # service-layer guard would require another roundtrip we
-        # already do at create-time, so we permit-by-readability:
-        # the caller will have hit ``_verify_scope`` at create time
-        # and any further enforcement is delegated to the router-
-        # level project-access check.
-        return view.scope_type == "federation"
+        # Federation views are read-gated through the federation's
+        # parent project. The earlier "permit by readability" stub was
+        # a cross-project leak (#103): any authenticated caller with
+        # ``smart_views.read`` could pull a federation-scoped view from
+        # another tenant by guessing the federation UUID. Use the async
+        # variant ``_can_read_async`` for federation views; this sync
+        # predicate defaults to False so callers that forget to check
+        # fail closed, not open.
+        return False
+
+    async def _can_read_async(
+        self,
+        view: SmartView,
+        *,
+        user_id: uuid.UUID,
+        accessible_project_ids: set[uuid.UUID],
+    ) -> bool:
+        """Visibility predicate that handles federation→project lookup.
+
+        For ``user`` / ``project`` scopes this is equivalent to
+        :meth:`_can_read` — no extra DB hit. For ``federation`` scope
+        we resolve the federation's ``project_id`` and check it is in
+        the caller's accessible project set. The N+1 cost is one extra
+        ``session.get`` per federation-scoped row touched (capped to
+        the small list of views a single request handles).
+        """
+        if view.scope_type in {"user", "project"}:
+            return self._can_read(
+                view, user_id=user_id, accessible_project_ids=accessible_project_ids
+            )
+        if view.scope_type == "federation":
+            federation = await self.session.get(BIMFederation, view.scope_id)
+            if federation is None:
+                return False
+            return federation.project_id in accessible_project_ids
+        return False
 
     def _can_write(self, view: SmartView, *, user_id: uuid.UUID) -> bool:
         """Mutation predicate — only the author can edit/delete their view."""
         return view.created_by == user_id
+
+    # ── Cross-module visibility event (#103) ──────────────────────────
+
+    async def _emit_visibility_changed(
+        self,
+        view: SmartView,
+        *,
+        reason: str,
+    ) -> None:
+        """Re-broadcast a federation/project view's visibility change.
+
+        Backlog #103: when a smart view's owner changes, the view is
+        shared/unshared, or the view itself is created/updated/deleted
+        under a federation scope, downstream consumers (the BIM viewer
+        sidebar cache, the federation hub's permission badge) must be
+        told to drop their cached list. We emit a single event the bus
+        can fan out — subscribers are responsible for their own
+        invalidation strategy. Fire-and-forget so the request still
+        commits cleanly even if a subscriber raises.
+        """
+        try:
+            payload = {
+                "view_id": str(view.id),
+                "scope_type": view.scope_type,
+                "scope_id": str(view.scope_id),
+                "owner_id": str(view.created_by),
+                "shared": view.share_token is not None,
+                "reason": reason,
+            }
+            event_bus.publish_detached(
+                "smart_views.visibility_changed",
+                payload,
+                source_module="oe_smart_views",
+            )
+        except Exception:
+            # Visibility re-emission is best-effort; never block the
+            # transaction on a misbehaving subscriber.
+            logger.debug(
+                "smart_views.visibility_changed emit failed", exc_info=True
+            )
 
     # ── CRUD ───────────────────────────────────────────────────────────
 
@@ -255,6 +325,7 @@ class SmartViewService:
             created_by=user_id,
         )
         await self.repo.add(view)
+        await self._emit_visibility_changed(view, reason="created")
         return self._response_for(view, viewer_id=user_id)
 
     async def list_views(
@@ -287,7 +358,7 @@ class SmartViewService:
                 status_code=status.HTTP_404_NOT_FOUND, detail="SmartView not found"
             )
         project_ids = set(await self._accessible_project_ids(user_id))
-        if not self._can_read(
+        if not await self._can_read_async(
             view, user_id=user_id, accessible_project_ids=project_ids
         ):
             # 404, not 403 — same UUID-existence-leak hardening the
@@ -311,7 +382,7 @@ class SmartViewService:
                 status_code=status.HTTP_404_NOT_FOUND, detail="SmartView not found"
             )
         project_ids = set(await self._accessible_project_ids(user_id))
-        if not self._can_read(
+        if not await self._can_read_async(
             view, user_id=user_id, accessible_project_ids=project_ids
         ):
             raise HTTPException(
@@ -342,6 +413,7 @@ class SmartViewService:
         # validator would attempt a synchronous lazy reload and trip
         # MissingGreenlet under the async session).
         await self.session.refresh(view)
+        await self._emit_visibility_changed(view, reason="updated")
         return self._response_for(view, viewer_id=user_id)
 
     async def delete_view(
@@ -357,7 +429,7 @@ class SmartViewService:
                 status_code=status.HTTP_404_NOT_FOUND, detail="SmartView not found"
             )
         project_ids = set(await self._accessible_project_ids(user_id))
-        if not self._can_read(
+        if not await self._can_read_async(
             view, user_id=user_id, accessible_project_ids=project_ids
         ):
             raise HTTPException(
@@ -368,6 +440,9 @@ class SmartViewService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only the author can delete this SmartView",
             )
+        # Capture identity for the visibility event before SQLAlchemy
+        # detaches the row on delete.
+        await self._emit_visibility_changed(view, reason="deleted")
         await self.repo.delete(view)
 
     # ── Evaluator ──────────────────────────────────────────────────────
@@ -386,7 +461,7 @@ class SmartViewService:
                 status_code=status.HTTP_404_NOT_FOUND, detail="SmartView not found"
             )
         project_ids = set(await self._accessible_project_ids(user_id))
-        if not self._can_read(
+        if not await self._can_read_async(
             view, user_id=user_id, accessible_project_ids=project_ids
         ):
             raise HTTPException(
@@ -532,6 +607,7 @@ class SmartViewService:
         token = self._make_share_token(view.id)
         view.share_token = token
         await self.session.flush()
+        await self._emit_visibility_changed(view, reason="shared")
         return SmartViewShareInfo(
             view_id=view.id,
             share_token=token,
@@ -561,6 +637,7 @@ class SmartViewService:
             )
         view.share_token = None
         await self.session.flush()
+        await self._emit_visibility_changed(view, reason="unshared")
 
     async def resolve_share_token(
         self, token: str

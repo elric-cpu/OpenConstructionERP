@@ -47,6 +47,10 @@ class CorrespondenceService:
             metadata_=data.metadata,
         )
         correspondence = await self.repo.create(correspondence)
+        # PII discipline: log only structural fields (ref number, direction,
+        # type, project id). Subject and notes can contain personal data —
+        # legal names, addresses, allegations — and structured-log sinks
+        # outside our control (Sentry, Datadog) shouldn't see them.
         logger.info(
             "Correspondence created: %s (%s/%s) for project %s",
             reference_number,
@@ -109,3 +113,27 @@ class CorrespondenceService:
         await self.get_correspondence(correspondence_id)
         await self.repo.delete(correspondence_id)
         logger.info("Correspondence deleted: %s", correspondence_id)
+
+    async def add_attachment(
+        self,
+        correspondence_id: uuid.UUID,
+        attachment_path: str,
+    ) -> Correspondence:
+        """‌⁠‍Append a validated attachment path to the correspondence.
+
+        The caller (router) is responsible for magic-byte validation and
+        for choosing the server-side filename; this method only mutates
+        the JSON column. We avoid logging the path payload itself —
+        attachment filenames may carry PII (e.g. ``CV_jane_doe.pdf``).
+        """
+        correspondence = await self.get_correspondence(correspondence_id)
+        attachments = list(correspondence.attachments or [])
+        attachments.append(attachment_path)
+        await self.repo.update_fields(correspondence_id, attachments=attachments)
+        await self.session.refresh(correspondence)
+        logger.info(
+            "Attachment added to correspondence %s (count=%d)",
+            correspondence_id,
+            len(attachments),
+        )
+        return correspondence

@@ -35,6 +35,7 @@ from app.dependencies import (
     CurrentUserId,
     RequirePermission,
     SessionDep,
+    check_ai_rate_limit,
     verify_project_access,
 )
 from app.modules.clash.models import ClashResult, ClashRun
@@ -121,8 +122,14 @@ async def triage_clash(
     session: SessionDep,
     force_refresh: bool = Query(default=False),
     service: ClashTriageService = Depends(_get_service),
+    _ai_remaining: int = Depends(check_ai_rate_limit),
 ) -> TriageResultResponse:
-    """Triage one clash. Returns the cached row unless ``force_refresh=true``."""
+    """Triage one clash. Returns the cached row unless ``force_refresh=true``.
+
+    Rate-limited via :func:`check_ai_rate_limit` so a runaway client cannot
+    drive unbounded LLM cost — see ``AI_RATE_LIMIT`` env var (default 10/min
+    per user).
+    """
     project_id = await _project_id_for_clash(session, clash_id)
     await verify_project_access(project_id, user_id, session)
     try:
@@ -151,8 +158,15 @@ async def triage_batch(
     user_id: CurrentUserId,
     session: SessionDep,
     service: ClashTriageService = Depends(_get_service),
+    _ai_remaining: int = Depends(check_ai_rate_limit),
 ) -> list[TriageResultResponse]:
-    """Fan out triage over ``body.clash_ids`` with bounded concurrency."""
+    """Fan out triage over ``body.clash_ids`` with bounded concurrency.
+
+    Rate-limited (one bucket "slot" per batch call) so a malicious project
+    cannot replay-triage thousands of clashes by submitting one giant batch
+    after another — paired with ``max_concurrent`` (in-flight cap) and the
+    per-(subject, prompt, model) cache to keep cost predictable.
+    """
     # Verify project access against the first reachable clash. The batch
     # contract is "all clashes belong to the same project the caller has
     # access to" — we enforce by sampling the head; the service then
@@ -244,8 +258,14 @@ async def replay(
     session: SessionDep,
     body: TriageReplayRequest | None = None,
     service: ClashTriageService = Depends(_get_service),
+    _ai_remaining: int = Depends(check_ai_rate_limit),
 ) -> TriageResultResponse:
-    """Re-run an existing triage against a (usually newer) prompt version."""
+    """Re-run an existing triage against a (usually newer) prompt version.
+
+    Replay ALWAYS pays for a fresh LLM call (the cache is by design bypassed
+    — that's the whole point of replay). Rate-limited so an actor with
+    ``clash_triage.execute`` cannot loop replays to drive LLM cost up.
+    """
     stmt = select(ClashTriageResult).where(ClashTriageResult.id == triage_result_id)
     existing = (await session.execute(stmt)).scalar_one_or_none()
     if existing is None:

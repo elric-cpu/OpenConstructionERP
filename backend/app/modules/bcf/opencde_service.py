@@ -352,9 +352,22 @@ def _clauses_to_sqla(clauses: list[_Clause]):
             # Bound parameter — no interpolation.
             from sqlalchemy import String, cast
             from sqlalchemy import literal as sl
-            quoted = f'"{c.value}"'
+
+            # Escape SQL LIKE wildcards in the user-supplied label value
+            # so a label like ``50%_off`` cannot match unintended rows.
+            # Also strip embedded double-quotes — a label is a scalar token,
+            # never a JSON fragment, so a ``"`` in it would only ever be a
+            # poisoning attempt against the LIKE pattern below.
+            safe = (
+                str(c.value)
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_")
+                .replace('"', "")
+            )
+            quoted = f'"{safe}"'
             sqla_clauses.append(
-                cast(BCFTopic.labels, String).like(sl(f"%{quoted}%"))
+                cast(BCFTopic.labels, String).like(sl(f"%{quoted}%"), escape="\\")
             )
             continue
         col = getattr(BCFTopic, c.field, None)
@@ -383,8 +396,26 @@ def _clauses_to_sqla(clauses: list[_Clause]):
     return sqla_clauses
 
 
+# Fields allowed on $orderby. Restricted to scalar columns — relationships
+# / hybrid attributes / dunder attrs are explicitly rejected to prevent a
+# malformed query from leaking through ``getattr`` and exploding deep in
+# the SQLA compile step.
+_ORDERBY_ALLOWED_FIELDS: set[str] = _TOPIC_FIELDS_SCALAR | {
+    "creation_date",
+    "modified_date",
+    "topic_index",
+    "created_at",
+    "updated_at",
+}
+
+
 def parse_orderby(expr: str | None) -> list:
-    """Translate ``$orderby`` like ``creation_date desc, title asc`` to SQLA."""
+    """Translate ``$orderby`` like ``creation_date desc, title asc`` to SQLA.
+
+    Only fields in :data:`_ORDERBY_ALLOWED_FIELDS` are accepted; anything
+    else (including ORM relationships such as ``comments`` / ``viewpoints``)
+    returns a 400.
+    """
     if not expr:
         return [BCFTopic.created_at.desc()]
     out: list = []
@@ -394,6 +425,8 @@ def parse_orderby(expr: str | None) -> list:
             continue
         field = parts[0]
         direction = parts[1].lower() if len(parts) > 1 else "asc"
+        if field not in _ORDERBY_ALLOWED_FIELDS:
+            raise ODataParseError(f"Field '{field}' is not orderable")
         col = getattr(BCFTopic, field, None)
         if col is None:
             raise ODataParseError(f"Unknown $orderby field {field}")
@@ -561,11 +594,20 @@ class OpenCDEService:
     ) -> tuple[BCFTopicResponse, BCFTopic]:
         now = datetime.now(UTC)
         author = user_email or str(user_id)
-        # Best-effort server_assigned_id: monotonic count + 1.
-        existing_count = await self.session.execute(
-            select(BCFTopic).where(BCFTopic.project_id == project_id)
+        # Best-effort server_assigned_id: monotonic count + 1. Use COUNT(*)
+        # rather than loading every BCFTopic row for the project — a project
+        # with thousands of topics would otherwise pull every row into memory
+        # just to count them.
+        from sqlalchemy import func as _func
+
+        count_stmt = (
+            select(_func.count())
+            .select_from(BCFTopic)
+            .where(BCFTopic.project_id == project_id)
         )
-        topic_index = len(list(existing_count.scalars().all())) + 1
+        topic_index = int(
+            (await self.session.execute(count_stmt)).scalar() or 0
+        ) + 1
         topic = BCFTopic(
             guid=str(uuid.uuid4()).lower(),
             project_id=project_id,

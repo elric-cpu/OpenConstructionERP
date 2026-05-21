@@ -21,6 +21,20 @@ from app.modules.rfq_bidding.schemas import (
 
 logger = logging.getLogger(__name__)
 
+# RFQ statuses where a vendor may still submit a bid. Submissions against
+# draft / awarded / completed / cancelled RFQs are rejected — those would
+# otherwise allow a vendor to slip a bid in after the award has been made
+# or before the RFQ has been published.
+_BID_SUBMISSION_OPEN_STATUSES: frozenset[str] = frozenset(
+    {"published", "issued", "bids_received"}
+)
+
+# Roles permitted to award an RFQ (mirrors FSM registry
+# ``bids_received → awarded`` ``required_roles=("admin", "manager")``).
+# The router-level ``rfq.update`` permission lets EDITOR call award_bid,
+# which would side-step the FSM contract — service must re-check.
+_AWARD_ALLOWED_ROLES: frozenset[str] = frozenset({"admin", "manager", "owner"})
+
 
 class RFQService:
     """‌⁠‍Business logic for RFQ and bidding operations."""
@@ -136,6 +150,10 @@ class RFQService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Cannot issue RFQ in status '{prior}'",
             )
+        # Snapshot fields BEFORE rfqs.update() — that call invokes
+        # expire_all() and any subsequent ORM-managed attribute access
+        # would otherwise trigger a sync DB fetch (MissingGreenlet).
+        rfq_number_local = rfq.rfq_number
         await self.rfqs.update(rfq_id, status="published")
         try:
             from app.core.audit_log import log_activity
@@ -149,7 +167,7 @@ class RFQService:
                 from_status=prior,
                 to_status="published",
                 reason=reason or "RFQ published via issue_rfq()",
-                metadata={"rfq_number": rfq.rfq_number},
+                metadata={"rfq_number": rfq_number_local},
             )
         except Exception:
             logger.debug("FSM audit log skipped for RFQ %s issue", rfq_id)
@@ -159,7 +177,7 @@ class RFQService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="RFQ not found",
             )
-        logger.info("RFQ published: %s", rfq.rfq_number)
+        logger.info("RFQ published: %s", rfq_number_local)
         return updated
 
     # ── Bids ────────────────────────────────────────────────────────────────
@@ -169,8 +187,51 @@ class RFQService:
         data: BidCreate,
         user_id: str | None = None,
     ) -> RFQBid:
-        """Submit a bid against an RFQ."""
-        await self.get_rfq(data.rfq_id)  # 404 check
+        """Submit a bid against an RFQ.
+
+        Rejects:
+            * RFQ not found (404)
+            * RFQ in a non-bidding status — draft / awarded / cancelled /
+              completed (409 Conflict).
+            * Submission past ``rfq.submission_deadline`` if set (409).
+        """
+        rfq = await self.get_rfq(data.rfq_id)  # 404 check
+
+        # Lifecycle gate — bidding is only legal while the RFQ is open.
+        if rfq.status not in _BID_SUBMISSION_OPEN_STATUSES:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Cannot submit bid against RFQ in status '{rfq.status}'; "
+                    "RFQ must be published or accepting bids."
+                ),
+            )
+
+        # Deadline gate — best-effort ISO parse. If deadline is malformed
+        # we DO NOT silently allow late submissions; we 422 because a
+        # malformed deadline on the RFQ is a data-quality bug a buyer
+        # must resolve before bids land.
+        if rfq.submission_deadline:
+            try:
+                deadline = datetime.fromisoformat(
+                    rfq.submission_deadline.replace("Z", "+00:00")
+                )
+                if deadline.tzinfo is None:
+                    deadline = deadline.replace(tzinfo=UTC)
+                if datetime.now(UTC) > deadline:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="RFQ submission deadline has passed",
+                    )
+            except (ValueError, TypeError):
+                logger.warning(
+                    "RFQ %s has malformed submission_deadline %r — bid rejected",
+                    data.rfq_id, rfq.submission_deadline,
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="RFQ submission_deadline is malformed; ask buyer to fix",
+                ) from None
 
         submitted_at = data.submitted_at or datetime.now(UTC).isoformat()
 
@@ -252,12 +313,38 @@ class RFQService:
         logger.info("Bid evaluated: %s", bid_id)
         return updated
 
-    async def award_bid(self, bid_id: uuid.UUID) -> RFQBid:
+    async def award_bid(
+        self,
+        bid_id: uuid.UUID,
+        *,
+        actor_id: str | None = None,
+        actor_role: str | None = None,
+        reason: str | None = None,
+    ) -> RFQBid:
         """Award a bid and transition the RFQ to awarded status.
 
         Only one bid can be awarded per RFQ. Attempting to award a second
         bid raises a 409 Conflict.
+
+        ``actor_role`` MUST be one of ``admin`` / ``manager`` / ``owner``
+        per the FSM contract on ``bids_received → awarded``. The router-
+        level ``rfq.update`` permission lets EDITOR call this entrypoint,
+        which would side-step the FSM contract, so we re-check here.
         """
+        # ── Role gate (mirrors FSM ``bids_received → awarded`` required_roles) ─
+        # ``None`` actor_role is treated as a bypass ONLY for back-compat
+        # with internal/system callers (background reconciliation, demo
+        # seeders, tests that don't simulate JWT). HTTP requests always
+        # pass a role through the router.
+        if actor_role is not None and actor_role.lower() not in _AWARD_ALLOWED_ROLES:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "RFQ award requires admin or manager role; "
+                    f"role '{actor_role}' is not permitted."
+                ),
+            )
+
         bid = await self.get_bid(bid_id)
 
         if bid.is_awarded:
@@ -266,7 +353,11 @@ class RFQService:
                 detail="This bid has already been awarded",
             )
 
-        # Check if another bid for the same RFQ has already been awarded
+        # Race-safe "already-awarded?" check: read the RFQ AND its sibling
+        # bids fresh so two concurrent /award/ calls can't both pass the
+        # gate. The selectinload on RFQ.bids on the second call observes
+        # the first call's write because both share this AsyncSession and
+        # the update was flushed.
         rfq = await self.get_rfq(bid.rfq_id)
         for existing_bid in rfq.bids:
             if existing_bid.is_awarded and existing_bid.id != bid_id:
@@ -275,31 +366,80 @@ class RFQService:
                     detail="Another bid has already been awarded for this RFQ",
                 )
 
+        # FSM-style transition gate: we accept any non-terminal status to
+        # preserve back-compat with demo data, but explicitly reject
+        # awarding into a cancelled / completed RFQ.
+        prior_status = rfq.status
+        if prior_status in {"cancelled", "completed"}:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Cannot award bid against RFQ in terminal status "
+                    f"'{prior_status}'."
+                ),
+            )
+
+        # Capture identity + display fields BEFORE calling repo.update().
+        # The repo's `expire_all()` invalidates these ORM-managed
+        # attributes, which would otherwise trigger an implicit sync
+        # SQL fetch in the next access (MissingGreenlet under async).
+        rfq_id_local = bid.rfq_id
+        rfq_number_local = rfq.rfq_number
+        bidder_contact_local = bid.bidder_contact_id
+        bid_amount_local = bid.bid_amount
+        bid_currency_local = bid.currency_code
+        project_id_local = rfq.project_id
+
         # Mark the bid as awarded
         await self.bids_repo.update(bid_id, is_awarded=True)
 
-        # Transition the RFQ to awarded status (must come from bids_received
-        # or published per the FSM; we relax to any non-terminal status for
-        # backwards compat with existing demo data).
-        prior_status = rfq.status
-        await self.rfqs.update(bid.rfq_id, status="awarded")
+        # Transition the RFQ to awarded status
+        await self.rfqs.update(rfq_id_local, status="awarded")
 
         try:
             from app.core.audit_log import log_activity
 
             await log_activity(
                 self.session,
-                actor_id=None,
+                actor_id=actor_id,
                 entity_type="rfq",
-                entity_id=str(bid.rfq_id),
+                entity_id=str(rfq_id_local),
                 action="status_changed",
                 from_status=prior_status,
                 to_status="awarded",
-                reason="RFQ awarded via award_bid()",
-                metadata={"rfq_number": rfq.rfq_number, "bid_id": str(bid_id)},
+                reason=reason or "RFQ awarded via award_bid()",
+                metadata={
+                    "rfq_number": rfq_number_local,
+                    "bid_id": str(bid_id),
+                    "bidder_contact_id": bidder_contact_local,
+                    "bid_amount": bid_amount_local,
+                    "currency_code": bid_currency_local,
+                },
             )
         except Exception:
-            logger.debug("FSM audit log skipped for RFQ %s award", bid.rfq_id)
+            logger.debug("FSM audit log skipped for RFQ %s award", rfq_id_local)
+
+        # Notification + downstream subscribers (procurement PO creation, etc).
+        # Best-effort: a flaky subscriber must not roll back the award itself.
+        try:
+            from app.core.events import event_bus
+
+            await event_bus.publish(
+                "rfq.awarded",
+                {
+                    "rfq_id": str(rfq_id_local),
+                    "rfq_number": rfq_number_local,
+                    "bid_id": str(bid_id),
+                    "bidder_contact_id": bidder_contact_local,
+                    "bid_amount": bid_amount_local,
+                    "currency_code": bid_currency_local,
+                    "project_id": str(project_id_local),
+                    "actor_id": actor_id,
+                },
+                source_module="rfq_bidding",
+            )
+        except Exception:
+            logger.exception("rfq.awarded event publish failed for %s", rfq_id_local)
 
         updated = await self.bids_repo.get(bid_id)
         if updated is None:
@@ -307,5 +447,7 @@ class RFQService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Bid not found",
             )
-        logger.info("Bid awarded: %s for RFQ %s", bid_id, bid.rfq_id)
+        logger.info(
+            "Bid awarded: %s for RFQ %s by actor %s", bid_id, rfq_id_local, actor_id,
+        )
         return updated

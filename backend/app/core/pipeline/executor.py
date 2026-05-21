@@ -28,7 +28,9 @@ node params at the boundary; dicts go on the wire.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
 import time
 import uuid
 from collections import defaultdict, deque
@@ -43,6 +45,16 @@ from app.core.pipeline.registry import NodeContext, node_registry
 logger = logging.getLogger(__name__)
 
 PIPELINE_JOB_KIND = "pipeline.run"
+
+# ── Resource caps (DoS / memory-bomb protection) ─────────────────────────
+# A user-authored DAG runs in-process; without an upper bound a buggy /
+# malicious graph could spin a worker forever or balloon node-state JSON.
+# Both caps are env-tunable so a self-host with bigger boxes can raise
+# them, but the defaults keep the SQLite / 2 GB-RAM deploy safe.
+DEFAULT_MAX_NODES_PER_RUN = int(os.environ.get("PIPELINE_MAX_NODES", "256"))
+DEFAULT_NODE_TIMEOUT_S = float(
+    os.environ.get("PIPELINE_NODE_TIMEOUT_S", "300")
+)
 
 # Terminal + transient node statuses (clone of MatchStageState's set, plus
 # the DAG-only "paused" for Phase-2 human-approval gates).
@@ -279,9 +291,26 @@ async def run_node(
             actor_id=actor_id,
             run_id=run_id,
         )
-        final_output = await spec.runner(ctx)
+        # Wall-clock cap so a stuck / runaway node cannot freeze the
+        # worker forever. Tunable via PIPELINE_NODE_TIMEOUT_S.
+        final_output = await asyncio.wait_for(
+            spec.runner(ctx), timeout=DEFAULT_NODE_TIMEOUT_S
+        )
         if not isinstance(final_output, dict):
             final_output = {"result": final_output}
+    except TimeoutError as exc:
+        logger.warning(
+            "pipeline.executor: node %s (%s) timed out after %.1fs for run %s",
+            node_id,
+            node_type,
+            DEFAULT_NODE_TIMEOUT_S,
+            run_id,
+        )
+        final_status = "error"
+        final_error = f"Node timed out after {DEFAULT_NODE_TIMEOUT_S:.0f}s"
+        await db.rollback()
+        # Suppress unused-variable warning while keeping the bind for grep.
+        del exc
     except Exception as exc:  # noqa: BLE001 — surface error to the run row.
         logger.exception(
             "pipeline.executor: node %s (%s) failed for run %s",
@@ -360,7 +389,14 @@ async def execute_run(
 
     graph = dict(run.graph_snapshot or {})
     order = validate_graph(graph)
+    # Cap the number of nodes per run to defuse memory-bomb / DoS graphs.
+    if len(order) > DEFAULT_MAX_NODES_PER_RUN:
+        raise GraphValidationError(
+            f"Pipeline graph has {len(order)} nodes, exceeds the per-run "
+            f"limit of {DEFAULT_MAX_NODES_PER_RUN}"
+        )
     nodes_by_id, _, in_edges = _adjacency(graph)
+    run_t0 = time.perf_counter()
 
     project_id = run.project_id
     tenant_id = run.tenant_id
@@ -439,12 +475,26 @@ async def execute_run(
     n_done = sum(1 for s in statuses.values() if s == "done")
     n_error = sum(1 for s in statuses.values() if s == "error")
     n_skipped = sum(1 for s in statuses.values() if s == "skipped")
+    duration_ms = int((time.perf_counter() - run_t0) * 1000)
+    # Structured run-completion log so prod observability has the
+    # outcome + wall-clock without poking the DB.
+    logger.info(
+        "pipeline.executor: run %s finished node_count=%d done=%d "
+        "error=%d skipped=%d duration_ms=%d",
+        run_id,
+        len(order),
+        n_done,
+        n_error,
+        n_skipped,
+        duration_ms,
+    )
     return {
         "run_id": str(run_id),
         "node_count": len(order),
         "done": n_done,
         "error": n_error,
         "skipped": n_skipped,
+        "duration_ms": duration_ms,
         "statuses": statuses,
         "order": order,
     }

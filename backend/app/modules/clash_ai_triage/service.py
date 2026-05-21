@@ -102,6 +102,15 @@ MODEL_COSTS: dict[str, Decimal] = {
 #: under-report cost.
 DEFAULT_COST_PER_1K = Decimal("0.0020")
 
+#: Hard wall-clock cap for an end-to-end triage LLM call (initial + JSON
+#: retry). The provider HTTP client already enforces ``AI_TIMEOUT`` (120 s
+#: per request) but a stuck retry could still tie a request thread up for
+#: ~4 minutes. We bound the whole pair at 180 s so the calling worker
+#: recycles in a predictable time even on a bad-day provider. Exceeds it
+#: → :class:`asyncio.TimeoutError` bubbles up as a 503 via the router's
+#: existing ``ClashTriageUnavailable`` translation.
+_LLM_CALL_TIMEOUT_S: float = 180.0
+
 
 # ── Public exceptions ───────────────────────────────────────────────────────
 
@@ -379,12 +388,20 @@ class ClashTriageService:
             prior = await self._latest_prior(subject_id)
             user_prompt = build_user_prompt(evidence, prior=prior)
 
-            text, tokens = await _call_llm_with_retry(
-                provider=provider,
-                api_key=api_key,
-                model=model_override,
-                user_prompt=user_prompt,
-            )
+            try:
+                async with asyncio.timeout(_LLM_CALL_TIMEOUT_S):
+                    text, tokens = await _call_llm_with_retry(
+                        provider=provider,
+                        api_key=api_key,
+                        model=model_override,
+                        user_prompt=user_prompt,
+                    )
+            except asyncio.TimeoutError as exc:
+                msg = (
+                    f"LLM call exceeded {_LLM_CALL_TIMEOUT_S:.0f}s on provider "
+                    f"{provider} model={model_name}; aborted to free the worker."
+                )
+                raise ClashTriageUnavailable(msg) from exc
 
             verdict = _coerce_verdict(extract_json(text) or _try_fence_extract(text))
 
@@ -403,6 +420,29 @@ class ClashTriageService:
                     model_evidence_used=[],
                 )
 
+            cost_estimate = _estimate_cost_usd(model_name, int(tokens or 0))
+            # Structured cost log — one line per real LLM call so ops can
+            # aggregate spend by user / project / model without instrumenting
+            # the provider client. Uses ``extra=`` so log aggregators (Loki,
+            # Datadog, etc.) ingest the fields as structured columns rather
+            # than parsing the message string.
+            logger.info(
+                "clash_triage.llm_call",
+                extra={
+                    "event": "clash_triage.llm_call",
+                    "provider": provider,
+                    "model": model_name,
+                    "prompt_version": PROMPT_VERSION,
+                    "tokens_used": int(tokens or 0),
+                    "cost_usd_estimate": float(cost_estimate),
+                    "user_id": str(user_id),
+                    "clash_id": str(clash.id),
+                    "subject_type": subject_type,
+                    "subject_id": str(subject_id),
+                    "verdict_category": verdict.category,
+                },
+            )
+
             row = ClashTriageResult(
                 subject_type=subject_type,
                 subject_id=subject_id,
@@ -418,7 +458,7 @@ class ClashTriageService:
                 raw_prompt=user_prompt,
                 raw_response=text,
                 tokens_used=int(tokens or 0),
-                cost_usd_estimate=float(_estimate_cost_usd(model_name, int(tokens or 0))),
+                cost_usd_estimate=float(cost_estimate),
                 created_by_user_id=user_id,
             )
             self.session.add(row)
@@ -541,12 +581,20 @@ class ClashTriageService:
         evidence = _build_evidence_from_clash(clash)
         prior = await self._latest_prior(subject_id)
         user_prompt = build_user_prompt(evidence, prior=prior)
-        text, tokens = await _call_llm_with_retry(
-            provider=provider,
-            api_key=api_key,
-            model=model_override,
-            user_prompt=user_prompt,
-        )
+        try:
+            async with asyncio.timeout(_LLM_CALL_TIMEOUT_S):
+                text, tokens = await _call_llm_with_retry(
+                    provider=provider,
+                    api_key=api_key,
+                    model=model_override,
+                    user_prompt=user_prompt,
+                )
+        except asyncio.TimeoutError as exc:
+            msg = (
+                f"LLM call exceeded {_LLM_CALL_TIMEOUT_S:.0f}s on provider "
+                f"{provider} model={model_name}; replay aborted."
+            )
+            raise ClashTriageUnavailable(msg) from exc
         verdict = _coerce_verdict(extract_json(text) or _try_fence_extract(text))
         if verdict is None:
             verdict = TriageVerdict(
@@ -560,6 +608,24 @@ class ClashTriageService:
                 suggested_action=None,
                 model_evidence_used=[],
             )
+        cost_estimate = _estimate_cost_usd(model_name, int(tokens or 0))
+        logger.info(
+            "clash_triage.llm_call",
+            extra={
+                "event": "clash_triage.llm_call",
+                "provider": provider,
+                "model": model_name,
+                "prompt_version": prompt_version,
+                "tokens_used": int(tokens or 0),
+                "cost_usd_estimate": float(cost_estimate),
+                "user_id": str(user_id),
+                "clash_id": str(clash.id),
+                "subject_type": subject_type,
+                "subject_id": str(subject_id),
+                "verdict_category": verdict.category,
+                "replay": True,
+            },
+        )
         row = ClashTriageResult(
             subject_type=subject_type,
             subject_id=subject_id,
@@ -575,7 +641,7 @@ class ClashTriageService:
             raw_prompt=user_prompt,
             raw_response=text,
             tokens_used=int(tokens or 0),
-            cost_usd_estimate=float(_estimate_cost_usd(model_name, int(tokens or 0))),
+            cost_usd_estimate=float(cost_estimate),
             created_by_user_id=user_id,
         )
         self.session.add(row)
@@ -691,8 +757,9 @@ __all__ = [
     "ClashTriageError",
     "ClashTriageService",
     "ClashTriageUnavailable",
-    "MODEL_COSTS",
     "DEFAULT_COST_PER_1K",
-    "_estimate_cost_usd",
+    "MODEL_COSTS",
+    "_LLM_CALL_TIMEOUT_S",
     "_coerce_verdict",
+    "_estimate_cost_usd",
 ]

@@ -42,6 +42,11 @@ MODULE = "oe_pipelines"
 # A small, bounded sample size — never stream the element universe through
 # the run rows (this is what protects the 2 GB-RAM / SQLite target).
 _SAMPLE_LIMIT = 25
+# Hard cap on the id-list that node-state envelopes can carry. Without
+# this a 100k-position project would JSON-encode 100k UUIDs into the
+# oe_pipeline_node_state.output column on every node hop — a slow
+# memory-bomb. ``count`` keeps the honest cardinality.
+_ROW_IDS_CAP = 5000
 
 
 def _resolve_project_id(ctx: NodeContext) -> uuid.UUID | None:
@@ -136,9 +141,11 @@ async def _run_source_boq(ctx: NodeContext) -> dict[str, Any]:
         }
         for p in positions
     ]
+    all_ids = [r["id"] for r in rows]
     return {
         "rows": rows[:_SAMPLE_LIMIT],
-        "row_ids": [r["id"] for r in rows],
+        "row_ids": all_ids[:_ROW_IDS_CAP],
+        "row_ids_truncated": len(all_ids) > _ROW_IDS_CAP,
         "count": len(rows),
         "sample_truncated": len(rows) > _SAMPLE_LIMIT,
         "summary": f"{len(rows)} BOQ positions across {len(boq_ids)} BOQ(s)",
@@ -191,9 +198,11 @@ async def _run_transform_filter(ctx: NodeContext) -> dict[str, Any]:
     else:
         kept = [r for r in rows if _matches(r, field, op, value)]
 
+    kept_ids = [r.get("id") for r in kept if r.get("id")]
     return {
         "rows": kept[:_SAMPLE_LIMIT],
-        "row_ids": [r.get("id") for r in kept if r.get("id")],
+        "row_ids": kept_ids[:_ROW_IDS_CAP],
+        "row_ids_truncated": len(kept_ids) > _ROW_IDS_CAP,
         "count": len(kept),
         "dropped": len(rows) - len(kept),
         "summary": (

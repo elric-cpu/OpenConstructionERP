@@ -219,7 +219,17 @@ async def list_markups(
     session: SessionDep,
     project_id: uuid.UUID = Query(...),
     document_id: str | None = Query(default=None),
-    page: int | None = Query(default=None, ge=1),
+    document_page: int | None = Query(
+        default=None,
+        ge=1,
+        description="Filter by drawing/PDF page number (the document's intrinsic page).",
+    ),
+    page: int | None = Query(
+        default=None,
+        ge=1,
+        deprecated=True,
+        description="Deprecated alias for document_page; prefer document_page.",
+    ),
     type: str | None = Query(default=None, alias="type"),
     status_filter: str | None = Query(default=None, alias="status"),
     layer: str | None = Query(default=None),
@@ -231,6 +241,11 @@ async def list_markups(
 ) -> list[MarkupResponse]:
     """List markups for a project with filters.
 
+    Pagination follows the platform standard ``offset`` + ``limit`` (max 200).
+    The pre-existing ``page`` query param meant *drawing page* and collided
+    with the platform's "page-of-results" convention — it is preserved as a
+    deprecated alias for one release. Use ``document_page`` going forward.
+
     Project membership is verified before returning anything — a non-member
     cannot enumerate markup ids by guessing project_ids (404 maps both
     "no such project" and "not your project" to the same response shape).
@@ -241,6 +256,9 @@ async def list_markups(
         items = await service.search_markups(project_id, query)
         return [_markup_to_response(i) for i in items]
 
+    # Resolve the document-page filter (new name wins, old aliased for compat).
+    page_filter = document_page if document_page is not None else page
+
     items, _ = await service.list_markups(
         project_id,
         offset=offset,
@@ -248,7 +266,7 @@ async def list_markups(
         type_filter=type,
         status_filter=status_filter,
         document_id=document_id,
-        page=page,
+        page=page_filter,
         layer=layer,
     )
     return [_markup_to_response(i) for i in items]
@@ -343,13 +361,34 @@ async def create_scale(
 @router.get("/scales/", response_model=list[ScaleConfigResponse])
 async def list_scales(
     document_id: str = Query(...),
-    page: int | None = Query(default=None, ge=1),
+    document_page: int | None = Query(
+        default=None,
+        ge=1,
+        description="Filter by drawing/PDF page number.",
+    ),
+    page: int | None = Query(
+        default=None,
+        ge=1,
+        deprecated=True,
+        description="Deprecated alias for document_page.",
+    ),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
     user_id: CurrentUserId = None,  # type: ignore[assignment]
     service: MarkupsService = Depends(_get_service),
 ) -> list[ScaleConfigResponse]:
-    """List scale configs for a document."""
-    items = await service.list_scales(document_id, page=page)
-    return [_scale_to_response(i) for i in items]
+    """List scale configs for a document.
+
+    Authn is required (CurrentUserId). Scales are document-scoped — until
+    documents grow a project FK we keep authz at the calibrator level (see
+    delete_scale). ``page`` is the deprecated alias for ``document_page``;
+    pagination uses platform-standard ``offset``+``limit``.
+    """
+    page_filter = document_page if document_page is not None else page
+    items = await service.list_scales(document_id, page=page_filter)
+    # Apply offset/limit at the API edge so the route matches platform shape
+    # without churning the repo signature for a small list.
+    return [_scale_to_response(i) for i in items[offset : offset + limit]]
 
 
 @router.delete("/scales/{config_id}", status_code=204)

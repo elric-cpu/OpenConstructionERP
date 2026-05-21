@@ -115,6 +115,17 @@ async def get_clash_impact(
     return ClashCostImpactResponse.model_validate(impact)
 
 
+#: Accepted ``status`` query values for the rollup endpoint. The two
+#: aggregate aliases are ``open`` (the open-statuses tuple) and ``all``
+#: (no filter); the remaining values are the per-row statuses surfaced
+#: by the clash module. Anything else returns 400 — silently accepting
+#: arbitrary strings used to produce empty rollups that looked like a
+#: clean project, which is misleading on a money endpoint.
+_ALLOWED_STATUS_FILTERS = frozenset(
+    {"open", "all", "new", "active", "reviewed", "approved", "resolved", "ignored"}
+)
+
+
 @router.get(
     "/project/{project_id}/rollup",
     response_model=ProjectCostImpactRollupResponse,
@@ -129,13 +140,22 @@ async def get_project_rollup(
         alias="status",
         description="Clash status filter. ``open`` (default) — clashes "
         "still needing attention (new/active/reviewed). ``all`` — every "
-        "clash regardless of status. Any other value is treated as a "
-        "literal status string.",
+        "clash regardless of status. Otherwise a literal status string "
+        "from the clash module's vocabulary "
+        "(``new``/``active``/``reviewed``/``resolved``/``ignored``).",
     ),
     service: ClashCostImpactService = Depends(_get_service),
 ) -> ProjectCostImpactRollupResponse:
     """Project-level open-impact rollup over the (filtered) clashes."""
     _require_boq_read(payload)
+    if status_filter not in _ALLOWED_STATUS_FILTERS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Invalid status filter {status_filter!r}; "
+                f"allowed: {sorted(_ALLOWED_STATUS_FILTERS)}"
+            ),
+        )
     user_id = payload.get("sub", "")
     await verify_project_access(project_id, user_id, session)
 

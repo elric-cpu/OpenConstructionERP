@@ -12,6 +12,7 @@ import re
 import uuid
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.contacts.models import Contact
@@ -22,6 +23,38 @@ logger = logging.getLogger(__name__)
 _logger_audit = logging.getLogger(__name__ + ".audit")
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+# ── PII safety ─────────────────────────────────────────────────────────────
+# Logs are routinely shipped off-host (CloudWatch / Loki / Sentry / journald
+# tail). GDPR Art. 5(1)(c) "data minimisation" means raw e-mail / phone /
+# full name must not flow into application logs by default. Redact before
+# formatting any log line that interpolates a contact attribute.
+
+
+def _redact_email(email: str | None) -> str:
+    """Return ``j***@example.com`` so support can still triage by domain."""
+    if not email or "@" not in email:
+        return "<redacted>"
+    local, _, domain = email.partition("@")
+    return f"{local[:1]}***@{domain}" if local else f"***@{domain}"
+
+
+def _safe_label(
+    *,
+    company_name: str | None,
+    first_name: str | None,
+    last_name: str | None,
+) -> str:
+    """Build a log-safe label from the most-public attribute available.
+
+    Falls back to initials-only when no company is set — full personal
+    names should never hit the log stream verbatim.
+    """
+    if company_name:
+        return company_name
+    initials = "".join(p[:1] for p in (first_name, last_name) if p)
+    return f"<person:{initials or '?'}>"
 
 
 async def _safe_audit(
@@ -121,16 +154,37 @@ class ContactService:
             created_by=user_id,
             metadata_=data.metadata,
         )
-        contact = await self.repo.create(contact)
-        label = data.company_name or f"{data.first_name or ''} {data.last_name or ''}".strip()
+        try:
+            contact = await self.repo.create(contact)
+        except IntegrityError:
+            # Two concurrent POSTs both passed the read-then-write check
+            # above and raced into the INSERT. If the deployment runs the
+            # ``ix_oe_contacts_contact_primary_email_unique_active`` partial
+            # index (or equivalent UNIQUE constraint), one INSERT wins and
+            # the other surfaces here. Translate to 409 instead of 500.
+            await self.session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A contact with this email already exists.",
+            ) from None
 
+        label = _safe_label(
+            company_name=data.company_name,
+            first_name=data.first_name,
+            last_name=data.last_name,
+        )
+
+        # Audit ``details`` survive into the audit table and may be reviewed
+        # by support staff — keep the same PII-minimising rule that applies
+        # to the log line. The full contact remains queryable by ``entity_id``
+        # for an authorised operator who actually needs the row.
         await _safe_audit(
             self.session,
             action="create",
             entity_type="contact",
             entity_id=str(contact.id),
             user_id=user_id,
-            details={"company_name": label, "contact_type": data.contact_type},
+            details={"label": label, "contact_type": data.contact_type},
         )
 
         logger.info("Contact created: %s (%s)", label, data.contact_type)
@@ -201,10 +255,15 @@ class ContactService:
         self,
         contact_id: uuid.UUID,
         data: ContactUpdate,
+        user_id: str | None = None,
     ) -> Contact:
         """Update contact fields.
 
         Validates email format and checks for duplicate emails on update.
+        ``user_id`` is the authenticated caller — recorded in the audit
+        row so PATCH events are attributable just like create/delete.
+        Earlier revisions of this method dropped the caller id, leaving
+        the audit table with ``user_id=NULL`` for every update.
         """
         contact = await self.get_contact(contact_id)
 
@@ -234,7 +293,14 @@ class ContactService:
         if not fields:
             return contact
 
-        await self.repo.update(contact_id, **fields)
+        try:
+            await self.repo.update(contact_id, **fields)
+        except IntegrityError:
+            await self.session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A contact with this email already exists.",
+            ) from None
         updated = await self.repo.get(contact_id)
         if updated is None:
             raise HTTPException(
@@ -247,6 +313,7 @@ class ContactService:
             action="update",
             entity_type="contact",
             entity_id=str(contact_id),
+            user_id=user_id,
             details={"updated_fields": list(fields.keys())},
         )
 
@@ -255,7 +322,11 @@ class ContactService:
 
     # ── Soft delete ───────────────────────────────────────────────────────
 
-    async def deactivate_contact(self, contact_id: uuid.UUID) -> None:
+    async def deactivate_contact(
+        self,
+        contact_id: uuid.UUID,
+        user_id: str | None = None,
+    ) -> None:
         """Soft-delete a contact (set is_active=False)."""
         await self.get_contact(contact_id)  # Raises 404 if not found
         await self.repo.update(contact_id, is_active=False)
@@ -264,6 +335,7 @@ class ContactService:
             action="delete",
             entity_type="contact",
             entity_id=str(contact_id),
+            user_id=user_id,
             details={},
         )
 

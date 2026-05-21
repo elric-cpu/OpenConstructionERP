@@ -15,7 +15,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.dependencies import CurrentUserId, SessionDep, verify_project_access
+from app.dependencies import CurrentUserId, SessionDep
 from app.modules.teams.schemas import (
     AddMemberRequest,
     MembershipResponse,
@@ -60,12 +60,17 @@ async def list_teams(
 @router.post("/", response_model=TeamResponse, status_code=201)
 async def create_team(
     data: TeamCreate,
-    _user_id: CurrentUserId,
+    user_id: CurrentUserId,
     service: TeamService = Depends(_get_service),
 ) -> TeamResponse:
-    """Create a new team within a project."""
+    """Create a new team within a project.
+
+    RBAC: caller must own (or be admin of) the parent project. The
+    service-layer ``_assert_project_access`` enforces this — the router
+    just forwards ``user_id``.
+    """
     try:
-        team = await service.create_team(data)
+        team = await service.create_team(data, actor_id=user_id)
         return TeamResponse.model_validate(team)
     except HTTPException:
         raise
@@ -79,13 +84,13 @@ async def update_team(
     team_id: uuid.UUID,
     data: TeamUpdate,
     user_id: CurrentUserId,
-    session: SessionDep,
     service: TeamService = Depends(_get_service),
 ) -> TeamResponse:
     """Update team fields."""
-    existing = await service.get_team(team_id)
-    await verify_project_access(existing.project_id, str(user_id), session)
-    team = await service.update_team(team_id, data)
+    # Service performs the verify_project_access call internally —
+    # double-gating at the router was redundant and made the service
+    # privately callable from inside the process without a guard.
+    team = await service.update_team(team_id, data, actor_id=user_id)
     return TeamResponse.model_validate(team)
 
 
@@ -93,13 +98,10 @@ async def update_team(
 async def delete_team(
     team_id: uuid.UUID,
     user_id: CurrentUserId,
-    session: SessionDep,
     service: TeamService = Depends(_get_service),
 ) -> None:
     """Delete a team and all its memberships."""
-    existing = await service.get_team(team_id)
-    await verify_project_access(existing.project_id, str(user_id), session)
-    await service.delete_team(team_id)
+    await service.delete_team(team_id, actor_id=user_id)
 
 
 # ── Members ──────────────────────────────────────────────────────────────
@@ -119,12 +121,20 @@ async def list_members(
 async def add_member(
     team_id: uuid.UUID,
     data: AddMemberRequest,
-    _user_id: CurrentUserId,
+    user_id: CurrentUserId,
     service: TeamService = Depends(_get_service),
 ) -> MembershipResponse:
-    """Add a user to a team."""
+    """Add a user to a team.
+
+    RBAC: ``actor_id=user_id`` is passed to the service so it can (a)
+    verify the caller has access to the team's parent project and
+    (b) block elevation into ``owner`` / ``project_manager`` unless the
+    caller is system-admin or the project owner. Closes the
+    self-elevation hole where any authenticated user could grant
+    themselves owner-equivalent permissions by joining a team.
+    """
     try:
-        membership = await service.add_member(team_id, data)
+        membership = await service.add_member(team_id, data, actor_id=user_id)
         return MembershipResponse.model_validate(membership)
     except HTTPException:
         raise
@@ -137,8 +147,13 @@ async def add_member(
 async def remove_member(
     team_id: uuid.UUID,
     user_id: uuid.UUID,
-    _user_id: CurrentUserId,
+    actor_user_id: CurrentUserId,
     service: TeamService = Depends(_get_service),
 ) -> None:
-    """Remove a user from a team."""
-    await service.remove_member(team_id, user_id)
+    """Remove a user from a team.
+
+    ``actor_user_id`` is the caller (from JWT); ``user_id`` is the
+    membership being revoked. The service uses ``actor_user_id`` to
+    enforce project-access RBAC.
+    """
+    await service.remove_member(team_id, user_id, actor_id=actor_user_id)

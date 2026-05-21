@@ -81,6 +81,21 @@ class SmartViewRepository:
                     SmartView.scope_id.in_(accessible_project_ids),
                 )
             )
+            # Federation visibility: join through BIMFederation.project_id.
+            # Without this, federation-scoped views never list (issue #103
+            # mirror — they existed in DB but were invisible to owners).
+            from app.modules.bim_hub.models import BIMFederation
+            fed_subq = (
+                select(BIMFederation.id)
+                .where(BIMFederation.project_id.in_(accessible_project_ids))
+                .scalar_subquery()
+            )
+            clauses.append(
+                and_(
+                    SmartView.scope_type == "federation",
+                    SmartView.scope_id.in_(fed_subq),
+                )
+            )
         visibility = or_(*clauses)
 
         stmt = select(SmartView).where(visibility)

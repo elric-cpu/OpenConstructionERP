@@ -26,7 +26,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 
 from app.core.pipeline.executor import GraphValidationError
 from app.core.pipeline.registry import list_node_specs
-from app.dependencies import CurrentUserId, SessionDep
+from app.dependencies import CurrentUserId, SessionDep, verify_project_access
 from app.modules.pipelines.models import Pipeline
 from app.modules.pipelines.schemas import (
     NodeTypeOut,
@@ -141,7 +141,21 @@ async def create_pipeline(
     session: SessionDep,
     user_id: CurrentUserId,
 ) -> PipelineDetail:
-    """Create a new (unpublished) pipeline."""
+    """Create a new (unpublished) pipeline.
+
+    When a ``project_id`` is supplied the caller MUST have access to that
+    project — otherwise an authenticated user could bind a pipeline (and
+    every future run + node-state output of that pipeline) to a project
+    they do not own (cross-tenant write IDOR).
+    """
+    if body.project_id is not None:
+        try:
+            pid = uuid.UUID(str(body.project_id))
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
+            ) from exc
+        await verify_project_access(pid, user_id, session)
     service = PipelineService(session)
     pipeline = await service.create(
         name=body.name,

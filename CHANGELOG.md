@@ -5,6 +5,69 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.4] — 2026-05-21 · Round 4 — 20-module deep improvements sweep
+
+A single release bundling 20 parallel module-deep audit + fix passes on previously under-tested modules. Every module touched here got a baseline pytest file; combined ~140 new tests.
+
+### Security
+
+- **`teams`: critical RBAC bypass closed.** `create_team`, `add_member`, `remove_member` had no `verify_project_access` gate — any authenticated user could create teams in any project and self-elevate to `owner`/`project_manager`, inheriting elevated permissions. Service-layer project-access check + self-elevation block on elevated roles.
+- **`architecture_map`: critical information disclosure closed.** Was `Depends(get_current_user_id)` only → every viewer/estimator could enumerate the full ERP architecture (table names, model columns, module deps). Now requires `architecture.read` admin permission with router-level + per-endpoint defence.
+- **`rfq_bidding`: award role gate.** `award_bid` only required `rfq.update` (EDITOR) but FSM declares admin/manager. Added service-layer 403 check on `{admin, manager, owner}`. Also: bid-submission state-escape blocked (vendors could submit against draft/awarded/cancelled), past-deadline submissions 409.
+- **`smart_views`: federation read leak.** `_can_read` returned `True` blindly for federation scope → anyone with a federation UUID could read any federation-scoped view. Now resolves `BIMFederation.project_id` and checks accessible project set. Closes backlog #103 (federation visibility staleness on owner change) via new event subscriber on `projects.project.updated`.
+- **`opencde_api`: `$orderby` allowlist + LIKE-wildcard injection.** `parse_orderby` used bare `getattr(BCFTopic, field, None)` accepting ORM relationships; user-supplied label literal interpolated into `LIKE %"<value>"%` without escaping `%`/`_`/`\`. Both fixed; scalar columns only + SQLA `.like(escape="\\")`.
+- **`pipelines`: `create_pipeline` accepted `project_id` from body without `verify_project_access`.** Now gated.
+- **`coordination_hub`: silent write on `coordination.read` GET.** Viewer hitting `/thresholds` committed seed rows. Now `allow_seed` is permission-derived; viewers get ephemeral defaults.
+- **`compliance_docs` + `correspondence`: magic-byte upload endpoints.** Mirror v4.2.1 punchlist + v4.2.3 AI fixes — extension-only validation replaced with `app.core.file_signature.require_signature`.
+- **`correspondence`: CRLF subject sanitisation.** Email-header injection vector closed; control chars stripped from `subject` on create + update.
+- **`contacts`: PII redaction in logs + import-error responses + duplicate-email race (IntegrityError → 409) + PATCH audit `user_id` propagation.**
+- **`erp_chat`: history role/length sanitisation.** Smuggled `system` role in `conversation_history` now dropped — kills prompt-injection via fake system turn. Content capped at 4000 chars, tail-windowed to 20 most recent.
+- **`ai_agents`: tool-context spoofing fix.** An LLM that forged `__agent_context__` in tool_args could spoof the user; trusted context now strips and re-injects. Idempotency-Key header dedupes retries.
+- **`clash_ai_triage`: rate limit added to triage/batch/replay endpoints** (was none) + 180s wall-timeout + structured per-call cost log.
+- **`enterprise_workflows`: action_type whitelist + MAX_STEPS=32 cap + role validation.**
+
+### Performance
+
+- **`opencde_api`: N+1 in `create_topic`** — was loading every BCFTopic row for the project to compute monotonic index via `len(list(...))`. Replaced with `SELECT COUNT(*)`.
+- **`project_intelligence`: LLM LRU cache (sha256-keyed, 60s TTL) + bounded state cache (was unbounded → memory leak on long-lived process).**
+- **`pipelines`: max-nodes cap (256), per-node `asyncio.wait_for` timeout (300s), row-ids cap (5000) on `source.boq` / `transform.filter` envelopes.**
+
+### Correctness
+
+- **`clash_cost_impact`: Decimal-exact rollup.** Was reading 2dp-rounded floats and re-summing → drift up to `0.005 × N`. Now sums exact Decimals, rounds once at the boundary; `ROUND_HALF_UP` instead of banker's even.
+- **`coordination_hub`: warn/error threshold invariant.** Inverted pairs could persist and silently break the elif-cascade.
+- **`rfq_bidding`: money/currency Decimal validation** + 3-letter ISO normalisation + score field validation. Also fixed latent `MissingGreenlet` bug (ORM access after `expire_all()` — hidden in prod because the prior `try: except: pass` audit-log catch swallowed it).
+- **`markups` + `dwg_takeoff`: Float → Numeric(18,6) / Numeric(10,6)** on `measurement_value`, `pixels_per_unit`, `real_distance`, `scale_override`, `thickness`, `scale_denominator`. New alembic migrations `v3097_markups_measurement_numeric` (merges two heads) + `v3097_dwg_takeoff_decimal_quantities`. Float precision drift no longer leaks into BOQ via takeoff/markups.
+- **`dwg_takeoff`: magic-byte validation moved pre-write.** Renamed PDFs/ZIPs no longer land on disk before the sniff.
+- **`compliance_ai`: was stub-only.** Built `POST /from-nl` with auth + rate-limit + 2000-char input cap + 1024-token AI cap + structured verdict log + `_log_failures`-wrapped event publish. Fixed latent double-prefix bug (`/api/v1/compliance-ai/compliance-ai/_health`).
+- **`smart_views`: federation views now appear in `list_visible_to_user`** (previously excluded entirely).
+
+### Observability
+
+- New structured cost / outcome logs across: `erp_chat`, `ai_agents`, `clash_ai_triage`, `project_intelligence`, `compliance_ai`, `pipelines`, `coordination_hub`, `teams`, `enterprise_workflows` — each emits a single `module.operation` INFO record with relevant fields (tokens, duration, cost, actor, outcome).
+- `architecture_map` now writes per-endpoint audit log of who's enumerating system architecture.
+- `teams` publishes `teams.team.{created,updated,deleted}` and `teams.membership.{added,removed}` events for permission-cache invalidation.
+- `compliance_docs` publishes `compliance_docs.expiry.alert` event on status transitions.
+
+### DB
+
+- `alembic v3097_markups_measurement_numeric` (merge migration for multi-head)
+- `alembic v3097_dwg_takeoff_decimal_quantities`
+- `alembic v3098_correspondence_attachments_column` (adds `attachments JSON NOT NULL DEFAULT []` to `oe_correspondence_correspondence` — required for the new attachments endpoint to work on existing prod DBs)
+
+Single head at `v3098`.
+
+### Tests
+
+~140 new tests across:
+- `test_coordination_hub.py` (5), `test_smart_views.py` (3), `test_clash_ai_triage.py` (12), `test_clash_cost_impact.py` (9), `test_cost_match.py` (13), `test_rfq_bidding.py` (11), `test_pipelines.py` (4), `test_erp_chat.py` (5)
+- `test_teams.py` (2), `test_contacts.py` (11), `test_correspondence.py` (6), `test_compliance_ai.py` (4), `test_compliance_docs.py` (12), `test_enterprise_workflows.py` (6), `test_ai_agents.py` (6), `test_project_intelligence.py` (7)
+- `test_dwg_takeoff_service.py` (11), `test_markups.py` (4), `test_opencde_api.py` (30), `test_architecture_map.py` (11)
+
+### Notes
+
+`cost_match` was found to be a stub-only module (the matching logic lives in `match_elements`; cost_match is reserved for T12 assembly material-layer matching). Baseline tests pin current shape with a guard that fails when models.py lands, prompting full T12 coverage. No regressions detected in any adjacent suite.
+
 ## [4.2.3] — 2026-05-21 · Security hardening + observability foundation + bundle slimdown
 
 ### Added

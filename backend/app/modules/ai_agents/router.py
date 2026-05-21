@@ -14,10 +14,11 @@ Endpoints (mounted at ``/api/v1/ai-agents/`` by the module loader):
 from __future__ import annotations
 
 import logging
+import time
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session_factory
@@ -35,6 +36,36 @@ from app.modules.ai_agents.service import AgentService
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# ── Idempotency cache ────────────────────────────────────────────────────
+# In-memory map of ``(user_id, idempotency_key) -> (run_id, created_ts)``.
+# Purpose: protect agent runs from frontend retry storms / duplicate
+# submits — each agent run costs real LLM dollars, so re-running on a
+# transient network blip would burn cash silently. Entries expire after
+# IDEMPOTENCY_TTL_SECONDS.
+#
+# Single-process scope is acceptable for now (single-tenant VPS deploy);
+# multi-instance prod will need Redis backing (TODO).
+IDEMPOTENCY_TTL_SECONDS = 600  # 10 minutes
+_IDEMPOTENCY_CACHE: dict[tuple[str, str], tuple[uuid.UUID, float]] = {}
+
+
+def _idempotency_lookup(user_id: str, key: str) -> uuid.UUID | None:
+    """Return the cached run_id for this user+key, or None if absent/expired."""
+    now = time.monotonic()
+    # Lazy eviction of stale entries (cheap; cache is tiny).
+    stale = [k for k, (_, ts) in _IDEMPOTENCY_CACHE.items() if now - ts > IDEMPOTENCY_TTL_SECONDS]
+    for k in stale:
+        _IDEMPOTENCY_CACHE.pop(k, None)
+    entry = _IDEMPOTENCY_CACHE.get((user_id, key))
+    if entry is None:
+        return None
+    return entry[0]
+
+
+def _idempotency_record(user_id: str, key: str, run_id: uuid.UUID) -> None:
+    _IDEMPOTENCY_CACHE[(user_id, key)] = (run_id, time.monotonic())
 
 
 def _get_service(session: SessionDep) -> AgentService:
@@ -187,6 +218,7 @@ async def create_run(
     user_id: CurrentUserId,
     session: SessionDep,
     service: AgentService = Depends(_get_service),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> AgentRunResponse:
     """Start a new run.
 
@@ -194,8 +226,22 @@ async def create_run(
     loop continues in a FastAPI background task. Poll
     ``GET /runs/{id}`` for progress (the steps timeline updates as
     the loop emits each step).
+
+    Idempotency: clients may pass ``Idempotency-Key`` header to make
+    retries safe. Submitting the same key within 10 minutes returns the
+    original run instead of spawning a duplicate (agent runs cost real
+    LLM dollars — never let a retry storm double-spend).
     """
     uid = uuid.UUID(user_id)
+
+    # Idempotency replay: return existing run for the same key within TTL.
+    if idempotency_key:
+        existing_run_id = _idempotency_lookup(user_id, idempotency_key)
+        if existing_run_id is not None:
+            existing = await service.get_run(existing_run_id)
+            if existing is not None and str(existing.user_id) == user_id:
+                steps = await service.get_run_steps(existing_run_id)
+                return _serialise_run(existing, steps=steps)
 
     # Validate that the agent exists before creating the row.
     from app.modules.ai_agents.base import get_agent
@@ -219,6 +265,9 @@ async def create_run(
     )
     run = await service.run_repo.create(run)
     await session.commit()
+
+    if idempotency_key:
+        _idempotency_record(user_id, idempotency_key, run.id)
 
     background_tasks.add_task(
         _run_in_background,
