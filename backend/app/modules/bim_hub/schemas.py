@@ -915,3 +915,60 @@ class FederationListResponse(BaseModel):
 
     items: list[FederationResponse] = Field(default_factory=list)
     total: int = 0
+
+
+# ── Federation Type Tree (v4.0 / Slice 2) ─────────────────────────────────
+#
+# Counter-intuitive design note
+# -----------------------------
+# Most BIM viewers nest the federation tree as
+# ``Federation › Model › Storey › Element``. BIMcollab Zoom inverts it to
+# ``Federation › IfcClass › [all instances across all models]``. The flat-
+# by-class layout is what makes "color all mechanical ducts red across 12
+# models" a single click instead of a 12-step traversal. The endpoint and
+# schemas below model the flat-by-class shape; the per-model split is
+# kept as a drill-down (``member_breakdown``) so the user can still see
+# how a given class is distributed across the federation members.
+
+
+class FederationTypeTreeMember(BaseModel):
+    """Per-member breakdown for one IfcClass inside the federation.
+
+    Surfaces in the type-tree drill-down: "IfcWall has 1 234 instances
+    across 3 members — 600 in ARCH, 500 in STRUCT, 134 in MEP".
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    model_id: UUID
+    model_name: str
+    discipline: str
+    element_count: int
+
+
+class FederationTypeTreeClass(BaseModel):
+    """A single IfcClass row in the federation-flat type tree."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    ifc_class: str
+    display_name: str
+    element_count: int
+    member_breakdown: list[FederationTypeTreeMember] = Field(default_factory=list)
+    sample_properties: list[str] = Field(default_factory=list)
+
+
+class FederationTypeTreeResponse(BaseModel):
+    """Aggregated, federation-flat type tree response.
+
+    Empty (``total_elements=0``, ``classes=[]``) but valid when the
+    federation has no members or none of the members have ingested
+    elements yet — the page renders an explicit empty state instead of
+    blowing up.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    federation_id: UUID
+    total_elements: int = 0
+    classes: list[FederationTypeTreeClass] = Field(default_factory=list)

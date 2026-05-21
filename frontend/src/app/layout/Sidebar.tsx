@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, Fragment } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { CustomBranding } from './CustomBranding';
 import { useTranslation } from 'react-i18next';
@@ -83,6 +83,7 @@ import { useGlobalSearchStore } from '@/stores/useGlobalSearchStore';
 import { getModuleNavItems } from '@/modules/_registry';
 import { APP_VERSION } from '@/shared/lib/version';
 import { useSidebarBadges } from '@/shared/hooks/useSidebarBadges';
+import { useModulePresence } from '@/shared/hooks/useModulePresence';
 import { useIsRTL } from '@/shared/hooks/useIsRTL';
 import {
   useSidebarCollapseStore,
@@ -118,6 +119,10 @@ interface NavGroup {
   items: NavItem[];
   defaultOpen: boolean;
   hideInSimple?: boolean; // Entire group hidden in simple mode
+  /** Render a thin horizontal divider above this group. Used to peel
+   *  reference/setup groups (Regional, Modules, Settings) away from
+   *  the project-work surface above. */
+  separator?: boolean;
 }
 
 // Navigation groups — collapsible sections
@@ -136,6 +141,11 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.project_files', to: '/files', icon: HardDrive },
     ],
   },
+  // ── ESTIMATING ─────────────────────────────────────────────────────
+  // The project's actual cost work-product: BOQ, AI-driven estimate,
+  // and the BIM↔catalogue link that powers both. Catalogues themselves
+  // live in the next group ("Catalogues & Reference") so they don't
+  // crowd the day-to-day estimating surface.
   {
     id: 'estimation',
     labelKey: 'nav.group_estimation',
@@ -143,12 +153,25 @@ const navGroups: NavGroup[] = [
     defaultOpen: true,
     items: [
       { labelKey: 'boq.title', to: '/boq', icon: Table2, tourId: 'boq' },
-      { labelKey: 'costs.title', to: '/costs', icon: Database, tourId: 'costs' },
       { labelKey: 'nav.match_elements', to: '/match-elements', icon: Link2, badge: 'BETA' },
+      { labelKey: 'nav.ai_estimate', to: '/ai-estimate', icon: Sparkles, badge: 'BETA' },
+      { labelKey: 'nav.estimation_dashboard', to: '/project-intelligence', icon: BrainCircuit, badge: 'BETA' },
+    ],
+  },
+  // ── CATALOGUES & REFERENCE ─────────────────────────────────────────
+  // Cross-project reference data: cost databases, regional catalogues
+  // and assembly templates. Live next to Estimating but separate so
+  // database curators have their own home.
+  {
+    id: 'catalogues',
+    labelKey: 'nav.group_catalogues',
+    descriptionKey: 'nav.group_catalogues_desc',
+    defaultOpen: false,
+    items: [
+      { labelKey: 'costs.title', to: '/costs', icon: Database, tourId: 'costs' },
+      { labelKey: 'catalog.title', to: '/catalog', icon: Boxes },
       { labelKey: 'nav.assemblies', to: '/assemblies', icon: Layers },
       { labelKey: 'nav.assembly_library', to: '/assemblies/library', icon: Library, badge: 'BETA' },
-      { labelKey: 'catalog.title', to: '/catalog', icon: Boxes },
-      { labelKey: 'nav.quantity_rules', to: '/bim/rules', icon: ClipboardCheck, badge: 'BETA' },
     ],
   },
   {
@@ -160,25 +183,64 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.dwg_takeoff', to: '/dwg-takeoff', icon: PencilRuler },
       { labelKey: 'nav.cad_bim_explorer', to: '/data-explorer', icon: TableProperties },
       { labelKey: 'nav.bim_viewer', to: '/bim', icon: Box },
+    ],
+  },
+  // ── CAD-BIM ANALYTICS ──────────────────────────────────────────────
+  // Coordinated multi-model analyses live in their own group so users
+  // who only need quantity takeoff don't have to scroll past clash
+  // detection / federations / rule packs every time.
+  {
+    id: 'cad_bim_analytics',
+    labelKey: 'nav.group_cad_bim_analytics',
+    descriptionKey: 'nav.group_cad_bim_analytics_desc',
+    defaultOpen: true,
+    items: [
+      { labelKey: 'nav.coordination_hub', to: '/coordination', icon: LayoutDashboard, badge: 'NEW' },
       { labelKey: 'nav.bim_federations', to: '/bim/federations', icon: Layers, badge: 'NEW' },
       { labelKey: 'nav.clash_detection', to: '/clash', icon: Radar, badge: 'BETA' },
       { labelKey: 'nav.bim_rules', to: '/bim/rules?mode=requirements', icon: SlidersHorizontal, badge: 'BETA' },
     ],
   },
+  // ── AI & TOOLS ─────────────────────────────────────────────────────
+  // AI agents, advisor, project intelligence and ERP chat. AI Estimate
+  // moved to the Estimating group above (it's estimation work, not
+  // a standalone tool).
   {
     id: 'ai',
     labelKey: 'nav.group_ai_estimation',
-    defaultOpen: true,
+    descriptionKey: 'nav.group_ai_estimation_desc',
+    defaultOpen: false,
     hideInSimple: true,
     items: [
-      { labelKey: 'nav.ai_estimate', to: '/ai-estimate', icon: Sparkles, badge: 'BETA' },
       { labelKey: 'nav.ai_agents', to: '/ai-agents', icon: Bot, badge: 'NEW' },
       { labelKey: 'nav.ai_advisor', to: '/advisor', icon: MessageSquare },
-      { labelKey: 'nav.estimation_dashboard', to: '/project-intelligence', icon: BrainCircuit, badge: 'BETA' },
       { labelKey: 'nav.erp_chat', to: '/chat', icon: MessageSquare, badge: 'BETA' },
     ],
   },
+  // ── COMMERCIAL ─────────────────────────────────────────────────────
+  // Commercial pipeline — CRM lead → contract award → variations,
+  // subcontractor management, bid management, supplier catalogs,
+  // property/asset development. Moved up to sit next to Estimating
+  // because it's the same "before-construction" phase: sales, bidding,
+  // commit.
+  {
+    id: 'commercial',
+    labelKey: 'nav.group_commercial',
+    descriptionKey: 'nav.group_commercial_desc',
+    defaultOpen: false,
+    hideInSimple: true,
+    items: [
+      { labelKey: 'nav.crm', to: '/crm', icon: Briefcase },
+      { labelKey: 'nav.contracts', to: '/contracts', icon: FileSignature },
+      { labelKey: 'nav.subcontractors', to: '/subcontractors', icon: HardHat },
+      { labelKey: 'nav.bid_management', to: '/bid-management', icon: Scale },
+      { labelKey: 'nav.variations', to: '/variations', icon: GitBranch },
+      { labelKey: 'nav.supplier_catalogs', to: '/supplier-catalogs', icon: ShoppingCart },
+      { labelKey: 'nav.property_dev', to: '/property-dev', icon: Building2 },
+    ],
+  },
   // ── PLANNING & CONTROL (advanced) ──────────────────────────────────
+  // After the deal closes: schedule, tasks, 5D cost model, risk.
   {
     id: 'planning',
     labelKey: 'nav.group_planning',
@@ -194,10 +256,10 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.risk_register', to: '/risks', icon: ShieldAlert, advancedOnly: true },
     ],
   },
-  // ── FIELD OPERATIONS (18-Modules Wave) ─────────────────────────────
-  // Day-to-day site operations: service tickets, equipment, daily diary,
-  // subcontractor portal, resource/crew assignment. Most useful to PMs,
-  // site engineers, and field supervisors.
+  // ── FIELD OPERATIONS ───────────────────────────────────────────────
+  // Day-to-day site operations: service tickets, equipment, diary,
+  // sub portal, resources, and the physical assets register. Most
+  // useful to PMs, site engineers, and field supervisors.
   {
     id: 'operations',
     labelKey: 'nav.group_operations',
@@ -206,42 +268,15 @@ const navGroups: NavGroup[] = [
     hideInSimple: true,
     items: [
       { labelKey: 'nav.daily_diary', to: '/daily-diary', icon: BookOpen },
+      { labelKey: 'nav.field_reports', to: '/field-reports', icon: ClipboardList, advancedOnly: true },
       { labelKey: 'nav.equipment', to: '/equipment', icon: Truck },
       { labelKey: 'nav.resources', to: '/resources', icon: Users },
       { labelKey: 'nav.service', to: '/service', icon: Wrench },
       { labelKey: 'nav.portal', to: '/portal', icon: Globe },
-    ],
-  },
-  {
-    id: 'finance',
-    labelKey: 'nav.group_finance',
-    defaultOpen: false,
-    hideInSimple: true,
-    items: [
-      { labelKey: 'finance.title', to: '/finance', icon: Wallet, advancedOnly: true },
-      { labelKey: 'procurement.title', to: '/procurement', icon: Package, advancedOnly: true },
-      { labelKey: 'tendering.title', to: '/tendering', icon: FileText, moduleKey: 'tendering', advancedOnly: true },
-      { labelKey: 'nav.change_orders', to: '/changeorders', icon: FileEdit, advancedOnly: true },
-    ],
-  },
-  // ── COMMERCIAL (18-Modules Wave) ───────────────────────────────────
-  // Commercial pipeline — from CRM lead to contract award to variations,
-  // including subcontractor management, bid management, supplier
-  // catalogs, and property/asset development tracking.
-  {
-    id: 'commercial',
-    labelKey: 'nav.group_commercial',
-    descriptionKey: 'nav.group_commercial_desc',
-    defaultOpen: false,
-    hideInSimple: true,
-    items: [
-      { labelKey: 'nav.crm', to: '/crm', icon: Briefcase },
-      { labelKey: 'nav.contracts', to: '/contracts', icon: FileSignature },
-      { labelKey: 'nav.subcontractors', to: '/subcontractors', icon: HardHat },
-      { labelKey: 'nav.bid_management', to: '/bid-management', icon: Scale },
-      { labelKey: 'nav.variations', to: '/variations', icon: GitBranch },
-      { labelKey: 'nav.supplier_catalogs', to: '/supplier-catalogs', icon: ShoppingCart },
-      { labelKey: 'nav.property_dev', to: '/property-dev', icon: Building2 },
+      // Assets live here (not Documents) — they're physical inventory,
+      // not paperwork. The /assets page already mirrors equipment-style
+      // detail views, not a document viewer.
+      { labelKey: 'nav.assets', to: '/assets', icon: Package, badge: 'BETA' },
     ],
   },
   // ── COMMUNICATION ──────────────────────────────────────────────────
@@ -260,25 +295,24 @@ const navGroups: NavGroup[] = [
     ],
   },
   // ── DOCUMENTS ──────────────────────────────────────────────────────
-  // /files moved to Overview (unified entry point); leaving the
-  // narrower per-type entries here for users who jump straight to a
-  // category-specific tool.
+  // Paperwork: CDE binder, project photos, drawing markups. Assets
+  // moved up to Field Operations (they're physical things, not docs).
   {
     id: 'documentation',
     labelKey: 'nav.group_documentation',
     defaultOpen: false,
     hideInSimple: true,
     items: [
-      { labelKey: 'nav.assets', to: '/assets', icon: Package, badge: 'BETA' },
       { labelKey: 'cde.title', to: '/cde', icon: Database },
       { labelKey: 'nav.photos', to: '/photos', icon: Camera },
       { labelKey: 'nav.markups', to: '/markups', icon: PenTool },
-      { labelKey: 'nav.field_reports', to: '/field-reports', icon: ClipboardList, advancedOnly: true },
-      { labelKey: 'nav.reports', to: '/reports', icon: FileBarChart, advancedOnly: true },
-      { labelKey: 'nav.bi_dashboards', to: '/bi-dashboards', icon: BarChart3, advancedOnly: true },
     ],
   },
-  // ── QUALITY & SAFETY ───────────────────────────────────────────────
+  // ── QUALITY ────────────────────────────────────────────────────────
+  // Validation, inspections, NCR, QMS, punchlist — anything that
+  // certifies "the work passes". Safety/HSE/ESG is split into its own
+  // sibling group below so site supervisors don't have to scroll past
+  // QA paperwork to log a hazard.
   {
     id: 'quality',
     labelKey: 'nav.group_quality',
@@ -288,24 +322,67 @@ const navGroups: NavGroup[] = [
       { labelKey: 'validation.title', to: '/validation', icon: ShieldCheck, moduleKey: 'validation' },
       { labelKey: 'inspections.title', to: '/inspections', icon: ClipboardCheck },
       { labelKey: 'ncr.title', to: '/ncr', icon: AlertOctagon },
-      { labelKey: 'safety.title', to: '/safety', icon: HardHat },
       { labelKey: 'nav.punchlist', to: '/punchlist', icon: ListChecks },
-      // 18-Modules Wave additions
       { labelKey: 'nav.qms', to: '/qms', icon: BadgeCheck, advancedOnly: true },
-      { labelKey: 'nav.hse_advanced', to: '/hse-advanced', icon: Shield, advancedOnly: true },
-      { labelKey: 'nav.carbon', to: '/carbon', icon: Leaf, advancedOnly: true },
       // sustainability + cost-benchmark injected dynamically from module registry
     ],
   },
-  // BI Dashboards moved into the Documentation group (above) — the
-  // remaining "Analytics" group had only one entry and now feels
-  // redundant alongside Reports / Field Reports in Documentation.
+  // ── SAFETY & HSE ───────────────────────────────────────────────────
+  // Site safety, HSE management, carbon/sustainability tracking. Lives
+  // next to Quality but its own collapsible header so HSE officers can
+  // bookmark just this group.
+  {
+    id: 'safety',
+    labelKey: 'nav.group_safety',
+    defaultOpen: false,
+    hideInSimple: true,
+    items: [
+      { labelKey: 'safety.title', to: '/safety', icon: HardHat },
+      { labelKey: 'nav.hse_advanced', to: '/hse-advanced', icon: Shield, advancedOnly: true },
+      { labelKey: 'nav.carbon', to: '/carbon', icon: Leaf, advancedOnly: true },
+    ],
+  },
+  // ── FINANCE & PROCUREMENT ──────────────────────────────────────────
+  // Money roll-up: finance, procurement, tendering, change orders.
+  // Sits near the bottom because it's the close-out / accounting view
+  // of work done elsewhere — not the daily action surface.
+  {
+    id: 'finance',
+    labelKey: 'nav.group_finance',
+    defaultOpen: false,
+    hideInSimple: true,
+    items: [
+      { labelKey: 'finance.title', to: '/finance', icon: Wallet, advancedOnly: true },
+      { labelKey: 'procurement.title', to: '/procurement', icon: Package, advancedOnly: true },
+      { labelKey: 'tendering.title', to: '/tendering', icon: FileText, moduleKey: 'tendering', advancedOnly: true },
+      { labelKey: 'nav.change_orders', to: '/changeorders', icon: FileEdit, advancedOnly: true },
+    ],
+  },
+  // ── ANALYTICS & REPORTS ────────────────────────────────────────────
+  // Cross-module reporting + BI. End of the lifecycle: everything else
+  // has happened, this is where you look at the result.
+  {
+    id: 'analytics',
+    labelKey: 'nav.group_analytics',
+    descriptionKey: 'nav.group_analytics_desc',
+    defaultOpen: false,
+    hideInSimple: true,
+    items: [
+      { labelKey: 'nav.reports', to: '/reports', icon: FileBarChart, advancedOnly: true },
+      { labelKey: 'nav.bi_dashboards', to: '/bi-dashboards', icon: BarChart3, advancedOnly: true },
+    ],
+  },
+  // ── REGIONAL EXCHANGE (setup-only, dynamic) ────────────────────────
+  // A visual separator marks the boundary between the project-work
+  // surface (Overview … Analytics) and reference/setup surfaces (this
+  // group + Modules + Settings in bottomNav).
   {
     id: 'regional',
     labelKey: 'modules.cat_regional',
     descriptionKey: 'modules.cat_regional_desc',
     defaultOpen: false,
     hideInSimple: true,
+    separator: true,
     items: [
       // All regional exchange modules injected dynamically from module registry
     ],
@@ -480,6 +557,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   const { isModuleEnabled } = useModuleStore();
   const isAdvanced = useViewModeStore((s) => s.isAdvanced);
   const badgeCounts = useSidebarBadges();
+  const modulePresence = useModulePresence();
   const openSearch = useGlobalSearchStore((s) => s.openModal);
   const iconified = useSidebarCollapseStore((s) => s.iconified);
   const toggleIconified = useSidebarCollapseStore((s) => s.toggle);
@@ -895,8 +973,14 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           const isCollapsed = collapsed[group.id] ?? false;
 
           return (
+            <Fragment key={group.id}>
+              {group.separator && (
+                <div
+                  className="my-3 mx-auto h-px w-10/12 bg-border-light/70"
+                  aria-hidden
+                />
+              )}
             <NavGroupSection
-              key={group.id}
               label={t(group.labelKey, { defaultValue: group.id })}
               isCollapsed={isCollapsed}
               onToggle={() => toggleGroup(group.id)}
@@ -914,10 +998,21 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
                   const notNeeded = g != null && !g.enabled;
                   const needed = g != null && g.enabled;
                   const seq = needed ? (routeSeq += 1) : null;
+                  // Module-presence dimming: modules with no data for
+                  // this project render at 55 % opacity so users see at
+                  // a glance which surfaces are populated. Only applies
+                  // when project-focus is OFF (project-focus already
+                  // greys-out unrelated rows more strongly via opacity-45).
+                  const isEmptyForProject =
+                    !notNeeded && !modulePresence.isPopulated(item.to);
                   return (
                     <li
                       key={item.to}
-                      className={clsx('oe-stagger', notNeeded && 'opacity-45')}
+                      className={clsx(
+                        'oe-stagger',
+                        notNeeded && 'opacity-45',
+                        isEmptyForProject && 'opacity-55',
+                      )}
                       style={{ animationDelay: `${i * 18}ms` }}
                     >
                       <SidebarItem
@@ -937,6 +1032,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
                 })}
               </ul>
             </NavGroupSection>
+            </Fragment>
           );
         })}
         {/* Add-a-module CTA — dashed-border tile with a plus icon. Sits at

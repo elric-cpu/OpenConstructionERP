@@ -102,6 +102,7 @@ from app.modules.bim_hub.schemas import (
     FederationModelAdd,
     FederationModelResponse,
     FederationResponse,
+    FederationTypeTreeResponse,
     FederationUpdate,
     QuantityMapApplyRequest,
     QuantityMapApplyResult,
@@ -4186,3 +4187,35 @@ async def remove_federation_member(
     federation = await service.get_federation(federation_id)
     await _verify_project_access(session, federation.project_id, _user_id)
     await service.remove_federation_member(federation_id, model_id)
+
+
+# ── Federation Type Tree (v4.0 / Slice 2) ─────────────────────────────────
+#
+# Counter-intuitive design note (kept inline so future maintainers don't
+# undo it): the tree is **federation-flat by IfcClass**, NOT a nested
+# Federation › Model › Storey › Element tree. The flat layout is what lets
+# the UI offer "color all IfcDuctSegment across 12 models" as one click;
+# the per-model split lives in the drill-down ``member_breakdown`` so the
+# information is not lost.
+
+
+@router.get(
+    "/federations/{federation_id}/type-tree",
+    response_model=FederationTypeTreeResponse,
+    dependencies=[Depends(RequirePermission("bim.read"))],
+)
+async def get_federation_type_tree(
+    federation_id: uuid.UUID,
+    session: SessionDep,
+    _user_id: CurrentUserId,
+) -> FederationTypeTreeResponse:
+    """Return the federation-flat element-type tree.
+
+    Aggregates element counts across every member model, grouped by
+    ``element_type`` (= IfcClass). Empty members yield an empty but
+    well-formed response (``total_elements=0``, ``classes=[]``).
+    """
+    service = BIMHubService(session)
+    federation = await service.get_federation(federation_id)
+    await _verify_project_access(session, federation.project_id, _user_id)
+    return await service.aggregate_federation_type_tree(federation_id)

@@ -1068,3 +1068,98 @@ class FocusModePatch(BaseModel):
     focus_mode_enabled: bool
 
 
+class ProjectModulePresence(BaseModel):
+    """‌⁠‍Per-module "has any data?" booleans for one project.
+
+    Used by the frontend sidebar to dim/grey modules that have no rows
+    for the current project. Every field is a single boolean — keeping
+    the response shape literal (vs. a free-form dict) so the
+    openapi-typescript client gets a strongly typed surface.
+
+    Rules of the road:
+
+    * ``True``  — at least one row exists in that module's primary
+                  project-scoped table.
+    * ``False`` — either zero rows, OR the underlying table is missing
+                  (fresh DB / migration not yet applied). Endpoint must
+                  never 500 because one module is unwired.
+
+    Module keys mirror the frontend sidebar slugs.
+    """
+
+    # ``populate_by_name=True`` lets ``model_validate({"5d": ...})``
+    # resolve the alias. ``from_attributes=True`` keeps the usual
+    # ORM-friendly behaviour the rest of the schemas use.
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    # ── Estimation & BIM ──
+    boq: bool = False
+    takeoff: bool = False
+    clash: bool = False
+    bim: bool = False
+    costs: bool = False
+    match_elements: bool = False
+    assemblies: bool = False
+    smart_views: bool = False
+    bim_requirements: bool = False
+    bcf: bool = False
+
+    # ── Planning & Field ──
+    schedule: bool = False
+    tasks: bool = False
+    # JSON requires keys be valid Python identifiers — store as ``five_d``
+    # in Python and serialise to ``"5d"`` (sidebar key) on the wire.
+    five_d: bool = Field(default=False, alias="5d")
+    risk: bool = False
+    field_reports: bool = False
+    daily_diary: bool = False
+    equipment: bool = False
+    resources: bool = False
+    service: bool = False
+    portal: bool = False
+
+    # ── Commercial ──
+    finance: bool = False
+    procurement: bool = False
+    tendering: bool = False
+    changeorders: bool = False
+    crm: bool = False
+    contracts: bool = False
+    subcontractors: bool = False
+    bid_management: bool = False
+    variations: bool = False
+    supplier_catalogs: bool = False
+    property_dev: bool = False
+
+    # ── Communication & Docs ──
+    contacts: bool = False
+    meetings: bool = False
+    rfi: bool = False
+    submittals: bool = False
+    transmittals: bool = False
+    correspondence: bool = False
+    assets: bool = False
+    cde: bool = False
+    photos: bool = False
+    markups: bool = False
+    reports: bool = False
+    bi_dashboards: bool = False
+
+    # ── Quality, HSE & Compliance ──
+    validation: bool = False
+    inspections: bool = False
+    ncr: bool = False
+    punchlist: bool = False
+    qms: bool = False
+    safety: bool = False
+    hse_advanced: bool = False
+    carbon: bool = False
+
+    # ── AI & Analytics ──
+    ai_estimate: bool = False
+    ai_agents: bool = False
+    advisor: bool = False
+    estimation_dashboard: bool = False
+    erp_chat: bool = False
+
+

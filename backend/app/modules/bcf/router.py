@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from fastapi import File as FileParam
@@ -44,15 +45,23 @@ from app.modules.bcf.schemas import (
     ViewpointCreate,
     ViewpointResponse,
 )
-from app.modules.bcf.service import BCFService, BCFServiceError
+from app.modules.bcf.service import (
+    BCFExportFeatureUnavailable,
+    BCFExportService,
+    BCFService,
+    BCFServiceError,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["BCF"])
 
-# 25 MiB hard cap on an uploaded .bcfzip (markup + small PNG snapshots are
-# tiny; this still leaves generous headroom while blocking memory abuse).
-_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+# 100 MiB hard cap on an uploaded .bcfzip — harmonised with the
+# ``_BCF_IMPORT_MAX_BYTES`` cap on the clash-import endpoint below and
+# the BCFReader's ``DEFAULT_MAX_TOTAL_BYTES``. A typical coordination
+# round-trip is markup + small PNG snapshots, but federated models with
+# hundreds of viewpoints can legitimately exceed 25 MiB.
+_MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 
 
 def _get_service(session: SessionDep) -> BCFService:
@@ -552,3 +561,178 @@ async def import_project_bcf(
     return await service.import_bcfzip(
         project_id, payload, user_id, forced_version=version
     )
+
+
+# ── Clash → BCF 3.0 zip (file-based, no persistence) ──────────────────────
+
+
+@router.get(
+    "/export/clashes",
+    dependencies=[Depends(RequirePermission("bcf.export"))],
+)
+async def export_clashes_bcfzip(
+    project_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    status_filter: str | None = Query(
+        default=None,
+        alias="status",
+        description=(
+            "Filter by clash status. Use the literal 'open' to include all "
+            "unresolved states (new|active|persisted|reviewed)."
+        ),
+    ),
+    severity: str | None = Query(default=None),
+) -> Response:
+    """Download all clashes for ``project_id`` as a BCF 3.0 ``.bcfzip``.
+
+    File-based — does not persist anything in the BCF tables. The
+    ``status`` and ``severity`` query parameters narrow the export.
+
+    Returns 503 when the clash schema (v41) has not been migrated yet.
+    """
+    project_name = await _require_project_access(session, project_id, user_id)
+    filter_dict: dict[str, str] = {}
+    if status_filter:
+        filter_dict["status"] = status_filter
+    if severity:
+        filter_dict["severity"] = severity
+
+    export = BCFExportService(session)
+    try:
+        archive = await export.export_clashes_to_bcf(
+            project_id,
+            filter_dict,
+            author=str(user_id),
+            project_name=project_name or str(project_id),
+        )
+    except BCFExportFeatureUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+
+    today = datetime.now(UTC).strftime("%Y%m%d")
+    filename = f"clashes-{project_id}-{today}.bcfzip"
+    return Response(
+        content=archive,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ── BCF 3.0 → Clash import (file-based, mirror of /export/clashes) ────────
+#
+# The endpoint below is the inbound half of the BCF round-trip introduced
+# by the sibling export agent. It accepts a multipart-uploaded ``.bcfzip``,
+# parses every Topic with :class:`BCFReader`, and upserts a
+# :class:`ClashIssue` row per Topic via :class:`BCFImportService`. The
+# auth pattern is the same as ``/export/clashes`` (RequirePermission +
+# ``_require_project_access``) so an EDITOR on the target project can
+# round-trip a Revit Coordination BCF without paperwork.
+#
+# Deliberate properties:
+#   * 100 MiB hard cap on the multipart payload (matches the BCFReader's
+#     default zip-bomb defence — we never read more than that into RAM)
+#   * 413 on too-large uploads
+#   * 422 on a non-zip / malformed archive
+#   * 503 when the ClashIssue table hasn't been migrated yet (mirrors the
+#     503 emitted by /export/clashes for the same condition)
+
+
+_BCF_IMPORT_MAX_BYTES = 100 * 1024 * 1024  # 100 MiB — matches reader default
+
+
+@router.post(
+    "/import/clashes",
+    dependencies=[Depends(RequirePermission("bcf.import"))],
+)
+async def import_clashes_bcfzip(
+    project_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    file: UploadFile = FileParam(
+        ..., description="A BCF 3.0 .bcfzip archive (Revit/ArchiCAD/etc.)"
+    ),
+) -> dict:
+    """Ingest a ``.bcfzip`` and upsert each Topic as a :class:`ClashIssue`.
+
+    Permission: ``bcf.import`` (EDITOR or higher).
+
+    Returns a JSON :class:`ImportReport`:
+
+        {
+          "created": int, "updated": int, "skipped": int,
+          "errors": [{"topic_guid": "...", "message": "..."}]
+        }
+
+    HTTP codes:
+        * 200 — import completed (the report may still carry per-topic
+          errors; ``created+updated+skipped+len(errors) == topic_count``)
+        * 413 — uploaded archive exceeds the 100 MiB cap
+        * 422 — payload is not a BCF .bcfzip / zip-bomb / path traversal
+        * 503 — clash schema (v41) hasn't been migrated yet
+    """
+    await _require_project_access(session, project_id, user_id)
+
+    # Stream-read with a 100 MiB cap. We trust starlette's spool boundary
+    # (1 MiB default) — anything larger is rejected outright.
+    try:
+        payload = await file.read()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=translate("bcf.upload_read_failed", _locale_of(user_id)),
+        ) from exc
+
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=translate("bcf.upload_empty", _locale_of(user_id)),
+        )
+    if len(payload) > _BCF_IMPORT_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=translate("bcf.upload_too_large", _locale_of(user_id)),
+        )
+
+    # Deferred import keeps the BCF module's import graph cheap when the
+    # endpoint is never hit (most projects don't ingest BCF on every
+    # request) and avoids circular imports with the clash module.
+    from app.modules.bcf.import_service import (
+        BCFFormatError,
+        BCFImportFeatureUnavailable,
+        BCFImportService,
+        BCFReaderError,
+        BCFSecurityError,
+    )
+
+    importer = BCFImportService(session)
+    try:
+        report = await importer.import_clashes_from_bcf(
+            project_id, payload, current_user_id=user_id
+        )
+    except BCFImportFeatureUnavailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    except BCFSecurityError as exc:
+        # Zip-bomb / path-traversal — refuse to ingest.
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=str(exc),
+        ) from exc
+    except BCFFormatError as exc:
+        # Not a BCF zip / missing bcf.version → 422.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except BCFReaderError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    return report.to_dict()

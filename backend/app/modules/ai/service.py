@@ -38,6 +38,8 @@ from app.modules.ai.prompts import (
     SMART_IMPORT_VISION_PROMPT,
     SYSTEM_PROMPT,
     TEXT_ESTIMATE_PROMPT,
+    fence_user_content,
+    sanitize_user_text,
 )
 from app.modules.ai.repository import AIEstimateJobRepository, AISettingsRepository
 from app.modules.ai.schemas import (
@@ -438,11 +440,15 @@ class AIService:
         # so the LLM is steered by the project's explicit setting (or absence).
         standard_val = request.standard or ""
 
+        # Audit AI1: hard-strip control chars + truncate any free-form
+        # user text before it reaches the LLM, so attackers can't smuggle
+        # role-switch escapes (\x1b, raw bidi marks, etc.) through the
+        # description / extra-context fields.
         prompt = TEXT_ESTIMATE_PROMPT.format(
-            description=request.description,
-            extra_context=extra_context,
-            currency=currency,
-            standard=standard_val,
+            description=sanitize_user_text(request.description, max_len=5000),
+            extra_context=sanitize_user_text(extra_context, max_len=2000),
+            currency=sanitize_user_text(currency, max_len=20),
+            standard=sanitize_user_text(standard_val, max_len=64),
         )
 
         # Call AI
@@ -615,10 +621,11 @@ class AIService:
         standard_val = standard or ""
         location_val = location or ""
 
+        # Audit AI1: sanitize any free-form user strings reaching the LLM.
         prompt = PHOTO_ESTIMATE_PROMPT.format(
-            location=location_val,
-            currency=currency_val,
-            standard=standard_val,
+            location=sanitize_user_text(location_val, max_len=200),
+            currency=sanitize_user_text(currency_val, max_len=20),
+            standard=sanitize_user_text(standard_val, max_len=64),
         )
 
         # Encode image
@@ -905,7 +912,13 @@ class AIService:
         start_time = time.monotonic()
         try:
             if category == "cad":
-                prompt = CAD_IMPORT_PROMPT.format(text=extracted_text, currency=currency_val)
+                # Audit AI1: wrap extracted CAD/element data in the
+                # "treat as data not instructions" fence so a malicious
+                # element description in the model can't issue commands.
+                prompt = CAD_IMPORT_PROMPT.format(
+                    text=fence_user_content(extracted_text),
+                    currency=sanitize_user_text(currency_val, max_len=20),
+                )
                 raw_response, tokens = await call_ai(
                     provider=provider,
                     api_key=api_key,
@@ -914,7 +927,11 @@ class AIService:
                     model=model_override,
                 )
             elif image_b64:
-                prompt = SMART_IMPORT_VISION_PROMPT.format(filename=filename)
+                # Audit AI1: filename is user-controlled — sanitize before
+                # interpolation.
+                prompt = SMART_IMPORT_VISION_PROMPT.format(
+                    filename=sanitize_user_text(filename, max_len=255),
+                )
                 raw_response, tokens = await call_ai(
                     provider=provider,
                     api_key=api_key,
@@ -925,7 +942,14 @@ class AIService:
                     model=model_override,
                 )
             else:
-                prompt = SMART_IMPORT_PROMPT.format(filename=filename, text=extracted_text[:15000])
+                # Audit AI1: filename + extracted text are user-controlled.
+                # Fence the text (which carries the heaviest injection risk)
+                # and sanitize the filename so neither can break out of the
+                # prompt template.
+                prompt = SMART_IMPORT_PROMPT.format(
+                    filename=sanitize_user_text(filename, max_len=255),
+                    text=fence_user_content(extracted_text),
+                )
                 raw_response, tokens = await call_ai(
                     provider=provider,
                     api_key=api_key,

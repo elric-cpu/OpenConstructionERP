@@ -35,6 +35,43 @@ _USER_FENCE_CLOSE = "<<<END_UNTRUSTED_USER_CONTENT>>>"
 USER_FENCE_MAX_LEN = 15000
 
 
+def sanitize_user_text(text: str | None, *, max_len: int = USER_FENCE_MAX_LEN) -> str:
+    """Strip control characters and hard-truncate user-supplied text.
+
+    Audit AI1 — last-line defence applied to any free-form string that
+    will end up inside a prompt sent to an LLM:
+
+    * Removes every C0 / C1 control byte except ``\\n``, ``\\r`` and
+      ``\\t`` — these are the characters attackers use to forge fake
+      "role" boundaries (``\\x00``, ``\\x1b[`` ANSI sequences, raw
+      bidi-override marks, etc.).
+    * Caps the length so a single user request can't crowd the system
+      prompt out of the context window or run up the per-call cost.
+
+    Returns an empty string for ``None`` input so prompt templates can
+    interpolate the result unconditionally.
+    """
+    if not text:
+        return ""
+    # Drop C0 (0x00-0x1F) and DEL (0x7F) controls except TAB / LF / CR,
+    # plus the C1 range (0x80-0x9F) which mostly only appears in encoding
+    # smuggling attempts inside otherwise-ASCII descriptions.
+    cleaned_chars: list[str] = []
+    for ch in text:
+        code = ord(ch)
+        if code < 0x20 and ch not in ("\n", "\r", "\t"):
+            continue
+        if code == 0x7F:
+            continue
+        if 0x80 <= code <= 0x9F:
+            continue
+        cleaned_chars.append(ch)
+    cleaned = "".join(cleaned_chars)
+    if len(cleaned) > max_len:
+        cleaned = cleaned[:max_len] + "\n...[truncated]..."
+    return cleaned
+
+
 def fence_user_content(text: str, *, max_len: int = USER_FENCE_MAX_LEN) -> str:
     """Wrap user-controlled text in a 'data not instructions' fence.
 

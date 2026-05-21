@@ -28,9 +28,12 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from fastapi import File as FileParam
 from fastapi.responses import StreamingResponse
+from sqlalchemy import select as _select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import CurrentUserId, RequirePermission, SessionDep
+from app.modules.clash.models import ClashIssue as _IssueModel
+from app.modules.clash.models import ClashRun as _RunModel
 from app.modules.clash.schemas import (
     CLASH_GROUP_BY,
     CLASH_PROPERTY_GROUP_PREFIX,
@@ -44,6 +47,8 @@ from app.modules.clash.schemas import (
     ClashCategoryItem,
     ClashClusterRead,
     ClashCompareResponse,
+    ClashIssuePage,
+    ClashIssueRead,
     ClashKpiResponse,
     ClashPropertyFacet,
     ClashResultPage,
@@ -53,17 +58,19 @@ from app.modules.clash.schemas import (
     ClashRuleList,
     ClashRuleSuggestion,
     ClashRunCreate,
+    ClashRunDiff,
     ClashRunListItem,
     ClashRunResponse,
+    ClashSuppressRequest,
     ClashWatchResponse,
 )
 from app.modules.clash.service import ClashService
 
 _MAX_EXPORT_ROWS = 25_000
-# Upper bound on the BCF import payload. 25 MiB mirrors the BCF
-# module's own gate — a coordination round-trip is comments + metadata,
-# not megabytes of mesh data.
-_MAX_BCF_UPLOAD_BYTES = 25 * 1024 * 1024
+# Upper bound on the BCF import payload. 100 MiB matches the BCF
+# module's own gate and the BCFReader default — federated coordination
+# packages with hundreds of viewpoints can legitimately exceed 25 MiB.
+_MAX_BCF_UPLOAD_BYTES = 100 * 1024 * 1024
 
 logger = logging.getLogger(__name__)
 
@@ -276,6 +283,15 @@ async def list_results(
     status_filter: str | None = Query(default=None, alias="status"),
     clash_type: str | None = Query(default=None),
     discipline: str | None = Query(default=None),
+    discipline_a: str | None = Query(
+        default=None,
+        description=(
+            "Filter for clashes whose discipline pair includes this value. "
+            "When combined with ``discipline_b`` the row must match the "
+            "(a,b) pair in either order — symmetric pair filter."
+        ),
+    ),
+    discipline_b: str | None = Query(default=None),
     severity: str | None = Query(default=None),
     order_by: str | None = Query(default=None),
     offset: int = Query(default=0, ge=0),
@@ -293,6 +309,8 @@ async def list_results(
         status=status_filter,
         clash_type=clash_type,
         discipline=discipline,
+        discipline_a=discipline_a,
+        discipline_b=discipline_b,
         severity=severity,
         order_by=order_by,
         offset=offset,
@@ -517,7 +535,7 @@ async def import_bcf(
     if len(payload) > _MAX_BCF_UPLOAD_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="BCF archive exceeds 25 MiB upload cap.",
+            detail="BCF archive exceeds 100 MiB upload cap.",
         )
     matched, unmatched, errors = await service.import_bcf(
         project_id, run_id, payload, actor=str(user_id)
@@ -699,6 +717,143 @@ async def replace_rules(
         [r.model_dump() for r in data.rules],
     )
     return [ClashRule.model_validate(r) for r in rules]
+
+
+# ── v41 — Smart-issue + signature endpoints ──────────────────────────────
+
+
+@router.get(
+    "/issues",
+    response_model=ClashIssuePage,
+    dependencies=[Depends(RequirePermission("clash.read"))],
+)
+async def list_issues(
+    user_id: CurrentUserId,
+    session: SessionDep,
+    project_id: uuid.UUID = Query(..., description="Project to scope by"),
+    status_filter: str | None = Query(default=None, alias="status"),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
+    service: ClashService = Depends(_get_service),
+) -> ClashIssuePage:
+    """List smart issues for a project, optionally filtered by status.
+
+    Each row carries the member-clash count (the number of
+    :class:`ClashResult` rows currently pointing at the issue). Status
+    filter must be one of the canonical smart-issue states (validated by
+    the service layer).
+    """
+    await _require_project_access(session, project_id, user_id)
+    rows, total = await service.list_issues(
+        project_id,
+        status_filter=status_filter,
+        offset=offset,
+        limit=limit,
+    )
+    items: list[ClashIssueRead] = []
+    for issue, count in rows:
+        payload = ClashIssueRead.model_validate(issue)
+        payload.member_count = int(count)
+        # ``due_date`` on the model is a date; serialise as ISO string for
+        # the response. Pydantic v2 doesn't auto-coerce ``date`` → ``str``.
+        if getattr(issue, "due_date", None) is not None:
+            try:
+                payload.due_date = issue.due_date.isoformat()  # type: ignore[union-attr]
+            except Exception:  # noqa: BLE001
+                payload.due_date = None
+        items.append(payload)
+    return ClashIssuePage(
+        items=items, total=int(total), offset=offset, limit=limit
+    )
+
+
+@router.post(
+    "/issues/{issue_id}/suppress",
+    response_model=ClashIssueRead,
+    dependencies=[Depends(RequirePermission("clash.update"))],
+)
+async def suppress_issue(
+    issue_id: uuid.UUID,
+    data: ClashSuppressRequest,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: ClashService = Depends(_get_service),
+) -> ClashIssueRead:
+    """Suppress a smart issue's signature — flip it to ``ignored``.
+
+    Adds a :class:`ClashSuppression` row scoped to the issue's project
+    (per-project isolation) and flips the issue's status to ``ignored``.
+    The matching signature won't auto-resurface in future runs while the
+    suppression is in place.
+    """
+    # Resolve project from any existing issue lookup so we can IDOR-check
+    # without a project_id query parameter. We do that by querying any
+    # issue with this id and using its project_id; if none exists → 404.
+    raw = (
+        await session.execute(_select(_IssueModel).where(_IssueModel.id == issue_id))
+    ).scalar_one_or_none()
+    if raw is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Clash issue not found"
+        )
+    await _require_project_access(session, raw.project_id, user_id)
+    issue = await service.suppress_by_issue(
+        raw.project_id, issue_id, data.reason, user_id
+    )
+    return ClashIssueRead.model_validate(issue)
+
+
+@router.post(
+    "/issues/{issue_id}/unsuppress",
+    response_model=ClashIssueRead,
+    dependencies=[Depends(RequirePermission("clash.update"))],
+)
+async def unsuppress_issue(
+    issue_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: ClashService = Depends(_get_service),
+) -> ClashIssueRead:
+    """Lift a suppression — flip the issue from ``ignored`` back to ``persisted``."""
+    raw = (
+        await session.execute(_select(_IssueModel).where(_IssueModel.id == issue_id))
+    ).scalar_one_or_none()
+    if raw is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Clash issue not found"
+        )
+    await _require_project_access(session, raw.project_id, user_id)
+    issue = await service.unsuppress_by_issue(raw.project_id, issue_id, user_id)
+    return ClashIssueRead.model_validate(issue)
+
+
+@router.get(
+    "/runs/{run_id}/diff",
+    response_model=ClashRunDiff,
+    dependencies=[Depends(RequirePermission("clash.read"))],
+)
+async def run_signature_diff(
+    run_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: ClashService = Depends(_get_service),
+) -> ClashRunDiff:
+    """Smart-issue diff counts (``new``/``persisted``/``resolved``/``reopened``/``ignored``).
+
+    Computed by comparing the run's signature set against the project's
+    known smart issues and the prior run. IDOR-guarded via the run's own
+    ``project_id``.
+    """
+    raw = (
+        await session.execute(_select(_RunModel).where(_RunModel.id == run_id))
+    ).scalar_one_or_none()
+    if raw is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Clash run not found"
+        )
+    await _require_project_access(session, raw.project_id, user_id)
+    diff = await service.run_diff(raw.project_id, run_id)
+    return ClashRunDiff(**diff)
 
 
 @router.get(

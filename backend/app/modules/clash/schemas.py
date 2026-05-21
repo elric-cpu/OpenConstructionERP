@@ -631,6 +631,84 @@ class ClashDisciplinePairStat(BaseModel):
     open_share: float
 
 
+# ── Smart-issue / signature schemas (v41) ───────────────────────────────
+
+# Smart-issue lifecycle status (independent of per-row ClashResult.status).
+CLASH_ISSUE_STATUSES = ("new", "persisted", "resolved", "ignored", "archived")
+CLASH_ISSUE_PRIORITIES = ("low", "medium", "high", "critical")
+CLASH_SIGNATURE_QUALITIES = ("strong", "weak")
+
+
+class ClashIssueRead(BaseModel):
+    """A single smart-issue row (signature-scoped, project-scoped).
+
+    The smart issue is the *persistent* identity of a clash across re-runs
+    — see :class:`app.modules.clash.models.ClashIssue` for the lifecycle.
+    ``member_count`` is the number of :class:`ClashResult` rows currently
+    linked to this issue (across every run of the project); the list
+    endpoint computes it with one extra COUNT query so the UI can render
+    it as a chip without fetching the rows.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    project_id: uuid.UUID
+    signature_hash: str
+    status: str
+    first_seen_run_id: uuid.UUID
+    last_seen_run_id: uuid.UUID
+    resolved_run_id: uuid.UUID | None = None
+    missing_run_count: int = 0
+    assignee_id: uuid.UUID | None = None
+    due_date: str | None = None  # ISO date "YYYY-MM-DD" (None if unset)
+    priority: str = "medium"
+    server_assigned_id: str = ""
+    tags: list[str] = Field(default_factory=list)
+    signature_quality: str = "strong"
+    member_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+
+class ClashIssuePage(BaseModel):
+    """Paginated list of smart issues for the project-wide issues view."""
+
+    items: list[ClashIssueRead] = Field(default_factory=list)
+    total: int = 0
+    offset: int = 0
+    limit: int = 0
+
+
+class ClashSuppressRequest(BaseModel):
+    """POST body for ``/clash/issues/{issue_id}/suppress``.
+
+    ``reason`` is a short, free-text triage note (1..500 chars). Persisted
+    on :class:`ClashSuppression.reason`. Empty reasons are rejected at the
+    schema level — suppressions must always carry an audit trail.
+    """
+
+    reason: str = Field(..., min_length=1, max_length=500)
+
+
+class ClashRunDiff(BaseModel):
+    """Smart-issue diff counts for ``/clash/runs/{run_id}/diff``.
+
+    Computed by diffing the run's results against the project's known
+    smart issues. ``new`` = signatures first seen this run; ``persisted``
+    = signatures present in both this run and the previous; ``resolved``
+    = signatures present in the previous run but absent now; ``reopened``
+    = signatures whose issue had ``status='resolved'`` but resurfaced;
+    ``ignored`` = signatures whose issue is suppressed.
+    """
+
+    new: int = 0
+    persisted: int = 0
+    resolved: int = 0
+    reopened: int = 0
+    ignored: int = 0
+
+
 class ClashKpiResponse(BaseModel):
     """Dashboard projection for ``GET /runs/{id}/kpi``.
 

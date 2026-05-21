@@ -39,6 +39,8 @@ import {
   Database,
   Plus,
   Search,
+  BrainCircuit,
+  Wand2,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { Card, CardContent, Button, Badge, AIDisclaimerBanner } from '@/shared/ui';
@@ -173,22 +175,22 @@ function ShimmerRow() {
   return (
     <tr className="animate-pulse">
       <td className="px-4 py-3">
-        <div className="h-4 w-12 rounded bg-surface-tertiary" />
+        <div className="h-4 w-12 rounded bg-slate-200/70 dark:bg-slate-700/40" />
       </td>
       <td className="px-4 py-3">
-        <div className="h-4 w-48 rounded bg-surface-tertiary" />
+        <div className="h-4 w-48 rounded bg-slate-200/70 dark:bg-slate-700/40" />
       </td>
       <td className="px-4 py-3">
-        <div className="h-4 w-8 rounded bg-surface-tertiary" />
+        <div className="h-4 w-8 rounded bg-slate-200/70 dark:bg-slate-700/40" />
       </td>
       <td className="px-4 py-3 text-right">
-        <div className="ml-auto h-4 w-14 rounded bg-surface-tertiary" />
+        <div className="ml-auto h-4 w-14 rounded bg-slate-200/70 dark:bg-slate-700/40" />
       </td>
       <td className="px-4 py-3 text-right">
-        <div className="ml-auto h-4 w-16 rounded bg-surface-tertiary" />
+        <div className="ml-auto h-4 w-16 rounded bg-slate-200/70 dark:bg-slate-700/40" />
       </td>
       <td className="px-4 py-3 text-right">
-        <div className="ml-auto h-4 w-20 rounded bg-surface-tertiary" />
+        <div className="ml-auto h-4 w-20 rounded bg-slate-200/70 dark:bg-slate-700/40" />
       </td>
     </tr>
   );
@@ -221,11 +223,15 @@ function LoadingState({ isCad, fileName, fileSizeMB }: { isCad?: boolean; fileNa
 
   return (
     <div className="animate-card-in" style={{ animationDelay: '100ms' }}>
-      <Card>
-        <div className="px-6 pt-6 pb-2">
+      <section className="relative overflow-hidden rounded-2xl border border-white/40 bg-white/60 backdrop-blur-xl shadow-lg shadow-slate-900/[0.04] dark:border-white/5 dark:bg-slate-900/40 dark:shadow-slate-950/30">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -top-20 -right-20 h-48 w-48 rounded-full bg-gradient-radial from-sky-500/20 to-transparent blur-3xl"
+        />
+        <div className="relative px-6 pt-6 pb-2">
           <div className="flex items-center gap-3 mb-4">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-oe-blue-subtle">
-              <Sparkles size={16} className="text-oe-blue animate-pulse" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 text-white shadow-md shadow-sky-500/25">
+              <Sparkles size={18} className="animate-pulse" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-content-primary">{title}</p>
@@ -239,14 +245,14 @@ function LoadingState({ isCad, fileName, fileSizeMB }: { isCad?: boolean; fileNa
               {fileName && <span className="ml-2 text-content-tertiary truncate max-w-[120px] inline-block align-bottom">{fileName}</span>}
             </div>
           </div>
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-secondary">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200/60 dark:bg-slate-700/40">
             {isCad && estimatedTotal > 0 ? (
               <div
-                className="h-full rounded-full bg-oe-blue transition-all duration-1000 ease-linear"
+                className="h-full rounded-full bg-gradient-to-r from-sky-500 to-blue-600 transition-all duration-1000 ease-linear"
                 style={{ width: `${progressPct}%` }}
               />
             ) : (
-              <div className="h-full w-1/3 animate-shimmer rounded-full bg-oe-blue opacity-60 bg-[length:200%_100%]" />
+              <div className="h-full w-1/3 animate-shimmer rounded-full bg-gradient-to-r from-sky-500 to-blue-600 opacity-70 bg-[length:200%_100%]" />
             )}
           </div>
         </div>
@@ -281,7 +287,7 @@ function LoadingState({ isCad, fileName, fileSizeMB }: { isCad?: boolean; fileNa
             </tbody>
           </table>
         </div>
-      </Card>
+      </section>
     </div>
   );
 }
@@ -1318,7 +1324,8 @@ export function QuickEstimatePage() {
   // ── Text estimate mutation ────────────────────────────────────────────
 
   const textEstimateMutation = useMutation({
-    mutationFn: aiApi.quickEstimate,
+    mutationFn: (data: Parameters<typeof aiApi.quickEstimate>[0]) =>
+      aiApi.quickEstimate(data),
     onSuccess: (data) => {
       setResult(data);
       addToast({
@@ -1988,29 +1995,75 @@ export function QuickEstimatePage() {
   // ── Render ────────────────────────────────────────────────────────────
 
   return (
-    <div className="w-full space-y-6 animate-fade-in">
-      {/* Header */}
-      <div className="animate-card-in" style={{ animationDelay: '0ms' }}>
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-oe-blue to-[#7c3aed] shadow-lg shadow-oe-blue/20">
-            <Sparkles size={20} className="text-white" />
+    <div
+      data-testid="ai-quick-estimate-page"
+      className="relative min-h-full w-full overflow-hidden animate-fade-in"
+    >
+      {/* Page-level gradient backdrop (sky → white → emerald) */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-br from-sky-50 via-white to-emerald-50/40 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -top-40 -left-40 -z-10 h-96 w-96 rounded-full bg-gradient-radial from-sky-400/15 to-transparent blur-3xl"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -bottom-40 -right-40 -z-10 h-96 w-96 rounded-full bg-gradient-radial from-emerald-400/15 to-transparent blur-3xl"
+      />
+
+      <div className="space-y-6 px-4 py-5 lg:px-6 lg:py-6">
+      {/* Hero header — glass pill with title, subtitle, model pill */}
+      <header
+        className="animate-card-in relative overflow-hidden rounded-2xl border border-white/40 bg-white/60 px-5 py-4 backdrop-blur-xl shadow-lg shadow-slate-900/[0.04] dark:border-white/5 dark:bg-slate-900/40"
+        style={{ animationDelay: '0ms' }}
+      >
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -top-16 right-1/4 h-40 w-40 rounded-full bg-gradient-radial from-violet-400/20 to-transparent blur-3xl"
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -bottom-16 -left-10 h-40 w-40 rounded-full bg-gradient-radial from-sky-400/15 to-transparent blur-3xl"
+        />
+        <div className="relative flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 via-blue-500 to-sky-500 text-white shadow-md shadow-violet-500/25">
+              <BrainCircuit size={22} />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold tracking-tight text-content-primary">
+                {isCadRoute
+                  ? t('ai.cad_takeoff_title', { defaultValue: 'CAD/BIM Takeoff' })
+                  : t('ai.estimate_title', { defaultValue: 'AI Estimate' })
+                }
+              </h1>
+              <p className="mt-0.5 text-sm text-content-secondary">
+                {isCadRoute
+                  ? t('ai.cad_takeoff_subtitle', { defaultValue: 'Extract quantities from 3D models and drawings' })
+                  : t('ai.estimate_subtitle', { defaultValue: 'Create an estimate from any source' })
+                }
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-content-primary">
-              {isCadRoute
-                ? t('ai.cad_takeoff_title', { defaultValue: 'CAD/BIM Takeoff' })
-                : t('ai.estimate_title', { defaultValue: 'AI Estimate' })
-              }
-            </h1>
-            <p className="text-sm text-content-secondary">
-              {isCadRoute
-                ? t('ai.cad_takeoff_subtitle', { defaultValue: 'Extract quantities from 3D models and drawings' })
-                : t('ai.estimate_subtitle', { defaultValue: 'Create an estimate from any source' })
-              }
-            </p>
-          </div>
+          {!isCadRoute && isConfigured && aiSettings?.preferred_model && (
+            <div className="flex items-center gap-2">
+              <span
+                data-testid="ai-quick-estimate-model-pill"
+                className="inline-flex items-center gap-1.5 rounded-full border border-white/50 bg-white/70 px-3 py-1 text-xs font-medium text-content-secondary backdrop-blur dark:border-white/10 dark:bg-slate-800/60"
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <Zap size={11} className="text-violet-500" />
+                {t('ai.model_pill', {
+                  defaultValue: 'model: {{model}}',
+                  model: aiSettings.preferred_model,
+                })}
+              </span>
+            </div>
+          )}
         </div>
-      </div>
+      </header>
 
       {!isCadRoute && <AIDisclaimerBanner />}
 
@@ -2155,7 +2208,7 @@ export function QuickEstimatePage() {
       {/* Source type selector (hidden on /data-explorer) */}
       {!isCadRoute && (
       <div className="animate-card-in" style={{ animationDelay: '100ms' }}>
-        {/* Horizontal tab pills — single row */}
+        {/* Horizontal tab pills — single row, glass treatment */}
         <div className="grid grid-cols-5 gap-2">
           {TABS.map((tab) => {
             const isActive = activeTab === tab.id;
@@ -2164,20 +2217,26 @@ export function QuickEstimatePage() {
                 key={tab.id}
                 onClick={() => handleTabChange(tab.id)}
                 disabled={isPending}
-                className={`
-                  flex flex-col items-center gap-1.5 rounded-xl px-2 py-3 text-center transition-all border
-                  ${isActive
-                    ? 'border-oe-blue bg-oe-blue-subtle/70 shadow-sm ring-1 ring-oe-blue/20'
-                    : 'border-border-light bg-surface-elevated hover:border-border hover:bg-surface-secondary active:scale-[0.98]'
-                  }
-                  ${isPending ? 'opacity-50 pointer-events-none' : ''}
-                `}
+                className={clsx(
+                  'group relative flex flex-col items-center gap-1.5 overflow-hidden rounded-xl px-2 py-3 text-center transition-all border backdrop-blur-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400',
+                  isActive
+                    ? 'border-violet-300/60 bg-gradient-to-br from-violet-50/90 via-white/80 to-sky-50/70 shadow-md shadow-violet-500/10 ring-1 ring-violet-400/20 dark:border-violet-400/30 dark:from-violet-500/10 dark:via-slate-900/40 dark:to-sky-500/10'
+                    : 'border-white/40 bg-white/50 hover:-translate-y-0.5 hover:border-violet-300/40 hover:bg-white/80 hover:shadow-lg dark:border-white/5 dark:bg-slate-900/40 dark:hover:bg-slate-800/60',
+                  isPending && 'opacity-50 pointer-events-none',
+                )}
               >
-                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors ${isActive ? 'bg-oe-blue text-white' : 'bg-surface-secondary text-content-tertiary'}`}>
+                <div
+                  className={clsx(
+                    'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-all',
+                    isActive
+                      ? 'bg-gradient-to-br from-violet-500 to-sky-500 text-white shadow-sm shadow-violet-500/30'
+                      : 'bg-slate-100 text-content-tertiary group-hover:bg-violet-100 group-hover:text-violet-600 dark:bg-slate-800 dark:group-hover:bg-violet-500/20',
+                  )}
+                >
                   {tab.icon}
                 </div>
                 <div>
-                  <div className={`text-xs font-semibold ${isActive ? 'text-oe-blue' : 'text-content-primary'}`}>
+                  <div className={clsx('text-xs font-semibold', isActive ? 'text-violet-700 dark:text-violet-300' : 'text-content-primary')}>
                     {t(tab.labelKey, { defaultValue: tab.label })}
                   </div>
                   <div className="text-2xs text-content-tertiary leading-tight mt-0.5">
@@ -2191,8 +2250,38 @@ export function QuickEstimatePage() {
       </div>
       )}
 
-      {/* Input area for selected source */}
-      <Card className="animate-card-in" style={{ animationDelay: '200ms' }} padding="none">
+      {/* Input area for selected source — glass panel */}
+      <section
+        data-testid="ai-quick-estimate-input"
+        className="animate-card-in relative overflow-hidden rounded-2xl border border-white/40 bg-white/60 backdrop-blur-xl shadow-lg shadow-slate-900/[0.04] dark:border-white/5 dark:bg-slate-900/40 dark:shadow-slate-950/30"
+        style={{ animationDelay: '200ms' }}
+      >
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -top-24 -right-24 h-56 w-56 rounded-full bg-gradient-radial from-sky-500/15 to-transparent blur-3xl"
+        />
+        {/* Coloured section accent bar */}
+        <div className="relative flex items-center gap-3 border-b border-white/40 px-5 py-3 dark:border-white/5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-blue-600 text-white shadow-sm shadow-sky-500/25">
+            <Wand2 size={15} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-sm font-semibold text-content-primary">
+              {isCadRoute
+                ? t('ai.input_cad_title', { defaultValue: 'Upload a CAD or BIM file' })
+                : activeTab === 'text'
+                  ? t('ai.input_text_title', { defaultValue: 'Describe your project' })
+                  : activeTab === 'paste'
+                    ? t('ai.input_paste_title', { defaultValue: 'Paste BOQ or table data' })
+                    : t('ai.input_file_title', { defaultValue: 'Upload a source file' })}
+            </h2>
+            <p className="text-xs text-content-tertiary">
+              {t('ai.input_subtitle', {
+                defaultValue: 'The AI returns a structured BOQ with quantities and indicative rates.',
+              })}
+            </p>
+          </div>
+        </div>
 
         {/* Tab content */}
         <form
@@ -2201,7 +2290,7 @@ export function QuickEstimatePage() {
             handleSubmit();
           }}
         >
-          <div className="px-6 py-5">
+          <div className="relative px-6 py-5">
             {/* ── Tab 1: Text Description ─────────────────────────── */}
             {activeTab === 'text' && (
               <div className="space-y-4">
@@ -2213,14 +2302,79 @@ export function QuickEstimatePage() {
                       defaultValue:
                         'Describe your project...\n\nExample: "3-story residential building, 1200 m\u00b2 total area, reinforced concrete frame with brick facade, flat roof, standard MEP installations. Location: Berlin, Germany."',
                     })}
-                    rows={5}
-                    className="w-full rounded-xl border border-border bg-surface-primary px-4 py-3 text-sm text-content-primary placeholder:text-content-tertiary focus:outline-none focus:ring-2 focus:ring-oe-blue/30 focus:border-oe-blue focus:shadow-[0_0_0_4px_rgba(0,113,227,0.08)] transition-all duration-normal ease-oe hover:border-content-tertiary resize-none leading-relaxed"
+                    rows={6}
+                    className="w-full rounded-xl border border-white/50 bg-white/70 px-5 py-4 text-base text-content-primary placeholder:text-content-tertiary shadow-inner shadow-slate-900/[0.03] backdrop-blur-sm transition-all duration-normal ease-oe hover:border-violet-300/60 focus:border-violet-400 focus:bg-white/90 focus:outline-none focus:ring-2 focus:ring-violet-400/40 focus:shadow-[0_0_0_6px_rgba(139,92,246,0.08)] resize-none leading-relaxed dark:border-white/10 dark:bg-slate-900/50 dark:focus:bg-slate-900/70"
                     disabled={isPending}
                   />
-                  <div className="absolute bottom-3 right-3 text-xs text-content-tertiary">
+                  <div className="absolute bottom-3 right-3 text-xs text-content-tertiary tabular-nums">
                     {description.length > 0 && `${description.length} chars`}
                   </div>
                 </div>
+
+                {/* Example chips — auto-fill the prompt */}
+                {!description && !isPending && (
+                  <div
+                    data-testid="ai-quick-estimate-examples"
+                    className="flex flex-wrap items-center gap-2"
+                  >
+                    <span className="text-2xs font-medium uppercase tracking-wide text-content-tertiary">
+                      {t('ai.examples_label', { defaultValue: 'Try' })}
+                    </span>
+                    {[
+                      {
+                        key: 'apartment_berlin',
+                        label: t('ai.example_apartment_berlin', {
+                          defaultValue: 'Apartment building 1200 m² Berlin',
+                        }),
+                        prompt: t('ai.example_apartment_berlin_prompt', {
+                          defaultValue:
+                            '4-story residential apartment building, 1200 m² total area, reinforced concrete frame with brick facade, flat roof, standard MEP installations. Location: Berlin, Germany.',
+                        }),
+                      },
+                      {
+                        key: 'office_nyc',
+                        label: t('ai.example_office_nyc', {
+                          defaultValue: 'Office fit-out NYC 800 m²',
+                        }),
+                        prompt: t('ai.example_office_nyc_prompt', {
+                          defaultValue:
+                            'Class A office tenant fit-out, 800 m², open-plan layout with 12 private offices, 4 meeting rooms, breakroom, full MEP upgrade. Location: New York, USA.',
+                        }),
+                      },
+                      {
+                        key: 'warehouse_rotterdam',
+                        label: t('ai.example_warehouse_rotterdam', {
+                          defaultValue: 'Warehouse 4500 m² Rotterdam',
+                        }),
+                        prompt: t('ai.example_warehouse_rotterdam_prompt', {
+                          defaultValue:
+                            'Single-story logistics warehouse, 4500 m², steel portal frame, insulated metal panel cladding, 8 loading docks, sprinkler system. Location: Rotterdam, Netherlands.',
+                        }),
+                      },
+                      {
+                        key: 'school_london',
+                        label: t('ai.example_school_london', {
+                          defaultValue: 'School 2000 m² London',
+                        }),
+                        prompt: t('ai.example_school_london_prompt', {
+                          defaultValue:
+                            'Two-story primary school extension, 2000 m², CLT structure with brick facade, 12 classrooms, assembly hall, kitchen, full MEP and AV. Location: London, UK.',
+                        }),
+                      },
+                    ].map((ex) => (
+                      <button
+                        key={ex.key}
+                        type="button"
+                        onClick={() => setDescription(ex.prompt)}
+                        disabled={isPending}
+                        className="group inline-flex items-center gap-1.5 rounded-full border border-white/50 bg-white/60 px-3 py-1 text-xs font-medium text-content-secondary backdrop-blur transition hover:-translate-y-0.5 hover:border-violet-300/60 hover:bg-white/90 hover:text-violet-700 hover:shadow-sm dark:border-white/10 dark:bg-slate-800/50 dark:hover:bg-slate-700/60 dark:hover:text-violet-300"
+                      >
+                        <Sparkles size={11} className="text-violet-500 opacity-70 group-hover:opacity-100" />
+                        {ex.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
 
                 {/* Full options row for text tab */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
@@ -2638,7 +2792,7 @@ export function QuickEstimatePage() {
             </div>
           </div>
         </form>
-      </Card>
+      </section>
 
       {/* Loading state */}
       {isPending && <LoadingState isCad={isCadRoute} fileName={selectedFile?.name} fileSizeMB={selectedFile ? selectedFile.size / (1024 * 1024) : undefined} />}
@@ -3629,6 +3783,7 @@ export function QuickEstimatePage() {
         onSave={(projectId, boqName) => saveMutation.mutate({ projectId, boqName })}
         saving={saveMutation.isPending}
       />
+      </div>
     </div>
   );
 }

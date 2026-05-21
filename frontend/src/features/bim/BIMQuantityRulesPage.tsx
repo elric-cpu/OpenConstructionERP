@@ -59,6 +59,7 @@ import { Badge, ConfirmDialog, EmptyState } from '@/shared/ui';
 import { apiGet } from '@/shared/lib/api';
 import { FolderOpen } from 'lucide-react';
 import BIMRequirementsImport from './BIMRequirementsImport';
+import { RulePackLibrary } from '@/features/bim_requirements/RulePackLibrary';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useToastStore } from '@/stores/useToastStore';
 import {
@@ -1037,7 +1038,7 @@ function StatCard({ label, value }: { label: string; value: number }) {
 
 /* ── Tabs ─────────────────────────────────────────────────────────────── */
 
-type RulesTab = 'quantity_rules' | 'requirements';
+type RulesTab = 'quantity_rules' | 'requirements' | 'rule_library';
 
 /* ── Requirements Rule Editor (three-column) ─────────────────────────── */
 
@@ -2978,6 +2979,20 @@ export function BIMQuantityRulesPage() {
               <ClipboardCheck size={13} />
               {t('bim_rules.tab_requirements', { defaultValue: 'Requirements' })}
             </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('rule_library')}
+              data-testid="bim-rules-tab-rule-library"
+              className={clsx(
+                'px-4 py-2 text-xs font-medium border-b-2 transition-colors flex items-center gap-1.5',
+                activeTab === 'rule_library'
+                  ? 'border-oe-blue text-oe-blue'
+                  : 'border-transparent text-content-tertiary hover:text-content-secondary hover:border-border-light',
+              )}
+            >
+              <BookOpen size={13} />
+              {t('rulePacks.title', { defaultValue: 'Rule Library' })}
+            </button>
           </div>
         )}
 
@@ -3057,7 +3072,12 @@ export function BIMQuantityRulesPage() {
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-6">
-        {!activeProjectId ? (
+        {activeTab === 'rule_library' ? (
+          /* Rule Library tab — works without an active project too
+             because the seed packs are inlined; install button stays
+             disabled until a project is selected. */
+          <RulePackLibrary projectId={activeProjectId} />
+        ) : !activeProjectId ? (
           <EmptyState
             icon={<FolderOpen size={28} strokeWidth={1.5} />}
             title={t('bim_rules.no_project_title', { defaultValue: 'Pick a project to view rules' })}

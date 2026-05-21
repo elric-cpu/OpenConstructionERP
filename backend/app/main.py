@@ -1860,6 +1860,25 @@ def create_app() -> FastAPI:
         except Exception:
             logger.debug("Procurement Tenders alias not available (non-fatal)")
 
+        # Coordination Hub — module directory is ``coordination_hub`` (the
+        # full name keeps the package self-describing) but the canonical
+        # public URL is ``/api/v1/coordination/...`` so the surface matches
+        # the industry term ("Model Coordination") rather than our internal
+        # directory layout. Mount the alias here in addition to the
+        # auto-mount the loader does at ``/api/v1/coordination-hub``.
+        try:
+            from app.modules.coordination_hub.router import (
+                router as coord_router,
+            )
+
+            app.include_router(
+                coord_router,
+                prefix="/api/v1/coordination",
+                tags=["Coordination Hub"],
+            )
+        except Exception:
+            logger.debug("Coordination Hub alias not available (non-fatal)")
+
         # 4D module (Section 6) — mount schedules + EAC schedule links at /api/v2
         try:
             from app.modules.schedule.router_4d import (

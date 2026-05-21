@@ -10,7 +10,13 @@ from sqlalchemy import case, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.bim_hub.models import BIMElement, BIMModel
-from app.modules.clash.models import ClashCluster, ClashResult, ClashRun
+from app.modules.clash.models import (
+    ClashCluster,
+    ClashIssue,
+    ClashResult,
+    ClashRun,
+    ClashSuppression,
+)
 from app.modules.clash.schemas import (
     CLASH_PROPERTY_GROUP_PREFIX,
     SEVERITY_ORDER,
@@ -358,6 +364,8 @@ class ClashRepository:
         status: str | None = None,
         clash_type: str | None = None,
         discipline: str | None = None,
+        discipline_a: str | None = None,
+        discipline_b: str | None = None,
         severity: str | None = None,
         order_by: str | None = None,
         offset: int = 0,
@@ -372,6 +380,31 @@ class ClashRepository:
             base = base.where(
                 (ClashResult.a_discipline == discipline)
                 | (ClashResult.b_discipline == discipline)
+            )
+        # Symmetric pair filter — the coordination-hub trade matrix drill-
+        # down passes both halves, and a clash (X,Y) must match whether it
+        # was stored as (X,Y) or (Y,X). When only one half is given, fall
+        # back to the single-discipline behaviour (matches either column).
+        if discipline_a and discipline_b:
+            base = base.where(
+                (
+                    (ClashResult.a_discipline == discipline_a)
+                    & (ClashResult.b_discipline == discipline_b)
+                )
+                | (
+                    (ClashResult.a_discipline == discipline_b)
+                    & (ClashResult.b_discipline == discipline_a)
+                )
+            )
+        elif discipline_a:
+            base = base.where(
+                (ClashResult.a_discipline == discipline_a)
+                | (ClashResult.b_discipline == discipline_a)
+            )
+        elif discipline_b:
+            base = base.where(
+                (ClashResult.a_discipline == discipline_b)
+                | (ClashResult.b_discipline == discipline_b)
             )
         if severity:
             base = base.where(ClashResult.severity == severity)
@@ -470,3 +503,225 @@ class ClashRepository:
             .order_by(ClashCluster.cluster_id.asc())
         )
         return list((await self.session.execute(stmt)).scalars().all())
+
+    # ── ClashIssue (smart-issue identity across re-runs) ───────────────
+
+    async def get_issue_by_signature(
+        self, project_id: uuid.UUID, signature_hash: str
+    ) -> ClashIssue | None:
+        """Find the smart issue for a given project + signature hash."""
+        stmt = select(ClashIssue).where(
+            ClashIssue.project_id == project_id,
+            ClashIssue.signature_hash == signature_hash,
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def get_issue(
+        self, project_id: uuid.UUID, issue_id: uuid.UUID
+    ) -> ClashIssue | None:
+        """Fetch a single smart issue (project-scoped — IDOR-safe)."""
+        stmt = select(ClashIssue).where(
+            ClashIssue.id == issue_id,
+            ClashIssue.project_id == project_id,
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    def add_issue(self, issue: ClashIssue) -> None:
+        """Stage a new smart issue for insert. Caller flushes."""
+        self.session.add(issue)
+
+    async def next_issue_seq(self, project_id: uuid.UUID) -> int:
+        """Next monotonic 1-based counter for ``server_assigned_id``.
+
+        Computed as ``COUNT(*) + 1`` over the project's issues. We don't
+        need true gap-free monotonicity (an issue can never be deleted
+        through the public API — only archived), and ``COUNT`` is index-
+        backed via ``ix_clash_issue_project`` so this stays cheap.
+        Concurrent run executions on the same project are serialized at
+        the request level (one FastAPI worker per ``create_run`` call),
+        so two issues never race for the same counter.
+        """
+        stmt = select(func.count()).select_from(ClashIssue).where(
+            ClashIssue.project_id == project_id
+        )
+        n = (await self.session.execute(stmt)).scalar_one()
+        return int(n or 0) + 1
+
+    async def list_issues(
+        self,
+        project_id: uuid.UUID,
+        *,
+        status: str | None = None,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> tuple[list[tuple[ClashIssue, int]], int]:
+        """List smart issues for a project + each row's member-count.
+
+        Returns ``(rows, total)`` where ``rows`` is
+        ``[(ClashIssue, member_count), ...]`` and ``member_count`` is the
+        number of :class:`ClashResult` rows pointing at the issue. One
+        round-trip per page — the count subquery is on the indexed
+        ``issue_id`` column so even a large project stays cheap.
+        """
+        base = select(ClashIssue).where(ClashIssue.project_id == project_id)
+        if status:
+            base = base.where(ClashIssue.status == status)
+        total = (
+            await self.session.execute(
+                select(func.count()).select_from(base.subquery())
+            )
+        ).scalar_one()
+        ordered = base.order_by(
+            ClashIssue.created_at.desc(), ClashIssue.id.asc()
+        )
+        rows = list(
+            (
+                await self.session.execute(
+                    ordered.offset(offset).limit(limit)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        # Member-count subquery per page (one round-trip).
+        if rows:
+            ids = [r.id for r in rows]
+            cstmt = (
+                select(ClashResult.issue_id, func.count())
+                .where(ClashResult.issue_id.in_(ids))
+                .group_by(ClashResult.issue_id)
+            )
+            counts = {
+                iid: int(c)
+                for iid, c in (await self.session.execute(cstmt)).all()
+            }
+        else:
+            counts = {}
+        return [(r, counts.get(r.id, 0)) for r in rows], int(total)
+
+    async def signatures_present_in_run(
+        self, run_id: uuid.UUID
+    ) -> set[str]:
+        """Distinct ``signature_hash`` values present in a single run."""
+        stmt = (
+            select(ClashResult.signature_hash)
+            .where(
+                ClashResult.run_id == run_id,
+                ClashResult.signature_hash != "",
+            )
+            .distinct()
+        )
+        return {
+            str(s)
+            for (s,) in (await self.session.execute(stmt)).all()
+            if s
+        }
+
+    async def issues_for_project(
+        self, project_id: uuid.UUID
+    ) -> list[ClashIssue]:
+        """Every smart issue belonging to a project (no pagination)."""
+        stmt = select(ClashIssue).where(ClashIssue.project_id == project_id)
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def issues_by_signatures(
+        self, project_id: uuid.UUID, signatures: list[str]
+    ) -> dict[str, ClashIssue]:
+        """Fetch many issues at once, keyed by ``signature_hash``."""
+        if not signatures:
+            return {}
+        stmt = select(ClashIssue).where(
+            ClashIssue.project_id == project_id,
+            ClashIssue.signature_hash.in_(signatures),
+        )
+        out: dict[str, ClashIssue] = {}
+        for issue in (await self.session.execute(stmt)).scalars().all():
+            out[str(issue.signature_hash)] = issue
+        return out
+
+    async def previous_run(
+        self,
+        project_id: uuid.UUID,
+        exclude_run_id: uuid.UUID,
+    ) -> ClashRun | None:
+        """Most-recent completed run of a project, excluding ``exclude_run_id``.
+
+        Used by ``finalize_run`` to diff "current vs last" without needing
+        the caller to pass the prior run id explicitly. Ignores ``failed``
+        runs so a single bad run doesn't break the chain.
+        """
+        stmt = (
+            select(ClashRun)
+            .where(
+                ClashRun.project_id == project_id,
+                ClashRun.id != exclude_run_id,
+                ClashRun.status == "completed",
+            )
+            .order_by(ClashRun.created_at.desc())
+            .limit(1)
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    # ── ClashSuppression ───────────────────────────────────────────────
+
+    async def get_suppression(
+        self, project_id: uuid.UUID, signature_hash: str
+    ) -> ClashSuppression | None:
+        """One per-project suppression row, or ``None``."""
+        stmt = select(ClashSuppression).where(
+            ClashSuppression.project_id == project_id,
+            ClashSuppression.signature_hash == signature_hash,
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    def add_suppression(self, suppression: ClashSuppression) -> None:
+        self.session.add(suppression)
+
+    async def delete_suppression(self, suppression: ClashSuppression) -> None:
+        await self.session.delete(suppression)
+        await self.session.flush()
+
+    async def suppressed_signatures_for_project(
+        self, project_id: uuid.UUID
+    ) -> set[str]:
+        """Set of suppressed ``signature_hash`` values for a project."""
+        stmt = select(ClashSuppression.signature_hash).where(
+            ClashSuppression.project_id == project_id
+        )
+        return {
+            str(s)
+            for (s,) in (await self.session.execute(stmt)).all()
+            if s
+        }
+
+    async def get_issues_by_ids(
+        self, project_id: uuid.UUID, issue_ids: list[uuid.UUID]
+    ) -> list[ClashIssue]:
+        """Project-scoped fetch of many issues by id (IDOR-safe).
+
+        Issues whose ``id`` isn't in the project are silently dropped so
+        the caller sees only authorized rows — same defensive pattern the
+        single-issue ``get_issue`` follows. Empty input → empty list.
+        """
+        if not issue_ids:
+            return []
+        stmt = select(ClashIssue).where(
+            ClashIssue.project_id == project_id,
+            ClashIssue.id.in_(issue_ids),
+        )
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def get_suppressions_by_signatures(
+        self, project_id: uuid.UUID, signatures: list[str]
+    ) -> dict[str, ClashSuppression]:
+        """Fetch many suppression rows at once, keyed by ``signature_hash``."""
+        if not signatures:
+            return {}
+        stmt = select(ClashSuppression).where(
+            ClashSuppression.project_id == project_id,
+            ClashSuppression.signature_hash.in_(signatures),
+        )
+        out: dict[str, ClashSuppression] = {}
+        for row in (await self.session.execute(stmt)).scalars().all():
+            out[str(row.signature_hash)] = row
+        return out

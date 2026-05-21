@@ -50,9 +50,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.bcf.bcf_xml import BCFParseError, parse_bcfzip
 from app.modules.bcf.schemas import PerspectiveCamera, TopicCreate, Vec3, ViewpointCreate
 from app.modules.bcf.service import BCFService
-from app.modules.clash.models import ClashCluster, ClashResult, ClashRun
+from app.modules.clash.models import (
+    ClashCluster,
+    ClashIssue,
+    ClashResult,
+    ClashRun,
+    ClashSuppression,
+)
 from app.modules.clash.repository import ClashRepository
 from app.modules.clash.schemas import (
+    CLASH_ISSUE_STATUSES,
     CLASH_SEVERITIES,
     CLASH_STATUSES,
     CLASH_TYPES,
@@ -192,6 +199,111 @@ def _signature(a_stable_id: str, b_stable_id: str, clash_type: str) -> str:
     lo, hi = (a, b) if a <= b else (b, a)
     raw = f"{lo}|{hi}|{clash_type}"
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+
+
+# ── Smart-issue signature (v41) ─────────────────────────────────────────
+
+# Default spatial grid in millimetres for ``ClashRun.spatial_grid_mm`` —
+# coarse enough to absorb sub-mm geometry drift on re-runs but fine
+# enough that a real geometry change (moving a pipe by half a metre)
+# hashes to a fresh issue. Tweakable per-run on the model.
+_DEFAULT_SPATIAL_GRID_MM = 500
+# How many consecutive runs an issue must be absent for before we move
+# it from ``resolved`` to ``archived``. Three is the convention from
+# Navisworks/Solibri: one missing run is noise, three is "really gone".
+_ARCHIVE_AFTER_MISSING = 3
+
+
+def _canon_guid(value: object) -> str:
+    """Canonicalise a stable id / guid for the signature input.
+
+    NFKC-normalises unicode + lower-cases + trims so two callers can pass
+    e.g. ``"GUID-AB12"`` and ``" guid-ab12 "`` and get the same hash.
+    ``None`` / empty → ``""`` so the caller knows the GUID is missing and
+    can decide to fall back to the weak signature.
+    """
+    if value is None:
+        return ""
+    import unicodedata as _ud
+
+    s = str(value).strip()
+    if not s:
+        return ""
+    return _ud.normalize("NFKC", s).lower()
+
+
+def _bucket(value: float, grid_mm: int) -> int:
+    """Quantise a metre coordinate to its ``grid_mm`` cell index.
+
+    ``floor((value_m * 1000) / grid_mm)``. Pure integer arithmetic on the
+    millimetre scale so two centroids that differ by < grid_mm map to
+    the same bucket and therefore the same signature.
+    """
+    if grid_mm <= 0:
+        return 0
+    try:
+        mm = float(value) * 1000.0
+    except (TypeError, ValueError):
+        return 0
+    if not math.isfinite(mm):
+        return 0
+    return int(math.floor(mm / float(grid_mm)))
+
+
+def _compute_signature_hash(
+    *,
+    a_guid: str | None,
+    b_guid: str | None,
+    centroid: tuple[float, float, float],
+    clash_type: str,
+    grid_mm: int = _DEFAULT_SPATIAL_GRID_MM,
+    weak_fallback: tuple[str, str, list[str]] | None = None,
+) -> tuple[str, str]:
+    """Compute the canonical clash signature hash.
+
+    Returns ``(signature_hash, quality)`` where ``quality`` is ``"strong"``
+    when real stable ids drove the hash, ``"weak"`` when the GUID-less
+    fallback (ifc_class | material | sorted quantity keys) was used.
+
+    ``signature = SHA1(canon(min) || "|" || canon(max) || "|" ||
+                       bucket(cx) || "," || bucket(cy) || "," || bucket(cz)
+                       || "|" || clash_type)``
+
+    The GUID pair is sorted before hashing so ``(A, B)`` and ``(B, A)``
+    yield the same hash. The clash-box centroid is bucketed by
+    ``grid_mm`` so sub-mm drift between re-runs hashes to the same
+    issue. ``clash_type`` is included so a hard hit and a clearance hit
+    at the same spot are tracked as separate issues.
+
+    Weak fallback: when either ``a_guid`` or ``b_guid`` canonicalises to
+    the empty string AND ``weak_fallback`` is supplied
+    (``(ifc_class, material, [quantity_keys])``), the GUIDs are replaced
+    with ``sha1(ifc_class | material | sorted-keys)`` and the function
+    flags the result as ``"weak"``. Without a fallback the strong path
+    is used regardless (preserving the historical strong-only contract).
+    """
+    a_canon = _canon_guid(a_guid)
+    b_canon = _canon_guid(b_guid)
+    quality = "strong"
+    if (not a_canon or not b_canon) and weak_fallback is not None:
+        ifc_class, material, qty_keys = weak_fallback
+        ifc_c = _canon_guid(ifc_class)
+        mat_c = _canon_guid(material)
+        keys = sorted(_canon_guid(k) for k in (qty_keys or []) if k)
+        raw = f"{ifc_c}|{mat_c}|{','.join(keys)}"
+        weak_hash = hashlib.sha1(raw.encode("utf-8")).hexdigest()
+        # Re-use the weak hash on both sides so the sort still works.
+        a_canon = weak_hash
+        b_canon = weak_hash
+        quality = "weak"
+    lo, hi = (a_canon, b_canon) if a_canon <= b_canon else (b_canon, a_canon)
+    cx, cy, cz = centroid
+    bx = _bucket(cx, grid_mm)
+    by = _bucket(cy, grid_mm)
+    bz = _bucket(cz, grid_mm)
+    ctype = _canon_guid(clash_type) or "hard"
+    raw = f"{lo}|{hi}|{bx},{by},{bz}|{ctype}"
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest(), quality
 
 
 _SEVERITY_BUMP_NEXT: dict[str, str] = {
@@ -1421,8 +1533,22 @@ class ClashService:
                 await self._persist_clusters(run, results)
             except Exception:  # noqa: BLE001 — clustering is best-effort
                 logger.exception("Clash run %s cluster pass failed", run.id)
-            run.status = "completed"
-            run.completed_at = _now()
+            # v41 — smart-issue upsert + finalize. Best-effort: failures
+            # leave the run rows in place but skip the smart-issue write.
+            try:
+                await self.session.flush()
+                for clash in results:
+                    if clash.signature_hash:
+                        await self.upsert_clash_with_signature(run, clash)
+                run.status = "completed"
+                run.completed_at = _now()
+                await self.finalize_run(run)
+            except Exception:  # noqa: BLE001 — smart issues are best-effort
+                logger.exception(
+                    "Clash run %s smart-issue upsert failed", run.id
+                )
+                run.status = "completed"
+                run.completed_at = _now()
         except Exception as exc:  # noqa: BLE001 — surface, don't 500 the run
             logger.exception("Clash run %s failed", run.id)
             run.status = "failed"
@@ -1592,6 +1718,516 @@ class ClashService:
                 "base_total": len(base),
                 "current_total": len(current),
             },
+        }
+
+    # ── Smart-issue identity (v41) ─────────────────────────────────────
+
+    @staticmethod
+    def compute_signature(
+        *,
+        a_guid: str | None,
+        b_guid: str | None,
+        centroid: tuple[float, float, float],
+        clash_type: str,
+        grid_mm: int = _DEFAULT_SPATIAL_GRID_MM,
+        weak_fallback: tuple[str, str, list[str]] | None = None,
+    ) -> tuple[str, str]:
+        """Public, stateless signature computation — see :func:`_compute_signature_hash`.
+
+        Exposed on the service so callers and tests don't reach into the
+        private helper. Returns ``(signature_hash, quality)``.
+        """
+        return _compute_signature_hash(
+            a_guid=a_guid,
+            b_guid=b_guid,
+            centroid=centroid,
+            clash_type=clash_type,
+            grid_mm=grid_mm,
+            weak_fallback=weak_fallback,
+        )
+
+    async def _format_server_id(self, project_id: uuid.UUID) -> str:
+        """Allocate the next ``CLASH-NNN`` id for ``project_id``."""
+        n = await self.repo.next_issue_seq(project_id)
+        return f"CLASH-{n:03d}"
+
+    async def upsert_clash_with_signature(
+        self,
+        run: ClashRun,
+        clash: ClashResult,
+    ) -> ClashIssue:
+        """Find or create the smart issue for one clash row and link it.
+
+        The result row's ``signature_hash`` and ``signature_quality`` are
+        assumed to be stamped already (the engine path sets them in
+        :meth:`_row`; callers using this API on hand-built rows should
+        compute them via :meth:`compute_signature` first).
+
+        On insert: creates a fresh :class:`ClashIssue` with the project-
+        scoped server-assigned id (``CLASH-NNN``) and ``status='new'``.
+        On hit: bumps ``last_seen_run_id`` and resets ``missing_run_count``,
+        flipping ``resolved`` issues to ``persisted`` (a reopen) and
+        ``archived`` ones back to ``persisted`` as well. Suppressed
+        signatures stay ``ignored``. ``new`` becomes ``persisted`` only
+        when this is the second or later run that's seen it.
+
+        Returns the (now-linked) :class:`ClashIssue`.
+        """
+        sig = (clash.signature_hash or "").strip()
+        if not sig:
+            raise ValueError(
+                "ClashResult.signature_hash must be set before upsert"
+            )
+        # Suppressed signatures resolve to an ignored issue and never
+        # surface as new — but we still link the row so the UI can
+        # explain why the clash is suppressed.
+        suppressed = await self.repo.get_suppression(run.project_id, sig)
+        existing = await self.repo.get_issue_by_signature(run.project_id, sig)
+        if existing is None:
+            server_id = await self._format_server_id(run.project_id)
+            issue = ClashIssue(
+                project_id=run.project_id,
+                signature_hash=sig,
+                status="ignored" if suppressed is not None else "new",
+                first_seen_run_id=run.id,
+                last_seen_run_id=run.id,
+                missing_run_count=0,
+                server_assigned_id=server_id,
+                signature_quality=(clash.signature_quality or "strong"),
+                tags=[],
+            )
+            self.repo.add_issue(issue)
+            await self.session.flush()
+            clash.issue_id = issue.id
+            return issue
+        # Hit — bump last_seen + reset missing count + transition status.
+        existing.last_seen_run_id = run.id
+        existing.missing_run_count = 0
+        if suppressed is not None:
+            # An active suppression always wins, regardless of prior status.
+            existing.status = "ignored"
+        else:
+            prior_status = existing.status or "new"
+            if prior_status in ("resolved", "archived"):
+                # Reopen — the signature came back.
+                existing.status = "persisted"
+                existing.resolved_run_id = None
+            elif prior_status == "new":
+                # Second-or-later sighting → persisted.
+                existing.status = "persisted"
+            elif prior_status == "ignored":
+                # Suppression must have been lifted between runs — flip
+                # back to persisted so coordination can see it again.
+                existing.status = "persisted"
+            # ``persisted`` stays ``persisted``.
+        clash.issue_id = existing.id
+        return existing
+
+    async def finalize_run(
+        self,
+        run: ClashRun,
+    ) -> None:
+        """Close the smart-issue diff for a freshly-completed run.
+
+        Walks every existing :class:`ClashIssue` for the project and,
+        for those *not* present in this run's signatures, bumps
+        ``missing_run_count``. Issues that were present in the prior run
+        but absent now flip ``new``/``persisted`` → ``resolved`` and stamp
+        ``resolved_run_id``. Issues missing for ≥ ``_ARCHIVE_AFTER_MISSING``
+        consecutive runs flip ``resolved`` → ``archived``. Suppressed
+        issues are untouched (they stay ``ignored``).
+
+        Idempotent on the same run — calling twice produces the same
+        terminal state.
+        """
+        current_sigs = await self.repo.signatures_present_in_run(run.id)
+        suppressed_sigs = await self.repo.suppressed_signatures_for_project(
+            run.project_id
+        )
+        all_issues = await self.repo.issues_for_project(run.project_id)
+        for issue in all_issues:
+            sig = issue.signature_hash or ""
+            if sig in suppressed_sigs:
+                # Suppression overrides lifecycle; never archive or auto-
+                # resolve an actively-suppressed signature.
+                issue.status = "ignored"
+                continue
+            if sig in current_sigs:
+                # Present this run — the upsert path already moved the
+                # status forward, nothing else to do here.
+                continue
+            # Absent this run.
+            prior_status = issue.status or "new"
+            issue.missing_run_count = int(issue.missing_run_count or 0) + 1
+            if prior_status in ("new", "persisted"):
+                issue.status = "resolved"
+                issue.resolved_run_id = run.id
+            elif prior_status == "resolved":
+                if issue.missing_run_count >= _ARCHIVE_AFTER_MISSING:
+                    issue.status = "archived"
+        await self.session.flush()
+
+    async def suppress(
+        self,
+        project_id: uuid.UUID,
+        signature_hash: str,
+        reason: str,
+        user_id: uuid.UUID | str | None,
+    ) -> ClashSuppression:
+        """Suppress a signature for a project + flip matching issues to ``ignored``.
+
+        Idempotent — repeating the call updates the existing suppression's
+        reason / user but does not create a duplicate row.
+        """
+        sig = (signature_hash or "").strip()
+        if not sig:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="signature_hash is required",
+            )
+        rsn = (reason or "").strip()
+        if not rsn:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="reason is required",
+            )
+        existing = await self.repo.get_suppression(project_id, sig)
+        uid: uuid.UUID | None = None
+        if user_id is not None:
+            try:
+                uid = uuid.UUID(str(user_id))
+            except (TypeError, ValueError):
+                uid = None
+        if existing is None:
+            existing = ClashSuppression(
+                project_id=project_id,
+                signature_hash=sig,
+                reason=rsn,
+                suppressed_by_user_id=uid,
+            )
+            self.repo.add_suppression(existing)
+        else:
+            existing.reason = rsn
+            if uid is not None:
+                existing.suppressed_by_user_id = uid
+        # Flip every matching issue to ``ignored``.
+        matching = await self.repo.get_issue_by_signature(project_id, sig)
+        if matching is not None:
+            matching.status = "ignored"
+        await self.session.flush()
+        return existing
+
+    async def unsuppress(
+        self,
+        project_id: uuid.UUID,
+        signature_hash: str,
+        user_id: uuid.UUID | str | None,  # noqa: ARG002 — kept for audit symmetry
+    ) -> bool:
+        """Remove a suppression + flip matching ``ignored`` issues back to ``persisted``.
+
+        Returns True if a suppression row was deleted, False if none was
+        found (idempotent no-op).
+        """
+        sig = (signature_hash or "").strip()
+        if not sig:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="signature_hash is required",
+            )
+        existing = await self.repo.get_suppression(project_id, sig)
+        if existing is None:
+            return False
+        await self.repo.delete_suppression(existing)
+        # Flip the matching issue (if any) back to ``persisted`` — the
+        # signature is once again "live" coordination work.
+        matching = await self.repo.get_issue_by_signature(project_id, sig)
+        if matching is not None and matching.status == "ignored":
+            matching.status = "persisted"
+        await self.session.flush()
+        return True
+
+    async def suppress_by_issue(
+        self,
+        project_id: uuid.UUID,
+        issue_id: uuid.UUID,
+        reason: str,
+        user_id: uuid.UUID | str | None,
+    ) -> ClashIssue:
+        """Convenience wrapper used by the router (issue_id, not hash)."""
+        issue = await self.repo.get_issue(project_id, issue_id)
+        if issue is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Clash issue not found",
+            )
+        await self.suppress(project_id, issue.signature_hash, reason, user_id)
+        return issue
+
+    async def unsuppress_by_issue(
+        self,
+        project_id: uuid.UUID,
+        issue_id: uuid.UUID,
+        user_id: uuid.UUID | str | None,
+    ) -> ClashIssue:
+        """Convenience wrapper used by the router (issue_id, not hash)."""
+        issue = await self.repo.get_issue(project_id, issue_id)
+        if issue is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Clash issue not found",
+            )
+        await self.unsuppress(project_id, issue.signature_hash, user_id)
+        return issue
+
+    # TODO: expose via bulk endpoint — router.py is in flight with
+    # another agent, so the service method is shipped on its own and
+    # wired up in a follow-up patch.
+    async def bulk_suppress(
+        self,
+        project_id: uuid.UUID,
+        issue_ids: list[uuid.UUID],
+        reason: str,
+        user_id: uuid.UUID | str | None,
+    ) -> dict:
+        """Suppress many :class:`ClashIssue` rows in a single transaction.
+
+        Atomic — either every authorized issue flips to ``ignored`` and
+        gains a :class:`ClashSuppression` row, or nothing does (the
+        caller's request-scoped session is rolled back on any error).
+
+        IDOR-safe: ids that don't belong to ``project_id`` are silently
+        dropped (the same defensive pattern as the single-issue path);
+        the result's ``skipped_ids`` lists them so the caller can surface
+        a structured warning. Idempotent: an issue already covered by a
+        suppression row gets its ``reason`` updated in place — no duplicate
+        rows and the audit trail still records the re-suppression.
+
+        Empty ``issue_ids`` → returns the zero-counts envelope, never raises.
+
+        Args:
+            project_id: scoping project (every issue must belong to it).
+            issue_ids: list of ``ClashIssue.id`` values to suppress.
+            reason: free-text suppression reason (non-empty after strip).
+            user_id: actor id for the audit trail (best-effort UUID coerced).
+
+        Returns:
+            ``{"suppressed_ids": [...], "skipped_ids": [...],
+               "suppressed_count": int, "skipped_count": int}``
+
+        Raises:
+            HTTPException 422: ``reason`` is empty / whitespace-only.
+        """
+        rsn = (reason or "").strip()
+        if not rsn:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="reason is required",
+            )
+
+        # Empty input is a legal no-op — the UI can wire an "Apply to
+        # selected" button without first checking the selection length.
+        if not issue_ids:
+            return {
+                "suppressed_ids": [],
+                "skipped_ids": [],
+                "suppressed_count": 0,
+                "skipped_count": 0,
+            }
+
+        # De-duplicate while preserving order — the audit trail entries
+        # below are emitted once per issue, never twice for a repeat id.
+        seen: set[uuid.UUID] = set()
+        unique_ids: list[uuid.UUID] = []
+        for iid in issue_ids:
+            if iid is None or iid in seen:
+                continue
+            seen.add(iid)
+            unique_ids.append(iid)
+
+        # Coerce user_id once — re-used on every audit + suppression row.
+        uid: uuid.UUID | None = None
+        if user_id is not None:
+            try:
+                uid = uuid.UUID(str(user_id))
+            except (TypeError, ValueError):
+                uid = None
+
+        # IDOR gate: load only project-scoped rows. Anything missing is
+        # an unauthorized / vanished id — reported back in ``skipped_ids``
+        # so the UI never silently swallows a typo'd selection.
+        authorized = await self.repo.get_issues_by_ids(project_id, unique_ids)
+        authorized_by_id: dict[uuid.UUID, ClashIssue] = {
+            i.id: i for i in authorized
+        }
+        skipped: list[uuid.UUID] = [
+            iid for iid in unique_ids if iid not in authorized_by_id
+        ]
+
+        signatures = [
+            i.signature_hash for i in authorized if (i.signature_hash or "").strip()
+        ]
+        existing_suppressions = (
+            await self.repo.get_suppressions_by_signatures(project_id, signatures)
+        )
+
+        # Resolve actor string once for the audit log entries written to
+        # each affected ClashResult's history JSON column.
+        actor = await self.resolve_author(str(user_id)) if user_id else "system"
+
+        suppressed_ids: list[uuid.UUID] = []
+        for issue in authorized:
+            sig = (issue.signature_hash or "").strip()
+            if not sig:
+                # Defensive: an issue without a signature hash can't be
+                # suppressed (the suppression key IS the signature) — skip
+                # it as if it had been unauthorized so the count is honest.
+                skipped.append(issue.id)
+                continue
+
+            existing = existing_suppressions.get(sig)
+            if existing is None:
+                row = ClashSuppression(
+                    project_id=project_id,
+                    signature_hash=sig,
+                    reason=rsn,
+                    suppressed_by_user_id=uid,
+                )
+                self.repo.add_suppression(row)
+                existing_suppressions[sig] = row
+            else:
+                # Idempotent re-suppression: update reason + actor in place.
+                existing.reason = rsn
+                if uid is not None:
+                    existing.suppressed_by_user_id = uid
+
+            prior_status = issue.status
+            issue.status = "ignored"
+
+            # Audit trail: fan out to every result row attached to this
+            # issue so the per-clash Activity tab reflects the bulk op.
+            from sqlalchemy import select as _select  # local import — see note
+            res_stmt = _select(ClashResult).where(ClashResult.issue_id == issue.id)
+            for r in (await self.session.execute(res_stmt)).scalars().all():
+                self._append_history(
+                    r, actor, "suppression", prior_status, "ignored"
+                )
+
+            suppressed_ids.append(issue.id)
+
+        # Single flush at the end → atomic. If the flush raises, the
+        # caller's session.rollback() (or AsyncSession context manager)
+        # discards every change above so a partial bulk is impossible.
+        await self.session.flush()
+
+        return {
+            "suppressed_ids": suppressed_ids,
+            "skipped_ids": skipped,
+            "suppressed_count": len(suppressed_ids),
+            "skipped_count": len(skipped),
+        }
+
+    async def list_issues(
+        self,
+        project_id: uuid.UUID,
+        *,
+        status_filter: str | None = None,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> tuple[list[tuple[ClashIssue, int]], int]:
+        """Project-scoped list of smart issues with member counts."""
+        if status_filter is not None and status_filter not in CLASH_ISSUE_STATUSES:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid clash issue status '{status_filter}'",
+            )
+        return await self.repo.list_issues(
+            project_id,
+            status=status_filter,
+            offset=offset,
+            limit=limit,
+        )
+
+    async def run_diff(
+        self,
+        project_id: uuid.UUID,
+        run_id: uuid.UUID,
+    ) -> dict:
+        """Smart-issue diff counts for a run vs the previous one.
+
+        Returns ``{new, persisted, resolved, reopened, ignored}``. ``new`` =
+        signatures first seen this run (i.e. their issue's
+        ``first_seen_run_id == run_id``). ``persisted`` = signatures seen
+        in both runs whose issue is currently ``persisted``. ``resolved``
+        = signatures that were in the prior run but not this one
+        (``resolved_run_id == run_id``). ``reopened`` = signatures whose
+        issue had ``status='resolved'`` in the prior run but is back to
+        ``persisted`` this run (the upsert path detects this). ``ignored``
+        = signatures whose issue is currently ``ignored`` (suppressed).
+        """
+        run = await self.get_run(project_id, run_id)
+        sigs_this_run = await self.repo.signatures_present_in_run(run_id)
+        issues = await self.repo.issues_by_signatures(
+            project_id, list(sigs_this_run)
+        )
+        prev_run = await self.repo.previous_run(project_id, run_id)
+        prev_sigs: set[str] = set()
+        if prev_run is not None:
+            prev_sigs = await self.repo.signatures_present_in_run(prev_run.id)
+
+        new = 0
+        persisted = 0
+        reopened = 0
+        ignored = 0
+        for sig, issue in issues.items():
+            st = (issue.status or "").lower()
+            if st == "ignored":
+                ignored += 1
+                continue
+            if str(issue.first_seen_run_id) == str(run_id):
+                new += 1
+                continue
+            if sig in prev_sigs:
+                persisted += 1
+                # Reopened: issue resurfaced after a resolved/archived spell
+                # and is now persisted. We detect this via resolved_run_id
+                # being non-null (set on the resolution diff, cleared on
+                # next reopen) — but the upsert clears it on the reopen, so
+                # we approximate via ``missing_run_count``: any issue
+                # whose missing count was > 0 just before this run is a
+                # reopen. The upsert resets it to 0, so we infer via the
+                # history of the previous run: simpler heuristic — count
+                # an issue as reopened when its first_seen_run_id is older
+                # than the previous run but it was *not* present in that
+                # previous run.
+                if (
+                    prev_run is not None
+                    and sig not in prev_sigs
+                    and str(issue.first_seen_run_id) != str(run_id)
+                ):
+                    reopened += 1
+            else:
+                # Present this run, not present in prev_sigs, but not
+                # first-seen this run — that's a reopen.
+                if (
+                    prev_run is not None
+                    and str(issue.first_seen_run_id) != str(run_id)
+                ):
+                    reopened += 1
+        # Resolved: count of issues whose resolved_run_id == run_id (the
+        # finalize_run pass stamps these).
+        all_issues = await self.repo.issues_for_project(project_id)
+        resolved = sum(
+            1
+            for i in all_issues
+            if i.resolved_run_id is not None
+            and str(i.resolved_run_id) == str(run_id)
+        )
+        return {
+            "new": int(new),
+            "persisted": int(persisted),
+            "resolved": int(resolved),
+            "reopened": int(reopened),
+            "ignored": int(ignored),
         }
 
     async def list_runs(self, project_id: uuid.UUID) -> list[ClashRun]:
@@ -2277,6 +2913,49 @@ class ClashService:
         clr = float(getattr(run, "clearance_m", 0.0) or 0.0)
         sev = _severity_for(clash_type, penetration, distance, clr)
         suggestion = _severity_suggestion(clash_type, penetration, sev)
+        # Smart-issue signature (v41). Bucketed centroid + sorted GUID pair
+        # + clash type → SHA-1. Per-run ``spatial_grid_mm`` lets a project
+        # dial the precision; defaults to 500 mm.
+        grid_mm = int(getattr(run, "spatial_grid_mm", None) or _DEFAULT_SPATIAL_GRID_MM)
+        # Weak-fallback inputs — only consulted when one stable_id is empty.
+        a_props = getattr(ea, "properties", None) or {}
+        b_props = getattr(eb, "properties", None) or {}
+        ifc_a = str(
+            a_props.get("ifc_class")
+            or a_props.get("category")
+            or getattr(ea, "element_type", "")
+            or ""
+        )
+        ifc_b = str(
+            b_props.get("ifc_class")
+            or b_props.get("category")
+            or getattr(eb, "element_type", "")
+            or ""
+        )
+        mat_a = str(a_props.get("material") or "")
+        mat_b = str(b_props.get("material") or "")
+        ifc_class_combined = f"{ifc_a}|{ifc_b}" if ifc_a or ifc_b else ""
+        material_combined = f"{mat_a}|{mat_b}" if mat_a or mat_b else ""
+        # Quantity keys (deterministic) — from either props.quantities or
+        # the geometric properties keys themselves; sorted for stability.
+        qty_keys: list[str] = []
+        for src in (a_props, b_props):
+            qsrc = src.get("quantities") if isinstance(src, dict) else None
+            if isinstance(qsrc, dict):
+                qty_keys.extend(str(k) for k in qsrc)
+        sig_hash, sig_quality = _compute_signature_hash(
+            a_guid=a_sid,
+            b_guid=b_sid,
+            centroid=(cx, cy, cz),
+            clash_type=clash_type,
+            grid_mm=grid_mm,
+            weak_fallback=(
+                ifc_class_combined,
+                material_combined,
+                qty_keys,
+            ),
+        )
+        tol_at_sig_mm = float(getattr(run, "tolerance_m", 0.0) or 0.0) * 1000.0
         meta: dict = {}
         if suggestion is not None:
             meta["severity_suggestion"] = suggestion
@@ -2305,6 +2984,9 @@ class ClashService:
             status="new",
             severity=sev,
             signature=_signature(a_sid, b_sid, clash_type),
+            signature_hash=sig_hash,
+            signature_quality=sig_quality,
+            tolerance_at_signature_time_mm=tol_at_sig_mm,
             comments=[],
             watchers=[],
             history=[],

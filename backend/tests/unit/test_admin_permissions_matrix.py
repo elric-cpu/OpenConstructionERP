@@ -1,22 +1,41 @@
-"""Tests for ``GET /api/v1/admin/permissions/matrix``.
+"""Tests for ``GET /api/v1/admin/permissions/matrix`` and friends.
 
 The endpoint snapshots the live ``PermissionRegistry`` for the admin
 UI. We exercise the pure builder directly (no ASGI) so the unit suite
 stays fast, plus one focused round-trip through the registry so the
 gate (``audit.view``) and the response shape can't drift apart.
+
+The edit surface (``PATCH /permissions/{key}`` and
+``POST /permissions/preset/{name}``) is exercised via FastAPI's
+``TestClient`` with dependency overrides for the admin role and the DB
+session — that's the smallest setup that lets us assert the lockout
+guard, the audit-log write, the 404 paths, and the non-admin 403.
 """
 
 from __future__ import annotations
 
-import pytest
+import uuid
+from collections.abc import AsyncIterator
 
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from app.core.audit import AuditEntry
 from app.core.permissions import (
     PermissionRegistry,
     Role,
     permission_registry,
     register_core_permissions,
 )
-from app.modules.admin.permissions_router import _build_matrix_payload
+from app.database import Base
+from app.dependencies import (
+    SessionDep,
+    get_current_user_payload,
+    get_session,
+)
+from app.modules.admin.permissions_router import _build_matrix_payload, router
 
 
 @pytest.fixture
@@ -43,6 +62,11 @@ class TestPermissionsMatrixPayload:
             "manager": 2,
             "admin": 3,
         }
+        # Presets are surfaced so the UI can offer them in a dropdown
+        # without hard-coding the list on its side.
+        assert "viewer-default" in payload["presets"]
+        assert "editor-default" in payload["presets"]
+        assert "manager-default" in payload["presets"]
 
     def test_includes_registered_modules(self, fresh_registry):
         fresh_registry.register_module_permissions(
@@ -86,3 +110,167 @@ class TestPermissionsMatrixPayload:
         register_core_permissions()
         all_perms = permission_registry.list_all()
         assert all_perms.get("audit.view") == "manager"
+
+
+# ── Edit-surface tests (PATCH + POST preset) ─────────────────────────────
+
+
+@pytest.fixture
+async def edit_app(fresh_registry, tmp_path):
+    """Mount the permissions router with an isolated SQLite + admin user."""
+    # Seed the clean registry with a couple of perms to mutate.
+    fresh_registry.register_module_permissions(
+        "projects",
+        {
+            "projects.create": Role.EDITOR,
+            "projects.delete": Role.MANAGER,
+            "projects.read": Role.VIEWER,
+        },
+    )
+    fresh_registry.register("permissions.admin", Role.ADMIN)
+
+    # Per-test SQLite so the audit-log table can hold inserts without
+    # touching the session-wide DB.
+    db_file = tmp_path / "perms-edit.db"
+    engine = create_async_engine(f"sqlite+aiosqlite:///{db_file.as_posix()}")
+    async with engine.begin() as conn:
+        # Create the audit-log table — that's the only schema this
+        # endpoint touches. Pulling in the whole Base.metadata is wasteful
+        # but safe with a fresh in-memory DB.
+        await conn.run_sync(Base.metadata.create_all)
+    sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def _override_session() -> AsyncIterator[AsyncSession]:
+        async with sessionmaker() as session:
+            yield session
+            await session.commit()
+
+    app = FastAPI()
+    app.include_router(router, prefix="/v1/admin")
+    app.dependency_overrides[get_session] = _override_session
+
+    yield app, sessionmaker
+
+    await engine.dispose()
+
+
+def _set_admin(app: FastAPI, role: str = "admin", user_id: str | None = None) -> None:
+    """Inject a fake JWT payload so the role / lockout gates see the caller."""
+    uid = user_id or str(uuid.uuid4())
+
+    async def _payload() -> dict[str, str]:
+        return {
+            "sub": uid,
+            "role": role,
+            "permissions": ["audit.view"],
+        }
+
+    app.dependency_overrides[get_current_user_payload] = _payload
+
+
+@pytest.mark.asyncio
+class TestPermissionsMatrixEdit:
+    async def test_patch_toggles_min_role_and_writes_audit(self, edit_app):
+        app, sessionmaker = edit_app
+        _set_admin(app)
+        client = TestClient(app)
+
+        # Flip projects.create from editor → manager.
+        resp = client.patch(
+            "/v1/admin/permissions/projects.create",
+            json={"min_role": "manager"},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["previous_min_role"] == "editor"
+        assert body["new_min_role"] == "manager"
+
+        # Audit log carries the before/after.
+        async with sessionmaker() as session:
+            entries = (await session.execute(
+                __import__("sqlalchemy").select(AuditEntry)
+            )).scalars().all()
+        keys = [e.entity_id for e in entries]
+        assert "projects.create" in keys
+        update = next(e for e in entries if e.entity_id == "projects.create")
+        assert update.action == "update"
+        assert update.details["previous_min_role"] == "editor"
+        assert update.details["new_min_role"] == "manager"
+
+    async def test_patch_blocks_admin_lockout(self, edit_app):
+        """Refuse to drop ``permissions.admin`` below admin role."""
+        app, _ = edit_app
+        _set_admin(app)
+        client = TestClient(app)
+
+        resp = client.patch(
+            "/v1/admin/permissions/permissions.admin",
+            json={"min_role": "viewer"},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["detail"]["code"] == "admin_lockout_blocked"
+
+    async def test_patch_unknown_permission_returns_404(self, edit_app):
+        app, _ = edit_app
+        _set_admin(app)
+        client = TestClient(app)
+
+        resp = client.patch(
+            "/v1/admin/permissions/nonexistent.thing",
+            json={"min_role": "viewer"},
+        )
+        assert resp.status_code == 404
+        assert resp.json()["detail"]["code"] == "permission_not_found"
+
+    async def test_patch_non_admin_caller_is_forbidden(self, edit_app):
+        app, _ = edit_app
+        # A manager has audit.view but is below the admin role gate.
+        _set_admin(app, role="manager")
+        client = TestClient(app)
+
+        resp = client.patch(
+            "/v1/admin/permissions/projects.create",
+            json={"min_role": "viewer"},
+        )
+        assert resp.status_code == 403
+
+    async def test_preset_apply_rewrites_matrix(self, edit_app):
+        """``viewer-default`` flips read-style keys to viewer."""
+        app, sessionmaker = edit_app
+        _set_admin(app)
+        client = TestClient(app)
+
+        # projects.read is already viewer — flip it to editor first so
+        # the preset has something to undo.
+        client.patch(
+            "/v1/admin/permissions/projects.read",
+            json={"min_role": "editor"},
+        )
+
+        resp = client.post("/v1/admin/permissions/preset/viewer-default")
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["preset"] == "viewer-default"
+        # At least projects.read should have moved back to viewer.
+        keys_changed = {c["permission"] for c in body["changes"]}
+        assert "projects.read" in keys_changed
+
+        # Audit log carries one preset_applied row with the full diff.
+        async with sessionmaker() as session:
+            preset_entries = (await session.execute(
+                __import__("sqlalchemy")
+                .select(AuditEntry)
+                .where(AuditEntry.action == "preset_applied")
+            )).scalars().all()
+        assert len(preset_entries) == 1
+        assert preset_entries[0].entity_id == "viewer-default"
+        assert preset_entries[0].details["preset"] == "viewer-default"
+
+    async def test_preset_unknown_returns_404(self, edit_app):
+        app, _ = edit_app
+        _set_admin(app)
+        client = TestClient(app)
+
+        resp = client.post("/v1/admin/permissions/preset/does-not-exist")
+        assert resp.status_code == 404
+        assert resp.json()["detail"]["code"] == "preset_not_found"

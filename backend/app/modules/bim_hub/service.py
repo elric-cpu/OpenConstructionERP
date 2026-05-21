@@ -58,6 +58,9 @@ from app.modules.bim_hub.schemas import (
     FederationModelAdd,
     FederationModelResponse,
     FederationResponse,
+    FederationTypeTreeClass,
+    FederationTypeTreeMember,
+    FederationTypeTreeResponse,
     FederationUpdate,
     QuantityMapApplyRequest,
     QuantityMapApplyResult,
@@ -78,6 +81,30 @@ async def _safe_publish(
         event_bus.publish_detached(name, data, source_module=source_module)
     except Exception:
         _logger_events.debug("Event publish skipped (SQLite async): %s", name)
+
+
+def _humanise_ifc_class(ifc_class: str) -> str:
+    """Best-effort human label for an IfcClass string.
+
+    ``"IfcWall"`` → ``"Wall"``, ``"IfcDuctSegment"`` → ``"Duct Segment"``.
+    Anything that does not look like an IfcXxx class name is returned
+    verbatim. The display_name is intentionally NOT i18n'd here: the
+    federation type tree is a developer-facing surface that maps a
+    canonical IFC class to a fallback label; the FE is free to translate
+    by class id (``ifc_class``) later without re-fetching.
+    """
+    if not ifc_class:
+        return "Unclassified"
+    raw = ifc_class[3:] if ifc_class.startswith("Ifc") else ifc_class
+    if not raw:
+        return ifc_class
+    # Insert space before each interior capital: "DuctSegment" → "Duct Segment".
+    out_chars: list[str] = []
+    for idx, ch in enumerate(raw):
+        if idx > 0 and ch.isupper() and not raw[idx - 1].isupper():
+            out_chars.append(" ")
+        out_chars.append(ch)
+    return "".join(out_chars)
 
 
 def _safe_float(value: Any) -> float | None:
@@ -3083,4 +3110,178 @@ class BIMHubService:
             members=[
                 FederationModelResponse.model_validate(m) for m in members_sorted
             ],
+        )
+
+    # ── Federation Type Tree (v4.0 / Slice 2) ───────────────────────────────
+
+    async def aggregate_federation_type_tree(
+        self, federation_id: uuid.UUID,
+    ) -> FederationTypeTreeResponse:
+        """Compute the federation-flat type tree.
+
+        Walks every BIM element that belongs to a model that is a
+        member of the federation, groups by ``element_type`` (= IfcClass),
+        and returns:
+
+        * one row per IfcClass with the total element count,
+        * a per-member breakdown for the drill-down ("how many IfcWalls
+          live in the ARCH model vs. the STRUCT model"),
+        * a small ``sample_properties`` set drawn from the first
+          representative element of each class so the colour-by-property
+          UI knows which property keys are even worth offering.
+
+        The "federation-flat, not per-model" shape mirrors BIMcollab Zoom
+        and is the key UX insight: it makes "select every IfcDuctSegment
+        across 12 federated models" a one-click operation.
+
+        Empty federations / federations whose members have no elements
+        return ``total_elements=0`` and ``classes=[]`` — the response is
+        always well-formed.
+        """
+        # 1. Resolve federation + members (raises 404 when missing).
+        federation = await self.get_federation(federation_id)
+        members = list(federation.members or [])
+        if not members:
+            return FederationTypeTreeResponse(
+                federation_id=federation_id,
+                total_elements=0,
+                classes=[],
+            )
+
+        # 2. Build a stable model_id → (model_name, discipline) map.
+        #    The federation's stored discipline tag wins over the model
+        #    row's own discipline (member-level override is the source
+        #    of truth for federation context).
+        member_model_ids = [m.bim_model_id for m in members]
+        model_rows = (
+            (
+                await self.session.execute(
+                    select(BIMModel).where(BIMModel.id.in_(member_model_ids))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        model_lookup: dict[uuid.UUID, tuple[str, str]] = {}
+        for row in model_rows:
+            model_lookup[row.id] = (row.name, row.discipline or "other")
+        # Overlay the federation-member discipline (canonical for this fed).
+        for member in members:
+            existing = model_lookup.get(member.bim_model_id)
+            if existing is None:
+                # Stale member referencing a deleted model — surface a
+                # neutral placeholder so the row is still countable.
+                model_lookup[member.bim_model_id] = (
+                    f"model-{str(member.bim_model_id)[:8]}",
+                    member.discipline or "other",
+                )
+            else:
+                model_lookup[member.bim_model_id] = (
+                    existing[0],
+                    member.discipline or existing[1],
+                )
+
+        # 3. Aggregate per (model_id, ifc_class).
+        #    SQLAlchemy func.count on a non-nullable PK column is the
+        #    fast path across all supported dialects (SQLite + Postgres).
+        agg_stmt = (
+            select(
+                BIMElement.model_id,
+                BIMElement.element_type,
+                func.count(BIMElement.id).label("element_count"),
+            )
+            .where(BIMElement.model_id.in_(member_model_ids))
+            .group_by(BIMElement.model_id, BIMElement.element_type)
+        )
+        agg_rows = (await self.session.execute(agg_stmt)).all()
+        if not agg_rows:
+            return FederationTypeTreeResponse(
+                federation_id=federation_id,
+                total_elements=0,
+                classes=[],
+            )
+
+        # 4. Pivot to {ifc_class -> {model_id -> count}} with a parallel
+        #    {ifc_class -> total} for sort + total computation.
+        class_totals: dict[str, int] = {}
+        class_per_model: dict[str, dict[uuid.UUID, int]] = {}
+        for model_id, element_type, element_count in agg_rows:
+            # NULL / empty element_type rolls up under "Unclassified" so
+            # they never silently disappear from the tree.
+            ifc_class = element_type if element_type else "Unclassified"
+            class_totals[ifc_class] = class_totals.get(ifc_class, 0) + int(element_count)
+            per_model = class_per_model.setdefault(ifc_class, {})
+            per_model[model_id] = per_model.get(model_id, 0) + int(element_count)
+
+        # 5. Pull one representative element per class to extract the
+        #    sample_properties — capped at 6 keys so the UI tooltip
+        #    stays readable.
+        #    A single subquery per class would be cleaner but Postgres
+        #    + SQLite both run this fine as N small queries (N = number
+        #    of distinct classes, typically < 50). For very wide models
+        #    we could swap to DISTINCT ON; the current shape keeps
+        #    portability simple.
+        sample_props: dict[str, list[str]] = {}
+        for ifc_class in class_totals:
+            element_type_filter = (
+                BIMElement.element_type == ifc_class
+                if ifc_class != "Unclassified"
+                else BIMElement.element_type.is_(None)
+            )
+            sample_stmt = (
+                select(BIMElement.properties)
+                .where(
+                    BIMElement.model_id.in_(member_model_ids),
+                    element_type_filter,
+                )
+                .limit(1)
+            )
+            row = (await self.session.execute(sample_stmt)).scalar_one_or_none()
+            if isinstance(row, dict):
+                sample_props[ifc_class] = list(row.keys())[:6]
+            else:
+                sample_props[ifc_class] = []
+
+        # 6. Materialise the response, sorted by element_count DESC. Ties
+        #    break by ifc_class ASC so the order is fully deterministic
+        #    (tests + UI snapshots depend on this).
+        classes_payload: list[FederationTypeTreeClass] = []
+        for ifc_class in sorted(
+            class_totals.keys(), key=lambda c: (-class_totals[c], c)
+        ):
+            per_model = class_per_model.get(ifc_class, {})
+            breakdown_rows: list[FederationTypeTreeMember] = []
+            # Sort the breakdown by element_count DESC then model_name
+            # ASC for a stable visual order across renders.
+            sorted_pairs = sorted(
+                per_model.items(),
+                key=lambda kv: (-kv[1], model_lookup.get(kv[0], ("", ""))[0]),
+            )
+            for model_id, count in sorted_pairs:
+                model_name, discipline = model_lookup.get(
+                    model_id, (f"model-{str(model_id)[:8]}", "other"),
+                )
+                breakdown_rows.append(
+                    FederationTypeTreeMember(
+                        model_id=model_id,
+                        model_name=model_name,
+                        discipline=discipline,
+                        element_count=int(count),
+                    )
+                )
+            classes_payload.append(
+                FederationTypeTreeClass(
+                    ifc_class=ifc_class,
+                    display_name=_humanise_ifc_class(ifc_class),
+                    element_count=int(class_totals[ifc_class]),
+                    member_breakdown=breakdown_rows,
+                    sample_properties=sample_props.get(ifc_class, []),
+                )
+            )
+
+        total_elements = sum(class_totals.values())
+        return FederationTypeTreeResponse(
+            federation_id=federation_id,
+            total_elements=total_elements,
+            classes=classes_payload,
         )

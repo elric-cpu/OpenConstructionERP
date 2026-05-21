@@ -53,11 +53,23 @@ import {
 import { fetchBIMElementProperties } from '@/features/bim/api';
 import { SceneManager } from './SceneManager';
 import { ElementManager } from './ElementManager';
+import {
+  applySmartView,
+  revertSmartView,
+  type SmartViewEvalResult,
+} from './applySmartView';
 import type { BIMElementData } from './ElementManager';
 import { aggregateBIMQuantities, type AggResult } from './aggregation';
 import { SelectionManager } from './SelectionManager';
 import { MeasureManager } from './MeasureManager';
 import { ClipManager } from './ClipManager';
+// Slice: BIMcollab-style additive viewer tools (Section Box from selection,
+// Walk mode, point-to-point Measure). Wired in additively next to the
+// existing managers so they coexist without disrupting current flows.
+import { SectionBox } from './SectionBox';
+import { WalkMode } from './WalkMode';
+import { MeasureTool } from './MeasureTool';
+import { ViewerToolbar } from './ViewerToolbar';
 import { deriveGeometry, deriveRelations } from './canonicalElementDetails';
 import { BIMContextMenu } from './BIMContextMenu';
 import type { BIMContextMenuState } from './BIMContextMenu';
@@ -249,6 +261,15 @@ export interface BIMViewerProps {
    * survives the load race. Pass null for normal viewing.
    */
   focusPoint?: { x: number; y: number; z: number } | null;
+  /**
+   * Smart View evaluator result — keyed by element ``stable_id`` (the
+   * IFC GUID / Revit UniqueId). When set, the viewer paints each mesh
+   * with the resolved per-element ``{visible, color, opacity}`` state.
+   * Pass ``null`` (or omit) for normal rendering. Re-paint is additive
+   * and fully reversible: the helper caches each mesh's original
+   * material so toggling the prop back to ``null`` restores the model
+   * exactly.  See {@link applySmartView} / {@link revertSmartView}. */
+  smartViewEvalResult?: SmartViewEvalResult | null;
 }
 
 /* ── Properties Table ──────────────────────────────────────────────────── */
@@ -481,6 +502,7 @@ export function BIMViewer({
   diffChangeByStableId = null,
   clashHighlightIds = null,
   focusPoint = null,
+  smartViewEvalResult = null,
 }: BIMViewerProps) {
   const { t } = useTranslation();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -489,6 +511,14 @@ export function BIMViewer({
   const selectionMgrRef = useRef<SelectionManager | null>(null);
   const measureMgrRef = useRef<MeasureManager | null>(null);
   const clipMgrRef = useRef<ClipManager | null>(null);
+  // BIMcollab-style additive helpers (Section Box / Walk / Measure).
+  // Initialised inside the scene-setup useEffect below and disposed in its
+  // cleanup. Exposed via state so the ViewerToolbar overlay can render
+  // once they're ready.
+  const sectionBoxRef = useRef<SectionBox | null>(null);
+  const walkModeRef = useRef<WalkMode | null>(null);
+  const measureToolRef = useRef<MeasureTool | null>(null);
+  const [viewerToolsReady, setViewerToolsReady] = useState(false);
   const categoryOpacity = useBIMViewerStore((s) => s.categoryOpacity);
   const hiddenCategories = useBIMViewerStore((s) => s.hiddenCategories);
   const measureActive = useBIMViewerStore((s) => s.measureActive);
@@ -924,6 +954,34 @@ export function BIMViewer({
     clipMgr.setCapEnabled(true);
     clipMgrRef.current = clipMgr;
 
+    // ── Additive viewer tools (Slice: Section Box / Walk / Measure) ──
+    // These are independent of the existing ClipManager/MeasureManager —
+    // they're surfaced through the floating `ViewerToolbar` overlay and
+    // intended as BIMcollab-style affordances. Mutual exclusion (only one
+    // active at a time) is enforced by the toolbar; the helpers themselves
+    // only operate on the shared Three.js scene/camera/renderer.
+    const sectionBox = new SectionBox({
+      scene: scene.scene,
+      camera: scene.camera,
+      renderer: scene.renderer,
+    });
+    const walkModeHelper = new WalkMode({
+      camera: scene.camera,
+      renderer: scene.renderer,
+      domElement: canvas,
+      orbitControls: scene.controls,
+    });
+    const measureToolHelper = new MeasureTool({
+      scene: scene.scene,
+      camera: scene.camera,
+      renderer: scene.renderer,
+      domElement: canvas,
+    });
+    sectionBoxRef.current = sectionBox;
+    walkModeRef.current = walkModeHelper;
+    measureToolRef.current = measureToolHelper;
+    setViewerToolsReady(true);
+
     // Track mouse position for hover tooltip
     const handleMouseMoveForTooltip = (e: MouseEvent) => {
       const container = containerRef.current;
@@ -941,6 +999,11 @@ export function BIMViewer({
       unsubscribeHiddenCount();
       clipMgr.dispose();
       measureMgr.dispose();
+      // Dispose the additive viewer-tools slice helpers BEFORE the scene
+      // itself so they can detach their overlays from a still-live scene.
+      sectionBox.dispose();
+      walkModeHelper.dispose();
+      measureToolHelper.dispose();
       selectionMgr.dispose();
       elementMgr.dispose();
       scene.dispose();
@@ -949,6 +1012,10 @@ export function BIMViewer({
       selectionMgrRef.current = null;
       measureMgrRef.current = null;
       clipMgrRef.current = null;
+      sectionBoxRef.current = null;
+      walkModeRef.current = null;
+      measureToolRef.current = null;
+      setViewerToolsReady(false);
       setSceneManagerReady(null);
     };
     // Intentionally only run on mount — stable refs
@@ -2126,6 +2193,25 @@ export function BIMViewer({
     onElementSelect?.(null);
   }, [hiddenIds, onElementSelect]);
 
+  // ── Smart View overlay (rule-based per-element paint) ───────────────
+  // Runs whenever `smartViewEvalResult` flips. When non-null we paint
+  // the evaluated state onto every matching mesh; when null we revert
+  // every mesh that previously had a cached pristine material. Safe to
+  // re-run with the same result thanks to the helper's idempotency.
+  useEffect(() => {
+    const elementMgr = elementMgrRef.current;
+    const scene = sceneRef.current?.scene;
+    if (!elementMgr || !scene) return;
+    const viewerHandle = { scene, root: scene };
+    if (smartViewEvalResult) {
+      applySmartView(viewerHandle, smartViewEvalResult);
+    } else {
+      revertSmartView(viewerHandle);
+    }
+    // Force one frame so paint changes show up on the next animation tick.
+    sceneRef.current?.renderer?.render(scene, sceneRef.current.camera);
+  }, [smartViewEvalResult]);
+
   // ── Keyboard shortcuts ──────────────────────────────────────────────
   //   F     — zoom to fit all
   //   W     — toggle wireframe
@@ -3026,6 +3112,70 @@ export function BIMViewer({
           testId="bim-ghost-toggle"
         />
       </div>
+
+      {/* BIMcollab-style additive viewer tools — Section Box / Walk /
+          Measure. Anchored top-right so it stays out of the way of the
+          main toolbar (top-left), selection toolbar (top-centre), and
+          status badges (bottom-right). Renders only once the scene-init
+          effect has built the helper trio. */}
+      {viewerToolsReady &&
+        sectionBoxRef.current &&
+        walkModeRef.current &&
+        measureToolRef.current && (
+          <ViewerToolbar
+            sectionBox={sectionBoxRef.current}
+            walkMode={walkModeRef.current}
+            measureTool={measureToolRef.current}
+            position="top-right"
+            onSectionAction={(action) => {
+              // Wire section actions to the live selection + element
+              // manager when available. The helper itself enforces the
+              // INWARD-facing planes; we just feed it the right AABB.
+              const sb = sectionBoxRef.current;
+              const elementMgr = elementMgrRef.current;
+              const selectionMgr = selectionMgrRef.current;
+              if (!sb) return;
+              if (action === 'reset') {
+                sb.disable();
+                return;
+              }
+              if (action === 'fit_selection' && elementMgr && selectionMgr) {
+                const ids = selectionMgr.getSelectedIds();
+                const meshes = ids
+                  .map((id) => elementMgr.getMesh(id))
+                  .filter((m): m is NonNullable<typeof m> => m != null);
+                if (meshes.length > 0) {
+                  sb.setBoundsToSelection(meshes);
+                  sb.enable();
+                }
+                return;
+              }
+              if (action === 'fit_all' && sceneRef.current) {
+                const scene = sceneRef.current.scene;
+                const allMeshes: Array<{ isObject3D: true } & object> = [];
+                scene.traverse((obj) => {
+                  // Re-use the helper's own filter: anything not the
+                  // overlay + meshes only.
+                  if (
+                    (obj as { isMesh?: boolean }).isMesh &&
+                    !obj.userData?.isSectionBoxOverlay &&
+                    !obj.userData?.isMeasureLine &&
+                    !obj.userData?.isMeasureMarker &&
+                    !obj.userData?.isClipCap
+                  ) {
+                    allMeshes.push(obj as unknown as { isObject3D: true } & object);
+                  }
+                });
+                if (allMeshes.length > 0) {
+                  sb.setBoundsToSelection(
+                    allMeshes as unknown as import('three').Object3D[],
+                  );
+                  sb.enable();
+                }
+              }
+            }}
+          />
+        )}
 
       {/* Section / clipping-plane control popover. Anchored under the
           toolbar; mutually-exclusive box vs plane modes with live

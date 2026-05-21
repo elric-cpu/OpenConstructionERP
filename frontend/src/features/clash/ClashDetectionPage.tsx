@@ -1,6 +1,6 @@
-/**
- * Clash Detection — geometric AABB interference / clearance coordination
- * over canonical BIM elements, with a discipline×discipline clash matrix,
+﻿/**
+ * Clash Detection â€” geometric AABB interference / clearance coordination
+ * over canonical BIM elements, with a disciplineÃ—discipline clash matrix,
  * a Navisworks/Solibri-grade clash-review workspace and one-click BCF export.
  *
  * Route: /clash  (project chosen via ?project= query param)
@@ -13,7 +13,7 @@
  *
  * BIM deep-link contract (verified in features/bim/BIMPage.tsx):
  *   /projects/{projectId}/bim/{modelId}?isolate=id1,id2
- *   — the viewer reads `?isolate=` (BIMPage L1795-1813), isolates the listed
+ *   â€” the viewer reads `?isolate=` (BIMPage L1795-1813), isolates the listed
  *     element ids in the 3D scene and selects them when there is one. There
  *     is no camera/point param, so we isolate both clash elements by id.
  */
@@ -89,10 +89,15 @@ import {
   type ClashHistoryEntry,
 } from './api';
 import { buildClashBimLink } from './clashBimLink';
+import {
+  createDebouncedPersist,
+  loadFilters,
+} from './clashFilterPersistence';
 import { ClashClusterChips } from './ClashClusterChips';
 import { ClashRuleEditor } from './ClashRuleEditor';
 import { ClashRuleSuggestionBanner } from './ClashRuleSuggestionBanner';
 import { ClashKpiPanel } from './ClashKpiPanel';
+import { ClashCostImpactColumn } from './ClashCostImpactColumn';
 
 const EMPTY_SET: ClashSelectionSet = {
   disciplines: [],
@@ -115,7 +120,7 @@ const BUILTIN_GROUP_BY = [
 ] as const;
 type BuiltinGroupBy = (typeof BUILTIN_GROUP_BY)[number];
 
-/** Backward-compatible alias — older code referenced this name. */
+/** Backward-compatible alias â€” older code referenced this name. */
 const ALL_GROUP_BY: readonly BuiltinGroupBy[] = BUILTIN_GROUP_BY;
 
 /** True for the dynamic ``property:<key>`` grouping parameter. */
@@ -131,7 +136,7 @@ function propertyKeyOf(g: `property:${string}`): string {
 /** Which {@link ClashSelectionSet} list the four built-in grouping
  *  parameters write into, so the engine resolves set membership by the
  *  same parameter the user faceted by (see backend ``_in_set``). The
- *  ``property:<key>`` case routes into ``properties[key]`` instead — see
+ *  ``property:<key>`` case routes into ``properties[key]`` instead â€” see
  *  {@link SelectionSetPicker}. */
 /** The four list-typed {@link ClashSelectionSet} fields (excludes the
  *  `properties` map, which the `property:<key>` path handles). */
@@ -150,19 +155,19 @@ const GROUP_BY_FIELD: Record<BuiltinGroupBy, SelectionSetListField> = {
 
 type TFn = ReturnType<typeof useTranslation>['t'];
 
-/** i18n label for each built-in grouping parameter (built lazily — needs
+/** i18n label for each built-in grouping parameter (built lazily â€” needs
  *  `t`). The ``property:<key>`` form uses the raw key as its own label. */
 const GROUP_BY_LABELS: Record<BuiltinGroupBy, (t: TFn) => string> = {
   discipline: (t) =>
-    t('clash.group_discipline', { defaultValue: 'Discipline‌⁠‍' }),
-  type: (t) => t('clash.group_type', { defaultValue: 'Type‌⁠‍' }),
+    t('clash.group_discipline', { defaultValue: 'Disciplineâ€Œâ â€' }),
+  type: (t) => t('clash.group_type', { defaultValue: 'Typeâ€Œâ â€' }),
   category: (t) =>
-    t('clash.group_category', { defaultValue: 'Category‌⁠‍' }),
+    t('clash.group_category', { defaultValue: 'Categoryâ€Œâ â€' }),
   ifc_entity: (t) =>
-    t('clash.group_ifc_entity', { defaultValue: 'IfcEntity‌⁠‍' }),
+    t('clash.group_ifc_entity', { defaultValue: 'IfcEntityâ€Œâ â€' }),
 };
 
-/** UI label for any grouping parameter — i18n for the built-ins, the raw
+/** UI label for any grouping parameter â€” i18n for the built-ins, the raw
  *  property key for the dynamic ``property:<key>`` form. */
 function groupByLabel(g: ClashGroupBy, t: TFn): string {
   return isPropertyGroupBy(g)
@@ -170,17 +175,17 @@ function groupByLabel(g: ClashGroupBy, t: TFn): string {
     : GROUP_BY_LABELS[g as BuiltinGroupBy](t);
 }
 
-/** Tolerance presets (mm) — so users coordinate at a sane scale instead
+/** Tolerance presets (mm) â€” so users coordinate at a sane scale instead
  *  of guessing a raw number. Matches the granularity bands a coordinator
- *  reaches for (rough first pass → final sign-off). */
+ *  reaches for (rough first pass â†’ final sign-off). */
 const TOLERANCE_PRESETS: { mm: number; key: string; label: string }[] = [
-  { mm: 25, key: 'coarse', label: 'Coarse · 25 mm' },
-  { mm: 10, key: 'standard', label: 'Standard · 10 mm' },
-  { mm: 3, key: 'fine', label: 'Fine · 3 mm' },
-  { mm: 1, key: 'precise', label: 'Precise · 1 mm' },
+  { mm: 25, key: 'coarse', label: 'Coarse Â· 25 mm' },
+  { mm: 10, key: 'standard', label: 'Standard Â· 10 mm' },
+  { mm: 3, key: 'fine', label: 'Fine Â· 3 mm' },
+  { mm: 1, key: 'precise', label: 'Precise Â· 1 mm' },
 ];
 
-/** Result-table aggregation (client-side only — no backend round-trip).
+/** Result-table aggregation (client-side only â€” no backend round-trip).
  *  `none` keeps the flat sortable list. The rest mirror the Navisworks
  *  "Group clashes" axes a reviewer triages by. */
 type ResultGroupBy =
@@ -202,7 +207,7 @@ const STATUS_OPTIONS = [
 type StatusOpt = (typeof STATUS_OPTIONS)[number];
 
 /** Linear three-step workflow that 95% of clashes follow:
- *  ``new → active → reviewed``. After ``reviewed`` the coordinator
+ *  ``new â†’ active â†’ reviewed``. After ``reviewed`` the coordinator
  *  picks one of the terminal states (approved / resolved / ignored)
  *  explicitly from the dropdown. */
 const STATUS_FLOW: readonly StatusOpt[] = ['new', 'active', 'reviewed'] as const;
@@ -214,7 +219,7 @@ function nextStatusOf(s: string): StatusOpt | null {
   return STATUS_FLOW[i + 1] ?? null;
 }
 
-/** Coordination priority — high → low. The order doubles as the sort
+/** Coordination priority â€” high â†’ low. The order doubles as the sort
  *  ranking (critical sorts first). */
 const SEVERITY_OPTIONS: ClashSeverity[] = [
   'critical',
@@ -222,7 +227,7 @@ const SEVERITY_OPTIONS: ClashSeverity[] = [
   'medium',
   'low',
 ];
-/** Severity → Tailwind badge classes. Reuses the page's existing colour
+/** Severity â†’ Tailwind badge classes. Reuses the page's existing colour
  *  language (semantic-error for critical, amber/slate scale below). */
 const SEVERITY_BADGE: Record<ClashSeverity, string> = {
   critical:
@@ -232,7 +237,7 @@ const SEVERITY_BADGE: Record<ClashSeverity, string> = {
     'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300',
   low: 'bg-slate-100 text-slate-600 dark:bg-slate-800/60 dark:text-slate-300',
 };
-/** Stable sort rank — lower = more urgent (critical first when asc). */
+/** Stable sort rank â€” lower = more urgent (critical first when asc). */
 const SEVERITY_RANK: Record<ClashSeverity, number> = {
   critical: 0,
   high: 1,
@@ -255,20 +260,20 @@ function suggestionOf(r: ClashResult): ClashSeverity | undefined {
   return s;
 }
 
-/** Order-independent two-value key — discipline, storey or model pair.
- *  ``null``/``undefined`` normalises to "—" so the facet picks up
+/** Order-independent two-value key â€” discipline, storey or model pair.
+ *  ``null``/``undefined`` normalises to "â€”" so the facet picks up
  *  "(no level)" as a real bucket instead of silently dropping rows. */
 function orderedPairKey(
   a: string | number | null | undefined,
   b: string | number | null | undefined,
 ): string {
-  const sa = a == null || a === '' ? '—' : String(a);
-  const sb = b == null || b === '' ? '—' : String(b);
+  const sa = a == null || a === '' ? 'â€”' : String(a);
+  const sb = b == null || b === '' ? 'â€”' : String(b);
   const [lo, hi] = sa < sb ? [sa, sb] : [sb, sa];
   return `${lo}|${hi}`;
 }
 
-/** Pair-cluster signature — unordered ``a_stable_id|b_stable_id``,
+/** Pair-cluster signature â€” unordered ``a_stable_id|b_stable_id``,
  *  independent of ``clash_type`` so sub-clashes between the same two
  *  elements collapse into one master row. */
 function pairClusterKey(r: ClashResult): string {
@@ -290,12 +295,12 @@ function isOverdue(due: string | null | undefined): boolean {
  *  filter/sort. Multiple of the backend's 500-row max. KPI tiles come from
  *  the authoritative run `summary`, NOT this capped set, so the tiles stay
  *  correct even when the row set is capped. Wave A2 raised this from
- *  2000 to 10000 — the table now uses IntersectionObserver-windowed
+ *  2000 to 10000 â€” the table now uses IntersectionObserver-windowed
  *  chunks so very large runs stay smooth. */
 const CLIENT_CAP = 10000;
 const PAGE_SIZE = 100;
 /** Chunk size for the IntersectionObserver-windowed body. Renders in
- *  batches of N — only chunks intersecting the viewport (or its 600 px
+ *  batches of N â€” only chunks intersecting the viewport (or its 600 px
  *  lookahead) mount their rows. */
 const WINDOW_CHUNK = 50;
 
@@ -319,7 +324,7 @@ function heat(count: number, max: number): string {
   return 'bg-amber-200 text-amber-900';
 }
 
-/** Stable per-discipline chip palette (deterministic — same discipline →
+/** Stable per-discipline chip palette (deterministic â€” same discipline â†’
  *  same colour for the whole session). */
 const DISCIPLINE_PALETTE = [
   'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300',
@@ -337,15 +342,15 @@ function disciplineHash(d: string): number {
   return h % DISCIPLINE_PALETTE.length;
 }
 /** The seeded BIM models carry the project name baked into their label
- *  (e.g. "Edifício Comercial Faria Lima — São Paulo — Modelo Estrutural
+ *  (e.g. "EdifÃ­cio Comercial Faria Lima â€” SÃ£o Paulo â€” Modelo Estrutural
  *  Revit"). Clash is intra-project and the project is already chosen
- *  globally, so the project/location prefix is pure noise here — and
+ *  globally, so the project/location prefix is pure noise here â€” and
  *  worse, two such models read like "two projects", which confuses users
  *  (clash is always single-project). Strip it down to the discipline/type
  *  tail. We do NOT rely on the global project name being hydrated (it is
  *  often empty on a direct nav / ``?project=`` deep-link, which is exactly
  *  when the full prefixed name leaked through before): the seeded labels
- *  use a spaced dash ( — / – / - ) between "Project — City — Discipline",
+ *  use a spaced dash ( â€” / â€“ / - ) between "Project â€” City â€” Discipline",
  *  so the last dash-delimited segment is the model's real identity. Falls
  *  back to the full name if stripping would empty it. */
 export function shortModelName(
@@ -358,15 +363,15 @@ export function shortModelName(
   if (pn && s.toLowerCase().startsWith(pn.toLowerCase())) {
     s = s
       .slice(pn.length)
-      .replace(/^[\s—–\-:/·|]+/, '')
+      .replace(/^[\sâ€”â€“\-:/Â·|]+/, '')
       .trim();
   }
-  // Generic strip: if a "Prefix — … — Discipline" structure remains,
+  // Generic strip: if a "Prefix â€” â€¦ â€” Discipline" structure remains,
   // keep only the final segment (the discipline/type). This makes the
   // two model cards read as two *models*, not two projects, regardless
   // of whether the global project name was available.
   const parts = s
-    .split(/\s+[—–|]\s+|\s+-\s+/)
+    .split(/\s+[â€”â€“|]\s+|\s+-\s+/)
     .map((p) => p.trim())
     .filter(Boolean);
   if (parts.length >= 2) s = parts[parts.length - 1] ?? s;
@@ -374,24 +379,24 @@ export function shortModelName(
 }
 
 /** Stable group key + human label for the review-table aggregation.
- *  Discipline pairs are order-independent (Struct↔Mech == Mech↔Struct). */
+ *  Discipline pairs are order-independent (Structâ†”Mech == Mechâ†”Struct). */
 function resultGroupKey(
   r: ClashResult,
   by: ResultGroupBy,
 ): { key: string; label: string } {
   switch (by) {
     case 'pair': {
-      const a = r.a_discipline || '—';
-      const b = r.b_discipline || '—';
+      const a = r.a_discipline || 'â€”';
+      const b = r.b_discipline || 'â€”';
       const [x, y] = a < b ? [a, b] : [b, a];
-      return { key: `${x}|${y}`, label: `${x} ↔ ${y}` };
+      return { key: `${x}|${y}`, label: `${x} â†” ${y}` };
     }
     case 'clash_type':
       return { key: r.clash_type, label: r.clash_type };
     case 'status':
       return { key: r.status, label: r.status };
     case 'element_a': {
-      const v = r.a_name || r.a_stable_id || '—';
+      const v = r.a_name || r.a_stable_id || 'â€”';
       return { key: v, label: v };
     }
     default:
@@ -433,7 +438,7 @@ function SeverityBadge({
 }
 
 function DisciplineChip({ name }: { name: string }) {
-  const label = name || '—';
+  const label = name || 'â€”';
   return (
     <span
       className={clsx(
@@ -454,7 +459,7 @@ export function ClashDetectionPage() {
   const qc = useQueryClient();
   const [params, setParams] = useSearchParams();
   // The active project is chosen once, globally, from the selector at the
-  // top of the app — clash does NOT show its own project picker. We fall
+  // top of the app â€” clash does NOT show its own project picker. We fall
   // back to a legacy ``?project=`` deep-link only when no global context
   // is set yet (external links into a specific project's clashes).
   const ctxProjectId = useProjectContextStore((s) => s.activeProjectId);
@@ -470,12 +475,12 @@ export function ClashDetectionPage() {
   // Navisworks-style "Type": hard interpenetration only, clearance
   // (proximity) only, or both. `both` is the universal default.
   const [clashType, setClashType] = useState<ClashType>('both');
-  // Federated noise filter — drop pairs whose two elements are in the
+  // Federated noise filter â€” drop pairs whose two elements are in the
   // same model (only meaningful when >1 model is selected).
   const [ignoreSameModel, setIgnoreSameModel] = useState(false);
   const [toleranceMm, setToleranceMm] = useState(10);
   const [clearanceMm, setClearanceMm] = useState(0);
-  // Category/type-based search (Set A × Set B) is the primary mode — it is
+  // Category/type-based search (Set A Ã— Set B) is the primary mode â€” it is
   // what users reach for first when coordinating a model.
   const [mode, setMode] = useState('selection_sets');
   const [setA, setSetA] = useState<ClashSelectionSet>(EMPTY_SET);
@@ -497,13 +502,13 @@ export function ClashDetectionPage() {
   const [kpiFilter, setKpiFilter] = useState<
     'all' | 'hard' | 'clearance' | 'open' | 'resolved'
   >('all');
-  // Wave A4 — selected spatial-cluster id (or null = "all"). Filters
+  // Wave A4 â€” selected spatial-cluster id (or null = "all"). Filters
   // the review table to that DBSCAN bucket so the coordinator can walk
   // through a single hot-spot at a time.
   const [selectedClusterId, setSelectedClusterId] = useState<number | null>(
     null,
   );
-  // Wave A4 — UI flags for the new rule editor modal + KPI dashboard tab.
+  // Wave A4 â€” UI flags for the new rule editor modal + KPI dashboard tab.
   const [rulesOpen, setRulesOpen] = useState(false);
   const [kpiTabOpen, setKpiTabOpen] = useState(false);
 
@@ -516,7 +521,7 @@ export function ClashDetectionPage() {
   // (assignee / due date / comments thread) is open, or null.
   const [detailId, setDetailId] = useState<string | null>(null);
   // Keyboard navigation: index into the current page's data rows, or -1
-  // when nothing is keyboard-focused. ↑/↓ or j/k move it, Enter → 3D.
+  // when nothing is keyboard-focused. â†‘/â†“ or j/k move it, Enter â†’ 3D.
   const [kbRow, setKbRow] = useState<number>(-1);
   // Run-to-run comparison: which earlier run to diff the active run
   // against (null = comparison panel closed) + collapsed buckets.
@@ -530,17 +535,87 @@ export function ClashDetectionPage() {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
     new Set(),
   );
-  // Wave A2 — pair clustering. When ON, every row sharing the same
+  // Wave A2 â€” pair clustering. When ON, every row sharing the same
   // unordered element-pair signature collapses into one master row with
-  // a count×N badge, expandable in place. Independent of `resultGroupBy`.
+  // a countÃ—N badge, expandable in place. Independent of `resultGroupBy`.
   const [pairCluster, setPairCluster] = useState(false);
   const [expandedPairs, setExpandedPairs] = useState<Set<string>>(new Set());
-  // Wave A2 — collapsible faceted filter rail. Default OFF so the pill
+  // Wave A2 â€” collapsible faceted filter rail. Default OFF so the pill
   // bar stays the lightweight quick filter; the rail is the power view.
   const [showFacets, setShowFacets] = useState(false);
   const [fDiscPair, setFDiscPair] = useState<Set<string>>(new Set());
   const [fLevelPair, setFLevelPair] = useState<Set<string>>(new Set());
   const [fModelPair, setFModelPair] = useState<Set<string>>(new Set());
+
+  // Wave A5 — per-project filter persistence (localStorage + LRU).
+  // Hydrate on the first project mount; thereafter every filter change
+  // schedules a debounced write so rapid clicks coalesce into one save.
+  // Filters that don't survive a reload (e.g. transient search text) are
+  // intentionally left out of the persisted envelope.
+  const filterPersistRef = useRef(createDebouncedPersist());
+  const hydratedProjectRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!projectId || hydratedProjectRef.current === projectId) return;
+    hydratedProjectRef.current = projectId;
+    const saved = loadFilters(projectId);
+    if (saved.severity.length > 0)
+      setFSeverity(new Set(saved.severity as ClashSeverity[]));
+    if (saved.status.length > 0) setFStatus(new Set(saved.status));
+    if (saved.discipline.length > 0) setFDiscPair(new Set(saved.discipline));
+    if (saved.sortBy) setSortKey(saved.sortBy as SortKey);
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId || hydratedProjectRef.current !== projectId) return;
+    filterPersistRef.current.schedule(projectId, {
+      severity: [...fSeverity],
+      status: [...fStatus],
+      discipline: [...fDiscPair],
+      sortBy: sortKey,
+    });
+  }, [projectId, fSeverity, fStatus, fDiscPair, sortKey]);
+
+  // ── Coordination-Hub trade-matrix deep-link ────────────────────────────
+  // The trade-matrix cell navigates here with ``?disciplineA=X&disciplineB=Y``
+  // — seed the discipline-pair facet (and the legacy `trade_a/trade_b`
+  // shape from earlier links). We do this AFTER the localStorage-hydrate
+  // effect so the deep-link wins over a stale saved filter on the same
+  // project. Strip the params once consumed so a back-then-forward
+  // navigation does not re-apply them.
+  const deepLinkAppliedRef = useRef(false);
+  useEffect(() => {
+    if (!projectId || deepLinkAppliedRef.current) return;
+    const dA =
+      params.get('disciplineA') ?? params.get('trade_a') ?? '';
+    const dB =
+      params.get('disciplineB') ?? params.get('trade_b') ?? '';
+    if (!dA && !dB) return;
+    deepLinkAppliedRef.current = true;
+    if (dA && dB) {
+      setFDiscPair(new Set([orderedPairKey(dA, dB)]));
+    } else {
+      // Single-discipline link — treat it as a one-sided filter using
+      // the unordered key with the other half normalised to "—".
+      const lone = dA || dB;
+      setFDiscPair(new Set([orderedPairKey(lone, '—')]));
+    }
+    // Prune the consumed params from the URL so refresh / back-forward
+    // doesn't keep clobbering the filter every time the page rehydrates.
+    const next = new URLSearchParams(params);
+    next.delete('disciplineA');
+    next.delete('disciplineB');
+    next.delete('trade_a');
+    next.delete('trade_b');
+    setParams(next, { replace: true });
+  }, [projectId, params, setParams]);
+
+  // Flush any pending write when this page unmounts so the last edit
+  // isn't lost between an "apply filter → navigate away" beat.
+  useEffect(() => {
+    const persist = filterPersistRef.current;
+    return () => persist.flush();
+  }, []);
 
   const modelsQ = useQuery({
     queryKey: ['clash-models', projectId],
@@ -579,8 +654,8 @@ export function ClashDetectionPage() {
     [categoriesQ.data],
   );
   // Distinct element-property keys the backend surfaced for the selected
-  // models — each becomes a dynamic `property:<key>` grouping parameter.
-  // Absent on older backends → no dynamic options (graceful degrade).
+  // models â€” each becomes a dynamic `property:<key>` grouping parameter.
+  // Absent on older backends â†’ no dynamic options (graceful degrade).
   const availableProperties = useMemo(
     () => categoriesQ.data?.available_properties ?? [],
     [categoriesQ.data],
@@ -602,8 +677,8 @@ export function ClashDetectionPage() {
     }
   }, [availableGroupBy, availableProperties, groupBy, categoriesQ.data]);
   // Page the result rows into the browser at the backend's 500-row max
-  // (single limit=2000 used to 422 → empty UI). KPI tiles do NOT depend on
-  // this set — they read the authoritative run `summary`. This set only
+  // (single limit=2000 used to 422 â†’ empty UI). KPI tiles do NOT depend on
+  // this set â€” they read the authoritative run `summary`. This set only
   // backs the client-side table filter/sort, and may be capped.
   const resultsQ = useQuery({
     queryKey: ['clash-results', projectId, runId],
@@ -624,14 +699,14 @@ export function ClashDetectionPage() {
   /** True when the run has more result rows than we paged into the browser. */
   const rowsCapped = resultsQ.data?.capped ?? false;
 
-  // Surface a fetch failure as a toast (don't swallow it — a non-2xx must
+  // Surface a fetch failure as a toast (don't swallow it â€” a non-2xx must
   // never look like "models are clean").
   useEffect(() => {
     if (resultsQ.isError) {
       addToast({
         type: 'error',
         title: t('clash.results_error', {
-          defaultValue: 'Failed to load clash results‌⁠‍',
+          defaultValue: 'Failed to load clash resultsâ€Œâ â€',
         }),
         message:
           resultsQ.error instanceof Error
@@ -697,7 +772,7 @@ export function ClashDetectionPage() {
   // Models actually selected that carry geometry (the run scope).
   const multiModelScope = selModels.length > 1;
   // A clearance-only run with no clearance distance can never report
-  // anything — guard it the same way the backend contract implies.
+  // anything â€” guard it the same way the backend contract implies.
   const clearanceMisconfigured =
     clashType === 'clearance' && clearanceMm <= 0;
 
@@ -726,14 +801,14 @@ export function ClashDetectionPage() {
       if (run.status === 'failed') {
         addToast({
           type: 'error',
-          title: t('clash.run_failed', { defaultValue: 'Clash run failed‌⁠‍' }),
+          title: t('clash.run_failed', { defaultValue: 'Clash run failedâ€Œâ â€' }),
           message: run.error ?? undefined,
         });
       } else {
         addToast({
           type: 'success',
           title: t('clash.run_done', {
-            defaultValue: '{{n}} clashes found across {{e}} elements‌⁠‍',
+            defaultValue: '{{n}} clashes found across {{e}} elementsâ€Œâ â€',
             n: run.total_clashes,
             e: run.element_count,
           }),
@@ -776,7 +851,7 @@ export function ClashDetectionPage() {
       addToast({
         type: 'error',
         title: t('clash.status_failed', {
-          defaultValue: 'Could not update status‌⁠‍',
+          defaultValue: 'Could not update statusâ€Œâ â€',
         }),
         message: e.message,
       });
@@ -784,7 +859,7 @@ export function ClashDetectionPage() {
     onSuccess: () => {
       addToast({
         type: 'success',
-        title: t('clash.status_saved', { defaultValue: 'Status updated‌⁠‍' }),
+        title: t('clash.status_saved', { defaultValue: 'Status updatedâ€Œâ â€' }),
       });
     },
     onSettled: () => {
@@ -795,7 +870,7 @@ export function ClashDetectionPage() {
     },
   });
 
-  // Wave A2 — bulk severity reclassification. Same optimistic+invalidate
+  // Wave A2 â€” bulk severity reclassification. Same optimistic+invalidate
   // pattern as `statusMut`; kept as a sibling mutation so the bulk
   // toolbar can fan out one mutate per selected row without touching
   // existing single-row triage paths.
@@ -831,7 +906,7 @@ export function ClashDetectionPage() {
       addToast({
         type: 'error',
         title: t('clash.severity_failed', {
-          defaultValue: 'Could not update severity‌⁠‍',
+          defaultValue: 'Could not update severityâ€Œâ â€',
         }),
         message: e.message,
       });
@@ -844,7 +919,7 @@ export function ClashDetectionPage() {
     },
   });
 
-  // Wave A2 — bulk assignee set (sibling mutation; same optimistic contract).
+  // Wave A2 â€” bulk assignee set (sibling mutation; same optimistic contract).
   const assignMut = useMutation({
     mutationFn: (v: { id: string; assigned_to: string | null }) =>
       clashApi.updateResult(projectId, runId, v.id, {
@@ -879,7 +954,7 @@ export function ClashDetectionPage() {
       addToast({
         type: 'error',
         title: t('clash.assign_failed', {
-          defaultValue: 'Could not update assignee‌⁠‍',
+          defaultValue: 'Could not update assigneeâ€Œâ â€',
         }),
         message: e.message,
       });
@@ -932,7 +1007,7 @@ export function ClashDetectionPage() {
                       ...(r.comments ?? []),
                       {
                         author: t('clash.you', {
-                          defaultValue: 'You‌⁠‍',
+                          defaultValue: 'Youâ€Œâ â€',
                         }),
                         author_id: null,
                         ts: new Date().toISOString(),
@@ -954,7 +1029,7 @@ export function ClashDetectionPage() {
       addToast({
         type: 'error',
         title: t('clash.detail_failed', {
-          defaultValue: 'Could not save clash update‌⁠‍',
+          defaultValue: 'Could not save clash updateâ€Œâ â€',
         }),
         message: e.message,
       });
@@ -991,7 +1066,7 @@ export function ClashDetectionPage() {
       addToast({
         type: 'success',
         title: t('clash.bcf_done', {
-          defaultValue: 'Exported {{n}} clash(es) to BCF ({{s}} skipped)‌⁠‍',
+          defaultValue: 'Exported {{n}} clash(es) to BCF ({{s}} skipped)â€Œâ â€',
           n: r.exported,
           s: r.skipped,
         }),
@@ -1014,7 +1089,7 @@ export function ClashDetectionPage() {
         type: 'success',
         title: t('clash.bcf_import_done', {
           defaultValue:
-            'BCF import: {{m}} matched, {{u}} unmatched, {{e}} errors‌⁠‍',
+            'BCF import: {{m}} matched, {{u}} unmatched, {{e}} errorsâ€Œâ â€',
           m: r.matched,
           u: r.unmatched,
           e: r.errors,
@@ -1025,7 +1100,7 @@ export function ClashDetectionPage() {
       addToast({
         type: 'error',
         title: t('clash.bcf_import_failed', {
-          defaultValue: 'BCF import failed‌⁠‍',
+          defaultValue: 'BCF import failedâ€Œâ â€',
         }),
         message: e.message,
       }),
@@ -1043,7 +1118,7 @@ export function ClashDetectionPage() {
     },
   });
 
-  // CSV export — server-rendered, honouring the same single-value
+  // CSV export â€” server-rendered, honouring the same single-value
   // status/type/severity filters the list endpoint accepts. (The free-text
   // search / pair / min-penetration are client-only refinements and have
   // no server query param, so they are intentionally NOT forwarded.)
@@ -1057,20 +1132,20 @@ export function ClashDetectionPage() {
       addToast({
         type: 'success',
         title: t('clash.csv_done', {
-          defaultValue: 'CSV export started‌⁠‍',
+          defaultValue: 'CSV export startedâ€Œâ â€',
         }),
       }),
     onError: (e: Error) =>
       addToast({
         type: 'error',
         title: t('clash.csv_failed', {
-          defaultValue: 'CSV export failed‌⁠‍',
+          defaultValue: 'CSV export failedâ€Œâ â€',
         }),
         message: e.message,
       }),
   });
 
-  // Run-to-run comparison — diff the active run against `compareBaseId`.
+  // Run-to-run comparison â€” diff the active run against `compareBaseId`.
   const compareQ = useQuery({
     queryKey: ['clash-compare', projectId, runId, compareBaseId],
     queryFn: () =>
@@ -1093,7 +1168,7 @@ export function ClashDetectionPage() {
     [summary],
   );
 
-  // ── KPI counts — AUTHORITATIVE, from the run + its cached summary ──────
+  // â”€â”€ KPI counts â€” AUTHORITATIVE, from the run + its cached summary â”€â”€â”€â”€â”€â”€
   // These reflect the FULL run (which may be 25k+ clashes), never the
   // capped rows loaded into the table. `run.total_clashes` and
   // `summary.by_type` / `summary.by_status` are computed server-side over
@@ -1114,7 +1189,7 @@ export function ClashDetectionPage() {
     const matrixCells = (summary?.matrix ?? []).filter(
       (c) => c.count > 0,
     ).length;
-    // Severity histogram — authoritative when the backend supplies it;
+    // Severity histogram â€” authoritative when the backend supplies it;
     // `bySev` stays undefined on older payloads so the tile degrades.
     const bySev = summary?.by_severity;
     return {
@@ -1132,7 +1207,7 @@ export function ClashDetectionPage() {
     };
   }, [runQ.data, summary]);
 
-  // ── Client-side filter pipeline ───────────────────────────────────────
+  // â”€â”€ Client-side filter pipeline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const filtered = useMemo(() => {
     const q = fSearch.trim().toLowerCase();
     const minPenM = fMinPen / 1000;
@@ -1176,7 +1251,7 @@ export function ClashDetectionPage() {
       )
         return false;
       if (r.clash_type === 'hard' && r.penetration_m < minPenM) return false;
-      // Wave A4 — restrict to the active cluster chip (null = "all").
+      // Wave A4 â€” restrict to the active cluster chip (null = "all").
       if (
         selectedClusterId !== null &&
         (r.cluster_id ?? null) !== selectedClusterId
@@ -1250,9 +1325,9 @@ export function ClashDetectionPage() {
   }, [filtered, sortKey, sortDir]);
 
   // Flat render list. Stacked transforms (applied in order):
-  //   1. Group axis — if active, reorder rows by bucket + inject headers.
-  //   2. Pair cluster (Wave A2) — if ON, collapse same-pair rows within
-  //      each bucket into a master row with N×members, expandable.
+  //   1. Group axis â€” if active, reorder rows by bucket + inject headers.
+  //   2. Pair cluster (Wave A2) â€” if ON, collapse same-pair rows within
+  //      each bucket into a master row with NÃ—members, expandable.
   // Pagination runs over this flat list so the sticky table / paging
   // stay unchanged.
   const renderItems = useMemo<RenderItem[]>(() => {
@@ -1280,7 +1355,7 @@ export function ClashDetectionPage() {
           out.push({ kind: 'row', row: head });
           continue;
         }
-        const label = `${head.a_name || head.a_stable_id} ↔ ${
+        const label = `${head.a_name || head.a_stable_id} â†” ${
           head.b_name || head.b_stable_id
         }`;
         out.push({ kind: 'pair', key, label, members, head });
@@ -1461,7 +1536,7 @@ export function ClashDetectionPage() {
     fLevelPair.size > 0 ||
     fModelPair.size > 0;
 
-  // Faceted filter rail counts — derived from the FULL row set so a
+  // Faceted filter rail counts â€” derived from the FULL row set so a
   // narrow active filter never makes the other facets read as empty.
   const facets = useMemo(() => {
     const disc = new Map<string, number>();
@@ -1494,9 +1569,9 @@ export function ClashDetectionPage() {
       key
         .split('|')
         .map((id) =>
-          id === '—' ? '—' : (modelName.get(id) ?? id.slice(0, 8)),
+          id === 'â€”' ? 'â€”' : (modelName.get(id) ?? id.slice(0, 8)),
         )
-        .join(' ↔ ');
+        .join(' â†” ');
     const sortDesc = <K,>(m: Map<K, number>) =>
       [...m.entries()].sort((a, b) => b[1] - a[1]);
     return {
@@ -1514,7 +1589,7 @@ export function ClashDetectionPage() {
    *
    *  We isolate BOTH interfering elements, flag them clash-red (`clash=1`),
    *  and pass the clash world centroid (`focus=cx,cy,cz`, raw canonical
-   *  Z-up — the viewer applies its own Z-up→Y-up rotation) so the camera
+   *  Z-up â€” the viewer applies its own Z-upâ†’Y-up rotation) so the camera
    *  reliably frames the interference even on showcase IFC/RVT models whose
    *  GLB nodes are numeric Revit ids that never match the DB element UUIDs
    *  (the per-element mesh resolution is only an approximate positional
@@ -1539,7 +1614,7 @@ export function ClashDetectionPage() {
     );
   }, [pageRows.length]);
 
-  // Keyboard navigation for the results table — ↑/↓ or j/k move the
+  // Keyboard navigation for the results table â€” â†‘/â†“ or j/k move the
   // selection between visible clash rows, Enter opens the selected clash in
   // the 3D viewer (existing deep-link). MUST ignore keystrokes while an
   // input / textarea / select / contentEditable is focused so it never
@@ -1591,9 +1666,9 @@ export function ClashDetectionPage() {
   const compactLayout =
     !!runId || runMut.isPending || runQ.data?.status === 'running';
 
-  // ── No active project ────────────────────────────────────────────────
+  // â”€â”€ No active project â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // The project is selected globally at the top of the app. If none is set
-  // we don't show a picker here — we invite the user to upload a BIM model
+  // we don't show a picker here â€” we invite the user to upload a BIM model
   // (a new project) to run coordination on.
   if (!projectId) {
     return (
@@ -1603,11 +1678,11 @@ export function ClashDetectionPage() {
           <EmptyState
             icon={<Upload className="h-10 w-10" />}
             title={t('clash.no_project_title', {
-              defaultValue: 'No active project‌⁠‍',
+              defaultValue: 'No active projectâ€Œâ â€',
             })}
             description={t('clash.no_project_desc', {
               defaultValue:
-                'Pick a project from the selector at the top of the page, or upload a BIM model to start coordinating clashes.‌⁠‍',
+                'Pick a project from the selector at the top of the page, or upload a BIM model to start coordinating clashes.â€Œâ â€',
             })}
             action={
               <Link to="/bim">
@@ -1617,7 +1692,7 @@ export function ClashDetectionPage() {
                   icon={<Upload className="h-4 w-4" />}
                 >
                   {t('clash.upload_model', {
-                    defaultValue: 'Upload a BIM model‌⁠‍',
+                    defaultValue: 'Upload a BIM modelâ€Œâ â€',
                   })}
                 </Button>
               </Link>
@@ -1632,8 +1707,8 @@ export function ClashDetectionPage() {
     <div className="w-full animate-fade-in">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <Header />
-        {/* ── Project actions ─────────────────────────────────────────────
-              No descriptive/summary panel — the selectable CAD-BIM model
+        {/* â”€â”€ Project actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+              No descriptive/summary panel â€” the selectable CAD-BIM model
               cards below ARE the project's data surface. Keep only the
               working deep-links into the 3D viewer / element matcher /
               project overview. */}
@@ -1660,7 +1735,7 @@ export function ClashDetectionPage() {
             }}
           >
             {t('clash.open_bim_viewer', {
-              defaultValue: 'Open BIM 3D Viewer‌⁠‍',
+              defaultValue: 'Open BIM 3D Viewerâ€Œâ â€',
             })}
           </Button>
           <Button
@@ -1671,7 +1746,7 @@ export function ClashDetectionPage() {
             onClick={() => navigate(`/match-elements?project=${projectId}`)}
           >
             {t('clash.match_elements', {
-              defaultValue: 'Match / Analyze elements‌⁠‍',
+              defaultValue: 'Match / Analyze elementsâ€Œâ â€',
             })}
           </Button>
           <Button
@@ -1682,13 +1757,13 @@ export function ClashDetectionPage() {
             onClick={() => navigate(`/projects/${projectId}`)}
           >
             {t('clash.project_overview', {
-              defaultValue: 'Project overview‌⁠‍',
+              defaultValue: 'Project overviewâ€Œâ â€',
             })}
           </Button>
         </div>
       </div>
 
-      {/* ── Selectable CAD-BIM model cards ──────────────────────────────
+      {/* â”€â”€ Selectable CAD-BIM model cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             One card per BIM model in the project. Clicking a card toggles
             it into the clash set (cards ARE the model selection). Sits in
             the setup area; shown in both layouts so the user can re-scope
@@ -1720,8 +1795,8 @@ export function ClashDetectionPage() {
           compactLayout ? 'lg:grid-cols-[300px_1fr]' : 'grid-cols-1',
         )}
       >
-        {/* ── Config rail. Compact → narrow left menu; initial → a wide,
-              horizontal full-page setup. ─────────────────────────────── */}
+        {/* â”€â”€ Config rail. Compact â†’ narrow left menu; initial â†’ a wide,
+              horizontal full-page setup. â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <div
           className={clsx(
             compactLayout
@@ -1732,7 +1807,7 @@ export function ClashDetectionPage() {
           <Card padding="md">
             <h2 className="flex items-center gap-2 text-sm font-semibold text-content-primary">
               <Radar className="h-4 w-4 text-oe-blue" />
-              {t('clash.new_run', { defaultValue: 'New clash run‌⁠‍' })}
+              {t('clash.new_run', { defaultValue: 'New clash runâ€Œâ â€' })}
             </h2>
             <div
               className={clsx(
@@ -1742,7 +1817,7 @@ export function ClashDetectionPage() {
                   : 'grid gap-x-6 gap-y-4 md:grid-cols-2 xl:grid-cols-4 items-start',
               )}
             >
-              {/* PRIMARY control — what to coordinate. Clash is always
+              {/* PRIMARY control â€” what to coordinate. Clash is always
                   intra-project (every selected model's elements tested
                   against each other); the project itself is chosen once,
                   globally, at the top of the app. */}
@@ -1753,7 +1828,7 @@ export function ClashDetectionPage() {
                 )}
               >
                 {t('clash.mode', {
-                  defaultValue: 'What to check for clashes‌⁠‍',
+                  defaultValue: 'What to check for clashesâ€Œâ â€',
                 })}
                 <select
                   value={mode}
@@ -1762,16 +1837,16 @@ export function ClashDetectionPage() {
                 >
                   <option value="selection_sets">
                     {t('clash.mode_sets', {
-                      defaultValue: 'By category / type (Set A vs Set B)‌⁠‍',
+                      defaultValue: 'By category / type (Set A vs Set B)â€Œâ â€',
                     })}
                   </option>
                   <option value="cross_discipline">
                     {t('clash.mode_cross', {
-                      defaultValue: 'Cross-discipline only‌⁠‍',
+                      defaultValue: 'Cross-discipline onlyâ€Œâ â€',
                     })}
                   </option>
                   <option value="all">
-                    {t('clash.mode_all', { defaultValue: 'Every pair‌⁠‍' })}
+                    {t('clash.mode_all', { defaultValue: 'Every pairâ€Œâ â€' })}
                   </option>
                 </select>
               </label>
@@ -1786,19 +1861,19 @@ export function ClashDetectionPage() {
                   <p className="text-2xs leading-snug text-content-tertiary">
                     {t('clash.sets_hint', {
                       defaultValue:
-                        'Only pairs where one element is in Set A and the other in Set B are tested — e.g. all Walls (A) against all Pipes (B).‌⁠‍',
+                        'Only pairs where one element is in Set A and the other in Set B are tested â€” e.g. all Walls (A) against all Pipes (B).â€Œâ â€',
                     })}
                   </p>
 
-                  {/* GROUPING parameter — the element parameter the Set A
+                  {/* GROUPING parameter â€” the element parameter the Set A
                       / Set B facet lists are built from. The four built-ins
                       (IFC-only options appear only when the selected models
                       carry that data) plus every distinct element-property
-                      key the backend surfaced (older backends → built-ins
+                      key the backend surfaced (older backends â†’ built-ins
                       only). */}
                   <label className="block text-2xs font-medium text-content-secondary">
                     {t('clash.group_by', {
-                      defaultValue: 'Group elements by‌⁠‍',
+                      defaultValue: 'Group elements byâ€Œâ â€',
                     })}
                     <select
                       value={groupBy}
@@ -1817,7 +1892,7 @@ export function ClashDetectionPage() {
                       {availableProperties.length > 0 && (
                         <optgroup
                           label={t('clash.group_properties', {
-                            defaultValue: 'Element properties‌⁠‍',
+                            defaultValue: 'Element propertiesâ€Œâ â€',
                           })}
                         >
                           {availableProperties.map((p) => (
@@ -1826,7 +1901,7 @@ export function ClashDetectionPage() {
                               value={`property:${p.key}`}
                             >
                               {t('clash.group_property_option', {
-                                defaultValue: '{{key}} ({{count}})‌⁠‍',
+                                defaultValue: '{{key}} ({{count}})â€Œâ â€',
                                 key: p.key,
                                 count: p.count,
                               })}
@@ -1845,7 +1920,7 @@ export function ClashDetectionPage() {
                     )}
                   >
                     <SelectionSetPicker
-                      label={t('clash.set_a', { defaultValue: 'Set A‌⁠‍' })}
+                      label={t('clash.set_a', { defaultValue: 'Set Aâ€Œâ â€' })}
                       accent="oe-blue"
                       value={setA}
                       onChange={setSetA}
@@ -1854,7 +1929,7 @@ export function ClashDetectionPage() {
                       loading={categoriesQ.isLoading}
                     />
                     <SelectionSetPicker
-                      label={t('clash.set_b', { defaultValue: 'Set B‌⁠‍' })}
+                      label={t('clash.set_b', { defaultValue: 'Set Bâ€Œâ â€' })}
                       accent="amber"
                       value={setB}
                       onChange={setSetB}
@@ -1867,14 +1942,14 @@ export function ClashDetectionPage() {
                     <p className="text-2xs text-semantic-error">
                       {t('clash.sets_required', {
                         defaultValue:
-                          'Pick at least one value for both Set A and Set B.‌⁠‍',
+                          'Pick at least one value for both Set A and Set B.â€Œâ â€',
                       })}
                     </p>
                   )}
                 </div>
               )}
 
-              {/* CLASH TYPE — Navisworks-style "Type" rule selector. The
+              {/* CLASH TYPE â€” Navisworks-style "Type" rule selector. The
                   single most load-bearing run parameter: it decides
                   WHICH interference the engine reports. Hard = real
                   interpenetration; Clearance = proximity (no overlap)
@@ -1887,7 +1962,7 @@ export function ClashDetectionPage() {
                 )}
               >
                 {t('clash.clash_type', {
-                  defaultValue: 'Clash type‌⁠‍',
+                  defaultValue: 'Clash typeâ€Œâ â€',
                 })}
                 <select
                   value={clashType}
@@ -1899,18 +1974,18 @@ export function ClashDetectionPage() {
                   <option value="both">
                     {t('clash.ct_both', {
                       defaultValue:
-                        'Hard + Clearance (interference & proximity)‌⁠‍',
+                        'Hard + Clearance (interference & proximity)â€Œâ â€',
                     })}
                   </option>
                   <option value="hard">
                     {t('clash.ct_hard', {
-                      defaultValue: 'Hard only — true interpenetration‌⁠‍',
+                      defaultValue: 'Hard only â€” true interpenetrationâ€Œâ â€',
                     })}
                   </option>
                   <option value="clearance">
                     {t('clash.ct_clearance', {
                       defaultValue:
-                        'Clearance only — proximity, no overlap‌⁠‍',
+                        'Clearance only â€” proximity, no overlapâ€Œâ â€',
                     })}
                   </option>
                 </select>
@@ -1918,16 +1993,16 @@ export function ClashDetectionPage() {
                   {clashType === 'hard'
                     ? t('clash.ct_hard_hint', {
                         defaultValue:
-                          'Reports only element pairs whose geometry actually interpenetrates beyond the tolerance. The clearance pass is skipped.‌⁠‍',
+                          'Reports only element pairs whose geometry actually interpenetrates beyond the tolerance. The clearance pass is skipped.â€Œâ â€',
                       })
                     : clashType === 'clearance'
                       ? t('clash.ct_clearance_hint', {
                           defaultValue:
-                            'Reports only pairs that do NOT overlap but sit within the clearance distance (e.g. maintenance access). Set a clearance > 0.‌⁠‍',
+                            'Reports only pairs that do NOT overlap but sit within the clearance distance (e.g. maintenance access). Set a clearance > 0.â€Œâ â€',
                         })
                       : t('clash.ct_both_hint', {
                           defaultValue:
-                            'Reports hard interferences, then a clearance violation for any non-hard pair within the clearance distance.‌⁠‍',
+                            'Reports hard interferences, then a clearance violation for any non-hard pair within the clearance distance.â€Œâ â€',
                         })}
                 </span>
               </label>
@@ -1944,7 +2019,7 @@ export function ClashDetectionPage() {
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="text-2xs font-medium uppercase tracking-wide text-content-tertiary">
                     {t('clash.tol_presets', {
-                      defaultValue: 'Tolerance preset‌⁠‍',
+                      defaultValue: 'Tolerance presetâ€Œâ â€',
                     })}
                   </span>
                   {TOLERANCE_PRESETS.map((p) => (
@@ -1971,7 +2046,7 @@ export function ClashDetectionPage() {
                     )}
                   >
                     {t('clash.tolerance', {
-                      defaultValue: 'Tolerance (mm)‌⁠‍',
+                      defaultValue: 'Tolerance (mm)â€Œâ â€',
                     })}
                     <input
                       type="number"
@@ -1992,7 +2067,7 @@ export function ClashDetectionPage() {
                     )}
                   >
                     {t('clash.clearance', {
-                      defaultValue: 'Clearance (mm)‌⁠‍',
+                      defaultValue: 'Clearance (mm)â€Œâ â€',
                     })}
                     <input
                       type="number"
@@ -2016,13 +2091,13 @@ export function ClashDetectionPage() {
                   <p className="text-2xs text-semantic-error">
                     {t('clash.clearance_required', {
                       defaultValue:
-                        'A clearance-only run needs a clearance distance greater than 0 to find anything.‌⁠‍',
+                        'A clearance-only run needs a clearance distance greater than 0 to find anything.â€Œâ â€',
                     })}
                   </p>
                 )}
               </div>
 
-              {/* Federated noise filter — only meaningful with >1 model
+              {/* Federated noise filter â€” only meaningful with >1 model
                   in scope (otherwise every pair is intra-model). */}
               {multiModelScope && (
                 <label
@@ -2043,21 +2118,21 @@ export function ClashDetectionPage() {
                     <span className="font-medium text-content-primary">
                       {t('clash.ignore_same_model', {
                         defaultValue:
-                          'Ignore clashes within the same model‌⁠‍',
+                          'Ignore clashes within the same modelâ€Œâ â€',
                       })}
                     </span>
                     <span className="mt-0.5 block text-2xs leading-snug text-content-tertiary">
                       {t('clash.ignore_same_model_hint', {
                         defaultValue:
-                          'Only report pairs whose two elements come from different BIM models — strips the intra-model self-clash noise from a federated coordination run.‌⁠‍',
+                          'Only report pairs whose two elements come from different BIM models â€” strips the intra-model self-clash noise from a federated coordination run.â€Œâ â€',
                       })}
                     </span>
                   </span>
                 </label>
               )}
 
-              {/* Run identity — name + description so the run is
-                  recognisable in history (not "Clash run 2026-…"). */}
+              {/* Run identity â€” name + description so the run is
+                  recognisable in history (not "Clash run 2026-â€¦"). */}
               <div
                 className={clsx(
                   'grid gap-2',
@@ -2067,7 +2142,7 @@ export function ClashDetectionPage() {
               >
                 <label className="text-xs text-content-secondary">
                   {t('clash.run_name', {
-                    defaultValue: 'Run name (optional)‌⁠‍',
+                    defaultValue: 'Run name (optional)â€Œâ â€',
                   })}
                   <input
                     type="text"
@@ -2075,14 +2150,14 @@ export function ClashDetectionPage() {
                     value={runName}
                     onChange={(e) => setRunName(e.target.value)}
                     placeholder={t('clash.run_name_ph', {
-                      defaultValue: 'e.g. Struct vs MEP — L3 coordination‌⁠‍',
+                      defaultValue: 'e.g. Struct vs MEP â€” L3 coordinationâ€Œâ â€',
                     })}
                     className="mt-1 w-full rounded-md border border-border bg-surface-primary px-2 py-1 text-sm"
                   />
                 </label>
                 <label className="text-xs text-content-secondary">
                   {t('clash.run_desc', {
-                    defaultValue: 'Description (optional)‌⁠‍',
+                    defaultValue: 'Description (optional)â€Œâ â€',
                   })}
                   <input
                     type="text"
@@ -2090,7 +2165,7 @@ export function ClashDetectionPage() {
                     value={runDesc}
                     onChange={(e) => setRunDesc(e.target.value)}
                     placeholder={t('clash.run_desc_ph', {
-                      defaultValue: 'Scope / intent / reviewer note‌⁠‍',
+                      defaultValue: 'Scope / intent / reviewer noteâ€Œâ â€',
                     })}
                     className="mt-1 w-full rounded-md border border-border bg-surface-primary px-2 py-1 text-sm"
                   />
@@ -2120,7 +2195,7 @@ export function ClashDetectionPage() {
                   icon={<Play className="h-4 w-4" />}
                   onClick={() => runMut.mutate()}
                 >
-                  {t('clash.run', { defaultValue: 'Run clash detection‌⁠‍' })}
+                  {t('clash.run', { defaultValue: 'Run clash detectionâ€Œâ â€' })}
                 </Button>
               </div>
             </div>
@@ -2128,10 +2203,10 @@ export function ClashDetectionPage() {
 
           <Card padding="md">
             <h2 className="text-sm font-semibold text-content-primary">
-              {t('clash.history', { defaultValue: 'Run history‌⁠‍' })}
+              {t('clash.history', { defaultValue: 'Run historyâ€Œâ â€' })}
             </h2>
 
-            {/* Run-to-run comparison — pick an earlier run to diff the
+            {/* Run-to-run comparison â€” pick an earlier run to diff the
                 active run against. The diff renders in the main column. */}
             {runId &&
               (runsQ.data ?? []).filter((r) => r.id !== runId).length >
@@ -2140,7 +2215,7 @@ export function ClashDetectionPage() {
                   <GitCompareArrows className="h-3.5 w-3.5 shrink-0 text-content-tertiary" />
                   <span className="shrink-0 font-medium uppercase tracking-wide text-content-tertiary">
                     {t('clash.compare_to', {
-                      defaultValue: 'Compare to‌⁠‍',
+                      defaultValue: 'Compare toâ€Œâ â€',
                     })}
                   </span>
                   <select
@@ -2152,14 +2227,14 @@ export function ClashDetectionPage() {
                   >
                     <option value="">
                       {t('clash.compare_none', {
-                        defaultValue: 'No comparison‌⁠‍',
+                        defaultValue: 'No comparisonâ€Œâ â€',
                       })}
                     </option>
                     {(runsQ.data ?? [])
                       .filter((r) => r.id !== runId)
                       .map((r) => (
                         <option key={r.id} value={r.id}>
-                          {r.name} · {r.total_clashes}
+                          {r.name} Â· {r.total_clashes}
                         </option>
                       ))}
                   </select>
@@ -2169,7 +2244,7 @@ export function ClashDetectionPage() {
             <div className="mt-2 space-y-1">
               {(runsQ.data ?? []).length === 0 && (
                 <p className="text-xs text-content-tertiary">
-                  {t('clash.no_runs', { defaultValue: 'No runs yet.‌⁠‍' })}
+                  {t('clash.no_runs', { defaultValue: 'No runs yet.â€Œâ â€' })}
                 </p>
               )}
               {(runsQ.data ?? []).map((r) => (
@@ -2197,20 +2272,20 @@ export function ClashDetectionPage() {
                       <span className="ml-1 rounded-full bg-surface-secondary px-1.5 text-[10px] font-medium text-content-secondary">
                         {r.clash_type === 'hard'
                           ? t('clash.type_hard', {
-                              defaultValue: 'Hard‌⁠‍',
+                              defaultValue: 'Hardâ€Œâ â€',
                             })
                           : t('clash.type_clearance', {
-                              defaultValue: 'Clearance‌⁠‍',
+                              defaultValue: 'Clearanceâ€Œâ â€',
                             })}
                       </span>
                     )}
                     <span className="ml-1 text-content-tertiary">
-                      · {r.total_clashes}
+                      Â· {r.total_clashes}
                     </span>
                   </button>
                   <button
                     aria-label={t('common.delete', {
-                      defaultValue: 'Delete‌⁠‍',
+                      defaultValue: 'Deleteâ€Œâ â€',
                     })}
                     onClick={() => delMut.mutate(r.id)}
                     className="text-content-tertiary hover:text-semantic-error"
@@ -2223,7 +2298,7 @@ export function ClashDetectionPage() {
           </Card>
         </div>
 
-        {/* ── Main: KPIs + matrix + review workspace ────────────────── */}
+        {/* â”€â”€ Main: KPIs + matrix + review workspace â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <div className="min-w-0 space-y-6">
           {(runMut.isPending || runQ.data?.status === 'running') && (
             <Card padding="md" className="border-oe-blue/30">
@@ -2232,13 +2307,13 @@ export function ClashDetectionPage() {
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-content-primary">
                     {t('clash.running_title', {
-                      defaultValue: 'Running clash detection…‌⁠‍',
+                      defaultValue: 'Running clash detectionâ€¦â€Œâ â€',
                     })}
                   </p>
                   <p className="text-xs text-content-tertiary">
                     {t('clash.running_desc', {
                       defaultValue:
-                        'Testing element geometry for interferences. This can take up to ~30s on large models — please keep this tab open.‌⁠‍',
+                        'Testing element geometry for interferences. This can take up to ~30s on large models â€” please keep this tab open.â€Œâ â€',
                     })}
                   </p>
                 </div>
@@ -2254,10 +2329,10 @@ export function ClashDetectionPage() {
             </Card>
           )}
 
-          {/* ── Run-to-run comparison ──────────────────────────────
+          {/* â”€â”€ Run-to-run comparison â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 Diff the active run against the picked base run: New /
                 Resolved / Persistent buckets. Lives in the main column,
-                ABOVE the KPI/matrix/table — it is what a coordinator
+                ABOVE the KPI/matrix/table â€” it is what a coordinator
                 checks first after a re-run. */}
           {compareBaseId && (
             <CompareSection
@@ -2268,7 +2343,7 @@ export function ClashDetectionPage() {
                     ? compareQ.error.message
                     : t('clash.compare_error', {
                         defaultValue:
-                          'Could not compare the runs.‌⁠‍',
+                          'Could not compare the runs.â€Œâ â€',
                       })
                   : null
               }
@@ -2293,7 +2368,7 @@ export function ClashDetectionPage() {
 
           {runId && runQ.data && (
             <>
-              {/* ── Wave A4 — rule-suggestion banner + cluster chips +
+              {/* â”€â”€ Wave A4 â€” rule-suggestion banner + cluster chips +
                     KPI / rules quick actions. Sits just above the KPI
                     tiles so the coordinator sees engine-mined hints
                     before drilling into the result table. */}
@@ -2315,7 +2390,7 @@ export function ClashDetectionPage() {
                     size="sm"
                     onClick={() => setRulesOpen(true)}
                   >
-                    {t('clash.rules.open_editor', { defaultValue: 'Rules…' })}
+                    {t('clash.rules.open_editor', { defaultValue: 'Rulesâ€¦' })}
                   </Button>
                   <Button
                     variant={kpiTabOpen ? 'primary' : 'secondary'}
@@ -2338,19 +2413,19 @@ export function ClashDetectionPage() {
                 runId={runId}
               />
 
-              {/* ── KPI tiles ──────────────────────────────────────── */}
+              {/* â”€â”€ KPI tiles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
               <div
                 className={clsx(
                   'grid grid-cols-2 gap-3 sm:grid-cols-4',
                   // The severity tile only renders when the backend sends
-                  // `by_severity` — keep the row balanced either way.
+                  // `by_severity` â€” keep the row balanced either way.
                   kpis.bySev ? 'xl:grid-cols-8' : 'xl:grid-cols-7',
                 )}
               >
                 <Kpi
                   icon={<Layers className="h-4 w-4" />}
                   label={t('clash.kpi_total', {
-                    defaultValue: 'Total clashes‌⁠‍',
+                    defaultValue: 'Total clashesâ€Œâ â€',
                   })}
                   value={kpis.total}
                   active={kpiFilter === 'all'}
@@ -2362,7 +2437,7 @@ export function ClashDetectionPage() {
                       <AlertTriangle className="h-4 w-4 text-semantic-error" />
                     }
                     label={t('clash.kpi_critical', {
-                      defaultValue: 'Critical / High‌⁠‍',
+                      defaultValue: 'Critical / Highâ€Œâ â€',
                     })}
                     value={`${kpis.critical} / ${kpis.high}`}
                     active={
@@ -2391,7 +2466,7 @@ export function ClashDetectionPage() {
                   icon={
                     <AlertTriangle className="h-4 w-4 text-semantic-error" />
                   }
-                  label={t('clash.kpi_hard', { defaultValue: 'Hard‌⁠‍' })}
+                  label={t('clash.kpi_hard', { defaultValue: 'Hardâ€Œâ â€' })}
                   value={kpis.hard}
                   active={kpiFilter === 'hard'}
                   onClick={() =>
@@ -2401,7 +2476,7 @@ export function ClashDetectionPage() {
                 <Kpi
                   icon={<Ruler className="h-4 w-4 text-amber-500" />}
                   label={t('clash.kpi_clearance', {
-                    defaultValue: 'Clearance‌⁠‍',
+                    defaultValue: 'Clearanceâ€Œâ â€',
                   })}
                   value={kpis.clearance}
                   active={kpiFilter === 'clearance'}
@@ -2413,7 +2488,7 @@ export function ClashDetectionPage() {
                 />
                 <Kpi
                   icon={<CheckCircle2 className="h-4 w-4 text-oe-blue" />}
-                  label={t('clash.kpi_open', { defaultValue: 'Open‌⁠‍' })}
+                  label={t('clash.kpi_open', { defaultValue: 'Openâ€Œâ â€' })}
                   value={kpis.open}
                   active={kpiFilter === 'open'}
                   onClick={() =>
@@ -2425,7 +2500,7 @@ export function ClashDetectionPage() {
                     <CheckCircle2 className="h-4 w-4 text-semantic-success" />
                   }
                   label={t('clash.kpi_resolved', {
-                    defaultValue: 'Resolved‌⁠‍',
+                    defaultValue: 'Resolvedâ€Œâ â€',
                   })}
                   value={`${kpis.resolvedPct}%`}
                   active={kpiFilter === 'resolved'}
@@ -2438,26 +2513,26 @@ export function ClashDetectionPage() {
                 <Kpi
                   icon={<Box className="h-4 w-4 text-content-tertiary" />}
                   label={t('clash.kpi_disciplines', {
-                    defaultValue: 'Disciplines‌⁠‍',
+                    defaultValue: 'Disciplinesâ€Œâ â€',
                   })}
                   value={kpis.disciplines}
                 />
                 <Kpi
                   icon={<Grid3x3 className="h-4 w-4 text-content-tertiary" />}
                   label={t('clash.kpi_matrix_cells', {
-                    defaultValue: 'Matrix cells‌⁠‍',
+                    defaultValue: 'Matrix cellsâ€Œâ â€',
                   })}
                   value={kpis.matrixCells}
                 />
               </div>
 
-              {/* ── Clash matrix ───────────────────────────────────── */}
+              {/* â”€â”€ Clash matrix â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
               <Card padding="md">
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-semibold text-content-primary">
                     {t('clash.matrix_title', {
                       defaultValue:
-                        'Clash matrix — discipline × discipline‌⁠‍',
+                        'Clash matrix â€” discipline Ã— disciplineâ€Œâ â€',
                     })}
                   </h2>
                   {fPair && (
@@ -2468,7 +2543,7 @@ export function ClashDetectionPage() {
                       onClick={() => setFPair('')}
                     >
                       {t('clash.clear_filter', {
-                        defaultValue: 'Clear filter‌⁠‍',
+                        defaultValue: 'Clear filterâ€Œâ â€',
                       })}
                     </Button>
                   )}
@@ -2477,7 +2552,7 @@ export function ClashDetectionPage() {
                   <p className="mt-3 text-sm text-content-tertiary">
                     {t('clash.no_clashes', {
                       defaultValue:
-                        'No clashes — the models are clean.‌⁠‍',
+                        'No clashes â€” the models are clean.â€Œâ â€',
                     })}
                   </p>
                 ) : (
@@ -2525,13 +2600,13 @@ export function ClashDetectionPage() {
                                       isActive &&
                                         'ring-2 ring-oe-blue ring-offset-1',
                                     )}
-                                    title={`${a} ↔ ${b}: ${c}`}
+                                    title={`${a} â†” ${b}: ${c}`}
                                   >
-                                    <span>{c || '·'}</span>
+                                    <span>{c || 'Â·'}</span>
                                     {cell && cell.open > 0 && (
                                       <span className="text-[10px] font-normal opacity-80">
                                         {t('clash.matrix_open', {
-                                          defaultValue: '{{n}} open‌⁠‍',
+                                          defaultValue: '{{n}} openâ€Œâ â€',
                                           n: cell.open,
                                         })}
                                       </span>
@@ -2548,18 +2623,18 @@ export function ClashDetectionPage() {
                 )}
               </Card>
 
-              {/* ── Review workspace ──────────────────────────────── */}
+              {/* â”€â”€ Review workspace â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
               <Card padding="none">
                 {/* Toolbar */}
                 <div className="border-b border-border-light p-4">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="flex items-center gap-2 text-sm font-semibold text-content-primary">
                       {t('clash.results', {
-                        defaultValue: 'Clash results‌⁠‍',
+                        defaultValue: 'Clash resultsâ€Œâ â€',
                       })}
                       <Badge variant="neutral" size="sm">
                         {t('clash.count_of', {
-                          defaultValue: '{{shown}} of {{total}}‌⁠‍',
+                          defaultValue: '{{shown}} of {{total}}â€Œâ â€',
                           shown: sorted.length,
                           total: kpis.total,
                         })}
@@ -2572,7 +2647,7 @@ export function ClashDetectionPage() {
                         value={fSearch}
                         onChange={(e) => setFSearch(e.target.value)}
                         placeholder={t('clash.search_ph', {
-                          defaultValue: 'Search element name…‌⁠‍',
+                          defaultValue: 'Search element nameâ€¦â€Œâ â€',
                         })}
                         className="h-8 w-56 rounded-md border border-border bg-surface-primary pl-8 pr-2 text-xs"
                       />
@@ -2589,26 +2664,26 @@ export function ClashDetectionPage() {
                     >
                       <option value="all">
                         {t('clash.all_types', {
-                          defaultValue: 'All types‌⁠‍',
+                          defaultValue: 'All typesâ€Œâ â€',
                         })}
                       </option>
                       <option value="hard">
-                        {t('clash.type_hard', { defaultValue: 'Hard‌⁠‍' })}
+                        {t('clash.type_hard', { defaultValue: 'Hardâ€Œâ â€' })}
                       </option>
                       <option value="clearance">
                         {t('clash.type_clearance', {
-                          defaultValue: 'Clearance‌⁠‍',
+                          defaultValue: 'Clearanceâ€Œâ â€',
                         })}
                       </option>
                     </select>
 
-                    {/* Result aggregation — group the review list the way
+                    {/* Result aggregation â€” group the review list the way
                         a coordinator triages (Navisworks "Group by"). */}
                     <label className="flex items-center gap-1.5 text-2xs text-content-tertiary">
                       <Layers className="h-3.5 w-3.5" />
                       <span className="font-medium uppercase tracking-wide">
                         {t('clash.group_results', {
-                          defaultValue: 'Group‌⁠‍',
+                          defaultValue: 'Groupâ€Œâ â€',
                         })}
                       </span>
                       <select
@@ -2622,35 +2697,35 @@ export function ClashDetectionPage() {
                       >
                         <option value="none">
                           {t('clash.grp_none', {
-                            defaultValue: 'No grouping‌⁠‍',
+                            defaultValue: 'No groupingâ€Œâ â€',
                           })}
                         </option>
                         <option value="pair">
                           {t('clash.grp_pair', {
-                            defaultValue: 'Discipline pair‌⁠‍',
+                            defaultValue: 'Discipline pairâ€Œâ â€',
                           })}
                         </option>
                         <option value="clash_type">
                           {t('clash.grp_type', {
-                            defaultValue: 'Clash type‌⁠‍',
+                            defaultValue: 'Clash typeâ€Œâ â€',
                           })}
                         </option>
                         <option value="status">
                           {t('clash.grp_status', {
-                            defaultValue: 'Status‌⁠‍',
+                            defaultValue: 'Statusâ€Œâ â€',
                           })}
                         </option>
                         <option value="element_a">
                           {t('clash.grp_element_a', {
-                            defaultValue: 'Element A‌⁠‍',
+                            defaultValue: 'Element Aâ€Œâ â€',
                           })}
                         </option>
                       </select>
                     </label>
 
-                    {/* Wave A2 — pair clustering. Independent of the group
+                    {/* Wave A2 â€” pair clustering. Independent of the group
                         axis: collapses every row sharing the same unordered
-                        element pair into one master row with N×members. */}
+                        element pair into one master row with NÃ—members. */}
                     <button
                       type="button"
                       onClick={() => setPairCluster((v) => !v)}
@@ -2662,16 +2737,16 @@ export function ClashDetectionPage() {
                       )}
                       title={t('clash.pair_cluster_hint', {
                         defaultValue:
-                          'Collapse rows that share the same element pair into one master row.‌⁠‍',
+                          'Collapse rows that share the same element pair into one master row.â€Œâ â€',
                       })}
                     >
                       <Link2 className="h-3.5 w-3.5" />
                       {t('clash.pair_cluster_toggle', {
-                        defaultValue: 'Group by element pair‌⁠‍',
+                        defaultValue: 'Group by element pairâ€Œâ â€',
                       })}
                     </button>
 
-                    {/* Wave A2 — Advanced (faceted) filter rail toggle. */}
+                    {/* Wave A2 â€” Advanced (faceted) filter rail toggle. */}
                     <button
                       type="button"
                       onClick={() => setShowFacets((v) => !v)}
@@ -2684,11 +2759,11 @@ export function ClashDetectionPage() {
                     >
                       <Filter className="h-3.5 w-3.5" />
                       {t('clash.advanced_filters', {
-                        defaultValue: 'Advanced filters‌⁠‍',
+                        defaultValue: 'Advanced filtersâ€Œâ â€',
                       })}
                     </button>
 
-                    {/* Wave A3 — BCF round-trip import. Hidden file input
+                    {/* Wave A3 â€” BCF round-trip import. Hidden file input
                         driven by a regular Button so the action sits in
                         the same toolbar row as the Export BCF button. */}
                     <input
@@ -2710,7 +2785,7 @@ export function ClashDetectionPage() {
                       onClick={() => bcfFileInputRef.current?.click()}
                     >
                       {t('clash.import_bcf', {
-                        defaultValue: 'Import BCF‌⁠‍',
+                        defaultValue: 'Import BCFâ€Œâ â€',
                       })}
                     </Button>
 
@@ -2729,15 +2804,15 @@ export function ClashDetectionPage() {
                     >
                       {selResults.size
                         ? t('clash.export_sel', {
-                            defaultValue: 'Export {{n}} to BCF‌⁠‍',
+                            defaultValue: 'Export {{n}} to BCFâ€Œâ â€',
                             n: selResults.size,
                           })
                         : t('clash.export_open', {
-                            defaultValue: 'Export open → BCF‌⁠‍',
+                            defaultValue: 'Export open â†’ BCFâ€Œâ â€',
                           })}
                     </Button>
 
-                    {/* CSV export — server-rendered, honours the active
+                    {/* CSV export â€” server-rendered, honours the active
                         single-value status/type/severity filters. */}
                     <Button
                       variant="secondary"
@@ -2761,13 +2836,13 @@ export function ClashDetectionPage() {
                       }
                     >
                       {t('clash.export_csv', {
-                        defaultValue: 'Export CSV‌⁠‍',
+                        defaultValue: 'Export CSVâ€Œâ â€',
                       })}
                     </Button>
                   </div>
 
                   {/* Status filter pills + min-penetration slider.
-                      Wave A2 — hidden when the facet rail is open
+                      Wave A2 â€” hidden when the facet rail is open
                       (the rail covers status / severity / type natively). */}
                   {!showFacets && (
                   <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-3">
@@ -2775,7 +2850,7 @@ export function ClashDetectionPage() {
                       <span className="flex items-center gap-1 text-2xs font-medium uppercase tracking-wide text-content-tertiary">
                         <SlidersHorizontal className="h-3 w-3" />
                         {t('clash.filter_status', {
-                          defaultValue: 'Status‌⁠‍',
+                          defaultValue: 'Statusâ€Œâ â€',
                         })}
                       </span>
                       {STATUS_OPTIONS.map((s) => (
@@ -2794,13 +2869,13 @@ export function ClashDetectionPage() {
                       ))}
                     </div>
 
-                    {/* Severity filter pills — coloured to match the table
+                    {/* Severity filter pills â€” coloured to match the table
                         badge so the filter and the column read as one. */}
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="flex items-center gap-1 text-2xs font-medium uppercase tracking-wide text-content-tertiary">
                         <AlertTriangle className="h-3 w-3" />
                         {t('clash.filter_severity', {
-                          defaultValue: 'Severity‌⁠‍',
+                          defaultValue: 'Severityâ€Œâ â€',
                         })}
                       </span>
                       {SEVERITY_OPTIONS.map((s) => (
@@ -2822,7 +2897,7 @@ export function ClashDetectionPage() {
                     <label className="flex items-center gap-2 text-2xs text-content-secondary">
                       <span className="font-medium uppercase tracking-wide text-content-tertiary">
                         {t('clash.filter_min_pen', {
-                          defaultValue: 'Min penetration‌⁠‍',
+                          defaultValue: 'Min penetrationâ€Œâ â€',
                         })}
                       </span>
                       <input
@@ -2841,38 +2916,38 @@ export function ClashDetectionPage() {
                       </span>
                     </label>
 
-                    {/* Keyboard-navigation hint — subtle, non-blocking. */}
+                    {/* Keyboard-navigation hint â€” subtle, non-blocking. */}
                     <span
                       className="ml-auto hidden items-center gap-1.5 text-2xs text-content-tertiary sm:flex"
                       title={t('clash.kbd_hint_full', {
                         defaultValue:
-                          'Use ↑/↓ or J/K to move between clashes, Enter to open the selected clash in 3D.‌⁠‍',
+                          'Use â†‘/â†“ or J/K to move between clashes, Enter to open the selected clash in 3D.â€Œâ â€',
                       })}
                     >
                       <Keyboard className="h-3.5 w-3.5" />
                       <kbd className="rounded border border-border bg-surface-secondary px-1 font-mono">
-                        ↑↓
+                        â†‘â†“
                       </kbd>
                       <span>/</span>
                       <kbd className="rounded border border-border bg-surface-secondary px-1 font-mono">
                         J K
                       </kbd>
                       <span>
-                        {t('clash.kbd_move', { defaultValue: 'move‌⁠‍' })}
+                        {t('clash.kbd_move', { defaultValue: 'moveâ€Œâ â€' })}
                       </span>
                       <kbd className="rounded border border-border bg-surface-secondary px-1 font-mono">
-                        ↵
+                        â†µ
                       </kbd>
                       <span>
                         {t('clash.kbd_open3d', {
-                          defaultValue: '3D‌⁠‍',
+                          defaultValue: '3Dâ€Œâ â€',
                         })}
                       </span>
                     </span>
                   </div>
                   )}
 
-                  {/* Wave A2 — Faceted filter rail (advanced view). */}
+                  {/* Wave A2 â€” Faceted filter rail (advanced view). */}
                   {showFacets && (
                     <FacetRail
                       facets={facets}
@@ -2914,7 +2989,7 @@ export function ClashDetectionPage() {
                       )}
                       {fPair && (
                         <FilterChip
-                          label={fPair.replace('|', ' ↔ ')}
+                          label={fPair.replace('|', ' â†” ')}
                           onClear={() => setFPair('')}
                         />
                       )}
@@ -2938,7 +3013,7 @@ export function ClashDetectionPage() {
                       ))}
                       {fMinPen > 0 && (
                         <FilterChip
-                          label={`≥ ${fMinPen} mm`}
+                          label={`â‰¥ ${fMinPen} mm`}
                           onClear={() => setFMinPen(0)}
                         />
                       )}
@@ -2953,24 +3028,24 @@ export function ClashDetectionPage() {
                         className="ml-1 text-2xs font-medium text-oe-blue hover:underline"
                       >
                         {t('clash.clear_all', {
-                          defaultValue: 'Clear all‌⁠‍',
+                          defaultValue: 'Clear allâ€Œâ â€',
                         })}
                       </button>
                     </div>
                   )}
                 </div>
 
-                {/* Table — honest three-state handling so a failed fetch
+                {/* Table â€” honest three-state handling so a failed fetch
                     can NEVER read as "models are clean". Order matters:
-                    error → loading/rows-arriving → genuinely-zero →
-                    filtered-to-zero → table. */}
+                    error â†’ loading/rows-arriving â†’ genuinely-zero â†’
+                    filtered-to-zero â†’ table. */}
                 {resultsQ.isError ? (
                   <EmptyState
                     icon={
                       <AlertTriangle className="h-10 w-10 text-semantic-error" />
                     }
                     title={t('clash.results_error', {
-                      defaultValue: 'Failed to load clash results‌⁠‍',
+                      defaultValue: 'Failed to load clash resultsâ€Œâ â€',
                     })}
                     description={
                       (resultsQ.error instanceof Error
@@ -2978,7 +3053,7 @@ export function ClashDetectionPage() {
                         : '') ||
                       t('clash.results_error_desc', {
                         defaultValue:
-                          'The clash results could not be loaded. This does not mean the models are clean — please retry.‌⁠‍',
+                          'The clash results could not be loaded. This does not mean the models are clean â€” please retry.â€Œâ â€',
                       })
                     }
                     action={
@@ -2988,7 +3063,7 @@ export function ClashDetectionPage() {
                         loading={resultsQ.isFetching}
                         onClick={() => resultsQ.refetch()}
                       >
-                        {t('clash.retry', { defaultValue: 'Retry‌⁠‍' })}
+                        {t('clash.retry', { defaultValue: 'Retryâ€Œâ â€' })}
                       </Button>
                     }
                   />
@@ -2999,22 +3074,22 @@ export function ClashDetectionPage() {
                   <EmptyState
                     icon={<Radar className="h-10 w-10" />}
                     title={t('clash.no_clashes_title', {
-                      defaultValue: 'No clashes detected‌⁠‍',
+                      defaultValue: 'No clashes detectedâ€Œâ â€',
                     })}
                     description={t('clash.no_clashes', {
                       defaultValue:
-                        'No clashes — the models are clean.‌⁠‍',
+                        'No clashes â€” the models are clean.â€Œâ â€',
                     })}
                   />
                 ) : sorted.length === 0 ? (
                   <EmptyState
                     icon={<Radar className="h-10 w-10" />}
                     title={t('clash.no_match_title', {
-                      defaultValue: 'No clashes match the filters‌⁠‍',
+                      defaultValue: 'No clashes match the filtersâ€Œâ â€',
                     })}
                     description={t('clash.no_match_desc', {
                       defaultValue:
-                        'Try widening or clearing the active filters.‌⁠‍',
+                        'Try widening or clearing the active filters.â€Œâ â€',
                     })}
                     action={
                       hasActiveFilters ? (
@@ -3024,7 +3099,7 @@ export function ClashDetectionPage() {
                           onClick={clearAllFilters}
                         >
                           {t('clash.clear_all', {
-                            defaultValue: 'Clear all‌⁠‍',
+                            defaultValue: 'Clear allâ€Œâ â€',
                           })}
                         </Button>
                       ) : undefined
@@ -3042,7 +3117,7 @@ export function ClashDetectionPage() {
                         <span>
                           {t('clash.capped_notice', {
                             defaultValue:
-                              'Showing the first {{loaded}} of {{total}} clashes — refine the filters to narrow the review set.‌⁠‍',
+                              'Showing the first {{loaded}} of {{total}} clashes â€” refine the filters to narrow the review set.â€Œâ â€',
                             loaded: allResults.length,
                             total: loadedTotal,
                           })}
@@ -3057,7 +3132,7 @@ export function ClashDetectionPage() {
                             <input
                               type="checkbox"
                               aria-label={t('clash.select_all', {
-                                defaultValue: 'Select all on page‌⁠‍',
+                                defaultValue: 'Select all on pageâ€Œâ â€',
                               })}
                               checked={allPageSelected}
                               ref={(el) => {
@@ -3078,7 +3153,7 @@ export function ClashDetectionPage() {
                           />
                           <SortableTh
                             label={t('clash.col_a', {
-                              defaultValue: 'Element A‌⁠‍',
+                              defaultValue: 'Element Aâ€Œâ â€',
                             })}
                             k="a_name"
                             sortKey={sortKey}
@@ -3087,7 +3162,7 @@ export function ClashDetectionPage() {
                           />
                           <SortableTh
                             label={t('clash.col_b', {
-                              defaultValue: 'Element B‌⁠‍',
+                              defaultValue: 'Element Bâ€Œâ â€',
                             })}
                             k="b_name"
                             sortKey={sortKey}
@@ -3096,7 +3171,7 @@ export function ClashDetectionPage() {
                           />
                           <SortableTh
                             label={t('clash.col_type', {
-                              defaultValue: 'Type‌⁠‍',
+                              defaultValue: 'Typeâ€Œâ â€',
                             })}
                             k="clash_type"
                             sortKey={sortKey}
@@ -3105,7 +3180,7 @@ export function ClashDetectionPage() {
                           />
                           <SortableTh
                             label={t('clash.col_severity', {
-                              defaultValue: 'Severity‌⁠‍',
+                              defaultValue: 'Severityâ€Œâ â€',
                             })}
                             k="severity"
                             sortKey={sortKey}
@@ -3114,7 +3189,7 @@ export function ClashDetectionPage() {
                           />
                           <SortableTh
                             label={t('clash.col_penetration', {
-                              defaultValue: 'Penetration‌⁠‍',
+                              defaultValue: 'Penetrationâ€Œâ â€',
                             })}
                             k="penetration_m"
                             sortKey={sortKey}
@@ -3124,7 +3199,7 @@ export function ClashDetectionPage() {
                           />
                           <SortableTh
                             label={t('clash.col_distance', {
-                              defaultValue: 'Distance‌⁠‍',
+                              defaultValue: 'Distanceâ€Œâ â€',
                             })}
                             k="distance_m"
                             sortKey={sortKey}
@@ -3134,21 +3209,31 @@ export function ClashDetectionPage() {
                           />
                           <SortableTh
                             label={t('clash.col_status', {
-                              defaultValue: 'Status‌⁠‍',
+                              defaultValue: 'Statusâ€Œâ â€',
                             })}
                             k="status"
                             sortKey={sortKey}
                             sortDir={sortDir}
                             onSort={toggleSort}
                           />
+                          {/* Cost impact column â€” unique-to-AGPL-ERP move.
+                              Owned by the backend ``clash_cost_impact``
+                              module: surfaces the estimated rework cost
+                              per clash so a coordinator can prioritise
+                              by money, not just by geometry. */}
+                          <th className="px-3 py-2.5 text-right">
+                            {t('clash.col_cost_impact', {
+                              defaultValue: 'Cost impactâ€Œâ â€',
+                            })}
+                          </th>
                           <th className="px-3 py-2.5 text-right">
                             {t('clash.col_actions', {
-                              defaultValue: 'Actions‌⁠‍',
+                              defaultValue: 'Actionsâ€Œâ â€',
                             })}
                           </th>
                         </tr>
                       </thead>
-                      {/* Wave A2 — windowed body. Chunks of 50 mount via
+                      {/* Wave A2 â€” windowed body. Chunks of 50 mount via
                           IntersectionObserver so very large pages stay
                           interactive. */}
                       <ChunkedBody chunkSize={WINDOW_CHUNK} items={pageItems}>
@@ -3162,7 +3247,7 @@ export function ClashDetectionPage() {
                                 key={`g-${it.key}`}
                                 className="border-b border-border-light bg-surface-secondary/60"
                               >
-                                <td colSpan={10} className="px-3 py-1.5">
+                                <td colSpan={11} className="px-3 py-1.5">
                                   <button
                                     type="button"
                                     onClick={() => toggleGroup(it.key)}
@@ -3174,7 +3259,7 @@ export function ClashDetectionPage() {
                                       <ChevronLeft className="h-3.5 w-3.5 rotate-[-90deg] text-content-tertiary" />
                                     )}
                                     <span className="truncate">
-                                      {it.label || '—'}
+                                      {it.label || 'â€”'}
                                     </span>
                                     <span className="rounded-full bg-surface-primary px-1.5 text-[10px] font-medium text-content-secondary">
                                       {it.count}
@@ -3185,7 +3270,7 @@ export function ClashDetectionPage() {
                             );
                           }
                           if (it.kind === 'pair') {
-                            // Pair-cluster master — applies status changes
+                            // Pair-cluster master â€” applies status changes
                             // to every member (bulk mutate via statusMut).
                             const expanded = expandedPairs.has(it.key);
                             const head = it.head;
@@ -3194,7 +3279,7 @@ export function ClashDetectionPage() {
                                 key={`p-${it.key}`}
                                 className="border-b border-border-light bg-oe-blue/[0.04]"
                               >
-                                <td colSpan={10} className="px-3 py-2">
+                                <td colSpan={11} className="px-3 py-2">
                                   <div className="flex flex-wrap items-center gap-2">
                                     <button
                                       type="button"
@@ -3216,7 +3301,7 @@ export function ClashDetectionPage() {
                                     </button>
                                     <Badge variant="blue" size="sm">
                                       {t('clash.pair_count', {
-                                        defaultValue: '{{n}}× clashes‌⁠‍',
+                                        defaultValue: '{{n}}Ã— clashesâ€Œâ â€',
                                         n: it.members.length,
                                       })}
                                     </Badge>
@@ -3247,7 +3332,7 @@ export function ClashDetectionPage() {
                           }
                           const r = it.row;
                           const selected = selResults.has(r.id);
-                          // Index within the current page's data rows — for
+                          // Index within the current page's data rows â€” for
                           // the keyboard cursor highlight (header markers
                           // are excluded from `pageRows`).
                           const kbIndex = pageRows.indexOf(r);
@@ -3276,7 +3361,7 @@ export function ClashDetectionPage() {
                                 <input
                                   type="checkbox"
                                   aria-label={t('clash.select_row', {
-                                    defaultValue: 'Select clash‌⁠‍',
+                                    defaultValue: 'Select clashâ€Œâ â€',
                                   })}
                                   checked={selected}
                                   onChange={(e) =>
@@ -3339,10 +3424,10 @@ export function ClashDetectionPage() {
                                 >
                                   {r.clash_type === 'hard'
                                     ? t('clash.type_hard', {
-                                        defaultValue: 'Hard‌⁠‍',
+                                        defaultValue: 'Hardâ€Œâ â€',
                                       })
                                     : t('clash.type_clearance', {
-                                        defaultValue: 'Clearance‌⁠‍',
+                                        defaultValue: 'Clearanceâ€Œâ â€',
                                       })}
                                 </Badge>
                               </td>
@@ -3363,14 +3448,14 @@ export function ClashDetectionPage() {
                                         }
                                         title={t('clash.severity_suggested_hint', {
                                           defaultValue:
-                                            'Engine-suggested severity from geometry. Click to accept.‌⁠‍',
+                                            'Engine-suggested severity from geometry. Click to accept.â€Œâ â€',
                                         })}
                                         className="inline-flex items-center gap-0.5 rounded-full border border-dashed border-oe-blue/60 px-1.5 py-0.5 text-[10px] font-medium text-oe-blue hover:bg-oe-blue/10"
                                       >
                                         <Sparkles className="h-2.5 w-2.5" />
                                         {t('clash.severity_suggested', {
                                           defaultValue:
-                                            'Suggested: {{s}}‌⁠‍',
+                                            'Suggested: {{s}}â€Œâ â€',
                                           s: t(`clash.severity.${sug}`, {
                                             defaultValue: sug,
                                           }),
@@ -3383,12 +3468,12 @@ export function ClashDetectionPage() {
                               <td className="px-3 py-2 text-right tabular-nums text-content-secondary">
                                 {r.clash_type === 'hard'
                                   ? `${r.penetration_m.toFixed(3)} m`
-                                  : '—'}
+                                  : 'â€”'}
                               </td>
                               <td className="px-3 py-2 text-right tabular-nums text-content-secondary">
                                 {r.clash_type === 'clearance'
                                   ? `${r.distance_m.toFixed(3)} m`
-                                  : '—'}
+                                  : 'â€”'}
                               </td>
                               <td className="px-3 py-2">
                                 <StatusWorkflow
@@ -3401,7 +3486,7 @@ export function ClashDetectionPage() {
                                   }
                                   t={t}
                                 />
-                                {/* Coordination state at a glance —
+                                {/* Coordination state at a glance â€”
                                     assignee chip, comment count, due date
                                     (overdue = red). Click opens the detail
                                     panel for editing. */}
@@ -3413,7 +3498,7 @@ export function ClashDetectionPage() {
                                     onClick={() => setDetailId(r.id)}
                                     title={t('clash.open_detail', {
                                       defaultValue:
-                                        'Open clash details‌⁠‍',
+                                        'Open clash detailsâ€Œâ â€',
                                     })}
                                     className="mt-1 flex flex-wrap items-center gap-1"
                                   >
@@ -3447,23 +3532,27 @@ export function ClashDetectionPage() {
                                   </button>
                                 )}
                               </td>
+                              {/* Cost impact cell â€” fetches the per-clash
+                                  rework estimate from the
+                                  ``clash_cost_impact`` backend module. */}
+                              <ClashCostImpactColumn clashId={r.id} />
                               <td className="px-3 py-2">
                                 <div className="flex items-center justify-end gap-1.5">
                                   {r.bcf_topic_guid && (
                                     <Badge variant="blue" size="sm">
                                       {t('clash.bcf', {
-                                        defaultValue: 'BCF‌⁠‍',
+                                        defaultValue: 'BCFâ€Œâ â€',
                                       })}
                                     </Badge>
                                   )}
                                   <button
                                     aria-label={t('clash.open_detail', {
                                       defaultValue:
-                                        'Open clash details‌⁠‍',
+                                        'Open clash detailsâ€Œâ â€',
                                     })}
                                     title={t('clash.open_detail', {
                                       defaultValue:
-                                        'Open clash details‌⁠‍',
+                                        'Open clash detailsâ€Œâ â€',
                                     })}
                                     onClick={() => setDetailId(r.id)}
                                     className="rounded-md p-1 text-content-tertiary hover:bg-surface-tertiary hover:text-content-primary"
@@ -3473,11 +3562,11 @@ export function ClashDetectionPage() {
                                   <button
                                     aria-label={t('clash.export_row', {
                                       defaultValue:
-                                        'Export this clash to BCF‌⁠‍',
+                                        'Export this clash to BCFâ€Œâ â€',
                                     })}
                                     title={t('clash.export_row', {
                                       defaultValue:
-                                        'Export this clash to BCF‌⁠‍',
+                                        'Export this clash to BCFâ€Œâ â€',
                                     })}
                                     onClick={() =>
                                       exportMut.mutate([r.id])
@@ -3489,13 +3578,13 @@ export function ClashDetectionPage() {
                                   <Link
                                     to={bimLink(r)}
                                     title={t('clash.isolate_3d', {
-                                      defaultValue: 'Isolate in 3D‌⁠‍',
+                                      defaultValue: 'Isolate in 3Dâ€Œâ â€',
                                     })}
                                     className="inline-flex items-center gap-1 rounded-md bg-oe-blue/10 px-2 py-1 text-2xs font-medium text-oe-blue hover:bg-oe-blue/20"
                                   >
                                     <Box className="h-3.5 w-3.5" />
                                     {t('clash.isolate_3d_short', {
-                                      defaultValue: '3D‌⁠‍',
+                                      defaultValue: '3Dâ€Œâ â€',
                                     })}
                                   </Link>
                                 </div>
@@ -3509,7 +3598,7 @@ export function ClashDetectionPage() {
                   </div>
                 )}
 
-                {/* Wave A2 — Bulk-actions toolbar. Fans severity / status
+                {/* Wave A2 â€” Bulk-actions toolbar. Fans severity / status
                     / assignee mutations across the current selection.
                     Severity gated by a confirm in the caller (the most
                     disruptive of the three). */}
@@ -3524,7 +3613,7 @@ export function ClashDetectionPage() {
                     onSetSeverity={(sv) => {
                       const msg = t('clash.bulk_severity_confirm', {
                         defaultValue:
-                          'Set severity to "{{s}}" for {{n}} selected clash(es)?‌⁠‍',
+                          'Set severity to "{{s}}" for {{n}} selected clash(es)?â€Œâ â€',
                         s: sv,
                         n: selResults.size,
                       });
@@ -3559,7 +3648,7 @@ export function ClashDetectionPage() {
                       {selResults.size > 0 ? (
                         <span className="flex items-center gap-2">
                           {t('clash.n_selected', {
-                            defaultValue: '{{n}} selected‌⁠‍',
+                            defaultValue: '{{n}} selectedâ€Œâ â€',
                             n: selResults.size,
                           })}
                           <button
@@ -3567,14 +3656,14 @@ export function ClashDetectionPage() {
                             className="text-oe-blue hover:underline"
                           >
                             {t('clash.clear_selection', {
-                              defaultValue: 'Clear‌⁠‍',
+                              defaultValue: 'Clearâ€Œâ â€',
                             })}
                           </button>
                         </span>
                       ) : (
                         t('clash.page_range', {
                           defaultValue:
-                            '{{from}}–{{to}} of {{total}}‌⁠‍',
+                            '{{from}}â€“{{to}} of {{total}}â€Œâ â€',
                           from: safePage * PAGE_SIZE + 1,
                           to: Math.min(
                             (safePage + 1) * PAGE_SIZE,
@@ -3592,11 +3681,11 @@ export function ClashDetectionPage() {
                         icon={<ChevronLeft className="h-4 w-4" />}
                         onClick={() => setPage((p) => Math.max(0, p - 1))}
                       >
-                        {t('clash.prev', { defaultValue: 'Prev‌⁠‍' })}
+                        {t('clash.prev', { defaultValue: 'Prevâ€Œâ â€' })}
                       </Button>
                       <span className="tabular-nums text-content-secondary">
                         {t('clash.page_of', {
-                          defaultValue: 'Page {{p}} / {{n}}‌⁠‍',
+                          defaultValue: 'Page {{p}} / {{n}}â€Œâ â€',
                           p: safePage + 1,
                           n: pageCount,
                         })}
@@ -3613,7 +3702,7 @@ export function ClashDetectionPage() {
                           )
                         }
                       >
-                        {t('clash.next', { defaultValue: 'Next‌⁠‍' })}
+                        {t('clash.next', { defaultValue: 'Nextâ€Œâ â€' })}
                       </Button>
                     </div>
                   </div>
@@ -3624,7 +3713,7 @@ export function ClashDetectionPage() {
         </div>
       </div>
 
-      {/* ── Per-clash collaboration panel ───────────────────────────────
+      {/* â”€â”€ Per-clash collaboration panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             Right-hand slide-over: assignee, due date, comments thread.
             Keyboard-accessible (Esc to close, focusable controls). */}
       {detailRow && (
@@ -3654,7 +3743,7 @@ export function ClashDetectionPage() {
   );
 }
 
-/* ── Sub-components ───────────────────────────────────────────────────── */
+/* â”€â”€ Sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
 function Header() {
   const { t } = useTranslation();
@@ -3662,19 +3751,19 @@ function Header() {
     <div>
       <h1 className="flex items-center gap-2 text-2xl font-bold text-content-primary">
         <Radar className="h-6 w-6 text-oe-blue" />
-        {t('clash.title', { defaultValue: 'Clash Detection‌⁠‍' })}
+        {t('clash.title', { defaultValue: 'Clash Detectionâ€Œâ â€' })}
       </h1>
       <p className="mt-1 text-sm text-content-secondary">
         {t('clash.subtitle', {
           defaultValue:
-            'Geometric interference & clearance coordination across federated BIM models — with a clash matrix and BCF export.‌⁠‍',
+            'Geometric interference & clearance coordination across federated BIM models â€” with a clash matrix and BCF export.â€Œâ â€',
         })}
       </p>
 
-      {/* Beta · feedback-wanted banner. Clash Detection is a new module
+      {/* Beta Â· feedback-wanted banner. Clash Detection is a new module
           and still has rough edges (engine tuning, grouping facets,
           viewer edge cases). Sets the right expectation and gives a
-          1-click path to file an issue against the public repo —
+          1-click path to file an issue against the public repo â€”
           mirrors the /match-elements banner for consistency. */}
       <div className="mt-3 flex flex-wrap items-center gap-2.5 rounded-xl border border-amber-200/60 bg-gradient-to-r from-amber-50/80 via-white to-white px-3 py-2 shadow-sm dark:border-amber-800/40 dark:from-amber-950/20 dark:via-surface-primary dark:to-surface-primary">
         <span className="inline-flex shrink-0 items-center gap-1 rounded border border-amber-300/60 bg-amber-100/80 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-900 dark:border-amber-700/40 dark:bg-amber-900/40 dark:text-amber-100">
@@ -3684,7 +3773,7 @@ function Header() {
         <p className="min-w-0 flex-1 text-xs leading-snug text-content-secondary">
           {t('clash.beta_blurb', {
             defaultValue:
-              'Clash Detection is a new module and may still have inaccuracies. Found a bug or have an idea? Please file an issue — every report tightens the next release.',
+              'Clash Detection is a new module and may still have inaccuracies. Found a bug or have an idea? Please file an issue â€” every report tightens the next release.',
           })}
         </p>
         <a
@@ -3826,11 +3915,11 @@ function TableSkeleton() {
 
 /**
  * Three-step status workflow control (Wave A2). Replaces the per-row
- * ``<select>``: one chip per stage of the linear ``new → active →
+ * ``<select>``: one chip per stage of the linear ``new â†’ active â†’
  * reviewed`` path (the 95% case), an arrow that advances to the next
  * stage, and a small dropdown for the terminal states
  * (approved / resolved / ignored). One-click "advance" is disabled at
- * the end of the flow — the user picks a terminal state explicitly.
+ * the end of the flow â€” the user picks a terminal state explicitly.
  */
 function StatusWorkflow({
   status,
@@ -3878,11 +3967,11 @@ function StatusWorkflow({
         title={
           next
             ? t('clash.status_advance', {
-                defaultValue: 'Advance to {{s}}‌⁠‍',
+                defaultValue: 'Advance to {{s}}â€Œâ â€',
                 s: t(`clash.status.${next}`, { defaultValue: next }),
               })
             : t('clash.status_terminal', {
-                defaultValue: 'At terminal status — pick from menu‌⁠‍',
+                defaultValue: 'At terminal status â€” pick from menuâ€Œâ â€',
               })
         }
         className={clsx(
@@ -3904,13 +3993,13 @@ function StatusWorkflow({
           terminal ? 'text-content-primary' : 'text-content-tertiary',
         )}
         title={t('clash.status_terminal_picker', {
-          defaultValue: 'Pick a terminal status‌⁠‍',
+          defaultValue: 'Pick a terminal statusâ€Œâ â€',
         })}
       >
         <option value="">
           {terminal
             ? t(`clash.status.${status}`, { defaultValue: status })
-            : t('clash.status_more', { defaultValue: '…‌⁠‍' })}
+            : t('clash.status_more', { defaultValue: 'â€¦â€Œâ â€' })}
         </option>
         {STATUS_OPTIONS.filter(
           (s) => !STATUS_FLOW.includes(s) || (terminal && s !== status),
@@ -3926,7 +4015,7 @@ function StatusWorkflow({
 
 /**
  * Bulk-actions toolbar (Wave A2). Fans severity / status / assignee
- * mutations across the current selection. Pure controlled component —
+ * mutations across the current selection. Pure controlled component â€”
  * the parent gates severity behind a confirm before calling
  * ``onSetSeverity`` (the destructive change of the three).
  */
@@ -3952,13 +4041,13 @@ function BulkActionsBar({
     <div className="flex flex-wrap items-center gap-2 border-t border-oe-blue/30 bg-oe-blue/[0.05] p-3 text-xs">
       <span className="font-semibold text-oe-blue">
         {t('clash.bulk_selected', {
-          defaultValue: '{{n}} selected — apply to all:‌⁠‍',
+          defaultValue: '{{n}} selected â€” apply to all:â€Œâ â€',
           n: count,
         })}
       </span>
       <label className="flex items-center gap-1">
         <span className="text-content-tertiary">
-          {t('clash.bulk_severity', { defaultValue: 'Severity‌⁠‍' })}
+          {t('clash.bulk_severity', { defaultValue: 'Severityâ€Œâ â€' })}
         </span>
         <select
           disabled={busy}
@@ -3971,7 +4060,7 @@ function BulkActionsBar({
           className="h-7 rounded-md border border-border bg-surface-primary px-2 text-2xs"
         >
           <option value="">
-            {t('clash.bulk_pick', { defaultValue: 'Pick…‌⁠‍' })}
+            {t('clash.bulk_pick', { defaultValue: 'Pickâ€¦â€Œâ â€' })}
           </option>
           {SEVERITY_OPTIONS.map((s) => (
             <option key={s} value={s}>
@@ -3982,7 +4071,7 @@ function BulkActionsBar({
       </label>
       <label className="flex items-center gap-1">
         <span className="text-content-tertiary">
-          {t('clash.bulk_status', { defaultValue: 'Status‌⁠‍' })}
+          {t('clash.bulk_status', { defaultValue: 'Statusâ€Œâ â€' })}
         </span>
         <select
           disabled={busy}
@@ -3995,7 +4084,7 @@ function BulkActionsBar({
           className="h-7 rounded-md border border-border bg-surface-primary px-2 text-2xs"
         >
           <option value="">
-            {t('clash.bulk_pick', { defaultValue: 'Pick…‌⁠‍' })}
+            {t('clash.bulk_pick', { defaultValue: 'Pickâ€¦â€Œâ â€' })}
           </option>
           {STATUS_OPTIONS.map((s) => (
             <option key={s} value={s}>
@@ -4006,13 +4095,13 @@ function BulkActionsBar({
       </label>
       <label className="flex items-center gap-1">
         <span className="text-content-tertiary">
-          {t('clash.bulk_assignee', { defaultValue: 'Assignee‌⁠‍' })}
+          {t('clash.bulk_assignee', { defaultValue: 'Assigneeâ€Œâ â€' })}
         </span>
         <input
           value={assignee}
           onChange={(e) => setAssignee(e.target.value)}
           placeholder={t('clash.bulk_assignee_ph', {
-            defaultValue: 'name or e-mail‌⁠‍',
+            defaultValue: 'name or e-mailâ€Œâ â€',
           })}
           className="h-7 w-40 rounded-md border border-border bg-surface-primary px-2 text-2xs"
         />
@@ -4022,14 +4111,14 @@ function BulkActionsBar({
           disabled={busy}
           onClick={() => onSetAssignee(assignee)}
         >
-          {t('clash.bulk_assign_apply', { defaultValue: 'Apply‌⁠‍' })}
+          {t('clash.bulk_assign_apply', { defaultValue: 'Applyâ€Œâ â€' })}
         </Button>
       </label>
       <button
         onClick={onClear}
         className="ml-auto text-2xs font-medium text-content-tertiary hover:text-content-primary"
       >
-        {t('clash.clear_selection', { defaultValue: 'Clear‌⁠‍' })}
+        {t('clash.clear_selection', { defaultValue: 'Clearâ€Œâ â€' })}
       </button>
     </div>
   );
@@ -4085,7 +4174,7 @@ function FacetRail({
   return (
     <div className="mt-3 grid gap-3 rounded-lg border border-border-light bg-surface-elevated p-3 md:grid-cols-2 lg:grid-cols-3">
       <FacetGroup
-        title={t('clash.facet_status', { defaultValue: 'Status‌⁠‍' })}
+        title={t('clash.facet_status', { defaultValue: 'Statusâ€Œâ â€' })}
         rows={facets.status.map(([k, c]) => ({
           key: k,
           label: t(`clash.status.${k}`, { defaultValue: k }),
@@ -4095,7 +4184,7 @@ function FacetRail({
         }))}
       />
       <FacetGroup
-        title={t('clash.facet_severity', { defaultValue: 'Severity‌⁠‍' })}
+        title={t('clash.facet_severity', { defaultValue: 'Severityâ€Œâ â€' })}
         rows={facets.severity.map(([k, c]) => ({
           key: k,
           label: t(`clash.severity.${k}`, { defaultValue: k }),
@@ -4105,7 +4194,7 @@ function FacetRail({
         }))}
       />
       <FacetGroup
-        title={t('clash.facet_type', { defaultValue: 'Clash type‌⁠‍' })}
+        title={t('clash.facet_type', { defaultValue: 'Clash typeâ€Œâ â€' })}
         rows={facets.type.map(([k, c]) => ({
           key: k,
           label: t(`clash.type_${k}`, { defaultValue: k }),
@@ -4122,11 +4211,11 @@ function FacetRail({
       />
       <FacetGroup
         title={t('clash.facet_disc_pair', {
-          defaultValue: 'Discipline pair‌⁠‍',
+          defaultValue: 'Discipline pairâ€Œâ â€',
         })}
         rows={facets.disc.map(([k, c]) => ({
           key: k,
-          label: k.replace('|', ' ↔ '),
+          label: k.replace('|', ' â†” '),
           count: c,
           on: fDiscPair.has(k),
           onToggle: () => onToggleDiscPair(k),
@@ -4134,11 +4223,11 @@ function FacetRail({
       />
       <FacetGroup
         title={t('clash.facet_level_pair', {
-          defaultValue: 'Level pair‌⁠‍',
+          defaultValue: 'Level pairâ€Œâ â€',
         })}
         rows={facets.level.map(([k, c]) => ({
           key: k,
-          label: k.replace('|', ' ↔ '),
+          label: k.replace('|', ' â†” '),
           count: c,
           on: fLevelPair.has(k),
           onToggle: () => onToggleLevelPair(k),
@@ -4146,7 +4235,7 @@ function FacetRail({
       />
       <FacetGroup
         title={t('clash.facet_model_pair', {
-          defaultValue: 'Model pair‌⁠‍',
+          defaultValue: 'Model pairâ€Œâ â€',
         })}
         rows={facets.model.map(([k, c]) => ({
           key: k,
@@ -4161,7 +4250,7 @@ function FacetRail({
           onClick={onClear}
           className="text-2xs font-medium text-oe-blue hover:underline"
         >
-          {t('clash.clear_all', { defaultValue: 'Clear all‌⁠‍' })}
+          {t('clash.clear_all', { defaultValue: 'Clear allâ€Œâ â€' })}
         </button>
       </div>
     </div>
@@ -4201,7 +4290,7 @@ function FacetGroup({
             )}
           >
             <span className="min-w-0 flex-1 truncate" title={r.label}>
-              {r.label || '—'}
+              {r.label || 'â€”'}
             </span>
             <span
               className={clsx(
@@ -4290,11 +4379,11 @@ function ChunkRow({
         style={{ height: chunk.length * 36 }}
         aria-hidden
       >
-        <td colSpan={10} />
+        <td colSpan={11} />
       </tr>
     );
   }
-  // ``children`` can be a multi-row group (no Fragment wrapper) — fine
+  // ``children`` can be a multi-row group (no Fragment wrapper) â€” fine
   // because tbody accepts adjacent <tr> nodes natively.
   return <>{chunk.map((it) => renderItem(it))}</>;
 }
@@ -4302,7 +4391,7 @@ function ChunkRow({
 /**
  * One side (A or B) of a Navisworks-style selection-set clash.
  *
- * A "set" is the union of the ticked disciplines + element types — every
+ * A "set" is the union of the ticked disciplines + element types â€” every
  * chip widens it. Searchable, count-annotated, scroll-bounded so a model
  * with hundreds of distinct Revit types stays usable. Pure controlled
  * component: it owns no state beyond the local search box.
@@ -4327,8 +4416,8 @@ function SelectionSetPicker({
   const { t } = useTranslation();
   const [q, setQ] = useState('');
   // A set can carry chips from multiple grouping params (Navisworks-style
-  // union); the badge reflects every chip — built-in lists plus every
-  // `property:<key>` map — and the list shows the active one.
+  // union); the badge reflects every chip â€” built-in lists plus every
+  // `property:<key>` map â€” and the list shows the active one.
   const selectedCount =
     value.disciplines.length +
     value.element_types.length +
@@ -4390,7 +4479,7 @@ function SelectionSetPicker({
             onClick={() => onChange({ ...EMPTY_SET })}
             className="text-2xs text-content-tertiary hover:text-semantic-error"
           >
-            {t('common.clear', { defaultValue: 'Clear‌⁠‍' })}
+            {t('common.clear', { defaultValue: 'Clearâ€Œâ â€' })}
           </button>
         )}
       </div>
@@ -4401,7 +4490,7 @@ function SelectionSetPicker({
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder={t('clash.set_search', {
-            defaultValue: 'Search…‌⁠‍',
+            defaultValue: 'Searchâ€¦â€Œâ â€',
           })}
           className="w-full rounded-md border border-border bg-surface-primary py-1 pl-7 pr-2 text-2xs"
         />
@@ -4410,13 +4499,13 @@ function SelectionSetPicker({
       <div className="mt-1.5 max-h-44 space-y-2 overflow-y-auto pr-0.5">
         {loading && (
           <p className="px-1 py-2 text-2xs text-content-tertiary">
-            {t('common.loading', { defaultValue: 'Loading…‌⁠‍' })}
+            {t('common.loading', { defaultValue: 'Loadingâ€¦â€Œâ â€' })}
           </p>
         )}
         {!loading && groups.length === 0 && (
           <p className="px-1 py-2 text-2xs text-content-tertiary">
             {t('clash.set_empty', {
-              defaultValue: 'No elements — select a parsed model first.‌⁠‍',
+              defaultValue: 'No elements â€” select a parsed model first.â€Œâ â€',
             })}
           </p>
         )}
@@ -4475,7 +4564,7 @@ function SetRow({
   );
 }
 
-/** Status → badge variant for a CAD-BIM model card. */
+/** Status â†’ badge variant for a CAD-BIM model card. */
 function modelStatusVariant(
   status: string | null,
 ): 'success' | 'warning' | 'error' | 'neutral' {
@@ -4488,7 +4577,7 @@ function modelStatusVariant(
 }
 
 /**
- * Selectable CAD-BIM model cards — the project's model surface and the
+ * Selectable CAD-BIM model cards â€” the project's model surface and the
  * clash scope picker in one. Clicking a card toggles that model into the
  * clash set (`selModels`). Replaces the old project-description panel and
  * the collapsed "models in scope" disclosure. A model with no parsed
@@ -4523,12 +4612,12 @@ function ModelCardPicker({
         <h2 className="flex items-center gap-2 text-sm font-semibold text-content-primary">
           <Boxes className="h-4 w-4 text-oe-blue" />
           {t('clash.models_title', {
-            defaultValue: 'CAD-BIM models — pick what to coordinate‌⁠‍',
+            defaultValue: 'CAD-BIM models â€” pick what to coordinateâ€Œâ â€',
           })}
           {selectable.length > 0 && (
             <span className="rounded-full bg-surface-secondary px-1.5 text-2xs font-medium text-content-secondary">
               {t('clash.models_selected', {
-                defaultValue: '{{n}} of {{total}} selected‌⁠‍',
+                defaultValue: '{{n}} of {{total}} selectedâ€Œâ â€',
                 n: selected.length,
                 total: selectable.length,
               })}
@@ -4542,14 +4631,14 @@ function ModelCardPicker({
               onClick={onSelectAll}
               className="rounded-md px-2 py-1 text-2xs font-medium text-content-secondary hover:bg-surface-secondary"
             >
-              {t('clash.select_all', { defaultValue: 'Select all‌⁠‍' })}
+              {t('clash.select_all', { defaultValue: 'Select allâ€Œâ â€' })}
             </button>
             <button
               type="button"
               onClick={onClear}
               className="rounded-md px-2 py-1 text-2xs font-medium text-content-secondary hover:bg-surface-secondary"
             >
-              {t('common.clear', { defaultValue: 'Clear‌⁠‍' })}
+              {t('common.clear', { defaultValue: 'Clearâ€Œâ â€' })}
             </button>
           </div>
         )}
@@ -4571,11 +4660,11 @@ function ModelCardPicker({
           <EmptyState
             icon={<Upload className="h-9 w-9" />}
             title={t('clash.no_models', {
-              defaultValue: 'No parsed BIM models in this project.‌⁠‍',
+              defaultValue: 'No parsed BIM models in this project.â€Œâ â€',
             })}
             description={t('clash.no_models_desc', {
               defaultValue:
-                'Upload and parse a BIM model to run clash detection on it.‌⁠‍',
+                'Upload and parse a BIM model to run clash detection on it.â€Œâ â€',
             })}
             action={
               <Link to="/bim">
@@ -4585,7 +4674,7 @@ function ModelCardPicker({
                   icon={<Upload className="h-4 w-4" />}
                 >
                   {t('clash.upload_model', {
-                    defaultValue: 'Upload a BIM model‌⁠‍',
+                    defaultValue: 'Upload a BIM modelâ€Œâ â€',
                   })}
                 </Button>
               </Link>
@@ -4659,14 +4748,14 @@ function ModelCardPicker({
                     >
                       {m.status ??
                         t('clash.status_unknown', {
-                          defaultValue: 'unknown‌⁠‍',
+                          defaultValue: 'unknownâ€Œâ â€',
                         })}
                     </Badge>
                     <span className="inline-flex items-center gap-1 text-2xs text-content-tertiary">
                       <Layers className="h-3 w-3" />
                       {m.element_count.toLocaleString()}{' '}
                       {t('clash.ctx_elements', {
-                        defaultValue: 'elements‌⁠‍',
+                        defaultValue: 'elementsâ€Œâ â€',
                       })}
                     </span>
                   </div>
@@ -4683,7 +4772,7 @@ function ModelCardPicker({
 /**
  * Per-clash collaboration slide-over. A right-hand panel (not a modal) so
  * the reviewer keeps the results table visible while triaging. Holds the
- * assignee editor (free-text — no user-picker dependency), a native
+ * assignee editor (free-text â€” no user-picker dependency), a native
  * due-date input, a tabbed "Comments / Activity" pane and the watchers
  * chip. Keyboard-accessible: Esc closes, every control is natively
  * focusable, the backdrop is click-to-close.
@@ -4725,7 +4814,7 @@ function ClashDetailPanel({
   // unmatched ``@`` token used to filter the project-members list.
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
-  // Pre-existing GLB load state — mirrors the BOQ grid `glbOk` pattern:
+  // Pre-existing GLB load state â€” mirrors the BOQ grid `glbOk` pattern:
   // flips false on a load error so we swap the canvas for a hint.
   const [glbOk, setGlbOk] = useState(true);
   const draftRef = useRef<HTMLTextAreaElement | null>(null);
@@ -4758,7 +4847,7 @@ function ClashDetailPanel({
     return (m.full_name && m.full_name.trim()) || m.email || id;
   }
 
-  // Watch / unwatch — optimistic; the server returns the authoritative
+  // Watch / unwatch â€” optimistic; the server returns the authoritative
   // watcher list which the cache merge picks up on settle.
   const watchMut = useMutation({
     mutationFn: (watching: boolean) =>
@@ -4785,7 +4874,7 @@ function ClashDetailPanel({
       addToast({
         type: 'error',
         title: t('clash.watch_failed', {
-          defaultValue: 'Could not update watch state‌⁠‍',
+          defaultValue: 'Could not update watch stateâ€Œâ â€',
         }),
         message: e.message,
       }),
@@ -4809,7 +4898,7 @@ function ClashDetailPanel({
   const canPreview =
     !!previewModelId && previewElementIds.length > 0;
 
-  // A different clash may have a working model — reset the error flag so
+  // A different clash may have a working model â€” reset the error flag so
   // the preview retries when the panel is reused for another row.
   useEffect(() => {
     setGlbOk(true);
@@ -4848,14 +4937,14 @@ function ClashDetailPanel({
     }
   }
 
-  // Activity entries — reverse-chronological so the latest event is on
+  // Activity entries â€” reverse-chronological so the latest event is on
   // top. Mutates a copy (never the cached array). Falls back to an
   // empty list when the backend is older / never wrote one.
   const activity: ClashHistoryEntry[] = [...history].sort((a, b) =>
     b.ts.localeCompare(a.ts),
   );
 
-  // Mention-autocomplete candidates — case-insensitive substring match
+  // Mention-autocomplete candidates â€” case-insensitive substring match
   // against email + full_name, capped at the visual budget.
   const mentionCandidates = useMemo(() => {
     const q = mentionQuery.trim().toLowerCase();
@@ -4873,7 +4962,7 @@ function ClashDetailPanel({
   function handleDraftChange(value: string) {
     setDraft(value);
     // Track the unmatched ``@`` at-or-before the caret; if there is one
-    // (and no whitespace between it and the caret) → open the popover.
+    // (and no whitespace between it and the caret) â†’ open the popover.
     const ta = draftRef.current;
     const caret = ta ? ta.selectionStart ?? value.length : value.length;
     const before = value.slice(0, caret);
@@ -4926,12 +5015,12 @@ function ClashDetailPanel({
       role="dialog"
       aria-modal="true"
       aria-label={t('clash.detail_title', {
-        defaultValue: 'Clash details‌⁠‍',
+        defaultValue: 'Clash detailsâ€Œâ â€',
       })}
     >
       <button
         type="button"
-        aria-label={t('common.close', { defaultValue: 'Close‌⁠‍' })}
+        aria-label={t('common.close', { defaultValue: 'Closeâ€Œâ â€' })}
         onClick={onClose}
         className="absolute inset-0 bg-black/30 backdrop-blur-[1px]"
       />
@@ -4941,18 +5030,18 @@ function ClashDetailPanel({
             <h2 className="flex items-center gap-2 text-sm font-semibold text-content-primary">
               <MessageSquare className="h-4 w-4 text-oe-blue" />
               {t('clash.detail_title', {
-                defaultValue: 'Clash details‌⁠‍',
+                defaultValue: 'Clash detailsâ€Œâ â€',
               })}
             </h2>
             <p className="mt-1 truncate text-2xs text-content-tertiary">
               {(row.a_name || row.a_stable_id) +
-                ' ↔ ' +
+                ' â†” ' +
                 (row.b_name || row.b_stable_id)}
             </p>
           </div>
           <button
             type="button"
-            aria-label={t('common.close', { defaultValue: 'Close‌⁠‍' })}
+            aria-label={t('common.close', { defaultValue: 'Closeâ€Œâ â€' })}
             onClick={onClose}
             className="rounded-md p-1 text-content-tertiary hover:bg-surface-secondary hover:text-content-primary"
           >
@@ -4970,7 +5059,7 @@ function ClashDetailPanel({
             <h3 className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-content-secondary">
               <Box className="h-3.5 w-3.5" />
               {t('clash.quick_preview', {
-                defaultValue: 'Quick 3D preview‌⁠‍',
+                defaultValue: 'Quick 3D previewâ€Œâ â€',
               })}
             </h3>
             {canPreview && glbOk ? (
@@ -4988,7 +5077,7 @@ function ClashDetailPanel({
                 <p className="text-2xs text-content-tertiary">
                   {t('clash.preview_unavailable', {
                     defaultValue:
-                      'Preview unavailable — open the full viewer.‌⁠‍',
+                      'Preview unavailable â€” open the full viewer.â€Œâ â€',
                   })}
                 </p>
               </div>
@@ -5001,16 +5090,16 @@ function ClashDetailPanel({
               onClick={() => navigate(bimLink)}
             >
               {t('clash.open_full_viewer', {
-                defaultValue: 'Open in full 3D viewer‌⁠‍',
+                defaultValue: 'Open in full 3D viewerâ€Œâ â€',
               })}
             </Button>
           </div>
 
-          {/* Assignee — free text (no user-picker dependency). */}
+          {/* Assignee â€” free text (no user-picker dependency). */}
           <div>
             <label className="flex items-center gap-1.5 text-xs font-medium text-content-secondary">
               <User className="h-3.5 w-3.5" />
-              {t('clash.assignee', { defaultValue: 'Assignee‌⁠‍' })}
+              {t('clash.assignee', { defaultValue: 'Assigneeâ€Œâ â€' })}
             </label>
             <div className="mt-1 flex items-center gap-2">
               <input
@@ -5018,7 +5107,7 @@ function ClashDetailPanel({
                 value={assignee}
                 maxLength={255}
                 placeholder={t('clash.assignee_ph', {
-                  defaultValue: 'e.g. MEP coordinator‌⁠‍',
+                  defaultValue: 'e.g. MEP coordinatorâ€Œâ â€',
                 })}
                 onChange={(e) => setAssignee(e.target.value)}
                 className="h-8 min-w-0 flex-1 rounded-md border border-border bg-surface-primary px-2 text-sm"
@@ -5031,16 +5120,16 @@ function ClashDetailPanel({
                   onSaveAssignee(assignee.trim() || null)
                 }
               >
-                {t('common.save', { defaultValue: 'Save‌⁠‍' })}
+                {t('common.save', { defaultValue: 'Saveâ€Œâ â€' })}
               </Button>
             </div>
           </div>
 
-          {/* Due date — native date input. */}
+          {/* Due date â€” native date input. */}
           <div>
             <label className="flex items-center gap-1.5 text-xs font-medium text-content-secondary">
               <CalendarClock className="h-3.5 w-3.5" />
-              {t('clash.due_date', { defaultValue: 'Due date‌⁠‍' })}
+              {t('clash.due_date', { defaultValue: 'Due dateâ€Œâ â€' })}
             </label>
             <div className="mt-1 flex items-center gap-2">
               <input
@@ -5055,13 +5144,13 @@ function ClashDetailPanel({
                 disabled={saving || !dueDirty}
                 onClick={() => onSaveDueDate(due || null)}
               >
-                {t('common.save', { defaultValue: 'Save‌⁠‍' })}
+                {t('common.save', { defaultValue: 'Saveâ€Œâ â€' })}
               </Button>
             </div>
             {isOverdue(row.due_date) && (
               <p className="mt-1 text-2xs font-medium text-semantic-error">
                 {t('clash.overdue', {
-                  defaultValue: 'This clash is overdue.‌⁠‍',
+                  defaultValue: 'This clash is overdue.â€Œâ â€',
                 })}
               </p>
             )}
@@ -5069,12 +5158,12 @@ function ClashDetailPanel({
 
           {/* Watchers chip (Wave A3). Click toggles the caller's own
               subscription. ``getUserName`` falls back to the raw id
-              when the watcher isn't in the project members list — a
+              when the watcher isn't in the project members list â€” a
               graceful degradation for cross-team coordination. */}
           <div>
             <h3 className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-content-secondary">
               <Eye className="h-3.5 w-3.5" />
-              {t('clash.watchers', { defaultValue: 'Watchers‌⁠‍' })}
+              {t('clash.watchers', { defaultValue: 'Watchersâ€Œâ â€' })}
               <span className="rounded-full bg-surface-secondary px-1.5 text-[10px] font-medium text-content-tertiary">
                 {watchers.length}
               </span>
@@ -5092,7 +5181,7 @@ function ClashDetailPanel({
               {watchers.length === 0 && (
                 <span className="text-2xs text-content-tertiary">
                   {t('clash.no_watchers', {
-                    defaultValue: 'No watchers yet.‌⁠‍',
+                    defaultValue: 'No watchers yet.â€Œâ â€',
                   })}
                 </span>
               )}
@@ -5110,8 +5199,8 @@ function ClashDetailPanel({
                 onClick={() => watchMut.mutate(!isWatching)}
               >
                 {isWatching
-                  ? t('clash.unwatch', { defaultValue: 'Unwatch‌⁠‍' })
-                  : t('clash.watch', { defaultValue: 'Watch‌⁠‍' })}
+                  ? t('clash.unwatch', { defaultValue: 'Unwatchâ€Œâ â€' })
+                  : t('clash.watch', { defaultValue: 'Watchâ€Œâ â€' })}
               </Button>
             </div>
           </div>
@@ -5122,7 +5211,7 @@ function ClashDetailPanel({
             <div
               role="tablist"
               aria-label={t('clash.collaboration_tabs', {
-                defaultValue: 'Collaboration tabs‌⁠‍',
+                defaultValue: 'Collaboration tabsâ€Œâ â€',
               })}
               className="flex items-center gap-1 border-b border-border-light"
             >
@@ -5139,7 +5228,7 @@ function ClashDetailPanel({
                 )}
               >
                 <MessageSquare className="h-3.5 w-3.5" />
-                {t('clash.comments', { defaultValue: 'Comments‌⁠‍' })}
+                {t('clash.comments', { defaultValue: 'Commentsâ€Œâ â€' })}
                 <span className="rounded-full bg-surface-secondary px-1.5 text-[10px] font-medium text-content-tertiary">
                   {comments.length}
                 </span>
@@ -5157,7 +5246,7 @@ function ClashDetailPanel({
                 )}
               >
                 <History className="h-3.5 w-3.5" />
-                {t('clash.activity', { defaultValue: 'Activity‌⁠‍' })}
+                {t('clash.activity', { defaultValue: 'Activityâ€Œâ â€' })}
                 <span className="rounded-full bg-surface-secondary px-1.5 text-[10px] font-medium text-content-tertiary">
                   {activity.length}
                 </span>
@@ -5169,7 +5258,7 @@ function ClashDetailPanel({
                 {comments.length === 0 && (
                   <p className="text-2xs text-content-tertiary">
                     {t('clash.no_comments', {
-                      defaultValue: 'No comments yet.‌⁠‍',
+                      defaultValue: 'No comments yet.â€Œâ â€',
                     })}
                   </p>
                 )}
@@ -5213,7 +5302,7 @@ function ClashDetailPanel({
                 {activity.length === 0 && (
                   <p className="text-2xs text-content-tertiary">
                     {t('clash.no_activity', {
-                      defaultValue: 'No activity yet.‌⁠‍',
+                      defaultValue: 'No activity yet.â€Œâ â€',
                     })}
                   </p>
                 )}
@@ -5228,7 +5317,7 @@ function ClashDetailPanel({
                         <span className="font-medium text-content-secondary">
                           {getUserName(h.actor)}
                         </span>
-                        <span>·</span>
+                        <span>Â·</span>
                         <span className="tabular-nums">
                           {new Date(h.ts).toLocaleString()}
                         </span>
@@ -5238,7 +5327,7 @@ function ClashDetailPanel({
                         {h.before !== null && h.after !== null && (
                           <>
                             : <span className="line-through opacity-60">{h.before}</span>{' '}
-                            → <span>{h.after}</span>
+                            â†’ <span>{h.after}</span>
                           </>
                         )}
                         {h.before === null && h.after !== null && (
@@ -5263,7 +5352,7 @@ function ClashDetailPanel({
                     <Reply className="h-3 w-3" />
                     <span className="truncate">
                       {t('clash.replying_to', {
-                        defaultValue: 'Replying to {{author}}‌⁠‍',
+                        defaultValue: 'Replying to {{author}}â€Œâ â€',
                         author:
                           comments.find((c) => c.ts === replyTo)?.author ?? '',
                       })}
@@ -5273,7 +5362,7 @@ function ClashDetailPanel({
                       className="ml-auto rounded p-0.5 text-content-tertiary hover:bg-surface-primary"
                       onClick={() => setReplyTo(null)}
                       aria-label={t('clash.cancel_reply', {
-                        defaultValue: 'Cancel reply‌⁠‍',
+                        defaultValue: 'Cancel replyâ€Œâ â€',
                       })}
                     >
                       <X className="h-3 w-3" />
@@ -5286,7 +5375,7 @@ function ClashDetailPanel({
                   rows={3}
                   maxLength={4000}
                   placeholder={t('clash.comment_ph_mention', {
-                    defaultValue: 'Add a coordination note… (@ to mention)‌⁠‍',
+                    defaultValue: 'Add a coordination noteâ€¦ (@ to mention)â€Œâ â€',
                   })}
                   onChange={(e) => handleDraftChange(e.target.value)}
                   onKeyDown={(e) => {
@@ -5334,9 +5423,9 @@ function ClashDetailPanel({
                     onClick={submitDraft}
                   >
                     {replyTo
-                      ? t('clash.reply', { defaultValue: 'Reply‌⁠‍' })
+                      ? t('clash.reply', { defaultValue: 'Replyâ€Œâ â€' })
                       : t('clash.add_comment', {
-                          defaultValue: 'Add comment‌⁠‍',
+                          defaultValue: 'Add commentâ€Œâ â€',
                         })}
                   </Button>
                 </div>
@@ -5352,7 +5441,7 @@ function ClashDetailPanel({
           >
             <Box className="h-4 w-4" />
             {t('clash.isolate_3d', {
-              defaultValue: 'Isolate in 3D‌⁠‍',
+              defaultValue: 'Isolate in 3Dâ€Œâ â€',
             })}
           </Link>
         </div>
@@ -5445,7 +5534,7 @@ function ClashCommentBubble({
           className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-content-tertiary hover:bg-surface-primary hover:text-content-secondary"
         >
           <Reply className="h-3 w-3" />
-          {t('clash.reply', { defaultValue: 'Reply‌⁠‍' })}
+          {t('clash.reply', { defaultValue: 'Replyâ€Œâ â€' })}
         </button>
       </div>
     </div>
@@ -5505,7 +5594,7 @@ function CompareBucket({
   );
 }
 
-/** Run-to-run comparison view — New / Resolved / Persistent buckets with
+/** Run-to-run comparison view â€” New / Resolved / Persistent buckets with
  *  colour-coded counts. New is emphasised (needs attention), Resolved is
  *  muted green, Persistent neutral. Compared clashes still open in 3D when
  *  the result is still in the loaded set. Stays inside the page. */
@@ -5535,7 +5624,7 @@ function CompareSection({
     return (
       <div className="flex items-center gap-2 border-b border-border-light/60 px-3 py-1.5 text-xs last:border-b-0">
         <span className="min-w-0 flex-1 truncate text-content-primary">
-          {s.a_name} ↔ {s.b_name}
+          {s.a_name} â†” {s.b_name}
         </span>
         <SeverityBadge severity={s.severity} t={t} />
         <span className="shrink-0 text-2xs text-content-tertiary">
@@ -5545,12 +5634,12 @@ function CompareSection({
           <Link
             to={bimLink(full)}
             title={t('clash.isolate_3d', {
-              defaultValue: 'Isolate in 3D‌⁠‍',
+              defaultValue: 'Isolate in 3Dâ€Œâ â€',
             })}
             className="inline-flex shrink-0 items-center gap-1 rounded-md bg-oe-blue/10 px-1.5 py-0.5 text-2xs font-medium text-oe-blue hover:bg-oe-blue/20"
           >
             <Box className="h-3 w-3" />
-            {t('clash.isolate_3d_short', { defaultValue: '3D‌⁠‍' })}
+            {t('clash.isolate_3d_short', { defaultValue: '3Dâ€Œâ â€' })}
           </Link>
         )}
       </div>
@@ -5563,12 +5652,12 @@ function CompareSection({
         <h2 className="flex items-center gap-2 text-sm font-semibold text-content-primary">
           <GitCompareArrows className="h-4 w-4 text-oe-blue" />
           {t('clash.compare_title', {
-            defaultValue: 'Run-to-run comparison‌⁠‍',
+            defaultValue: 'Run-to-run comparisonâ€Œâ â€',
           })}
         </h2>
         <button
           type="button"
-          aria-label={t('common.close', { defaultValue: 'Close‌⁠‍' })}
+          aria-label={t('common.close', { defaultValue: 'Closeâ€Œâ â€' })}
           onClick={onClose}
           className="rounded-md p-1 text-content-tertiary hover:bg-surface-secondary hover:text-content-primary"
         >
@@ -5598,7 +5687,7 @@ function CompareSection({
                 {data.stats.new}
               </div>
               <div className="text-2xs font-medium text-semantic-error">
-                {t('clash.cmp_new', { defaultValue: 'New‌⁠‍' })}
+                {t('clash.cmp_new', { defaultValue: 'Newâ€Œâ â€' })}
               </div>
             </div>
             <div className="rounded-lg bg-semantic-success-bg p-2 text-center">
@@ -5607,7 +5696,7 @@ function CompareSection({
               </div>
               <div className="text-2xs font-medium text-semantic-success">
                 {t('clash.cmp_resolved', {
-                  defaultValue: 'Resolved‌⁠‍',
+                  defaultValue: 'Resolvedâ€Œâ â€',
                 })}
               </div>
             </div>
@@ -5617,7 +5706,7 @@ function CompareSection({
               </div>
               <div className="text-2xs font-medium text-content-secondary">
                 {t('clash.cmp_persistent', {
-                  defaultValue: 'Persistent‌⁠‍',
+                  defaultValue: 'Persistentâ€Œâ â€',
                 })}
               </div>
             </div>
@@ -5625,7 +5714,7 @@ function CompareSection({
           <p className="mt-2 text-2xs text-content-tertiary">
             {t('clash.cmp_totals', {
               defaultValue:
-                'Base run: {{b}} clashes · this run: {{c}} clashes‌⁠‍',
+                'Base run: {{b}} clashes Â· this run: {{c}} clashesâ€Œâ â€',
               b: data.stats.base_total,
               c: data.stats.current_total,
             })}
@@ -5636,7 +5725,7 @@ function CompareSection({
               bucketKey="new"
               tone="new"
               title={t('clash.cmp_new_title', {
-                defaultValue: 'New clashes — need attention‌⁠‍',
+                defaultValue: 'New clashes â€” need attentionâ€Œâ â€',
               })}
               count={data.new.length}
               collapsed={collapsed.has('new')}
@@ -5651,7 +5740,7 @@ function CompareSection({
               bucketKey="resolved"
               tone="resolved"
               title={t('clash.cmp_resolved_title', {
-                defaultValue: 'Resolved since the base run‌⁠‍',
+                defaultValue: 'Resolved since the base runâ€Œâ â€',
               })}
               count={data.resolved.length}
               collapsed={
@@ -5669,7 +5758,7 @@ function CompareSection({
               bucketKey="persistent"
               tone="persistent"
               title={t('clash.cmp_persistent_title', {
-                defaultValue: 'Still present in both runs‌⁠‍',
+                defaultValue: 'Still present in both runsâ€Œâ â€',
               })}
               count={data.persistent.length}
               collapsed={!collapsed.has('persistent:open')}

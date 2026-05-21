@@ -286,6 +286,11 @@ const BIDashboardsPage = lazy(() =>
 const FederationsPage = lazy(() =>
   import('@/features/bim/FederationsPage').then((m) => ({ default: m.FederationsPage }))
 );
+const CoordinationHubPage = lazy(() =>
+  import('@/features/coordination/CoordinationHubPage').then((m) => ({
+    default: m.CoordinationHubPage,
+  }))
+);
 const CPMView = lazy(() =>
   import('@/features/schedule/CPMView').then((m) => ({ default: m.CPMView }))
 );
@@ -538,6 +543,7 @@ export default function App() {
             "quantity-rules" segment isn't swallowed as a UUID model id. */}
         <Route path="/bim/quantity-rules" element={<Navigate to="/bim/rules" replace />} />
         <Route path="/clash" element={<P title="Clash Detection"><ClashDetectionPage /></P>} />
+        <Route path="/coordination" element={<P title="Model Coordination"><CoordinationHubPage /></P>} />
         <Route path="/assets" element={<P title="Asset Register"><AssetsPage /></P>} />
         <Route path="/bim/:modelId" element={<P title="BIM Viewer"><BIMPage /></P>} />
         <Route path="/projects/:projectId/bim" element={<P title="BIM Viewer"><BIMPage /></P>} />

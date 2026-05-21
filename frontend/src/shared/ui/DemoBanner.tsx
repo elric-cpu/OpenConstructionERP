@@ -112,8 +112,15 @@ export function DemoBanner() {
                 <strong className="text-content-primary">
                   OpenConstructionERP
                 </strong>
-                . It runs on a single small VPS and is shared with everyone in
-                the world who clicks the demo link, so:
+                . It runs on a{' '}
+                <strong className="text-content-primary">
+                  small 2&nbsp;GB&nbsp;RAM VPS
+                </strong>{' '}
+                shared with every visitor on the internet — it is meant for a{' '}
+                <strong className="text-content-primary">
+                  quick surface walkthrough
+                </strong>{' '}
+                of the product, nothing more. Specifically:
               </p>
               <ul className="space-y-2 pl-1">
                 <li className="flex gap-2.5">
@@ -129,11 +136,13 @@ export function DemoBanner() {
                   <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-amber-500 mt-1.5" />
                   <span>
                     <strong className="text-content-primary">
-                      Not every module is stable here.
+                      Expect a surface-level look only.
                     </strong>{' '}
                     Heavy features (CAD/BIM conversion, AI inference, vector
-                    search) are tuned for local installs and may be slow or
-                    rate-limited on the demo.
+                    search) need real RAM and are tuned for local installs —
+                    on the 2&nbsp;GB demo box they may be slow, rate-limited,
+                    or simply unavailable. For benchmarks or full workflows,
+                    install locally.
                   </span>
                 </li>
                 <li className="flex gap-2.5">

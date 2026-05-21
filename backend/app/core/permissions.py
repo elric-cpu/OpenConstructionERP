@@ -164,9 +164,100 @@ class PermissionRegistry:
         self._permissions.clear()
         self._module_permissions.clear()
 
+    # ── Edit operations (used by the admin permissions matrix UI) ─────────
+
+    def has(self, permission: str) -> bool:
+        """True iff the permission key exists in the registry."""
+        return permission in self._permissions
+
+    def get_min_role(self, permission: str) -> Role | None:
+        """Return the minimum role required for ``permission`` or ``None``."""
+        return self._permissions.get(permission)
+
+    def set_min_role(self, permission: str, min_role: Role) -> Role:
+        """Update the minimum role for an existing permission.
+
+        Returns the previous ``min_role`` so callers can audit the delta.
+        Raises ``KeyError`` if the permission is not registered — we never
+        silently create permissions through the admin UI.
+        """
+        previous = self._permissions.get(permission)
+        if previous is None:
+            raise KeyError(permission)
+        self._permissions[permission] = min_role
+        logger.info(
+            "Permission min_role updated: %s %s → %s",
+            permission, previous.value, min_role.value,
+        )
+        return previous
+
+    def snapshot(self) -> dict[str, Role]:
+        """Return a copy of the current permission → min_role map.
+
+        Used by the admin UI to diff against a preset / baseline without
+        mutating the live registry.
+        """
+        return dict(self._permissions)
+
 
 # Global singleton
 permission_registry = PermissionRegistry()
+
+
+# ── Role presets for the admin UI ─────────────────────────────────────────
+#
+# A preset answers "what should role X be able to do by default?" without
+# resetting every permission row by hand. Applied by walking every
+# registered permission and computing the implied min_role from a rule.
+#
+# Each preset is a callable (permission_key) -> Role:
+#
+#   • viewer-default   — viewer can read, everything else stays Editor+.
+#   • editor-default   — editor can read/create/update, manager+ for
+#                        delete / destructive actions, admin for "system."
+#   • manager-default  — manager can do almost anything; admin still owns
+#                        system-level toggles.
+#
+# Presets are intentionally derived from the permission key shape rather
+# than from a hard-coded list — this keeps them working even as new
+# modules register new permissions.
+
+
+def _viewer_default(key: str) -> Role:
+    # Everything readable to viewers, structural changes manager+, system
+    # toggles admin-only.
+    if key.startswith("system.") or key.endswith(".delete"):
+        return Role.ADMIN if key.startswith("system.") else Role.MANAGER
+    if any(key.endswith(s) for s in (".read", ".list", ".view", ".export")):
+        return Role.VIEWER
+    return Role.EDITOR
+
+
+def _editor_default(key: str) -> Role:
+    if key.startswith("system."):
+        return Role.ADMIN
+    if key.endswith(".delete") or key.endswith(".approve") or key.endswith(".reject"):
+        return Role.MANAGER
+    if any(key.endswith(s) for s in (".read", ".list", ".view", ".export")):
+        return Role.VIEWER
+    return Role.EDITOR
+
+
+def _manager_default(key: str) -> Role:
+    if key.startswith("system."):
+        return Role.ADMIN
+    if any(key.endswith(s) for s in (".read", ".list", ".view", ".export")):
+        return Role.VIEWER
+    if any(key.endswith(s) for s in (".create", ".update", ".import")):
+        return Role.EDITOR
+    return Role.MANAGER
+
+
+PRESETS: dict[str, "callable"] = {
+    "viewer-default": _viewer_default,
+    "editor-default": _editor_default,
+    "manager-default": _manager_default,
+}
 
 
 def register_core_permissions() -> None:

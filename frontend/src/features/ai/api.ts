@@ -169,8 +169,21 @@ export const aiApi = {
   testConnection: (provider: AIProvider) =>
     apiPost<AITestResult, { provider: AIProvider }>('/v1/ai/settings/test/', { provider }),
 
-  quickEstimate: (data: QuickEstimateRequest) =>
-    apiPost<EstimateJobResponse, QuickEstimateRequest>('/v1/ai/quick-estimate/', data),
+  /**
+   * Generate a BOQ estimate from a text description.
+   *
+   * Accepts an optional `signal` so callers can wire a Cancel button via
+   * `AbortController` — aborting rejects the promise with a DOMException
+   * whose `name === 'AbortError'`. The hook layer (useQuickEstimateHistory)
+   * uses that signal to distinguish user-cancelled runs (status: 'cancelled')
+   * from real failures (status: 'error').
+   */
+  quickEstimate: (data: QuickEstimateRequest, opts?: { signal?: AbortSignal }) =>
+    apiPost<EstimateJobResponse, QuickEstimateRequest>(
+      '/v1/ai/quick-estimate/',
+      data,
+      opts?.signal ? { signal: opts.signal } : undefined,
+    ),
 
   /** Upload a photo and get an AI estimate via Vision model. */
   photoEstimate: async (params: {
@@ -178,6 +191,7 @@ export const aiApi = {
     location?: string;
     currency?: string;
     standard?: string;
+    signal?: AbortSignal;
   }): Promise<EstimateJobResponse> => {
     const form = new FormData();
     form.append('file', params.file);
@@ -189,6 +203,7 @@ export const aiApi = {
       method: 'POST',
       headers: { ...getAuthHeaders(), Accept: 'application/json' },
       body: form,
+      signal: params.signal,
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({ detail: res.statusText }));
@@ -203,6 +218,7 @@ export const aiApi = {
     location?: string;
     currency?: string;
     standard?: string;
+    signal?: AbortSignal;
   }): Promise<EstimateJobResponse> => {
     const form = new FormData();
     form.append('file', params.file);
@@ -214,6 +230,7 @@ export const aiApi = {
       method: 'POST',
       headers: { ...getAuthHeaders(), Accept: 'application/json' },
       body: form,
+      signal: params.signal,
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({ detail: res.statusText }));

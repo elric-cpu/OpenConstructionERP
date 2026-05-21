@@ -22,7 +22,7 @@
  *   DELETE /federations/{id}/models/{model_id}    — remove member
  */
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -39,6 +39,9 @@ import {
   WideModalSection,
   WideModalField,
 } from '@/shared/ui';
+
+import { FederationTypeTree } from './FederationTypeTree';
+import { FederatedViewer, type FederatedViewerHandle } from './FederatedViewer';
 
 /* ── Types ─────────────────────────────────────────────────────────── */
 
@@ -329,6 +332,25 @@ function FederationDetailDrawer({
     useState<FederationDiscipline>('arch');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Slice 3: which sub-tab is visible inside the drawer. The "3D" tab
+  // mounts the FederatedViewer; the type tree's onSelectClass callback
+  // auto-switches to it so users see isolation take effect.
+  const [activeTab, setActiveTab] = useState<'members' | 'types' | '3d'>(
+    'members',
+  );
+  const viewerRef = useRef<FederatedViewerHandle | null>(null);
+  const handleSelectClass = useCallback(
+    (ifcClass: string /* , _modelIds: string[] */) => {
+      setActiveTab('3d');
+      // useImperativeHandle is set up on FederatedViewer; ref may be null
+      // until the canvas mounts after the tab switch (effect runs on the
+      // next tick). Defer the isolation push so the scene is alive.
+      queueMicrotask(() => {
+        viewerRef.current?.isolateClass(ifcClass);
+      });
+    },
+    [],
+  );
 
   const memberModelIds = useMemo(
     () => new Set((data?.members ?? []).map((m) => m.bim_model_id)),
@@ -451,114 +473,174 @@ function FederationDetailDrawer({
               </div>
             </div>
 
-            <h3 className="mb-2 text-sm font-semibold text-slate-700">
-              {t('bim.federation.members')}
-            </h3>
-            {data.members.length === 0 ? (
-              <p className="mb-4 text-sm text-slate-500">
-                {t('bim.federation.no_members')}
-              </p>
-            ) : (
-              <ul className="mb-4 divide-y divide-slate-100 rounded border border-slate-200">
-                {data.members.map((m) => (
-                  <li
-                    key={m.id}
-                    className="flex items-center justify-between gap-3 px-3 py-2"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span
-                        className="inline-block h-4 w-4 rounded"
-                        style={{
-                          backgroundColor:
-                            m.color_hint ||
-                            DISCIPLINE_PALETTE[
-                              m.discipline as FederationDiscipline
-                            ] ||
-                            '#94a3b8',
-                        }}
-                        aria-hidden
-                      />
-                      <Badge>{t(`bim.federation.disc_${m.discipline}`, {
-                        defaultValue: m.discipline,
-                      })}</Badge>
-                      <span className="text-sm text-slate-700">
-                        {m.bim_model_id.slice(0, 8)}
-                      </span>
-                      <span className="text-xs text-slate-400">
-                        z={m.z_order}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleVisible(m)}
-                        className="text-xs text-slate-500 hover:text-slate-700"
-                      >
-                        {m.visible
-                          ? t('bim.federation.visible')
-                          : t('bim.federation.hidden')}
-                      </button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleRemove(m.bim_model_id)}
-                        disabled={busy}
-                      >
-                        {t('bim.federation.remove')}
-                      </Button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            <h3 className="mb-2 text-sm font-semibold text-slate-700">
-              {t('bim.federation.add_member')}
-            </h3>
-            <div className="flex flex-wrap items-end gap-2">
-              <label className="flex flex-col text-xs text-slate-500">
-                {t('bim.federation.bim_model')}
-                <select
-                  value={addingModelId}
-                  onChange={(e) => setAddingModelId(e.target.value)}
-                  className="mt-1 rounded border border-slate-300 px-2 py-1 text-sm"
-                >
-                  <option value="">
-                    {t('bim.federation.select_model')}
-                  </option>
-                  {availableModels.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex flex-col text-xs text-slate-500">
-                {t('bim.federation.field_discipline')}
-                <select
-                  value={addingDiscipline}
-                  onChange={(e) =>
-                    setAddingDiscipline(e.target.value as FederationDiscipline)
+            {/* Slice 3: 3-tab layout — Members / Element types / 3D. The
+                3D tab mounts the FederatedViewer; selecting a class from
+                the type tree auto-switches to it and isolates that class
+                in the viewer via the imperative ref handle. */}
+            <div
+              role="tablist"
+              aria-label={t('bim.federation.tabs_label', {
+                defaultValue: 'Federation views',
+              })}
+              className="mb-3 flex items-center gap-1 border-b border-slate-200"
+            >
+              {(
+                [
+                  ['members', t('bim.federation.tab_members', { defaultValue: 'Members' })],
+                  ['types', t('bim.federation.tab_types', { defaultValue: 'Element types' })],
+                  ['3d', t('bim.federation.tab_3d', { defaultValue: '3D' })],
+                ] as Array<[typeof activeTab, string]>
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === key}
+                  data-testid={`federation-tab-${key}`}
+                  onClick={() => setActiveTab(key)}
+                  className={
+                    'px-3 py-1.5 -mb-px border-b-2 text-sm font-medium transition-colors ' +
+                    (activeTab === key
+                      ? 'border-oe-blue text-oe-blue'
+                      : 'border-transparent text-slate-500 hover:text-slate-700')
                   }
-                  className="mt-1 rounded border border-slate-300 px-2 py-1 text-sm"
                 >
-                  {DISCIPLINE_ORDER.map((d) => (
-                    <option key={d} value={d}>
-                      {t(`bim.federation.disc_${d}`, { defaultValue: d })}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <Button
-                onClick={handleAdd}
-                disabled={busy || !addingModelId}
-                size="sm"
-              >
-                {t('bim.federation.add')}
-              </Button>
+                  {label}
+                </button>
+              ))}
             </div>
-            {error ? (
-              <p className="mt-2 text-sm text-red-600">{error}</p>
+
+            {activeTab === 'members' ? (
+              <div data-testid="federation-tab-panel-members" role="tabpanel">
+                <h3 className="mb-2 text-sm font-semibold text-slate-700">
+                  {t('bim.federation.members')}
+                </h3>
+                {data.members.length === 0 ? (
+                  <p className="mb-4 text-sm text-slate-500">
+                    {t('bim.federation.no_members')}
+                  </p>
+                ) : (
+                  <ul className="mb-4 divide-y divide-slate-100 rounded border border-slate-200">
+                    {data.members.map((m) => (
+                      <li
+                        key={m.id}
+                        className="flex items-center justify-between gap-3 px-3 py-2"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span
+                            className="inline-block h-4 w-4 rounded"
+                            style={{
+                              backgroundColor:
+                                m.color_hint ||
+                                DISCIPLINE_PALETTE[
+                                  m.discipline as FederationDiscipline
+                                ] ||
+                                '#94a3b8',
+                            }}
+                            aria-hidden
+                          />
+                          <Badge>{t(`bim.federation.disc_${m.discipline}`, {
+                            defaultValue: m.discipline,
+                          })}</Badge>
+                          <span className="text-sm text-slate-700">
+                            {m.bim_model_id.slice(0, 8)}
+                          </span>
+                          <span className="text-xs text-slate-400">
+                            z={m.z_order}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleVisible(m)}
+                            className="text-xs text-slate-500 hover:text-slate-700"
+                          >
+                            {m.visible
+                              ? t('bim.federation.visible')
+                              : t('bim.federation.hidden')}
+                          </button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRemove(m.bim_model_id)}
+                            disabled={busy}
+                          >
+                            {t('bim.federation.remove')}
+                          </Button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                <h3 className="mb-2 text-sm font-semibold text-slate-700">
+                  {t('bim.federation.add_member')}
+                </h3>
+                <div className="flex flex-wrap items-end gap-2">
+                  <label className="flex flex-col text-xs text-slate-500">
+                    {t('bim.federation.bim_model')}
+                    <select
+                      value={addingModelId}
+                      onChange={(e) => setAddingModelId(e.target.value)}
+                      className="mt-1 rounded border border-slate-300 px-2 py-1 text-sm"
+                    >
+                      <option value="">
+                        {t('bim.federation.select_model')}
+                      </option>
+                      {availableModels.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col text-xs text-slate-500">
+                    {t('bim.federation.field_discipline')}
+                    <select
+                      value={addingDiscipline}
+                      onChange={(e) =>
+                        setAddingDiscipline(e.target.value as FederationDiscipline)
+                      }
+                      className="mt-1 rounded border border-slate-300 px-2 py-1 text-sm"
+                    >
+                      {DISCIPLINE_ORDER.map((d) => (
+                        <option key={d} value={d}>
+                          {t(`bim.federation.disc_${d}`, { defaultValue: d })}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <Button
+                    onClick={handleAdd}
+                    disabled={busy || !addingModelId}
+                    size="sm"
+                  >
+                    {t('bim.federation.add')}
+                  </Button>
+                </div>
+                {error ? (
+                  <p className="mt-2 text-sm text-red-600">{error}</p>
+                ) : null}
+              </div>
+            ) : null}
+
+            {activeTab === 'types' ? (
+              <div data-testid="federation-tab-panel-types" role="tabpanel">
+                {/* Slice 2: federation-flat (NOT per-model) element-type
+                    tree. Mirrors BIMcollab Zoom — IfcClass is the primary
+                    axis so cross-model selections ("color all
+                    IfcDuctSegment red") are a single click. */}
+                <FederationTypeTree
+                  federationId={data.id}
+                  onSelectClass={handleSelectClass}
+                />
+              </div>
+            ) : null}
+
+            {activeTab === '3d' ? (
+              <div data-testid="federation-tab-panel-3d" role="tabpanel">
+                <FederatedViewer ref={viewerRef} federationId={data.id} />
+              </div>
             ) : null}
           </>
         ) : null}
@@ -581,11 +663,14 @@ export function FederationsPage() {
     queryFn: fetchProjects,
   });
 
-  // Auto-pick first project once the list loads.
-  const firstProject = projects && projects.length > 0 ? projects[0] : undefined;
-  if (firstProject && !projectId) {
-    setProjectId(firstProject.id);
-  }
+  // Auto-pick the first project once the list loads. Runs in an effect so
+  // we never call setState during render (React 18 strict mode logs a
+  // warning that previously blanked the page in dev).
+  useEffect(() => {
+    if (!projectId && Array.isArray(projects) && projects.length > 0) {
+      setProjectId(projects[0]!.id);
+    }
+  }, [projects, projectId]);
 
   const { data: federations, isLoading, refetch } = useQuery({
     queryKey: ['bim-federations', projectId],
@@ -615,25 +700,31 @@ export function FederationsPage() {
   );
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="border-b border-slate-200 bg-white px-6 py-4">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">
+    <div className="w-full animate-fade-in">
+      <header className="mb-4 rounded-xl border border-border-light bg-surface-primary px-5 py-4">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold text-content-primary">
               {t('bim.federation.page_title')}
             </h1>
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-content-tertiary">
               {t('bim.federation.page_subtitle')}
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-slate-500">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 text-xs font-medium text-content-tertiary">
               {t('bim.federation.project')}
               <select
                 value={projectId}
                 onChange={(e) => setProjectId(e.target.value)}
-                className="ml-2 rounded border border-slate-300 px-2 py-1 text-sm"
+                disabled={!projects || projects.length === 0}
+                className="rounded-md border border-border-light bg-surface-primary px-2.5 py-1.5 text-sm text-content-primary focus:outline-none focus:ring-2 focus:ring-oe-blue/40"
               >
+                {(projects ?? []).length === 0 && (
+                  <option value="">
+                    {t('bim.no_project', { defaultValue: 'No project selected' })}
+                  </option>
+                )}
                 {(projects ?? []).map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
@@ -651,14 +742,16 @@ export function FederationsPage() {
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto px-6 py-4">
+      <section className="min-h-[60vh]">
         {!projectId ? (
           <EmptyState
             title={t('bim.no_project')}
             description={t('bim.no_project_desc')}
           />
         ) : isLoading ? (
-          <p className="text-sm text-slate-500">{t('bim.federation.loading')}</p>
+          <p className="px-2 py-6 text-sm text-content-tertiary">
+            {t('bim.federation.loading')}
+          </p>
         ) : !federations || federations.total === 0 ? (
           <EmptyState
             title={t('bim.federation.empty_title')}
@@ -667,7 +760,7 @@ export function FederationsPage() {
         ) : (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {federations.items.map((f) => (
-              <Card key={f.id} className="cursor-pointer hover:shadow-md">
+              <Card key={f.id} className="hover:shadow-md transition-shadow">
                 <CardHeader
                   title={f.name}
                   subtitle={
@@ -682,7 +775,7 @@ export function FederationsPage() {
                         defaultValue: `${f.member_count} models`,
                       })}
                     </Badge>
-                    <span className="text-xs text-slate-400">
+                    <span className="text-xs text-content-quaternary">
                       {f.shared_units}
                     </span>
                   </div>
@@ -707,7 +800,7 @@ export function FederationsPage() {
             ))}
           </div>
         )}
-      </main>
+      </section>
 
       <NewFederationModal
         open={createOpen}

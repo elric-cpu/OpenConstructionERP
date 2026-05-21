@@ -14,8 +14,9 @@ Endpoints:
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
+from pydantic import BaseModel, Field
 
 from app.dependencies import (
     CurrentUserId,
@@ -212,7 +213,10 @@ async def delete_set(
 # ── Download template ──────────────────────────────────────────────────────
 
 
-@router.get("/template/")
+@router.get(
+    "/template/",
+    dependencies=[Depends(RequirePermission("bim_requirements.read"))],
+)
 async def download_template(
     user_id: CurrentUserId = None,  # type: ignore[assignment]
 ) -> Response:
@@ -312,3 +316,141 @@ async def validate_against_model(
     await verify_project_access(req_set.project_id, str(user_id), session)
     report = await service.validate_against_model(set_id, model_id)
     return RequirementValidationResponse(**report)
+
+
+# ── Rules-as-Code (YAML) ──────────────────────────────────────────────────
+#
+# These two endpoints back the *rules-as-YAML* feature. The intent is that
+# rule packs live as plain YAML files in a Git repo — diffable, reviewable,
+# and free of any proprietary editor. ``preview-yaml`` parses + dry-runs
+# without persisting anything; ``install-from-yaml`` commits the pack to a
+# project's requirement set so the existing /validate endpoint can use it.
+
+
+class _PreviewYamlRequest(BaseModel):
+    """Body for ``POST /preview-yaml``."""
+
+    yaml_text: str = Field(..., min_length=1, max_length=1_000_000)
+    model_id: uuid.UUID | None = None
+
+
+class _InstallYamlRequest(BaseModel):
+    """Body for ``POST /install-from-yaml``."""
+
+    yaml_text: str = Field(..., min_length=1, max_length=1_000_000)
+    project_id: uuid.UUID
+
+
+@router.post(
+    "/preview-yaml/",
+    dependencies=[Depends(RequirePermission("bim_requirements.read"))],
+)
+async def preview_yaml(
+    body: _PreviewYamlRequest,
+    user_id: CurrentUserId,
+    session: SessionDep,
+) -> dict:
+    """Parse YAML rule-pack text and (optionally) dry-run against a BIM model.
+
+    Persists *nothing*. Returns the parsed pack as JSON plus, when
+    ``model_id`` is given, a pack-level execution summary so the author
+    can see how their YAML would behave before committing.
+
+    The dry-run reads BIM elements from the existing ``bim_hub`` model
+    store, so the caller must have project access to that model when one
+    is supplied.
+    """
+    from app.modules.bim_requirements.rule_runtime import evaluate_rule_pack
+    from app.modules.bim_requirements.yaml_loader import (
+        RulePackParseError,
+        load_rule_pack,
+    )
+
+    try:
+        pack = load_rule_pack("<preview>", text=body.yaml_text)
+    except RulePackParseError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    response: dict = {"pack": pack.model_dump()}
+
+    if body.model_id is not None:
+        from app.modules.bim_hub.models import BIMModel
+        from app.modules.bim_hub.repository import BIMElementRepository
+
+        model = await session.get(BIMModel, body.model_id)
+        if model is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="BIM model not found",
+            )
+        await verify_project_access(model.project_id, str(user_id), session)
+
+        elem_repo = BIMElementRepository(session)
+        elements, _total = await elem_repo.list_for_model(
+            body.model_id, offset=0, limit=50_000
+        )
+        # Convert ORM rows to plain dicts the runtime can consume.
+        plain: list[dict] = [
+            {
+                "id": str(getattr(e, "id", "")),
+                "ifc_class": getattr(e, "element_type", None),
+                "classification": getattr(e, "classification", None) or {},
+                "properties": getattr(e, "properties", None) or {},
+                "quantities": getattr(e, "quantities", None) or {},
+            }
+            for e in elements
+        ]
+        pack_result = evaluate_rule_pack(pack, plain)
+        response["dry_run"] = {
+            "pack_id": pack_result.pack_id,
+            "total_elements": pack_result.total_elements,
+            "passed": pack_result.passed,
+            "failed": pack_result.failed,
+            "not_applicable": pack_result.not_applicable,
+            "results": [
+                {
+                    "rule_id": r.rule_id,
+                    "element_id": r.element_id,
+                    "passed": r.passed,
+                    "message": r.message,
+                    "evidence": r.evidence,
+                }
+                for r in pack_result.results
+            ],
+        }
+
+    return response
+
+
+@router.post(
+    "/install-from-yaml/",
+    status_code=201,
+    dependencies=[Depends(RequirePermission("bim_requirements.create"))],
+)
+async def install_from_yaml(
+    body: _InstallYamlRequest,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: BIMRequirementService = Depends(_get_service),
+) -> dict:
+    """Persist a YAML rule pack as a project-scoped BIM requirement set.
+
+    The pack is parsed exactly as in ``preview-yaml`` and then projected
+    onto the existing 5-column ``BIMRequirement`` storage. The full source
+    rule is preserved on each row so the YAML round-trips losslessly.
+    """
+    await verify_project_access(body.project_id, str(user_id), session)
+    req_set, created = await service.install_rules_from_yaml(
+        project_id=body.project_id,
+        yaml_text=body.yaml_text,
+        user_id=user_id or "",
+    )
+    return {
+        "requirement_set_id": str(req_set.id),
+        "pack_id": req_set.metadata_.get("pack_id"),
+        "rules_installed": len(created),
+        "rule_ids": [r.id for r in created],
+    }

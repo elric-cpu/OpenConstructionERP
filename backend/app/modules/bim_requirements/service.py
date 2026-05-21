@@ -544,3 +544,139 @@ class BIMRequirementService:
 
         # Unknown constraint type — pass if value exists
         return actual is not None
+
+    # ── Rules-as-Code (YAML) install ──────────────────────────────────────
+    #
+    # The YAML pack carries a richer schema than the 5-column universal
+    # ``BIMRequirement`` row (severity, rationale, selector predicates,
+    # assertion predicates, failure_message). We persist each rule as one
+    # row, mapping the rule's *primary* assertion to the row's
+    # ``property_name`` + ``constraint_def`` and stashing the full
+    # source YAML rule in ``context`` so the runtime can rehydrate it
+    # losslessly. Pack-level metadata (id, version, applies_to) goes
+    # onto the ``BIMRequirementSet.metadata_`` JSON blob.
+
+    async def install_rules_from_yaml(
+        self,
+        *,
+        project_id: uuid.UUID,
+        yaml_text: str,
+        user_id: str = "",
+    ) -> tuple[BIMRequirementSet, list[BIMRequirement]]:
+        """Parse a YAML rule pack and persist it as a project-scoped set.
+
+        Args:
+            project_id: Owner project for the new requirement set.
+            yaml_text: Raw YAML source — typically pasted into the
+                ``/install-from-yaml`` endpoint body.
+            user_id: Importing user (for audit).
+
+        Returns:
+            Tuple of (created ``BIMRequirementSet``, list of created
+            ``BIMRequirement`` rows).
+
+        Raises:
+            HTTPException 422: on any parse/validation failure. The
+                detail string is the verbatim error from the YAML loader
+                so the operator can see file/line context.
+        """
+        from app.modules.bim_requirements.yaml_loader import (
+            PropertyAssertion,
+            RulePackParseError,
+            SetVsSetAssertion,
+            load_rule_pack,
+        )
+
+        try:
+            pack = load_rule_pack(f"<inline:{project_id}>", text=yaml_text)
+        except RulePackParseError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
+
+        req_set = BIMRequirementSet(
+            project_id=project_id,
+            name=pack.pack.name,
+            description=pack.pack.description or f"YAML rule pack {pack.pack.id}",
+            source_format="YAML",
+            source_filename=f"{pack.pack.id}.yaml",
+            created_by=user_id,
+            metadata_={
+                "pack_id": pack.pack.id,
+                "pack_version": pack.pack.version,
+                "schema_version": pack.schema_version,
+                "applies_to": pack.pack.applies_to.model_dump(),
+                "source": pack.pack.source,
+            },
+        )
+        self.session.add(req_set)
+        await self.session.flush()
+
+        created: list[BIMRequirement] = []
+        for rule in pack.rules:
+            # Project the rich YAML rule onto the 5-column row. The full
+            # rule is preserved in ``context['yaml_rule']`` so runtime can
+            # round-trip it through :func:`rule_runtime.evaluate_rule`.
+            if isinstance(rule.assertion, PropertyAssertion):
+                primary = rule.assertion.property
+                property_name = primary.key
+                constraint_def = {
+                    "type": "yaml_predicate",
+                    "op": primary.op,
+                    "value": primary.value,
+                    "unit": primary.unit,
+                }
+            elif isinstance(rule.assertion, SetVsSetAssertion):
+                primary = rule.assertion.set_vs_set.property
+                property_name = primary.key
+                constraint_def = {
+                    "type": "yaml_set_vs_set",
+                    "op": primary.op,
+                    "value": primary.value,
+                    "unit": primary.unit,
+                    "metric": rule.assertion.set_vs_set.metric,
+                }
+            else:  # pragma: no cover — schema-validated
+                continue
+
+            element_filter: dict[str, object] = {}
+            if rule.selector.ifc_class is not None:
+                element_filter["ifc_class"] = rule.selector.ifc_class
+            if rule.selector.classification:
+                element_filter["classification"] = dict(rule.selector.classification)
+            if rule.selector.properties:
+                element_filter["properties"] = [
+                    p.model_dump(exclude_none=True) for p in rule.selector.properties
+                ]
+
+            db_req = BIMRequirement(
+                requirement_set_id=req_set.id,
+                element_filter=element_filter,
+                property_group=None,
+                property_name=property_name,
+                constraint_def=constraint_def,
+                context={
+                    "rule_id": rule.id,
+                    "severity": rule.severity,
+                    "rationale": rule.rationale,
+                    "failure_message": rule.failure_message,
+                    "yaml_rule": rule.model_dump(),
+                },
+                source_format="YAML",
+                source_ref=f"{pack.pack.id}#{rule.id}",
+                is_active=True,
+            )
+            self.session.add(db_req)
+            created.append(db_req)
+
+        await self.session.flush()
+
+        logger.info(
+            "Installed YAML rule pack '%s' (v%s) — %d rules — into set %s",
+            pack.pack.id,
+            pack.pack.version,
+            len(created),
+            req_set.id,
+        )
+        return req_set, created

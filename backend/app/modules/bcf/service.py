@@ -603,3 +603,227 @@ class BCFService:
         if not raw.startswith(b"\x89PNG\r\n\x1a\n"):
             raise BCFServiceError("snapshot_png_b64 is not a PNG image")
         return raw
+
+
+# ── BCF 3.0 clash export service (v41 — file-based, no REST yet) ──────────
+
+
+class BCFExportFeatureUnavailable(Exception):
+    """Raised when the clash module's storage table isn't migrated yet.
+
+    Mirrors the platform's pattern of degrading gracefully when a sibling
+    module's alembic migration hasn't landed — the router maps this to a
+    structured 503 rather than letting it bubble as a generic 500.
+    """
+
+
+class BCFExportService:
+    """‌⁠‍Builds a BCF 3.0 ``.bcfzip`` from clash data.
+
+    Decoupled from :class:`BCFService` (the BCF-Topic CRUD service) so
+    the clash export can run without touching the BCF persistence
+    tables — it reads from clash and writes to a zip stream.
+
+    The service is intentionally defensive about the clash module's
+    schema: if the v41 migration that adds ``ClashIssue`` hasn't run
+    yet, :meth:`export_clashes_to_bcf` raises
+    :class:`BCFExportFeatureUnavailable` instead of crashing.
+    """
+
+    # Map our internal clash workflow states → BCF TopicStatus enum.
+    _STATUS_MAP: dict[str, str] = {
+        "new": "Open",
+        "active": "Open",
+        "persisted": "Open",
+        "reviewed": "Open",
+        "in_progress": "In Progress",
+        "approved": "Closed",
+        "resolved": "Closed",
+        "ignored": "Closed",
+        "archived": "Closed",
+        "closed": "Closed",
+    }
+
+    # Map internal severity → BCF Priority enum.
+    _PRIORITY_MAP: dict[str, str] = {
+        "critical": "Critical",
+        "high": "Major",
+        "medium": "Normal",
+        "low": "Minor",
+    }
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def export_clashes_to_bcf(
+        self,
+        project_id: uuid.UUID,
+        filter_dict: dict | None = None,
+        *,
+        author: str = "OpenConstructionERP",
+        project_name: str | None = None,
+    ) -> bytes:
+        """Export clashes for ``project_id`` as a BCF 3.0 ``.bcfzip``.
+
+        Args:
+            project_id: project to export from.
+            filter_dict: optional clash filter — keys are ``status`` (one
+                of ``new|persisted|resolved|ignored|archived`` or the
+                special ``"open"`` which expands to the unresolved set)
+                and ``severity`` (one of the engine's four levels).
+            author: the BCF ``CreationAuthor`` for synthesised topics.
+            project_name: optional ``Project Name`` in ``project.bcfp``.
+                Defaults to the project's stringified id.
+
+        Returns:
+            The raw ``.bcfzip`` bytes (BCF 3.0).
+
+        Raises:
+            BCFExportFeatureUnavailable: clash table missing (pre-v41).
+        """
+        # Defer the clash import so the BCF module loads cleanly even if
+        # the clash module is missing or its migration hasn't run.
+        try:
+            from app.modules.clash.models import ClashResult, ClashRun
+        except Exception as exc:  # noqa: BLE001 — module-level missing/broken
+            raise BCFExportFeatureUnavailable(
+                "Clash module not available — BCF clash export requires "
+                "the v41 clash schema migration."
+            ) from exc
+
+        # Probe table existence so we degrade cleanly on a partial DB.
+        try:
+
+            rows = await self._load_clash_rows(
+                project_id, filter_dict or {}, ClashRun, ClashResult
+            )
+        except Exception as exc:  # noqa: BLE001 — table missing / probe failure
+            # OperationalError 'no such table' is the common case.
+            msg = str(exc).lower()
+            if "no such table" in msg or "does not exist" in msg:
+                raise BCFExportFeatureUnavailable(
+                    "Clash storage table missing — BCF clash export "
+                    "requires the v41 migration."
+                ) from exc
+            raise
+
+        from app.modules.bcf.writer import (
+            BCFWriter,
+            synthesize_viewpoint_from_centroid,
+        )
+
+        writer = BCFWriter().set_project(
+            str(project_id), project_name or str(project_id)
+        )
+
+        for r in rows:
+            topic = self._clash_to_topic(r, author=author)
+            # Synthesise a viewpoint from the centroid if we have one.
+            cx = float(getattr(r, "cx", 0.0) or 0.0)
+            cy = float(getattr(r, "cy", 0.0) or 0.0)
+            cz = float(getattr(r, "cz", 0.0) or 0.0)
+            if (cx, cy, cz) != (0.0, 0.0, 0.0):
+                topic.viewpoints.append(
+                    synthesize_viewpoint_from_centroid((cx, cy, cz))
+                )
+            writer.add_topic(topic)
+
+        return writer.build_bytes()
+
+    # ── helpers ─────────────────────────────────────────────────────
+
+    async def _load_clash_rows(
+        self,
+        project_id: uuid.UUID,
+        filter_dict: dict,
+        ClashRun,  # noqa: N803 — runtime-imported ORM class
+        ClashResult,  # noqa: N803
+    ) -> list:
+        """Return the filtered :class:`ClashResult` rows for ``project_id``."""
+        from sqlalchemy import select
+
+        status_filter = (filter_dict or {}).get("status")
+        severity_filter = (filter_dict or {}).get("severity")
+
+        q = (
+            select(ClashResult)
+            .join(ClashRun, ClashResult.run_id == ClashRun.id)
+            .where(ClashRun.project_id == project_id)
+        )
+        if status_filter == "open":
+            q = q.where(
+                ClashResult.status.in_(["new", "active", "persisted", "reviewed"])
+            )
+        elif status_filter:
+            q = q.where(ClashResult.status == status_filter)
+        if severity_filter:
+            q = q.where(ClashResult.severity == severity_filter)
+        q = q.order_by(ClashResult.signature, ClashResult.created_at)
+        result = await self.session.execute(q)
+        return list(result.scalars().all())
+
+    def _clash_to_topic(self, r, *, author: str):
+        """Map one :class:`ClashResult` row to a :class:`BCFTopic`."""
+        from datetime import UTC, datetime
+
+        from app.modules.bcf.writer import BCFTopic
+
+        signature = getattr(r, "signature", "") or ""
+        topic_guid = signature if signature else str(uuid.uuid4())
+
+        status_raw = (getattr(r, "status", "new") or "new").lower()
+        topic_status = self._STATUS_MAP.get(status_raw, "Open")
+
+        severity_raw = (getattr(r, "severity", "medium") or "medium").lower()
+        priority = self._PRIORITY_MAP.get(severity_raw, "Normal")
+
+        a_name = getattr(r, "a_name", "") or "Element A"
+        b_name = getattr(r, "b_name", "") or "Element B"
+        clash_type = getattr(r, "clash_type", "hard")
+        short_desc = f"{a_name} × {b_name} ({clash_type})"
+        server_id = str(getattr(r, "id", "")) or None
+        title = f"{server_id}: {short_desc}" if server_id else short_desc
+        # markup.xsd caps a few of these; we clip defensively at 500 chars.
+        title = title[:500]
+
+        description_parts = [
+            f"Discipline A: {getattr(r, 'a_discipline', '') or 'Unassigned'}",
+            f"Discipline B: {getattr(r, 'b_discipline', '') or 'Unassigned'}",
+            f"Clash type: {clash_type}",
+            f"Penetration (m): {float(getattr(r, 'penetration_m', 0.0) or 0.0):.4f}",
+            f"Distance (m): {float(getattr(r, 'distance_m', 0.0) or 0.0):.4f}",
+            f"Signature: {signature}",
+        ]
+        description = "\n".join(description_parts)
+
+        creation_date = getattr(r, "created_at", None) or datetime.now(UTC)
+        modified_date = getattr(r, "updated_at", None)
+
+        assigned_to = getattr(r, "assigned_to", None) or None
+        due_date_raw = getattr(r, "due_date", None)
+        due_date = None
+        if isinstance(due_date_raw, str) and due_date_raw:
+            try:
+                due_date = datetime.fromisoformat(due_date_raw)
+            except ValueError:
+                due_date = None
+        elif isinstance(due_date_raw, datetime):
+            due_date = due_date_raw
+
+        topic = BCFTopic(
+            guid=topic_guid,
+            topic_type="Clash",
+            topic_status=topic_status,
+            title=title,
+            creation_date=creation_date,
+            creation_author=author,
+            modified_date=modified_date,
+            modified_author=author if modified_date else None,
+            server_assigned_id=server_id,
+            priority=priority,
+            description=description,
+            assigned_to=assigned_to,
+            due_date=due_date,
+            labels=[clash_type, severity_raw],
+        )
+        return topic

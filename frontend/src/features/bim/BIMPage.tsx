@@ -80,6 +80,8 @@ import LinkActivityToBIMModal from './LinkActivityToBIMModal';
 import LinkRequirementToBIMModal from './LinkRequirementToBIMModal';
 import type { BIMGroupFilterCriteria } from './api';
 import { Filter, Search } from 'lucide-react';
+import { SmartViewsPanel } from '@/features/smart_views/SmartViewsPanel';
+import { useSmartViewState } from '@/features/smart_views/useSmartViewState';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useToastStore } from '@/stores/useToastStore';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -1557,6 +1559,24 @@ export function BIMPage() {
   const projectId = urlProjectId || contextProjectId || projectsList[0]?.id || '';
   const { confirm, ...confirmProps } = useConfirm();
 
+  // Decode the JWT ``sub`` claim so the Smart Views panel can scope its
+  // "My views" tab. Mirrors the helper used in
+  // ``features/meetings/AttendanceSection.tsx``.
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const currentUserId = useMemo(() => {
+    if (!accessToken) return null;
+    try {
+      const parts = accessToken.split('.');
+      if (parts.length !== 3) return null;
+      const payload = parts[1]!.replace(/-/g, '+').replace(/_/g, '/');
+      const padded = payload + '='.repeat((4 - (payload.length % 4)) % 4);
+      const json = JSON.parse(atob(padded)) as { sub?: string };
+      return typeof json.sub === 'string' ? json.sub : null;
+    } catch {
+      return null;
+    }
+  }, [accessToken]);
+
   // BUG-AUTO-PROJECT-SELECT — when /bim is opened cold (no URL project,
   // no project in the global ProjectContextStore) we silently fall back
   // to ``projectsList[0]`` for the models query.  That works for the
@@ -1659,6 +1679,10 @@ export function BIMPage() {
     string,
     DiffChangeType
   > | null>(null);
+  /** Smart Views side-panel state. Driven by the toolbar button — the
+   *  evaluator result itself lives in `useSmartViewState`. */
+  const [smartViewsPanelOpen, setSmartViewsPanelOpen] = useState(false);
+  const smartViewEvalStates = useSmartViewState((s) => s.lastEvalResult?.states ?? null);
   /** Elements queued for linking via the AddToBOQ modal. Single element
    *  when the user clicks an element; multiple elements when "quick
    *  takeoff" on a filtered category. */
@@ -2766,6 +2790,22 @@ export function BIMPage() {
                 {t('bim.diff_button', { defaultValue: 'Compare' })}
               </button>
 
+              <button
+                onClick={() => setSmartViewsPanelOpen((o) => !o)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-colors border ${
+                  smartViewsPanelOpen
+                    ? 'bg-oe-blue/10 text-oe-blue border-oe-blue/30'
+                    : 'text-content-secondary bg-surface-secondary border-border-light hover:bg-surface-tertiary'
+                }`}
+                title={t('smartViews.title', { defaultValue: 'Smart Views' })}
+                aria-label={t('smartViews.title', { defaultValue: 'Smart Views' })}
+                aria-pressed={smartViewsPanelOpen}
+                data-testid="bim-smart-views-toggle"
+              >
+                <Sparkles size={13} />
+                {t('smartViews.title', { defaultValue: 'Smart Views' })}
+              </button>
+
               {/* Color-by selector — three families:
                   · Field-based (Storey / Type) use the hash-to-hue palette
                   · Compliance-based (Validation / BOQ / Documents) use a
@@ -3167,6 +3207,7 @@ export function BIMPage() {
             onSmartFilter={handleSmartFilter}
             leftPanelOpen={filterPanelOpen && elements.length > 0}
             diffChangeByStableId={diffChangeByStableId}
+            smartViewEvalResult={smartViewEvalStates}
             className="h-full"
           />
 
@@ -3262,6 +3303,22 @@ export function BIMPage() {
                   setIsolatedIds(null);
                 }
               }}
+            />
+          </div>
+        )}
+
+        {/* Smart Views — rule-based, model-survivable views. Docked on
+            the left next to the diff panel (lower z-index so the diff
+            panel sits in front when both are open). Always available as
+            long as a model is loaded; the panel itself handles the no-
+            project case for the "Project views" tab. */}
+        {activeModelId && smartViewsPanelOpen && currentUserId && (
+          <div className="absolute top-0 start-0 h-full z-[24] w-[360px] bg-surface-primary border-e border-border-light flex flex-col">
+            <SmartViewsPanel
+              modelId={activeModelId}
+              projectId={projectId || null}
+              userId={currentUserId}
+              onClose={() => setSmartViewsPanelOpen(false)}
             />
           </div>
         )}

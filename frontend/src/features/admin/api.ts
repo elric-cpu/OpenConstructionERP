@@ -11,7 +11,7 @@
  * without a frontend redeploy.
  */
 
-import { apiGet } from '@/shared/lib/api';
+import { apiGet, apiPatch, apiPost } from '@/shared/lib/api';
 
 /** Single audit-log entry as returned by the backend. */
 export interface AuditEntry {
@@ -179,11 +179,57 @@ export interface PermissionsMatrix {
   role_hierarchy: Record<string, number>;
   /** Module groups, alphabetically sorted by name. */
   modules: MatrixModule[];
+  /** Names of the baseline presets the admin UI can apply. Optional for
+   *  older backends that don't yet ship the preset endpoint. */
+  presets?: string[];
 }
 
 /** Fetch the live RBAC matrix for the admin UI. Requires `audit.view`. */
 export async function fetchPermissionsMatrix(): Promise<PermissionsMatrix> {
   return apiGet<PermissionsMatrix>('/v1/admin/permissions/matrix');
+}
+
+/** Body for ``PATCH /v1/admin/permissions/{key}``. */
+export interface PermissionUpdateBody {
+  min_role: MatrixRole;
+}
+
+/** Response for ``PATCH /v1/admin/permissions/{key}``. */
+export interface PermissionUpdateResponse {
+  permission: string;
+  previous_min_role: MatrixRole;
+  new_min_role: MatrixRole;
+}
+
+/** Patch one permission's min_role. Admin-only on the backend; non-admin
+ *  callers get a 403 which the page surfaces by falling back to the
+ *  read-only matrix. */
+export async function updatePermissionMinRole(
+  permissionKey: string,
+  newMinRole: MatrixRole,
+): Promise<PermissionUpdateResponse> {
+  return apiPatch<PermissionUpdateResponse, PermissionUpdateBody>(
+    `/v1/admin/permissions/${encodeURIComponent(permissionKey)}`,
+    { min_role: newMinRole },
+  );
+}
+
+/** Response for ``POST /v1/admin/permissions/preset/{name}``. */
+export interface PresetApplyResponse {
+  preset: string;
+  permissions_changed: number;
+  total_permissions: number;
+  changes: { permission: string; previous_min_role: MatrixRole; new_min_role: MatrixRole }[];
+}
+
+/** Apply a named baseline preset. Admin-only. */
+export async function applyPermissionPreset(
+  preset: string,
+): Promise<PresetApplyResponse> {
+  return apiPost<PresetApplyResponse, Record<string, never>>(
+    `/v1/admin/permissions/preset/${encodeURIComponent(preset)}`,
+    {},
+  );
 }
 
 /**

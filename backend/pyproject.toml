@@ -1,6 +1,6 @@
 [project]
 name = "openconstructionerp"
-version = "4.1.0"
+version = "4.2.0"
 description = "Open-source construction cost estimation — multi-currency BOQ, AI vector matching, CAD/BIM takeoff without IfcOpenShell, resource-based cost DB import with example templates, 48 regional catalogues, 24 languages. AGPL-3.0. After install, run: openconstructionerp"
 license = "AGPL-3.0-or-later"
 requires-python = ">=3.12"
@@ -195,14 +195,25 @@ packages = ["app"]
 
 # Editable installs (uv pip install -e ./backend, pip install -e .) do NOT
 # need the bundled frontend — Vite's dev server serves the UI on :5180
-# during development. Without this section, hatchling re-uses the wheel's
-# force-include map and aborts with "Forced include not found:
+# during development. Without this section, hatchling re-uses the wheel
+# target's force-include map and aborts with "Forced include not found:
 # .../frontend/dist" on a fresh checkout where the frontend hasn't been
-# built yet. Defining an editable target with its own (empty) force-include
-# breaks that inheritance and lets contributors install the backend
-# editable without pre-building the SPA.
+# built yet.
+#
+# Two-layer fix:
+#   1. ``dev-mode-dirs`` makes hatchling generate a simple ``.pth`` pointing
+#      at the source folders, bypassing the wheel-style file detection that
+#      consults ``force-include``.
+#   2. Explicit (empty) ``force-include`` map on the editable target
+#      additionally severs inheritance from the wheel target — defence in
+#      depth in case a hatchling version still walks the inclusion map.
+#   3. ``only-include = ["app"]`` keeps the discovered file set scoped to
+#      the package itself, so even if (1) and (2) were to fail open, the
+#      frontend/dist path never enters the inclusion candidate list.
 [tool.hatch.build.targets.editable]
 packages = ["app"]
+dev-mode-dirs = ["."]
+only-include = ["app"]
 
 [tool.hatch.build.targets.editable.force-include]
 

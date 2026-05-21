@@ -62,6 +62,7 @@ from app.modules.projects.member_schemas import (
     ProjectMemberResponse,
 )
 from app.modules.projects import profile_service
+from app.modules.projects.module_presence import probe_project_modules
 from app.modules.projects.schemas import (
     FocusModePatch,
     MatchProjectSettingsRead,
@@ -71,6 +72,7 @@ from app.modules.projects.schemas import (
     MilestoneUpdate,
     PresetRead,
     ProfileSpec,
+    ProjectModulePresence,
     ProjectModuleRead,
     ProjectCreate,
     ProjectProfileResult,
@@ -2782,3 +2784,40 @@ async def list_project_modules(
             service.session, project_id,
         )
     return result.modules
+
+
+# ── Module presence (sidebar dimming hint) ─────────────────────────────────
+
+
+@router.get(
+    "/{project_id}/module-presence",
+    response_model=ProjectModulePresence,
+    response_model_by_alias=True,
+    summary="Module presence per project",
+    description=(
+        "Cheap per-module 'has any row?' probe used by the sidebar to dim "
+        "empty modules. Each field is True iff the corresponding module's "
+        "primary project-scoped table has at least one row for this "
+        "project. Missing tables (fresh DB) read as False. Cached for "
+        "60 seconds per project. Probes run concurrently — typical "
+        "latency is well under 200 ms even with 50+ modules."
+    ),
+)
+async def get_module_presence(
+    project_id: uuid.UUID,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    service: ProjectService = Depends(_get_service),
+) -> ProjectModulePresence:
+    """Return ``ProjectModulePresence`` for ``project_id``.
+
+    Auth: requires a valid JWT (``CurrentUserId``) plus project
+    ownership / admin (via :func:`_verify_project_owner`). The probe
+    itself runs against the request session — no extra connection.
+    """
+    await _verify_project_owner(service, project_id, user_id, payload)
+    presence = await probe_project_modules(session, project_id)
+    # ``probe_project_modules`` returns sidebar slugs (incl. "5d");
+    # ``model_validate`` resolves the ``5d`` → ``five_d`` alias.
+    return ProjectModulePresence.model_validate(presence)
