@@ -85,10 +85,14 @@ def _report_to_response(report: object) -> FieldReportResponse:
         signature_by=report.signature_by,  # type: ignore[attr-defined]
         signature_data=report.signature_data,  # type: ignore[attr-defined]
         status=report.status,  # type: ignore[attr-defined]
-        approved_by=report.approved_by,  # type: ignore[attr-defined]
+        # approved_by / created_by are now GUID() columns — read as
+        # uuid.UUID; stringify for the str-typed response schema. (v40
+        # typing fix: matches daily_diary's convention while keeping the
+        # API shape unchanged.)
+        approved_by=str(report.approved_by) if report.approved_by else None,  # type: ignore[attr-defined]
         approved_at=report.approved_at,  # type: ignore[attr-defined]
         document_ids=report.document_ids or [],  # type: ignore[attr-defined]
-        created_by=report.created_by,  # type: ignore[attr-defined]
+        created_by=str(report.created_by) if report.created_by else None,  # type: ignore[attr-defined]
         metadata=getattr(report, "metadata_", {}),  # type: ignore[attr-defined]
         created_at=report.created_at,  # type: ignore[attr-defined]
         updated_at=report.updated_at,  # type: ignore[attr-defined]

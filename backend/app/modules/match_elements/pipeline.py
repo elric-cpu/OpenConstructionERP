@@ -729,10 +729,52 @@ async def _run_group(
     # which delegates back to rebuild_groups).
     new_group_by = (stage.inputs or {}).get("group_by")
     if new_group_by:
+        # P1: validate the user's keys against the actual attribute set
+        # exposed by the source adapter. Without this, a typo (or a key
+        # that exists on a different model) silently produces a single
+        # ``__missing__`` bucket while the stage flips to ``done`` —
+        # the user thinks the run worked and only spots the empty
+        # groups in the Match stage two clicks later. Failing fast here
+        # surfaces the error on the stage card instead.
+        service = get_service()
+        adapter = service._adapter(  # noqa: SLF001 — pipeline lives next to the service
+            session.source, db, session,
+        )
+        available_keys = await adapter.list_attribute_keys(
+            session.project_id, session.bim_model_id,
+        )
+        available_set = {str(k) for k in available_keys}
+        # ``list_attribute_keys`` returns the adapter's per-row keys.
+        # Some sessions also legitimately group by structural fields
+        # the adapter doesn't surface ("level", "ifc_class",
+        # "type_name") — those are stamped on every element and the
+        # grouper handles them natively. Whitelist them so the
+        # validator doesn't reject a known-good preset.
+        structural_group_keys = {
+            "ifc_class",
+            "type_name",
+            "level",
+            "category",
+            "material",
+            "trade",
+        }
+        bad = [
+            k for k in new_group_by
+            if str(k) not in available_set
+            and str(k) not in structural_group_keys
+        ]
+        if bad:
+            # Raise a structured error — ``run_stage`` catches Exception
+            # and stamps ``str(exc)`` into ``stage.error`` while flipping
+            # status to "error", which is exactly the UX we want. The
+            # str() of a multi-arg ValueError is a tuple-repr; that
+            # carries both the stable error code (parsable by the FE
+            # error mapper) and the offending keys for the toast.
+            raise ValueError("invalid_group_by_keys", bad)
+
         session.group_by = list(new_group_by)
         await db.flush()
         # Group_by changed → rebuild.
-        service = get_service()
         await service.rebuild_groups(db, session.id)
 
     groups = (

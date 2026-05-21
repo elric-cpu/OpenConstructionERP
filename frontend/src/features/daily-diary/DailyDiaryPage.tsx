@@ -36,6 +36,7 @@ import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { getErrorMessage } from '@/shared/lib/api';
+import { todayLocalISO, isoDateFromLocal, nowLocalISO } from '@/shared/lib/dates';
 import { projectsApi } from '@/features/projects/api';
 import {
   listDiaries,
@@ -76,23 +77,10 @@ const inputCls =
 
 /* ── helpers ─────────────────────────────────────────────────────────── */
 
-function todayIso(): string {
-  // Local calendar date — NOT the UTC slice of toISOString(). A site
-  // diary "for today" must track the viewer's local day; using UTC would
-  // drift the highlighted day and the "Today" query by ±1 near midnight
-  // for any user away from UTC. This also keeps todayIso() consistent
-  // with the calendar grid, which is built from local getFullYear()/
-  // getMonth()/date values.
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
-function isoDate(year: number, month: number, day: number): string {
-  return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-}
+// Local-date helpers re-export — kept as local names for in-file readability,
+// implementation lives in shared/lib/dates.ts and is shared with field-reports.
+const todayIso = todayLocalISO;
+const isoDate = isoDateFromLocal;
 
 function monthBounds(year: number, month: number): { from: string; to: string } {
   // Built from the local calendar fields the grid itself uses, NOT a UTC
@@ -497,6 +485,19 @@ export function DailyDiaryPage() {
           onClose={() => setSignOpen(false)}
         />
       )}
+
+      {/* Mobile PWA — Slice 1. Bottom-anchored quick-action FAB visible
+          only on viewports ≤640px so field crews on phones reach the
+          primary action without scrolling. ≥44×44 tap target. */}
+      <button
+        type="button"
+        onClick={() => setCreateOpen(true)}
+        disabled={!projectId}
+        aria-label={t('daily_diary.new_diary', { defaultValue: 'New Diary' })}
+        className="fixed bottom-5 right-5 z-40 inline-flex h-14 w-14 min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-oe-blue text-white shadow-lg ring-1 ring-black/5 transition-transform hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100 sm:hidden"
+      >
+        <Plus size={22} />
+      </button>
     </div>
   );
 }
@@ -953,7 +954,13 @@ function EntriesTimeline({
       await createEntry({
         diary_id: diaryId,
         entry_type: entryType,
-        entry_time: new Date().toISOString(),
+        // Local ISO with offset (NOT toISOString(), which is UTC). The
+        // owning diary's ``diary_date`` is a local YYYY-MM-DD so the
+        // entry timestamp must agree on the same local calendar day —
+        // otherwise an entry created at 02:30 local on 2026-05-21 in
+        // Berlin would persist as 2026-05-21T00:30:00Z and read back as
+        // belonging to a different day in any UTC-anchored projection.
+        entry_time: nowLocalISO(),
         title: title.trim(),
         description: description.trim() || undefined,
       });

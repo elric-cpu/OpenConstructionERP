@@ -39,10 +39,14 @@ from app.modules.schedule_advanced.schemas import (
     ConstraintResponse,
     ConstraintUpdate,
     CPMActivityResult,
+    CPMComputeSummary,
     CPMRequest,
     CPMResponse,
     EVMRequest,
     EVMResponse,
+    LevelResourcesRequest,
+    LevelResourcesResponse,
+    LevelResourcesShift,
     LookAheadCreate,
     LookAheadResponse,
     LookAheadUpdate,
@@ -54,6 +58,7 @@ from app.modules.schedule_advanced.schemas import (
     PhasePlanResponse,
     PhasePlanUpdate,
     PPCResponse,
+    PPCWeeklyResponse,
     RNCCreate,
     RNCParetoResponse,
     RNCParetoSortedResponse,
@@ -61,6 +66,8 @@ from app.modules.schedule_advanced.schemas import (
     RNCUpdate,
     TIARequest,
     TIAResponse,
+    WeeklyCommitmentCreate,
+    WeeklyCommitmentResponse,
     WeeklyWorkPlanCreate,
     WeeklyWorkPlanResponse,
     WeeklyWorkPlanUpdate,
@@ -1221,3 +1228,325 @@ async def project_rnc_pareto_sorted(
         project_id, period_start, period_end,
     )
     return RNCParetoSortedResponse(**payload)
+
+
+# ── CPM Slice 1 — persisted compute + leveling + weekly commitments ───────
+
+
+async def _project_id_for_schedule(
+    schedule_id: uuid.UUID,
+    session: SessionDep,
+) -> uuid.UUID:
+    """Resolve project_id for a ``oe_schedule_schedule`` row.
+
+    Kept out of :class:`ScheduleAdvancedService` because that service only
+    owns LPS tables — Schedule lives in the sister ``schedule`` module.
+    """
+    from app.modules.schedule.models import Schedule as _Schedule
+
+    sched = await session.get(_Schedule, schedule_id)
+    if sched is None:
+        raise _not_found("Schedule not found")
+    return sched.project_id
+
+
+@router.post(
+    "/{schedule_id}/compute-cpm",
+    response_model=CPMComputeSummary,
+)
+async def compute_cpm_for_schedule(
+    schedule_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("schedule_advanced.update")),
+) -> CPMComputeSummary:
+    """Recompute CPM for ``schedule_id`` and persist ES/EF/LS/LF/float on each Activity.
+
+    Forward + backward pass implemented in
+    :mod:`app.modules.schedule_advanced.cpm` (pure Python, no scipy /
+    networkx). FS dependencies only in Slice 1.
+    """
+    from sqlalchemy import select
+
+    from app.modules.schedule.models import Activity as _Activity
+    from app.modules.schedule.models import ScheduleRelationship as _Rel
+    from app.modules.schedule_advanced.cpm import (
+        Activity as _CPMActivity,
+    )
+    from app.modules.schedule_advanced.cpm import (
+        TaskNetwork as _CPMNetwork,
+    )
+    from app.modules.schedule_advanced.cpm import (
+        compute_cpm as _compute_cpm,
+    )
+    from app.modules.schedule_advanced.cpm import (
+        critical_path as _critical_path,
+    )
+
+    project_id = await _project_id_for_schedule(schedule_id, session)
+    await verify_project_access(project_id, user_id, session)
+
+    act_rows = (
+        await session.execute(
+            select(_Activity).where(_Activity.schedule_id == schedule_id),
+        )
+    ).scalars().all()
+    rel_rows = (
+        await session.execute(
+            select(_Rel).where(_Rel.schedule_id == schedule_id),
+        )
+    ).scalars().all()
+
+    # Build the pure-Python network.
+    cpm_acts: list[_CPMActivity] = []
+    rel_index: dict[uuid.UUID, list[tuple[uuid.UUID, str, int]]] = {}
+    for r in rel_rows:
+        rel_index.setdefault(r.successor_id, []).append(
+            (r.predecessor_id, r.relationship_type or "FS", int(r.lag_days or 0)),
+        )
+    for a in act_rows:
+        preds = rel_index.get(a.id, [])
+        cpm_acts.append(
+            _CPMActivity(
+                id=a.id,
+                duration=int(a.duration_days or 0),
+                predecessors=preds,
+                required_resources={},
+            ),
+        )
+
+    network = _CPMNetwork(cpm_acts)
+    results = _compute_cpm(network)
+
+    # Persist back onto Activity rows.
+    activity_by_id = {a.id: a for a in act_rows}
+    project_duration = 0
+    num_critical = 0
+    for aid, res in results.items():
+        a = activity_by_id.get(aid)
+        if a is None:
+            continue
+        a.early_start = str(res.es)
+        a.early_finish = str(res.ef)
+        a.late_start = str(res.ls)
+        a.late_finish = str(res.lf)
+        a.total_float = int(res.total_float)
+        a.free_float = int(res.free_float)
+        a.is_critical = bool(res.is_critical)
+        if res.ef > project_duration:
+            project_duration = res.ef
+        if res.is_critical:
+            num_critical += 1
+    await session.flush()
+
+    cp_ids = _critical_path(network, results)
+    return CPMComputeSummary(
+        schedule_id=schedule_id,
+        critical_path=[uuid.UUID(str(x)) for x in cp_ids],
+        project_duration_days=project_duration,
+        num_critical=num_critical,
+        num_activities=len(results),
+    )
+
+
+@router.post(
+    "/{schedule_id}/level-resources",
+    response_model=LevelResourcesResponse,
+)
+async def level_resources_for_schedule(
+    schedule_id: uuid.UUID,
+    data: LevelResourcesRequest,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("schedule_advanced.update")),
+) -> LevelResourcesResponse:
+    """Run serial-greedy resource leveling — returns shifted ES for changed activities only."""
+    from sqlalchemy import select
+
+    from app.modules.schedule.models import Activity as _Activity
+    from app.modules.schedule.models import ScheduleRelationship as _Rel
+    from app.modules.schedule_advanced.cpm import (
+        Activity as _CPMActivity,
+    )
+    from app.modules.schedule_advanced.cpm import (
+        TaskNetwork as _CPMNetwork,
+    )
+    from app.modules.schedule_advanced.cpm import (
+        compute_cpm as _compute_cpm,
+    )
+    from app.modules.schedule_advanced.leveling import level_by_resource_max
+
+    project_id = await _project_id_for_schedule(schedule_id, session)
+    await verify_project_access(project_id, user_id, session)
+
+    act_rows = (
+        await session.execute(
+            select(_Activity).where(_Activity.schedule_id == schedule_id),
+        )
+    ).scalars().all()
+    rel_rows = (
+        await session.execute(
+            select(_Rel).where(_Rel.schedule_id == schedule_id),
+        )
+    ).scalars().all()
+
+    rel_index: dict[uuid.UUID, list[tuple[uuid.UUID, str, int]]] = {}
+    for r in rel_rows:
+        rel_index.setdefault(r.successor_id, []).append(
+            (r.predecessor_id, r.relationship_type or "FS", int(r.lag_days or 0)),
+        )
+
+    cpm_acts: list[_CPMActivity] = []
+    for a in act_rows:
+        # Resources are stored as ``[{"name": "...", "type": "...",
+        # "allocation_pct": ...}, ...]`` on Activity.resources. Use the
+        # ``name`` as the resource code and ``1`` as the unit demand
+        # (Slice 1 limits to integer counts). Callers passing a richer
+        # shape will be supported in Slice 2.
+        required: dict[str, int] = {}
+        for r in (a.resources or []):
+            if isinstance(r, dict) and r.get("name"):
+                required[str(r["name"])] = int(r.get("count", 1) or 1)
+        cpm_acts.append(
+            _CPMActivity(
+                id=a.id,
+                duration=int(a.duration_days or 0),
+                predecessors=rel_index.get(a.id, []),
+                required_resources=required,
+            ),
+        )
+
+    network = _CPMNetwork(cpm_acts)
+    base = _compute_cpm(network)
+    shifted = level_by_resource_max(network, base, data.resource_limits or {})
+
+    rows: list[LevelResourcesShift] = []
+    for aid, new_es in shifted.items():
+        rows.append(
+            LevelResourcesShift(
+                activity_id=uuid.UUID(str(aid)),
+                original_es=base[aid].es,
+                shifted_es=new_es,
+                delta_days=new_es - base[aid].es,
+            ),
+        )
+    return LevelResourcesResponse(
+        schedule_id=schedule_id,
+        shifts=rows,
+        num_shifted=len(rows),
+    )
+
+
+@router.post(
+    "/{schedule_id}/commitments",
+    response_model=WeeklyCommitmentResponse,
+    status_code=201,
+)
+async def create_weekly_commitment(
+    schedule_id: uuid.UUID,
+    data: WeeklyCommitmentCreate,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("schedule_advanced.commit")),
+) -> WeeklyCommitmentResponse:
+    """Record a Last-Planner weekly commitment and auto-compute PPC."""
+    from decimal import Decimal as _Decimal
+
+    from app.modules.schedule_advanced.models import (
+        WeeklyCommitment as _WeeklyCommitment,
+    )
+
+    project_id = await _project_id_for_schedule(schedule_id, session)
+    await verify_project_access(project_id, user_id, session)
+
+    planned = data.planned_complete_pct or _Decimal("0")
+    actual = data.actual_complete_pct or _Decimal("0")
+    if planned > 0:
+        ppc = actual / planned
+        if ppc > 1:
+            ppc = _Decimal("1")
+        if ppc < 0:
+            ppc = _Decimal("0")
+    else:
+        ppc = _Decimal("0")
+    # Truncate to 4 decimal places to fit Numeric(6, 4).
+    ppc = ppc.quantize(_Decimal("0.0001"))
+
+    committed_by_uuid: uuid.UUID | None
+    try:
+        committed_by_uuid = uuid.UUID(str(user_id)) if user_id else None
+    except (ValueError, TypeError):
+        committed_by_uuid = None
+
+    row = _WeeklyCommitment(
+        schedule_id=schedule_id,
+        activity_id=data.activity_id,
+        week_start=data.week_start,
+        committed_by=committed_by_uuid,
+        planned_complete_pct=planned,
+        actual_complete_pct=actual,
+        ppc=ppc,
+    )
+    session.add(row)
+    await session.flush()
+    return WeeklyCommitmentResponse.model_validate(row)
+
+
+@router.get(
+    "/{schedule_id}/ppc",
+    response_model=PPCWeeklyResponse,
+)
+async def get_weekly_ppc(
+    schedule_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    week: date = Query(...),
+    _perm: None = Depends(RequirePermission("schedule_advanced.read")),
+) -> PPCWeeklyResponse:
+    """Roll-up Percent-Plan-Complete for a single week.
+
+    PPC is the unweighted mean of per-commitment PPC values for the week.
+    Used by the CPM frontend to drive the weekly Last-Planner card.
+    """
+    from decimal import Decimal as _Decimal
+
+    from sqlalchemy import select
+
+    from app.modules.schedule_advanced.models import (
+        WeeklyCommitment as _WeeklyCommitment,
+    )
+
+    project_id = await _project_id_for_schedule(schedule_id, session)
+    await verify_project_access(project_id, user_id, session)
+
+    rows = (
+        await session.execute(
+            select(_WeeklyCommitment).where(
+                _WeeklyCommitment.schedule_id == schedule_id,
+                _WeeklyCommitment.week_start == week,
+            ),
+        )
+    ).scalars().all()
+
+    if not rows:
+        return PPCWeeklyResponse(
+            schedule_id=schedule_id,
+            week_start=week,
+            num_commitments=0,
+            avg_planned_pct=_Decimal("0"),
+            avg_actual_pct=_Decimal("0"),
+            ppc=_Decimal("0"),
+        )
+
+    n = _Decimal(len(rows))
+    sum_planned = sum((r.planned_complete_pct or _Decimal("0") for r in rows), _Decimal("0"))
+    sum_actual = sum((r.actual_complete_pct or _Decimal("0") for r in rows), _Decimal("0"))
+    sum_ppc = sum((r.ppc or _Decimal("0") for r in rows), _Decimal("0"))
+    return PPCWeeklyResponse(
+        schedule_id=schedule_id,
+        week_start=week,
+        num_commitments=len(rows),
+        avg_planned_pct=(sum_planned / n).quantize(_Decimal("0.0001")),
+        avg_actual_pct=(sum_actual / n).quantize(_Decimal("0.0001")),
+        ppc=(sum_ppc / n).quantize(_Decimal("0.0001")),
+    )

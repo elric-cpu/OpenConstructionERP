@@ -4,13 +4,17 @@ All database queries for assemblies and components live here.
 No business logic — pure data access.
 """
 
+import logging
 import uuid
 
-from sqlalchemy import String, delete, func, select, update
+from sqlalchemy import String, delete, func, or_, select, update
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import noload, selectinload
 
-from app.modules.assemblies.models import Assembly, Component
+from app.modules.assemblies.models import Assembly, AssemblyTemplate, Component
+
+logger = logging.getLogger(__name__)
 
 
 class AssemblyRepository:
@@ -203,3 +207,199 @@ class ComponentRepository:
         stmt = select(func.coalesce(func.max(Component.sort_order), -1)).where(Component.assembly_id == assembly_id)
         result = (await self.session.execute(stmt)).scalar_one()
         return int(result)
+
+
+# ── Assembly templates (platform-wide library) ───────────────────────────────
+
+
+class AssemblyTemplateRepository:
+    """Data access for the AssemblyTemplate model (platform library).
+
+    Templates are read-only for end users — the only writer is the seed
+    function ``seed_assembly_templates``. All getters return ORM rows
+    without eager-loading anything else (the model has no relationships).
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def get_by_id(self, template_id: uuid.UUID) -> AssemblyTemplate | None:
+        stmt = select(AssemblyTemplate).where(AssemblyTemplate.id == template_id)
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def get_by_name(self, name: str) -> AssemblyTemplate | None:
+        stmt = select(AssemblyTemplate).where(AssemblyTemplate.name == name)
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def list_all(
+        self,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        q: str | None = None,
+        category: str | None = None,
+        tag: str | None = None,
+        classification_din276: str | None = None,
+        classification_masterformat: str | None = None,
+    ) -> tuple[list[AssemblyTemplate], int]:
+        """List templates with pagination and optional filters.
+
+        Free-text ``q`` matches the canonical English ``name``, the
+        serialised JSON ``name_translations`` (so a German user typing
+        "Stahlbeton" hits ``Stahlbetonwand C30/37``), and the
+        serialised ``tags`` array — all via case-insensitive LIKE so the
+        same code path works on SQLite and PostgreSQL without a JSON
+        operator dance.
+        """
+        base = select(AssemblyTemplate)
+
+        if q:
+            pattern = f"%{q.strip()}%"
+            base = base.where(
+                or_(
+                    AssemblyTemplate.name.ilike(pattern),
+                    AssemblyTemplate.name_translations.cast(String).ilike(pattern),
+                    AssemblyTemplate.tags.cast(String).ilike(pattern),
+                )
+            )
+
+        if category:
+            base = base.where(AssemblyTemplate.category == category)
+
+        if tag:
+            tag_pattern = f"%{tag.strip()}%"
+            base = base.where(AssemblyTemplate.tags.cast(String).ilike(tag_pattern))
+
+        # Classification filters: DIN 276 KG and MasterFormat division
+        # are stored as values in the JSON `classification` blob. LIKE on
+        # the serialised JSON is portable across SQLite and Postgres and
+        # avoids dialect-specific JSON path operators.
+        if classification_din276:
+            din_pattern = f'%"din276": "{classification_din276}"%'
+            base = base.where(
+                AssemblyTemplate.classification.cast(String).ilike(din_pattern)
+            )
+        if classification_masterformat:
+            mf_pattern = f'%"masterformat": "{classification_masterformat}"%'
+            base = base.where(
+                AssemblyTemplate.classification.cast(String).ilike(mf_pattern)
+            )
+
+        count_stmt = select(func.count()).select_from(base.subquery())
+        total = (await self.session.execute(count_stmt)).scalar_one()
+
+        stmt = (
+            base.order_by(AssemblyTemplate.category, AssemblyTemplate.name)
+            .offset(offset)
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all()), int(total)
+
+    async def count(self) -> int:
+        try:
+            stmt = select(func.count()).select_from(AssemblyTemplate)
+            return int((await self.session.execute(stmt)).scalar_one())
+        except (OperationalError, ProgrammingError):
+            # Table not present yet (fresh DB, alembic head not at v40).
+            return 0
+
+    async def upsert_by_name(self, payload: dict) -> AssemblyTemplate:
+        """Insert or update a template keyed by its canonical ``name``.
+
+        Returns the persisted ORM row. The seeder uses this so re-running
+        on an existing DB refreshes the recipe definition without
+        creating duplicates and without disturbing any user data —
+        templates carry no FK relationships.
+        """
+        name = str(payload["name"]).strip()
+        existing = await self.get_by_name(name)
+        if existing is None:
+            tpl = AssemblyTemplate(
+                name=name,
+                name_translations=payload.get("name_translations", {}) or {},
+                category=str(payload.get("category", "")),
+                unit=str(payload.get("unit", "")),
+                components=payload.get("components", []) or [],
+                classification=payload.get("classification", {}) or {},
+                tags=list(payload.get("tags", []) or []),
+                is_builtin=bool(payload.get("is_builtin", True)),
+            )
+            self.session.add(tpl)
+            await self.session.flush()
+            return tpl
+
+        existing.name_translations = (
+            payload.get("name_translations", {}) or existing.name_translations
+        )
+        existing.category = str(payload.get("category", existing.category))
+        existing.unit = str(payload.get("unit", existing.unit))
+        existing.components = payload.get("components", []) or []
+        existing.classification = payload.get("classification", {}) or {}
+        existing.tags = list(payload.get("tags", []) or [])
+        existing.is_builtin = bool(payload.get("is_builtin", existing.is_builtin))
+        await self.session.flush()
+        return existing
+
+
+async def seed_assembly_templates(
+    session: AsyncSession, *, force: bool = False
+) -> int:
+    """Bulk-upsert the canonical assembly templates from ``templates_seed``.
+
+    Args:
+        session: An open async DB session.
+        force: When False (default) the seeder short-circuits if any
+            template row already exists — the common boot-time case
+            doesn't need to re-write 25 rows on every restart. Set True
+            in migrations / tests when you want a guaranteed refresh.
+
+    Returns:
+        Number of templates that were inserted or updated.
+
+    The function is exception-tolerant: a missing table (a fresh DB
+    where the v40 migration has not yet run) logs a warning and
+    returns 0 — never raises into the startup hook. This mirrors the
+    pattern other modules use for optional seed data.
+    """
+    from app.modules.assemblies.templates_seed import get_seed_templates
+
+    repo = AssemblyTemplateRepository(session)
+    try:
+        existing_total = await repo.count()
+    except (OperationalError, ProgrammingError) as exc:
+        logger.warning(
+            "Assembly templates table not present; skipping seed (%s)", exc
+        )
+        return 0
+
+    templates = get_seed_templates()
+    if not force and existing_total >= len(templates):
+        logger.debug(
+            "Assembly templates seed skipped — %d already present (target %d)",
+            existing_total,
+            len(templates),
+        )
+        return 0
+
+    written = 0
+    for tpl in templates:
+        try:
+            await repo.upsert_by_name(tpl)
+            written += 1
+        except (OperationalError, ProgrammingError) as exc:
+            logger.warning(
+                "Assembly template upsert failed for %r: %s", tpl.get("name"), exc
+            )
+            continue
+
+    if written:
+        try:
+            await session.commit()
+        except Exception:  # noqa: BLE001
+            await session.rollback()
+            logger.warning("Assembly templates seed commit failed", exc_info=True)
+            return 0
+
+    logger.info("Assembly templates seeded: %d rows", written)
+    return written

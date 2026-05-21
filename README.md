@@ -134,39 +134,43 @@ Star OpenConstructionERP on GitHub and be instantly notified of new releases.
 
 ---
 
-## ✨ What's New in v3.0.x
+## ✨ What's New in v4.0.0 — Stable Major
 
-The v3 stable line — milestone **v3.0.0** rolled up 100+ v2.x patch releases; **v3.0.1** shipped the 18-Modules Wave; **v3.0.2** brought IFC parser correctness and supply-chain hardening.
+The **v4.x stable line** — milestone **v4.0.0** marks the platform as production-ready across the full estimation → takeoff → BIM → BOQ → tender → reporting workflow. **103 modules** ship in the box, the `/api/v1/*` surface is now a public contract, and the multi-tenant security pass is complete.
 
 <table>
 <tr>
 <td width="50%" valign="top">
 
-**🧱 18-Modules Wave — 88 modules total**
-- **Field Operations** — Service · Equipment & Fleet · Daily Diary · Subcontractor Portal · Resources & Crew
-- **Commercial** — CRM · Contracts (FIDIC / JCT / NEC4 / AIA) · Bid Management · Variations · Supplier Catalogs · Property Development
-- **Schedule & Quality** — Advanced Schedule (Last Planner, CPM) · QMS (ISO 9001) · HSE (ISO 45001) · Carbon & ESG (EN 15978, GHG Protocol) · BI Dashboards
+**🏗️ 103 modules · full pro-grade depth**
+- **BOQ pro-grade** — bulk multiply rate/qty/classification, per-cell field-history restore, Ctrl+D fill-down, 8-deep hierarchy, reusable/linked positions, FX-correct CSV/Excel exports.
+- **BIM Hub pro-grade** — Site Compass cube, Solo Mode, Trait Lens (color-by-property), Element Bundles, viewpoint state (camera + filter + clip + thumbnail), serve-time magic-byte validation.
+- **Clash Detection** — DBSCAN engine + FP mining, severity/discipline-pair/MTTR KPIs, rule editor with suggestions.
+- **Takeoff** — PDF + DWG measurements, PaddleOCR + YOLO symbol detection, jsPDF/exceljs exports with subtotals.
+- **Match Elements** — 7-stage visible pipeline (Convert → Load → Schema → Filter → Group → Match → Rollup) with per-stage adjust, vector + lexical + resource matchers, currency-aware rollup, catalogue + display-currency picker.
 
-**🔍 IFC parser correctness**
-Full `IfcUnitAssignment` parser per ISO 16739-1:2024 — every SI prefix, Imperial conversion, recursive `IfcConversionBasedUnit`. A 24-inch wall now reads as 0.6096 m, not raw `24`.
+**🌍 24 languages · 30+ regional catalogues · CWICR 55k positions**
+Multi-currency BOQ with FX-correct exports, vector search via Qdrant for multilingual semantic match.
 
 </td>
 <td width="50%" valign="top">
 
-**🔒 Security & supply chain**
-- `Settings` fail-fast on default `JWT_SECRET` in production
-- 230+ IDOR endpoints hardened via `verify_project_access`
-- Ed25519-signed converter manifests with SHA-256 verification
-- BOQ lock/unlock uses CAS UPDATE — eliminates TOCTOU race
+**🔒 Public API contract + multi-tenant security**
+- Every `/api/v1/*` endpoint shipped in 3.10.x–3.12.x is now part of the **public contract**; breaking changes go to `/v2`; 4.x patches only add fields and endpoints.
+- Cross-category IDOR sweep closed **~73 endpoints** across Planning / Communication / Procurement / Documents.
+- Every project-scoped route enforces `verify_project_access`; every owner-scoped route enforces inline `owner_user_id` with 404-not-403 on mismatch.
 
-**📡 Qdrant native (no Docker)**
-One-click install of the official Qdrant binary, supervised in-process. Vector search no longer needs Docker.
+**📊 BI Dashboards · idempotent starter pack**
+5 role-based dashboards (CEO · CFO · PM · Site · Safety), 14 system KPIs with 12-week history, 3 reports, 2 schedules, 4 alert rules — installed in one click via `POST /api/v1/bi-dashboards/install-starter-pack`.
+
+**✅ Validation@Import · GAEB X84 writer**
+DIN 276 + GAEB + NRM + MasterFormat + BOQ-quality + project-completeness rule packs wired into the GAEB / Excel import path; GAEB X84 (Nebenangebot) export writer with round-trip tests.
 
 </td>
 </tr>
 </table>
 
-See the [v3.0.x releases](https://github.com/datadrivenconstruction/OpenConstructionERP/releases) and the [CHANGELOG](CHANGELOG.md) for the per-release breakdown.
+See the [v4.0.0 release](https://github.com/datadrivenconstruction/OpenConstructionERP/releases/tag/v4.0.0) and the [CHANGELOG](CHANGELOG.md) for the per-release breakdown.
 
 ---
 

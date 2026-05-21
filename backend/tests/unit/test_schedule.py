@@ -353,3 +353,105 @@ async def test_gantt_duration_matches_stored_working_days() -> None:
         "Gantt duration must match the stored working-day duration, "
         "not the calendar-day diff"
     )
+
+
+# ── Cycle-detection performance (2026-05-21 audit fix #5) ─────────────────
+
+
+@pytest.mark.asyncio
+async def test_reject_dependency_cycles_single_traversal_for_many_predecessors() -> None:
+    """Audit fix: previously ``_reject_dependency_cycles`` ran a BFS per
+    proposed predecessor (O(P × V)). The refactor pre-computes reachability
+    from ``activity_id`` once and reduces each per-predecessor check to a
+    hash-set membership test (O(V+E) total). We assert behaviour first;
+    the call-count instrumentation guards against a regression.
+    """
+    svc = _make_service()
+    schedule = await _create_schedule(svc)
+
+    # Build a chain A -> B -> C -> D -> E so reachability from A is {B,C,D,E}.
+    a = await _create_activity(svc, schedule.id, name="A")
+    b = await _create_activity(svc, schedule.id, name="B")
+    c = await _create_activity(svc, schedule.id, name="C")
+    d = await _create_activity(svc, schedule.id, name="D")
+    e = await _create_activity(svc, schedule.id, name="E")
+
+    # Each "dependencies" entry on activity X is a predecessor → edge
+    # ``pred -> X``. So to build A -> B -> ... -> E, B's deps = [A], C's = [B], etc.
+    b.dependencies = [{"activity_id": str(a.id), "type": "FS", "lag_days": 0}]
+    c.dependencies = [{"activity_id": str(b.id), "type": "FS", "lag_days": 0}]
+    d.dependencies = [{"activity_id": str(c.id), "type": "FS", "lag_days": 0}]
+    e.dependencies = [{"activity_id": str(d.id), "type": "FS", "lag_days": 0}]
+
+    # Attempt to add B, C, D, and E as predecessors of A — all of these
+    # would close a cycle. The first detected one raises.
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc_info:
+        await svc._reject_dependency_cycles(
+            activity_id=a.id,
+            schedule_id=schedule.id,
+            proposed_predecessors=[b.id, c.id, d.id, e.id],
+        )
+    assert exc_info.value.status_code == 400
+    assert "circular" in exc_info.value.detail.lower()
+
+
+@pytest.mark.asyncio
+async def test_reject_dependency_cycles_allows_safe_predecessors() -> None:
+    """Adding a predecessor that is NOT in the reachability set must NOT
+    raise. Pins the negative side of the audit fix so the refactor's
+    single-pass traversal doesn't over-reject."""
+    svc = _make_service()
+    schedule = await _create_schedule(svc)
+
+    a = await _create_activity(svc, schedule.id, name="A")
+    b = await _create_activity(svc, schedule.id, name="B")
+    # Disconnected node — safe to depend on.
+    disconnected = await _create_activity(svc, schedule.id, name="X")
+
+    # A -> B exists. Adding "disconnected -> A" is safe (no cycle).
+    b.dependencies = [{"activity_id": str(a.id), "type": "FS", "lag_days": 0}]
+
+    # No raise expected:
+    await svc._reject_dependency_cycles(
+        activity_id=a.id,
+        schedule_id=schedule.id,
+        proposed_predecessors=[disconnected.id],
+    )
+
+
+@pytest.mark.asyncio
+async def test_reject_dependency_cycles_lists_activities_only_once() -> None:
+    """Performance contract: even when N proposed predecessors are passed,
+    the helper must load the schedule's activity list ONCE — the previous
+    code already did this, the refactor preserves it. We wrap the repo
+    method to count calls.
+    """
+    svc = _make_service()
+    schedule = await _create_schedule(svc)
+    a = await _create_activity(svc, schedule.id, name="A")
+    others = [
+        await _create_activity(svc, schedule.id, name=f"N{i}")
+        for i in range(5)
+    ]
+
+    original = svc.activity_repo.list_for_schedule
+    counter = {"n": 0}
+
+    async def _counting(*args, **kwargs):  # type: ignore[no-untyped-def]
+        counter["n"] += 1
+        return await original(*args, **kwargs)
+
+    svc.activity_repo.list_for_schedule = _counting  # type: ignore[assignment]
+
+    # 5 proposed predecessors, none in cycle -> no raise.
+    await svc._reject_dependency_cycles(
+        activity_id=a.id,
+        schedule_id=schedule.id,
+        proposed_predecessors=[o.id for o in others],
+    )
+
+    assert counter["n"] == 1, (
+        f"Expected one repo load for the whole batch; got {counter['n']}."
+    )

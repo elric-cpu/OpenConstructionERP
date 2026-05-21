@@ -343,3 +343,134 @@ class BIMElementGroup(Base):
 
     def __repr__(self) -> str:
         return f"<BIMElementGroup {self.name} project={self.project_id}>"
+
+
+# ── BIM Federation (v4.0 / Slice 1) ──────────────────────────────────────────
+
+
+class BIMFederation(Base):
+    """‌⁠‍Federation — a named group of N BIM models with a shared origin.
+
+    A federation composes multiple per-discipline models (architectural,
+    structural, MEP, …) into a single coordinated set. Each member model
+    keeps its own version history and upload pipeline; the federation
+    simply records which models belong together, in what z-order, and
+    with what display hint (visibility + color).
+
+    Federation ownership tracks project ownership — the project access
+    helper (``_verify_project_access``) is the sole authorization gate.
+    """
+
+    __tablename__ = "oe_bim_federation"
+    __table_args__ = (
+        Index("ix_bim_federation_project", "project_id"),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Shared origin offset applied to every member model at composition
+    # time. Defaults to {x:0, y:0, z:0} so identical authoring origins
+    # render correctly without manual alignment.
+    origin_offset: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        JSON,
+        nullable=False,
+        default=lambda: {"x": 0.0, "y": 0.0, "z": 0.0},
+        server_default='{"x":0,"y":0,"z":0}',
+    )
+    # Display unit hint for the federated scene (e.g. ``m``, ``mm``,
+    # ``ft``). Quantities themselves remain canonical SI on the member
+    # ``BIMElement.quantities`` blobs.
+    shared_units: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="m",
+        server_default="m",
+    )
+
+    # Relationships — member links cascade on federation delete so we
+    # never strand orphaned link rows. Members themselves (BIMModel
+    # rows) are NOT deleted; the federation is purely an overlay.
+    members: Mapped[list[BIMFederationModel]] = relationship(
+        back_populates="federation",
+        cascade="all, delete-orphan",
+        order_by="BIMFederationModel.z_order",
+        lazy="selectin",
+    )
+
+    def __repr__(self) -> str:
+        return f"<BIMFederation {self.name} project={self.project_id}>"
+
+
+class BIMFederationModel(Base):
+    """‌⁠‍Join row — one ``BIMModel`` participating in one ``BIMFederation``.
+
+    A model can belong to multiple federations (e.g. the structural
+    model takes part in both a clash-detection federation and a coord-
+    review federation), so the link table is intentionally many-to-many
+    with a uniqueness constraint per (federation, model) pair to keep
+    duplicate adds out.
+    """
+
+    __tablename__ = "oe_bim_federation_model"
+    __table_args__ = (
+        UniqueConstraint(
+            "federation_id",
+            "bim_model_id",
+            name="uq_bim_federation_model_pair",
+        ),
+        Index("ix_bim_federation_model_fed", "federation_id"),
+        Index("ix_bim_federation_model_model", "bim_model_id"),
+    )
+
+    federation_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_bim_federation.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    bim_model_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_bim_model.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Canonical discipline tag for the role this model plays inside the
+    # federation. Free-form string with a documented allow-list (the
+    # Pydantic schema enforces the enum at the API boundary; the DB
+    # stays open so future disciplines don't require a migration).
+    discipline: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="other",
+        server_default="other",
+    )
+    # Optional hex colour swatch (``#RRGGBB``) used by the federated
+    # viewer to tint this model's elements. ``None`` means "use member's
+    # own discipline palette".
+    color_hint: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    visible: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="1",
+    )
+    z_order: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+
+    # Relationships
+    federation: Mapped[BIMFederation] = relationship(back_populates="members")
+
+    def __repr__(self) -> str:
+        return (
+            f"<BIMFederationModel fed={self.federation_id} "
+            f"model={self.bim_model_id} z={self.z_order}>"
+        )

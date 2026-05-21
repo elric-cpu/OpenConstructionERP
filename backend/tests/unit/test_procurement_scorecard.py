@@ -317,3 +317,61 @@ async def test_scorecard_period_window_excludes_old(session: AsyncSession) -> No
     sc = await svc.get_supplier_scorecard(SUPPLIER_ID, period_days=365)
     # Only the new PO is in scope.
     assert sc["total_po_count"] == 1
+
+
+# ── P0-2: Unscheduled PO must NOT inflate on-time score ─────────────────
+
+
+@pytest.mark.asyncio
+async def test_scorecard_unscheduled_po_excluded_from_on_time(
+    session: AsyncSession,
+) -> None:
+    """GRs against POs with no delivery_date are tracked separately and
+    excluded from the on-time denominator (P0-2: previously such GRs were
+    counted as on-time, inflating the supplier score)."""
+    # PO A: scheduled, GR arrived ON TIME.
+    po_sched = _make_po(po_number="PO-SCHED", delivery_date="2026-04-10")
+    # PO B: NO delivery_date (unscheduled). A GR against it must not
+    # inflate the on-time count.
+    po_unsched = _make_po(po_number="PO-UNSCHED", delivery_date=None)
+    session.add_all([po_sched, po_unsched])
+    await session.flush()
+
+    gr_a = GoodsReceipt(po_id=po_sched.id, receipt_date="2026-04-09", status="confirmed")
+    gr_b = GoodsReceipt(
+        po_id=po_unsched.id, receipt_date="2026-04-09", status="confirmed"
+    )
+    session.add_all([gr_a, gr_b])
+    await session.flush()
+
+    svc = ProcurementService(session)
+    sc = await svc.get_supplier_scorecard(SUPPLIER_ID)
+
+    # Two GRs total, but only one is schedulable.
+    assert sc["total_gr_count"] == 2
+    assert sc["on_time_count"] == 1
+    assert sc["unscheduled_count"] == 1
+    # Denominator = scheduled = 1 → on-time = 1/1 = 1.0 (NOT 2/2).
+    assert sc["on_time_delivery_pct"] == pytest.approx(1.0, rel=1e-6)
+
+
+@pytest.mark.asyncio
+async def test_scorecard_only_unscheduled_pos_on_time_zero(
+    session: AsyncSession,
+) -> None:
+    """Supplier with only unscheduled POs has on_time_delivery_pct == 0.0
+    (no schedulable denominator) instead of inflating to 1.0."""
+    po = _make_po(delivery_date=None)
+    session.add(po)
+    await session.flush()
+    gr = GoodsReceipt(po_id=po.id, receipt_date="2026-04-09", status="confirmed")
+    session.add(gr)
+    await session.flush()
+
+    svc = ProcurementService(session)
+    sc = await svc.get_supplier_scorecard(SUPPLIER_ID)
+
+    assert sc["total_gr_count"] == 1
+    assert sc["unscheduled_count"] == 1
+    assert sc["on_time_count"] == 0
+    assert sc["on_time_delivery_pct"] == 0.0

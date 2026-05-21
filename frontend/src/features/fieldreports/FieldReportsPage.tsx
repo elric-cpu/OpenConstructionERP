@@ -41,6 +41,7 @@ import {
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
+import { todayLocalISO } from '@/shared/lib/dates';
 import {
   fetchFieldReports,
   fetchFieldReportSummary,
@@ -134,8 +135,12 @@ function formatDate(dateStr: string): string {
   }
 }
 
+// Local calendar date (NOT the UTC slice of toISOString()). A field report
+// "for today" must track the viewer's local day — using UTC would drift the
+// highlighted day and the "Today" cell by ±1 near midnight for any user
+// away from UTC. Shared with daily-diary via shared/lib/dates.ts.
 function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+  return todayLocalISO();
 }
 
 /* ── Compute total workforce from entries ──────────────────────────────── */

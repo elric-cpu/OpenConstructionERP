@@ -3,6 +3,9 @@
 Tables:
     oe_assemblies_assembly — composite cost items (calculations / recipes)
     oe_assemblies_component — individual line items within an assembly
+    oe_assemblies_template  — platform-wide canonical templates (v3.13.0
+        Assembly Library) — read-only, catalogue-agnostic recipes that
+        match against the project's bound cost catalogue at apply time.
 """
 
 import uuid
@@ -117,3 +120,70 @@ class Component(Base):
 
     def __repr__(self) -> str:
         return f"<Component {self.description[:40]} (factor={self.factor})>"
+
+
+class AssemblyTemplate(Base):
+    """A canonical, platform-wide assembly template (Assembly Library, v3.13.0).
+
+    Templates are read-only for end users — they are the starting points
+    estimators clone or apply to a BOQ. Each component is defined by a
+    catalogue-agnostic ``cost_match_query`` (free text such as
+    "concrete C30/37 ready-mix") that the apply endpoint resolves against
+    the project's bound cost catalogue at runtime via the existing
+    ``costs.matcher`` lexical search. That keeps the seed independent of
+    any single supplier / region / code-list / currency.
+
+    Columns
+    -------
+    name
+        Canonical English name. Unique — the seeder upserts by this key.
+    name_translations
+        JSON dict ``{lang: localised_name}``. The first slice ships DE +
+        RU + ES; more languages join in subsequent slices.
+    category
+        Coarse bucket (``concrete`` | ``masonry`` | ``drywall`` | ``mep`` |
+        ``roofing`` | ``insulation`` | ``finishing`` | ``earthwork`` |
+        ``steel``). Used to drive the library's category-chip filter.
+    unit
+        Output unit of the recipe (m³, m², m, kg, pcs, lsum, set, h).
+    components
+        JSON list of component dicts. See ``templates_seed`` for the
+        contract.
+    classification
+        JSON ``{"din276": "...", "masterformat": "..."}`` — the recipe's
+        cost-classification anchor used by the BOQ side for grouping
+        and validation.
+    tags
+        JSON list of free-text tags. Searchable.
+    is_builtin
+        ``True`` for rows shipped by the platform seed; ``False`` for
+        future user-contributed templates (next slice).
+    """
+
+    __tablename__ = "oe_assemblies_template"
+
+    name: Mapped[str] = mapped_column(
+        String(255), unique=True, index=True, nullable=False
+    )
+    name_translations: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        JSON, nullable=False, default=dict, server_default="{}"
+    )
+    category: Mapped[str] = mapped_column(
+        String(100), nullable=False, default="", index=True
+    )
+    unit: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    components: Mapped[list] = mapped_column(  # type: ignore[assignment]
+        JSON, nullable=False, default=list, server_default="[]"
+    )
+    classification: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        JSON, nullable=False, default=dict, server_default="{}"
+    )
+    tags: Mapped[list] = mapped_column(  # type: ignore[assignment]
+        JSON, nullable=False, default=list, server_default="[]"
+    )
+    is_builtin: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="1"
+    )
+
+    def __repr__(self) -> str:
+        return f"<AssemblyTemplate {self.name[:60]} ({self.category}/{self.unit})>"

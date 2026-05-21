@@ -3931,25 +3931,25 @@
     .mod-overview {
       max-width: 1280px;
       margin: 0 auto;
-      padding: clamp(36px, 4vw, 64px) clamp(24px, 5vw, 80px) clamp(20px, 3vw, 40px);
+      padding: clamp(28px, 3vw, 48px) clamp(16px, 4vw, 60px) clamp(16px, 2.5vw, 28px);
       position: relative;
       z-index: 4;
     }
     .mod-overview-head {
       text-align: center;
-      margin: 0 auto clamp(20px, 2.4vw, 32px);
-      max-width: 720px;
+      margin: 0 auto clamp(18px, 2vw, 26px);
+      max-width: 680px;
     }
     .mod-overview-eyebrow {
       display: inline-flex;
       align-items: center;
       gap: 8px;
       font-family: 'JetBrains Mono', ui-monospace, monospace;
-      font-size: 10px;
+      font-size: 9.5px;
       letter-spacing: 0.22em;
       text-transform: uppercase;
       color: var(--accent);
-      padding: 6px 12px;
+      padding: 5px 11px;
       border-radius: 999px;
       background: color-mix(in oklab, var(--accent) 8%, transparent);
       border: 1px solid color-mix(in oklab, var(--accent) 22%, var(--line-1));
@@ -3957,10 +3957,10 @@
     .mod-overview-title {
       font-family: 'Inter Tight', sans-serif;
       font-weight: 500;
-      font-size: clamp(22px, 2.2vw, 30px);
+      font-size: clamp(20px, 1.9vw, 26px);
       letter-spacing: -0.02em;
       color: var(--ink-0);
-      margin: 14px 0 8px;
+      margin: 12px 0 6px;
       line-height: 1.2;
     }
     .mod-overview-title em {
@@ -3970,47 +3970,61 @@
       color: var(--accent-3);
     }
     .mod-overview-sub {
-      font-size: clamp(13.5px, 1.05vw, 15px);
+      font-size: clamp(12.5px, 0.95vw, 14px);
       color: var(--ink-2);
-      line-height: 1.55;
+      line-height: 1.5;
       margin: 0;
     }
-    .mod-group { margin-top: clamp(18px, 2vw, 30px); }
+    /* Compact side-rail layout: category label sits as a vertical rail on the */
+    /* left, cards form a tight 4-col grid on the right. Groups stack tightly. */
+    .mod-group {
+      margin-top: clamp(12px, 1.4vw, 20px);
+      display: grid;
+      grid-template-columns: 124px 1fr;
+      gap: 14px;
+      align-items: flex-start;
+    }
+    @media (max-width: 720px) {
+      .mod-group { grid-template-columns: 1fr; gap: 6px; }
+    }
     .mod-group-label {
       font-family: 'JetBrains Mono', ui-monospace, monospace;
-      font-size: 10.5px;
-      letter-spacing: 0.18em;
+      font-size: 9.5px;
+      letter-spacing: 0.16em;
       text-transform: uppercase;
       color: var(--ink-3);
-      margin: 0 0 10px;
+      margin: 8px 0 0;
+      padding: 0 10px 0 0;
+      border-right: 2px solid color-mix(in oklab, var(--accent) 28%, var(--line-1));
+      min-height: 36px;
       display: flex;
-      align-items: center;
-      gap: 10px;
+      align-items: flex-start;
     }
-    .mod-group-label::after {
-      content: '';
-      flex: 1;
-      height: 1px;
-      background: linear-gradient(90deg, var(--line-1), transparent);
+    .mod-group-label::after { content: none; }
+    @media (max-width: 720px) {
+      .mod-group-label {
+        border-right: 0;
+        border-bottom: 1px solid color-mix(in oklab, var(--accent) 24%, var(--line-1));
+        padding: 0 0 5px;
+        margin: 4px 0 2px;
+        min-height: 0;
+      }
     }
     .mod-grid {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
     }
-    @media (max-width: 960px) {
-      .mod-grid { grid-template-columns: repeat(2, 1fr); }
-    }
-    @media (max-width: 580px) {
-      .mod-grid { grid-template-columns: 1fr; }
-    }
+    @media (max-width: 1180px) { .mod-grid { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 720px)  { .mod-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 460px)  { .mod-grid { grid-template-columns: 1fr; } }
     .mod-cell {
       display: grid;
-      grid-template-columns: 36px 1fr;
+      grid-template-columns: 26px 1fr;
       align-items: flex-start;
-      gap: 12px;
-      padding: 14px 14px 14px 14px;
-      border-radius: 12px;
+      gap: 9px;
+      padding: 9px 10px 10px;
+      border-radius: 9px;
       border: 1px solid var(--line-1);
       background: color-mix(in oklab, #ffffff 56%, transparent);
       backdrop-filter: blur(10px);
@@ -4034,9 +4048,9 @@
         0 12px 28px -16px color-mix(in oklab, var(--tint, var(--accent)) 40%, transparent);
     }
     .mod-cell-icon {
-      width: 36px;
-      height: 36px;
-      border-radius: 10px;
+      width: 26px;
+      height: 26px;
+      border-radius: 7px;
       flex-shrink: 0;
       background:
         linear-gradient(140deg,
@@ -4049,42 +4063,54 @@
       justify-content: center;
       box-shadow:
         inset 0 1px 0 color-mix(in oklab, #ffffff 34%, transparent),
-        0 3px 8px -5px color-mix(in oklab, var(--tint, var(--accent)) 35%, transparent);
+        0 2px 6px -4px color-mix(in oklab, var(--tint, var(--accent)) 35%, transparent);
     }
     .mod-cell-icon svg {
-      width: 16px;
-      height: 16px;
+      width: 13px;
+      height: 13px;
       display: block;
     }
     .mod-cell-body { min-width: 0; }
     .mod-cell-name {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       font-family: 'Inter Tight', sans-serif;
       font-weight: 500;
-      font-size: 13.5px;
+      font-size: 12px;
       color: var(--ink-0);
-      margin: 1px 0 3px;
+      margin: 0 0 2px;
       letter-spacing: -0.005em;
+      line-height: 1.25;
+    }
+    .mod-cell-name > span:first-child {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
     }
     .mod-cell-beta {
       font-family: 'JetBrains Mono', ui-monospace, monospace;
-      font-size: 8.5px;
-      letter-spacing: 0.14em;
+      font-size: 7.5px;
+      letter-spacing: 0.12em;
       text-transform: uppercase;
       color: var(--accent);
-      padding: 2px 6px;
+      padding: 1.5px 5px;
       border-radius: 4px;
       background: color-mix(in oklab, var(--accent) 10%, transparent);
       border: 1px solid color-mix(in oklab, var(--accent) 24%, transparent);
       line-height: 1;
+      flex-shrink: 0;
     }
     .mod-cell-desc {
-      font-size: 12px;
+      font-size: 10.5px;
       color: var(--ink-2);
-      line-height: 1.45;
+      line-height: 1.4;
       margin: 0;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
     }
     [data-theme="dark"] .mod-cell {
       background: color-mix(in oklab, #141d30 72%, transparent);
@@ -4096,6 +4122,75 @@
           color-mix(in oklab, var(--tint, var(--accent)) 12%, transparent) 100%);
       border-color: color-mix(in oklab, var(--tint, var(--accent)) 36%, transparent);
     }
+
+    /* ── Collapsible "more modules" block ─────────────────────────────── */
+    /* Collapsed: peek of next groups visible through a CSS mask that fades  */
+    /* the content itself to transparent — page background shows through    */
+    /* naturally, so there's no fake "white band" against the bluish bg.    */
+    .mod-overview-more {
+      display: grid;
+      gap: clamp(12px, 1.4vw, 20px);
+      max-height: 110px;
+      overflow: hidden;
+      -webkit-mask-image: linear-gradient(to bottom,
+        #000 0%,
+        #000 25%,
+        rgba(0,0,0,0.55) 60%,
+        rgba(0,0,0,0) 100%);
+              mask-image: linear-gradient(to bottom,
+        #000 0%,
+        #000 25%,
+        rgba(0,0,0,0.55) 60%,
+        rgba(0,0,0,0) 100%);
+      transition: max-height 0.55s cubic-bezier(.22,.61,.36,1);
+    }
+    .mod-overview.is-expanded .mod-overview-more {
+      max-height: 6000px;
+      -webkit-mask-image: none;
+              mask-image: none;
+    }
+    /* Legacy fade div kept in markup for backward-compat but rendered nil. */
+    .mod-overview-fade { display: none; }
+    .mod-overview-toggle {
+      display: flex;
+      justify-content: center;
+      margin-top: 4px;
+    }
+    .mod-overview-toggle-btn {
+      font-family: 'JetBrains Mono', ui-monospace, monospace;
+      font-size: 10.5px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--accent);
+      padding: 10px 22px;
+      border-radius: 999px;
+      background: color-mix(in oklab, #ffffff 80%, transparent);
+      border: 1px solid color-mix(in oklab, var(--accent) 30%, var(--line-1));
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      transition: transform 0.22s ease, border-color 0.22s ease, background 0.22s ease;
+    }
+    .mod-overview-toggle-btn:hover,
+    .mod-overview-toggle-btn:focus-visible {
+      background: color-mix(in oklab, var(--accent) 8%, #ffffff);
+      border-color: color-mix(in oklab, var(--accent) 50%, var(--line-1));
+      transform: translateY(-1px);
+      outline: none;
+    }
+    [data-theme="dark"] .mod-overview-toggle-btn {
+      background: color-mix(in oklab, #141d30 70%, transparent);
+    }
+    .mod-overview-toggle-btn .chevron {
+      width: 12px;
+      height: 12px;
+      transition: transform 0.32s ease;
+    }
+    .mod-overview.is-expanded .mod-overview-toggle-btn .chevron { transform: rotate(180deg); }
+    .mod-toggle-count { opacity: 0.55; margin-left: 4px; }
 
     /* ================================================================ */
     /* FLOW STRIP — 5 USPs                                               */
@@ -11132,6 +11227,117 @@
         #38bdf8 45%,
         #60a5fa 95%) !important;
     }
+    /* ── Module-cards grid ───────────────────────────────────────────
+       Sits between the "Skip the sales call. See it work." headline and
+       the existing 7-tab carousel. Mirrors the in-app sidebar 1:1 —
+       same lucide icons, same labels, one-sentence functional summary
+       per card. Inline SVG sprite (see #icon-sprite) keeps the page
+       fully dependency-free: no CDN, no JS loader, just <use href=…/>. */
+    .modules-grid-wrap {
+      margin: 32px auto 12px;
+      max-width: 1180px;
+      padding: 0 12px;
+    }
+    .modules-grid-eyebrow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin: 0 0 16px;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--ink-3);
+    }
+    .modules-grid-eyebrow::before,
+    .modules-grid-eyebrow::after {
+      content: "";
+      flex: 1 1 auto;
+      max-width: 70px;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--line), transparent);
+    }
+    .modules-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 8px;
+    }
+    @media (max-width: 1180px) { .modules-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+    @media (max-width:  980px) { .modules-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+    @media (max-width:  720px) { .modules-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+    @media (max-width:  480px) { .modules-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    .mod-card {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      padding: 10px 10px 9px;
+      border-radius: 10px;
+      background: var(--card, #ffffff);
+      border: 1px solid color-mix(in srgb, var(--line, #e5e7eb) 80%, transparent);
+      transition: transform 180ms cubic-bezier(.22,.61,.36,1), border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+      text-decoration: none;
+      color: inherit;
+      cursor: default;
+      outline: none;
+      min-width: 0;
+    }
+    .mod-card:focus-visible,
+    .mod-card:hover {
+      transform: translateY(-1.5px);
+      border-color: color-mix(in srgb, var(--tint, var(--accent)) 40%, var(--line));
+      background: color-mix(in srgb, var(--tint, var(--accent)) 3%, var(--card, #ffffff));
+      box-shadow: 0 6px 14px -10px color-mix(in srgb, var(--tint, var(--accent)) 60%, rgba(15,23,42,0.18));
+    }
+    .mod-card .mod-ico {
+      flex: 0 0 26px;
+      width: 26px;
+      height: 26px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 7px;
+      background: color-mix(in srgb, var(--tint, var(--accent)) 10%, transparent);
+      color: var(--tint, var(--accent));
+      transition: background 180ms ease, transform 180ms cubic-bezier(.22,.61,.36,1);
+    }
+    .mod-card:hover .mod-ico {
+      background: color-mix(in srgb, var(--tint, var(--accent)) 18%, transparent);
+      transform: scale(1.05);
+    }
+    .mod-card .mod-ico svg {
+      width: 15px;
+      height: 15px;
+      stroke-width: 1.7;
+      fill: none;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .mod-card .mod-body { min-width: 0; flex: 1 1 auto; }
+    .mod-card .mod-title {
+      display: block;
+      font-weight: 600;
+      font-size: 12.5px;
+      line-height: 1.25;
+      letter-spacing: -0.005em;
+      color: var(--ink-1);
+      margin: 1px 0 2px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .mod-card .mod-sub {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      font-size: 11px;
+      line-height: 1.4;
+      color: var(--ink-3);
+    }
+
+
   </style>
 
   <!-- =============================================================== -->
@@ -11636,6 +11842,7 @@
         <a href="/maturity.html">Maturity</a>
         <a href="#pricing" data-i18n="nav.pricing">Pricing</a>
         <a href="/partners.html" data-i18n="nav.partners">Partners</a>
+        <a href="/news.html" data-i18n="nav.news">News</a>
         <a href="/docs.html" data-i18n="nav.docs">Docs</a>
       </div>
 
@@ -11721,15 +11928,15 @@
 
       <div class="eyebrow" id="fx-eyebrow">
         <span class="dot" aria-hidden="true"></span>
-        <span><b id="latest-version">v3.0.4</b> &middot; <span id="latest-version-meta" data-i18n="hero.version_meta">shipped 2026-05-13</span></span>
+        <span><b id="latest-version">v4.0.0</b> &middot; <span id="latest-version-meta" data-i18n="hero.version_meta">shipped 2026-05-20</span></span>
       </div>
 
-      <h1 class="headline" id="headline">
+      <h1 class="headline" id="headline" data-i18n-html="hero.headline">
         <span class="word"><span>Run</span></span>
         <span class="word"><span>the</span></span>
         <span class="word"><span>whole</span></span>
-        <span class="word italic"><span>construction</span></span>
-        <span class="word italic"><span>project</span></span>
+        <span class="word italic" data-anchor="primary"><span>construction</span></span>
+        <span class="word italic" data-anchor="secondary"><span>project</span></span>
       </h1>
 
       <p class="sub" id="fx-sub" data-i18n="hero.sub">
@@ -12176,6 +12383,8 @@
       </p>
     </div>
 
+
+
     <div class="hp-player">
       <ol class="hp-nav-list" role="tablist" aria-label="Product preview modules">
         <li role="presentation">
@@ -12325,12 +12534,12 @@
     <!-- ============================================================ -->
     <div class="mod-overview reveal" id="modules-overview" aria-label="Module overview">
       <div class="mod-overview-head">
-        <span class="mod-overview-eyebrow" data-i18n="modgrid.eyebrow">Every module, on one screen</span>
+        <span class="mod-overview-eyebrow" data-i18n="modgrid.eyebrow">What's in the box</span>
         <h3 class="mod-overview-title" data-i18n-html="modgrid.title">
-          Sixty&#8209;plus modules ship in the same install. <em>No add-on store.</em>
+          One install. <em>The whole construction stack.</em>
         </h3>
         <p class="mod-overview-sub" data-i18n="modgrid.sub">
-          Same icons, same names you'll see inside the app. Hover any card for a one-line read on what it does.
+          Estimating, takeoff, BIM, scheduling, finance, field ops &mdash; every module already wired into the same database. No marketplace, no paywalls, no per-seat add-ons.
         </p>
       </div>
 
@@ -12489,6 +12698,9 @@
           </div>
         </div>
       </section>
+
+      <!-- Collapsed-by-default block: 9 categories revealed on click. -->
+      <div class="mod-overview-more" id="mod-overview-more">
 
       <!-- ── AI ESTIMATION ──────────────────────────────────────────── -->
       <section class="mod-group" aria-labelledby="modgroup-ai-h">
@@ -12959,7 +13171,43 @@
           </div>
         </div>
       </section>
+
+      </div><!-- /.mod-overview-more -->
+
+      <div class="mod-overview-fade" aria-hidden="true"></div>
+      <div class="mod-overview-toggle">
+        <button type="button" class="mod-overview-toggle-btn" data-mod-overview-toggle
+                aria-expanded="false" aria-controls="mod-overview-more">
+          <span class="mod-toggle-label" data-i18n="modgrid.show_all">Show all modules</span>
+          <span class="mod-toggle-count" data-i18n="modgrid.show_count">(+9 groups)</span>
+          <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+      </div>
     </div>
+    <script>
+      (function(){
+        var root = document.getElementById('modules-overview');
+        if (!root) return;
+        var btn = root.querySelector('[data-mod-overview-toggle]');
+        var label = btn && btn.querySelector('.mod-toggle-label');
+        var count = btn && btn.querySelector('.mod-toggle-count');
+        if (!btn) return;
+        btn.addEventListener('click', function(){
+          var open = root.classList.toggle('is-expanded');
+          btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+          if (label) {
+            var key = open ? 'modgrid.show_less' : 'modgrid.show_all';
+            var fallback = open ? 'Show fewer modules' : 'Show all modules';
+            label.setAttribute('data-i18n', key);
+            var translated = (window.OCE_I18N && window.OCE_I18N.t) ? window.OCE_I18N.t(key) : null;
+            label.textContent = translated || fallback;
+          }
+          if (count) {
+            count.style.display = open ? 'none' : '';
+          }
+        });
+      })();
+    </script>
 
   </section>
   <!-- ============================================================ -->
@@ -13799,24 +14047,24 @@
       </div>
       <ul class="release-ticker-list">
         <li id="latest-release-row">
-          <span class="ver" id="latest-release-tag">v3.0.4</span>
-          <span class="note" id="latest-release-note">Polish pass + community contributor flow &mdash; Support-us modal, Mongolian locale, marketing auto-version sync, 12 dependency bumps</span>
-          <span class="date" id="latest-release-date">2026-05-13</span>
+          <span class="ver" id="latest-release-tag">v4.0.0</span>
+          <span class="note" id="latest-release-note">Stable 4.0 milestone &mdash; 103 modules, public /api/v1 contract, multi-tenant security pass complete, BIM serve-validation, BI starter pack</span>
+          <span class="date" id="latest-release-date">2026-05-20</span>
         </li>
         <li>
-          <span class="ver">v3.0.3</span>
-          <span class="note">Deep correctness pass &mdash; FSM engine, ISO 16739-1:2024 IFC parser, Ed25519 manifest signing, 19-file WideModal sweep</span>
-          <span class="date">2026-05-13</span>
+          <span class="ver">v3.12.1</span>
+          <span class="note">BIM serve-time magic-byte validation, /match-elements catalogue + currency pickers, BI Dashboards install-starter-pack, 34-card module grid</span>
+          <span class="date">2026-05-20</span>
         </li>
         <li>
-          <span class="ver">v3.0.1</span>
-          <span class="note">18-Modules Wave &mdash; 17 new business modules (88 total), India CRS auto-detect, Qdrant without Docker, JWT fail-fast</span>
-          <span class="date">2026-05-13</span>
+          <span class="ver">v3.12.0</span>
+          <span class="note">Wave 5/6/7 pro-grade rollup &mdash; BOQ bulk ops, Cost Intelligence, Clash A4, BIM viewpoints, Files CDE, Takeoff PDF/Excel exports</span>
+          <span class="date">2026-05-20</span>
         </li>
         <li>
-          <span class="ver">v3.0.0</span>
-          <span class="note">v3 milestone &mdash; rollup of v2.x to PyPI + GitHub + VPS</span>
-          <span class="date">2026-05-12</span>
+          <span class="ver">v3.11.0</span>
+          <span class="note">Wave 3/4 modules &mdash; Validation@Import (GAEB/Excel), GAEB X84 writer, RVT converter diagnostics, /about redesign</span>
+          <span class="date">2026-05-20</span>
         </li>
         <li>
           <span class="ver">v2.9.39</span>
@@ -14477,6 +14725,93 @@ manifest = <span class="tok-fn">ModuleManifest</span>(
       ]
       </script>
     </div>
+  </section>
+
+  <!-- ================================================================ -->
+  <!-- All modules grid · placed after the GIF tour (v4.0.0)             -->
+  <!-- ================================================================ -->
+  <section class="section reveal" id="all-modules" aria-label="All built-in modules">
+      <!-- ===================================================================
+             Module-cards grid (v4.0.0) — 34 cards mirroring the in-app sidebar.
+             Same lucide icons as the menu, one-sentence functional summary each.
+             =================================================================== -->
+      <svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
+        <symbol id="i-Dashboard" viewBox="0 0 24 24"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></symbol>
+        <symbol id="i-Projects" viewBox="0 0 24 24"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></symbol>
+        <symbol id="i-Files" viewBox="0 0 24 24"><line x1="22" x2="2" y1="12" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" x2="6.01" y1="16" y2="16"/><line x1="10" x2="10.01" y1="16" y2="16"/></symbol>
+        <symbol id="i-BOQ" viewBox="0 0 24 24"><path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"/></symbol>
+        <symbol id="i-Costs" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></symbol>
+        <symbol id="i-MatchElements" viewBox="0 0 24 24"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/></symbol>
+        <symbol id="i-Assemblies" viewBox="0 0 24 24"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></symbol>
+        <symbol id="i-Catalog" viewBox="0 0 24 24"><path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42Z"/><path d="m7 16.5-4.74-2.85"/><path d="m7 16.5 5-3"/><path d="M7 16.5v5.17"/><path d="M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5l-5 3Z"/><path d="m17 16.5-5-3"/><path d="m17 16.5 4.74-2.85"/><path d="M17 16.5v5.17"/><path d="M7.97 4.42A2 2 0 0 0 7 6.13v4.37l5 3 5-3V6.13a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0l-3 1.8Z"/><path d="M12 8 7.26 5.15"/><path d="m12 8 4.74-2.85"/><path d="M12 13.5V8"/></symbol>
+        <symbol id="i-Takeoff" viewBox="0 0 24 24"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/></symbol>
+        <symbol id="i-DwgTakeoff" viewBox="0 0 24 24"><path d="M13 7 8.7 2.7a2.41 2.41 0 0 0-3.4 0L2.7 5.3a2.41 2.41 0 0 0 0 3.4L7 13"/><path d="m8 6 2-2"/><path d="m18 16 2-2"/><path d="m17 11 4.3 4.3c.94.94.94 2.46 0 3.4l-2.6 2.6c-.94.94-2.46.94-3.4 0L11 17"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></symbol>
+        <symbol id="i-DataExplorer" viewBox="0 0 24 24"><path d="M15 3v18"/><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M21 9H3"/><path d="M21 15H3"/></symbol>
+        <symbol id="i-BIM" viewBox="0 0 24 24"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></symbol>
+        <symbol id="i-Clash" viewBox="0 0 24 24"><path d="M19.07 4.93A10 10 0 0 0 6.99 3.34"/><path d="M4 6h.01"/><path d="M2.29 9.62A10 10 0 1 0 21.31 8.35"/><path d="M16.24 7.76A6 6 0 1 0 8.23 16.67"/><path d="M12 18h.01"/><path d="M17.99 11.66A6 6 0 0 1 15.77 16.67"/><circle cx="12" cy="12" r="2"/><path d="m13.41 10.59 5.66-5.66"/></symbol>
+        <symbol id="i-AiEstimate" viewBox="0 0 24 24"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></symbol>
+        <symbol id="i-ErpChat" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+        <symbol id="i-ProjectIntel" viewBox="0 0 24 24"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M9 13a4.5 4.5 0 0 0 3-4"/><path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/><path d="M3.477 10.896a4 4 0 0 1 .585-.396"/><path d="M6 18a4 4 0 0 1-1.967-.516"/><path d="M12 13h4"/><path d="M12 18h6a2 2 0 0 1 2 2v1"/><path d="M12 8h8"/><path d="M16 8V5a2 2 0 0 1 2-2"/><circle cx="16" cy="13" r=".5"/><circle cx="18" cy="3" r=".5"/><circle cx="20" cy="21" r=".5"/><circle cx="20" cy="8" r=".5"/></symbol>
+        <symbol id="i-Schedule" viewBox="0 0 24 24"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/></symbol>
+        <symbol id="i-Tasks" viewBox="0 0 24 24"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></symbol>
+        <symbol id="i-Risks" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/></symbol>
+        <symbol id="i-DailyDiary" viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></symbol>
+        <symbol id="i-Equipment" viewBox="0 0 24 24"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></symbol>
+        <symbol id="i-Service" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></symbol>
+        <symbol id="i-Finance" viewBox="0 0 24 24"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></symbol>
+        <symbol id="i-Procurement" viewBox="0 0 24 24"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="M12 22V12"/><path d="m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7"/><path d="m7.5 4.27 9 5.15"/></symbol>
+        <symbol id="i-Tendering" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></symbol>
+        <symbol id="i-CRM" viewBox="0 0 24 24"><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><rect width="20" height="14" x="2" y="6" rx="2"/></symbol>
+        <symbol id="i-Contracts" viewBox="0 0 24 24"><path d="m18 5-2.414-2.414A2 2 0 0 0 14.172 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2"/><path d="M21.378 12.626a1 1 0 0 0-3.004-3.004l-4.01 4.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z"/><path d="M8 18h1"/></symbol>
+        <symbol id="i-Subcontractors" viewBox="0 0 24 24"><path d="M10 10V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5"/><path d="M14 6a6 6 0 0 1 6 6v3"/><path d="M4 15v-3a6 6 0 0 1 6-6"/><rect x="2" y="15" width="20" height="4" rx="1"/></symbol>
+        <symbol id="i-BidMgmt" viewBox="0 0 24 24"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></symbol>
+        <symbol id="i-Suppliers" viewBox="0 0 24 24"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></symbol>
+        <symbol id="i-BIDashboards" viewBox="0 0 24 24"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></symbol>
+        <symbol id="i-Validation" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
+        <symbol id="i-Inspections" viewBox="0 0 24 24"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></symbol>
+        <symbol id="i-Punchlist" viewBox="0 0 24 24"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></symbol>
+      </svg>
+
+      <div class="modules-grid-wrap" aria-label="All built-in modules">
+        <div class="modules-grid-eyebrow" data-i18n="demo.grid_eyebrow">All modules · same as the in-app menu</div>
+        <div class="modules-grid">
+          <div class="mod-card" style="--tint: var(--accent);" tabindex="0"><span class="mod-ico"><svg><use href="#i-Dashboard"/></svg></span><span class="mod-body"><span class="mod-title">Dashboard</span><span class="mod-sub" data-i18n="demo.card_dashboard">Live view of every active project — cost, schedule and risk on one screen.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent);" tabindex="0"><span class="mod-ico"><svg><use href="#i-Projects"/></svg></span><span class="mod-body"><span class="mod-title">Projects</span><span class="mod-sub" data-i18n="demo.card_projects">Portfolio across regions, currencies and clients — search, group, archive.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent);" tabindex="0"><span class="mod-ico"><svg><use href="#i-Files"/></svg></span><span class="mod-body"><span class="mod-title">Files</span><span class="mod-sub" data-i18n="demo.card_files">One drop-zone for models, drawings, PDFs, photos and contracts — versioned by default.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-3);" tabindex="0"><span class="mod-ico"><svg><use href="#i-BOQ"/></svg></span><span class="mod-body"><span class="mod-title">BOQ</span><span class="mod-sub" data-i18n="demo.card_boq">Hierarchical bills of quantities with assemblies, formulas and live cost rollup.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-3);" tabindex="0"><span class="mod-ico"><svg><use href="#i-Costs"/></svg></span><span class="mod-body"><span class="mod-title">Cost database</span><span class="mod-sub" data-i18n="demo.card_costs">55,000 priced positions with multilingual semantic search.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-3);" tabindex="0"><span class="mod-ico"><svg><use href="#i-MatchElements"/></svg></span><span class="mod-body"><span class="mod-title">Match Elements</span><span class="mod-sub" data-i18n="demo.card_match">AI ranks cost candidates per element group — you confirm with one click.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-3);" tabindex="0"><span class="mod-ico"><svg><use href="#i-Assemblies"/></svg></span><span class="mod-body"><span class="mod-title">Assemblies</span><span class="mod-sub" data-i18n="demo.card_assemblies">Reusable recipes: concrete, rebar and formwork priced as a single unit.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-3);" tabindex="0"><span class="mod-ico"><svg><use href="#i-Catalog"/></svg></span><span class="mod-body"><span class="mod-title">Catalog</span><span class="mod-sub" data-i18n="demo.card_catalog">Browse, install and version regional cost databases without redeploys.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-3);" tabindex="0"><span class="mod-ico"><svg><use href="#i-Takeoff"/></svg></span><span class="mod-body"><span class="mod-title">PDF takeoff</span><span class="mod-sub" data-i18n="demo.card_takeoff">Click-to-measure on PDF drawings — areas, lengths, counts in real units.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-3);" tabindex="0"><span class="mod-ico"><svg><use href="#i-DwgTakeoff"/></svg></span><span class="mod-body"><span class="mod-title">DWG takeoff</span><span class="mod-sub" data-i18n="demo.card_dwgtakeoff">Native DWG/DXF takeoff with layer filtering and dimension extraction.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-3);" tabindex="0"><span class="mod-ico"><svg><use href="#i-DataExplorer"/></svg></span><span class="mod-body"><span class="mod-title">CAD/BIM explorer</span><span class="mod-sub" data-i18n="demo.card_dataexplorer">Spreadsheet view of every model element — filter, formula, export.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-3);" tabindex="0"><span class="mod-ico"><svg><use href="#i-BIM"/></svg></span><span class="mod-body"><span class="mod-title">BIM viewer</span><span class="mod-sub" data-i18n="demo.card_bim">IFC and RVT viewer — section, color by property, link elements to BOQ.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-3);" tabindex="0"><span class="mod-ico"><svg><use href="#i-Clash"/></svg></span><span class="mod-body"><span class="mod-title">Clash detection</span><span class="mod-sub" data-i18n="demo.card_clash">Find geometric collisions across federated models, clustered by location.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-4, var(--accent));" tabindex="0"><span class="mod-ico"><svg><use href="#i-AiEstimate"/></svg></span><span class="mod-body"><span class="mod-title">AI estimate</span><span class="mod-sub" data-i18n="demo.card_aiestimate">Photo or document → priced first-pass estimate with confidence per row.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-4, var(--accent));" tabindex="0"><span class="mod-ico"><svg><use href="#i-ErpChat"/></svg></span><span class="mod-body"><span class="mod-title">ERP chat</span><span class="mod-sub" data-i18n="demo.card_chat">Ask in plain language — get charts, numbers and the underlying rows.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-4, var(--accent));" tabindex="0"><span class="mod-ico"><svg><use href="#i-ProjectIntel"/></svg></span><span class="mod-body"><span class="mod-title">Project intelligence</span><span class="mod-sub" data-i18n="demo.card_pi">Risk, schedule and cost outliers surfaced before they show up in reports.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-5);" tabindex="0"><span class="mod-ico"><svg><use href="#i-Schedule"/></svg></span><span class="mod-body"><span class="mod-title">Schedule</span><span class="mod-sub" data-i18n="demo.card_schedule">Gantt with critical path, lookaheads and 4D links to model elements.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-5);" tabindex="0"><span class="mod-ico"><svg><use href="#i-Tasks"/></svg></span><span class="mod-body"><span class="mod-title">Tasks</span><span class="mod-sub" data-i18n="demo.card_tasks">Site task tracker — assignees, due dates and checklists per project.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-5);" tabindex="0"><span class="mod-ico"><svg><use href="#i-Risks"/></svg></span><span class="mod-body"><span class="mod-title">Risk register</span><span class="mod-sub" data-i18n="demo.card_risks">Track, score and own project risks with mitigation actions and audit trail.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-5);" tabindex="0"><span class="mod-ico"><svg><use href="#i-DailyDiary"/></svg></span><span class="mod-body"><span class="mod-title">Daily diary</span><span class="mod-sub" data-i18n="demo.card_diary">Field log: weather, crews, deliveries and hours — time-stamped automatically.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-5);" tabindex="0"><span class="mod-ico"><svg><use href="#i-Equipment"/></svg></span><span class="mod-body"><span class="mod-title">Equipment</span><span class="mod-sub" data-i18n="demo.card_equipment">Fleet tracker — utilization, maintenance and allocation per project.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-5);" tabindex="0"><span class="mod-ico"><svg><use href="#i-Service"/></svg></span><span class="mod-body"><span class="mod-title">Service</span><span class="mod-sub" data-i18n="demo.card_service">Maintenance tickets for field equipment with SLAs and history.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-2, var(--accent));" tabindex="0"><span class="mod-ico"><svg><use href="#i-Finance"/></svg></span><span class="mod-body"><span class="mod-title">Finance</span><span class="mod-sub" data-i18n="demo.card_finance">Project cashflow, budget vs actual, FX-aware multi-currency rollups.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-2, var(--accent));" tabindex="0"><span class="mod-ico"><svg><use href="#i-Procurement"/></svg></span><span class="mod-body"><span class="mod-title">Procurement</span><span class="mod-sub" data-i18n="demo.card_procurement">POs, deliveries and 3-way invoice matching, end to end.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-2, var(--accent));" tabindex="0"><span class="mod-ico"><svg><use href="#i-Tendering"/></svg></span><span class="mod-body"><span class="mod-title">Tendering</span><span class="mod-sub" data-i18n="demo.card_tendering">Generate, distribute and compare bid packages with a full audit trail.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-2, var(--accent));" tabindex="0"><span class="mod-ico"><svg><use href="#i-CRM"/></svg></span><span class="mod-body"><span class="mod-title">CRM</span><span class="mod-sub" data-i18n="demo.card_crm">Lead-to-contract pipeline tailored to construction sales cycles.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-2, var(--accent));" tabindex="0"><span class="mod-ico"><svg><use href="#i-Contracts"/></svg></span><span class="mod-body"><span class="mod-title">Contracts</span><span class="mod-sub" data-i18n="demo.card_contracts">Award, change and amend contracts with version diffs and signatures.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-2, var(--accent));" tabindex="0"><span class="mod-ico"><svg><use href="#i-Subcontractors"/></svg></span><span class="mod-body"><span class="mod-title">Subcontractors</span><span class="mod-sub" data-i18n="demo.card_subs">Sub directory, pre-qualification checks and payment status per package.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-2, var(--accent));" tabindex="0"><span class="mod-ico"><svg><use href="#i-BidMgmt"/></svg></span><span class="mod-body"><span class="mod-title">Bid management</span><span class="mod-sub" data-i18n="demo.card_bidmgmt">Side-by-side bid comparison with anomaly flags and award guidance.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-2, var(--accent));" tabindex="0"><span class="mod-ico"><svg><use href="#i-Suppliers"/></svg></span><span class="mod-body"><span class="mod-title">Supplier catalogs</span><span class="mod-sub" data-i18n="demo.card_suppliers">Searchable supplier catalogs linked directly to BOQ unit rates.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-4, var(--accent));" tabindex="0"><span class="mod-ico"><svg><use href="#i-BIDashboards"/></svg></span><span class="mod-body"><span class="mod-title">BI dashboards</span><span class="mod-sub" data-i18n="demo.card_bi">Build dashboards from project, cost and model data — no SQL required.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-5);" tabindex="0"><span class="mod-ico"><svg><use href="#i-Validation"/></svg></span><span class="mod-body"><span class="mod-title">Validation</span><span class="mod-sub" data-i18n="demo.card_validation">Run rule packs against any imported data — completeness, format, compliance.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-5);" tabindex="0"><span class="mod-ico"><svg><use href="#i-Inspections"/></svg></span><span class="mod-body"><span class="mod-title">Inspections</span><span class="mod-sub" data-i18n="demo.card_inspections">Field inspections with photos, signatures and pass/fail logic.</span></span></div>
+          <div class="mod-card" style="--tint: var(--accent-5);" tabindex="0"><span class="mod-ico"><svg><use href="#i-Punchlist"/></svg></span><span class="mod-body"><span class="mod-title">Punchlist</span><span class="mod-sub" data-i18n="demo.card_punchlist">Snag tracker with assignees, photos and closeout reporting.</span></span></div>
+        </div>
+      </div>
+
   </section>
 
   <!-- ================================================================ -->
@@ -15147,12 +15482,11 @@ manifest = <span class="tok-fn">ModuleManifest</span>(
         <p class="cb-newsletter-sub" data-i18n="newsletter.lede">
           Monthly digest &mdash; new modules, CAD parser updates, cost-database releases, behind-the-scenes notes. No spam, unsubscribe any time.
         </p>
-        <form class="cb-newsletter-form" id="newsletter-form-inline" action="https://formsubmit.co/info@datadrivenconstruction.io" method="POST">
-          <input type="hidden" name="_subject" value="Newsletter signup — OpenConstructionERP" />
-          <input type="hidden" name="_captcha" value="true" />
-          <input type="hidden" name="_next" value="https://openconstructionerp.com/?subscribed=1" />
-          <input type="hidden" name="_template" value="box" />
-          <input type="hidden" name="form_type" value="newsletter" />
+        <form class="cb-newsletter-form" id="newsletter-form-inline" action="/api/subscribe" method="POST" data-form="newsletter-inline">
+
+
+
+<input type="hidden" name="form_type" value="newsletter" />
           <input type="text" name="_honey" style="display:none" tabindex="-1" autocomplete="off" />
           <div class="cb-newsletter-field">
             <svg class="cb-newsletter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
@@ -15181,15 +15515,14 @@ manifest = <span class="tok-fn">ModuleManifest</span>(
       </div>
 
       <form id="custom-form"
-            action="https://formsubmit.co/info@datadrivenconstruction.io"
+            action="/api/inquiry"
             method="POST"
             novalidate>
-        <input type="hidden" name="_subject" value="Inquiry — OpenConstructionERP" />
-        <input type="hidden" name="_captcha" value="true" />
-        <input type="hidden" name="_next" value="https://openconstructionerp.com/?inquiry=sent" />
-        <input type="hidden" name="_template" value="box" />
-        <input type="hidden" name="_autoresponse" value="Thanks for your message — a human at DataDrivenConstruction has received it and will get back to you. — OpenConstructionERP" />
-        <input type="text" name="_honey" style="display:none" tabindex="-1" autocomplete="off" />
+
+
+
+
+<input type="text" name="_honey" style="display:none" tabindex="-1" autocomplete="off" />
 
         <span class="cb-chips-label">
           <span data-i18n="custom.chips_label">What can we help with?</span><span class="req">*</span>
@@ -15502,13 +15835,12 @@ manifest = <span class="tok-fn">ModuleManifest</span>(
       <p class="newsletter-sub" data-i18n="newsletter.lede">
         Monthly digest — new modules, CAD parser updates, cost-database releases, behind-the-scenes notes. No spam, unsubscribe any time.
       </p>
-      <form class="newsletter-form" id="newsletter-form" action="https://formsubmit.co/info@datadrivenconstruction.io" method="POST">
-        <input type="hidden" name="_subject" value="Newsletter signup — OpenConstructionERP" />
-        <input type="hidden" name="_captcha" value="true" />
-        <input type="hidden" name="_next" value="https://openconstructionerp.com/?subscribed=1" />
-        <input type="hidden" name="_template" value="box" />
-        <input type="hidden" name="_autoresponse" value="Thanks for subscribing to OpenConstructionERP updates! You'll get the next monthly digest soon. Unsubscribe any time by replying with 'stop'. — Team DataDrivenConstruction" />
-        <input type="hidden" name="form_type" value="newsletter" />
+      <form class="newsletter-form" id="newsletter-form" action="/api/subscribe" method="POST" data-form="newsletter">
+
+
+
+
+<input type="hidden" name="form_type" value="newsletter" />
         <input type="text" name="_honey" style="display:none" tabindex="-1" autocomplete="off" />
         <div class="newsletter-input-wrap">
           <svg class="newsletter-input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
@@ -17328,8 +17660,8 @@ manifest = <span class="tok-fn">ModuleManifest</span>(
       });
     })();
 
-    // Commercial license request form — submits natively to formsubmit.co (see form action)
-    // Light client-side validation of required fields; native submit handles the POST.
+    // Commercial license request form — submits to /api/license-request (handled in license-request.html flow)
+    // Light client-side validation of required fields; submit handler attached elsewhere if present.
     (function setupLicenseForm() {
       const form = document.getElementById('license-form');
       const status = document.getElementById('license-status');
@@ -19724,12 +20056,20 @@ manifest = <span class="tok-fn">ModuleManifest</span>(
         [105, 520, 235, 580],
       ];
 
-      // Locate the "construction" and "project" words — the 5 incoming
-      // streams emerge from letters distributed along both words, not from
-      // a single dot. Each stream visually anchors on a different letter.
+      // Locate the two emphasized words via data-anchor attributes — robust
+      // against translations that reorder or change word count (e.g. German
+      // wraps "construction project" into a single compound, Russian uses
+      // 4 words instead of 5). Fall back to the last two words by index if
+      // the markup hasn't been updated yet.
       const words = hero.querySelectorAll('.headline .word');
-      const wConstruction = words[3] || null; // index 3 → "construction"
-      const wProject      = words[4] || null; // index 4 → "project"
+      const wConstruction =
+        hero.querySelector('.headline [data-anchor="primary"]') ||
+        words[Math.max(0, words.length - 2)] ||
+        null;
+      const wProject =
+        hero.querySelector('.headline [data-anchor="secondary"]') ||
+        words[words.length - 1] ||
+        null;
       // Fallback single-source (legacy): last word's trailing edge.
       const fallbackWord = words[words.length - 1]?.querySelector('span') || words[words.length - 1] || null;
 
@@ -19883,7 +20223,7 @@ manifest = <span class="tok-fn">ModuleManifest</span>(
         try {
           // Cache-bust on each release so updated copy reaches users without
           // a hard refresh. LOCALE_VERSION is bumped on every content change.
-          const LOCALE_VERSION = '20260520a';
+          const LOCALE_VERSION = '20260521a';
           const res = await fetch(`locales/${lang}.json?v=${LOCALE_VERSION}`, { cache: 'default' });
           if (!res.ok) throw 0;
           const json = await res.json();
@@ -20042,13 +20382,12 @@ manifest = <span class="tok-fn">ModuleManifest</span>(
       <p class="ddc-popup-sub" data-i18n="popup.sub">
         One short email a month — new modules, CAD parser releases, behind-the-scenes notes. No spam, unsubscribe any time.
       </p>
-      <form class="newsletter-form ddc-popup-form" id="ddc-popup-form" action="https://formsubmit.co/info@datadrivenconstruction.io" method="POST">
-        <input type="hidden" name="_subject" value="Newsletter signup (popup) — OpenConstructionERP" />
-        <input type="hidden" name="_captcha" value="true" />
-        <input type="hidden" name="_next" value="https://openconstructionerp.com/?subscribed=1" />
-        <input type="hidden" name="_template" value="box" />
-        <input type="hidden" name="_autoresponse" value="Thanks for subscribing to OpenConstructionERP updates! You'll get the next monthly digest soon. — Team DataDrivenConstruction" />
-        <input type="hidden" name="form_type" value="newsletter_popup" />
+      <form class="newsletter-form ddc-popup-form" id="ddc-popup-form" action="/api/subscribe" method="POST" data-form="popup">
+
+
+
+
+<input type="hidden" name="form_type" value="newsletter_popup" />
         <input type="text" name="_honey" style="display:none" tabindex="-1" autocomplete="off" />
         <div class="newsletter-input-wrap">
           <svg class="newsletter-input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
@@ -20244,5 +20583,99 @@ manifest = <span class="tok-fn">ModuleManifest</span>(
         .catch(function () { /* silent — static fallback wins */ });
     })();
   </script>
+
+<script id="oce-marketing-forms">
+/* Marketing-site AJAX form handlers (v4.0.0).
+   - .cb-newsletter-form / .newsletter-form / .ddc-popup-form -> POST /api/subscribe
+   - #custom-form -> POST /api/inquiry
+   On success: swap form with inline success state. On error: inline message. */
+(function(){
+  function payloadFromForm(form){
+    var fd = new FormData(form);
+    var out = {};
+    var interests = [];
+    fd.forEach(function(v, k){
+      if (k.startsWith('_')) return; // skip any legacy hidden honeypot
+      if (k === 'interest' || k === 'interests') { interests.push(String(v)); return; }
+      if (typeof v === 'string') out[k] = v;
+    });
+    if (interests.length) out.interests = interests;
+    return out;
+  }
+
+  function successHtml(title, sub, refId){
+    var ref = refId ? '<p style="margin:0;color:#047857;font-size:12.5px;">Reference: <code style="background:#fff;padding:2px 8px;border-radius:4px;color:#065f46;">' + refId + '</code></p>' : '';
+    return (
+      '<div role="status" style="padding:18px 20px;border-radius:12px;background:linear-gradient(180deg,#ecfdf5,#f0fdf4);border:1px solid #6ee7b7;">' +
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">' +
+          '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>' +
+          '<strong style="font-size:15.5px;color:#064e3b;">' + title + '</strong>' +
+        '</div>' +
+        '<p style="margin:0 0 8px;color:#065f46;font-size:13.5px;line-height:1.55;">' + sub + '</p>' +
+        ref +
+      '</div>'
+    );
+  }
+
+  function showErr(form, msg){
+    var old = form.querySelector('.oce-form-error');
+    if (old) old.remove();
+    var div = document.createElement('div');
+    div.className = 'oce-form-error';
+    div.setAttribute('role','alert');
+    div.style.cssText = 'margin-top:10px;padding:9px 12px;border-radius:8px;background:#fef2f2;color:#991b1b;border:1px solid #fecaca;font-size:13px;';
+    div.textContent = msg;
+    form.appendChild(div);
+  }
+
+  function bind(form, endpoint, kind){
+    form.addEventListener('submit', function(e){
+      e.preventDefault();
+      var btn = form.querySelector('button[type="submit"], button:not([type])');
+      var origLabel = btn ? btn.innerHTML : '';
+      if (btn) { btn.disabled = true; btn.innerHTML = 'Sending…'; }
+
+      var payload = payloadFromForm(form);
+      if (kind === 'subscribe') {
+        payload.source = form.getAttribute('data-form') || 'newsletter';
+        payload.lang = document.documentElement.getAttribute('lang') || '';
+      } else if (kind === 'inquiry') {
+        payload.source = 'inquiry';
+        payload.lang = document.documentElement.getAttribute('lang') || '';
+      }
+
+      fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+        .then(function(r){ return r.json().then(function(j){ return { ok: r.ok, body: j }; }); })
+        .then(function(r){
+          if (r.ok && r.body && (r.body.status === 'subscribed' || r.body.status === 'received')) {
+            var ref = r.body.reference_id || '';
+            var msg = (kind === 'subscribe')
+              ? successHtml('You are subscribed', 'Welcome — we will email you when we ship a new release. Check your inbox for the confirmation.', '')
+              : successHtml('Message received', 'Thanks — we will reply within a few business days. A confirmation email is on its way.', ref);
+            form.outerHTML = msg;
+            return;
+          }
+          var em = (r.body && r.body.message) || 'Something went wrong. Please email info@openconstructionerp.com directly.';
+          showErr(form, em);
+          if (btn) { btn.disabled = false; btn.innerHTML = origLabel; }
+        })
+        .catch(function(){
+          showErr(form, 'Network error. Please try again or email info@openconstructionerp.com directly.');
+          if (btn) { btn.disabled = false; btn.innerHTML = origLabel; }
+        });
+    });
+  }
+
+  document.querySelectorAll('#newsletter-form-inline, #newsletter-form, #ddc-popup-form').forEach(function(f){
+    bind(f, '/api/subscribe', 'subscribe');
+  });
+  var custom = document.getElementById('custom-form');
+  if (custom) bind(custom, '/api/inquiry', 'inquiry');
+})();
+</script>
 </body>
 </html>

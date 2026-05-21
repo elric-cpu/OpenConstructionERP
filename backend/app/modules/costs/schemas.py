@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
+import logging
+import re
 from datetime import date, datetime
 from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+logger = logging.getLogger(__name__)
+
+# Canonical CWICR region shape — ``<2-3 letter country>_<UPPERCASE city>``.
+# Anything else is junk / a typo and we log a warning rather than silently
+# resolving it to EUR.
+_REGION_FORMAT_RE = re.compile(r"^[A-Z]{2,3}_[A-Z0-9]+$")
 
 # CWICR ingestion historically stored currency as an empty string because the
 # parquet files don't carry a currency column. We resolve the right ISO 4217
@@ -25,7 +34,9 @@ _REGION_CURRENCY_FALLBACK: dict[str, str] = {
     "NL_AMSTERDAM": "EUR",
     "BE_BRUSSELS": "EUR",
     "PT_LISBON": "EUR",
-    "PT_SAOPAULO": "BRL",
+    # NOTE: ``PT_SAOPAULO`` was historically mislabeled (São Paulo is BR,
+    # not PT). Canonical key is ``BR_SAOPAULO`` (below). Removed here so a
+    # bad row would hit the warning path rather than silently resolve.
     "GB_LONDON": "GBP",
     "IE_DUBLIN": "EUR",
     "PL_WARSAW": "PLN",
@@ -143,14 +154,33 @@ class CostItemResponse(BaseModel):
         falls back to ``USD`` and every RU/RO/UK rate is mislabeled. This
         validator runs once per response (read-side), so existing rows
         surface the right ISO 4217 code without a backfill migration.
+
+        Logs a warning when the region is malformed or unknown so the
+        offending row can be tracked down — the route handler picks the
+        same warning up via ``_resolve_currency()`` to surface it on the
+        API response for the FE toast.
         """
         if (not self.currency or not self.currency.strip()) and self.region:
-            mapped = _REGION_CURRENCY_FALLBACK.get(self.region.strip().upper())
-            if mapped:
-                # Bypass strict-frozen guard via __dict__ — the model is
-                # mutable by default, but we go direct to skip any future
-                # ConfigDict(frozen=True) regression.
-                self.__dict__["currency"] = mapped
+            normalized = self.region.strip().upper()
+            if not _REGION_FORMAT_RE.match(normalized):
+                logger.warning(
+                    "Cost row uses non-canonical region tag %r "
+                    "(expected ``XX_CITY``); currency falls back to EUR.",
+                    normalized,
+                )
+            else:
+                mapped = _REGION_CURRENCY_FALLBACK.get(normalized)
+                if mapped:
+                    # Bypass strict-frozen guard via __dict__ — the model is
+                    # mutable by default, but we go direct to skip any future
+                    # ConfigDict(frozen=True) regression.
+                    self.__dict__["currency"] = mapped
+                else:
+                    logger.warning(
+                        "Unknown region %r — no entry in "
+                        "_REGION_CURRENCY_FALLBACK; currency falls back to EUR.",
+                        normalized,
+                    )
         return self
 
 

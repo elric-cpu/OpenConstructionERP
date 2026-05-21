@@ -292,11 +292,11 @@ def _label_for_cluster(
                 continue
     if not pair_counts:
         return f"Cluster {cluster_id}"
-    # Dominant pair (tie-break alphabetically for determinism).
-    top_pair, _ = max(
-        pair_counts.items(), key=lambda kv: (kv[1], -ord(kv[0][0][0])) if kv[0][0] else (kv[1], 0)
-    )
-    # The simpler stable sort: highest count, then alphabetic.
+    # Dominant pair: highest count, then alphabetic tie-break for
+    # determinism. The previous version computed `top_pair` twice with
+    # divergent tie-break logic; the first assignment was dead code, so
+    # results were inconsistent only when re-reading the variable for
+    # debugging. Keep one stable expression.
     top_pair = max(pair_counts, key=lambda p: (pair_counts[p], -ord(p[0][:1] or "z")))
     label = f"{top_pair[0]} × {top_pair[1]}"
     if storey_counts:

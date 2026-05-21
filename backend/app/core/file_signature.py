@@ -129,6 +129,51 @@ ALLOWED_PHOTO_TYPES: Final[frozenset[str]] = frozenset(
     {"jpeg", "png", "gif", "webp", "heic", "heif", "tiff"}
 )
 
+# Signature tokens that must NEVER be stored even if the surrounding
+# allow-list would tolerate them. ``detect`` does not currently surface
+# PE/ELF/Mach-O/script types as named tokens — unknown blobs return
+# ``None`` so that plain text (CSV/JSON/TXT) still uploads — but listing
+# the names here keeps the policy contract explicit and lets us tighten
+# the detector later (e.g. add an ``exe`` token) without touching the
+# upload sites.
+BANNED_SIGNATURE_TOKENS: Final[frozenset[str]] = frozenset(
+    {"exe", "elf", "mach-o", "shellscript", "batch", "msi"}
+)
+
+# Mapping from detector tokens to canonical IANA MIME types. Used by
+# upload paths that want to store an attacker-resistant MIME on the
+# Document/Photo row: the request ``Content-Type`` header is fully
+# controlled by the client, so we derive the stored value from the
+# magic bytes we actually inspected.
+_SIGNATURE_TO_MIME: Final[dict[str, str]] = {
+    "pdf": "application/pdf",
+    "png": "image/png",
+    "jpeg": "image/jpeg",
+    "gif": "image/gif",
+    "webp": "image/webp",
+    "heic": "image/heic",
+    "heif": "image/heif",
+    "tiff": "image/tiff",
+    "zip": "application/zip",
+    "ole": "application/x-ole-storage",
+    "ifc": "application/x-step",
+    "dwg": "image/vnd.dwg",
+    "dxf": "image/vnd.dxf",
+    "glb": "model/gltf-binary",
+    "xml": "application/xml",
+}
+
+
+def mime_for_signature(detected: str | None) -> str:
+    """Return the canonical MIME for a detector token.
+
+    ``None`` and unknown tokens map to ``application/octet-stream``
+    so the stored ``mime_type`` is never attacker-controlled.
+    """
+    if detected is None:
+        return "application/octet-stream"
+    return _SIGNATURE_TO_MIME.get(detected, "application/octet-stream")
+
 
 class FileSignatureMismatch(ValueError):
     """‌⁠‍Raised when an upload's magic bytes don't match the allowed set."""

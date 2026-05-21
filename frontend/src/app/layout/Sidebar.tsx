@@ -9,7 +9,9 @@ import {
   Table2,
   CalendarDays,
   Database,
+  Bot,
   Layers,
+  Library,
   Boxes,
   Box,
   ShieldCheck,
@@ -69,8 +71,10 @@ import {
   BarChart3,
   LineChart,
   Radar,
+  ScrollText,
   type LucideIcon,
 } from 'lucide-react';
+import { useAuthStore } from '@/stores/useAuthStore';
 import { useModuleStore } from '@/stores/useModuleStore';
 import { UpdateNotification } from '@/shared/ui/UpdateChecker';
 import { useViewModeStore } from '@/stores/useViewModeStore';
@@ -101,6 +105,10 @@ interface NavItem {
   moduleKey?: string;
   advancedOnly?: boolean; // Hidden in simple mode
   tourId?: string; // data-tour attribute for onboarding
+  /** Optional role gate — hide the entry unless the JWT role matches.
+   *  Used for admin-only items like the Audit Log (`audit.view`
+   *  permission, MANAGER+ on the backend). */
+  roleGate?: ('admin' | 'manager' | 'editor' | 'viewer')[];
 }
 
 interface NavGroup {
@@ -138,6 +146,7 @@ const navGroups: NavGroup[] = [
       { labelKey: 'costs.title', to: '/costs', icon: Database, tourId: 'costs' },
       { labelKey: 'nav.match_elements', to: '/match-elements', icon: Link2, badge: 'BETA' },
       { labelKey: 'nav.assemblies', to: '/assemblies', icon: Layers },
+      { labelKey: 'nav.assembly_library', to: '/assemblies/library', icon: Library, badge: 'BETA' },
       { labelKey: 'catalog.title', to: '/catalog', icon: Boxes },
       { labelKey: 'nav.quantity_rules', to: '/bim/rules', icon: ClipboardCheck, badge: 'BETA' },
     ],
@@ -151,6 +160,7 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.dwg_takeoff', to: '/dwg-takeoff', icon: PencilRuler },
       { labelKey: 'nav.cad_bim_explorer', to: '/data-explorer', icon: TableProperties },
       { labelKey: 'nav.bim_viewer', to: '/bim', icon: Box },
+      { labelKey: 'nav.bim_federations', to: '/bim/federations', icon: Layers, badge: 'NEW' },
       { labelKey: 'nav.clash_detection', to: '/clash', icon: Radar, badge: 'BETA' },
       { labelKey: 'nav.bim_rules', to: '/bim/rules?mode=requirements', icon: SlidersHorizontal, badge: 'BETA' },
     ],
@@ -162,6 +172,7 @@ const navGroups: NavGroup[] = [
     hideInSimple: true,
     items: [
       { labelKey: 'nav.ai_estimate', to: '/ai-estimate', icon: Sparkles, badge: 'BETA' },
+      { labelKey: 'nav.ai_agents', to: '/ai-agents', icon: Bot, badge: 'NEW' },
       { labelKey: 'nav.ai_advisor', to: '/advisor', icon: MessageSquare },
       { labelKey: 'nav.estimation_dashboard', to: '/project-intelligence', icon: BrainCircuit, badge: 'BETA' },
       { labelKey: 'nav.erp_chat', to: '/chat', icon: MessageSquare, badge: 'BETA' },
@@ -303,6 +314,25 @@ const navGroups: NavGroup[] = [
 
 const bottomNav: NavItem[] = [
   { labelKey: 'users.management', to: '/users', icon: Users },
+  // Admin: read-only audit-log timeline. Backend permission is
+  // `audit.view` (MANAGER+); we mirror the gate client-side so the row
+  // never appears for `editor` / `viewer` JWTs. Backend enforcement
+  // remains authoritative — the gate here is purely cosmetic.
+  {
+    labelKey: 'nav.audit_log',
+    to: '/admin/audit-log',
+    icon: ScrollText,
+    roleGate: ['admin', 'manager'],
+  },
+  // Admin: read-only permissions matrix (roles × modules). Same
+  // `audit.view` backend gate — surfaced next to the audit log so
+  // operators see them as a single admin surface.
+  {
+    labelKey: 'nav.permissions_matrix',
+    to: '/admin/permissions',
+    icon: ShieldCheck,
+    roleGate: ['admin', 'manager'],
+  },
   { labelKey: 'modules.title', to: '/modules', icon: Package },
   { labelKey: 'nav.settings', to: '/settings', icon: Settings },
   { labelKey: 'nav.about', to: '/about', icon: Info },
@@ -454,6 +484,15 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   const iconified = useSidebarCollapseStore((s) => s.iconified);
   const toggleIconified = useSidebarCollapseStore((s) => s.toggle);
   const isRTL = useIsRTL();
+  const userRole = useAuthStore((s) => s.userRole);
+
+  // Role-gate the bottom nav. Items without a `roleGate` always show;
+  // gated items only render when the current JWT role matches. The
+  // backend `RequirePermission` decorator still enforces real access —
+  // this is just to keep the sidebar tidy for non-admin users.
+  const visibleBottomNav = bottomNav.filter(
+    (item) => !item.roleGate || (userRole && (item.roleGate as string[]).includes(userRole)),
+  );
 
   // Drive the global CSS variable so both the aside (`w-sidebar`) and
   // the main-content offset (`lg:pl-sidebar`) shrink/grow in lockstep.
@@ -1002,7 +1041,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           )}
         />
         <ul className="space-y-px">
-          {bottomNav.map((item) => (
+          {visibleBottomNav.map((item) => (
             <li key={item.to}>
               <SidebarItem
                 item={item}

@@ -172,10 +172,15 @@ class DocumentService:
 
         Security measures:
         - Filename sanitization (path traversal prevention)
-        - File size validation (max 100MB)
+        - File size validation (max ``MAX_FILE_SIZE`` = 100MB — defence
+          in depth; the API gateway / nginx is expected to enforce the
+          same cap, but the service rejects oversize uploads itself so
+          a misconfigured gateway can't surface a memory-DoS vector)
         - Category validation against allowed list
         - UUID-prefixed storage path to avoid collisions
         - File written AFTER DB record creation for easy rollback
+        - Stored ``mime_type`` is derived from the detected magic-byte
+          signature, NOT the attacker-controlled request header (P0-1)
         """
         # Sanitize filename
         raw_name = file.filename or "untitled"
@@ -195,8 +200,21 @@ class DocumentService:
         if category not in VALID_CATEGORIES:
             category = "other"
 
-        # Read file content (no upload size cap per product policy).
+        # Enforce size cap (defence in depth — max also expected at the
+        # API gateway level). Done after reading because UploadFile is a
+        # streaming object: we cap on read by checking length before
+        # acceptance. 100 MB is enough for typical AEC drawings and
+        # contracts; oversized assets belong on direct-to-S3 paths.
         content = await file.read()
+        if len(content) > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=(
+                    f"File too large: {len(content)} bytes "
+                    f"(max {MAX_FILE_SIZE} bytes / "
+                    f"{MAX_FILE_SIZE // (1024 * 1024)} MB)."
+                ),
+            )
 
         # Magic-byte validation — BLOCKED_EXTENSIONS only rejects known-bad
         # names; this catches an attacker who renames evil.exe → evil.pdf.
@@ -208,14 +226,28 @@ class DocumentService:
         from app.core.file_signature import (
             ALLOWED_CAD_TYPES,
             ALLOWED_DOCUMENT_TYPES,
+            BANNED_SIGNATURE_TOKENS,
             SIGNATURE_BYTES_REQUIRED,
         )
         from app.core.file_signature import (
             detect as _sig_detect,
         )
+        from app.core.file_signature import (
+            mime_for_signature as _mime_for_signature,
+        )
 
         allowed_signatures = ALLOWED_DOCUMENT_TYPES | ALLOWED_CAD_TYPES
         detected_type = _sig_detect(content[:SIGNATURE_BYTES_REQUIRED])
+        # Reject explicitly banned types (executables, scripts, …) even
+        # if a future detector update surfaces them as named tokens.
+        if detected_type is not None and detected_type in BANNED_SIGNATURE_TOKENS:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Executable/script content is not allowed "
+                    f"(detected: {detected_type})."
+                ),
+            )
         if detected_type is not None and detected_type not in allowed_signatures:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -225,6 +257,13 @@ class DocumentService:
                     f"Allowed: {', '.join(sorted(allowed_signatures))}"
                 ),
             )
+
+        # Derive the stored MIME from the detected signature (P0-1).
+        # ``file.content_type`` is fully attacker-controlled — an .exe
+        # uploaded with header ``image/png`` previously round-tripped
+        # into the DB and downstream consumers (vector indexer, viewers)
+        # would happily trust it.
+        stored_mime = _mime_for_signature(detected_type)
 
         # Build storage path with UUID prefix to avoid collisions
         file_uuid = uuid.uuid4().hex[:12]
@@ -239,7 +278,7 @@ class DocumentService:
             name=safe_name,
             category=category,
             file_size=len(content),
-            mime_type=file.content_type or "",
+            mime_type=stored_mime,
             file_path=str(file_path),
             uploaded_by=user_id,
         )
@@ -267,7 +306,7 @@ class DocumentService:
                     "name": safe_name,
                     "category": category,
                     "file_size": len(content),
-                    "mime_type": file.content_type or "",
+                    "mime_type": stored_mime,
                     "uploaded_by": user_id,
                 },
                 source_module="oe_documents",
@@ -316,7 +355,7 @@ class DocumentService:
                 "name": safe_name,
                 "category": category,
                 "file_size": len(content),
-                "mime_type": file.content_type or "",
+                "mime_type": stored_mime,
             },
         )
 
@@ -414,6 +453,34 @@ class DocumentService:
                         detail=(
                             f"Invalid CDE state transition: '{current_state}' -> '{new_state}'. "
                             f"Allowed: {allowed}"
+                        ),
+                    )
+
+        # P1 — revision-conflict guard. Two concurrent updates that both
+        # set ``is_current_revision=True`` under the same parent
+        # ``parent_document_id`` would silently leave the chain with two
+        # "current" rows; downstream consumers (viewer, vector index)
+        # then have to pick one and the choice diverges across tenants.
+        # Reject the second update with 409 so the client retries against
+        # the row that won.
+        if fields.get("is_current_revision") is True:
+            parent_id = fields.get(
+                "parent_document_id", document.parent_document_id
+            )
+            if parent_id is not None:
+                stmt = select(Document).where(
+                    Document.parent_document_id == parent_id,
+                    Document.is_current_revision.is_(True),
+                    Document.id != document_id,
+                )
+                existing = (await self.session.execute(stmt)).scalars().first()
+                if existing is not None:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"Revision conflict: document {existing.id} is "
+                            f"already the current revision under parent "
+                            f"{parent_id}. Demote it first."
                         ),
                     )
 
@@ -589,13 +656,20 @@ class PhotoService:
         """Upload a photo and create a record.
 
         Security measures:
-        - MIME type validation (images only)
+        - MIME type validation (images only) — header used only as a
+          quick pre-check; the authoritative gate is the magic-byte
+          sniff below, and the stored ``mime_type`` is derived from it
         - Filename sanitization
-        - File size validation (max 50MB)
+        - File size validation (max ``MAX_PHOTO_SIZE`` = 50MB — defence
+          in depth; the API gateway is expected to enforce the same
+          cap, but we reject oversize uploads here so a misconfigured
+          gateway can't surface a memory-DoS vector)
         - Category validation
         - UUID-prefixed storage path
         """
-        # Validate MIME type
+        # Validate MIME type (header — fully attacker-controlled, so this
+        # is only a fast pre-check; the magic-byte sniff below is the
+        # authoritative gate and the stored value below comes from it).
         content_type = file.content_type or ""
         if content_type not in ALLOWED_IMAGE_TYPES:
             raise HTTPException(
@@ -622,26 +696,59 @@ class PhotoService:
         if category not in VALID_PHOTO_CATEGORIES:
             category = "site"
 
-        # Read file content (no upload size cap per product policy).
+        # Enforce size cap (defence in depth; max also expected at the
+        # API gateway level). 50 MB is enough for 12 MP JPEGs and
+        # construction-site phone photos; bigger assets belong on
+        # direct-to-S3 paths.
         content = await file.read()
+        if len(content) > MAX_PHOTO_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=(
+                    f"Photo too large: {len(content)} bytes "
+                    f"(max {MAX_PHOTO_SIZE} bytes / "
+                    f"{MAX_PHOTO_SIZE // (1024 * 1024)} MB)."
+                ),
+            )
 
         # Magic-byte cross-check — content_type is fully attacker-controlled
         # (it's a request header), so we re-derive the real format from the
         # bytes. Reject anything that isn't a recognised raster image.
         from app.core.file_signature import (
             ALLOWED_PHOTO_TYPES,
+            BANNED_SIGNATURE_TOKENS,
             SIGNATURE_BYTES_REQUIRED,
         )
         from app.core.file_signature import (
             detect as _sig_detect,
         )
+        from app.core.file_signature import (
+            mime_for_signature as _mime_for_signature,
+        )
 
         detected_photo_type = _sig_detect(content[:SIGNATURE_BYTES_REQUIRED])
+        if (
+            detected_photo_type is not None
+            and detected_photo_type in BANNED_SIGNATURE_TOKENS
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Executable/script content is not allowed "
+                    f"(detected: {detected_photo_type})."
+                ),
+            )
         if detected_photo_type is None or detected_photo_type not in ALLOWED_PHOTO_TYPES:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="uploaded file content does not match an image format",
             )
+
+        # Use the magic-byte-derived MIME for the cross-linked Document
+        # row below (P0-1). The header value is left in ``content_type``
+        # for backwards-compat with the photo response field but the
+        # stored canonical MIME is server-derived.
+        stored_mime = _mime_for_signature(detected_photo_type)
 
         # Build storage path
         file_uuid = uuid.uuid4().hex[:12]
@@ -720,7 +827,7 @@ class PhotoService:
                 {
                     "id": doc_id, "pid": str(project_id), "name": safe_name,
                     "desc": caption or "", "cat": "photo", "fsize": len(content),
-                    "mime": content_type, "fpath": str(file_path), "by": user_id or "",
+                    "mime": stored_mime, "fpath": str(file_path), "by": user_id or "",
                     "tags": tags_json, "now": now,
                 },
             )
@@ -1111,7 +1218,16 @@ class SheetService:
         safe_name = _sanitize_filename(raw_name)
 
         content = await file.read()
-        # No upload size cap — per product policy.
+        # Defence-in-depth size cap (also expected at API gateway level).
+        if len(content) > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=(
+                    f"PDF too large: {len(content)} bytes "
+                    f"(max {MAX_FILE_SIZE} bytes / "
+                    f"{MAX_FILE_SIZE // (1024 * 1024)} MB)."
+                ),
+            )
 
         # Save the original PDF to uploads
         file_uuid = uuid.uuid4().hex[:12]

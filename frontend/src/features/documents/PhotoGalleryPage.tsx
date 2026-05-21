@@ -1428,6 +1428,19 @@ export function PhotoGalleryPage() {
           onCancel={() => setDeleteTarget(null)}
         />
       )}
+
+      {/* Mobile PWA — Slice 1. Bottom-anchored quick-action FAB visible
+          only on viewports ≤640px; opens the upload sheet for fast
+          site capture from a phone. ≥44×44 tap target. */}
+      <button
+        type="button"
+        onClick={() => setShowUpload(true)}
+        disabled={!projectId}
+        aria-label={t('photos.upload', { defaultValue: 'Upload Photos' })}
+        className="fixed bottom-5 right-5 z-40 inline-flex h-14 w-14 min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-oe-blue text-white shadow-lg ring-1 ring-black/5 transition-transform hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100 sm:hidden"
+      >
+        <Upload size={22} />
+      </button>
     </div>
   );
 }

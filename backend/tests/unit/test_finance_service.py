@@ -655,3 +655,172 @@ async def test_pay_invoice_does_not_write_total_to_every_budget_row() -> None:
 
     assert budget_material.actual == "1000"
     assert budget_labor.actual == "0"  # stays zero — the bug would have written 1000 here
+
+
+# ── ETC clamp regression (2026-05-21 audit fix #4) ────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_create_evm_snapshot_etc_clamped_to_zero_when_over_budget() -> None:
+    """When AC > EAC (over-budget run), ETC ("estimate to complete") would
+    naively report a negative figure (eac - ac < 0). The right answer is
+    "no remaining spend forecast" = 0, not a negative budget recovery.
+
+    Setup: CPI=1 (so EAC ≈ AC + (BAC-EV) = AC ≈ 12000 with BAC=10000,
+    EV=10000, AC=12000 → EAC=12000, ETC raw = 0). We push harder:
+    BAC=10000, PV=10000, EV=10000, AC=15000 → CPI=10000/15000=0.667,
+    EAC = 15000 + 0 / 0.667 = 15000, ETC raw = eac - ac = 0 — still
+    zero. We craft an explicit AC > EAC scenario by exploiting the
+    cpi==0 branch: when EV=0 and BAC < AC, EAC = AC + BAC < AC.
+    """
+    service = _make_service()
+    snapshot = await service.create_evm_snapshot(
+        EVMSnapshotCreate(
+            project_id=uuid.uuid4(),
+            snapshot_date="2026-04-01",
+            bac="10000",
+            pv="5000",
+            ev="0",        # forces cpi=0 branch -> eac = ac + (bac - ev) = ac + bac
+            ac="50000",    # ac > bac, so eac = 50000 + 10000 = 60000 still > ac
+        )
+    )
+    # Above scenario: eac = 60000, ac = 50000, etc raw = 10000 > 0 — safe.
+
+    # Now the actual clamp case: bac small, ev > 0, cpi forces EAC < AC.
+    # EAC = AC + (BAC-EV)/CPI. With CPI very large (EV >> AC), EAC ≈ AC + 0+.
+    # To force EAC < AC we need (BAC-EV)/CPI < 0, i.e. EV > BAC.
+    snapshot2 = await service.create_evm_snapshot(
+        EVMSnapshotCreate(
+            project_id=uuid.uuid4(),
+            snapshot_date="2026-04-02",
+            bac="10000",
+            pv="10000",
+            ev="12000",    # over-performing — EV > BAC drives (BAC-EV) negative
+            ac="11000",    # CPI = 12000/11000 = 1.0909
+        )
+    )
+    # EAC = 11000 + (10000 - 12000) / 1.0909 = 11000 - 1833.33 = 9166.67
+    # raw ETC = 9166.67 - 11000 = -1833.33  -->  clamp -> 0
+    assert Decimal(snapshot2.etc) == Decimal("0.00")
+    # snapshot1 retains a positive ETC (cpi==0 fallback path)
+    assert Decimal(snapshot.etc) >= Decimal("0")
+
+
+# ── Audit-warning regression (2026-05-21 audit fix #3) ────────────────────
+
+
+@pytest.mark.asyncio
+async def test_approve_invoice_audit_failure_emits_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """When the audit-log helper raises, ``approve_invoice`` must still
+    succeed (best-effort) but emit a logger.warning carrying the actor_id
+    and invoice_id so ops can spot the failure (previously logger.debug,
+    invisible at production INFO root level)."""
+    import logging as _logging
+
+    service = _make_service()
+    invoice = await service.create_invoice(
+        InvoiceCreate(
+            project_id=uuid.uuid4(),
+            invoice_direction="payable",
+            invoice_date="2026-04-01",
+            amount_subtotal="100",
+            tax_amount="19",
+        )
+    )
+
+    # Force the audit-log helper to blow up.
+    import app.core.audit_log as _audit_mod
+
+    original = _audit_mod.log_activity
+
+    async def _boom(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("audit db is down")
+
+    _audit_mod.log_activity = _boom  # type: ignore[assignment]
+    try:
+        actor = uuid.uuid4()
+        with caplog.at_level(_logging.WARNING, logger="app.modules.finance.service"):
+            updated = await service.approve_invoice(invoice.id, actor_id=str(actor))
+        # The status transition still landed:
+        assert updated.status == "sent"
+        # The warning fired and carries the operational metadata:
+        warning_records = [
+            r for r in caplog.records
+            if r.levelno == _logging.WARNING
+            and "FSM audit log FAILED for invoice approve" in r.getMessage()
+        ]
+        assert warning_records, "Expected an audit-failure WARNING but none was emitted"
+        msg = warning_records[0].getMessage()
+        assert str(actor) in msg
+        assert str(invoice.id) in msg
+    finally:
+        _audit_mod.log_activity = original  # type: ignore[assignment]
+
+
+@pytest.mark.asyncio
+async def test_update_invoice_line_items_replace_logs_audit_row(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The bulk line-item replace path inside ``update_invoice`` must log a
+    single audit row carrying the count + total delta — no per-item diff.
+    We capture the helper call instead of running it for real to keep this
+    fully stubbed."""
+    from app.modules.finance.schemas import InvoiceUpdate, InvoiceLineItemCreate
+
+    service = _make_service()
+    # Build a synthetic invoice row directly — the SQLAlchemy ORM-typed
+    # ``line_items`` relationship rejects SimpleNamespace, but a plain
+    # SimpleNamespace stand-in for the whole invoice lets us hand-pick the
+    # prior line items the audit delta calc inspects.
+    invoice = SimpleNamespace(
+        id=uuid.uuid4(),
+        project_id=uuid.uuid4(),
+        invoice_number="INV-TEST-1",
+        invoice_direction="payable",
+        amount_subtotal="500",
+        tax_amount="0",
+        amount_total="500",
+        status="draft",
+        line_items=[
+            SimpleNamespace(amount="200"),
+            SimpleNamespace(amount="300"),
+        ],
+    )
+    service.invoices.rows[invoice.id] = invoice  # type: ignore[attr-defined]
+
+    # Capture audit calls.
+    import app.core.audit_log as _audit_mod
+
+    captured: dict[str, Any] = {}
+    original = _audit_mod.log_activity
+
+    async def _spy(*args: Any, **kwargs: Any) -> None:
+        captured.update(kwargs)
+
+    _audit_mod.log_activity = _spy  # type: ignore[assignment]
+    try:
+        await service.update_invoice(
+            invoice.id,
+            InvoiceUpdate(
+                line_items=[
+                    InvoiceLineItemCreate(
+                        description="New only",
+                        quantity="1",
+                        unit="lsum",
+                        unit_rate="450",
+                        amount="450",
+                    ),
+                ],
+            ),
+        )
+    finally:
+        _audit_mod.log_activity = original  # type: ignore[assignment]
+
+    assert captured.get("action") == "line_items_replaced"
+    md = captured.get("metadata") or {}
+    assert md.get("prior_count") == 2
+    assert md.get("new_count") == 1
+    # 200 + 300 = 500 prior; 450 new; delta = -50
+    assert Decimal(md.get("total_delta", "0")) == Decimal("-50")

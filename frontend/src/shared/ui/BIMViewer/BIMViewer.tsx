@@ -566,6 +566,32 @@ export function BIMViewer({
    *  opening DevTools. ``null`` when the error had no stack (rare —
    *  some loaders throw plain strings) or no error is active. */
   const [geometryErrorStack, setGeometryErrorStack] = useState<string | null>(null);
+  /** Structured diagnostic dict surfaced by the backend when it serves
+   *  a 422 from the geometry endpoint (magic-byte / signature check
+   *  failed). Contains only non-PII bytes: first 8 hex/ASCII, file size,
+   *  parser reason, expected signature, first XML tag (DAE), and a
+   *  remediation hint. Rendered as a labelled table under the banner so
+   *  a user can diagnose without DevTools. ``null`` when the failure had
+   *  no structured payload (network errors, 404s, JS-side parse). */
+  const [geometryErrorDiagnostic, setGeometryErrorDiagnostic] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
+  /** HTTP status code of the latest geometry failure (401 / 403 / 404 /
+   *  422 / 5xx / null for network errors). Drives the headline copy +
+   *  remediation hint shown in the banner — "Refresh to renew session"
+   *  reads completely different from "The 3D file is corrupt" yet they
+   *  both surface through the same banner. */
+  const [geometryErrorStatus, setGeometryErrorStatus] = useState<number | null>(
+    null,
+  );
+  /** Correlation ID emitted by the backend on every geometry response
+   *  (the ``X-Request-Id`` header). Shown verbatim in the banner so the
+   *  user can quote it to support — and is the SOLE field that lets
+   *  support locate the failure in server logs. */
+  const [geometryErrorRequestId, setGeometryErrorRequestId] = useState<
+    string | null
+  >(null);
   /** Bumped to force the geometry-load effect to re-run when the user
    *  clicks Retry. Doesn't change ``geometryUrl`` so we can't simply
    *  re-set state to the same value — a discriminating dep is needed. */
@@ -1003,6 +1029,10 @@ export function BIMViewer({
       // Reset progress + error state at the start of every load.
       setGeometryProgress(0);
       setGeometryError(null);
+      setGeometryErrorStack(null);
+      setGeometryErrorDiagnostic(null);
+      setGeometryErrorStatus(null);
+      setGeometryErrorRequestId(null);
       // Per-modelId geometry cache (RFC 19 §UX-1). Hits skip the network
       // round-trip entirely; misses populate the cache for the next mount.
       const cacheStore = useBIMGeometryCache.getState();
@@ -1102,8 +1132,44 @@ export function BIMViewer({
                   .slice(0, 4) // first line is the message; next 3 are frames
                   .join('\n')
               : null;
+          // Backend now attaches a structured `diagnostic` dict to ALL
+          // geometry-error paths (401/403/404/422), each carrying the
+          // correlation request_id, a plain-language `cause` (422 only),
+          // and an actionable `remediation` string. Pull it out plus the
+          // HTTP status code and the request_id so the banner can render
+          // status-aware copy instead of "Failed to fetch geometry: 422".
+          const errAny = err as {
+            diagnostic?: unknown;
+            status?: number;
+            requestId?: string | null;
+          };
+          const diagnostic =
+            err && typeof err === 'object' && 'diagnostic' in err
+              ? (errAny.diagnostic as Record<string, unknown> | null | undefined)
+              : null;
+          const status =
+            err && typeof err === 'object' && typeof errAny.status === 'number'
+              ? errAny.status
+              : null;
+          // Request ID may also live INSIDE the diagnostic dict — backends
+          // emit it both ways for resilience against header stripping by
+          // intermediate proxies.
+          let requestIdFromDiag: string | null = null;
+          if (diagnostic && typeof diagnostic === 'object') {
+            const rid = (diagnostic as { request_id?: unknown }).request_id;
+            if (typeof rid === 'string' && rid) requestIdFromDiag = rid;
+          }
+          const requestId =
+            (typeof errAny.requestId === 'string' && errAny.requestId) ||
+            requestIdFromDiag ||
+            null;
           setGeometryError(message);
           setGeometryErrorStack(stackText);
+          setGeometryErrorDiagnostic(
+            diagnostic && typeof diagnostic === 'object' ? diagnostic : null,
+          );
+          setGeometryErrorStatus(status);
+          setGeometryErrorRequestId(requestId);
           setGeometryProgress(null);
         });
     }
@@ -2336,12 +2402,13 @@ export function BIMViewer({
           placeholder banner. */}
       {sceneManagerReady && (
         <div
-          className="absolute top-3 right-3 z-20"
+          className="absolute bottom-3 z-20"
+          style={{ left: leftPanelOpen ? leftPanelWidth + 16 : 12 }}
           aria-label={t('bim.site_compass.aria_label', {
             defaultValue: 'Site Compass — 3D navigation cube',
           })}
         >
-          <BIMViewCube sceneManager={sceneManagerReady} size={80} />
+          <BIMViewCube sceneManager={sceneManagerReady} size={112} />
         </div>
       )}
 
@@ -2518,20 +2585,197 @@ export function BIMViewer({
           user can still pan/zoom whatever DID load (e.g. placeholder
           boxes from the text-IFC fallback). The Retry button re-runs
           the load by bumping ``geometryRetryNonce``. */}
-      {geometryError && (
+      {geometryError && (() => {
+        // Derive a status-aware headline + plain-language "What happened"
+        // sentence. The backend's structured diagnostic carries `cause`
+        // (422 only) and `remediation` (every error). We pick a friendly
+        // top-line based on HTTP status so a 401 doesn't scare the user
+        // with "Could not load 3D geometry" when the real story is "your
+        // login expired — refresh".
+        const diag = geometryErrorDiagnostic;
+        const diagCause =
+          diag && typeof (diag as { cause?: unknown }).cause === 'string'
+            ? ((diag as { cause: string }).cause)
+            : null;
+        const diagRemediation =
+          diag && typeof (diag as { remediation?: unknown }).remediation === 'string'
+            ? ((diag as { remediation: string }).remediation)
+            : null;
+        const diagMessage =
+          diag && typeof (diag as { message?: unknown }).message === 'string'
+            ? ((diag as { message: string }).message)
+            : null;
+        const status = geometryErrorStatus;
+        let headline = t('bim.geometry_load_failed', {
+          defaultValue: 'Could not load 3D geometry',
+        });
+        let plainCause = diagCause;
+        if (status === 401) {
+          headline = t('bim.geometry_err_auth_title', {
+            defaultValue: 'Your session expired',
+          });
+          plainCause = plainCause ?? t('bim.geometry_err_auth_cause', {
+            defaultValue:
+              'The viewer could not authenticate to the server. Refreshing the page usually fixes this.',
+          });
+        } else if (status === 403) {
+          headline = t('bim.geometry_err_forbidden_title', {
+            defaultValue: 'You don’t have access to this model',
+          });
+          plainCause = plainCause ?? t('bim.geometry_err_forbidden_cause', {
+            defaultValue:
+              'Your account does not include permission to view BIM models on this project.',
+          });
+        } else if (status === 404) {
+          headline = t('bim.geometry_err_missing_title', {
+            defaultValue: 'This model has no 3D geometry on the server',
+          });
+          plainCause = plainCause ?? t('bim.geometry_err_missing_cause', {
+            defaultValue:
+              'Either the model was uploaded but the converter produced no 3D mesh, or the file was removed.',
+          });
+        } else if (status === 422) {
+          headline = t('bim.geometry_err_invalid_title', {
+            defaultValue: 'The 3D file looks damaged or unsupported',
+          });
+          // `plainCause` from the backend diagnostic already covers this
+          // case in plain language (HTML-page-instead-of-DAE, IFC schedule
+          // instead of mesh, truncated upload, etc.).
+        } else if (status && status >= 500) {
+          headline = t('bim.geometry_err_server_title', {
+            defaultValue: 'The server had a problem loading this model',
+          });
+          plainCause = plainCause ?? t('bim.geometry_err_server_cause', {
+            defaultValue:
+              'A backend error prevented the file from being served. This is usually temporary — try Retry.',
+          });
+        } else if (status === null) {
+          headline = t('bim.geometry_err_network_title', {
+            defaultValue: 'Could not reach the server',
+          });
+          plainCause = plainCause ?? t('bim.geometry_err_network_cause', {
+            defaultValue:
+              'The browser couldn’t connect to the backend. Check your internet connection or VPN, then click Retry.',
+          });
+        }
+        return (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 max-w-md w-[90%]">
           <div className="rounded-lg border border-amber-300/70 dark:border-amber-700/60 bg-amber-50/95 dark:bg-amber-900/30 backdrop-blur-sm shadow-lg px-4 py-3">
             <div className="flex items-start gap-3">
               <AlertCircle size={18} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-semibold text-amber-900 dark:text-amber-100">
-                  {t('bim.geometry_load_failed', {
-                    defaultValue: 'Could not load 3D geometry',
-                  })}
+                  {headline}
                 </div>
-                <div className="mt-1 text-[12px] text-amber-800 dark:text-amber-200 break-words">
-                  {geometryError}
+                {plainCause && (
+                  <div className="mt-1 text-[12.5px] text-amber-900 dark:text-amber-100 leading-snug">
+                    {plainCause}
+                  </div>
+                )}
+                {diagRemediation && (
+                  <div className="mt-2 text-[11.5px] text-amber-800 dark:text-amber-200 leading-snug">
+                    <span className="font-semibold">
+                      {t('bim.geometry_try_this', { defaultValue: 'Try this' })}:
+                    </span>{' '}
+                    {diagRemediation}
+                  </div>
+                )}
+                <div className="mt-1.5 text-[10.5px] text-amber-700/80 dark:text-amber-300/80 font-mono break-all">
+                  {status !== null && (
+                    <>
+                      <span>HTTP {status}</span>
+                      {(geometryErrorRequestId || diagMessage) && <span> &middot; </span>}
+                    </>
+                  )}
+                  {geometryErrorRequestId && (
+                    <>
+                      <span>Request ID: {geometryErrorRequestId}</span>
+                      {diagMessage && <span> &middot; </span>}
+                    </>
+                  )}
+                  {diagMessage && <span>{diagMessage}</span>}
                 </div>
+                {geometryErrorDiagnostic && (
+                  <details className="mt-2 text-[11px] text-amber-900/85 dark:text-amber-100/80" open>
+                    <summary className="cursor-pointer select-none hover:text-amber-900 dark:hover:text-amber-100 font-medium">
+                      {t('bim.geometry_diagnostic.title', {
+                        defaultValue: 'File diagnostic',
+                      })}
+                    </summary>
+                    <dl className="mt-1 grid grid-cols-[max-content_1fr] gap-x-2 gap-y-0.5 rounded bg-amber-100/60 dark:bg-amber-900/40 p-2 text-[10px] font-mono">
+                      {typeof geometryErrorDiagnostic.format === 'string' && (
+                        <>
+                          <dt className="text-amber-700 dark:text-amber-300">
+                            {t('bim.geometry_diagnostic.format', { defaultValue: 'Format' })}
+                          </dt>
+                          <dd className="text-amber-900 dark:text-amber-100 break-all">
+                            {String(geometryErrorDiagnostic.format)}
+                          </dd>
+                        </>
+                      )}
+                      {typeof geometryErrorDiagnostic.size_bytes === 'number' && (
+                        <>
+                          <dt className="text-amber-700 dark:text-amber-300">
+                            {t('bim.geometry_diagnostic.size', { defaultValue: 'Size' })}
+                          </dt>
+                          <dd className="text-amber-900 dark:text-amber-100 break-all">
+                            {String(geometryErrorDiagnostic.size_bytes)} {t('common.bytes', { defaultValue: 'bytes' })}
+                          </dd>
+                        </>
+                      )}
+                      {typeof geometryErrorDiagnostic.expected_signature === 'string' && (
+                        <>
+                          <dt className="text-amber-700 dark:text-amber-300">
+                            {t('bim.geometry_diagnostic.expected', { defaultValue: 'Expected' })}
+                          </dt>
+                          <dd className="text-amber-900 dark:text-amber-100 break-all">
+                            {String(geometryErrorDiagnostic.expected_signature)}
+                          </dd>
+                        </>
+                      )}
+                      {typeof geometryErrorDiagnostic.head_hex === 'string' && (
+                        <>
+                          <dt className="text-amber-700 dark:text-amber-300">
+                            {t('bim.geometry_diagnostic.head_hex', { defaultValue: 'First bytes (hex)' })}
+                          </dt>
+                          <dd className="text-amber-900 dark:text-amber-100 break-all">
+                            {String(geometryErrorDiagnostic.head_hex)}
+                          </dd>
+                        </>
+                      )}
+                      {typeof geometryErrorDiagnostic.head_ascii === 'string' && (
+                        <>
+                          <dt className="text-amber-700 dark:text-amber-300">
+                            {t('bim.geometry_diagnostic.head_ascii', { defaultValue: 'First bytes (ASCII)' })}
+                          </dt>
+                          <dd className="text-amber-900 dark:text-amber-100 break-all">
+                            {String(geometryErrorDiagnostic.head_ascii)}
+                          </dd>
+                        </>
+                      )}
+                      {typeof geometryErrorDiagnostic.first_tag === 'string' && (
+                        <>
+                          <dt className="text-amber-700 dark:text-amber-300">
+                            {t('bim.geometry_diagnostic.first_tag', { defaultValue: 'First XML tag' })}
+                          </dt>
+                          <dd className="text-amber-900 dark:text-amber-100 break-all">
+                            {String(geometryErrorDiagnostic.first_tag)}
+                          </dd>
+                        </>
+                      )}
+                      {typeof geometryErrorDiagnostic.reason === 'string' && (
+                        <>
+                          <dt className="text-amber-700 dark:text-amber-300">
+                            {t('bim.geometry_diagnostic.reason', { defaultValue: 'Reason' })}
+                          </dt>
+                          <dd className="text-amber-900 dark:text-amber-100 break-all">
+                            {String(geometryErrorDiagnostic.reason)}
+                          </dd>
+                        </>
+                      )}
+                    </dl>
+                  </details>
+                )}
                 {geometryErrorStack && (
                   <details className="mt-2 text-[11px] text-amber-900/80 dark:text-amber-100/70">
                     <summary className="cursor-pointer select-none hover:text-amber-900 dark:hover:text-amber-100">
@@ -2552,6 +2796,9 @@ export function BIMViewer({
                       if (mgr) mgr.resetGeometryLoadFlag();
                       setGeometryError(null);
                       setGeometryErrorStack(null);
+                      setGeometryErrorDiagnostic(null);
+                      setGeometryErrorStatus(null);
+                      setGeometryErrorRequestId(null);
                       setGeometryRetryNonce((n) => n + 1);
                     }}
                     className="inline-flex items-center gap-1 rounded-md border border-amber-400 dark:border-amber-700 bg-white dark:bg-amber-800/40 hover:bg-amber-100 dark:hover:bg-amber-700/60 px-2.5 py-1 text-xs font-medium text-amber-900 dark:text-amber-100 transition-colors"
@@ -2561,30 +2808,78 @@ export function BIMViewer({
                   <button
                     type="button"
                     onClick={() => {
-                      // Build a one-shot diagnostic blob the user can
-                      // paste into a bug report. Includes the geometry
-                      // URL, message, top stack frames, browser UA, and
-                      // app version — everything a triage engineer needs
-                      // to reproduce without asking follow-ups.
-                      const blob = {
-                        bim_geometry_url: geometryUrl ?? null,
-                        message: geometryError,
-                        stack: geometryErrorStack,
-                        user_agent: navigator.userAgent,
-                        time: new Date().toISOString(),
-                      };
+                      // Build a one-shot, human-readable bug report block
+                      // the user can paste straight into an email or
+                      // GitHub issue. The Request ID is the single most
+                      // important field for support to find this failure
+                      // in server logs. We deliberately use a markdown-
+                      // style template (not raw JSON) because most users
+                      // pasting into an email expect readable text, not
+                      // `{ "error": "..." }`. Privacy: no auth token, no
+                      // file path, no user PII — only what backend already
+                      // exposed in its 422/404/etc detail payload.
+                      const lines: string[] = [];
+                      lines.push('### BIM viewer error report');
+                      lines.push('');
+                      lines.push(
+                        `- When: ${new Date().toISOString()}`,
+                      );
+                      if (geometryErrorRequestId) {
+                        lines.push(`- Request ID: ${geometryErrorRequestId}`);
+                      }
+                      if (geometryErrorStatus !== null) {
+                        lines.push(`- HTTP status: ${geometryErrorStatus}`);
+                      }
+                      if (diagMessage) {
+                        lines.push(`- Backend message: ${diagMessage}`);
+                      }
+                      if (plainCause) {
+                        lines.push(`- Likely cause: ${plainCause}`);
+                      }
+                      if (geometryErrorDiagnostic) {
+                        const d = geometryErrorDiagnostic as Record<string, unknown>;
+                        if (typeof d.format === 'string') {
+                          lines.push(`- Format: ${d.format}`);
+                        }
+                        if (typeof d.size_bytes === 'number') {
+                          lines.push(`- File size: ${d.size_bytes} bytes`);
+                        }
+                        if (typeof d.expected_signature === 'string') {
+                          lines.push(`- Expected: ${d.expected_signature}`);
+                        }
+                        if (typeof d.head_hex === 'string') {
+                          lines.push(`- First bytes (hex): ${d.head_hex}`);
+                        }
+                        if (typeof d.head_ascii === 'string') {
+                          lines.push(`- First bytes (ASCII): ${d.head_ascii}`);
+                        }
+                        if (typeof d.first_tag === 'string' && d.first_tag) {
+                          lines.push(`- First XML tag: ${d.first_tag}`);
+                        }
+                        if (typeof d.reason === 'string') {
+                          lines.push(`- Parser reason: ${d.reason}`);
+                        }
+                      }
+                      lines.push(`- Browser: ${navigator.userAgent}`);
+                      lines.push(`- URL: ${window.location.href}`);
+                      if (geometryErrorStack) {
+                        lines.push('');
+                        lines.push('Stack (top frames):');
+                        lines.push('```');
+                        lines.push(geometryErrorStack);
+                        lines.push('```');
+                      }
+                      const blob = lines.join('\n');
                       try {
-                        navigator.clipboard?.writeText(
-                          JSON.stringify(blob, null, 2),
-                        );
+                        navigator.clipboard?.writeText(blob);
                       } catch {
                         /* clipboard blocked — silent */
                       }
                     }}
                     className="text-[11px] text-amber-700/80 dark:text-amber-300/80 hover:text-amber-900 dark:hover:text-amber-100 underline-offset-2 hover:underline"
                   >
-                    {t('bim.geometry_copy_diagnostic', {
-                      defaultValue: 'Copy diagnostic',
+                    {t('bim.geometry_copy_report', {
+                      defaultValue: 'Copy bug report',
                     })}
                   </button>
                   <button
@@ -2592,6 +2887,9 @@ export function BIMViewer({
                     onClick={() => {
                       setGeometryError(null);
                       setGeometryErrorStack(null);
+                      setGeometryErrorDiagnostic(null);
+                      setGeometryErrorStatus(null);
+                      setGeometryErrorRequestId(null);
                     }}
                     className="text-[11px] text-amber-700/80 dark:text-amber-300/80 hover:text-amber-900 dark:hover:text-amber-100"
                   >
@@ -2602,7 +2900,8 @@ export function BIMViewer({
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Empty state */}
       {!isLoading && !error && elementCount === 0 && modelId && (

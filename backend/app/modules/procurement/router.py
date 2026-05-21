@@ -355,7 +355,26 @@ async def create_invoice_from_po(
         ]
 
         violations = _validate_3way_match(po, proposed_lines)
+        # Determine HTTP code by violation reason: ``no_confirmed_grs`` is a
+        # workflow problem (caller skipped GR confirmation) → 400; everything
+        # else is an arithmetic mismatch (over-invoicing) → 422.
+        no_conf_violation = next(
+            (v for v in violations if v.get("reason") == "no_confirmed_grs"),
+            None,
+        )
         if violations and not force:
+            if no_conf_violation is not None:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "code": "no_confirmed_grs",
+                        "message": no_conf_violation.get("message") or (
+                            "No confirmed goods receipts exist for this PO; "
+                            "pass force=true to invoice without GR match."
+                        ),
+                        "errors": violations,
+                    },
+                )
             raise HTTPException(
                 status_code=422,
                 detail={
@@ -375,6 +394,7 @@ async def create_invoice_from_po(
                     "po_id": str(po_id),
                     "user_id": str(user_id),
                     "force_3way_match": True,
+                    "bypassed_3way_match": True,
                     "violations": violations,
                 },
             )
@@ -398,6 +418,7 @@ async def create_invoice_from_po(
                 "po_id": str(po_id),
                 "po_number": po.po_number,
                 "force_3way_match": bool(force and violations),
+                "bypassed_3way_match": bool(force and violations),
             },
         )
         session.add(invoice)

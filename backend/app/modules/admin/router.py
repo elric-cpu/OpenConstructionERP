@@ -18,10 +18,17 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from app.dependencies import SessionDep
+from app.modules.admin.permissions_router import router as permissions_router
 from app.modules.admin.service import GateError, check_gates, reset_demo_data
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# Sub-router: GET /permissions/matrix (admin UI). Lives in a separate
+# file because the endpoint is auth-gated by ``audit.view`` rather than
+# the qa-reset triple-gate model used by the destructive endpoints in
+# this file — keeping them apart makes the security review trivial.
+router.include_router(permissions_router)
 
 
 # Background-task registry for the cost-vector reindex.  Tracks one-shot

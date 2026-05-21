@@ -308,3 +308,8 @@ class SupplierScorecardResponse(BaseModel):
     qty_variance_pct: float = 0.0
     gr_rejection_rate: float = 0.0
     total_gr_count: int = 0
+    # Number of GRs counted as on-time (numerator of on_time_delivery_pct).
+    on_time_count: int = 0
+    # GRs whose parent PO had no delivery_date — excluded from on-time
+    # denominator so unscheduled POs do not inflate the score (P0-2).
+    unscheduled_count: int = 0

@@ -19,10 +19,11 @@
  * surfaced on Step 1 so power users can skip the wizard entirely.
  */
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowRight,
   Box,
@@ -534,7 +535,11 @@ function StageStep({
 
 /* ── Step 2: Catalogue ─────────────────────────────────────────────────── */
 
-function CatalogueStep({
+// Exported so the P0-2 regression suite (no-catalogue banner +
+// blocked-gate contract) can mount it in isolation without driving the
+// full 4-step wizard. Production code keeps using it through
+// ``MatchWizard``.
+export function CatalogueStep({
   projectRegion,
   selected,
   onPick,
@@ -579,14 +584,43 @@ function CatalogueStep({
   const installed = useMemo(() => all.filter((c) => c.install_status === 'loaded'), [all]);
   const available = useMemo(() => all.filter((c) => c.install_status === 'available'), [all]);
 
+  // P0-2: when ``installed`` is empty there is nothing to auto-select,
+  // and the wizard's Next gate stays blocked on Step 2 → Step 3 (see
+  // ``canNext`` further down: ``step === 2 ? catalogueId !== null``).
+  // The previous banner buried the recovery path inside a paragraph
+  // pointing at the "floating dock at the bottom-right" — but the dock
+  // only renders AFTER an install has been started, so an installer-
+  // less user staring at this page saw no actionable widget. The
+  // explicit "Install a catalogue first" banner below + scroll-to-list
+  // button surfaces the recovery directly.
   useEffect(() => {
     if (selected) return;
-    if (!projectRegion) return;
+    if (installed.length === 0) return;
+    if (!projectRegion) {
+      // No region hint? Auto-pick the first installed catalogue so the
+      // gate unblocks. Better to default than to silently strand the
+      // user on Step 2 with no actionable feedback.
+      onPick(installed[0]!.region);
+      return;
+    }
     const prefix = projectRegion.slice(0, 2).toUpperCase();
     const match = installed.find((c) => c.region.startsWith(prefix)) ||
                   installed[0];
     if (match) onPick(match.region);
   }, [installed, projectRegion, selected, onPick]);
+
+  // Anchor the "Install a catalogue first" banner's CTA so it scrolls
+  // the user to the available-to-install grid below. The banner CTA
+  // can't open the floating progress dock directly (the dock only
+  // surfaces in-flight + completed jobs), so we surface the closest
+  // actionable target: the list of installable catalogues.
+  const availableAnchorRef = useRef<HTMLDivElement | null>(null);
+  const scrollToAvailable = () => {
+    availableAnchorRef.current?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    });
+  };
 
   // Watch jobs flipping to 'ready'. As soon as one completes, kick the
   // catalogues query immediately (don't wait for the polling tick) and
@@ -657,11 +691,56 @@ function CatalogueStep({
       )}
 
       {!cataloguesQ.isLoading && installed.length === 0 && (
-        <div className="rounded-2xl border border-amber-200/60 dark:border-amber-800/40 bg-gradient-to-br from-amber-50 to-white dark:from-amber-950/20 dark:to-surface-primary p-4 text-sm text-amber-900 dark:text-amber-100">
-          {t(
-            'match_wizard.no_installed',
-            'No catalogues installed yet. Install one from the floating dock at the bottom-right — the wizard will keep your picks while it downloads.',
-          )}
+        <div
+          data-testid="no-catalogue-banner"
+          className="rounded-2xl border-2 border-amber-300/70 dark:border-amber-700/50 bg-gradient-to-br from-amber-50 to-white dark:from-amber-950/30 dark:to-surface-primary p-5 mb-4"
+          role="alert"
+        >
+          <div className="flex items-start gap-3">
+            <span className="shrink-0 w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-200 inline-flex items-center justify-center">
+              <AlertTriangle className="w-4 h-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm font-bold text-amber-900 dark:text-amber-100">
+                {t(
+                  'match_wizard.no_installed_title',
+                  'Install a catalogue first',
+                )}
+              </h3>
+              <p className="text-xs text-amber-800/90 dark:text-amber-200/80 mt-1 leading-relaxed">
+                {t(
+                  'match_wizard.no_installed_body',
+                  'A cost catalogue is the vector index your project elements are matched against. You can\'t move past this step until at least one is installed. Pick the closest regional book below — installs run in the background, the wizard keeps your picks.',
+                )}
+              </p>
+              <button
+                type="button"
+                data-testid="no-catalogue-install-cta"
+                onClick={scrollToAvailable}
+                disabled={available.length === 0}
+                className={clsx(
+                  'mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all',
+                  'bg-gradient-to-br from-amber-500 to-orange-600 text-white',
+                  'shadow-sm shadow-amber-500/25 hover:shadow-md hover:shadow-amber-500/35 hover:-translate-y-px',
+                  'disabled:opacity-60 disabled:shadow-none disabled:translate-y-0 disabled:cursor-not-allowed',
+                )}
+              >
+                <Download className="w-3.5 h-3.5" />
+                {t(
+                  'match_wizard.no_installed_cta',
+                  'Choose a catalogue to install',
+                )}
+              </button>
+              {available.length === 0 && (
+                <p className="mt-2 text-[11px] text-amber-700/80 dark:text-amber-300/70">
+                  {t(
+                    'match_wizard.no_installed_no_available',
+                    'No catalogues are available from the server. Check the Qdrant / costs registry status.',
+                  )}
+                </p>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -691,7 +770,11 @@ function CatalogueStep({
 
       {available.length > 0 && (
         <>
-          <div className="text-[11px] uppercase tracking-[0.14em] text-content-tertiary font-semibold mb-3 mt-2">
+          <div
+            ref={availableAnchorRef}
+            data-testid="catalogues-available-anchor"
+            className="text-[11px] uppercase tracking-[0.14em] text-content-tertiary font-semibold mb-3 mt-2 scroll-mt-20"
+          >
             {t('match_wizard.available_label', 'Available to install ({{n}})', {
               n: available.length,
             })}

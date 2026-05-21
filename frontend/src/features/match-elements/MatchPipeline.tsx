@@ -167,6 +167,16 @@ export function MatchPipeline({ sessionId }: Props) {
 
   // Sequential full run convert → rollup. Stops on the first error so
   // the user can inspect + fix that stage rather than cascading garbage.
+  //
+  // IMPORTANT: every stage is *unconditionally* re-executed here. An
+  // earlier shortcut skipped any stage already marked `done`, which
+  // looked fine — until you realise the backend marks downstream stages
+  // `stale` whenever the user adjusts an upstream input (see
+  // pipeline.run_stage: it walks STAGE_NAMES[idx+1:] and downgrades
+  // done→stale). Treating a stale stage as "already done" makes
+  // "Run all" silently feed pre-edit outputs into the rest of the
+  // pipeline. We only ever break the loop on a transport throw or a
+  // backend-reported error.
   const runEntirePipeline = async () => {
     setRunAll(true);
     setPipelineError(null);

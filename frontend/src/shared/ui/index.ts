@@ -127,3 +127,7 @@ export { KvList, Kv } from './KvList';
 export { QtyTile } from './QtyTile';
 
 export { OfflineBanner } from './OfflineBanner';
+
+export { PWAInstallPrompt } from './PWAInstallPrompt';
+
+export { OfflineFallback, markLastSync } from './OfflineFallback';

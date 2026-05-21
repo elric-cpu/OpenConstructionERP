@@ -179,7 +179,16 @@ def register_core_permissions() -> None:
             "system.modules.list": Role.VIEWER,
             "system.modules.install": Role.ADMIN,
             "system.modules.uninstall": Role.ADMIN,
+            "system.modules.enable": Role.ADMIN,
+            "system.modules.disable": Role.ADMIN,
             "system.hooks.list": Role.ADMIN,
             "system.validation_rules.list": Role.VIEWER,
+            # Audit log + viewer (audit_router.py + future admin UI).
+            # Without these, `RequirePermission("audit.view")` resolved to an
+            # unknown permission and fell through to the ADMIN-role bypass —
+            # technically safe but the gate was effectively ADMIN-only by
+            # accident, and "audit.delete" was completely unreachable.
+            "audit.view": Role.MANAGER,
+            "audit.delete": Role.ADMIN,
         },
     )

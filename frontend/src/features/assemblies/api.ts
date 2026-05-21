@@ -172,6 +172,79 @@ export interface AIGeneratedAssembly {
   region: string;
 }
 
+// ── Assembly Library templates (v3.13.0 — Slice 1) ──────────────────────
+
+/** One catalogue-agnostic component inside a library template. */
+export interface AssemblyTemplateComponent {
+  cost_match_query: string;
+  factor: number;
+  unit: string;
+  role: string;
+  description: string;
+}
+
+/** A row from the platform-wide Assembly Library. */
+export interface AssemblyTemplate {
+  id: string;
+  name: string;
+  name_translations: Record<string, string>;
+  category: string;
+  unit: string;
+  components: AssemblyTemplateComponent[];
+  classification: Record<string, string>;
+  tags: string[];
+  is_builtin: boolean;
+  component_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AssemblyTemplateSearchResponse {
+  items: AssemblyTemplate[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface AppliedTemplateComponent {
+  description: string;
+  cost_match_query: string;
+  matched_cost_item_id: string | null;
+  matched_description: string;
+  matched_code: string;
+  factor: number;
+  scaled_quantity: number;
+  unit: string;
+  unit_rate: number;
+  total: number;
+  role: string;
+  match_confidence: number;
+  match_channel: string;
+}
+
+export interface AppliedTemplateResponse {
+  template_id: string;
+  template_name: string;
+  project_id: string;
+  boq_position_id: string | null;
+  quantity: number;
+  unit: string;
+  currency: string;
+  components: AppliedTemplateComponent[];
+  total_rate: number;
+  grand_total: number;
+  unresolved_components: string[];
+  warnings: string[];
+}
+
+export interface ApplyTemplatePayload {
+  project_id: string;
+  boq_position_id?: string;
+  quantity: number;
+  region?: string;
+  language?: string;
+}
+
 export const assembliesApi = {
   list: (params?: Record<string, string>) =>
     apiGet<AssemblySearchResponse>(`/v1/assemblies/?${new URLSearchParams(params)}`),
@@ -199,4 +272,14 @@ export const assembliesApi = {
   updateTags: (assemblyId: string, tags: string[]) =>
     apiPatch<Assembly>(`/v1/assemblies/${assemblyId}/tags/`, { tags }),
   getStats: () => apiGet<AssemblyStats>(`/v1/assemblies/stats/`),
+
+  // Assembly Library templates
+  listTemplates: (params?: Record<string, string>) =>
+    apiGet<AssemblyTemplateSearchResponse>(
+      `/v1/assemblies/templates/?${new URLSearchParams(params)}`
+    ),
+  getTemplate: (id: string) =>
+    apiGet<AssemblyTemplate>(`/v1/assemblies/templates/${id}`),
+  applyTemplate: (id: string, body: ApplyTemplatePayload) =>
+    apiPost<AppliedTemplateResponse>(`/v1/assemblies/templates/${id}/apply`, body),
 };

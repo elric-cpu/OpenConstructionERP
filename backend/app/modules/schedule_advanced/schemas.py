@@ -669,3 +669,87 @@ class ConstraintReadinessResponse(BaseModel):
     is_ready: bool = True
     open_count: int = 0
     blockers: list[ConstraintReadinessBlocker] = Field(default_factory=list)
+
+
+# ── CPM Slice 1 — persisted compute + leveling + weekly commitments ────────
+
+
+class CPMComputeSummary(BaseModel):
+    """Summary returned by ``POST /schedule-advanced/{schedule_id}/compute-cpm``.
+
+    The per-activity ES/EF/LS/LF/total_float/is_critical values are written
+    back onto the schedule's :class:`Activity` rows; only the aggregate
+    summary travels over the wire.
+    """
+
+    schedule_id: UUID
+    critical_path: list[UUID] = Field(default_factory=list)
+    project_duration_days: int = 0
+    num_critical: int = 0
+    num_activities: int = 0
+
+
+class LevelResourcesRequest(BaseModel):
+    """Body for ``POST /schedule-advanced/{schedule_id}/level-resources``.
+
+    ``resource_limits`` is a mapping of resource code → max concurrent
+    units. Resources omitted from the dict are unconstrained.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    resource_limits: dict[str, int] = Field(default_factory=dict)
+
+
+class LevelResourcesShift(BaseModel):
+    """One activity-shift row produced by resource leveling."""
+
+    activity_id: UUID
+    original_es: int = 0
+    shifted_es: int = 0
+    delta_days: int = 0
+
+
+class LevelResourcesResponse(BaseModel):
+    """Response for /level-resources — only changed activities listed."""
+
+    schedule_id: UUID
+    shifts: list[LevelResourcesShift] = Field(default_factory=list)
+    num_shifted: int = 0
+
+
+class WeeklyCommitmentCreate(BaseModel):
+    """Body for ``POST /schedule-advanced/{schedule_id}/commitments``."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    activity_id: UUID
+    week_start: date
+    planned_complete_pct: Decimal = Field(default=Decimal("0"), ge=0, le=1)
+    actual_complete_pct: Decimal = Field(default=Decimal("0"), ge=0, le=1)
+
+
+class WeeklyCommitmentResponse(BaseModel):
+    """Stored weekly commitment row with auto-computed PPC."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    schedule_id: UUID
+    activity_id: UUID
+    week_start: date
+    committed_by: UUID | None = None
+    planned_complete_pct: Decimal = Decimal("0")
+    actual_complete_pct: Decimal = Decimal("0")
+    ppc: Decimal = Decimal("0")
+
+
+class PPCWeeklyResponse(BaseModel):
+    """Schedule-level PPC roll-up for a single week."""
+
+    schedule_id: UUID
+    week_start: date
+    num_commitments: int = 0
+    avg_planned_pct: Decimal = Decimal("0")
+    avg_actual_pct: Decimal = Decimal("0")
+    ppc: Decimal = Decimal("0")

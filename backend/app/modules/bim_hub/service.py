@@ -27,6 +27,8 @@ from app.modules.bim_hub import file_storage as bim_file_storage
 from app.modules.bim_hub.models import (
     BIMElement,
     BIMElementGroup,
+    BIMFederation,
+    BIMFederationModel,
     BIMModel,
     BIMModelDiff,
     BIMQuantityMap,
@@ -34,6 +36,7 @@ from app.modules.bim_hub.models import (
 )
 from app.modules.bim_hub.repository import (
     BIMElementRepository,
+    BIMFederationRepository,
     BIMModelDiffRepository,
     BIMModelRepository,
     BIMQuantityMapRepository,
@@ -50,6 +53,12 @@ from app.modules.bim_hub.schemas import (
     BIMQuantityMapCreate,
     BIMQuantityMapUpdate,
     BOQElementLinkCreate,
+    FederationCreate,
+    FederationFullResponse,
+    FederationModelAdd,
+    FederationModelResponse,
+    FederationResponse,
+    FederationUpdate,
     QuantityMapApplyRequest,
     QuantityMapApplyResult,
 )
@@ -2865,4 +2874,213 @@ class BIMHubService:
             created_at=group.created_at,
             updated_at=group.updated_at,
             member_element_ids=parsed_ids,
+        )
+
+    # ── BIM Federation (v4.0 / Slice 1) ──────────────────────────────────────
+
+    async def create_federation(
+        self, payload: FederationCreate,
+    ) -> FederationResponse:
+        """Persist a new federation header (no members yet)."""
+        repo = BIMFederationRepository(self.session)
+        federation = BIMFederation(
+            project_id=payload.project_id,
+            name=payload.name,
+            description=payload.description,
+            origin_offset=payload.origin_offset.model_dump(),
+            shared_units=payload.shared_units,
+        )
+        await repo.create(federation)
+        await self.session.refresh(federation)
+        logger.info(
+            "BIM federation created: %s (project=%s)",
+            federation.name,
+            federation.project_id,
+        )
+        return self._federation_to_response(federation)
+
+    async def list_federations(
+        self,
+        project_id: uuid.UUID,
+        *,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> tuple[list[FederationResponse], int]:
+        """List federations for a project."""
+        repo = BIMFederationRepository(self.session)
+        rows, total = await repo.list_for_project(
+            project_id, offset=offset, limit=limit,
+        )
+        return [self._federation_to_response(f) for f in rows], total
+
+    async def get_federation(
+        self, federation_id: uuid.UUID,
+    ) -> BIMFederation:
+        """Fetch a federation with members or raise 404."""
+        repo = BIMFederationRepository(self.session)
+        federation = await repo.get(federation_id)
+        if federation is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Federation not found",
+            )
+        return federation
+
+    async def get_federation_full(
+        self, federation_id: uuid.UUID,
+    ) -> FederationFullResponse:
+        """Get a federation header plus its z-ordered member list."""
+        federation = await self.get_federation(federation_id)
+        return self._federation_to_full_response(federation)
+
+    async def update_federation(
+        self,
+        federation_id: uuid.UUID,
+        payload: FederationUpdate,
+    ) -> FederationFullResponse:
+        """Patch a federation header (members untouched)."""
+        federation = await self.get_federation(federation_id)
+        fields = payload.model_dump(exclude_unset=True)
+        if "origin_offset" in fields and fields["origin_offset"] is not None:
+            # FederationOriginOffset → dict
+            offset = fields["origin_offset"]
+            if hasattr(offset, "model_dump"):
+                fields["origin_offset"] = offset.model_dump()
+        if fields:
+            repo = BIMFederationRepository(self.session)
+            await repo.update_fields(federation_id, **fields)
+        await self.session.refresh(federation)
+        return self._federation_to_full_response(federation)
+
+    async def delete_federation(self, federation_id: uuid.UUID) -> None:
+        """Delete a federation. Members cascade via FK."""
+        federation = await self.get_federation(federation_id)
+        await self.session.delete(federation)
+        await self.session.flush()
+        logger.info("BIM federation deleted: %s", federation_id)
+
+    async def add_federation_member(
+        self,
+        federation_id: uuid.UUID,
+        payload: FederationModelAdd,
+    ) -> FederationModelResponse:
+        """Bind an existing BIM model to a federation.
+
+        Verifies that the BIM model exists AND belongs to the same project
+        as the federation — cross-project membership would break the
+        project-ownership authorization model.
+        """
+        federation = await self.get_federation(federation_id)
+        # The model must exist and live in the same project as the
+        # federation. ``BIMModelRepository`` already enforces existence;
+        # we re-check project here.
+        model_repo = BIMModelRepository(self.session)
+        model = await model_repo.get(payload.bim_model_id)
+        if model is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="BIM model not found",
+            )
+        if model.project_id != federation.project_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "BIM model belongs to a different project — federations "
+                    "can only contain models from the same project"
+                ),
+            )
+        repo = BIMFederationRepository(self.session)
+        # Duplicate guard — the DB-level UniqueConstraint will also fire,
+        # but a friendly 409 beats a raw IntegrityError 500.
+        existing = await repo.find_member(federation_id, payload.bim_model_id)
+        if existing is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Model is already a member of this federation",
+            )
+        member = BIMFederationModel(
+            federation_id=federation_id,
+            bim_model_id=payload.bim_model_id,
+            discipline=payload.discipline,
+            color_hint=payload.color_hint,
+            visible=payload.visible,
+            z_order=payload.z_order,
+        )
+        try:
+            await repo.add_member(member)
+        except IntegrityError as exc:
+            await self.session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Model is already a member of this federation",
+            ) from exc
+        await self.session.refresh(member)
+        logger.info(
+            "BIM federation member added: federation=%s model=%s",
+            federation_id,
+            payload.bim_model_id,
+        )
+        return FederationModelResponse.model_validate(member)
+
+    async def remove_federation_member(
+        self,
+        federation_id: uuid.UUID,
+        bim_model_id: uuid.UUID,
+    ) -> None:
+        """Remove a model from a federation by model id."""
+        # Touching the federation ensures 404 propagates correctly when
+        # the federation itself is missing/foreign.
+        await self.get_federation(federation_id)
+        repo = BIMFederationRepository(self.session)
+        member = await repo.find_member(federation_id, bim_model_id)
+        if member is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Federation member not found",
+            )
+        await repo.remove_member(member.id)
+        await self.session.flush()
+        logger.info(
+            "BIM federation member removed: federation=%s model=%s",
+            federation_id,
+            bim_model_id,
+        )
+
+    @staticmethod
+    def _federation_to_response(
+        federation: BIMFederation,
+    ) -> FederationResponse:
+        return FederationResponse(
+            id=federation.id,
+            project_id=federation.project_id,
+            name=federation.name,
+            description=federation.description,
+            origin_offset=federation.origin_offset or {},
+            shared_units=federation.shared_units,
+            member_count=len(federation.members or []),
+            created_at=federation.created_at,
+            updated_at=federation.updated_at,
+        )
+
+    @staticmethod
+    def _federation_to_full_response(
+        federation: BIMFederation,
+    ) -> FederationFullResponse:
+        members_sorted = sorted(
+            federation.members or [],
+            key=lambda m: (m.z_order, m.created_at),
+        )
+        return FederationFullResponse(
+            id=federation.id,
+            project_id=federation.project_id,
+            name=federation.name,
+            description=federation.description,
+            origin_offset=federation.origin_offset or {},
+            shared_units=federation.shared_units,
+            member_count=len(members_sorted),
+            created_at=federation.created_at,
+            updated_at=federation.updated_at,
+            members=[
+                FederationModelResponse.model_validate(m) for m in members_sorted
+            ],
         )

@@ -9,6 +9,10 @@ Pins the contracts fixed in the A-DOC-* triage pass:
 * A-DOC-09  — CDE transition guard is enforced on a NULL-state document
 * A-DOC-10  — double-extension upload (``shell.php.png``) is rejected
 * A-DOC-11  — summary ``by_category`` only contains whitelisted categories
+* A-DOC-12  — stored MIME is derived from magic bytes, not Content-Type
+* A-DOC-13  — ``MAX_FILE_SIZE`` / ``MAX_PHOTO_SIZE`` actually enforced (413)
+* A-DOC-14  — revision-conflict guard rejects two "current" rows under
+              the same parent (P1)
 
 The deterministic logic checks (sort whitelist, CDE NULL guard,
 double-extension, summary normalisation) are unit-level and DB-free.
@@ -319,3 +323,270 @@ async def test_double_extension_upload_rejected(client: AsyncClient) -> None:
     )
     assert r.status_code == 400, r.text
     assert ".bat" in r.text
+
+
+# ── A-DOC-12 / 13 / 14 — P0 hardening regression tests ───────────────────
+
+
+def test_mime_for_signature_is_server_derived() -> None:
+    """A-DOC-12: mime_for_signature(detected) maps only the magic-byte token.
+
+    The attacker-controlled request header MUST NEVER reach the
+    stored ``mime_type`` column — derive from the detected magic byte
+    instead, with ``application/octet-stream`` as the conservative
+    fallback for unknown / None tokens.
+    """
+    from app.core.file_signature import mime_for_signature
+
+    assert mime_for_signature("png") == "image/png"
+    assert mime_for_signature("jpeg") == "image/jpeg"
+    assert mime_for_signature("pdf") == "application/pdf"
+    assert mime_for_signature("dwg") == "image/vnd.dwg"
+    # Unknown token / no detection → conservative fallback.
+    assert mime_for_signature(None) == "application/octet-stream"
+    assert mime_for_signature("totally-fake") == "application/octet-stream"
+
+
+def test_banned_signature_tokens_includes_executables() -> None:
+    """A-DOC-12: executable / script tokens are policy-banned."""
+    from app.core.file_signature import BANNED_SIGNATURE_TOKENS
+
+    # The exact detector tokens don't have to exist yet — what matters
+    # is that the policy contract names them so the upload sites can
+    # cross-reference once detection is added.
+    assert "exe" in BANNED_SIGNATURE_TOKENS
+    assert "elf" in BANNED_SIGNATURE_TOKENS
+    assert "shellscript" in BANNED_SIGNATURE_TOKENS
+
+
+def test_size_constants_kept_and_enforced() -> None:
+    """A-DOC-13: MAX_FILE_SIZE / MAX_PHOTO_SIZE remain the documented caps."""
+    from app.modules.documents.service import MAX_FILE_SIZE, MAX_PHOTO_SIZE
+
+    assert MAX_FILE_SIZE == 100 * 1024 * 1024
+    assert MAX_PHOTO_SIZE == 50 * 1024 * 1024
+
+
+@pytest.mark.asyncio
+async def test_exe_disguised_as_png_is_rejected(client: AsyncClient) -> None:
+    """A-DOC-12: an .exe payload sent with mime=image/png never lands.
+
+    The filename gate rejects ``.exe`` before bytes are even inspected —
+    that's the first line of defence; the magic-byte gate would catch
+    a renamed payload as a secondary line.
+    """
+    headers, _ = await _register_admin(client)
+    pid = await _make_project(client, headers)
+    # MZ header is the PE/exe magic. The .exe extension is in the
+    # BLOCKED_EXTENSIONS list so this MUST be rejected.
+    payload = b"MZ" + b"\x00" * 64
+    r = await client.post(
+        f"/api/v1/documents/upload/?project_id={pid}&category=other",
+        files={"file": ("evil.exe", io.BytesIO(payload), "image/png")},
+        headers=headers,
+    )
+    assert r.status_code == 400, r.text
+    assert ".exe" in r.text
+
+
+@pytest.mark.asyncio
+async def test_oversize_document_upload_413(client: AsyncClient) -> None:
+    """A-DOC-13: a 200MB document upload returns 413 (defence in depth)."""
+    from app.modules.documents.service import MAX_FILE_SIZE
+
+    headers, _ = await _register_admin(client)
+    pid = await _make_project(client, headers)
+    # PDF magic header + filler bytes to exceed MAX_FILE_SIZE without
+    # allocating a 200MB literal in the source.
+    oversize = b"%PDF-1.7\n" + (b"\x00" * (MAX_FILE_SIZE + 1024))
+    r = await client.post(
+        f"/api/v1/documents/upload/?project_id={pid}&category=other",
+        files={"file": ("huge.pdf", io.BytesIO(oversize), "application/pdf")},
+        headers=headers,
+    )
+    assert r.status_code == 413, r.text
+    assert "too large" in r.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_photo_49mb_accepted(client: AsyncClient) -> None:
+    """A-DOC-13: a 49MB photo is accepted (just under the 50MB cap)."""
+    headers, _ = await _register_admin(client)
+    pid = await _make_project(client, headers)
+    # Minimal valid PNG + filler IDAT-ish padding under the cap. The
+    # service doesn't decode the image, it only sniffs magic bytes,
+    # so padding after the PNG signature is fine.
+    png_head = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+        b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+    )
+    payload = png_head + (b"\x00" * (49 * 1024 * 1024))
+    r = await client.post(
+        f"/api/v1/documents/photos/upload/?project_id={pid}",
+        files={"file": ("big.png", io.BytesIO(payload), "image/png")},
+        headers=headers,
+    )
+    assert r.status_code == 201, r.text
+
+
+@pytest.mark.asyncio
+async def test_oversize_photo_upload_413(client: AsyncClient) -> None:
+    """A-DOC-13: a 200MB photo upload returns 413."""
+    from app.modules.documents.service import MAX_PHOTO_SIZE
+
+    headers, _ = await _register_admin(client)
+    pid = await _make_project(client, headers)
+    png_head = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+        b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+    )
+    oversize = png_head + (b"\x00" * (MAX_PHOTO_SIZE + 1024))
+    r = await client.post(
+        f"/api/v1/documents/photos/upload/?project_id={pid}",
+        files={"file": ("huge.png", io.BytesIO(oversize), "image/png")},
+        headers=headers,
+    )
+    assert r.status_code == 413, r.text
+    assert "too large" in r.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_valid_png_upload_stores_server_derived_mime(
+    client: AsyncClient,
+) -> None:
+    """A-DOC-12: a valid PNG with attacker-set Content-Type=image/svg+xml
+    still ends up with ``image/png`` in the DB (server-derived MIME)."""
+    headers, _ = await _register_admin(client)
+    pid = await _make_project(client, headers)
+    png = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+        b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+        b"\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4"
+        b"\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+    # Send with a lying header — the stored mime must come from the
+    # magic bytes, not from this header.
+    r = await client.post(
+        f"/api/v1/documents/upload/?project_id={pid}&category=other",
+        files={"file": ("real.png", io.BytesIO(png), "application/x-msdownload")},
+        headers=headers,
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body.get("mime_type") == "image/png", body
+
+
+@pytest.mark.asyncio
+async def test_revision_conflict_guard_rejects_dual_current() -> None:
+    """A-DOC-14 (P1): two docs cannot both be ``is_current_revision`` under
+    the same ``parent_document_id`` — second update returns 409."""
+    from types import SimpleNamespace
+
+    from app.modules.documents.schemas import DocumentUpdate
+    from app.modules.documents.service import DocumentService
+
+    parent_id = uuid.uuid4()
+    other_doc_id = uuid.uuid4()
+    target_doc_id = uuid.uuid4()
+
+    target = SimpleNamespace(
+        id=target_doc_id,
+        cde_state=None,
+        name="rev-b",
+        parent_document_id=parent_id,
+        is_current_revision=False,
+        project_id=uuid.uuid4(),
+    )
+    existing_current = SimpleNamespace(
+        id=other_doc_id,
+        parent_document_id=parent_id,
+        is_current_revision=True,
+    )
+
+    svc = DocumentService.__new__(DocumentService)
+
+    async def _get_document(_id):  # noqa: ANN001, ANN202
+        return target
+
+    class _ResultScalars:
+        def first(self):  # noqa: ANN202
+            return existing_current
+
+    class _Result:
+        def scalars(self):  # noqa: ANN202
+            return _ResultScalars()
+
+    class _Session:
+        async def execute(self, _stmt):  # noqa: ANN001, ANN202
+            return _Result()
+
+        async def refresh(self, _obj):  # noqa: ANN001, ANN202
+            return None
+
+    svc.get_document = _get_document  # type: ignore[method-assign]
+    svc.session = _Session()  # type: ignore[assignment]
+
+    with pytest.raises(HTTPException) as exc:
+        await svc.update_document(
+            target_doc_id, DocumentUpdate(is_current_revision=True)
+        )
+    assert exc.value.status_code == 409
+    assert "current revision" in str(exc.value.detail).lower()
+
+
+@pytest.mark.asyncio
+async def test_revision_promote_allowed_when_no_other_current() -> None:
+    """A-DOC-14: promoting to current is fine when no sibling is current
+    (no over-restriction — single-revision projects must still work)."""
+    from types import SimpleNamespace
+
+    from app.modules.documents.schemas import DocumentUpdate
+    from app.modules.documents.service import DocumentService
+
+    parent_id = uuid.uuid4()
+    target_doc_id = uuid.uuid4()
+    target = SimpleNamespace(
+        id=target_doc_id,
+        cde_state=None,
+        name="solo",
+        parent_document_id=parent_id,
+        is_current_revision=False,
+        project_id=uuid.uuid4(),
+    )
+
+    svc = DocumentService.__new__(DocumentService)
+
+    async def _get_document(_id):  # noqa: ANN001, ANN202
+        return target
+
+    class _ResultScalars:
+        def first(self):  # noqa: ANN202
+            return None
+
+    class _Result:
+        def scalars(self):  # noqa: ANN202
+            return _ResultScalars()
+
+    updated_fields: dict = {}
+
+    async def _update_fields(_id, **fields):  # noqa: ANN001, ANN202, ANN003
+        updated_fields.update(fields)
+
+    class _Repo:
+        update_fields = staticmethod(_update_fields)
+
+    class _Session:
+        async def execute(self, _stmt):  # noqa: ANN001, ANN202
+            return _Result()
+
+        async def refresh(self, _obj):  # noqa: ANN001, ANN202
+            return None
+
+    svc.get_document = _get_document  # type: ignore[method-assign]
+    svc.repo = _Repo()  # type: ignore[attr-defined]
+    svc.session = _Session()  # type: ignore[assignment]
+
+    await svc.update_document(
+        target_doc_id, DocumentUpdate(is_current_revision=True)
+    )
+    assert updated_fields.get("is_current_revision") is True

@@ -57,10 +57,21 @@ class FieldReportService:
         """
         workforce_data = [entry.model_dump() for entry in data.workforce]
 
-        # Auto-fetch weather when coordinates are provided
+        # Auto-fetch weather when coordinates are provided. Falls back to
+        # the owning project's ``address`` dict — sites typically have
+        # fixed coordinates, so the user shouldn't need to repeat them on
+        # every daily report. We accept several common key shapes the
+        # frontend may emit (lat/lon, latitude/longitude, coordinates.lat).
         weather_data: dict[str, Any] | None = None
-        if data.lat is not None and data.lon is not None:
-            weather_data = await self._try_fetch_weather(data.lat, data.lon)
+        lat = data.lat
+        lon = data.lon
+        if lat is None or lon is None:
+            fallback = await self._project_coords(data.project_id)
+            if fallback is not None:
+                lat = lat if lat is not None else fallback[0]
+                lon = lon if lon is not None else fallback[1]
+        if lat is not None and lon is not None:
+            weather_data = await self._try_fetch_weather(lat, lon)
 
         report = FieldReport(
             project_id=data.project_id,
@@ -105,6 +116,53 @@ class FieldReportService:
             data.project_id,
         )
         return report
+
+    async def _project_coords(
+        self, project_id: uuid.UUID,
+    ) -> tuple[float, float] | None:
+        """Best-effort lat/lon read from the owning project's address dict.
+
+        Returns None on any failure (missing project, missing address,
+        non-numeric coords, import errors). Tolerates several key shapes
+        because the frontend has historically emitted both flat
+        ``lat``/``lon`` and nested ``coordinates.lat`` payloads.
+        """
+        try:
+            from app.modules.projects.models import Project
+
+            project = await self.session.get(Project, project_id)
+            if project is None:
+                return None
+            address = getattr(project, "address", None)
+            if not isinstance(address, dict):
+                return None
+
+            def _pick(d: dict, *keys: str) -> object | None:
+                for k in keys:
+                    if k in d and d[k] is not None:
+                        return d[k]
+                return None
+
+            raw_lat = _pick(address, "lat", "latitude")
+            raw_lon = _pick(address, "lon", "lng", "longitude")
+            coords = address.get("coordinates")
+            if (raw_lat is None or raw_lon is None) and isinstance(coords, dict):
+                raw_lat = raw_lat if raw_lat is not None else _pick(coords, "lat", "latitude")
+                raw_lon = raw_lon if raw_lon is not None else _pick(coords, "lon", "lng", "longitude")
+
+            if raw_lat is None or raw_lon is None:
+                return None
+            lat_f = float(raw_lat)
+            lon_f = float(raw_lon)
+            # Sanity guard — match the schema's bounds so a junk address
+            # doesn't poison the weather call with nonsense coords.
+            if not (-90.0 <= lat_f <= 90.0):
+                return None
+            if not (-180.0 <= lon_f <= 180.0):
+                return None
+            return (lat_f, lon_f)
+        except Exception:
+            return None
 
     async def _try_fetch_weather(self, lat: float, lon: float) -> dict[str, Any] | None:
         """Attempt to fetch weather, returning None on any failure."""

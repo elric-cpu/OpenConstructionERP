@@ -664,7 +664,7 @@ function BidComparisonTable({
                 key={`${row.description}-${row.unit}-${idx}`}
                 className="group border-b border-border-light/50 transition-colors hover:bg-surface-secondary/30"
               >
-                <td className={`px-3 py-2.5 ${stickyColClass} group-hover:bg-surface-secondary/30`}>
+                <td className={`px-3 py-2.5 ${stickyColClass} z-20 group-hover:bg-surface-secondary/30`}>
                   <span className="text-content-primary">{row.description || '-'}</span>
                   <span className="ml-2 text-xs text-content-tertiary">{row.unit}</span>
                 </td>
@@ -690,7 +690,7 @@ function BidComparisonTable({
           <tfoot>
             <tr className="border-t-2 border-border bg-surface-secondary/30">
               <td
-                className={`px-3 py-3 font-bold text-content-primary sticky left-0 z-10 bg-surface-secondary shadow-[2px_0_3px_-2px_rgba(0,0,0,0.1)]`}
+                className={`px-3 py-3 font-bold text-content-primary sticky left-0 z-20 bg-surface-secondary shadow-[2px_0_3px_-2px_rgba(0,0,0,0.1)]`}
               >
                 {t('tendering.total', 'TOTAL')}
               </td>

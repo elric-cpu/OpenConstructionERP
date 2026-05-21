@@ -801,7 +801,56 @@ export class ElementManager {
         }
         const resp = await fetch(geometryUrl);
         if (!resp.ok) {
-          throw new Error(`Failed to fetch geometry: ${resp.status}`);
+          // Pull the structured FastAPI detail payload when present (the
+          // backend ships a JSON diagnostic block with head_hex, format,
+          // expected_signature, first_tag, size_bytes and a human
+          // `message` field). Falls back to plain text / status when the
+          // server is unreachable or returns HTML (e.g. a proxy error).
+          let detail: unknown = null;
+          let messageHint = '';
+          try {
+            const ct = resp.headers.get('content-type') ?? '';
+            if (ct.includes('application/json')) {
+              const body = (await resp.json()) as { detail?: unknown };
+              detail = body?.detail ?? body;
+            } else {
+              const text = await resp.text();
+              if (text) messageHint = text.slice(0, 500);
+            }
+          } catch {
+            // Body could not be read — keep going with the bare status.
+          }
+          // Detail may be a string (legacy) or an object (new diagnostic).
+          let diagnosticMessage = '';
+          if (typeof detail === 'string') {
+            diagnosticMessage = detail;
+          } else if (detail && typeof detail === 'object') {
+            const d = detail as { message?: string };
+            diagnosticMessage = d.message ?? '';
+          } else if (messageHint) {
+            diagnosticMessage = messageHint;
+          }
+          // Correlation ID — every backend response (success or error)
+          // carries an X-Request-Id header. Surface it on the Error so
+          // the UI can quote it in the user-visible diagnostic and the
+          // "Send to support" template; users don't have to dig through
+          // DevTools to find it.
+          const requestId =
+            resp.headers.get('x-request-id') ??
+            resp.headers.get('X-Request-Id') ??
+            null;
+          const headline = diagnosticMessage
+            ? `Failed to fetch geometry (${resp.status}): ${diagnosticMessage}`
+            : `Failed to fetch geometry: ${resp.status}`;
+          const err = new Error(headline) as Error & {
+            status?: number;
+            diagnostic?: unknown;
+            requestId?: string | null;
+          };
+          err.status = resp.status;
+          err.diagnostic = detail;
+          err.requestId = requestId;
+          throw err;
         }
         const total = Number(resp.headers.get('content-length')) || 0;
         const reader = resp.body?.getReader();

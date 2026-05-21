@@ -25,11 +25,16 @@ from sqlalchemy import select
 
 from app.dependencies import CurrentUserId, CurrentUserPayload, RequirePermission, SessionDep
 from app.modules.assemblies.schemas import (
+    AppliedComponent,
+    ApplyTemplateRequest,
+    ApplyTemplateResponse,
     ApplyToBOQRequest,
     AssemblyCreate,
     AssemblyImportRequest,
     AssemblyResponse,
     AssemblySearchResponse,
+    AssemblyTemplateResponse,
+    AssemblyTemplateSearchResponse,
     AssemblyUpdate,
     AssemblyWithComponents,
     CloneAssemblyRequest,
@@ -726,3 +731,284 @@ async def update_tags(
     await _verify_assembly_owner(session, assembly_id, user_id, payload)
     assembly = await service.update_tags(assembly_id, data.tags)
     return _assembly_to_response(assembly)
+
+
+# ── Assembly Library templates (v3.13.0 — Slice 1) ───────────────────────────
+
+
+def _template_to_response(template: object) -> AssemblyTemplateResponse:
+    """Convert an AssemblyTemplate ORM row to its response schema."""
+    components = getattr(template, "components", []) or []
+    return AssemblyTemplateResponse(
+        id=template.id,  # type: ignore[attr-defined]
+        name=template.name,  # type: ignore[attr-defined]
+        name_translations=getattr(template, "name_translations", {}) or {},
+        category=getattr(template, "category", ""),
+        unit=getattr(template, "unit", ""),
+        components=list(components),
+        classification=getattr(template, "classification", {}) or {},
+        tags=list(getattr(template, "tags", []) or []),
+        is_builtin=bool(getattr(template, "is_builtin", True)),
+        component_count=len(components),
+        created_at=template.created_at,  # type: ignore[attr-defined]
+        updated_at=template.updated_at,  # type: ignore[attr-defined]
+    )
+
+
+@router.get(
+    "/templates/",
+    response_model=AssemblyTemplateSearchResponse,
+    dependencies=[Depends(RequirePermission("assemblies.read"))],
+)
+async def list_templates(
+    session: SessionDep,
+    q: str | None = Query(default=None, description="Free-text search"),
+    category: str | None = Query(default=None, description="Filter by category"),
+    tag: str | None = Query(default=None, description="Filter by tag"),
+    din276: str | None = Query(default=None, description="Filter by DIN 276 KG code"),
+    masterformat: str | None = Query(
+        default=None, description="Filter by MasterFormat division"
+    ),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=500),
+) -> AssemblyTemplateSearchResponse:
+    """List Assembly Library templates with filters + pagination.
+
+    Any authenticated user with ``assemblies.read`` can browse. Templates
+    are read-only at this slice; future slices add user-contributed rows.
+    """
+    from app.modules.assemblies.repository import AssemblyTemplateRepository
+
+    repo = AssemblyTemplateRepository(session)
+    items, total = await repo.list_all(
+        offset=offset,
+        limit=limit,
+        q=q,
+        category=category,
+        tag=tag,
+        classification_din276=din276,
+        classification_masterformat=masterformat,
+    )
+    return AssemblyTemplateSearchResponse(
+        items=[_template_to_response(t) for t in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get(
+    "/templates/{template_id}",
+    response_model=AssemblyTemplateResponse,
+    dependencies=[Depends(RequirePermission("assemblies.read"))],
+)
+async def get_template(
+    template_id: uuid.UUID,
+    session: SessionDep,
+) -> AssemblyTemplateResponse:
+    """Fetch a single Assembly Library template by id."""
+    from app.modules.assemblies.repository import AssemblyTemplateRepository
+
+    repo = AssemblyTemplateRepository(session)
+    template = await repo.get_by_id(template_id)
+    if template is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Template not found"
+        )
+    return _template_to_response(template)
+
+
+def _component_total(factor: float, quantity: float, unit_rate: float) -> float:
+    """Compute one applied component's total — pure float, finite-only.
+
+    Returns 0.0 on overflow / non-finite inputs so the rolled-up
+    ``grand_total`` is always a serialisable number.
+    """
+    try:
+        total = float(factor) * float(quantity) * float(unit_rate)
+    except (TypeError, ValueError):
+        return 0.0
+    if total != total or total in (float("inf"), float("-inf")):  # NaN / inf
+        return 0.0
+    return round(total, 4)
+
+
+@router.post(
+    "/templates/{template_id}/apply",
+    response_model=ApplyTemplateResponse,
+    status_code=200,
+    dependencies=[Depends(RequirePermission("assemblies.read"))],
+)
+async def apply_template(
+    template_id: uuid.UUID,
+    data: ApplyTemplateRequest,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+) -> ApplyTemplateResponse:
+    """Resolve a template against a project's cost catalogue.
+
+    For each component:
+
+    1. Run the existing ``costs.matcher.match_cwicr_items`` lexical
+       search against the project's bound catalogue (filtered by region
+       / source when those are set on the project). The lexical channel
+       is the documented fallback that works without Qdrant — tests use
+       this path.
+    2. Pick the top match and capture its rate, code, currency.
+    3. Scale ``factor`` by the user-supplied ``quantity``.
+
+    Returns a non-persisted preview that the FE shows for confirmation.
+    Verifies the caller owns the target project (mirrors the per-tenant
+    isolation already in /apply-to-boq).
+    """
+    from app.modules.assemblies.repository import AssemblyTemplateRepository
+    from app.modules.costs.matcher import match_cwicr_items
+    from app.modules.projects.repository import ProjectRepository
+
+    repo = AssemblyTemplateRepository(session)
+    template = await repo.get_by_id(template_id)
+    if template is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Template not found"
+        )
+
+    project_repo = ProjectRepository(session)
+    project = await project_repo.get_by_id(data.project_id)
+    if project is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
+        )
+
+    is_admin = bool(payload and payload.get("role") == "admin")
+    if not is_admin and str(project.owner_id) != str(user_id):
+        # 404 instead of 403 — don't leak project existence to attackers.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Project not found"
+        )
+
+    region = data.region or getattr(project, "region", None) or None
+    language = data.language
+
+    components_out: list[AppliedComponent] = []
+    unresolved: list[str] = []
+    grand_total = 0.0
+    currency = getattr(project, "currency", "") or ""
+
+    for raw in template.components or []:
+        query = str(raw.get("cost_match_query", "")).strip()
+        factor = float(raw.get("factor", 0.0) or 0.0)
+        comp_unit = str(raw.get("unit", "")).strip() or template.unit
+        role = str(raw.get("role", "material"))
+        description = str(raw.get("description", query))
+
+        matches = []
+        if query:
+            try:
+                matches = await match_cwicr_items(
+                    session,
+                    query,
+                    unit=comp_unit or None,
+                    lang=language,
+                    top_k=1,
+                    region=region,
+                    source="cwicr",
+                )
+            except Exception:  # noqa: BLE001 — keep the apply preview alive
+                matches = []
+
+            # Fallback: relax to source=None when the bound catalogue is
+            # not CWICR-tagged. Cheap (one extra query at most) and keeps
+            # the preview useful on tenants importing third-party rates.
+            if not matches:
+                try:
+                    matches = await match_cwicr_items(
+                        session,
+                        query,
+                        unit=comp_unit or None,
+                        lang=language,
+                        top_k=1,
+                        region=region,
+                        source=None,
+                    )
+                except Exception:  # noqa: BLE001
+                    matches = []
+
+        scaled_q = factor * float(data.quantity)
+        matched_id: uuid.UUID | None = None
+        matched_desc = ""
+        matched_code = ""
+        unit_rate = 0.0
+        match_score = 0.0
+        match_channel = "lexical"
+        if matches:
+            top = matches[0]
+            # ``MatchResult`` is a flat pydantic model — fields are read
+            # directly, not through a wrapped ``.item``.
+            try:
+                unit_rate = float(getattr(top, "unit_rate", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                unit_rate = 0.0
+            match_score = float(getattr(top, "score", 0.0) or 0.0)
+            match_channel = str(getattr(top, "source", "lexical"))
+            matched_desc = str(getattr(top, "description", "") or "")[:200]
+            matched_code = str(getattr(top, "code", "") or "")
+            raw_id = getattr(top, "cost_item_id", None)
+            if raw_id:
+                try:
+                    matched_id = uuid.UUID(str(raw_id))
+                except (TypeError, ValueError):
+                    matched_id = None
+            m_currency = getattr(top, "currency", "") or ""
+            if not currency and m_currency:
+                currency = m_currency
+        else:
+            unresolved.append(query or description)
+
+        total = _component_total(factor, float(data.quantity), unit_rate)
+        grand_total += total
+
+        components_out.append(
+            AppliedComponent(
+                description=description,
+                cost_match_query=query,
+                matched_cost_item_id=matched_id,
+                matched_description=matched_desc,
+                matched_code=matched_code,
+                factor=factor,
+                scaled_quantity=scaled_q,
+                unit=comp_unit,
+                unit_rate=unit_rate,
+                total=total,
+                role=role,
+                match_confidence=round(match_score, 4),
+                match_channel=match_channel,
+            )
+        )
+
+    warnings: list[str] = []
+    if unresolved:
+        warnings.append(
+            f"{len(unresolved)} component(s) could not be matched against the "
+            "project's cost catalogue."
+        )
+
+    # ``total_rate`` is the per-unit rate (assembly subtotal at quantity=1);
+    # ``grand_total`` is the rolled-up total for the requested quantity.
+    qty_safe = float(data.quantity) if data.quantity else 1.0
+    total_rate = round(grand_total / qty_safe, 4) if qty_safe else 0.0
+
+    return ApplyTemplateResponse(
+        template_id=template.id,
+        template_name=template.name,
+        project_id=data.project_id,
+        boq_position_id=data.boq_position_id,
+        quantity=float(data.quantity),
+        unit=template.unit,
+        currency=currency,
+        components=components_out,
+        total_rate=total_rate,
+        grand_total=round(grand_total, 4),
+        unresolved_components=unresolved,
+        warnings=warnings,
+    )

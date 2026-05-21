@@ -2,6 +2,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { visualizer } from 'rollup-plugin-visualizer';
+import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
 import { readFileSync } from 'fs';
 
@@ -20,6 +21,146 @@ export default defineConfig({
       gzipSize: true,
       brotliSize: true,
       open: false,
+    }),
+    // ── Mobile PWA — Slice 1 ────────────────────────────────────────────
+    // Installable PWA with offline-app-shell + i18n bundle caching.
+    //
+    // * App-shell precaching is handled by workbox (generateSW), which
+    //   automatically picks up the build outputs via the
+    //   ``globPatterns``.  No additional pre-cache list is needed.
+    // * Runtime caching is split into three deliberately-named lanes
+    //   so each behaviour is independently verifiable in the SW unit
+    //   tests:
+    //     - "oce-static-assets"  CacheFirst for fonts/images that are
+    //       hash-fingerprinted at build time.
+    //     - "oce-i18n-locales"   StaleWhileRevalidate for the per-locale
+    //       chunks under ``assets/i18n-*.js`` so a returning user gets
+    //       an instant paint in their last language even when offline,
+    //       while the background fetch keeps the chunk fresh.
+    //     - "oce-api"            NetworkFirst for ``/api/v1/*`` GETs
+    //       with an 8s timeout; cache used only as offline fallback for
+    //       idempotent reads.  Mutations (POST/PUT/PATCH/DELETE) bypass
+    //       the cache and surface a network error normally.
+    //
+    // * Navigation fallback points at ``/index.html`` so a refresh from
+    //   any deep route while offline still gets the SPA shell back; the
+    //   inner ``<Routes>`` then resolves whatever route is in the URL
+    //   and the per-feature ``OfflineFallback`` renders if the route's
+    //   own data hooks fail.
+    //
+    // * registerType=autoUpdate + injectRegister=auto: the SW silently
+    //   takes over and starts updating in the background; ``skipWaiting``
+    //   + ``clientsClaim`` mean the next navigation picks up the new
+    //   bundle.  No "Update available" toast in this slice; deferred
+    //   behind ``vite-plugin-pwa``'s ``registerSW`` helper for a future
+    //   slice.
+    VitePWA({
+      registerType: 'autoUpdate',
+      injectRegister: 'auto',
+      // Strip the SW + manifest from the dev server entirely; the dev
+      // server is HMR-driven and a stale workbox precache would mask
+      // edits during development.  ``npm run build`` still emits both.
+      devOptions: { enabled: false },
+      includeAssets: ['favicon.svg', 'pwa/*.svg'],
+      manifest: {
+        name: 'OpenConstructionERP',
+        short_name: 'OCERP',
+        description:
+          'Open-source construction cost estimation, BIM takeoff, BOQ, tendering and field operations.',
+        theme_color: '#0284c7',
+        background_color: '#f7fbff',
+        display: 'standalone',
+        orientation: 'any',
+        start_url: '/',
+        scope: '/',
+        lang: 'en',
+        icons: [
+          { src: '/pwa/icon-192.svg', sizes: '192x192', type: 'image/svg+xml', purpose: 'any' },
+          { src: '/pwa/icon-256.svg', sizes: '256x256', type: 'image/svg+xml', purpose: 'any' },
+          { src: '/pwa/icon-384.svg', sizes: '384x384', type: 'image/svg+xml', purpose: 'any' },
+          { src: '/pwa/icon-512.svg', sizes: '512x512', type: 'image/svg+xml', purpose: 'any' },
+          { src: '/pwa/icon-maskable-512.svg', sizes: '512x512', type: 'image/svg+xml', purpose: 'maskable' },
+        ],
+      },
+      workbox: {
+        // Precache index + JS/CSS/HTML + the static SVGs above.  Vite's
+        // build output lands in ``dist/``; workbox-build resolves the
+        // patterns relative to that.
+        globPatterns: ['**/*.{js,css,html,svg,woff2,ico}'],
+        // Skip huge prerendered marketing assets (handled by the static
+        // host) and stats.html (visualizer output).
+        globIgnores: ['stats.html', '**/*.map'],
+        // Allow large lazy-loaded chunks (vendor-three, vendor-maplibre)
+        // to be runtime-cached on first visit. 5 MB ceiling matches
+        // workbox's default but is set explicitly for clarity.
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+        navigateFallback: '/index.html',
+        // Don't try to fall back to /index.html for API routes or for
+        // file/asset routes the SW doesn't precache.
+        navigateFallbackDenylist: [/^\/api\//, /^\/static\//, /^\/pwa\//],
+        cleanupOutdatedCaches: true,
+        skipWaiting: true,
+        clientsClaim: true,
+        runtimeCaching: [
+          {
+            // Static assets (fonts, images shipped under /assets/) ─
+            // hashed at build time so a CacheFirst lookup is safe.
+            urlPattern: ({ url, request }) => {
+              if (url.pathname.startsWith('/api/')) return false;
+              return (
+                request.destination === 'font' ||
+                request.destination === 'image' ||
+                /\/assets\//.test(url.pathname)
+              );
+            },
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'oce-static-assets',
+              expiration: {
+                maxEntries: 200,
+                maxAgeSeconds: 30 * 24 * 60 * 60, // 30 days
+              },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
+            // i18n locale chunks — names emitted by manualChunks above
+            // are ``i18n-<code>``.  StaleWhileRevalidate keeps the
+            // active locale instant-on while still pulling fresh keys
+            // in the background.
+            urlPattern: ({ url }) => /\/assets\/i18n-[a-z]{2}-.*\.js$/.test(url.pathname),
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'oce-i18n-locales',
+              expiration: {
+                maxEntries: 50,
+                maxAgeSeconds: 14 * 24 * 60 * 60, // 14 days
+              },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
+            // API reads — NetworkFirst with 8 s timeout, cache only
+            // used as the offline fallback for idempotent GETs.  Other
+            // verbs bypass the SW (no ``method`` match here means GET
+            // by default).
+            urlPattern: ({ url, request }) => {
+              if (request.method !== 'GET') return false;
+              return url.pathname.startsWith('/api/v1/');
+            },
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'oce-api',
+              networkTimeoutSeconds: 8,
+              expiration: {
+                maxEntries: 100,
+                maxAgeSeconds: 24 * 60 * 60, // 1 day
+              },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
+        ],
+      },
     }),
   ],
   resolve: {
@@ -141,7 +282,7 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
-    include: ['src/**/*.test.{ts,tsx}'],
+    include: ['src/**/*.test.{ts,tsx}', 'tests/**/*.test.{ts,tsx}'],
     css: false,
   },
 });

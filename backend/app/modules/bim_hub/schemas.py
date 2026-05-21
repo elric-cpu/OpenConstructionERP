@@ -810,3 +810,108 @@ class BIMModelSchemaResponse(BaseModel):
     )
     element_count: int = 0
     member_element_ids: list[UUID] = Field(default_factory=list)
+
+
+# ── BIM Federation schemas (v4.0 / Slice 1) ──────────────────────────────────
+
+
+FederationDiscipline = Literal[
+    "arch",
+    "struct",
+    "mep",
+    "landscape",
+    "civil",
+    "other",
+]
+
+
+class FederationOriginOffset(BaseModel):
+    """Shared origin offset applied to every federation member at render time."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    x: float = 0.0
+    y: float = 0.0
+    z: float = 0.0
+
+
+class FederationCreate(BaseModel):
+    """Create a new BIM federation under a project."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    project_id: UUID
+    name: str = Field(..., min_length=1, max_length=255)
+    description: str | None = None
+    origin_offset: FederationOriginOffset = Field(
+        default_factory=FederationOriginOffset
+    )
+    shared_units: str = Field(default="m", min_length=1, max_length=20)
+
+
+class FederationUpdate(BaseModel):
+    """Partial update for a federation header (metadata only)."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = None
+    origin_offset: FederationOriginOffset | None = None
+    shared_units: str | None = Field(default=None, min_length=1, max_length=20)
+
+
+class FederationModelAdd(BaseModel):
+    """Add an existing BIM model to a federation."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    bim_model_id: UUID
+    discipline: FederationDiscipline = "other"
+    color_hint: str | None = Field(default=None, max_length=20)
+    visible: bool = True
+    z_order: int = 0
+
+
+class FederationModelResponse(BaseModel):
+    """A single member-model link inside a federation."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    federation_id: UUID
+    bim_model_id: UUID
+    discipline: str
+    color_hint: str | None = None
+    visible: bool
+    z_order: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class FederationResponse(BaseModel):
+    """Federation header (no members) returned from list / create endpoints."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    project_id: UUID
+    name: str
+    description: str | None = None
+    origin_offset: dict[str, Any] = Field(default_factory=dict)
+    shared_units: str
+    member_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+
+class FederationFullResponse(FederationResponse):
+    """Federation header *plus* its members, ordered by z_order ascending."""
+
+    members: list[FederationModelResponse] = Field(default_factory=list)
+
+
+class FederationListResponse(BaseModel):
+    """Paginated federation list."""
+
+    items: list[FederationResponse] = Field(default_factory=list)
+    total: int = 0

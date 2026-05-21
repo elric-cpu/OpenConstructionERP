@@ -303,3 +303,109 @@ class AssemblyImportRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     assembly: AssemblyExport
+
+
+# ── Assembly Library templates (v3.13.0 — Slice 1) ───────────────────────────
+
+
+class AssemblyTemplateComponent(BaseModel):
+    """One component inside a canonical assembly template.
+
+    Catalogue-agnostic: the apply endpoint resolves ``cost_match_query``
+    against the project's bound cost catalogue at runtime instead of
+    storing a hard-coded ``cost_item_id``.
+    """
+
+    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
+
+    cost_match_query: str = Field(..., min_length=1, max_length=500)
+    factor: float = Field(default=1.0, ge=0.0, le=_NUM_MAX, allow_inf_nan=False)
+    unit: str = Field(..., min_length=1, max_length=20)
+    role: str = Field(default="material", max_length=20)
+    description: str = Field(default="", max_length=500)
+
+
+class AssemblyTemplateResponse(BaseModel):
+    """An Assembly Library template row as returned by the API."""
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    name: str
+    name_translations: dict[str, str] = Field(default_factory=dict)
+    category: str
+    unit: str
+    components: list[dict[str, Any]] = Field(default_factory=list)
+    classification: dict[str, Any] = Field(default_factory=dict)
+    tags: list[str] = Field(default_factory=list)
+    is_builtin: bool = True
+    component_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+
+class AssemblyTemplateSearchResponse(BaseModel):
+    """Paginated search result for the Assembly Library."""
+
+    items: list[AssemblyTemplateResponse]
+    total: int
+    limit: int
+    offset: int
+
+
+class ApplyTemplateRequest(BaseModel):
+    """Request body for applying an Assembly Library template to a project."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    project_id: UUID
+    boq_position_id: UUID | None = None
+    quantity: float = Field(default=1.0, gt=0.0, le=_NUM_MAX, allow_inf_nan=False)
+    region: str | None = Field(default=None, max_length=64)
+    language: str | None = Field(
+        default=None,
+        max_length=8,
+        description="ISO-639-1 language hint for the cost match (en/de/ru/...)",
+    )
+
+
+class AppliedComponent(BaseModel):
+    """A single component resolved against the project's cost catalogue."""
+
+    description: str
+    cost_match_query: str
+    matched_cost_item_id: UUID | None = None
+    matched_description: str = ""
+    matched_code: str = ""
+    factor: float = 0.0
+    scaled_quantity: float = 0.0
+    unit: str
+    unit_rate: float = 0.0
+    total: float = 0.0
+    role: str = "material"
+    match_confidence: float = 0.0
+    match_channel: str = "lexical"
+
+
+class ApplyTemplateResponse(BaseModel):
+    """Draft assembly returned by the apply endpoint.
+
+    The draft is NOT persisted — the FE shows it for user review and a
+    later POST creates the actual Assembly (or a BOQ position). That
+    "preview-then-confirm" contract matches the existing
+    ``/assemblies/ai-generate`` endpoint and the platform's
+    human-confirms-AI rule.
+    """
+
+    template_id: UUID
+    template_name: str
+    project_id: UUID
+    boq_position_id: UUID | None
+    quantity: float
+    unit: str
+    currency: str = ""
+    components: list[AppliedComponent] = Field(default_factory=list)
+    total_rate: float = 0.0
+    grand_total: float = 0.0
+    unresolved_components: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)

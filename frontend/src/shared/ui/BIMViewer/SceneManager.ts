@@ -44,6 +44,11 @@ export class SceneManager {
   private _tween: CameraTween | null = null;
   /** Reject the pending flyTo() promise when a new tween cancels it. */
   private _tweenReject: ((err: Error) => void) | null = null;
+  /** controls.enabled value captured at tween start. Restored on cancel
+   *  AND completion so a back-to-back cube click (which cancels the
+   *  previous tween before it could restore controls) does not leave
+   *  OrbitControls permanently disabled. */
+  private _tweenWasControlsEnabled: boolean | null = null;
   /** Subscribers to camera-change events (used by the View Cube widget). */
   private _cameraChangeListeners = new Set<() => void>();
   /**
@@ -52,6 +57,15 @@ export class SceneManager {
    */
   private _lastPreset: ViewPreset | null = null;
   private _lastPresetRotationSteps = 0;
+  /** Listener refs kept so dispose() can remove them — without this,
+   *  modifier-key handlers leaked on every viewer remount and the
+   *  pointerup restore listener could fire AFTER dispose, leaving
+   *  OrbitControls permanently disabled on the next model load. */
+  private _onKeyDown: ((e: KeyboardEvent) => void) | null = null;
+  private _onKeyUp: ((e: KeyboardEvent) => void) | null = null;
+  private _onPointerDown: ((e: PointerEvent) => void) | null = null;
+  private _canvasEl: HTMLCanvasElement | null = null;
+  private _activeRestoreListeners = new Set<() => void>();
 
   constructor(canvas: HTMLCanvasElement) {
     const parent = canvas.parentElement;
@@ -127,32 +141,37 @@ export class SceneManager {
     // Disable OrbitControls when Ctrl or Shift is held so that
     // Ctrl+Click and Shift+Click are free for multi-select in the
     // SelectionManager.  Re-enable on keyup.
-    const onKeyDown = (e: KeyboardEvent) => {
+    this._onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Control' || e.key === 'Shift') {
         this.controls.enabled = false;
       }
     };
-    const onKeyUp = (e: KeyboardEvent) => {
+    this._onKeyUp = (e: KeyboardEvent) => {
       if (e.key === 'Control' || e.key === 'Shift') {
         this.controls.enabled = true;
       }
     };
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('keydown', this._onKeyDown);
+    window.addEventListener('keyup', this._onKeyUp);
     // Also handle the case where modifier was held during pointerdown
     // on the canvas — OrbitControls checks enabled on pointer events.
-    canvas.addEventListener('pointerdown', (e: PointerEvent) => {
+    this._canvasEl = canvas;
+    this._onPointerDown = (e: PointerEvent) => {
       if (e.ctrlKey || e.metaKey || e.shiftKey) {
         this.controls.enabled = false;
-        // Re-enable after a short delay so the next non-modified
-        // interaction works normally.
+        // Re-enable on next pointerup. The restore is tracked in a Set
+        // so dispose() can drop it — otherwise a navigate-away mid-click
+        // leaves OrbitControls disabled for the next model load.
         const restore = () => {
           this.controls.enabled = true;
           window.removeEventListener('pointerup', restore);
+          this._activeRestoreListeners.delete(restore);
         };
+        this._activeRestoreListeners.add(restore);
         window.addEventListener('pointerup', restore);
       }
-    }, { capture: true }); // capture phase — runs BEFORE OrbitControls
+    };
+    canvas.addEventListener('pointerdown', this._onPointerDown, { capture: true });
 
     // On-demand rendering: only render when the camera moves or the
     // scene is explicitly invalidated.  Drops idle CPU from 60 FPS
@@ -631,9 +650,18 @@ export class SceneManager {
    */
   flyTo(target: CameraState, durationMs = 600): Promise<void> {
     // Abort any previously-running tween: reject its promise + stop rAF.
+    // CRITICAL: restore controls.enabled to its pre-tween value FIRST so
+    // the new tween captures the true user-visible enabled state, not
+    // the "disabled-during-animation" state left behind by the previous
+    // tween's start. Without this, two back-to-back cube clicks would
+    // permanently freeze OrbitControls.
     if (this._tween) {
       this._tween.cancel();
       this._tween = null;
+    }
+    if (this._tweenWasControlsEnabled !== null) {
+      this.controls.enabled = this._tweenWasControlsEnabled;
+      this._tweenWasControlsEnabled = null;
     }
     if (this._tweenReject) {
       const reject = this._tweenReject;
@@ -659,7 +687,7 @@ export class SceneManager {
       const tween = new CameraTween();
       this._tween = tween;
       this._tweenReject = reject;
-      const wasEnabled = this.controls.enabled;
+      this._tweenWasControlsEnabled = this.controls.enabled;
       this.controls.enabled = false;
 
       tween.start(
@@ -685,7 +713,13 @@ export class SceneManager {
           this._emitCameraChange();
         },
         () => {
-          this.controls.enabled = wasEnabled;
+          // Restore controls only if no newer tween has already swapped
+          // _tweenWasControlsEnabled out from under us — guards against
+          // a re-entrant flyTo that would otherwise be overwritten.
+          if (this._tweenWasControlsEnabled !== null) {
+            this.controls.enabled = this._tweenWasControlsEnabled;
+            this._tweenWasControlsEnabled = null;
+          }
           this.controls.update();
           this._needsRender = true;
           this._tween = null;
@@ -871,6 +905,23 @@ export class SceneManager {
     this._cameraChangeListeners.clear();
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
+
+    // Remove modifier-key listeners (otherwise every BIM viewer mount
+    // leaked a global handler; orbit-controls state could be flipped
+    // by a still-attached restore listener on a disposed scene).
+    if (this._onKeyDown) window.removeEventListener('keydown', this._onKeyDown);
+    if (this._onKeyUp) window.removeEventListener('keyup', this._onKeyUp);
+    this._onKeyDown = null;
+    this._onKeyUp = null;
+    if (this._canvasEl && this._onPointerDown) {
+      this._canvasEl.removeEventListener('pointerdown', this._onPointerDown, { capture: true } as EventListenerOptions);
+    }
+    this._onPointerDown = null;
+    this._canvasEl = null;
+    for (const restore of this._activeRestoreListeners) {
+      window.removeEventListener('pointerup', restore);
+    }
+    this._activeRestoreListeners.clear();
 
     this.controls.dispose();
 

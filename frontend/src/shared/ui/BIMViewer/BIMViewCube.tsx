@@ -233,9 +233,7 @@ export function BIMViewCube({
       ref={wrapperRef}
       data-testid="bim-view-cube"
       className={[
-        'absolute top-3 right-3 z-10',
-        'rounded-lg shadow-md ring-1 ring-black/5 bg-white/70 backdrop-blur',
-        'hover:ring-oe-blue/40 transition',
+        'transition',
         className ?? '',
       ]
         .filter(Boolean)

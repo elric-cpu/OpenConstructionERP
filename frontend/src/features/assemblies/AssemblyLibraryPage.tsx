@@ -1,0 +1,568 @@
+import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useQuery } from '@tanstack/react-query';
+import { Library, Search, X, Layers, Globe, Check, AlertCircle, Loader2 } from 'lucide-react';
+
+import { Button, Card, Badge, EmptyState, SkeletonGrid } from '@/shared/ui';
+import { useToastStore } from '@/stores/useToastStore';
+import { projectsApi } from '@/features/projects/api';
+
+import {
+  assembliesApi,
+  type AssemblyTemplate,
+  type AppliedTemplateResponse,
+} from './api';
+
+/* -- Constants ------------------------------------------------------------ */
+
+const CATEGORY_FILTERS: { value: string; key: string }[] = [
+  { value: '', key: 'assemblies.library.category_all' },
+  { value: 'concrete', key: 'assemblies.library.category_concrete' },
+  { value: 'masonry', key: 'assemblies.library.category_masonry' },
+  { value: 'drywall', key: 'assemblies.library.category_drywall' },
+  { value: 'steel', key: 'assemblies.library.category_steel' },
+  { value: 'roofing', key: 'assemblies.library.category_roofing' },
+  { value: 'insulation', key: 'assemblies.library.category_insulation' },
+  { value: 'finishing', key: 'assemblies.library.category_finishing' },
+  { value: 'mep', key: 'assemblies.library.category_mep' },
+  { value: 'earthwork', key: 'assemblies.library.category_earthwork' },
+];
+
+type BadgeVariant = 'blue' | 'success' | 'warning' | 'error' | 'neutral';
+
+const CATEGORY_BADGE: Record<string, BadgeVariant> = {
+  concrete: 'blue',
+  masonry: 'warning',
+  drywall: 'neutral',
+  steel: 'neutral',
+  roofing: 'warning',
+  insulation: 'blue',
+  finishing: 'success',
+  mep: 'success',
+  earthwork: 'warning',
+};
+
+/* -- Page ---------------------------------------------------------------- */
+
+export function AssemblyLibraryPage() {
+  const { t, i18n } = useTranslation();
+  const addToast = useToastStore((s) => s.addToast);
+
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [category, setCategory] = useState('');
+  const [selected, setSelected] = useState<AssemblyTemplate | null>(null);
+
+  // Debounce the search box.
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(id);
+  }, [search]);
+
+  const params: Record<string, string> = { limit: '200', offset: '0' };
+  if (debouncedSearch) params.q = debouncedSearch;
+  if (category) params.category = category;
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['assembly-templates', debouncedSearch, category],
+    queryFn: () => assembliesApi.listTemplates(params),
+    placeholderData: (prev) => prev,
+  });
+
+  const templates = data?.items ?? [];
+  const total = data?.total ?? 0;
+
+  const lang = ((i18n.language || 'en').split('-')[0] ?? 'en') as string;
+  const localisedName = (tpl: AssemblyTemplate): string =>
+    tpl.name_translations?.[lang] || tpl.name;
+
+  return (
+    <div className="space-y-6 p-6">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <div className="rounded-lg bg-blue-100 p-2 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+            <Library className="h-6 w-6" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
+              {t('assemblies.library.title', 'Assembly library')}
+            </h1>
+            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+              {t(
+                'assemblies.library.description',
+                'Canonical recipe templates — pick a starting point and apply it to your project.'
+              )}
+            </p>
+          </div>
+        </div>
+        <Badge variant="neutral">
+          {`${total} ${t('assemblies.library.templates_found', 'templates')}`}
+        </Badge>
+      </div>
+
+      {/* Search bar */}
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={t(
+            'assemblies.library.search_placeholder',
+            'Search by name, tag, or translation…'
+          )}
+          className="w-full rounded-lg border border-zinc-300 bg-white py-2.5 pl-10 pr-10 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+        />
+        {search && (
+          <button
+            type="button"
+            onClick={() => setSearch('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-0.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800"
+            aria-label={t('common.clear', 'Clear')}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+
+      {/* Category filter chips */}
+      <div className="flex flex-wrap gap-2">
+        {CATEGORY_FILTERS.map((c) => (
+          <button
+            key={c.value}
+            type="button"
+            onClick={() => setCategory(c.value)}
+            className={
+              'rounded-full border px-3 py-1 text-sm transition-colors ' +
+              (category === c.value
+                ? 'border-blue-600 bg-blue-600 text-white'
+                : 'border-zinc-300 bg-white text-zinc-700 hover:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-600')
+            }
+          >
+            {t(c.key, c.value || 'All')}
+          </button>
+        ))}
+      </div>
+
+      {/* Grid */}
+      {isLoading ? (
+        <SkeletonGrid items={9} />
+      ) : templates.length === 0 ? (
+        <EmptyState
+          icon={<Library className="h-8 w-8" />}
+          title={t('assemblies.library.empty_title', 'No templates match the current filter')}
+          description={t(
+            'assemblies.library.empty_description',
+            'Adjust the search or category to broaden your results.'
+          )}
+        />
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {templates.map((tpl) => (
+            <TemplateCard
+              key={tpl.id}
+              template={tpl}
+              localisedName={localisedName(tpl)}
+              onClick={() => setSelected(tpl)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Drawer */}
+      {selected && (
+        <TemplateDrawer
+          template={selected}
+          localisedName={localisedName(selected)}
+          onClose={() => setSelected(null)}
+          onApplied={(result) => {
+            addToast({
+              type: 'success',
+              title: t('assemblies.library.apply_success_title', 'Template applied'),
+              message: t(
+                'assemblies.library.apply_success',
+                'Template applied — {{matched}} of {{total}} components resolved.',
+                {
+                  matched: result.components.length - result.unresolved_components.length,
+                  total: result.components.length,
+                }
+              ),
+            });
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* -- Card ---------------------------------------------------------------- */
+
+function TemplateCard({
+  template,
+  localisedName,
+  onClick,
+}: {
+  template: AssemblyTemplate;
+  localisedName: string;
+  onClick: () => void;
+}) {
+  const { t } = useTranslation();
+  const badgeColor = CATEGORY_BADGE[template.category] ?? 'neutral';
+
+  const din = template.classification?.din276;
+  const mf = template.classification?.masterformat;
+
+  return (
+    <Card
+      className="cursor-pointer transition-shadow hover:shadow-md"
+      onClick={onClick}
+    >
+      <div className="flex h-full flex-col gap-3 p-4">
+        <div className="flex items-start justify-between gap-2">
+          <h3 className="line-clamp-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+            {localisedName}
+          </h3>
+          <Badge variant={badgeColor}>{template.category}</Badge>
+        </div>
+
+        <div className="flex flex-wrap gap-1.5">
+          {din && (
+            <Badge variant="blue" size="sm">
+              {`DIN ${din}`}
+            </Badge>
+          )}
+          {mf && (
+            <Badge variant="neutral" size="sm">
+              {`MF ${mf}`}
+            </Badge>
+          )}
+        </div>
+
+        <div className="mt-auto flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
+          <span className="flex items-center gap-1">
+            <Layers className="h-3.5 w-3.5" />
+            {template.component_count}{' '}
+            {t('assemblies.library.components', 'components')}
+          </span>
+          <span className="font-mono text-zinc-700 dark:text-zinc-300">
+            {t('assemblies.library.per_unit', 'per')} {template.unit}
+          </span>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+/* -- Drawer / Apply form ------------------------------------------------- */
+
+interface ProjectLite {
+  id: string;
+  name: string;
+}
+
+function TemplateDrawer({
+  template,
+  localisedName,
+  onClose,
+  onApplied,
+}: {
+  template: AssemblyTemplate;
+  localisedName: string;
+  onClose: () => void;
+  onApplied: (result: AppliedTemplateResponse) => void;
+}) {
+  const { t } = useTranslation();
+  const addToast = useToastStore((s) => s.addToast);
+
+  const [projectId, setProjectId] = useState<string>('');
+  const [quantity, setQuantity] = useState<string>('1');
+  const [applying, setApplying] = useState(false);
+  const [result, setResult] = useState<AppliedTemplateResponse | null>(null);
+
+  const { data: projects } = useQuery({
+    queryKey: ['projects-for-library'],
+    queryFn: () => projectsApi.list() as Promise<ProjectLite[]>,
+  });
+
+  // Pick the first project by default once the list arrives.
+  useEffect(() => {
+    if (projectId) return;
+    const first = projects?.[0];
+    if (first) setProjectId(first.id);
+  }, [projects, projectId]);
+
+  const handleApply = async () => {
+    if (!projectId) {
+      addToast({
+        type: 'error',
+        title: t(
+          'assemblies.library.no_project',
+          'Pick a project to apply this template.'
+        ),
+      });
+      return;
+    }
+    const qty = Number(quantity);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      addToast({
+        type: 'error',
+        title: t('assemblies.library.invalid_quantity', 'Quantity must be > 0.'),
+      });
+      return;
+    }
+    setApplying(true);
+    try {
+      const resp = await assembliesApi.applyTemplate(template.id, {
+        project_id: projectId,
+        quantity: qty,
+      });
+      setResult(resp);
+      onApplied(resp);
+    } catch (err) {
+      addToast({
+        type: 'error',
+        title: t('assemblies.library.apply_failed', 'Could not apply template.'),
+        message: (err as { message?: string })?.message,
+      });
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/40">
+      <div
+        className="flex h-full w-full max-w-xl flex-col overflow-y-auto bg-white shadow-xl dark:bg-zinc-900"
+        role="dialog"
+        aria-labelledby="template-drawer-title"
+      >
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-zinc-200 bg-white px-5 py-4 dark:border-zinc-800 dark:bg-zinc-900">
+          <div>
+            <h2
+              id="template-drawer-title"
+              className="text-lg font-semibold text-zinc-900 dark:text-zinc-100"
+            >
+              {localisedName}
+            </h2>
+            <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+              {template.category} · per {template.unit} · {template.component_count}{' '}
+              {t('assemblies.library.components', 'components')}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800"
+            aria-label={t('common.close', 'Close')}
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="flex-1 space-y-5 px-5 py-5">
+          {/* Translations */}
+          {Object.keys(template.name_translations || {}).length > 0 && (
+            <section>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                <Globe className="mr-1 inline h-3.5 w-3.5" />
+                {t('assemblies.library.translations', 'Translations')}
+              </h3>
+              <ul className="space-y-1 text-sm">
+                {Object.entries(template.name_translations).map(([k, v]) => (
+                  <li key={k} className="flex gap-2">
+                    <span className="w-8 font-mono text-zinc-400">{k}</span>
+                    <span className="text-zinc-700 dark:text-zinc-300">{v}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {/* Classification */}
+          {(template.classification?.din276 ||
+            template.classification?.masterformat) && (
+            <section>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                {t('assemblies.library.classification', 'Classification')}
+              </h3>
+              <div className="flex gap-2">
+                {template.classification.din276 && (
+                  <Badge variant="blue">{`DIN 276 · ${template.classification.din276}`}</Badge>
+                )}
+                {template.classification.masterformat && (
+                  <Badge variant="neutral">
+                    {`MasterFormat · ${template.classification.masterformat}`}
+                  </Badge>
+                )}
+              </div>
+            </section>
+          )}
+
+          {/* Components */}
+          <section>
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+              {t('assemblies.library.components', 'Components')}
+            </h3>
+            <ul className="divide-y divide-zinc-200 rounded-md border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+              {template.components.map((c, idx) => (
+                <li key={idx} className="flex items-center justify-between px-3 py-2 text-sm">
+                  <div>
+                    <div className="text-zinc-800 dark:text-zinc-200">{c.description}</div>
+                    <div className="text-xs text-zinc-500">{c.role}</div>
+                  </div>
+                  <div className="text-right font-mono text-xs text-zinc-600 dark:text-zinc-400">
+                    {c.factor} {c.unit}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+
+          {/* Tags */}
+          {template.tags.length > 0 && (
+            <section>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                {t('assemblies.library.tags', 'Tags')}
+              </h3>
+              <div className="flex flex-wrap gap-1.5">
+                {template.tags.map((tag) => (
+                  <Badge key={tag} variant="neutral" size="sm">
+                    {tag}
+                  </Badge>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Apply form */}
+          <section className="rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-800/40">
+            <h3 className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              {t('assemblies.library.apply_heading', 'Apply to BOQ')}
+            </h3>
+            <div className="space-y-3">
+              <label className="block text-sm">
+                <span className="mb-1 block text-zinc-700 dark:text-zinc-300">
+                  {t('assemblies.library.project', 'Project')}
+                </span>
+                <select
+                  value={projectId}
+                  onChange={(e) => setProjectId(e.target.value)}
+                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                >
+                  <option value="">
+                    {t('assemblies.library.pick_project', '— pick a project —')}
+                  </option>
+                  {(projects ?? []).map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-sm">
+                <span className="mb-1 block text-zinc-700 dark:text-zinc-300">
+                  {t('assemblies.library.quantity', 'Quantity')} ({template.unit})
+                </span>
+                <input
+                  type="number"
+                  min={0}
+                  step="any"
+                  value={quantity}
+                  onChange={(e) => setQuantity(e.target.value)}
+                  className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                />
+              </label>
+              <Button
+                onClick={handleApply}
+                disabled={applying || !projectId}
+                className="w-full"
+              >
+                {applying ? (
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                ) : (
+                  <Check className="mr-1.5 h-4 w-4" />
+                )}
+                {t('assemblies.library.apply_button', 'Apply to BOQ')}
+              </Button>
+            </div>
+          </section>
+
+          {/* Result */}
+          {result && (
+            <section>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                {t('assemblies.library.preview', 'Preview')}
+              </h3>
+              {result.warnings.length > 0 && (
+                <div className="mb-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                  <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                  <div>
+                    {result.warnings.map((w, i) => (
+                      <div key={i}>{w}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <table className="w-full text-xs">
+                <thead className="text-left text-zinc-500">
+                  <tr>
+                    <th className="py-1 pr-2">
+                      {t('assemblies.library.component', 'Component')}
+                    </th>
+                    <th className="py-1 pr-2 text-right">
+                      {t('assemblies.library.qty', 'Qty')}
+                    </th>
+                    <th className="py-1 pr-2 text-right">
+                      {t('assemblies.library.rate', 'Rate')}
+                    </th>
+                    <th className="py-1 text-right">
+                      {t('assemblies.library.total', 'Total')}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+                  {result.components.map((c, i) => (
+                    <tr key={i}>
+                      <td className="py-1.5 pr-2">
+                        <div className="text-zinc-800 dark:text-zinc-200">
+                          {c.description}
+                        </div>
+                        {c.matched_code && (
+                          <div className="font-mono text-[10px] text-zinc-500">
+                            {c.matched_code}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-1.5 pr-2 text-right font-mono">
+                        {c.scaled_quantity.toFixed(2)} {c.unit}
+                      </td>
+                      <td className="py-1.5 pr-2 text-right font-mono">
+                        {c.unit_rate.toFixed(2)} {result.currency}
+                      </td>
+                      <td className="py-1.5 text-right font-mono">
+                        {c.total.toFixed(2)} {result.currency}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="font-semibold">
+                    <td colSpan={3} className="py-2 text-right">
+                      {t('assemblies.library.grand_total', 'Grand total')}
+                    </td>
+                    <td className="py-2 text-right font-mono">
+                      {result.grand_total.toFixed(2)} {result.currency}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </section>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default AssemblyLibraryPage;

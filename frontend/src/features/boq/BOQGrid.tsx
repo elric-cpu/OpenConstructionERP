@@ -1097,11 +1097,29 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
    * memo rebuilds (it depends on `displayCurrency`), but AG Grid keeps
    * the prior formatted strings cached for already-rendered cells.
    * Force a cell refresh on the total column so every footer / section
-   * subtotal / per-position total reformats in lock-step. */
+   * subtotal / per-position total reformats in lock-step.
+   *
+   * Full-width section rows are NOT part of the `total` column — they
+   * render through SectionFullWidthRenderer, which reads `_subtotal` and
+   * divides by `displayCurrency.rate` itself. `refreshCells` does not
+   * reach them, so without an explicit redraw the section subtotals
+   * stay frozen at the previous currency. That was the regression
+   * reported on multi-currency BOQs (Spanish video, nested HIJO_*
+   * sections showing 0.00 in ARS while the grand total updated).
+   */
   useEffect(() => {
-    if (!gridApiRef.current) return;
-    gridApiRef.current.refreshCells({ columns: ['total'], force: true });
-    gridApiRef.current.refreshHeader();
+    const api = gridApiRef.current;
+    if (!api) return;
+    api.refreshCells({ columns: ['total'], force: true });
+    const sectionNodes: unknown[] = [];
+    api.forEachNode((node: unknown) => {
+      const data = (node as { data?: { _isSection?: boolean } } | null)?.data;
+      if (data?._isSection) sectionNodes.push(node);
+    });
+    if (sectionNodes.length > 0) {
+      api.redrawRows({ rowNodes: sectionNodes as never[] });
+    }
+    api.refreshHeader();
   }, [displayCurrency?.code, displayCurrency?.rate]);
 
   /* ── Helper: insert resource sub-rows after an expanded position ── */

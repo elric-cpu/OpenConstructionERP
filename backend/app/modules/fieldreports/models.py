@@ -102,7 +102,11 @@ class FieldReport(Base):
 
     # Status & approval
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft", index=True)
-    approved_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # ``approved_by`` / ``created_by`` are user UUIDs — use GUID() to match
+    # daily_diary's convention so Python-side code reads UUID objects, not
+    # raw strings. On SQLite GUID() impls as VARCHAR(36), so the storage
+    # layout is identical to the prior String(36) declaration.
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
     approved_at: Mapped[str | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Linked documents (cross-module references to oe_documents_document)
@@ -114,7 +118,7 @@ class FieldReport(Base):
     )
 
     # Standard fields
-    created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         "metadata",
         JSON,

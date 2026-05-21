@@ -455,3 +455,65 @@ class Calendar(Base):
 
     def __repr__(self) -> str:  # pragma: no cover - debug only
         return f"<Calendar {self.name} (default={self.is_default})>"
+
+
+# ── Weekly commitment (Last Planner — Slice 1 CPM build) ───────────────────
+
+
+class WeeklyCommitment(Base):
+    """A weekly Last-Planner commitment row tied to a CPM activity.
+
+    Slice 1 / v4.0 — a slimmer companion to :class:`Commitment` (which is
+    scoped to a :class:`WeeklyWorkPlan`). This table is keyed directly by
+    ``schedule_id`` so the CPM flow can read / write commitments without
+    going through the full LPS hierarchy (master schedule → weekly plan
+    → commitment). The two coexist; existing UIs keep using
+    :class:`Commitment`.
+
+    PPC (Percent Plan Complete) is auto-computed at write time:
+        ``ppc = actual_complete_pct / planned_complete_pct`` clamped to
+        ``[0, 1]`` and stored as a fraction (not a percentage).
+    """
+
+    __tablename__ = "oe_schedule_advanced_weekly_commitment"
+
+    # No ORM-level FK on schedule_id — schedule lives in the
+    # oe_schedule_schedule table (different module). Plain UUID column
+    # per the cross-module convention used throughout schedule_advanced.
+    schedule_id: Mapped[uuid.UUID] = mapped_column(GUID(), nullable=False, index=True)
+    # No FK on activity_id either — same reason.
+    activity_id: Mapped[uuid.UUID] = mapped_column(GUID(), nullable=False, index=True)
+    week_start: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    committed_by: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(),
+        ForeignKey("oe_users_user.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    planned_complete_pct: Mapped[Decimal] = mapped_column(
+        Numeric(6, 4),
+        nullable=False,
+        default=Decimal("0"),
+        server_default="0",
+        doc="Planned completion fraction for the week (0..1).",
+    )
+    actual_complete_pct: Mapped[Decimal] = mapped_column(
+        Numeric(6, 4),
+        nullable=False,
+        default=Decimal("0"),
+        server_default="0",
+        doc="Actual completion fraction at week-close (0..1).",
+    )
+    ppc: Mapped[Decimal] = mapped_column(
+        Numeric(6, 4),
+        nullable=False,
+        default=Decimal("0"),
+        server_default="0",
+        doc=(
+            "Percent Plan Complete — auto-computed as "
+            "actual_complete_pct / planned_complete_pct, clamped to [0, 1]. "
+            "0 when planned_complete_pct is 0."
+        ),
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - debug only
+        return f"<WeeklyCommitment activity={self.activity_id} week={self.week_start} ppc={self.ppc}>"

@@ -243,8 +243,28 @@ class FinanceService:
         if fields:
             await self.invoices.update(invoice_id, **fields)
 
-        # Replace line items if provided
+        # Replace line items if provided — record a single audit row that
+        # captures the count + total delta (no per-item diff, just the
+        # aggregate so audit logs aren't flooded by every bulk edit).
         if data.line_items is not None:
+            prior_items = list(getattr(invoice, "line_items", None) or [])
+            prior_count = len(prior_items)
+
+            def _sum(items) -> Decimal:  # type: ignore[no-untyped-def]
+                total = Decimal("0")
+                for it in items:
+                    amt = getattr(it, "amount", None)
+                    if amt is None and isinstance(it, dict):
+                        amt = it.get("amount")
+                    try:
+                        total += Decimal(str(amt or 0))
+                    except (InvalidOperation, TypeError, ValueError):
+                        continue
+                return total
+
+            prior_total = _sum(prior_items)
+            new_total = _sum(data.line_items)
+
             await self.line_items.delete_by_invoice(invoice_id)
             for idx, item_data in enumerate(data.line_items):
                 item = InvoiceLineItem(
@@ -259,6 +279,40 @@ class FinanceService:
                     sort_order=item_data.sort_order if item_data.sort_order else idx,
                 )
                 await self.line_items.create(item)
+
+            # Single audit row for the bulk replacement. Best-effort:
+            # failures are warned (not rolled back) for the same reason as
+            # the approve/pay paths.
+            try:
+                from app.core.audit_log import log_activity
+
+                await log_activity(
+                    self.session,
+                    actor_id=None,
+                    entity_type="invoice",
+                    entity_id=str(invoice_id),
+                    action="line_items_replaced",
+                    reason=(
+                        f"Replaced {prior_count} line item(s) with "
+                        f"{len(data.line_items)}; total delta="
+                        f"{(new_total - prior_total)}"
+                    ),
+                    metadata={
+                        "invoice_number": getattr(invoice, "invoice_number", None),
+                        "prior_count": prior_count,
+                        "new_count": len(data.line_items),
+                        "prior_total": str(prior_total),
+                        "new_total": str(new_total),
+                        "total_delta": str(new_total - prior_total),
+                    },
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Audit log FAILED for invoice line-items replace "
+                    "(invoice_id=%s): %s",
+                    invoice_id, exc,
+                    exc_info=True,
+                )
 
         updated = await self.invoices.get(invoice_id)
         if updated is None:
@@ -293,7 +347,9 @@ class FinanceService:
         await self.invoices.update(invoice_id, status="sent")
         # FSM audit row — see :mod:`app.core.fsm.registry` for the invoice
         # lifecycle. Best-effort: an audit failure must NOT roll back the
-        # status change.
+        # status change, but it MUST surface as a warning so audit-log
+        # outages don't go silently undetected (the prior debug-level log
+        # was invisible in production where root level = INFO).
         try:
             from app.core.audit_log import log_activity
 
@@ -308,8 +364,13 @@ class FinanceService:
                 reason=reason or "Invoice approved via approve_invoice()",
                 metadata={"invoice_number": invoice.invoice_number},
             )
-        except Exception:
-            logger.debug("FSM audit log skipped for invoice %s approve", invoice_id)
+        except Exception as exc:
+            logger.warning(
+                "FSM audit log FAILED for invoice approve "
+                "(user_id=%s, invoice_id=%s): %s",
+                actor_id, invoice_id, exc,
+                exc_info=True,
+            )
         updated = await self.invoices.get(invoice_id)
         if updated is None:
             raise HTTPException(
@@ -345,6 +406,10 @@ class FinanceService:
                 ),
             )
         await self.invoices.update(invoice_id, status="paid")
+        # Best-effort: an audit failure must NOT roll back the status
+        # change, but it MUST surface as a warning so audit-log outages
+        # don't go silently undetected (was previously logger.debug, which
+        # is invisible at production INFO root level).
         try:
             from app.core.audit_log import log_activity
 
@@ -359,8 +424,13 @@ class FinanceService:
                 reason=reason or "Invoice paid via pay_invoice()",
                 metadata={"invoice_number": invoice.invoice_number},
             )
-        except Exception:
-            logger.debug("FSM audit log skipped for invoice %s pay", invoice_id)
+        except Exception as exc:
+            logger.warning(
+                "FSM audit log FAILED for invoice pay "
+                "(user_id=%s, invoice_id=%s): %s",
+                actor_id, invoice_id, exc,
+                exc_info=True,
+            )
         updated = await self.invoices.get(invoice_id)
         if updated is None:
             raise HTTPException(
@@ -692,7 +762,13 @@ class FinanceService:
         eac = eac.quantize(Decimal("0.01"))
 
         vac = (bac - eac).quantize(Decimal("0.01"))
-        etc = (eac - ac).quantize(Decimal("0.01"))
+        # ETC ("estimate to complete") = forecast spend remaining. When a
+        # project is already over-forecast (ac > eac), ``eac - ac`` would
+        # report a negative remaining cost which is semantically wrong —
+        # the answer is "nothing more should be spent" (i.e. 0), not a
+        # negative budget recovery. Clamp at zero so the FE KPI card
+        # doesn't render a misleading negative figure.
+        etc = max(eac - ac, Decimal("0")).quantize(Decimal("0.01"))
 
         # TCPI: performance needed on remaining work to stay within BAC.
         # Clamp when over budget (bac - ac <= 0): the index is undefined

@@ -533,29 +533,33 @@ class ScheduleService:
                     continue
                 adjacency.setdefault(pred_id, set()).add(act.id)
 
-        # For every proposed predecessor P, BFS from activity_id through
-        # the current graph; if we land on P, then P depends (transitively)
-        # on activity_id, and adding P -> activity_id would close a cycle.
+        # Pre-compute the reachability set from ``activity_id`` ONCE for
+        # this mutation request. Adding ``P -> activity_id`` closes a cycle
+        # iff P is transitively reachable from ``activity_id`` in the
+        # current graph. The naive previous version re-ran a BFS per
+        # proposed predecessor (O(P × V)); a single traversal is O(V+E).
+        reachable_from_activity: set[uuid.UUID] = set()
+        stack: list[uuid.UUID] = list(adjacency.get(activity_id, set()))
+        while stack:
+            current = stack.pop()
+            if current in reachable_from_activity:
+                continue
+            reachable_from_activity.add(current)
+            for successor in adjacency.get(current, ()):
+                if successor not in reachable_from_activity:
+                    stack.append(successor)
+
+        # Now every proposed predecessor is a hash-set membership test.
         for predecessor in proposed_predecessors:
-            visited: set[uuid.UUID] = set()
-            queue: list[uuid.UUID] = list(adjacency.get(activity_id, set()))
-            while queue:
-                current = queue.pop(0)
-                if current == predecessor:
-                    from fastapi import HTTPException
-                    raise HTTPException(
-                        status_code=400,
-                        detail=(
-                            "Adding this dependency would create a circular "
-                            "reference. Check the dependency chain for cycles."
-                        ),
-                    )
-                if current in visited:
-                    continue
-                visited.add(current)
-                for successor in adjacency.get(current, set()):
-                    if successor not in visited:
-                        queue.append(successor)
+            if predecessor in reachable_from_activity:
+                from fastapi import HTTPException
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Adding this dependency would create a circular "
+                        "reference. Check the dependency chain for cycles."
+                    ),
+                )
 
     async def update_activity(self, activity_id: uuid.UUID, data: ActivityUpdate) -> Activity:
         """Update an activity and recalculate duration if dates changed.

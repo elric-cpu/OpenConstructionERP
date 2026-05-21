@@ -96,6 +96,13 @@ from app.modules.bim_hub.schemas import (
     BOQElementLinkCreate,
     BOQElementLinkListResponse,
     BOQElementLinkResponse,
+    FederationCreate,
+    FederationFullResponse,
+    FederationListResponse,
+    FederationModelAdd,
+    FederationModelResponse,
+    FederationResponse,
+    FederationUpdate,
     QuantityMapApplyRequest,
     QuantityMapApplyResult,
 )
@@ -2107,6 +2114,14 @@ async def get_model_geometry(
     we redirect to a short-lived presigned URL; for the local backend we
     stream the bytes directly through the route.
     """
+    # Per-request correlation ID — surfaced in the X-Request-Id response
+    # header AND embedded in every structured-error payload so a user who
+    # ships a screenshot to support can be located in server logs in one
+    # grep. UUID4 keeps it non-PII (no info about the user, project, or
+    # file).  We generate locally rather than relying on a middleware so
+    # the value is identical between log line and HTTP response.
+    request_id = str(uuid.uuid4())
+
     # Validate the token (header or query). ColladaLoader can't set headers,
     # so we accept ?token=<jwt> as an alternative auth mechanism.
     from app.config import get_settings
@@ -2119,7 +2134,19 @@ async def get_model_geometry(
     if not auth_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing token (use ?token=<jwt> or Authorization header)",
+            detail={
+                "error": "auth_missing",
+                "category": "authentication",
+                "request_id": request_id,
+                "model_id": str(model_id),
+                "message": "Missing authentication token.",
+                "remediation": (
+                    "Refresh the page to renew your login session. If you "
+                    "were idle for a long time the access token may have "
+                    "expired silently."
+                ),
+            },
+            headers={"X-Request-Id": request_id},
         )
 
     try:
@@ -2129,7 +2156,19 @@ async def get_model_geometry(
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
+            detail={
+                "error": "auth_invalid",
+                "category": "authentication",
+                "request_id": request_id,
+                "model_id": str(model_id),
+                "message": "Authentication token is invalid or expired.",
+                "remediation": (
+                    "Log out and log back in to obtain a fresh token. If "
+                    "the problem persists, your account may have been "
+                    "deactivated — contact support."
+                ),
+            },
+            headers={"X-Request-Id": request_id},
         )
 
     # BUG-323: forged tokens with a fake UUID must not authenticate here
@@ -2147,14 +2186,39 @@ async def get_model_geometry(
     if token_role != "admin" and "bim.read" not in token_perms:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Missing permission: bim.read",
+            detail={
+                "error": "permission_denied",
+                "category": "authorization",
+                "request_id": request_id,
+                "model_id": str(model_id),
+                "required_permission": "bim.read",
+                "message": "Your account lacks permission to view BIM models.",
+                "remediation": (
+                    "Ask a project administrator to grant you the 'bim.read' "
+                    "permission, or to assign you a role (Estimator / "
+                    "Manager / Admin) that includes it."
+                ),
+            },
+            headers={"X-Request-Id": request_id},
         )
 
     model = await service.get_model(model_id)
     if model is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Model not found",
+            detail={
+                "error": "model_not_found",
+                "category": "not_found",
+                "request_id": request_id,
+                "model_id": str(model_id),
+                "message": "This BIM model has been deleted or never existed.",
+                "remediation": (
+                    "Go back to the project's BIM tab and pick a model from "
+                    "the list. If you reached this page from a saved link, "
+                    "the model may have been removed by a teammate."
+                ),
+            },
+            headers={"X-Request-Id": request_id},
         )
 
     # IDOR guard: verify the caller owns the project this model belongs to.
@@ -2203,22 +2267,129 @@ async def get_model_geometry(
         # doesn't match the format the extension promises.
         ok_serve, reason_serve = _quick_validate_geometry_bytes(_geo_bytes, ext)
         if not ok_serve:
-            head_hex = " ".join(f"{b:02x}" for b in _geo_bytes[:8])
+            # Build a structured diagnostic payload. We deliberately limit
+            # what we expose to: (a) the first 8 bytes of the file as hex
+            # + ASCII (universally safe — magic bytes don't carry PII),
+            # (b) total size in bytes, (c) the parser reason, (d) the
+            # stored extension, (e) what we expected. NO actual user-data
+            # bytes or filenames are leaked. Frontend renders this verbatim
+            # in the BIM viewer error panel so users can give actionable
+            # detail to support without revealing the file contents.
+            head_bytes = _geo_bytes[:8]
+            head_hex = " ".join(f"{b:02x}" for b in head_bytes)
+            head_ascii = "".join(
+                chr(b) if 0x20 <= b < 0x7F else "." for b in head_bytes
+            )
+            # Surface the first identifiable XML root tag for the common
+            # "stored DAE turned out to be IFC-XML / gbXML / HTML 404 page"
+            # failure mode — gives support a one-glance diagnosis.
+            first_tag: str | None = None
+            if ext.lower() == ".dae":
+                import re as _re_diag
+                try:
+                    _head_text = _geo_bytes[:4096].decode("utf-8", errors="replace")
+                    _m = _re_diag.search(r"<([a-zA-Z_:][\w:.-]{0,40})", _head_text)
+                    if _m:
+                        first_tag = f"<{_m.group(1)}>"
+                except Exception:  # pragma: no cover — replace can't raise
+                    first_tag = None
+            expected_signature = {
+                ".glb": "b'glTF' magic + version 2",
+                ".dae": "<COLLADA> root tag within first 4 KB",
+                ".gltf": "JSON object with required 'asset' key",
+            }.get(ext.lower(), f"valid {ext} payload")
+            # Categorise reason into a plain-language "cause" the UI can
+            # show without the user having to read parser jargon. This is
+            # the single biggest lever for end-user understanding: instead
+            # of "DAE has no <COLLADA> root in first 4 KB (first tag found:
+            # <html>)" they see "The stored file is an HTML page, not a 3D
+            # model — the converter probably crashed and saved an error
+            # page by mistake."
+            reason_lower = reason_serve.lower()
+            if "empty buffer" in reason_lower:
+                cause = (
+                    "The geometry file on the server has zero bytes. The "
+                    "original upload likely failed half-way through."
+                )
+            elif "suspiciously small" in reason_lower:
+                cause = (
+                    "The geometry file is too small to be a real 3D model. "
+                    "The upload was probably truncated, or the converter "
+                    "wrote only an error stub."
+                )
+            elif "<!doctype html" in (first_tag or "").lower() or (
+                first_tag and first_tag.lower() in ("<html>", "<body>")
+            ):
+                cause = (
+                    "The stored file is an HTML page, not a 3D model. The "
+                    "converter likely saved an error page by mistake. The "
+                    "source CAD/BIM file may not be supported, or the "
+                    "converter service was unreachable during processing."
+                )
+            elif first_tag and first_tag.lower() in (
+                "<ifcxml>", "<gbxml>", "<xml>", "<?xml>",
+            ):
+                cause = (
+                    f"The stored file is {first_tag} (XML data) instead of "
+                    "a 3D mesh. The source format does not contain 3D "
+                    "geometry to display — e.g. an IFC schedule or a "
+                    "2D-only drawing."
+                )
+            elif "magic mismatch" in reason_lower:
+                cause = (
+                    "The file's first bytes don't match the expected "
+                    "format signature. The file is either corrupted in "
+                    "transit, or its extension was renamed manually."
+                )
+            elif "unsupported glb version" in reason_lower:
+                cause = (
+                    "The file is an older glTF format version that our "
+                    "viewer doesn't support (we require glTF 2.0)."
+                )
+            else:
+                cause = (
+                    f"The stored file does not match the expected {ext} "
+                    "signature. The CAD converter may have run with an "
+                    "older version, or the source file is corrupt."
+                )
             logger.warning(
                 "BIM geometry served from %s failed serve-time validation: %s "
-                "(model_id=%s, size=%d, head=%s)",
-                key, reason_serve, model_id, len(_geo_bytes), head_hex,
+                "(request_id=%s, model_id=%s, size=%d, head=%s, "
+                "first_tag=%s, ext=%s)",
+                key, reason_serve, request_id, model_id, len(_geo_bytes),
+                head_hex, first_tag, ext,
             )
+            diagnostic = {
+                "error": "geometry_invalid",
+                "category": "file_format",
+                "request_id": request_id,
+                "reason": reason_serve,
+                "cause": cause,
+                "format": ext.lstrip(".") or "unknown",
+                "stored_extension": ext,
+                "expected_signature": expected_signature,
+                "size_bytes": len(_geo_bytes),
+                "head_hex": head_hex,
+                "head_ascii": head_ascii,
+                "first_tag": first_tag,
+                "model_id": str(model_id),
+                "remediation": (
+                    "Delete this model and re-upload the source CAD/BIM "
+                    "file. If the problem repeats with the same file, the "
+                    "source itself may be unsupported (2D-only DWG, IFC "
+                    "schedule with no geometry, corrupted RVT) — try "
+                    "exporting from your CAD tool again, or contact "
+                    "support@openconstructionerp.com and quote the "
+                    "Request ID shown below."
+                ),
+                "message": (
+                    f"Geometry file is not a valid {ext} payload: {reason_serve}"
+                ),
+            }
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=(
-                    f"Geometry file stored for this model is not a valid {ext} payload "
-                    f"({reason_serve}; head={head_hex}). This usually means the CAD "
-                    "converter ran with an older version or the source format does not "
-                    "produce 3D geometry. Delete the model and re-upload the source CAD "
-                    "file with the latest DDC cad2data converter (v0.3+), or contact "
-                    "support if the issue persists across re-uploads."
-                ),
+                detail=diagnostic,
+                headers={"X-Request-Id": request_id},
             )
 
         compressed = _gzip.compress(_geo_bytes, compresslevel=6)
@@ -2245,12 +2416,40 @@ async def get_model_geometry(
                 **cache_headers,
                 "Content-Encoding": "gzip",
                 "Content-Disposition": cd_header,
+                # Surface the correlation ID even on the happy path so a
+                # downstream JS parsing failure still has a request_id to
+                # quote when reporting (matches every error branch above).
+                "X-Request-Id": request_id,
             },
         )
 
+    logger.warning(
+        "BIM geometry not found on storage (request_id=%s, model_id=%s, "
+        "project_id=%s)",
+        request_id, model_id, project_id,
+    )
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
-        detail="No geometry file found for this model.",
+        detail={
+            "error": "geometry_missing",
+            "category": "not_found",
+            "request_id": request_id,
+            "model_id": str(model_id),
+            "message": (
+                "No 3D geometry file is attached to this model on the "
+                "server."
+            ),
+            "remediation": (
+                "Either the model was uploaded but the CAD converter never "
+                "produced a 3D mesh (the source file may be 2D-only or "
+                "may have crashed the converter), or the file was deleted "
+                "manually from storage. Try re-uploading the source file. "
+                "If the same source file repeatedly produces no geometry, "
+                "contact support@openconstructionerp.com and quote the "
+                "Request ID below."
+            ),
+        },
+        headers={"X-Request-Id": request_id},
     )
 
 
@@ -3846,3 +4045,144 @@ router.add_api_route(
     response_model=BIMElementListResponse,
     name="list_elements_alias",
 )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BIM Federations (v4.0 / Slice 1)
+#
+# Federation = a named group of N BIM models with a shared origin. Each
+# member is a link row pointing at an existing ``oe_bim_model`` row. This
+# slice only persists + lists the data; the federated 3D viewer that
+# composes the models into a single scene is deferred to Slice 2.
+#
+# All endpoints reuse the project-ownership helper ``_verify_project_access``;
+# there is no separate federation ACL — owning the project owns its
+# federations.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@router.post(
+    "/federations/",
+    response_model=FederationResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(RequirePermission("bim.create"))],
+)
+async def create_federation(
+    payload: FederationCreate,
+    session: SessionDep,
+    _user_id: CurrentUserId,
+) -> FederationResponse:
+    """Create a new BIM federation under a project the caller owns."""
+    await _verify_project_access(session, payload.project_id, _user_id)
+    service = BIMHubService(session)
+    return await service.create_federation(payload)
+
+
+@router.get(
+    "/federations/",
+    response_model=FederationListResponse,
+    dependencies=[Depends(RequirePermission("bim.read"))],
+)
+async def list_federations(
+    session: SessionDep,
+    _user_id: CurrentUserId,
+    project_id: uuid.UUID = Query(..., description="Project to list federations for"),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
+) -> FederationListResponse:
+    """List federations belonging to a project."""
+    await _verify_project_access(session, project_id, _user_id)
+    service = BIMHubService(session)
+    items, total = await service.list_federations(
+        project_id, offset=offset, limit=limit,
+    )
+    return FederationListResponse(items=items, total=total)
+
+
+@router.get(
+    "/federations/{federation_id}",
+    response_model=FederationFullResponse,
+    dependencies=[Depends(RequirePermission("bim.read"))],
+)
+async def get_federation(
+    federation_id: uuid.UUID,
+    session: SessionDep,
+    _user_id: CurrentUserId,
+) -> FederationFullResponse:
+    """Fetch a federation with its z-ordered members."""
+    service = BIMHubService(session)
+    federation = await service.get_federation(federation_id)
+    await _verify_project_access(session, federation.project_id, _user_id)
+    return service._federation_to_full_response(federation)
+
+
+@router.put(
+    "/federations/{federation_id}",
+    response_model=FederationFullResponse,
+    dependencies=[Depends(RequirePermission("bim.update"))],
+)
+async def update_federation(
+    federation_id: uuid.UUID,
+    payload: FederationUpdate,
+    session: SessionDep,
+    _user_id: CurrentUserId,
+) -> FederationFullResponse:
+    """Update federation metadata (name, description, origin, units)."""
+    service = BIMHubService(session)
+    federation = await service.get_federation(federation_id)
+    await _verify_project_access(session, federation.project_id, _user_id)
+    return await service.update_federation(federation_id, payload)
+
+
+@router.delete(
+    "/federations/{federation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(RequirePermission("bim.delete"))],
+)
+async def delete_federation(
+    federation_id: uuid.UUID,
+    session: SessionDep,
+    _user_id: CurrentUserId,
+) -> None:
+    """Delete a federation. Member link rows cascade away."""
+    service = BIMHubService(session)
+    federation = await service.get_federation(federation_id)
+    await _verify_project_access(session, federation.project_id, _user_id)
+    await service.delete_federation(federation_id)
+
+
+@router.post(
+    "/federations/{federation_id}/models",
+    response_model=FederationModelResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(RequirePermission("bim.update"))],
+)
+async def add_federation_member(
+    federation_id: uuid.UUID,
+    payload: FederationModelAdd,
+    session: SessionDep,
+    _user_id: CurrentUserId,
+) -> FederationModelResponse:
+    """Bind an existing BIM model to a federation."""
+    service = BIMHubService(session)
+    federation = await service.get_federation(federation_id)
+    await _verify_project_access(session, federation.project_id, _user_id)
+    return await service.add_federation_member(federation_id, payload)
+
+
+@router.delete(
+    "/federations/{federation_id}/models/{model_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(RequirePermission("bim.update"))],
+)
+async def remove_federation_member(
+    federation_id: uuid.UUID,
+    model_id: uuid.UUID,
+    session: SessionDep,
+    _user_id: CurrentUserId,
+) -> None:
+    """Remove a model from a federation."""
+    service = BIMHubService(session)
+    federation = await service.get_federation(federation_id)
+    await _verify_project_access(session, federation.project_id, _user_id)
+    await service.remove_federation_member(federation_id, model_id)

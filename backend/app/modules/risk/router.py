@@ -269,8 +269,12 @@ async def batch_update_risk_status(
     from app.core.bulk_ops import bulk_update_status
     from app.modules.projects.repository import ProjectRepository
     from app.modules.risk.models import RiskItem
+    from app.modules.risk.schemas import STATUS_VALUES
 
-    allowed_statuses = {"identified", "assessed", "mitigating", "closed", "occurred"}
+    # Canonical set lives in schemas.STATUS_VALUES — the previous hardcoded
+    # subset silently rejected the "monitoring" and "mitigated" tiers that
+    # seeded risks already use, leaving bulk-update broken for them.
+    allowed_statuses = set(STATUS_VALUES)
     if body.status not in allowed_statuses:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

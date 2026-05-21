@@ -13,6 +13,8 @@ from sqlalchemy.orm import noload
 
 from app.modules.bim_hub.models import (
     BIMElement,
+    BIMFederation,
+    BIMFederationModel,
     BIMModel,
     BIMModelDiff,
     BIMQuantityMap,
@@ -468,3 +470,105 @@ class BIMModelDiffRepository:
         """Delete a model diff."""
         stmt = delete(BIMModelDiff).where(BIMModelDiff.id == diff_id)
         await self.session.execute(stmt)
+
+
+# ── BIM Federation repository (v4.0 / Slice 1) ───────────────────────────────
+
+
+class BIMFederationRepository:
+    """‌⁠‍Data access for BIMFederation + BIMFederationModel."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def get(self, federation_id: uuid.UUID) -> BIMFederation | None:
+        """Fetch a federation header (members loaded lazily via selectin)."""
+        from sqlalchemy.orm import selectinload
+
+        stmt = (
+            select(BIMFederation)
+            .options(selectinload(BIMFederation.members))
+            .where(BIMFederation.id == federation_id)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def list_for_project(
+        self,
+        project_id: uuid.UUID,
+        *,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> tuple[list[BIMFederation], int]:
+        """Paginated list of federations for a project (newest first)."""
+        from sqlalchemy.orm import selectinload
+
+        base = select(BIMFederation).where(BIMFederation.project_id == project_id)
+        count_stmt = select(func.count()).select_from(base.subquery())
+        total = (await self.session.execute(count_stmt)).scalar_one()
+        stmt = (
+            base.options(selectinload(BIMFederation.members))
+            .order_by(BIMFederation.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all()), total
+
+    async def create(self, federation: BIMFederation) -> BIMFederation:
+        """Insert a new federation."""
+        self.session.add(federation)
+        await self.session.flush()
+        return federation
+
+    async def update_fields(
+        self, federation_id: uuid.UUID, **fields: object,
+    ) -> None:
+        """Update specific fields on a federation."""
+        if not fields:
+            return
+        stmt = (
+            update(BIMFederation)
+            .where(BIMFederation.id == federation_id)
+            .values(**fields)
+        )
+        await self.session.execute(stmt)
+        await self.session.flush()
+        self.session.expire_all()
+
+    async def delete(self, federation_id: uuid.UUID) -> None:
+        """Delete a federation (members cascade via FK)."""
+        stmt = delete(BIMFederation).where(BIMFederation.id == federation_id)
+        await self.session.execute(stmt)
+
+    async def add_member(
+        self, member: BIMFederationModel,
+    ) -> BIMFederationModel:
+        """Insert a new federation-model link row."""
+        self.session.add(member)
+        await self.session.flush()
+        return member
+
+    async def get_member(
+        self, member_id: uuid.UUID,
+    ) -> BIMFederationModel | None:
+        return await self.session.get(BIMFederationModel, member_id)
+
+    async def remove_member(self, member_id: uuid.UUID) -> None:
+        stmt = delete(BIMFederationModel).where(
+            BIMFederationModel.id == member_id
+        )
+        await self.session.execute(stmt)
+
+    async def find_member(
+        self,
+        federation_id: uuid.UUID,
+        bim_model_id: uuid.UUID,
+    ) -> BIMFederationModel | None:
+        """Lookup the link row for a given (federation, bim_model) pair."""
+        stmt = select(BIMFederationModel).where(
+            BIMFederationModel.federation_id == federation_id,
+            BIMFederationModel.bim_model_id == bim_model_id,
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()

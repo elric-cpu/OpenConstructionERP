@@ -512,6 +512,64 @@ class TenderingService:
                 ),
             )
 
+        # ── Currency-mismatch guard ────────────────────────────────────────
+        # Awarding writes the winning bid's unit_rate values straight into
+        # the BOQ positions (which are denominated in the project currency).
+        # If the winning bid — or any of its line items — is quoted in a
+        # different currency we would silently overwrite project-currency
+        # rates with foreign-currency numbers, corrupting the budget.
+        # Block the award and surface every offending entity so the user
+        # can re-quote in the right currency or run FX conversion first.
+        from app.modules.projects.repository import ProjectRepository
+
+        project_repo = ProjectRepository(self.session)
+        project = await project_repo.get_by_id(package.project_id)
+        project_currency = (
+            (getattr(project, "currency", "") or "").strip().upper()
+            if project is not None
+            else ""
+        )
+        if project_currency:
+            offenders: list[dict[str, str]] = []
+            bid_ccy = (bid.currency or "").strip().upper()
+            if bid_ccy and bid_ccy != project_currency:
+                offenders.append(
+                    {
+                        "bid_id": str(bid.id),
+                        "scope": "bid",
+                        "currency": bid_ccy,
+                    }
+                )
+            for idx, item in enumerate(bid.line_items or []):
+                # line_items are stored as plain dicts; an optional per-line
+                # currency override is honoured if present (some bid imports
+                # carry it explicitly, see GAEB X84 / Excel templates).
+                line_ccy_raw = item.get("currency") if isinstance(item, dict) else None
+                line_ccy = (line_ccy_raw or "").strip().upper() if line_ccy_raw else ""
+                if line_ccy and line_ccy != project_currency:
+                    offenders.append(
+                        {
+                            "bid_id": str(bid.id),
+                            "scope": f"line[{idx}]",
+                            "position_id": str(item.get("position_id") or ""),
+                            "currency": line_ccy,
+                        }
+                    )
+            if offenders:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={
+                        "code": "currency_mismatch",
+                        "message": (
+                            f"Winning bid currency does not match project "
+                            f"currency {project_currency!r}; refusing to "
+                            f"overwrite BOQ rates with foreign-currency values."
+                        ),
+                        "project_currency": project_currency,
+                        "offenders": offenders,
+                    },
+                )
+
         from sqlalchemy import update
 
         from app.modules.boq.models import Position

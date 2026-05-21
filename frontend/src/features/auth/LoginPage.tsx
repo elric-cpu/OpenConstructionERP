@@ -472,14 +472,14 @@ export function LoginPage() {
             typography (no boxed icon backgrounds, accent rule above each
             title) so the marketing column lands on something concrete
             after the honeycomb. */}
-        <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 animate-stagger-in" style={{ animationDelay: '320ms' }}>
+        <div className="mt-2 flex flex-wrap items-start gap-x-5 gap-y-2 animate-stagger-in" style={{ animationDelay: '320ms' }}>
           {[
             { icon: ShieldCheck, title: t('login.feat_local_title', { defaultValue: 'Your data, your machine' }), desc: t('login.feat_local', { defaultValue: 'Nothing leaves your computer. Full ownership,\nzero cloud dependency.' }) },
             { icon: Brain,       title: t('login.feat_ai_title',    { defaultValue: 'AI-assisted, human-confirmed' }), desc: t('login.feat_ai',    { defaultValue: 'Smart suggestions with confidence scores. You always have the final say.' }) },
           ].map((feat) => {
             const Icon = feat.icon;
             return (
-              <div key={feat.title} className="relative pl-4">
+              <div key={feat.title} className="relative pl-4 max-w-[210px]">
                 <span aria-hidden className="absolute left-0 top-1 h-[14px] w-[2px] rounded-full bg-gradient-to-b from-oe-blue to-sky-500/60" />
                 <div className="flex items-center gap-1.5">
                   <Icon size={13} strokeWidth={1.8} className="text-oe-blue/85" />
