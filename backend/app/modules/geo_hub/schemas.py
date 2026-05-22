@@ -444,8 +444,57 @@ class MapConfigResponse(BaseModel):
     active_jobs: list[TileJobResponse] = Field(default_factory=list)
 
 
+# ── Cross-module geo pins (HSE / Punchlist / Daily Diary) ───────────────
+
+
+class HSEPinResponse(BaseModel):
+    """A single HSE incident pinned on the project map."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    incident_id: UUID
+    incident_number: str
+    title: str | None = None
+    incident_type: str
+    severity: str
+    status: str
+    lat: float
+    lon: float
+
+
+class PunchlistPinResponse(BaseModel):
+    """A single punch list item pinned on the project map."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    item_id: UUID
+    title: str
+    priority: str
+    status: str
+    category: str | None = None
+    lat: float
+    lon: float
+
+
+class DiaryPhotoPinResponse(BaseModel):
+    """A single geo-tagged Daily Diary photo on the project map."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    photo_id: UUID
+    diary_id: UUID | None = None
+    taken_at: datetime
+    thumbnail_url: str | None = None
+    file_url: str
+    is_360: bool = False
+    is_drone: bool = False
+    lat: float
+    lon: float
+
+
 __all__ = [
     "CanonicalToTilesetRequest",
+    "DiaryPhotoPinResponse",
     "GeoAnchorCreate",
     "GeoAnchorResponse",
     "GeoAnchorUpdate",
@@ -453,11 +502,13 @@ __all__ = [
     "GeoOverlayCreate",
     "GeoOverlayResponse",
     "GeoOverlayUpdate",
+    "HSEPinResponse",
     "ImageryLayerCreate",
     "ImageryLayerResponse",
     "ImageryLayerUpdate",
     "KMLImportRequest",
     "MapConfigResponse",
+    "PunchlistPinResponse",
     "TerrainSourceCreate",
     "TerrainSourceResponse",
     "TerrainSourceUpdate",

@@ -20,6 +20,7 @@ import {
   Trash2,
   ArrowRight,
   X,
+  Globe2,
 } from 'lucide-react';
 import {
   Button,
@@ -317,6 +318,19 @@ export function DailyDiaryPage() {
                 </option>
               ))}
             </select>
+          )}
+          {projectId && (
+            <button
+              type="button"
+              onClick={() => navigate(`/projects/${projectId}/geo`)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border-light bg-surface-primary px-2.5 py-1.5 text-xs font-medium text-content-secondary hover:bg-surface-secondary hover:text-oe-blue focus:outline-none focus:ring-2 focus:ring-oe-blue/40 shrink-0"
+              title={t('geo_hub.view_on_map', { defaultValue: 'View on map' })}
+              aria-label={t('geo_hub.view_on_map', { defaultValue: 'View on map' })}
+              data-testid="daily-diary-view-on-map"
+            >
+              <Globe2 size={13} />
+              {t('geo_hub.view_on_map', { defaultValue: 'View on map' })}
+            </button>
           )}
           <Button
             variant="primary"

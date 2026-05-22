@@ -956,6 +956,135 @@ class GeoHubService:
             "active_jobs": active_jobs,
         }
 
+    # ── Cross-module pin layers (HSE / Punchlist / Diary photos) ────────
+    #
+    # These endpoints expose a thin read projection of other modules'
+    # geo-tagged rows so the Cesium / Leaflet viewer can render them as
+    # per-module layers. Each query is project-scoped and IDOR-gated
+    # through ``_verify_project_owner`` — cross-tenant access returns 404,
+    # never 403.
+    #
+    # We deliberately don't go through HTTP to the other modules — they
+    # share the same SQLAlchemy session, and a SQL-level select is the
+    # cheap path. We import the models lazily so geo_hub keeps its
+    # dependency graph clean (the manifest only depends on bim_hub +
+    # projects; HSE / punchlist / daily_diary are not declared dependents).
+
+    async def list_hse_pins(
+        self,
+        project_id: uuid.UUID,
+        payload: dict[str, Any] | None = None,
+        *,
+        limit: int = 500,
+    ) -> list[dict[str, Any]]:
+        """Return geo-pinned safety incidents for the project."""
+        await self._verify_project_owner(
+            project_id, payload, not_found_detail="Project not found",
+        )
+        from sqlalchemy import select
+
+        from app.modules.safety.models import SafetyIncident
+
+        result = await self.session.execute(
+            select(SafetyIncident)
+            .where(SafetyIncident.project_id == project_id)
+            .where(SafetyIncident.geo_lat.is_not(None))
+            .where(SafetyIncident.geo_lon.is_not(None))
+            .order_by(SafetyIncident.incident_number)
+            .limit(limit)
+        )
+        rows = result.scalars().all()
+        return [
+            {
+                "incident_id": r.id,
+                "incident_number": r.incident_number,
+                "title": r.title or None,
+                "incident_type": r.incident_type,
+                "severity": r.severity,
+                "status": r.status,
+                "lat": r.geo_lat,
+                "lon": r.geo_lon,
+            }
+            for r in rows
+        ]
+
+    async def list_punchlist_pins(
+        self,
+        project_id: uuid.UUID,
+        payload: dict[str, Any] | None = None,
+        *,
+        limit: int = 500,
+    ) -> list[dict[str, Any]]:
+        """Return geo-pinned punch list items for the project."""
+        await self._verify_project_owner(
+            project_id, payload, not_found_detail="Project not found",
+        )
+        from sqlalchemy import select
+
+        from app.modules.punchlist.models import PunchItem
+
+        result = await self.session.execute(
+            select(PunchItem)
+            .where(PunchItem.project_id == project_id)
+            .where(PunchItem.geo_lat.is_not(None))
+            .where(PunchItem.geo_lon.is_not(None))
+            .order_by(PunchItem.created_at.desc())
+            .limit(limit)
+        )
+        rows = result.scalars().all()
+        return [
+            {
+                "item_id": r.id,
+                "title": r.title,
+                "priority": r.priority,
+                "status": r.status,
+                "category": r.category,
+                "lat": r.geo_lat,
+                "lon": r.geo_lon,
+            }
+            for r in rows
+        ]
+
+    async def list_diary_photo_pins(
+        self,
+        project_id: uuid.UUID,
+        payload: dict[str, Any] | None = None,
+        *,
+        limit: int = 500,
+    ) -> list[dict[str, Any]]:
+        """Return geo-tagged Daily Diary photos for the project."""
+        await self._verify_project_owner(
+            project_id, payload, not_found_detail="Project not found",
+        )
+        from sqlalchemy import select
+
+        from app.modules.daily_diary.models import DiaryPhoto
+
+        result = await self.session.execute(
+            select(DiaryPhoto)
+            .where(DiaryPhoto.project_id == project_id)
+            .where(DiaryPhoto.lat.is_not(None))
+            .where(DiaryPhoto.lng.is_not(None))
+            .where(DiaryPhoto.is_archived.is_(False))
+            .order_by(DiaryPhoto.taken_at.desc())
+            .limit(limit)
+        )
+        rows = result.scalars().all()
+        return [
+            {
+                "photo_id": r.id,
+                "diary_id": r.diary_id,
+                "taken_at": r.taken_at,
+                "thumbnail_url": r.thumbnail_url,
+                "file_url": r.file_url,
+                "is_360": r.is_360,
+                "is_drone": r.is_drone,
+                "lat": r.lat,
+                "lon": r.lng,
+            }
+            for r in rows
+        ]
+
 
 def _bim_element_to_canonical(element: Any) -> dict[str, Any]:
     """Project a BIMElement ORM row onto the canonical-format element dict."""

@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, Query, Response
 from app.dependencies import CurrentUserPayload, RequirePermission, SessionDep
 from app.modules.geo_hub.schemas import (
     CanonicalToTilesetRequest,
+    DiaryPhotoPinResponse,
     GeoAnchorCreate,
     GeoAnchorResponse,
     GeoAnchorUpdate,
@@ -23,11 +24,13 @@ from app.modules.geo_hub.schemas import (
     GeoOverlayCreate,
     GeoOverlayResponse,
     GeoOverlayUpdate,
+    HSEPinResponse,
     ImageryLayerCreate,
     ImageryLayerResponse,
     ImageryLayerUpdate,
     KMLImportRequest,
     MapConfigResponse,
+    PunchlistPinResponse,
     TerrainSourceCreate,
     TerrainSourceResponse,
     TerrainSourceUpdate,
@@ -532,6 +535,61 @@ async def get_map_config(
 ) -> MapConfigResponse:
     bundle = await service.map_config(project_id, payload=payload)
     return MapConfigResponse.model_validate(bundle)
+
+
+# ── Cross-module geo pin layers ──────────────────────────────────────────
+
+
+@router.get(
+    "/projects/{project_id}/hse-pins",
+    response_model=list[HSEPinResponse],
+)
+async def list_hse_pins(
+    project_id: uuid.UUID,
+    limit: int = Query(default=500, ge=1, le=2000),
+    service: GeoHubService = Depends(_svc),
+    payload: CurrentUserPayload = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("geo_hub.read")),
+) -> list[HSEPinResponse]:
+    """Geo-pinned safety incidents for the project."""
+    rows = await service.list_hse_pins(project_id, payload=payload, limit=limit)
+    return [HSEPinResponse.model_validate(r) for r in rows]
+
+
+@router.get(
+    "/projects/{project_id}/punchlist-pins",
+    response_model=list[PunchlistPinResponse],
+)
+async def list_punchlist_pins(
+    project_id: uuid.UUID,
+    limit: int = Query(default=500, ge=1, le=2000),
+    service: GeoHubService = Depends(_svc),
+    payload: CurrentUserPayload = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("geo_hub.read")),
+) -> list[PunchlistPinResponse]:
+    """Geo-pinned punch list items for the project."""
+    rows = await service.list_punchlist_pins(
+        project_id, payload=payload, limit=limit,
+    )
+    return [PunchlistPinResponse.model_validate(r) for r in rows]
+
+
+@router.get(
+    "/projects/{project_id}/diary-photo-pins",
+    response_model=list[DiaryPhotoPinResponse],
+)
+async def list_diary_photo_pins(
+    project_id: uuid.UUID,
+    limit: int = Query(default=500, ge=1, le=2000),
+    service: GeoHubService = Depends(_svc),
+    payload: CurrentUserPayload = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("geo_hub.read")),
+) -> list[DiaryPhotoPinResponse]:
+    """Geo-tagged Daily Diary photos for the project."""
+    rows = await service.list_diary_photo_pins(
+        project_id, payload=payload, limit=limit,
+    )
+    return [DiaryPhotoPinResponse.model_validate(r) for r in rows]
 
 
 __all__ = ["router"]
