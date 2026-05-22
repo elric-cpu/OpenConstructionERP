@@ -58,8 +58,20 @@ async function loadCesium(): Promise<CesiumLike | null> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const mod = (await import('cesium')) as any;
+    // Cesium ships the runtime constructors on the module namespace itself
+    // when imported via ESM. If the bundler resolved something that does not
+    // expose ``Viewer``, the viewer init will throw — degrade gracefully and
+    // log a diagnostic so we don't silently fall into "CesiumJS is not
+    // installed" mode while the package is actually present.
+    if (mod && typeof mod.Viewer !== 'function') {
+      // eslint-disable-next-line no-console
+      console.warn('[geo_hub] cesium import resolved but Viewer constructor is missing', Object.keys(mod || {}).slice(0, 10));
+      return null;
+    }
     return mod as CesiumLike;
-  } catch {
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('[geo_hub] cesium dynamic import failed', err);
     return null;
   }
 }

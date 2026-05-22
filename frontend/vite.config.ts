@@ -4,19 +4,63 @@ import react from '@vitejs/plugin-react';
 import { visualizer } from 'rollup-plugin-visualizer';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
-import { cpSync, existsSync, readFileSync } from 'fs';
+import { cpSync, existsSync, readFileSync, createReadStream, statSync } from 'fs';
 import type { Plugin } from 'vite';
 
 const cesiumSource = path.resolve(__dirname, 'node_modules/cesium/Build/Cesium');
+const cesiumDirs = ['Workers', 'ThirdParty', 'Assets', 'Widgets'] as const;
 
-function copyCesiumAssets(): Plugin {
+// Cesium's runtime fetches Workers / Widgets / Assets / ThirdParty from
+// ``window.CESIUM_BASE_URL`` (we set it to ``/cesium/`` in main.tsx). At build
+// time ``writeBundle`` copies the files into ``dist/cesium/``. The dev server
+// needs the same thing — without the middleware below, /cesium/Workers/*.js
+// falls through to Vite's SPA index.html, the Cesium loader gets a 200 with
+// "<!DOCTYPE html>" instead of JS, and the page wedges before the viewer
+// initialises. Middleware streams directly out of node_modules so first paint
+// is instant and HMR keeps working.
+function cesiumAssets(): Plugin {
   return {
-    name: 'copy-cesium-assets',
-    apply: 'build',
+    name: 'cesium-assets',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const url = req.url ?? '';
+        if (!url.startsWith('/cesium/')) {
+          next();
+          return;
+        }
+        const rel = decodeURIComponent(url.slice('/cesium/'.length).split('?')[0]);
+        const file = path.join(cesiumSource, rel);
+        if (!file.startsWith(cesiumSource) || !existsSync(file) || statSync(file).isDirectory()) {
+          next();
+          return;
+        }
+        const ext = path.extname(file).toLowerCase();
+        const mime: Record<string, string> = {
+          '.js': 'application/javascript',
+          '.mjs': 'application/javascript',
+          '.json': 'application/json',
+          '.css': 'text/css',
+          '.wasm': 'application/wasm',
+          '.glb': 'model/gltf-binary',
+          '.gltf': 'model/gltf+json',
+          '.svg': 'image/svg+xml',
+          '.png': 'image/png',
+          '.jpg': 'image/jpeg',
+          '.jpeg': 'image/jpeg',
+          '.xml': 'application/xml',
+          '.ktx2': 'image/ktx2',
+        };
+        if (mime[ext]) {
+          res.setHeader('Content-Type', mime[ext]);
+        }
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        createReadStream(file).pipe(res);
+      });
+    },
     writeBundle(options) {
       const outDir = options.dir ?? path.resolve(__dirname, 'dist');
       if (!existsSync(cesiumSource)) return;
-      for (const sub of ['Workers', 'ThirdParty', 'Assets', 'Widgets']) {
+      for (const sub of cesiumDirs) {
         const src = path.join(cesiumSource, sub);
         const dest = path.join(outDir, 'cesium', sub);
         if (existsSync(src)) {
@@ -43,7 +87,7 @@ export default defineConfig({
       brotliSize: true,
       open: false,
     }),
-    copyCesiumAssets(),
+    cesiumAssets(),
     // ── Mobile PWA — Slice 1 ────────────────────────────────────────────
     // Installable PWA with offline-app-shell + i18n bundle caching.
     //
@@ -223,7 +267,13 @@ export default defineConfig({
   // and BIM pages.  Including them up-front keeps the version hash stable
   // across the dev session.
   optimizeDeps: {
-    exclude: ['cesium'],
+    // Cesium ships a mix of ESM + CJS deps (mersenne-twister, urijs, etc.).
+    // Without pre-bundling, Vite's dev server fails the dynamic import with
+    // "does not provide an export named 'default'" the moment Cesium pulls in
+    // a CJS interop. ``include`` forces esbuild to bundle cesium up front so
+    // CJS named-exports become real default exports. The Rollup
+    // ``manualChunks`` rule still keeps it in its own production chunk.
+    include: ['cesium'],
     include: [
       'pdfjs-dist',
       'pdfjs-dist/build/pdf.worker.min.mjs',
