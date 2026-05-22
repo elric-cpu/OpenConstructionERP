@@ -16,7 +16,16 @@ Tables:
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import JSON, Boolean, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import GUID, Base
@@ -33,6 +42,15 @@ class ServiceContract(Base):
     """
 
     __tablename__ = "oe_service_contract"
+    __table_args__ = (
+        # Race-safe number allocation: ``next_contract_number()`` uses
+        # COUNT(*) then format-string concat, so two concurrent inserts
+        # can produce the same number. The unique index lets the DB
+        # reject the dupe and the service-layer retry loop allocate a
+        # fresh number. v3101_service_number_uniques backfills the
+        # constraint.
+        UniqueConstraint("contract_number", name="uq_oe_service_contract_number"),
+    )
 
     # Customer (a Contact row). Always required.
     # FK declared in alembic migration only; ORM-level FK omitted to avoid
@@ -143,6 +161,15 @@ class ServiceTicket(Base):
     """A request for service — created manually or via customer portal."""
 
     __tablename__ = "oe_service_ticket"
+    __table_args__ = (
+        # ``next_ticket_number()`` is contract-scoped (``T-NNNNN`` resets
+        # per contract), so the unique constraint is composite. Backfilled
+        # by alembic v3101_service_number_uniques.
+        UniqueConstraint(
+            "contract_id", "ticket_number",
+            name="uq_oe_service_ticket_contract_number",
+        ),
+    )
 
     contract_id: Mapped[uuid.UUID] = mapped_column(
         GUID(),
@@ -223,6 +250,13 @@ class ServiceWorkOrder(Base):
     """A dispatched on-site visit answering one or more ticket needs."""
 
     __tablename__ = "oe_service_work_order"
+    __table_args__ = (
+        # Race-safe: ``next_work_order_number()`` is tenant-wide. See
+        # ``ServiceContract.__table_args__`` for the rationale.
+        UniqueConstraint(
+            "work_order_number", name="uq_oe_service_work_order_number",
+        ),
+    )
 
     ticket_id: Mapped[uuid.UUID] = mapped_column(
         GUID(),

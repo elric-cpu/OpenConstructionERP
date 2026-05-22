@@ -80,7 +80,10 @@ async def list_itp_plans(
     project_id: uuid.UUID = Query(...),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
-    status_filter: str | None = Query(default=None, alias="status"),
+    status_filter: str | None = Query(
+        default=None, alias="status",
+        pattern=r"^(draft|active|superseded|closed)$",
+    ),
     _perm: None = Depends(RequirePermission("qms.itp.read")),
     service: QMSService = Depends(_get_service),
 ) -> list[ITPPlanRead]:
@@ -157,7 +160,10 @@ async def list_inspections(
     project_id: uuid.UUID = Query(...),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
-    status_filter: str | None = Query(default=None, alias="status"),
+    status_filter: str | None = Query(
+        default=None, alias="status",
+        pattern=r"^(scheduled|in_progress|passed|failed|conditional)$",
+    ),
     _perm: None = Depends(RequirePermission("qms.inspection.read")),
     service: QMSService = Depends(_get_service),
 ) -> list[InspectionRead]:
@@ -261,8 +267,13 @@ async def list_ncrs(
     project_id: uuid.UUID = Query(...),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
-    status_filter: str | None = Query(default=None, alias="status"),
-    severity: str | None = Query(default=None),
+    status_filter: str | None = Query(
+        default=None, alias="status",
+        pattern=r"^(open|action_pending|verifying|closed|cancelled)$",
+    ),
+    severity: str | None = Query(
+        default=None, pattern=r"^(minor|major|critical)$",
+    ),
     _perm: None = Depends(RequirePermission("qms.ncr.read")),
     service: QMSService = Depends(_get_service),
 ) -> list[NCRRead]:
@@ -383,7 +394,10 @@ async def list_punch_items(
     project_id: uuid.UUID = Query(...),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
-    status_filter: str | None = Query(default=None, alias="status"),
+    status_filter: str | None = Query(
+        default=None, alias="status",
+        pattern=r"^(open|assigned|in_progress|ready_for_inspection|closed|rejected)$",
+    ),
     _perm: None = Depends(RequirePermission("qms.punch.read")),
     service: QMSService = Depends(_get_service),
 ) -> list[PunchItemRead]:
@@ -479,7 +493,10 @@ async def list_audits(
     project_id: uuid.UUID = Query(...),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
-    status_filter: str | None = Query(default=None, alias="status"),
+    status_filter: str | None = Query(
+        default=None, alias="status",
+        pattern=r"^(planned|in_progress|completed|closed)$",
+    ),
     _perm: None = Depends(RequirePermission("qms.audit.read")),
     service: QMSService = Depends(_get_service),
 ) -> list[AuditRead]:
@@ -773,14 +790,30 @@ async def clone_itp_template(
 
 @router.get("/calibrations", response_model=list[CalibrationRead])
 async def list_calibrations(
+    session: SessionDep,
+    user_id: CurrentUserId,
     project_id: uuid.UUID | None = Query(default=None),
     instrument_type: str | None = Query(default=None, max_length=100),
-    status_filter: str | None = Query(default=None, alias="status"),
+    status_filter: str | None = Query(
+        default=None, alias="status",
+        pattern=r"^(valid|expired|withdrawn)$",
+    ),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
     _perm: None = Depends(RequirePermission("qms.calibration.read")),
     service: QMSService = Depends(_get_service),
 ) -> list[CalibrationRead]:
+    """List calibrations.
+
+    A ``project_id`` is required to prevent cross-tenant disclosure.
+    Without it we cannot gate the response by project ownership — the
+    Round-4 IDOR convention for list endpoints.
+    """
+    if project_id is None:
+        raise _bad(
+            "project_id is required (cross-project listing is restricted)",
+        )
+    await verify_project_access(project_id, user_id, session)
     rows, _ = await service.repo.list_calibrations(
         project_id=project_id, instrument_type=instrument_type,
         status=status_filter, offset=offset, limit=limit,
@@ -792,9 +825,12 @@ async def list_calibrations(
 async def create_calibration(
     data: CalibrationCreate,
     user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("qms.calibration.write")),
     service: QMSService = Depends(_get_service),
 ) -> CalibrationRead:
+    if data.project_id is not None:
+        await verify_project_access(data.project_id, user_id, session)
     try:
         cal = await service.create_calibration(data, user_id=user_id)
     except ValueError as exc:
@@ -804,11 +840,18 @@ async def create_calibration(
 
 @router.get("/calibrations/expiring", response_model=list[CalibrationRead])
 async def list_expiring_calibrations(
+    session: SessionDep,
+    user_id: CurrentUserId,
     days: int = Query(default=30, ge=0, le=365),
     project_id: uuid.UUID | None = Query(default=None),
     _perm: None = Depends(RequirePermission("qms.calibration.read")),
     service: QMSService = Depends(_get_service),
 ) -> list[CalibrationRead]:
+    if project_id is None:
+        raise _bad(
+            "project_id is required (cross-project listing is restricted)",
+        )
+    await verify_project_access(project_id, user_id, session)
     rows = await service.expiring_calibrations(days=days, project_id=project_id)
     return [CalibrationRead.model_validate(r) for r in rows]
 
@@ -816,12 +859,16 @@ async def list_expiring_calibrations(
 @router.get("/calibrations/{cal_id}", response_model=CalibrationRead)
 async def get_calibration(
     cal_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("qms.calibration.read")),
     service: QMSService = Depends(_get_service),
 ) -> CalibrationRead:
     cal = await service.repo.get_calibration(cal_id)
     if cal is None:
         raise _not_found("Calibration not found")
+    if cal.project_id is not None:
+        await verify_project_access(cal.project_id, user_id, session)
     return CalibrationRead.model_validate(cal)
 
 
@@ -829,9 +876,16 @@ async def get_calibration(
 async def update_calibration(
     cal_id: uuid.UUID,
     data: CalibrationUpdate,
+    user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("qms.calibration.write")),
     service: QMSService = Depends(_get_service),
 ) -> CalibrationRead:
+    existing = await service.repo.get_calibration(cal_id)
+    if existing is None:
+        raise _not_found("Calibration not found")
+    if existing.project_id is not None:
+        await verify_project_access(existing.project_id, user_id, session)
     try:
         cal = await service.update_calibration(cal_id, data)
     except ValueError as exc:
@@ -842,9 +896,16 @@ async def update_calibration(
 @router.delete("/calibrations/{cal_id}", status_code=204)
 async def delete_calibration(
     cal_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("qms.calibration.delete")),
     service: QMSService = Depends(_get_service),
 ) -> None:
+    existing = await service.repo.get_calibration(cal_id)
+    if existing is None:
+        raise _not_found("Calibration not found")
+    if existing.project_id is not None:
+        await verify_project_access(existing.project_id, user_id, session)
     try:
         await service.delete_calibration(cal_id)
     except ValueError as exc:

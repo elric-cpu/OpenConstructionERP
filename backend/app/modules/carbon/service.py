@@ -23,6 +23,7 @@ from decimal import Decimal
 from typing import Any, Iterable
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
@@ -785,7 +786,10 @@ class CarbonService:
     async def create_epd(self, data: EPDRecordCreate) -> EPDRecord:
         # ``EPDRecord.epd_id`` is unique. Reject a duplicate with a clean 409
         # instead of letting the DB raise an uncaught IntegrityError that
-        # surfaces to the client as an opaque 500.
+        # surfaces to the client as an opaque 500. We do BOTH a pre-flight
+        # lookup AND catch IntegrityError — the second guard closes a
+        # race-condition window between two concurrent ingests of the same
+        # external EPD id.
         existing = await self.epd_repo.get_by_epd_id(data.epd_id)
         if existing is not None:
             raise HTTPException(
@@ -794,7 +798,17 @@ class CarbonService:
             )
         epd = EPDRecord(**data.model_dump(exclude={"metadata"}))
         epd.metadata_ = data.metadata
-        return await self.epd_repo.create(epd)
+        try:
+            return await self.epd_repo.create(epd)
+        except IntegrityError as exc:
+            logger.info(
+                "carbon.epd.create_race",
+                extra={"epd_id": data.epd_id, "error": str(exc)},
+            )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"An EPD record with id '{data.epd_id}' already exists",
+            ) from exc
 
     async def get_epd(self, epd_id: uuid.UUID) -> EPDRecord:
         epd = await self.epd_repo.get_by_id(epd_id)
@@ -905,6 +919,43 @@ class CarbonService:
             )
         return inv
 
+    # ── IDOR project-access helpers (Round-5) ────────────────────────────
+    # These return the owning project_id for the entity addressed by the
+    # router URL / body, so the router can call ``verify_project_access``
+    # before touching cross-tenant rows. Raise HTTP 404 on missing rows so
+    # callers don't leak the existence of UUIDs they don't own.
+    async def get_inventory_project_id(self, inventory_id: uuid.UUID) -> uuid.UUID:
+        inv = await self.get_inventory(inventory_id)
+        return inv.project_id
+
+    async def get_embodied_project_id(self, entry_id: uuid.UUID) -> uuid.UUID:
+        entry = await self.get_embodied_entry(entry_id)
+        inv = await self.get_inventory(entry.inventory_id)
+        return inv.project_id
+
+    async def get_scope1_project_id(self, entry_id: uuid.UUID) -> uuid.UUID:
+        entry = await self.get_scope1(entry_id)
+        inv = await self.get_inventory(entry.inventory_id)
+        return inv.project_id
+
+    async def get_scope2_project_id(self, entry_id: uuid.UUID) -> uuid.UUID:
+        entry = await self.get_scope2(entry_id)
+        inv = await self.get_inventory(entry.inventory_id)
+        return inv.project_id
+
+    async def get_scope3_project_id(self, entry_id: uuid.UUID) -> uuid.UUID:
+        entry = await self.get_scope3(entry_id)
+        inv = await self.get_inventory(entry.inventory_id)
+        return inv.project_id
+
+    async def get_target_project_id(self, target_id: uuid.UUID) -> uuid.UUID:
+        target = await self.get_target(target_id)
+        return target.project_id
+
+    async def get_report_project_id(self, report_id: uuid.UUID) -> uuid.UUID:
+        report = await self.get_report(report_id)
+        return report.project_id
+
     async def list_inventories(
         self, project_id: uuid.UUID, *, offset: int = 0, limit: int = 100,
     ) -> tuple[list[CarbonInventory], int]:
@@ -951,6 +1002,19 @@ class CarbonService:
         totals = await self.compute_inventory_totals_fresh(inventory_id)
         await self.inventory_repo.update_fields(
             inventory_id, status=status_value, totals=totals,
+        )
+        # Structured audit log: carbon footprint freeze is a high-trust event
+        # (changes downstream targets/met state and TCFD report inputs).
+        logger.info(
+            "carbon.inventory.finalized",
+            extra={
+                "project_id": str(project_id),
+                "inventory_id": str(inventory_id),
+                "status": status_value,
+                "total_kg_co2e": str(totals.get("total", "0")),
+                "embodied_a1a5_kg": str(totals.get("embodied_a1a5", "0")),
+                "operational_kg": str(totals.get("operational", "0")),
+            },
         )
         event_bus.publish_detached(
             "carbon.inventory.finalized",
@@ -1007,6 +1071,17 @@ class CarbonService:
         offset: int = 0,
         limit: int = 500,
     ) -> tuple[list[EmbodiedCarbonEntry], int]:
+        # Allowlist the stage filter — any value is parameterised so there
+        # is no SQL injection, but accepting arbitrary garbage triggers a
+        # needless full-table scan that always returns zero rows. Reject early.
+        if stage is not None:
+            try:
+                stage = validate_en15978_stage(stage)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=str(exc),
+                ) from exc
         return await self.embodied_repo.list_for_inventory_paged(
             inventory_id, stage=stage, offset=offset, limit=limit,
         )
@@ -1039,18 +1114,34 @@ class CarbonService:
         inventory_id: uuid.UUID,
         entries: list[EmbodiedCarbonEntryCreate],
     ) -> int:
-        """Bulk insert; returns count created."""
-        count = 0
+        """Bulk insert via session.add_all + single flush.
+
+        Was: per-entry flush → 1 round-trip per row. Now: O(1) flushes for
+        the whole batch. Stage codes are validated up-front so a single bad
+        entry rejects the entire batch rather than half-committing.
+        """
+        models: list[EmbodiedCarbonEntry] = []
         for payload in entries:
             payload_dict = payload.model_dump()
             payload_dict["inventory_id"] = inventory_id
+            raw_stage = (payload_dict.get("stage") or "a1a3")
+            try:
+                payload_dict["stage"] = validate_en15978_stage(str(raw_stage))
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=str(exc),
+                ) from exc
             entry = EmbodiedCarbonEntry(
                 **{k: v for k, v in payload_dict.items() if k != "metadata"},
             )
             entry.metadata_ = payload_dict.get("metadata", {})
-            await self.embodied_repo.create(entry)
-            count += 1
-        return count
+            models.append(entry)
+        if not models:
+            return 0
+        self.session.add_all(models)
+        await self.session.flush()
+        return len(models)
 
     # ── Scope 1 ──────────────────────────────────────────────────────────
     async def create_scope1(self, data: Scope1EntryCreate) -> Scope1Entry:
@@ -1420,15 +1511,18 @@ class CarbonService:
         # Compose a canonical epd_id by combining source + remote id, so it
         # de-dupes across re-imports and preserves the original raw URL.
         canonical_id = f"{parsed['source']}:{parsed['id']}"
-        # Check for existing by canonical id
-        existing, _ = await self.epd_repo.list_filtered(material_class=None, region=None)
-        existing_match = next(
-            (e for e in existing if e.epd_id == canonical_id), None,
-        )
+        # Indexed lookup by canonical id (was: list-then-iterate, O(N) per call
+        # and unbounded — could scan thousands of EPDs on every ingest).
+        existing_match = await self.epd_repo.get_by_epd_id(canonical_id)
         gwp = Decimal(str(gwp_a1a3))
         if existing_match is not None:
+            # Capture PK BEFORE update_fields() — that call runs
+            # session.expire_all(), which expires every attribute on
+            # ``existing_match``; reading ``.id`` afterwards would trigger a
+            # lazy DB reload outside the async context (MissingGreenlet).
+            existing_id = existing_match.id
             await self.epd_repo.update_fields(
-                existing_match.id,
+                existing_id,
                 gwp_a1a3=gwp,
                 product_name=product_name,
                 material_class=material_class,
@@ -1438,7 +1532,7 @@ class CarbonService:
                 validity_until=validity_until,
                 document_url=document_url,
             )
-            return await self.epd_repo.get_by_id(existing_match.id)
+            return await self.epd_repo.get_by_id(existing_id)
         record = EPDRecord(
             epd_id=canonical_id,
             source=parsed["source"],

@@ -545,6 +545,43 @@ def _safe_publish(name: str, data: dict, source_module: str = "hse_advanced") ->
         logger.debug("Event publish skipped: %s", name)
 
 
+async def _safe_audit(
+    session: AsyncSession,
+    *,
+    actor_id: str | uuid.UUID | None,
+    entity_type: str,
+    entity_id: str | uuid.UUID | None,
+    action: str,
+    from_status: str | None = None,
+    to_status: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    """‌⁠‍Best-effort write to ``activity_log`` for HSE audit-trail coverage.
+
+    Round-3 Wave F flagged 21 HSE PATCH/DELETE / FSM-transition endpoints
+    as silent on the audit trail. We funnel every state change and
+    destructive op through this helper so a compliance auditor can answer
+    "who closed CAPA #X on Y date" without reading service logs. Errors
+    are swallowed: a flaky audit row must never block a legitimate write.
+    """
+    try:
+        from app.core.audit_log import log_activity
+
+        await log_activity(
+            session,
+            actor_id=actor_id,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            action=action,
+            from_status=from_status,
+            to_status=to_status,
+            reason=None,
+            metadata=metadata,
+        )
+    except Exception:
+        logger.debug("hse_advanced audit_log skipped: %s %s", entity_type, action)
+
+
 class HSEAdvancedService:
     """Business logic for the HSE Advanced module."""
 
@@ -599,7 +636,7 @@ class HSEAdvancedService:
         return obj
 
     async def complete_investigation(
-        self, item_id: uuid.UUID
+        self, item_id: uuid.UUID, user_id: str | None = None,
     ) -> HSEIncidentInvestigation:
         obj = await self.get_investigation(item_id)
         # `completed` and `abandoned` are terminal — re-completing would
@@ -609,14 +646,25 @@ class HSEAdvancedService:
                 status.HTTP_409_CONFLICT,
                 f"Cannot complete an investigation in status '{obj.status}'",
             )
+        prior = obj.status
         await self.investigation_repo.update_fields(
             item_id, status="completed", completed_at=datetime.now(UTC)
         )
         await self.session.refresh(obj)
+        await _safe_audit(
+            self.session,
+            actor_id=user_id,
+            entity_type="hse_investigation",
+            entity_id=str(item_id),
+            action="status_changed",
+            from_status=prior,
+            to_status="completed",
+            metadata={"incident_ref": str(obj.incident_ref)},
+        )
         return obj
 
     async def abandon_investigation(
-        self, item_id: uuid.UUID
+        self, item_id: uuid.UUID, user_id: str | None = None,
     ) -> HSEIncidentInvestigation:
         obj = await self.get_investigation(item_id)
         # A completed investigation is a closed record; an already-abandoned
@@ -627,10 +675,21 @@ class HSEAdvancedService:
                 status.HTTP_409_CONFLICT,
                 f"Cannot abandon an investigation in status '{obj.status}'",
             )
+        prior = obj.status
         await self.investigation_repo.update_fields(
             item_id, status="abandoned", completed_at=datetime.now(UTC)
         )
         await self.session.refresh(obj)
+        await _safe_audit(
+            self.session,
+            actor_id=user_id,
+            entity_type="hse_investigation",
+            entity_id=str(item_id),
+            action="status_changed",
+            from_status=prior,
+            to_status="abandoned",
+            metadata={"incident_ref": str(obj.incident_ref)},
+        )
         return obj
 
     # ── JSA ───────────────────────────────────────────────────────────────
@@ -662,7 +721,7 @@ class HSEAdvancedService:
         return obj
 
     async def update_jsa(
-        self, item_id: uuid.UUID, data: JSAUpdate
+        self, item_id: uuid.UUID, data: JSAUpdate, user_id: str | None = None,
     ) -> JobSafetyAnalysis:
         obj = await self.get_jsa(item_id)
         fields = data.model_dump(exclude_unset=True)
@@ -687,7 +746,37 @@ class HSEAdvancedService:
         if fields:
             await self.jsa_repo.update_fields(item_id, **fields)
             await self.session.refresh(obj)
+            await _safe_audit(
+                self.session,
+                actor_id=user_id,
+                entity_type="hse_jsa",
+                entity_id=str(item_id),
+                action="updated",
+                metadata={
+                    "project_id": str(obj.project_id),
+                    "fields": sorted(fields.keys()),
+                },
+            )
         return obj
+
+    async def delete_jsa(
+        self, item_id: uuid.UUID, user_id: str | None = None,
+    ) -> None:
+        obj = await self.get_jsa(item_id)
+        snapshot = {
+            "project_id": str(obj.project_id),
+            "status": obj.status,
+            "task_description": (obj.task_description or "")[:200],
+        }
+        await self.jsa_repo.delete(item_id)
+        await _safe_audit(
+            self.session,
+            actor_id=user_id,
+            entity_type="hse_jsa",
+            entity_id=str(item_id),
+            action="deleted",
+            metadata=snapshot,
+        )
 
     async def _transition_jsa(self, item_id: uuid.UUID, target: str) -> JobSafetyAnalysis:
         obj = await self.get_jsa(item_id)
@@ -787,7 +876,7 @@ class HSEAdvancedService:
         return obj
 
     async def update_permit(
-        self, item_id: uuid.UUID, data: PermitUpdate
+        self, item_id: uuid.UUID, data: PermitUpdate, user_id: str | None = None,
     ) -> PermitToWork:
         obj = await self.get_permit(item_id)
         # Editing the scope / window of a live, closed or cancelled permit
@@ -808,7 +897,38 @@ class HSEAdvancedService:
         if fields:
             await self.permit_repo.update_fields(item_id, **fields)
             await self.session.refresh(obj)
+            await _safe_audit(
+                self.session,
+                actor_id=user_id,
+                entity_type="hse_permit",
+                entity_id=str(item_id),
+                action="updated",
+                metadata={
+                    "project_id": str(obj.project_id),
+                    "permit_number": obj.permit_number,
+                    "fields": sorted(fields.keys()),
+                },
+            )
         return obj
+
+    async def delete_permit(
+        self, item_id: uuid.UUID, user_id: str | None = None,
+    ) -> None:
+        obj = await self.get_permit(item_id)
+        snapshot = {
+            "project_id": str(obj.project_id),
+            "permit_number": obj.permit_number,
+            "status": obj.status,
+        }
+        await self.permit_repo.delete(item_id)
+        await _safe_audit(
+            self.session,
+            actor_id=user_id,
+            entity_type="hse_permit",
+            entity_id=str(item_id),
+            action="deleted",
+            metadata=snapshot,
+        )
 
     async def approve_permit(
         self,
@@ -1120,14 +1240,44 @@ class HSEAdvancedService:
         return obj
 
     async def update_audit(
-        self, item_id: uuid.UUID, data: AuditUpdate
+        self, item_id: uuid.UUID, data: AuditUpdate, user_id: str | None = None,
     ) -> SafetyAudit:
         obj = await self.get_audit(item_id)
         fields = data.model_dump(exclude_unset=True)
         if fields:
             await self.audit_repo.update_fields(item_id, **fields)
             await self.session.refresh(obj)
+            await _safe_audit(
+                self.session,
+                actor_id=user_id,
+                entity_type="hse_audit",
+                entity_id=str(item_id),
+                action="updated",
+                metadata={
+                    "project_id": str(obj.project_id),
+                    "fields": sorted(fields.keys()),
+                },
+            )
         return obj
+
+    async def delete_audit(
+        self, item_id: uuid.UUID, user_id: str | None = None,
+    ) -> None:
+        obj = await self.get_audit(item_id)
+        snapshot = {
+            "project_id": str(obj.project_id),
+            "audit_type": obj.audit_type,
+            "status": obj.status,
+        }
+        await self.audit_repo.delete(item_id)
+        await _safe_audit(
+            self.session,
+            actor_id=user_id,
+            entity_type="hse_audit",
+            entity_id=str(item_id),
+            action="deleted",
+            metadata=snapshot,
+        )
 
     async def conduct_audit(
         self,
@@ -1177,13 +1327,16 @@ class HSEAdvancedService:
         await self.session.refresh(audit)
         return audit
 
-    async def complete_audit(self, audit_id: uuid.UUID) -> SafetyAudit:
+    async def complete_audit(
+        self, audit_id: uuid.UUID, user_id: str | None = None,
+    ) -> SafetyAudit:
         audit = await self.get_audit(audit_id)
         if "completed" not in allowed_audit_transitions(audit.status):
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
                 f"Invalid audit transition {audit.status} → completed",
             )
+        prior = audit.status
         findings = await self.finding_repo.list_for_audit(audit_id)
         score, max_score, _pct = compute_audit_score(findings)
         await self.audit_repo.update_fields(
@@ -1197,6 +1350,20 @@ class HSEAdvancedService:
             "hse.audit.completed",
             {
                 "audit_id": str(audit_id),
+                "project_id": str(audit.project_id),
+                "score_total": float(score),
+                "max_score": float(max_score),
+            },
+        )
+        await _safe_audit(
+            self.session,
+            actor_id=user_id,
+            entity_type="hse_audit",
+            entity_id=str(audit_id),
+            action="status_changed",
+            from_status=prior,
+            to_status="completed",
+            metadata={
                 "project_id": str(audit.project_id),
                 "score_total": float(score),
                 "max_score": float(max_score),
@@ -1249,22 +1416,55 @@ class HSEAdvancedService:
         return obj
 
     async def update_capa(
-        self, item_id: uuid.UUID, data: CAPAUpdate
+        self, item_id: uuid.UUID, data: CAPAUpdate, user_id: str | None = None,
     ) -> CorrectiveAction:
         obj = await self.get_capa(item_id)
         fields = data.model_dump(exclude_unset=True)
         if fields:
             await self.capa_repo.update_fields(item_id, **fields)
             await self.session.refresh(obj)
+            await _safe_audit(
+                self.session,
+                actor_id=user_id,
+                entity_type="hse_capa",
+                entity_id=str(item_id),
+                action="updated",
+                metadata={
+                    "project_id": str(obj.project_id),
+                    "fields": sorted(fields.keys()),
+                },
+            )
         return obj
 
-    async def escalate_capa(self, item_id: uuid.UUID) -> CorrectiveAction:
+    async def delete_capa(
+        self, item_id: uuid.UUID, user_id: str | None = None,
+    ) -> None:
+        obj = await self.get_capa(item_id)
+        snapshot = {
+            "project_id": str(obj.project_id),
+            "title": (obj.title or "")[:200],
+            "status": obj.status,
+        }
+        await self.capa_repo.delete(item_id)
+        await _safe_audit(
+            self.session,
+            actor_id=user_id,
+            entity_type="hse_capa",
+            entity_id=str(item_id),
+            action="deleted",
+            metadata=snapshot,
+        )
+
+    async def escalate_capa(
+        self, item_id: uuid.UUID, user_id: str | None = None,
+    ) -> CorrectiveAction:
         obj = await self.get_capa(item_id)
         if "overdue" not in allowed_capa_transitions(obj.status):
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
                 f"Invalid CAPA transition {obj.status} → overdue",
             )
+        prior = obj.status
         await self.capa_repo.update_fields(item_id, status="overdue")
         await self.session.refresh(obj)
         _safe_publish(
@@ -1275,10 +1475,23 @@ class HSEAdvancedService:
                 "title": obj.title,
             },
         )
+        await _safe_audit(
+            self.session,
+            actor_id=user_id,
+            entity_type="hse_capa",
+            entity_id=str(item_id),
+            action="status_changed",
+            from_status=prior,
+            to_status="overdue",
+            metadata={"project_id": str(obj.project_id)},
+        )
         return obj
 
     async def close_capa(
-        self, item_id: uuid.UUID, verification_notes: str = ""
+        self,
+        item_id: uuid.UUID,
+        verification_notes: str = "",
+        user_id: str | None = None,
     ) -> CorrectiveAction:
         obj = await self.get_capa(item_id)
         if "completed" not in allowed_capa_transitions(obj.status):
@@ -1286,6 +1499,7 @@ class HSEAdvancedService:
                 status.HTTP_409_CONFLICT,
                 f"Invalid CAPA transition {obj.status} → completed",
             )
+        prior = obj.status
         await self.capa_repo.update_fields(
             item_id,
             status="completed",
@@ -1301,17 +1515,43 @@ class HSEAdvancedService:
                 "title": obj.title,
             },
         )
+        await _safe_audit(
+            self.session,
+            actor_id=user_id,
+            entity_type="hse_capa",
+            entity_id=str(item_id),
+            action="status_changed",
+            from_status=prior,
+            to_status="completed",
+            metadata={
+                "project_id": str(obj.project_id),
+                "has_verification_notes": bool(verification_notes),
+            },
+        )
         return obj
 
-    async def cancel_capa(self, item_id: uuid.UUID) -> CorrectiveAction:
+    async def cancel_capa(
+        self, item_id: uuid.UUID, user_id: str | None = None,
+    ) -> CorrectiveAction:
         obj = await self.get_capa(item_id)
         if "cancelled" not in allowed_capa_transitions(obj.status):
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
                 f"Invalid CAPA transition {obj.status} → cancelled",
             )
+        prior = obj.status
         await self.capa_repo.update_fields(item_id, status="cancelled")
         await self.session.refresh(obj)
+        await _safe_audit(
+            self.session,
+            actor_id=user_id,
+            entity_type="hse_capa",
+            entity_id=str(item_id),
+            action="status_changed",
+            from_status=prior,
+            to_status="cancelled",
+            metadata={"project_id": str(obj.project_id)},
+        )
         return obj
 
     # ── Certifications ──────────────────────────────────────────────────

@@ -1,26 +1,42 @@
 """‌⁠‍RFI API routes.
 
 Endpoints:
-    GET    /                    - List RFIs for a project
-    POST   /                    - Create RFI
-    GET    /export              - Export RFI log as Excel
-    GET    /{rfi_id}            - Get single RFI
-    PATCH  /{rfi_id}            - Update RFI
-    DELETE /{rfi_id}            - Delete RFI
-    POST   /{rfi_id}/respond    - Record official response
-    POST   /{rfi_id}/close      - Close RFI
+    GET    /                              - List RFIs for a project
+    POST   /                              - Create RFI
+    GET    /export                        - Export RFI log as Excel
+    GET    /{rfi_id}                      - Get single RFI
+    PATCH  /{rfi_id}                      - Update RFI
+    DELETE /{rfi_id}                      - Delete RFI
+    POST   /{rfi_id}/respond              - Record official response
+    POST   /{rfi_id}/close                - Close RFI
+    POST   /{rfi_id}/attachments/         - Upload reply attachment
+                                            (magic-byte gated, R5)
 """
 
 import io
 import logging
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 
 from app.core.bulk_ops import BulkDeleteRequest, BulkStatusRequest
-from app.dependencies import CurrentUserId, RequirePermission, SessionDep, verify_project_access
+from app.core.file_signature import (
+    SIGNATURE_BYTES_REQUIRED,
+    FileSignatureMismatch,
+)
+from app.core.file_signature import (
+    require as require_signature,
+)
+from app.dependencies import (
+    CurrentUserId,
+    CurrentUserPayload,
+    RequirePermission,
+    SessionDep,
+    verify_project_access,
+)
 from app.modules.rfi.schemas import (
     RFICreate,
     RFIRespondRequest,
@@ -32,6 +48,25 @@ from app.modules.rfi.service import RFIService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# R5 / BUG-RFI-ATT: allow-list of magic-byte tokens accepted for RFI reply
+# attachments. Mirrors ``correspondence`` (PDF + photos + Office ZIP +
+# legacy OLE). ``xml`` is deliberately excluded — the stdlib detector
+# treats ``<html>`` as XML and an HTML payload served back out is a
+# stored-XSS vector.
+ALLOWED_ATTACHMENT_TYPES = frozenset(
+    {"pdf", "png", "jpeg", "gif", "webp", "heic", "heif", "tiff", "zip", "ole"}
+)
+
+# Cap on a single upload's size. Construction site photos run large; 25 MB
+# covers multi-page PDF transmittals and modern smartphone HEICs. Beyond
+# this we 413 before reading the body end-to-end.
+_MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+
+# On-disk storage for RFI attachments. Path layout mirrors correspondence
+# (``uploads/<module>/<bucket>/``) so the prod backup script picks it up
+# without per-module config. Created lazily on first upload.
+ATTACHMENTS_DIR = Path("uploads/rfi/attachments")
 
 
 def _get_service(session: SessionDep) -> RFIService:
@@ -104,6 +139,7 @@ def _to_response(item: object) -> RFIResponse:
         date_required=item.date_required,  # type: ignore[attr-defined]
         response_due_date=item.response_due_date,  # type: ignore[attr-defined]
         linked_drawing_ids=item.linked_drawing_ids or [],  # type: ignore[attr-defined]
+        attachments=getattr(item, "attachments", None) or [],
         change_order_id=item.change_order_id,  # type: ignore[attr-defined]
         created_by=item.created_by,  # type: ignore[attr-defined]
         priority=getattr(item, "priority", None),
@@ -381,14 +417,26 @@ async def update_rfi(
     rfi_id: uuid.UUID,
     data: RFIUpdate,
     session: SessionDep,
+    payload: CurrentUserPayload,
     user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("rfi.update")),
     service: RFIService = Depends(_get_service),
 ) -> RFIResponse:
-    """Update an RFI."""
+    """Update an RFI.
+
+    R5 / BUG-RFI-ROLE: ``assigned_to`` re-routing is gated to
+    manager/admin/owner at the service layer (assigner role gate). The
+    router still keeps ``rfi.update`` at EDITOR so estimators can patch
+    body fields without manager intervention.
+    """
     existing = await service.get_rfi(rfi_id)
     await verify_project_access(existing.project_id, str(user_id), session)
-    rfi = await service.update_rfi(rfi_id, data)
+    rfi = await service.update_rfi(
+        rfi_id,
+        data,
+        actor_id=str(user_id) if user_id else None,
+        actor_role=(payload.get("role") or "").lower(),
+    )
     return _to_response(rfi)
 
 
@@ -403,7 +451,7 @@ async def delete_rfi(
     """Delete an RFI."""
     existing = await service.get_rfi(rfi_id)
     await verify_project_access(existing.project_id, str(user_id), session)
-    await service.delete_rfi(rfi_id)
+    await service.delete_rfi(rfi_id, actor_id=str(user_id) if user_id else None)
 
 
 @router.post("/{rfi_id}/respond/", response_model=RFIResponse)
@@ -412,13 +460,25 @@ async def respond_to_rfi(
     body: RFIRespondRequest,
     user_id: CurrentUserId,
     session: SessionDep,
-    _perm: None = Depends(RequirePermission("rfi.update")),
+    payload: CurrentUserPayload,
+    _perm: None = Depends(RequirePermission("rfi.respond")),
     service: RFIService = Depends(_get_service),
 ) -> RFIResponse:
-    """Record an official response to an RFI."""
+    """Record an official response to an RFI.
+
+    R5 / BUG-RFI-ROLE: only the assignee or an admin/manager/owner may
+    answer. Coarse permission (``rfi.respond``, EDITOR+) lets the router
+    short-circuit anonymous / viewer callers without DB work; the
+    fine-grained identity check happens inside ``service.respond_to_rfi``.
+    """
     existing = await service.get_rfi(rfi_id)
     await verify_project_access(existing.project_id, str(user_id), session)
-    rfi = await service.respond_to_rfi(rfi_id, body.official_response, responded_by=user_id)
+    rfi = await service.respond_to_rfi(
+        rfi_id,
+        body.official_response,
+        responded_by=user_id,
+        actor_role=(payload.get("role") or "").lower(),
+    )
     return _to_response(rfi)
 
 
@@ -516,13 +576,120 @@ async def create_variation_from_rfi(
 @router.post(
     "/{rfi_id}/close/",
     response_model=RFIResponse,
-    dependencies=[Depends(RequirePermission("rfi.update"))],
+    dependencies=[Depends(RequirePermission("rfi.close"))],
 )
 async def close_rfi(
     rfi_id: uuid.UUID,
     user_id: CurrentUserId,
+    session: SessionDep,
     service: RFIService = Depends(_get_service),
 ) -> RFIResponse:
-    """Close an RFI."""
+    """Close an RFI.
+
+    R5 / BUG-RFI-IDOR-CLOSE: previously this endpoint called the service
+    directly without running ``verify_project_access``, so any caller with
+    the coarse ``rfi.update`` permission could close an RFI in any tenant
+    by guessing the UUID. We now load the row first and run the same
+    project-scope guard the other lifecycle endpoints use. The permission
+    is also tightened from ``rfi.update`` (EDITOR) to ``rfi.close``
+    (MANAGER) because closing is a terminal state.
+    """
+    existing = await service.get_rfi(rfi_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
     rfi = await service.close_rfi(rfi_id, closed_by=user_id)
     return _to_response(rfi)
+
+
+# ── Attachments (R5 / BUG-RFI-ATT) ─────────────────────────────────────────
+
+
+@router.post(
+    "/{rfi_id}/attachments/",
+    response_model=RFIResponse,
+)
+async def upload_rfi_attachment(
+    rfi_id: uuid.UUID,
+    session: SessionDep,
+    file: UploadFile = File(...),
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("rfi.update")),
+    service: RFIService = Depends(_get_service),
+) -> RFIResponse:
+    """‌⁠‍Upload a reply attachment for an RFI (magic-byte gated).
+
+    The ``Content-Type`` header is attacker-controlled, so we ignore it
+    and inspect the raw magic bytes via :func:`require_signature`
+    against :data:`ALLOWED_ATTACHMENT_TYPES` (PDF, common photo formats,
+    Office ZIP containers, legacy OLE).
+
+    Stored filename is server-derived (``{rfi_id}_{8-hex}{ext}``) so a
+    malicious filename cannot poison the storage path or escape from
+    :data:`ATTACHMENTS_DIR`.
+    """
+    # IDOR gate first — never read the body for a caller that can't see
+    # the project.
+    existing = await service.get_rfi(rfi_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
+
+    try:
+        content = await file.read()
+    except Exception as exc:
+        logger.exception(
+            "Unable to read RFI attachment upload",
+            extra={"rfi_id": str(rfi_id)},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to read uploaded attachment",
+        ) from exc
+
+    if not content:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded file is empty",
+        )
+    if len(content) > _MAX_ATTACHMENT_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=(
+                f"Attachment exceeds {_MAX_ATTACHMENT_BYTES // (1024 * 1024)} MB cap"
+            ),
+        )
+
+    try:
+        require_signature(
+            content[:SIGNATURE_BYTES_REQUIRED],
+            ALLOWED_ATTACHMENT_TYPES,
+            filename=file.filename,
+        )
+    except FileSignatureMismatch as exc:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=str(exc),
+        ) from exc
+
+    # Server-derived filename — extension is purely a hint for OS file
+    # managers; the magic-byte gate above decided what we actually keep.
+    ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
+    ext = Path(file.filename or "attachment.bin").suffix or ".bin"
+    # Strip surviving path separators (defence-in-depth; Path.suffix
+    # already returns at most one segment).
+    ext = ext.replace("/", "").replace("\\", "")
+    safe_name = f"{rfi_id}_{uuid.uuid4().hex[:8]}{ext}"
+    filepath = ATTACHMENTS_DIR / safe_name
+
+    try:
+        filepath.write_bytes(content)
+    except Exception as exc:
+        logger.exception(
+            "Unable to save RFI attachment",
+            extra={"rfi_id": str(rfi_id)},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to save attachment — storage error",
+        ) from exc
+
+    relative_path = f"rfi/attachments/{safe_name}"
+    updated = await service.add_attachment(rfi_id, relative_path)
+    return _to_response(updated)

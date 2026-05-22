@@ -14,9 +14,14 @@ def register_hse_advanced_permissions() -> None:
             "hse_advanced.delete": Role.MANAGER,
             "hse_advanced.approve_jsa": Role.MANAGER,
             "hse_advanced.approve_permit": Role.MANAGER,
-            "hse_advanced.close_permit": Role.EDITOR,
-            "hse_advanced.conduct_audit": Role.EDITOR,
-            "hse_advanced.close_capa": Role.EDITOR,
+            # Closure of safety records is a compliance-bearing action
+            # (RIDDOR §10, OSHA 29 CFR 1904, ISO 45001 §10.2) — gate to
+            # manager-or-above so a line editor can't silently sign off
+            # a permit, audit, CAPA or incident investigation.
+            "hse_advanced.close_permit": Role.MANAGER,
+            "hse_advanced.conduct_audit": Role.MANAGER,
+            "hse_advanced.close_capa": Role.MANAGER,
+            "hse_advanced.close_investigation": Role.MANAGER,
             "hse_advanced.escalate_capa": Role.MANAGER,
             "hse_advanced.issue_ppe": Role.EDITOR,
             "hse_advanced.jsa_template.read": Role.VIEWER,

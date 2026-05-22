@@ -302,6 +302,18 @@ class DisruptionClaimRepository(_BaseRepo):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def pending_count(self, project_id: uuid.UUID) -> int:
+        """R5 audit: ``COUNT(*)`` over pending claims — dashboard-friendly.
+
+        Replaces ``len(await pending_claims(...))`` which materialises the
+        full result set just to discard the rows.
+        """
+        stmt = select(func.count()).select_from(DisruptionClaim).where(
+            DisruptionClaim.project_id == project_id,
+            DisruptionClaim.status.in_(["submitted", "under_review"]),
+        )
+        return int((await self.session.execute(stmt)).scalar_one() or 0)
+
 
 class ExtensionOfTimeClaimRepository(_BaseRepo):
     model = ExtensionOfTimeClaim
@@ -314,6 +326,14 @@ class ExtensionOfTimeClaimRepository(_BaseRepo):
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def pending_count(self, project_id: uuid.UUID) -> int:
+        """R5 audit: ``COUNT(*)`` over pending EOT claims. See DisruptionClaim."""
+        stmt = select(func.count()).select_from(ExtensionOfTimeClaim).where(
+            ExtensionOfTimeClaim.project_id == project_id,
+            ExtensionOfTimeClaim.status.in_(["submitted", "under_review"]),
+        )
+        return int((await self.session.execute(stmt)).scalar_one() or 0)
 
 
 class FinalAccountRepository(_BaseRepo):

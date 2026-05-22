@@ -425,14 +425,25 @@ async def update_ticket(
     data: ServiceTicketUpdate,
     session: SessionDep,
     user_id: CurrentUserId,
+    payload: CurrentUserPayload,
     _perm: None = Depends(RequirePermission("service.update")),
     service: ServiceService = Depends(_get_service),
 ) -> ServiceTicketResponse:
-    """Update a service ticket."""
+    """Update a service ticket.
+
+    Dispatch-protected fields (``assigned_to``, ``sla_due_at``,
+    ``sla_breach_notified_at``, ``sla_breached_at``) additionally require
+    ``service.dispatch`` — see :data:`TICKET_DISPATCH_PROTECTED_FIELDS`.
+    Without this gate an EDITOR with ``service.update`` could self-assign
+    internal tickets or silence SLA-breach alerts.
+    """
     existing = await service.ticket_repo.get_by_id(ticket_id)
     if existing is not None:
         await _verify_contract_project(existing.contract_id, user_id, session, service)
-    ticket = await service.update_ticket(ticket_id, data)
+    has_dispatch = _payload_has_permission(payload, "service.dispatch")
+    ticket = await service.update_ticket(
+        ticket_id, data, has_dispatch_permission=has_dispatch,
+    )
     return ServiceTicketResponse.model_validate(ticket)
 
 

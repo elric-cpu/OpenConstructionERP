@@ -134,6 +134,7 @@ async def run_ruleset(
     elements: list[dict[str, Any]],
     model_version_id: uuid.UUID | None = None,
     triggered_by: str = "manual",
+    idempotency_key: str | None = None,
 ) -> EacRun:
     """Execute every active rule in ``ruleset_id`` against ``elements``.
 
@@ -167,6 +168,7 @@ async def run_ruleset(
         elements_evaluated=len(elements),
         elements_matched=0,
         error_count=0,
+        idempotency_key=idempotency_key,
     )
     session.add(run)
     await session.flush()  # populate run.id

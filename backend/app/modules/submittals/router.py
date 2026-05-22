@@ -7,17 +7,36 @@ Endpoints:
     PATCH  /{submittal_id}            - Update submittal
     DELETE /{submittal_id}            - Delete submittal
     POST   /{submittal_id}/submit     - Move to submitted status
-    POST   /{submittal_id}/review     - Review (approve/reject/revise)
-    POST   /{submittal_id}/approve    - Final approval
+    POST   /{submittal_id}/review     - Review (approve/reject/revise) [MANAGER]
+    POST   /{submittal_id}/approve    - Final approval [MANAGER]
+    GET    /{submittal_id}/attachments/ - List attachment refs
+    POST   /{submittal_id}/attachments/upload/ - Direct magic-byte gated upload
+    POST   /{submittal_id}/attachments/ - Link existing Document as attachment
+    DELETE /{submittal_id}/attachments/{document_id} - Remove attachment ref
 """
 
 import logging
 import uuid
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.file_signature import (
+    SIGNATURE_BYTES_REQUIRED,
+    FileSignatureMismatch,
+)
+from app.core.file_signature import (
+    require as require_signature,
+)
 from app.core.rate_limiter import approval_limiter
-from app.dependencies import CurrentUserId, RequirePermission, SessionDep, verify_project_access
+from app.dependencies import (
+    CurrentUserId,
+    RequirePermission,
+    RequireRole,
+    SessionDep,
+    verify_project_access,
+)
 from app.modules.submittals.schemas import (
     SubmittalCreate,
     SubmittalResponse,
@@ -28,6 +47,31 @@ from app.modules.submittals.service import SubmittalService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# Magic-byte allow-list for direct submittal-attachment uploads.
+# Submittals are shop drawings, product data, samples, test reports —
+# the realistic format set is PDFs, vector CAD (DWG/DXF/IFC/GLB), Office
+# ZIP containers, and site photos. ``xml`` is excluded deliberately: the
+# stdlib detector tolerates ``<html>...`` as XML and HTML payloads have
+# repeatedly been XSS sinks across audited modules.
+_ALLOWED_ATTACHMENT_TYPES = frozenset(
+    {
+        "pdf",
+        "png", "jpeg", "gif", "webp", "heic", "heif", "tiff",
+        "zip", "ole",
+        "dwg", "dxf", "ifc", "glb",
+    }
+)
+
+# On-disk storage for direct attachment uploads. The path mirrors
+# correspondence (``uploads/<module>/<bucket>/``) so the prod backup
+# already covers it; created lazily on first upload.
+ATTACHMENTS_DIR = Path("uploads/submittals/attachments")
+
+# Per-file upload cap — submittal attachments occasionally include large
+# RVT exports / BIM glTF files. 50 MB matches the documents-module cap
+# in v4.2.3 and bounds memory at a couple of attachments per request.
+_MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 
 def _get_service(session: SessionDep) -> SubmittalService:
@@ -157,7 +201,15 @@ async def submit_submittal(
     return _to_response(submittal)
 
 
-@router.post("/{submittal_id}/review/", response_model=SubmittalResponse)
+@router.post(
+    "/{submittal_id}/review/",
+    response_model=SubmittalResponse,
+    # Reviewer-role gate: approve / reject / revise-and-resubmit are
+    # contract-level decisions that touch payment scheduling downstream.
+    # A plain editor with ``submittals.update`` (e.g. an admin assistant
+    # entering submittal metadata) must NOT be able to drive the decision.
+    dependencies=[Depends(RequireRole("manager"))],
+)
 async def review_submittal(
     submittal_id: uuid.UUID,
     body: SubmittalReviewRequest,
@@ -166,14 +218,24 @@ async def review_submittal(
     _perm: None = Depends(RequirePermission("submittals.update")),
     service: SubmittalService = Depends(_get_service),
 ) -> SubmittalResponse:
-    """‌⁠‍Review a submittal (approve, reject, revise and resubmit, etc.)."""
+    """‌⁠‍Review a submittal (approve, reject, revise and resubmit, etc.).
+
+    Requires the ``manager`` role (or higher). The base
+    ``submittals.update`` permission alone is not sufficient.
+    """
     existing = await service.get_submittal(submittal_id)
     await verify_project_access(existing.project_id, str(user_id), session)
     submittal = await service.review_submittal(submittal_id, body.status, reviewer_id=user_id)
     return _to_response(submittal)
 
 
-@router.post("/{submittal_id}/approve/", response_model=SubmittalResponse)
+@router.post(
+    "/{submittal_id}/approve/",
+    response_model=SubmittalResponse,
+    # See note on /review/. Final approval is the most consequential
+    # FSM transition and must be MANAGER-or-higher only.
+    dependencies=[Depends(RequireRole("manager"))],
+)
 async def approve_submittal(
     submittal_id: uuid.UUID,
     user_id: CurrentUserId,
@@ -181,24 +243,32 @@ async def approve_submittal(
     _perm: None = Depends(RequirePermission("submittals.update")),
     service: SubmittalService = Depends(_get_service),
 ) -> SubmittalResponse:
-    """Final approval of a submittal."""
+    """Final approval of a submittal.
+
+    Requires the ``manager`` role (or higher).
+    """
     allowed, _ = approval_limiter.is_allowed(str(user_id))
     if not allowed:
-        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Rate limit exceeded. Try again later.")
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "Rate limit exceeded. Try again later.",
+        )
     existing = await service.get_submittal(submittal_id)
     await verify_project_access(existing.project_id, str(user_id), session)
     submittal = await service.approve_submittal(submittal_id, approver_id=user_id)
     return _to_response(submittal)
 
 
-# ── Attachments (BUG-162) ────────────────────────────────────────────────
+# ── Attachments ──────────────────────────────────────────────────────────
 #
-# Lightweight model: attachment = reference to a Document stored in the
-# existing documents module. We keep the list inside the submittal's
-# ``metadata_.attachments`` — no new table, no schema migration.
-
-
-from pydantic import BaseModel, ConfigDict, Field  # noqa: E402
+# Two flavours of attachment:
+#   * Direct upload (``POST /attachments/upload/``) — raw bytes pass through
+#     the magic-byte gate before they are written to disk. New in R4+R5,
+#     mirroring correspondence / compliance_docs / punchlist gates.
+#   * Document link (``POST /attachments/``) — references an already-
+#     uploaded ``Document`` row by id. Retained for backwards compat with
+#     existing front-end flows; the magic-byte gate runs in the documents
+#     module at the original upload site.
 
 
 class AttachmentLinkRequest(BaseModel):
@@ -256,6 +326,145 @@ async def list_submittal_attachments(
 
 
 @router.post(
+    "/{submittal_id}/attachments/upload/",
+    response_model=AttachmentResponse,
+    status_code=201,
+)
+async def upload_submittal_attachment(
+    submittal_id: uuid.UUID,
+    session: SessionDep,
+    file: UploadFile = File(...),
+    label: str = "",
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("submittals.update")),
+    service: SubmittalService = Depends(_get_service),
+) -> AttachmentResponse:
+    """Directly upload an attachment (magic-byte validated).
+
+    Unlike :func:`add_submittal_attachment` which links a pre-uploaded
+    Document by ID, this endpoint accepts the raw bytes and inspects the
+    magic bytes via :func:`require_signature`. ``Content-Type`` and
+    extension are attacker-controlled, so only the detector decides what
+    we keep on disk. Mirrors the v4.2.1 punchlist gate and v4.2.3 photo
+    upload gate. The stored filename is server-derived to prevent path
+    poisoning, and the body is bounded by :data:`_MAX_UPLOAD_BYTES` to
+    cap memory.
+    """
+    from datetime import UTC, datetime
+
+    # IDOR gate must run BEFORE we read any bytes — a caller without
+    # project access never causes us to touch the disk or learn whether
+    # the submittal exists.
+    submittal = await service.get_submittal(submittal_id)
+    await verify_project_access(submittal.project_id, str(user_id), session)
+
+    # Reject closed submittals — they're terminal and should not accept
+    # late attachments. ``draft`` and the active FSM states are fine.
+    if submittal.status == "closed":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot attach files to a closed submittal",
+        )
+
+    # Snapshot row attributes BEFORE update_fields — that helper expires
+    # the ORM row so a later lazy-attribute access (project_id, status)
+    # would trigger MissingGreenlet under async context.
+    project_id_s = str(submittal.project_id)
+
+    try:
+        content = await file.read()
+    except Exception as exc:
+        logger.exception(
+            "Unable to read attachment upload for submittal %s",
+            submittal_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to read uploaded attachment",
+        ) from exc
+
+    if not content:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded file is empty",
+        )
+    if len(content) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File exceeds {_MAX_UPLOAD_BYTES // (1024 * 1024)} MB upload cap",
+        )
+
+    try:
+        detected = require_signature(
+            content[:SIGNATURE_BYTES_REQUIRED],
+            _ALLOWED_ATTACHMENT_TYPES,
+            filename=file.filename,
+        )
+    except FileSignatureMismatch as exc:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=str(exc),
+        ) from exc
+
+    # Server-derived filename. Extension is from client's name purely as
+    # a hint for OS file managers; the magic-byte gate above decided.
+    ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
+    ext = Path(file.filename or "attachment.bin").suffix or ".bin"
+    ext = ext.replace("/", "").replace("\\", "")
+    safe_name = f"{submittal_id}_{uuid.uuid4().hex[:8]}{ext}"
+    filepath = ATTACHMENTS_DIR / safe_name
+
+    try:
+        filepath.write_bytes(content)
+    except Exception as exc:
+        logger.exception(
+            "Unable to save attachment for submittal %s",
+            submittal_id,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to save attachment — storage error",
+        ) from exc
+
+    relative_path = f"submittals/attachments/{safe_name}"
+    now = datetime.now(UTC).isoformat()
+    entry = {
+        "document_id": str(uuid.uuid4()),
+        "path": relative_path,
+        "label": (label or file.filename or "")[:255],
+        "added_by": str(user_id) if user_id else "",
+        "added_at": now,
+        "detected_type": detected,
+        "size_bytes": len(content),
+    }
+    meta = dict(getattr(submittal, "metadata_", {}) or {})
+    attachments: list[dict] = list(meta.get("attachments", []) or [])
+    attachments.append(entry)
+    meta["attachments"] = attachments
+    await service.repo.update_fields(submittal_id, metadata_=meta)
+
+    logger.info(
+        "submittal.attachment_uploaded %s",
+        {
+            "event": "submittal.attachment_uploaded",
+            "submittal_id": str(submittal_id),
+            "project_id": project_id_s,
+            "actor_id": str(user_id) if user_id else None,
+            "detected_type": detected,
+            "size_bytes": len(content),
+            "path": relative_path,
+        },
+    )
+
+    return AttachmentResponse(
+        document_id=uuid.UUID(entry["document_id"]),
+        label=entry["label"],
+        added_by=entry["added_by"],
+        added_at=entry["added_at"],
+    )
+
+
+@router.post(
     "/{submittal_id}/attachments/",
     response_model=AttachmentResponse,
     status_code=201,
@@ -290,7 +499,11 @@ async def add_submittal_attachment(
     attachments: list[dict] = list(meta.get("attachments", []) or [])
 
     # Reject duplicates — idempotency for retry-safe clients.
-    if any(str(a.get("document_id")) == str(data.document_id) for a in attachments if isinstance(a, dict)):
+    if any(
+        str(a.get("document_id")) == str(data.document_id)
+        for a in attachments
+        if isinstance(a, dict)
+    ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Document already attached to this submittal",

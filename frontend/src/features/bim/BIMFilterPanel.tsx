@@ -167,7 +167,10 @@ function detectModelFormat(
     ) {
       return 'rvt';
     }
-    if (Object.keys(props).some((k) => k.toLowerCase().includes('revit'))) {
+    // #153 guard — JSON property keys can in rare RVT exports be numeric
+    // or null sentinels after a deserialise round-trip; coerce to string
+    // before .toLowerCase() so the filter render can never crash.
+    if (Object.keys(props).some((k) => String(k).toLowerCase().includes('revit'))) {
       return 'rvt';
     }
   }

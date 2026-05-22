@@ -28,8 +28,15 @@ def register_crm_permissions() -> None:
             "crm.qualify_lead": Role.EDITOR,
             "crm.convert_lead": Role.EDITOR,
             "crm.move_stage": Role.EDITOR,
-            "crm.win_opportunity": Role.EDITOR,
+            # Winning a deal triggers downstream Project creation, commission
+            # calculation and locks the won-value into win-rate / forecast
+            # aggregates. Tightened to MANAGER in v4.3.0 (R5 audit).
+            "crm.win_opportunity": Role.MANAGER,
             "crm.lose_opportunity": Role.EDITOR,
             "crm.compute_forecast": Role.MANAGER,
+            # GDPR Art. 17 — right to erasure. Distinct from generic
+            # crm.delete so an org can ring-fence who is allowed to action
+            # a "forget me" request even when MANAGERs hold crm.delete.
+            "crm.forget": Role.ADMIN,
         },
     )

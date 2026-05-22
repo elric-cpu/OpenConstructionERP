@@ -1,6 +1,7 @@
 """‌⁠‍RFI Pydantic schemas — request/response models."""
 
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
 
@@ -20,6 +21,33 @@ def _sanitise_rfi_text(value: str | None) -> str | None:
     from app.core.sanitize import strip_dangerous_html
 
     return strip_dangerous_html(value)
+
+
+def _validate_cost_impact_value(value: str | None) -> str | None:
+    """‌⁠‍Round-trip ``cost_impact_value`` through :class:`Decimal`.
+
+    R5 / BUG-RFI-DEC: ``cost_impact_value`` is stored as a free-form
+    string so the DB layer never accumulates IEEE-754 drift. The schema
+    still has to reject garbage (``"definitely cheap"``) up front so the
+    variation builder (which feeds the value into ChangeOrder.cost_impact)
+    never sees a non-numeric blob.
+
+    Empty / ``None`` passes through. Otherwise we parse via Decimal and
+    re-serialise the canonical form so storage is always a clean number
+    string. Inf / NaN are rejected because Decimal accepts them but they
+    cannot become a valid currency amount.
+    """
+    if value is None or value == "":
+        return value
+    try:
+        parsed = Decimal(str(value).strip())
+    except (InvalidOperation, ValueError) as exc:
+        raise ValueError(
+            "cost_impact_value must be a numeric amount"
+        ) from exc
+    if not parsed.is_finite():
+        raise ValueError("cost_impact_value must be a finite number")
+    return format(parsed, "f")
 
 
 class RFICreate(BaseModel):
@@ -44,6 +72,12 @@ class RFICreate(BaseModel):
     ball_in_court: str | None = Field(default=None, max_length=100)
     cost_impact: bool = False
     cost_impact_value: str | None = Field(default=None, max_length=50)
+
+    @field_validator("cost_impact_value", mode="after")
+    @classmethod
+    def _validate_cost(cls, v: str | None) -> str | None:
+        return _validate_cost_impact_value(v)
+
     schedule_impact: bool = False
     schedule_impact_days: int | None = Field(default=None, ge=0)
     date_required: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
@@ -80,6 +114,12 @@ class RFIUpdate(BaseModel):
     ball_in_court: str | None = Field(default=None, max_length=100)
     cost_impact: bool | None = None
     cost_impact_value: str | None = Field(default=None, max_length=50)
+
+    @field_validator("cost_impact_value", mode="after")
+    @classmethod
+    def _validate_cost(cls, v: str | None) -> str | None:
+        return _validate_cost_impact_value(v)
+
     schedule_impact: bool | None = None
     schedule_impact_days: int | None = Field(default=None, ge=0)
     date_required: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
@@ -130,6 +170,10 @@ class RFIResponse(BaseModel):
     date_required: str | None = None
     response_due_date: str | None = None
     linked_drawing_ids: list[str] = Field(default_factory=list)
+    attachments: list[str] = Field(
+        default_factory=list,
+        description="Server-derived relative paths under uploads/rfi/attachments/.",
+    )
     change_order_id: str | None = None
     created_by: str | None = None
     priority: str | None = None

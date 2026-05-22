@@ -93,6 +93,20 @@ class ProjectRepository:
         stmt = select(func.count()).select_from(select(Project).where(Project.owner_id == owner_id).subquery())
         return (await self.session.execute(stmt)).scalar_one()
 
+    async def project_code_exists(self, code: str) -> bool:
+        """Return True if any row already carries this ``project_code``.
+
+        Used by ``ProjectService._generate_project_code`` to detect the
+        rare race where two concurrent creates compute the same next
+        sequence number before either inserts. Cheap — single indexed
+        scalar query.
+        """
+        stmt = select(func.count()).select_from(
+            select(Project.id).where(Project.project_code == code).subquery()
+        )
+        count = (await self.session.execute(stmt)).scalar_one()
+        return bool(count)
+
     async def max_project_code_seq(self, prefix: str) -> int | None:
         """Find the maximum sequence number for project codes with the given prefix.
 

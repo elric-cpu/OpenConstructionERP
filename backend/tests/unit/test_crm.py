@@ -113,7 +113,18 @@ class _StubAccountRepo(_StubRepo):
 
 
 class _StubLeadRepo(_StubRepo):
-    pass
+    async def find_by_email(self, email: str) -> Any:
+        if not email:
+            return None
+        normalised = email.strip().lower()
+        matches = [
+            r for r in self.rows.values()
+            if (getattr(r, "contact_email", None) or "").lower() == normalised
+        ]
+        if not matches:
+            return None
+        matches.sort(key=lambda r: getattr(r, "created_at", None) or datetime.min, reverse=True)
+        return matches[0]
 
 
 class _StubOpportunityRepo(_StubRepo):
@@ -487,7 +498,9 @@ def test_convert_opportunity_to_project_payload() -> None:
     )
     payload = convert_opportunity_to_project_payload(opp)
     assert payload["name"] == "ACME headquarters build"
-    assert payload["estimated_value"] == 1_500_000.0
+    # v4.3.0 audit: estimated_value is now a Decimal-as-string to avoid the
+    # binary-rounding hop into the Projects subscriber.
+    assert payload["estimated_value"] == "1500000"
     assert payload["currency"] == "EUR"
     assert payload["source_module"] == "crm"
     assert payload["source_entity"] == "opportunity"

@@ -27,10 +27,11 @@ import logging
 import uuid
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit_log import log_activity
 from app.dependencies import CurrentUserId, SessionDep, verify_project_access
 from app.modules.eac.models import (
     GLOBAL_VARIABLE_VALUE_TYPES,
@@ -671,6 +672,16 @@ async def run_ruleset_endpoint(
     payload: EacRunRulesetRequest,
     user_id: CurrentUserId,
     session: SessionDep,
+    idempotency_key_header: str | None = Header(
+        default=None,
+        alias="Idempotency-Key",
+        description=(
+            "RFC 9110 idempotency key. Re-posting the same key for this "
+            "ruleset returns the prior run row instead of starting a "
+            "duplicate execution. Auto-derived from the input hash when "
+            "omitted."
+        ),
+    ),
 ) -> EacRunRead:
     """Execute every active rule in a ruleset and persist an EacRun.
 
@@ -678,8 +689,19 @@ async def run_ruleset_endpoint(
     tests) or a ``model_id`` — in the latter case the runner loads
     BIMElement rows and converts them to canonical dicts via
     :func:`bim_element_to_canonical`.
+
+    **Idempotency** (RFC 36 W1.1): when the ``Idempotency-Key`` header
+    is set or when ``elements`` are supplied inline we compute a stable
+    key from ``ruleset_id + ruleset.updated_at + sorted element hash``.
+    A prior run with the same key for this ``(tenant, ruleset)`` is
+    returned verbatim — protecting against webhook retries, double-
+    click submits, and client retries on transient errors.
+
+    **Audit log**: each accepted trigger writes one ``ActivityLog`` row
+    keyed on the new run id (``entity_type='eac_run'``).
     """
     from app.modules.eac.engine.executor import ExecutionError
+    from app.modules.eac.engine.idempotency import compute_idempotency_key
     from app.modules.eac.engine.runner import (
         bim_element_to_canonical,
         run_ruleset,
@@ -708,6 +730,37 @@ async def run_ruleset_endpoint(
             detail="Either elements or model_id must be supplied",
         )
 
+    # Derive an idempotency key. ``updated_at`` may be None on freshly
+    # created rulesets — fall back to ``created_at`` then to the epoch
+    # so the hash input is always defined.
+    ruleset_ts = (
+        getattr(ruleset, "updated_at", None)
+        or getattr(ruleset, "created_at", None)
+    )
+    if ruleset_ts is None:
+        from datetime import UTC as _UTC, datetime as _dt
+        ruleset_ts = _dt(1970, 1, 1, tzinfo=_UTC)
+
+    idempotency_key = compute_idempotency_key(
+        ruleset_id=ruleset_id,
+        ruleset_updated_at=ruleset_ts,
+        elements=elements,
+        client_supplied=idempotency_key_header,
+    )
+
+    # Dedup: prior run with the same key for this (tenant, ruleset) wins.
+    dedup_stmt = (
+        select(EacRun)
+        .where(EacRun.tenant_id == tenant_id)
+        .where(EacRun.ruleset_id == ruleset_id)
+        .where(EacRun.idempotency_key == idempotency_key)
+        .order_by(EacRun.started_at.desc())
+        .limit(1)
+    )
+    existing = (await session.scalars(dedup_stmt)).first()
+    if existing is not None:
+        return EacRunRead.model_validate(existing)
+
     try:
         run = await run_ruleset(
             session=session,
@@ -716,12 +769,35 @@ async def run_ruleset_endpoint(
             elements=elements,
             model_version_id=payload.model_version_id,
             triggered_by=payload.triggered_by,
+            idempotency_key=idempotency_key,
         )
     except ExecutionError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
+
+    # Audit log — best effort. A failed audit-write must not roll back
+    # the run row: the work succeeded either way.
+    try:
+        await log_activity(
+            session,
+            actor_id=user_id,
+            tenant_id=tenant_id,
+            entity_type="eac_run",
+            entity_id=run.id,
+            action="run_triggered",
+            to_status=run.status,
+            metadata={
+                "ruleset_id": str(ruleset_id),
+                "triggered_by": run.triggered_by,
+                "elements_evaluated": run.elements_evaluated,
+                "idempotency_key": idempotency_key,
+                "client_supplied_key": idempotency_key_header is not None,
+            },
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to write eac_run audit log for run %s", run.id)
 
     return EacRunRead.model_validate(run)
 
@@ -950,6 +1026,21 @@ async def cancel_run_endpoint(
         user_id=user_id,
     )
     refreshed = await session.get(EacRun, run_id)
+    if accepted:
+        try:
+            await log_activity(
+                session,
+                actor_id=user_id,
+                tenant_id=tenant_id,
+                entity_type="eac_run",
+                entity_id=run_id,
+                action="run_cancelled",
+                from_status=pre.status,
+                to_status=refreshed.status if refreshed is not None else "cancelled",
+                metadata={"ruleset_id": str(pre.ruleset_id)},
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to write eac_run cancel audit log")
     return EacRunCancelResponse(
         run_id=run_id,
         cancelled=accepted,
@@ -989,6 +1080,24 @@ async def rerun_run_endpoint(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
         ) from exc
+
+    try:
+        await log_activity(
+            session,
+            actor_id=user_id,
+            tenant_id=tenant_id,
+            entity_type="eac_run",
+            entity_id=new_run.id,
+            action="run_rerun",
+            to_status=new_run.status,
+            metadata={
+                "source_run_id": str(run_id),
+                "ruleset_id": str(new_run.ruleset_id),
+                "elements_evaluated": new_run.elements_evaluated,
+            },
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to write eac_run rerun audit log")
     return EacRunRead.model_validate(new_run)
 
 

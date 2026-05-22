@@ -274,12 +274,18 @@ class ToolboxTopicRepository(_BaseRepo):
         *,
         offset: int = 0,
         limit: int = 100,
-        active_only: bool = True,
+        is_active: bool | None = True,
         language: str | None = None,
+        # Legacy alias retained so older callers / test stubs don't break.
+        active_only: bool | None = None,
     ) -> tuple[list[ToolboxTopic], int]:
+        if active_only is not None:
+            is_active = True if active_only else None
         base = select(ToolboxTopic)
-        if active_only:
+        if is_active is True:
             base = base.where(ToolboxTopic.is_active.is_(True))
+        elif is_active is False:
+            base = base.where(ToolboxTopic.is_active.is_(False))
         if language:
             base = base.where(ToolboxTopic.language == language)
         total = (
@@ -457,17 +463,23 @@ class JSATemplateRepository(_BaseRepo):
         *,
         trade: str | None = None,
         region: str | None = None,
-        active_only: bool = True,
+        is_active: bool | None = True,
         offset: int = 0,
         limit: int = 100,
+        # Legacy alias retained so test stubs / older callers don't break.
+        active_only: bool | None = None,
     ) -> tuple[list[JSATemplate], int]:
+        if active_only is not None:
+            is_active = True if active_only else None
         base = select(JSATemplate)
         if trade is not None:
             base = base.where(JSATemplate.trade == trade)
         if region is not None:
             base = base.where(JSATemplate.region == region)
-        if active_only:
+        if is_active is True:
             base = base.where(JSATemplate.is_active.is_(True))
+        elif is_active is False:
+            base = base.where(JSATemplate.is_active.is_(False))
         total = (
             await self.session.execute(
                 select(func.count()).select_from(base.subquery())

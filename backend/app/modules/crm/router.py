@@ -198,6 +198,22 @@ async def delete_lead(
     await service.delete_lead(lead_id)
 
 
+@router.post("/leads/{lead_id}/forget")
+async def forget_lead(
+    lead_id: uuid.UUID,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("crm.forget")),
+    service: CrmService = Depends(_get_service),
+) -> dict:
+    """GDPR Art. 17 right-to-be-forgotten.
+
+    Scrubs all PII from the lead row + every linked activity, audit-logs
+    the actor, but preserves the lead's row + status so referential
+    integrity stays intact. ADMIN-only.
+    """
+    return await service.forget_lead(lead_id, user_id=user_id)
+
+
 @router.post("/leads/{lead_id}/qualify", response_model=LeadResponse)
 async def qualify_lead(
     lead_id: uuid.UUID,

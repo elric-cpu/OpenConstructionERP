@@ -1,6 +1,14 @@
 """‌⁠‍RFI service — business logic for RFI management.
 
 - Event publishing on create/update/delete
+- Structured state-change logs (R5: keys = rfi_id / project_id /
+  status_from / status_to / actor) so the SIEM ingest pipeline can pivot
+  on transitions instead of regex-matching prose log lines
+- Retry-on-IntegrityError for RFI-number collisions
+  (R5 / BUG-RFI-UNIQ; mirrors the changeorders pattern)
+- Respondent identity verification + assigner role gate
+  (R5 / BUG-RFI-ROLE; the service is the source of truth, the router
+  permission registry is only the coarse first-line filter)
 """
 
 import logging
@@ -9,6 +17,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
@@ -27,6 +36,22 @@ async def _safe_publish(name: str, data: dict, source_module: str = "") -> None:
         _logger_ev.debug("Event publish skipped: %s", name)
 
 _RFI_RESPONSE_DUE_DAYS = 14
+
+# R5 / BUG-RFI-UNIQ: retry budget for ``create_rfi`` when two concurrent
+# transactions race on ``max(rfi_number)+1``. Mirrors the changeorders
+# code-collision retry loop.
+_RFI_CREATE_MAX_RETRIES = 5
+
+# R5 / BUG-RFI-ROLE: roles permitted to (re)assign an RFI. Echoed in the
+# permission registry as ``rfi.assign`` (MANAGER+); duplicated at the
+# service layer so the FSM check survives any router-level mis-wiring.
+_ASSIGNER_ROLES = frozenset({"admin", "manager", "owner"})
+
+# R5 / BUG-RFI-ROLE: roles whose holders may answer an RFI assigned to a
+# different user. The intended respondent is the assignee, but
+# manager/admin escalations must be able to close out an RFI when the
+# assignee is unavailable.
+_ESCALATION_ROLES = frozenset({"admin", "manager", "owner"})
 
 # ── Allowed RFI status transitions ────────────────────────────────────────────
 
@@ -67,9 +92,15 @@ class RFIService:
         Ball-in-court is automatically set to ``assigned_to`` when present.
         Response due date defaults to 14 business days from today when the
         status is ``open`` and no explicit due date is provided.
-        """
-        rfi_number = await self.repo.next_rfi_number(data.project_id)
 
+        R5 / BUG-RFI-UNIQ: ``(project_id, rfi_number)`` is now a unique
+        constraint. ``next_rfi_number`` reads ``MAX(rfi_number)+1`` outside
+        a SERIALIZABLE transaction, so two concurrent calls can pick the
+        same suffix. We catch the resulting :class:`IntegrityError`, roll
+        back, and retry up to ``_RFI_CREATE_MAX_RETRIES`` times. If every
+        retry collides (high contention) we surface HTTP 409 so the
+        client retries — never silently writing a duplicate.
+        """
         # Auto-set ball_in_court to assigned_to on creation
         ball_in_court = data.ball_in_court
         if ball_in_court is None and data.assigned_to is not None:
@@ -81,47 +112,76 @@ class RFIService:
         if response_due_date is None and data.status == "open":
             response_due_date = _add_business_days(datetime.now(UTC), _RFI_RESPONSE_DUE_DAYS)
 
-        rfi = RFI(
-            project_id=data.project_id,
-            rfi_number=rfi_number,
-            subject=data.subject,
-            question=data.question,
-            raised_by=data.raised_by or (uuid.UUID(user_id) if user_id else None),
-            assigned_to=data.assigned_to,
-            status=data.status,
-            ball_in_court=ball_in_court,
-            cost_impact=data.cost_impact,
-            cost_impact_value=data.cost_impact_value,
-            schedule_impact=data.schedule_impact,
-            schedule_impact_days=data.schedule_impact_days,
-            date_required=data.date_required,
-            response_due_date=response_due_date,
-            linked_drawing_ids=data.linked_drawing_ids,
-            change_order_id=data.change_order_id,
-            priority=data.priority,
-            discipline=data.discipline,
-            created_by=user_id,
-            metadata_=data.metadata,
-        )
-        rfi = await self.repo.create(rfi)
-        logger.info("RFI created: %s for project %s", rfi_number, data.project_id)
-
-        # Publish rfi.assigned event so notification handlers fire
-        if data.assigned_to:
-            await _safe_publish(
-                "rfi.assigned",
-                {
-                    "project_id": str(data.project_id),
+        last_exc: Exception | None = None
+        for attempt in range(_RFI_CREATE_MAX_RETRIES):
+            rfi_number = await self.repo.next_rfi_number(data.project_id)
+            rfi = RFI(
+                project_id=data.project_id,
+                rfi_number=rfi_number,
+                subject=data.subject,
+                question=data.question,
+                raised_by=data.raised_by or (uuid.UUID(user_id) if user_id else None),
+                assigned_to=data.assigned_to,
+                status=data.status,
+                ball_in_court=ball_in_court,
+                cost_impact=data.cost_impact,
+                cost_impact_value=data.cost_impact_value,
+                schedule_impact=data.schedule_impact,
+                schedule_impact_days=data.schedule_impact_days,
+                date_required=data.date_required,
+                response_due_date=response_due_date,
+                linked_drawing_ids=data.linked_drawing_ids,
+                change_order_id=data.change_order_id,
+                priority=data.priority,
+                discipline=data.discipline,
+                created_by=user_id,
+                metadata_=data.metadata,
+            )
+            try:
+                rfi = await self.repo.create(rfi)
+            except IntegrityError as exc:
+                # Another transaction picked the same number; roll back
+                # and retry with a freshly-bumped suffix.
+                last_exc = exc
+                await self.session.rollback()
+                continue
+            logger.info(
+                "rfi.created",
+                extra={
                     "rfi_id": str(rfi.id),
                     "rfi_number": rfi_number,
-                    "subject": data.subject,
-                    "assigned_to": str(data.assigned_to),
-                    "assigned_by": user_id or "",
+                    "project_id": str(data.project_id),
+                    "actor": user_id,
+                    "attempt": attempt + 1,
                 },
-                source_module="oe_rfi",
             )
 
-        return rfi
+            # Publish rfi.assigned event so notification handlers fire
+            if data.assigned_to:
+                await _safe_publish(
+                    "rfi.assigned",
+                    {
+                        "project_id": str(data.project_id),
+                        "rfi_id": str(rfi.id),
+                        "rfi_number": rfi_number,
+                        "subject": data.subject,
+                        "assigned_to": str(data.assigned_to),
+                        "assigned_by": user_id or "",
+                    },
+                    source_module="oe_rfi",
+                )
+
+            return rfi
+
+        # Exhausted the retry budget — surface as 409 so the client can
+        # back off and retry rather than silently failing.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Could not generate a unique RFI number after "
+                f"{_RFI_CREATE_MAX_RETRIES} attempts (concurrent contention)."
+            ),
+        ) from last_exc
 
     async def get_rfi(self, rfi_id: uuid.UUID) -> RFI:
         rfi = await self.repo.get_by_id(rfi_id)
@@ -153,7 +213,23 @@ class RFIService:
         self,
         rfi_id: uuid.UUID,
         data: RFIUpdate,
+        *,
+        actor_id: str | None = None,
+        actor_role: str | None = None,
     ) -> RFI:
+        """‌⁠‍Patch fields on an RFI, enforcing the FSM + assigner role gate.
+
+        R5 / BUG-RFI-ROLE: only ``admin`` / ``manager`` / ``owner`` may
+        change ``assigned_to``. An editor that attempts to reassign gets
+        a clean 403 — the rest of the payload is still rejected wholesale
+        (atomicity) so the caller never gets a partial update.
+
+        ``actor_role`` is plumbed through from the router so the service
+        can enforce the gate without re-reading the JWT. ``None`` means
+        the caller is internal (no router-supplied role) — internal
+        callers bypass the role check; in practice only background
+        subscribers like event handlers reach this path.
+        """
         rfi = await self.get_rfi(rfi_id)
 
         if rfi.status in ("closed", "void"):
@@ -165,6 +241,28 @@ class RFIService:
         fields: dict[str, Any] = data.model_dump(exclude_unset=True)
         if "metadata" in fields:
             fields["metadata_"] = fields.pop("metadata")
+
+        # R5 / BUG-RFI-ROLE: assigner role gate. ``rfi.update`` (EDITOR)
+        # at the router lets an estimator patch body fields, but
+        # redirecting ball-in-court is a MANAGER+ action. We refuse the
+        # whole request rather than silently dropping ``assigned_to`` so
+        # the caller learns what they tried to do.
+        if "assigned_to" in fields:
+            old_assigned_s = str(rfi.assigned_to) if rfi.assigned_to else None
+            requested_s = (
+                str(fields["assigned_to"])
+                if fields["assigned_to"] is not None
+                else None
+            )
+            if requested_s != old_assigned_s:
+                role = (actor_role or "").lower()
+                if role and role not in _ASSIGNER_ROLES:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=(
+                            "Only managers or admins may (re)assign an RFI."
+                        ),
+                    )
 
         # Validate status transition if status is being changed
         new_status = fields.get("status")
@@ -198,6 +296,7 @@ class RFIService:
         # Detect reassignment so we can fire rfi.assigned
         old_assigned = str(rfi.assigned_to) if rfi.assigned_to else None
         new_assigned = fields.get("assigned_to")
+        old_status = rfi.status
         # Snapshot attrs before update_fields detaches them from the session.
         project_id_s = str(rfi.project_id)
         rfi_number_s = rfi.rfi_number
@@ -205,7 +304,20 @@ class RFIService:
 
         await self.repo.update_fields(rfi_id, **fields)
         fresh = await self.repo.get_by_id(rfi_id)
-        logger.info("RFI updated: %s (fields=%s)", rfi_id, list(fields.keys()))
+        # R5: structured state-change log. SIEM pivots on rfi_id / from /
+        # to / actor; the legacy positional log lost the from/to context.
+        log_extra: dict[str, Any] = {
+            "rfi_id": str(rfi_id),
+            "project_id": project_id_s,
+            "actor": actor_id,
+            "fields": sorted(fields.keys()),
+        }
+        if new_status is not None and new_status != old_status:
+            log_extra["status_from"] = old_status
+            log_extra["status_to"] = new_status
+            logger.info("rfi.state_change", extra=log_extra)
+        else:
+            logger.info("rfi.updated", extra=log_extra)
 
         # Fire rfi.assigned when assigned_to changes to a new user
         if (
@@ -226,22 +338,47 @@ class RFIService:
 
         return fresh or rfi
 
-    async def delete_rfi(self, rfi_id: uuid.UUID) -> None:
-        await self.get_rfi(rfi_id)
+    async def delete_rfi(
+        self, rfi_id: uuid.UUID, *, actor_id: str | None = None
+    ) -> None:
+        rfi = await self.get_rfi(rfi_id)
+        project_id_s = str(rfi.project_id)
         await self.repo.delete(rfi_id)
-        logger.info("RFI deleted: %s", rfi_id)
+        logger.info(
+            "rfi.deleted",
+            extra={
+                "rfi_id": str(rfi_id),
+                "project_id": project_id_s,
+                "actor": actor_id,
+            },
+        )
 
     async def respond_to_rfi(
         self,
         rfi_id: uuid.UUID,
         official_response: str,
         responded_by: str,
+        *,
+        actor_role: str | None = None,
     ) -> RFI:
         """Record an official response to an RFI.
 
-        Ball-in-court automatically flips to ``raised_by`` so the originator
-        can review the answer. Publishes ``rfi.responded`` event so
-        subscribers (notifications, project intelligence) can react.
+        Ball-in-court automatically flips to ``raised_by`` so the
+        originator can review the answer. Publishes ``rfi.responded``
+        event so subscribers (notifications, project intelligence) can
+        react.
+
+        R5 / BUG-RFI-ROLE: respondent identity verification. An RFI
+        assigned to user X may only be answered by:
+
+        1. user X themselves, OR
+        2. an ``admin`` / ``manager`` / ``owner`` (escalation chain).
+
+        Unassigned RFIs (``assigned_to IS NULL``) can be answered by any
+        caller with ``rfi.respond`` — the router permission already
+        covers the coarse gate there. Refusing with 403 (not 404) so the
+        assignee knows the RFI exists; the IDOR concern is already
+        neutralised by ``verify_project_access`` at the router boundary.
         """
         rfi = await self.get_rfi(rfi_id)
         if rfi.status in ("closed", "void"):
@@ -250,11 +387,25 @@ class RFIService:
                 detail=f"Cannot respond to an RFI with status '{rfi.status}'",
             )
 
+        # R5 / BUG-RFI-ROLE: identity verification.
+        assigned_s = str(rfi.assigned_to) if rfi.assigned_to else None
+        if assigned_s and str(responded_by) != assigned_s:
+            role = (actor_role or "").lower()
+            if role not in _ESCALATION_ROLES:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        "Only the assignee or an admin/manager may answer "
+                        "this RFI."
+                    ),
+                )
+
         # Snapshot attrs before update_fields.
         project_id_s = str(rfi.project_id)
         rfi_number_s = rfi.rfi_number
         subject_s = rfi.subject
         raised_by_s = str(rfi.raised_by) if rfi.raised_by else None
+        old_status = rfi.status
 
         await self.repo.update_fields(
             rfi_id,
@@ -280,14 +431,25 @@ class RFIService:
             source_module="oe_rfi",
         )
 
-        logger.info("RFI responded: %s by %s", rfi_id, responded_by)
+        logger.info(
+            "rfi.state_change",
+            extra={
+                "rfi_id": str(rfi_id),
+                "project_id": project_id_s,
+                "actor": responded_by,
+                "status_from": old_status,
+                "status_to": "answered",
+                "transition": "respond",
+            },
+        )
         return fresh or rfi
 
     async def close_rfi(self, rfi_id: uuid.UUID, *, closed_by: str | None = None) -> RFI:
         """Close an RFI.
 
         Requires an official response before closing to prevent
-        unanswered RFIs from being silently closed. Publishes ``rfi.closed`` event.
+        unanswered RFIs from being silently closed. Publishes
+        ``rfi.closed`` event.
         """
         rfi = await self.get_rfi(rfi_id)
         if rfi.status == "closed":
@@ -304,6 +466,7 @@ class RFIService:
         project_id_s = str(rfi.project_id)
         rfi_number_s = rfi.rfi_number
         subject_s = rfi.subject
+        old_status = rfi.status
 
         await self.repo.update_fields(rfi_id, status="closed", ball_in_court=None)
         fresh = await self.repo.get_by_id(rfi_id)
@@ -320,7 +483,44 @@ class RFIService:
             source_module="oe_rfi",
         )
 
-        logger.info("RFI closed: %s by %s", rfi_id, closed_by)
+        logger.info(
+            "rfi.state_change",
+            extra={
+                "rfi_id": str(rfi_id),
+                "project_id": project_id_s,
+                "actor": closed_by,
+                "status_from": old_status,
+                "status_to": "closed",
+                "transition": "close",
+            },
+        )
+        return fresh or rfi
+
+    async def add_attachment(
+        self,
+        rfi_id: uuid.UUID,
+        attachment_path: str,
+    ) -> RFI:
+        """‌⁠‍Append a validated attachment path to the RFI.
+
+        R5 / BUG-RFI-ATT: router is responsible for magic-byte validation
+        and for picking a server-derived filename. This method only
+        mutates the JSON column. We don't log the path payload because
+        filenames can carry PII (e.g. ``site_photo_jane_doe.jpg``).
+        """
+        rfi = await self.get_rfi(rfi_id)
+        attachments = list(rfi.attachments or [])
+        attachments.append(attachment_path)
+        await self.repo.update_fields(rfi_id, attachments=attachments)
+        fresh = await self.repo.get_by_id(rfi_id)
+        logger.info(
+            "rfi.attachment_added",
+            extra={
+                "rfi_id": str(rfi_id),
+                "project_id": str(rfi.project_id),
+                "attachment_count": len(attachments),
+            },
+        )
         return fresh or rfi
 
     async def get_stats(self, project_id: uuid.UUID) -> RFIStatsResponse:

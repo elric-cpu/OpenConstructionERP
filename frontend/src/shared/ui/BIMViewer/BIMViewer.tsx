@@ -2260,7 +2260,9 @@ export function BIMViewer({
         }
       }
 
-      switch (e.key.toLowerCase()) {
+      // #153 guard — keydown on RVT-upload completion-modal close had a
+      // synthetic event with `e.key === undefined`, crashing the viewer.
+      switch ((e.key ?? '').toLowerCase()) {
         case 'f':
           e.preventDefault();
           sceneRef.current?.zoomToFit();

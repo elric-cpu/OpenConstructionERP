@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Body, Depends, Query
 
 from app.dependencies import CurrentUserId, RequirePermission, SessionDep, verify_project_access
 from app.modules.subcontractors.schemas import (
@@ -25,10 +25,10 @@ from app.modules.subcontractors.schemas import (
     PaymentApplicationCreate,
     PaymentApplicationResponse,
     PaymentApplicationUpdate,
-    PrequalRequest,
     PrequalificationCreate,
     PrequalificationResponse,
     PrequalificationUpdate,
+    PrequalRequest,
     RatingCreate,
     RatingResponse,
     RetentionLedgerEntryResponse,
@@ -732,10 +732,22 @@ async def update_rating(
     data: RatingCreate,
     session: SessionDep,
     _user: CurrentUserId,
-    events: dict[str, Any] | None = None,
-    _perm: None = Depends(RequirePermission("subcontractors.update")),
+    events: dict[str, Any] | None = Body(default=None),
+    _perm: None = Depends(RequirePermission("subcontractors.rate")),
 ) -> RatingResponse:
-    """Upsert a subcontractor rating for a period."""
+    """Upsert a subcontractor rating for a period.
+
+    R5: this endpoint is gated by the dedicated ``subcontractors.rate``
+    permission (MANAGER-only) — previously any EDITOR could write a
+    bogus rating and tamper with the subcontractor's roll-up score.
+    """
+    if events is not None and len(events) > 50:
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=422,
+            detail="events payload too large (max 50 keys)",
+        )
     svc = SubcontractorService(session)
     entity = await svc.update_rating(data, events=events)
     return RatingResponse.model_validate(entity)
@@ -861,9 +873,14 @@ async def block_subcontractor_endpoint(
     body: BlockRequest,
     user_id: CurrentUserId,
     session: SessionDep,
-    _perm: None = Depends(RequirePermission("subcontractors.update")),
+    _perm: None = Depends(RequirePermission("subcontractors.block")),
 ) -> SubcontractorResponse:
-    """Hard-block a subcontractor from bidding / payment with a reason."""
+    """Hard-block a subcontractor from bidding / payment with a reason.
+
+    R5: gated by the dedicated ``subcontractors.block`` permission
+    (MANAGER-only). Previously the generic ``update`` gate let any
+    EDITOR exclude a competing firm from all future bids.
+    """
     svc = SubcontractorService(session)
     entity = await svc.block_subcontractor(sub_id, reason=body.reason, by_user_id=user_id)
     return SubcontractorResponse.model_validate(entity)
@@ -877,7 +894,7 @@ async def unblock_subcontractor_endpoint(
     sub_id: uuid.UUID,
     user_id: CurrentUserId,
     session: SessionDep,
-    _perm: None = Depends(RequirePermission("subcontractors.update")),
+    _perm: None = Depends(RequirePermission("subcontractors.block")),
 ) -> SubcontractorResponse:
     """Clear the block flag + reason on a subcontractor."""
     svc = SubcontractorService(session)

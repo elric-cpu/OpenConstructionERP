@@ -17,6 +17,7 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
@@ -222,6 +223,24 @@ def compute_work_order_total(items: list[ServiceWorkOrderItem]) -> Decimal:
     return total.quantize(Decimal("0.01"))
 
 
+# Number-allocation retry cap. ``next_*_number()`` reads ``COUNT(*)`` then
+# concatenates, so two concurrent inserts can produce the same number. The
+# DB-level unique index on the number column then raises IntegrityError; we
+# rollback + re-read + retry up to this many times before bailing 503.
+_MAX_NUMBER_RETRIES: int = 5
+
+
+# Ticket fields that require ``service.dispatch`` permission to mutate via
+# PATCH /tickets/{id}. Without this gate, an EDITOR (``service.update``) can
+# (a) self-assign internal tickets, (b) push ``assigned_to`` to a customer-
+# portal user, (c) silence SLA-breach alerts by pushing ``sla_due_at`` to
+# the year 2099. The dispatch / dispatch-revoke endpoints already gate on
+# ``service.dispatch``; the same check needs to apply on the umbrella PATCH.
+TICKET_DISPATCH_PROTECTED_FIELDS: frozenset[str] = frozenset(
+    {"assigned_to", "sla_due_at", "sla_breach_notified_at", "sla_breached_at"},
+)
+
+
 def _utcnow_iso() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -276,25 +295,44 @@ class ServiceService:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="period_end must be on or after period_start.",
             )
-        contract_number = await self.contract_repo.next_contract_number()
-        contract = ServiceContract(
-            customer_id=data.customer_id,
-            project_id=data.project_id,
-            contract_number=contract_number,
-            title=data.title,
-            description=data.description,
-            period_start=data.period_start,
-            period_end=data.period_end,
-            sla_definition_id=data.sla_definition_id,
-            sla_tier=data.sla_tier,
-            status=data.status,
-            value=data.value,
-            currency=data.currency,
-            auto_renew=data.auto_renew,
-            created_by=user_id,
-            metadata_=data.metadata,
-        )
-        contract = await self.contract_repo.create(contract)
+        # Race-safe contract number allocation. Retry on the unique-index
+        # IntegrityError if two requests raced past the same COUNT(*).
+        contract: ServiceContract | None = None
+        last_exc: IntegrityError | None = None
+        contract_number: str = ""
+        for _attempt in range(_MAX_NUMBER_RETRIES):
+            contract_number = await self.contract_repo.next_contract_number()
+            candidate = ServiceContract(
+                customer_id=data.customer_id,
+                project_id=data.project_id,
+                contract_number=contract_number,
+                title=data.title,
+                description=data.description,
+                period_start=data.period_start,
+                period_end=data.period_end,
+                sla_definition_id=data.sla_definition_id,
+                sla_tier=data.sla_tier,
+                status=data.status,
+                value=data.value,
+                currency=data.currency,
+                auto_renew=data.auto_renew,
+                created_by=user_id,
+                metadata_=data.metadata,
+            )
+            try:
+                contract = await self.contract_repo.create(candidate)
+                break
+            except IntegrityError as exc:
+                last_exc = exc
+                await self.session.rollback()
+        if contract is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    "Could not allocate a unique contract number after "
+                    f"{_MAX_NUMBER_RETRIES} attempts (concurrent contention)."
+                ),
+            ) from last_exc
         logger.info("Service contract created: %s for customer %s", contract_number, data.customer_id)
         event_bus.publish_detached(
             "service.contract.created",
@@ -439,28 +477,48 @@ class ServiceService:
 
         sla_due_dt = compute_sla_due_at(reported_at_dt, sla, priority=data.priority)
 
-        ticket_number = await self.ticket_repo.next_ticket_number(contract.id)
-        ticket = ServiceTicket(
-            contract_id=data.contract_id,
-            asset_id=data.asset_id,
-            ticket_number=ticket_number,
-            title=data.title,
-            description=data.description,
-            priority=data.priority,
-            reported_at=reported_at_dt.isoformat(),
-            sla_due_at=sla_due_dt.isoformat() if sla_due_dt else None,
-            status="new",
-            source=data.source,
-            reported_by=data.reported_by or user_id,
-            assigned_to=data.assigned_to,
-            metadata_=data.metadata,
-        )
-        # If the create payload pre-supplied an assignee, the ticket is born
-        # in the 'assigned' state, mirroring the dispatcher click-flow.
-        if data.assigned_to:
-            ticket.status = "assigned"
-
-        ticket = await self.ticket_repo.create(ticket)
+        # Race-safe ticket number allocation, scoped per contract. See
+        # ``create_contract`` for the rationale — concurrent /tickets/ POSTs
+        # against the same contract previously raced past COUNT(*) and
+        # produced duplicate T-NNNNN labels.
+        ticket: ServiceTicket | None = None
+        last_exc: IntegrityError | None = None
+        ticket_number: str = ""
+        for _attempt in range(_MAX_NUMBER_RETRIES):
+            ticket_number = await self.ticket_repo.next_ticket_number(contract.id)
+            candidate = ServiceTicket(
+                contract_id=data.contract_id,
+                asset_id=data.asset_id,
+                ticket_number=ticket_number,
+                title=data.title,
+                description=data.description,
+                priority=data.priority,
+                reported_at=reported_at_dt.isoformat(),
+                sla_due_at=sla_due_dt.isoformat() if sla_due_dt else None,
+                status="new",
+                source=data.source,
+                reported_by=data.reported_by or user_id,
+                assigned_to=data.assigned_to,
+                metadata_=data.metadata,
+            )
+            # If the create payload pre-supplied an assignee, the ticket is born
+            # in the 'assigned' state, mirroring the dispatcher click-flow.
+            if data.assigned_to:
+                candidate.status = "assigned"
+            try:
+                ticket = await self.ticket_repo.create(candidate)
+                break
+            except IntegrityError as exc:
+                last_exc = exc
+                await self.session.rollback()
+        if ticket is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    "Could not allocate a unique ticket number after "
+                    f"{_MAX_NUMBER_RETRIES} attempts (concurrent contention)."
+                ),
+            ) from last_exc
         logger.info(
             "Service ticket created: %s (contract=%s, priority=%s, sla_due=%s)",
             ticket_number,
@@ -510,11 +568,47 @@ class ServiceService:
         self,
         ticket_id: uuid.UUID,
         data: ServiceTicketUpdate,
+        *,
+        has_dispatch_permission: bool = False,
     ) -> ServiceTicket:
+        """Patch ticket fields with dispatch-permission gating.
+
+        ``has_dispatch_permission`` is supplied by the router after a live
+        check against the JWT payload. When False, mutating
+        :data:`TICKET_DISPATCH_PROTECTED_FIELDS` (``assigned_to``,
+        ``sla_due_at``, ``sla_breach_notified_at``, ``sla_breached_at``)
+        raises 403 — closing the privilege-escalation hole where an EDITOR
+        with ``service.update`` could self-assign internal techs or silence
+        SLA-breach alerts by pushing ``sla_due_at`` into the future.
+        """
         ticket = await self.get_ticket(ticket_id)
         fields: dict[str, Any] = data.model_dump(exclude_unset=True)
         if "metadata" in fields:
             fields["metadata_"] = fields.pop("metadata")
+
+        # Dispatch-permission gate. Catches both the "field present but
+        # unchanged" case (refused) and the "field set to None to clear"
+        # case (also refused) so callers can't unassign over the PATCH.
+        protected_touched = TICKET_DISPATCH_PROTECTED_FIELDS & set(fields.keys())
+        if protected_touched and not has_dispatch_permission:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "Missing permission: service.dispatch (required to mutate "
+                    f"{sorted(protected_touched)} via PATCH)"
+                ),
+            )
+
+        # Asset-belongs-to-contract gate on PATCH. ``create_ticket`` already
+        # enforces this; without the same check on PATCH a caller could
+        # re-target a ticket at another contract's asset.
+        if "asset_id" in fields and fields["asset_id"] is not None:
+            asset = await self.asset_repo.get_by_id(fields["asset_id"])
+            if asset is None or asset.contract_id != ticket.contract_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="asset_id does not belong to this ticket's contract",
+                )
 
         if "status" in fields:
             new_status = fields["status"]
@@ -534,6 +628,10 @@ class ServiceService:
                 and ticket.closed_at is None
             ):
                 fields["closed_at"] = _utcnow_iso()
+            logger.info(
+                "Service ticket status patched: %s %s → %s",
+                ticket.ticket_number, ticket.status, new_status,
+            )
 
         if not fields:
             return ticket
@@ -646,17 +744,37 @@ class ServiceService:
                 ),
             )
 
-        wo_number = await self.work_order_repo.next_work_order_number()
-        wo = ServiceWorkOrder(
-            ticket_id=data.ticket_id,
-            work_order_number=wo_number,
-            scheduled_for=data.scheduled_for,
-            technician_id=data.technician_id,
-            status=data.status,
-            currency=data.currency,
-            metadata_=data.metadata,
-        )
-        wo = await self.work_order_repo.create(wo)
+        # Race-safe WO number allocation. ``next_work_order_number()`` uses
+        # COUNT(*) globally, so two concurrent POSTs can produce identical
+        # WO-NNNNNN labels. Retry on the unique-index IntegrityError.
+        wo: ServiceWorkOrder | None = None
+        last_exc: IntegrityError | None = None
+        wo_number: str = ""
+        for _attempt in range(_MAX_NUMBER_RETRIES):
+            wo_number = await self.work_order_repo.next_work_order_number()
+            candidate = ServiceWorkOrder(
+                ticket_id=data.ticket_id,
+                work_order_number=wo_number,
+                scheduled_for=data.scheduled_for,
+                technician_id=data.technician_id,
+                status=data.status,
+                currency=data.currency,
+                metadata_=data.metadata,
+            )
+            try:
+                wo = await self.work_order_repo.create(candidate)
+                break
+            except IntegrityError as exc:
+                last_exc = exc
+                await self.session.rollback()
+        if wo is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    "Could not allocate a unique work-order number after "
+                    f"{_MAX_NUMBER_RETRIES} attempts (concurrent contention)."
+                ),
+            ) from last_exc
 
         # Persist items (with computed totals if caller didn't supply them).
         for item_data in data.items:
@@ -1002,9 +1120,18 @@ class ServiceService:
         # completed_at is stored full-ISO ("…T…+00:00"); compare against a
         # matching full-ISO bound (not a bare date) so the string ordering is
         # well-defined.
+        #
+        # N+1 fix: a previous version materialised every completed-WO row
+        # (triggering the ServiceWorkOrder.items selectin) only to call
+        # ``len()`` + a Python-side sum. Use one aggregate query for both
+        # the count and the sum.
         thirty_days_ago = (datetime.now(UTC) - timedelta(days=30)).isoformat()
         completed_wo_stmt = (
-            select(ServiceWorkOrder)
+            select(
+                func.count(ServiceWorkOrder.id),
+                func.coalesce(func.sum(ServiceWorkOrder.billed_amount), 0),
+            )
+            .select_from(ServiceWorkOrder)
             .join(ServiceTicket, ServiceTicket.id == ServiceWorkOrder.ticket_id)
             .where(
                 ServiceTicket.contract_id == contract_id,
@@ -1013,11 +1140,11 @@ class ServiceService:
                 ServiceWorkOrder.completed_at >= thirty_days_ago,
             )
         )
-        completed_wos = list((await self.session.execute(completed_wo_stmt)).scalars().all())
-
-        billed_amount_total = sum(
-            (Decimal(wo.billed_amount or 0) for wo in completed_wos), Decimal("0")
-        )
+        completed_wo_count_raw, billed_amount_raw = (
+            await self.session.execute(completed_wo_stmt)
+        ).one()
+        completed_wo_count = int(completed_wo_count_raw)
+        billed_amount_total = Decimal(billed_amount_raw or 0)
 
         # Monthly revenue: contract.value / (period months). Falls back to
         # billed_amount_total when the contract has no value or zero duration.
@@ -1046,7 +1173,7 @@ class ServiceService:
             in_progress_tickets=in_progress_tickets,
             sla_breaches=sla_breaches,
             scheduled_work_orders=scheduled_work_orders,
-            completed_work_orders_30d=len(completed_wos),
+            completed_work_orders_30d=completed_wo_count,
             billed_amount_total=billed_amount_total.quantize(Decimal("0.01")),
             monthly_revenue=monthly_revenue,
             currency=contract.currency,

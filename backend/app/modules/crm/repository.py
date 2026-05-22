@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date as _date
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import func, select, update
@@ -100,6 +101,25 @@ class LeadRepository:
 
     async def get_by_id(self, lead_id: uuid.UUID) -> Lead | None:
         return await self.session.get(Lead, lead_id)
+
+    async def find_by_email(self, email: str) -> Lead | None:
+        """Return the most-recent lead carrying ``email`` (case-insensitive).
+
+        Used by ``CrmService.create_lead`` to translate concurrent inbound
+        webhooks targeting the same address into a deterministic 409 instead
+        of a duplicate-row silent-success or an IntegrityError 500.
+        """
+        normalised = email.strip().lower() if email else None
+        if not normalised:
+            return None
+        stmt = (
+            select(Lead)
+            .where(func.lower(Lead.contact_email) == normalised)
+            .order_by(Lead.created_at.desc())
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
 
     async def list_all(
         self,
@@ -212,15 +232,21 @@ class OpportunityRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def pipeline_value_by_owner(self) -> dict[uuid.UUID | None, float]:
-        """‌⁠‍Aggregate sum(estimated_value) for open opportunities grouped by owner."""
+    async def pipeline_value_by_owner(self) -> dict[uuid.UUID | None, Decimal]:
+        """‌⁠‍Aggregate sum(estimated_value) for open opportunities grouped by owner.
+
+        Returns Decimal — Round-5 audit closed the legacy float coercion
+        that silently drifted cents per million-dollar pipeline. Money
+        flows here feed the dashboard cards and forecast comparisons, so
+        cent-exactness is load-bearing.
+        """
         stmt = (
             select(Opportunity.owner_user_id, func.coalesce(func.sum(Opportunity.estimated_value), 0))
             .where(Opportunity.status == "open")
             .group_by(Opportunity.owner_user_id)
         )
         result = await self.session.execute(stmt)
-        return {row[0]: float(row[1] or 0) for row in result.all()}
+        return {row[0]: Decimal(str(row[1] or 0)) for row in result.all()}
 
     async def opportunities_closing_within_days(self, days: int) -> list[Opportunity]:
         """‌⁠‍Return open opportunities with expected_close_date within ``days`` from today."""

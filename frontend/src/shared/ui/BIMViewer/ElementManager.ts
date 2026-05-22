@@ -273,7 +273,10 @@ const DISCIPLINE_COLORS: Record<string, number> = {
 
 const DEFAULT_COLOR = 0x90a4ae; // blue-grey
 
-function getDisciplineColor(discipline: string): number {
+function getDisciplineColor(discipline: string | null | undefined): number {
+  // #153 guard — RVT elements without a mapped IFC discipline arrive with
+  // `discipline === undefined`; previous code crashed in toLowerCase().
+  if (!discipline) return DEFAULT_COLOR;
   const key = discipline.toLowerCase().replace(/[\s-]/g, '_');
   return DISCIPLINE_COLORS[key] ?? DEFAULT_COLOR;
 }
@@ -1976,9 +1979,14 @@ export class ElementManager {
 
   /** Set visibility of elements by discipline. */
   setDisciplineVisible(discipline: string, visible: boolean): void {
+    // #153 guard — RVT elements without an IFC discipline arrive with
+    // `data.elementData.discipline === undefined`. Previous code crashed
+    // on the first such element when the user toggled a filter.
+    const target = (discipline ?? '').toLowerCase();
     for (const [, mesh] of this.meshMap) {
       const data = mesh.userData as { elementData?: BIMElementData };
-      if (data.elementData?.discipline.toLowerCase() === discipline.toLowerCase()) {
+      const elDiscipline = (data.elementData?.discipline ?? '').toLowerCase();
+      if (elDiscipline && elDiscipline === target) {
         mesh.visible = visible;
       }
     }

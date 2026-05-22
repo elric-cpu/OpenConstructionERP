@@ -6,7 +6,7 @@ Tables:
 
 import uuid
 
-from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import GUID, Base
@@ -16,6 +16,14 @@ class RFI(Base):
     """‌⁠‍A Request for Information with response tracking and impact assessment."""
 
     __tablename__ = "oe_rfi_rfi"
+    # R5 / BUG-RFI-UNIQ: ``(project_id, rfi_number)`` must be unique so
+    # concurrent ``create_rfi`` calls racing on ``max(rfi_number)+1`` get
+    # a clean :class:`IntegrityError` the service can retry, rather than
+    # quietly writing two RFI-007 rows in the same project. Mirrors the
+    # changeorders ``uq_changeorders_project_code`` pattern.
+    __table_args__ = (
+        UniqueConstraint("project_id", "rfi_number", name="uq_rfi_project_number"),
+    )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
         GUID(),
@@ -51,6 +59,17 @@ class RFI(Base):
 
     # Linked drawing IDs: array of document/drawing UUID strings
     linked_drawing_ids: Mapped[list] = mapped_column(  # type: ignore[assignment]
+        JSON,
+        nullable=False,
+        default=list,
+        server_default="[]",
+    )
+
+    # R5 / BUG-RFI-ATT: reply attachments. Each entry is a server-derived
+    # relative path under ``uploads/rfi/attachments/<rfi_id>_<hex><ext>``.
+    # Magic-byte gated at the router; this column never stores
+    # attacker-controlled filenames.
+    attachments: Mapped[list] = mapped_column(  # type: ignore[assignment]
         JSON,
         nullable=False,
         default=list,

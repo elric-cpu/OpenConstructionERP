@@ -5,7 +5,34 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+def _validate_safe_url(value: str | None) -> str | None:
+    """Reject javascript:/data:/file: URLs in user-supplied evidence/report links.
+
+    Allowed schemes: ``http``, ``https``, or scheme-less relative paths
+    (e.g. ``/uploads/photos/abc.jpg``). Anything else is rejected so a
+    finding's ``evidence_url`` cannot become a stored-XSS vector when
+    rendered as an ``<a href>`` in the dashboard.
+    """
+    if value is None:
+        return None
+    stripped = value.strip()
+    if not stripped:
+        return None
+    lower = stripped.lower()
+    if lower.startswith(("http://", "https://", "/")):
+        return stripped
+    # Anything containing a scheme (``foo:bar``) that isn't whitelisted
+    # is rejected — keeps relative paths working but blocks javascript:.
+    if ":" in stripped.split("/", 1)[0]:
+        raise ValueError(
+            "URL must use http(s):// or be a relative path; "
+            "javascript:/data:/file: URIs are not allowed",
+        )
+    return stripped
+
 
 # ── Investigation ────────────────────────────────────────────────────────────
 
@@ -25,6 +52,11 @@ class InvestigationCreate(BaseModel):
         default="in_progress", pattern=r"^(in_progress|completed|abandoned)$"
     )
     report_url: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("report_url")
+    @classmethod
+    def _check_report_url(cls, value: str | None) -> str | None:
+        return _validate_safe_url(value)
 
 
 class InvestigationUpdate(BaseModel):
@@ -558,6 +590,11 @@ class AuditFindingPayload(BaseModel):
     severity: str = Field(default="low", pattern=r"^(low|med|high|critical)$")
     is_passed: bool = True
     evidence_url: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("evidence_url")
+    @classmethod
+    def _check_evidence_url(cls, value: str | None) -> str | None:
+        return _validate_safe_url(value)
 
 
 class AuditFindingCreate(AuditFindingPayload):

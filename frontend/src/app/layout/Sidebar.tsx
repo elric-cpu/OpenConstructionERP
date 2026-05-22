@@ -656,7 +656,10 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
       if (editable) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
-      const key = e.key.toLowerCase();
+      // #153 guard — non-printable keys (Dead/Meta combos on certain layouts)
+      // can land with `e.key === undefined`.
+      const key = (e.key ?? '').toLowerCase();
+      if (!key) return;
 
       if (firstKeyRef.current === 'g') {
         const route = KBD_BY_LETTER[key];

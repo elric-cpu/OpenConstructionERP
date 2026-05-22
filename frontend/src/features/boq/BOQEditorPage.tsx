@@ -1398,8 +1398,9 @@ export function BOQEditorPage() {
 
       // App-level Ctrl-shortcuts must fire even while editing a cell
       // (same as Ctrl+S in spreadsheets) — guard placed below them.
-      const k = e.key.toLowerCase();
-      const codeLetter = e.code.startsWith('Key') ? e.code.slice(3).toLowerCase() : '';
+      // #153 guard — e.key can be undefined for synthetic / IME events.
+      const k = (e.key ?? '').toLowerCase();
+      const codeLetter = (e.code ?? '').startsWith('Key') ? (e.code ?? '').slice(3).toLowerCase() : '';
       const isCmd = e.ctrlKey || e.metaKey;
 
       // Ctrl+E = Open export menu (use e.code so non-US keyboard layouts

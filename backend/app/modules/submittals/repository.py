@@ -3,6 +3,7 @@
 import uuid
 
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.submittals.models import Submittal
@@ -16,6 +17,23 @@ class SubmittalRepository:
 
     async def get_by_id(self, submittal_id: uuid.UUID) -> Submittal | None:
         return await self.session.get(Submittal, submittal_id)
+
+    async def count_for_project(
+        self,
+        project_id: uuid.UUID,
+        *,
+        status: str | None = None,
+        submittal_type: str | None = None,
+    ) -> int:
+        """Single-query count — used by list responses to avoid N+1."""
+        base = select(func.count()).select_from(Submittal).where(
+            Submittal.project_id == project_id,
+        )
+        if status is not None:
+            base = base.where(Submittal.status == status)
+        if submittal_type is not None:
+            base = base.where(Submittal.submittal_type == submittal_type)
+        return (await self.session.execute(base)).scalar_one()
 
     async def list_for_project(
         self,
@@ -63,15 +81,36 @@ class SubmittalRepository:
         return f"SUB-{max_num + 1:03d}"
 
     async def create(self, submittal: Submittal) -> Submittal:
+        """Persist a new submittal.
+
+        Raises :class:`sqlalchemy.exc.IntegrityError` on unique-constraint
+        collision — the service layer retries with a fresh submittal
+        number when this happens (concurrent create race).
+        """
         self.session.add(submittal)
-        await self.session.flush()
+        try:
+            await self.session.flush()
+        except IntegrityError:
+            # Rollback only the savepoint of this flush so the surrounding
+            # transaction stays alive for the service-layer retry. The
+            # caller decides whether to re-issue with a new number or to
+            # surface the error as HTTP 409.
+            await self.session.rollback()
+            raise
         return submittal
 
     async def update_fields(self, submittal_id: uuid.UUID, **fields: object) -> None:
         stmt = update(Submittal).where(Submittal.id == submittal_id).values(**fields)
         await self.session.execute(stmt)
         await self.session.flush()
-        self.session.expire_all()
+        # Targeted expire: only the row we just touched needs to be
+        # re-read. ``session.expire_all()`` previously invalidated every
+        # cached attribute on every loaded object (including unrelated
+        # rows in long-lived sessions) which forced lazy reloads under
+        # async context and risked MissingGreenlet downstream.
+        sub = await self.session.get(Submittal, submittal_id)
+        if sub is not None:
+            self.session.expire(sub)
 
     async def delete(self, submittal_id: uuid.UUID) -> None:
         submittal = await self.get_by_id(submittal_id)

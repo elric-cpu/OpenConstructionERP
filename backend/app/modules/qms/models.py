@@ -182,7 +182,10 @@ class QMSNCR(Base):
         String(3), nullable=False, default="",
     )
     cost_impact_amount: Mapped[Decimal | None] = mapped_column(
-        Numeric(15, 2), nullable=True,
+        # Round 4/5 money convention: Numeric(18, 2). Original schema used
+        # Numeric(15, 2); upgraded so very-large infrastructure NCRs no
+        # longer truncate at 13 digits of integer precision.
+        Numeric(18, 2), nullable=True,
     )
     linked_variation_id: Mapped[uuid.UUID | None] = mapped_column(
         GUID(), nullable=True,

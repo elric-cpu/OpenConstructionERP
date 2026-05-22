@@ -91,6 +91,29 @@ class SubcontractorRepository(_BaseRepo):
             rows = [r for r in rows if trade_category in (r.trade_categories or [])]
         return rows, total
 
+    async def find_by_tax_id(
+        self,
+        tax_id: str,
+        *,
+        country: str | None = None,
+    ) -> Subcontractor | None:
+        """Look up an active subcontractor by ``(country, tax_id)``.
+
+        Used by ``SubcontractorService.create_subcontractor`` for the
+        happy-path 409 — backed by the partial unique index added in
+        ``v3099_subcontractors_unique_tax_id``.
+        """
+        if not tax_id:
+            return None
+        stmt = select(Subcontractor).where(
+            Subcontractor.tax_id == tax_id,
+            Subcontractor.is_active.is_(True),
+        )
+        if country:
+            stmt = stmt.where(Subcontractor.country == country.upper()[:2])
+        stmt = stmt.limit(1)
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
     async def list_with_insurance_expiry_within(
         self,
         *,
@@ -262,6 +285,27 @@ class PaymentApplicationRepository(_BaseRepo):
         stmt = stmt.order_by(PaymentApplication.submitted_at.desc().nullslast())
         return list((await self.session.execute(stmt)).scalars().all())
 
+    async def count_open_for_agreements(
+        self, agreement_ids: list[uuid.UUID],
+    ) -> int:
+        """Single-query count of payment apps in any non-terminal status
+        for the supplied agreement set. Replaces the per-agreement loop
+        in ``SubcontractorService.dashboard``.
+        """
+        if not agreement_ids:
+            return 0
+        stmt = (
+            select(func.count())
+            .select_from(PaymentApplication)
+            .where(
+                PaymentApplication.agreement_id.in_(agreement_ids),
+                PaymentApplication.status.in_(
+                    ("submitted", "foreman_approved", "finance_approved"),
+                ),
+            )
+        )
+        return int((await self.session.execute(stmt)).scalar_one() or 0)
+
     async def next_application_number(self, agreement_id: uuid.UUID) -> str:
         stmt = (
             select(func.count())
@@ -311,6 +355,33 @@ class RetentionLedgerRepository(_BaseRepo):
             .order_by(RetentionLedger.created_at.asc())
         )
         return list((await self.session.execute(stmt)).scalars().all())
+
+    async def balance_for_agreements(
+        self, agreement_ids: list[uuid.UUID],
+    ) -> dict[uuid.UUID, Any]:
+        """Return ``{agreement_id: (accrued, released)}`` in a single query.
+
+        ``Decimal`` math happens in the caller. This collapses the
+        per-agreement ``retention_balance`` loop in dashboard().
+        """
+        from decimal import Decimal
+
+        if not agreement_ids:
+            return {}
+        stmt = (
+            select(
+                RetentionLedger.agreement_id,
+                func.coalesce(func.sum(RetentionLedger.accrued_amount), 0),
+                func.coalesce(func.sum(RetentionLedger.released_amount), 0),
+            )
+            .where(RetentionLedger.agreement_id.in_(agreement_ids))
+            .group_by(RetentionLedger.agreement_id)
+        )
+        rows = (await self.session.execute(stmt)).all()
+        out: dict[uuid.UUID, tuple[Any, Any]] = {}
+        for ag_id, accrued, released in rows:
+            out[ag_id] = (Decimal(str(accrued or 0)), Decimal(str(released or 0)))
+        return out
 
 
 class RatingRepository(_BaseRepo):

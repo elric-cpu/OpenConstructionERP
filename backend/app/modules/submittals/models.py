@@ -6,7 +6,7 @@ Tables:
 
 import uuid
 
-from sqlalchemy import JSON, ForeignKey, Integer, String
+from sqlalchemy import JSON, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import GUID, Base
@@ -16,6 +16,17 @@ class Submittal(Base):
     """‌⁠‍A construction submittal with multi-stage review and approval workflow."""
 
     __tablename__ = "oe_submittals_submittal"
+    # ``submittal_number`` must be unique per project — the auto-generator
+    # uses ``MAX(suffix)+1`` which has a TOCTOU race under concurrent
+    # creates; without this constraint two parallel POSTs would silently
+    # persist ``SUB-005`` twice. With the constraint the second commit
+    # raises ``IntegrityError`` and the service layer retries.
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id", "submittal_number",
+            name="uq_oe_submittals_submittal_project_number",
+        ),
+    )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
         GUID(),

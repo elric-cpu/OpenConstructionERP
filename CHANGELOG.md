@@ -5,6 +5,69 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.3.0] - 2026-05-22
+
+### Round 5 — 11-module deep hardening + issue #153 RVT crash fix
+
+A focused 11-module deep audit + fix wave, plus an urgent fix for the production-reported `TypeError: Cannot read properties of undefined (reading 'toLowerCase')` that crashed the RVT upload flow on /bim. ~150 new tests across the touched modules.
+
+### Security
+
+- **`carbon`: 22-endpoint IDOR closure.** Carbon-footprint endpoints (`/carbon/factors/`, `/carbon/scope1`, `/carbon/scope2`, `/carbon/scope3`, `/carbon/inventory/`, `/carbon/reduction-targets/`, `/carbon/offsets/`, `/carbon/reports/`) all routed by `project_id` without `verify_project_access`. Any authenticated user could read/write any project's emission inventory and CSRD-mandated targets. Project gate added on every read and write site; 22 endpoints covered.
+- **`hse_advanced`: MANAGER role gate on regulatory closures (RIDDOR/OSHA/ISO 45001).** `close_incident`, `close_inspection`, `close_audit_finding` accepted any authenticated user — a contractor could mark a fatality as "closed" without supervisor sign-off, breaking the regulator-facing audit trail. Now requires `manager` or `safety_officer` role; close-audit log captures the closer's role.
+- **`subcontractors`: rating + block tampering closed.** `rate_subcontractor`, `block_subcontractor`, `unblock_subcontractor` had no project-access check and no role guard. A bidder could downvote competitors company-wide. Project-scope verify + `procurement_manager`/`admin` role required.
+- **`qms`: IDOR closed on calibration + NCR routes.** `/qms/calibrations/{id}`, `/qms/ncrs/{id}` (read, update, close) returned/updated rows across project boundaries. Tenant + project gate added; close-NCR also requires `quality_manager` role.
+- **`rfi`: IDOR on close-rfi closed.** `POST /rfi/{id}/close` accepted any authenticated user from any project. Project-scope verify added; the close action now also captures `closed_by_user_id` for the regulator trail.
+- **`submittals`: project-scope IDOR closed.** `GET /submittals/{id}`, `PATCH /submittals/{id}`, `POST /submittals/{id}/transitions` all leaked across tenants. Repository-level `project_id` filter + service-layer project-access verify.
+- **`variations`: apply-to-final-account IDOR closed.** `POST /variations/{id}/apply-to-final-account` was the highest-impact endpoint in the module (rewrites the project final-account amount) and had no project gate. Now requires `finance_manager`/`pm` and verifies the variation belongs to the project on the URL.
+- **`projects`: currency-change race + slug-collision race closed.** Currency-change endpoint now returns 409 when the project already has financial transactions (was silently corrupting historical totals). Slug-collision retry loop replaced with a unique-index + IntegrityError catch.
+- **`crm`: GDPR Art-17 forget endpoint + role + activity-owner spoof.** New `POST /crm/leads/{id}/forget` that PII-purges + tombstones a lead per GDPR Art-17 (right to erasure). `win_lead` now requires `sales_manager` role (was open). `log_activity` no longer trusts the request body's `owner_user_id` field — server forces it to `current_user_id` (closes activity-attribution spoof).
+
+### Correctness
+
+- **`variations`: currency-aware rollup.** `get_project_variations_total` was summing `amount` across mixed-currency variations (USD + EUR + GBP) into one number. Now groups by `currency_code` and returns `{by_currency: {USD: 12345.00, EUR: 9876.00}, base_currency_total: <FX-converted>}` — matches the BOQ multi-currency rollup contract from v2.9.1.
+- **`qms`: NCR `cost_impact_amount` widened Numeric(15,2) → Numeric(18,2).** Aligns with the platform money convention used by `finance`, `change_orders`, `contracts`, `rfq_bidding`, and `clash_cost_impact`. Old precision capped the integer side at 13 digits — fine for a single positional cost but truncated multi-million-EUR tunnel-section rework NCRs at the database edge.
+- **`submittals`: unique number constraint + retry.** `next_submittal_number(project_id)` raced under concurrent submitter uploads producing duplicate labels. New `(project_id, submittal_number)` unique index + service-layer IntegrityError retry loop (3 attempts).
+- **`rfi`: `cost_impact` Decimal validation.** Was accepting `float` from the request body and round-tripping through SQLAlchemy `Decimal` — surfaced as 0.1 + 0.2 = 0.30000000000000004 in the rolled-up trade-cost report. Pydantic v2 `Decimal` field + `decimal_places=2` constraint on the schema.
+- **`service`: ticket / contract / work-order number uniqueness.** `next_ticket_number`, `next_contract_number`, `next_work_order_number` read `COUNT(*)` then format-string concat — two dispatchers POSTing concurrently produced identical labels. Backfilled three unique indexes (composite on ticket for per-contract scoping); the existing service-layer retry path now actually retries.
+- **`eac`: run-result `rule_id` index.** `oe_eac_run_result_item.rule_id` had no standalone index — the leftmost-prefix on the existing compound `(run_id, rule_id)` covered only the run-scoped queries, so "results for one rule across runs" was seq-scanning a 100k-row hot table.
+
+### Bug fixes
+
+- **#153 — RVT upload crash: `TypeError: Cannot read properties of undefined (reading 'toLowerCase')`.** Defensive guards at 7 sites where a string method was called on possibly-undefined input:
+  - `frontend/src/app/layout/Sidebar.tsx` — keydown handler (`e.key?.toLowerCase()`)
+  - `frontend/src/features/boq/BOQEditorPage.tsx` — keydown handler
+  - `frontend/src/shared/ui/BIMViewer/BIMViewer.tsx` — keydown handler
+  - `frontend/src/features/bim/InstallConverterPrompt.tsx` — converterId guard
+  - `frontend/src/shared/ui/BIMViewer/ElementManager.ts` — `setDisciplineVisible` + `getDisciplineColor` (discipline could be `undefined` for elements with no IFC class)
+  - `frontend/src/features/bim/BIMFilterPanel.tsx` — `Object.keys(...).map(k => String(k).toLowerCase())` so numeric/null keys can't crash the filter render.
+
+### New endpoints
+
+- `POST /api/v1/crm/leads/{id}/forget` — GDPR Art-17 right-to-erasure for CRM lead PII (name, email, phone, IP, lead-source UA scrubbed; lead row tombstoned with audit reason).
+- `POST /api/v1/submittals/{id}/attachments/upload/` — magic-byte-gated attachment upload (PDF/PNG/JPG/HEIC/HEIF/DWG/IFC; SVG banned; Content-Disposition: attachment).
+- `POST /api/v1/rfi/{id}/attachments/` — magic-byte-gated RFI reply attachment upload.
+
+### Migrations
+
+- `v3099_eac_run_result_rule_id_index` — eac standalone FK index on `oe_eac_run_result_item.rule_id`.
+- `v3099_rfi_unique_attachments` — RFI `(project_id, rfi_number)` unique + attachments JSON column.
+- `v3099_subcontractors_unique_tax_id` — subcontractors unique tax-id index (per tenant).
+- `v3099_submittals_unique_number` — submittals `(project_id, submittal_number)` unique constraint.
+- `v3100_schedule_advanced_user_indexes` — schedule_advanced user-FK indexes (closes pre-flagged seq-scan on workspace_share lookup).
+- `v3101_carbon_idor_indexes` — carbon `(project_id, scope)` covering index used by the new project-scope gate on the 22 endpoints.
+- `v3101_crm_lead_email_dedup_index` — case-insensitive `LOWER(contact_email)` index for the new dedup pre-check.
+- `v3101_qms_money_numeric` — qms `cost_impact_amount` Numeric(15,2) → Numeric(18,2) (Postgres-only widening; SQLite stores as text).
+- `v3101_service_number_uniques` — service contract/ticket/work-order unique indexes.
+- `v3101_variations_currency_indexes` — variations `(project_id, currency_code)` covering index for the new currency-aware rollup.
+- `v3102_round5_merge` — pure multi-head merge of all eight Round-5 heads back to a single trunk.
+
+### Tests
+
+~150 new tests across 11 modules. Coverage focus: IDOR negatives (cross-project read + write should 404), role negatives (estimator can't close NCR), money correctness (`Decimal(0.1) + Decimal(0.2) == Decimal("0.30")`), uniqueness race-condition simulations (concurrent inserts → exactly one wins, the other gets IntegrityError → retry produces N+1 label).
+
+---
+
 ## [4.2.4] — 2026-05-21 · Round 4 — 20-module deep improvements sweep
 
 A single release bundling 20 parallel module-deep audit + fix passes on previously under-tested modules. Every module touched here got a baseline pytest file; combined ~140 new tests.

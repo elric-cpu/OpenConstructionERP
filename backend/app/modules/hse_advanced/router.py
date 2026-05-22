@@ -83,6 +83,26 @@ def _get_service(session: SessionDep) -> HSEAdvancedService:
     return HSEAdvancedService(session)
 
 
+async def _guard_project(
+    project_id: uuid.UUID | None,
+    user_id: str | None,
+    session: SessionDep,
+) -> None:
+    """Verify cross-project access on a HSE row's ``project_id``.
+
+    Round-3 Wave F audit found that ``RequirePermission(...)`` only checks
+    role/permission scope — it does NOT prove the caller has access to the
+    *specific* project the row belongs to. Without this guard, any user
+    holding ``hse_advanced.update`` could PATCH / DELETE / state-transition
+    a JSA / permit / audit / CAPA on a project they cannot otherwise see,
+    by guessing or scraping a UUID. ``verify_project_access`` returns 404
+    on both "missing" and "denied" so the response is opaque to attackers.
+    """
+    if project_id is None:
+        return
+    await verify_project_access(project_id, user_id, session)
+
+
 # ── Investigations ─────────────────────────────────────────────────────────
 
 
@@ -168,10 +188,11 @@ async def update_investigation(
 )
 async def complete_investigation(
     item_id: uuid.UUID,
-    _perm: None = Depends(RequirePermission("hse_advanced.update")),
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("hse_advanced.close_investigation")),
     service: HSEAdvancedService = Depends(_get_service),
 ) -> InvestigationResponse:
-    obj = await service.complete_investigation(item_id)
+    obj = await service.complete_investigation(item_id, user_id=user_id)
     return InvestigationResponse.model_validate(obj)
 
 
@@ -180,10 +201,11 @@ async def complete_investigation(
 )
 async def abandon_investigation(
     item_id: uuid.UUID,
-    _perm: None = Depends(RequirePermission("hse_advanced.update")),
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("hse_advanced.close_investigation")),
     service: HSEAdvancedService = Depends(_get_service),
 ) -> InvestigationResponse:
-    obj = await service.abandon_investigation(item_id)
+    obj = await service.abandon_investigation(item_id, user_id=user_id)
     return InvestigationResponse.model_validate(obj)
 
 
@@ -234,21 +256,28 @@ async def get_jsa(
 async def update_jsa(
     item_id: uuid.UUID,
     data: JSAUpdate,
+    user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("hse_advanced.update")),
     service: HSEAdvancedService = Depends(_get_service),
 ) -> JSAResponse:
-    obj = await service.update_jsa(item_id, data)
+    existing = await service.get_jsa(item_id)
+    await _guard_project(existing.project_id, user_id, session)
+    obj = await service.update_jsa(item_id, data, user_id=user_id)
     return JSAResponse.model_validate(obj)
 
 
 @router.delete("/jsa/{item_id}", status_code=204)
 async def delete_jsa(
     item_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("hse_advanced.delete")),
     service: HSEAdvancedService = Depends(_get_service),
 ) -> None:
-    await service.get_jsa(item_id)
-    await service.jsa_repo.delete(item_id)
+    existing = await service.get_jsa(item_id)
+    await _guard_project(existing.project_id, user_id, session)
+    await service.delete_jsa(item_id, user_id=user_id)
 
 
 @router.post("/jsa/{item_id}/submit", response_model=JSAResponse)
@@ -349,21 +378,28 @@ async def get_permit(
 async def update_permit(
     item_id: uuid.UUID,
     data: PermitUpdate,
+    user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("hse_advanced.update")),
     service: HSEAdvancedService = Depends(_get_service),
 ) -> PermitResponse:
-    obj = await service.update_permit(item_id, data)
+    existing = await service.get_permit(item_id)
+    await _guard_project(existing.project_id, user_id, session)
+    obj = await service.update_permit(item_id, data, user_id=user_id)
     return PermitResponse.model_validate(obj)
 
 
 @router.delete("/permits/{item_id}", status_code=204)
 async def delete_permit(
     item_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("hse_advanced.delete")),
     service: HSEAdvancedService = Depends(_get_service),
 ) -> None:
-    await service.get_permit(item_id)
-    await service.permit_repo.delete(item_id)
+    existing = await service.get_permit(item_id)
+    await _guard_project(existing.project_id, user_id, session)
+    await service.delete_permit(item_id, user_id=user_id)
 
 
 @router.post("/permits/{item_id}/approve", response_model=PermitResponse)
@@ -516,13 +552,19 @@ async def add_attendance(
 async def list_topics(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
-    active_only: bool = Query(default=True),
+    is_active: bool | None = Query(
+        default=True,
+        description=(
+            "Tri-state filter (Round-3 Wave B convention): True = only "
+            "active, False = only inactive, omit/null = both."
+        ),
+    ),
     language: str | None = Query(default=None),
     _perm: None = Depends(RequirePermission("hse_advanced.read")),
     service: HSEAdvancedService = Depends(_get_service),
 ) -> list[ToolboxTopicResponse]:
     rows, _ = await service.topic_repo.list_topics(
-        offset=offset, limit=limit, active_only=active_only, language=language
+        offset=offset, limit=limit, is_active=is_active, language=language
     )
     return [ToolboxTopicResponse.model_validate(r) for r in rows]
 
@@ -682,30 +724,41 @@ async def get_audit(
 async def update_audit(
     item_id: uuid.UUID,
     data: AuditUpdate,
+    user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("hse_advanced.update")),
     service: HSEAdvancedService = Depends(_get_service),
 ) -> AuditResponse:
-    obj = await service.update_audit(item_id, data)
+    existing = await service.get_audit(item_id)
+    await _guard_project(existing.project_id, user_id, session)
+    obj = await service.update_audit(item_id, data, user_id=user_id)
     return AuditResponse.model_validate(obj)
 
 
 @router.delete("/audits/{item_id}", status_code=204)
 async def delete_audit(
     item_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("hse_advanced.delete")),
     service: HSEAdvancedService = Depends(_get_service),
 ) -> None:
-    await service.get_audit(item_id)
-    await service.audit_repo.delete(item_id)
+    existing = await service.get_audit(item_id)
+    await _guard_project(existing.project_id, user_id, session)
+    await service.delete_audit(item_id, user_id=user_id)
 
 
 @router.post("/audits/{item_id}/complete", response_model=AuditResponse)
 async def complete_audit(
     item_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("hse_advanced.conduct_audit")),
     service: HSEAdvancedService = Depends(_get_service),
 ) -> AuditResponse:
-    obj = await service.complete_audit(item_id)
+    existing = await service.get_audit(item_id)
+    await _guard_project(existing.project_id, user_id, session)
+    obj = await service.complete_audit(item_id, user_id=user_id)
     return AuditResponse.model_validate(obj)
 
 
@@ -792,51 +845,72 @@ async def get_capa(
 async def update_capa(
     item_id: uuid.UUID,
     data: CAPAUpdate,
+    user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("hse_advanced.update")),
     service: HSEAdvancedService = Depends(_get_service),
 ) -> CAPAResponse:
-    obj = await service.update_capa(item_id, data)
+    existing = await service.get_capa(item_id)
+    await _guard_project(existing.project_id, user_id, session)
+    obj = await service.update_capa(item_id, data, user_id=user_id)
     return CAPAResponse.model_validate(obj)
 
 
 @router.delete("/capas/{item_id}", status_code=204)
 async def delete_capa(
     item_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("hse_advanced.delete")),
     service: HSEAdvancedService = Depends(_get_service),
 ) -> None:
-    await service.get_capa(item_id)
-    await service.capa_repo.delete(item_id)
+    existing = await service.get_capa(item_id)
+    await _guard_project(existing.project_id, user_id, session)
+    await service.delete_capa(item_id, user_id=user_id)
 
 
 @router.post("/capas/{item_id}/complete", response_model=CAPAResponse)
 async def complete_capa(
     item_id: uuid.UUID,
     payload: CAPAVerificationPayload,
+    user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("hse_advanced.close_capa")),
     service: HSEAdvancedService = Depends(_get_service),
 ) -> CAPAResponse:
-    obj = await service.close_capa(item_id, verification_notes=payload.verification_notes)
+    existing = await service.get_capa(item_id)
+    await _guard_project(existing.project_id, user_id, session)
+    obj = await service.close_capa(
+        item_id, verification_notes=payload.verification_notes, user_id=user_id,
+    )
     return CAPAResponse.model_validate(obj)
 
 
 @router.post("/capas/{item_id}/escalate", response_model=CAPAResponse)
 async def escalate_capa(
     item_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("hse_advanced.escalate_capa")),
     service: HSEAdvancedService = Depends(_get_service),
 ) -> CAPAResponse:
-    obj = await service.escalate_capa(item_id)
+    existing = await service.get_capa(item_id)
+    await _guard_project(existing.project_id, user_id, session)
+    obj = await service.escalate_capa(item_id, user_id=user_id)
     return CAPAResponse.model_validate(obj)
 
 
 @router.post("/capas/{item_id}/cancel", response_model=CAPAResponse)
 async def cancel_capa(
     item_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("hse_advanced.update")),
     service: HSEAdvancedService = Depends(_get_service),
 ) -> CAPAResponse:
-    obj = await service.cancel_capa(item_id)
+    existing = await service.get_capa(item_id)
+    await _guard_project(existing.project_id, user_id, session)
+    obj = await service.cancel_capa(item_id, user_id=user_id)
     return CAPAResponse.model_validate(obj)
 
 
@@ -1167,14 +1241,20 @@ async def verify_effectiveness(
 async def list_jsa_templates(
     trade: str | None = Query(default=None, max_length=100),
     region: str | None = Query(default=None, max_length=32),
-    active_only: bool = Query(default=True),
+    is_active: bool | None = Query(
+        default=True,
+        description=(
+            "Tri-state filter (Round-3 Wave B convention): True = only "
+            "active, False = only inactive, omit/null = both."
+        ),
+    ),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
     _perm: None = Depends(RequirePermission("hse_advanced.jsa_template.read")),
     service: HSEAdvancedService = Depends(_get_service),
 ) -> list[JSATemplateResponse]:
     rows, _ = await service.jsa_template_repo.list_templates(
-        trade=trade, region=region, active_only=active_only,
+        trade=trade, region=region, is_active=is_active,
         offset=offset, limit=limit,
     )
     return [JSATemplateResponse.model_validate(r) for r in rows]

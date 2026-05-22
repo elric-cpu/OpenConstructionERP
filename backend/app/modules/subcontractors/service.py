@@ -20,6 +20,7 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
@@ -75,6 +76,28 @@ logger = logging.getLogger(__name__)
 
 REQUIRED_CERT_TYPES_FOR_PAYMENT: tuple[str, ...] = ("insurance", "license")
 EXPIRY_WINDOWS: tuple[int, ...] = (60, 30, 7)
+
+# ── R5 PII safety ──────────────────────────────────────────────────────────
+# Subcontractor contacts carry e-mail + phone — GDPR Art. 5(1)(c) requires
+# logs strip them before interpolation. Mirror the v4.2.4 contacts pattern.
+
+# Fields on SubcontractorUpdate that NO caller may set directly via PATCH —
+# they are derived from internal events (rating roll-up).
+_DERIVED_FIELDS_ON_SUB: frozenset[str] = frozenset({"rating_score"})
+
+
+def _redact_email(email: str | None) -> str:
+    if not email or "@" not in email:
+        return "<redacted>"
+    local, _, domain = email.partition("@")
+    return f"{local[:1]}***@{domain}" if local else f"***@{domain}"
+
+
+def _redact_phone(phone: str | None) -> str:
+    if not phone:
+        return "<redacted>"
+    digits = re.sub(r"\D", "", phone)
+    return f"***{digits[-2:]}" if len(digits) >= 2 else "<redacted>"
 
 
 # ── Pure helpers ─────────────────────────────────────────────────────────
@@ -482,6 +505,24 @@ class SubcontractorService:
     async def create_subcontractor(
         self, data: SubcontractorCreate, user_id: str | None = None,
     ) -> Subcontractor:
+        # Read-then-write duplicate guard on (country, tax_id). The DB
+        # also carries a partial unique index post-v3099 — that's the
+        # backstop; this read keeps the happy path 409 instead of 500.
+        # Stub repositories in unit tests don't implement the method;
+        # the IntegrityError handler below still catches a race.
+        find_by_tax_id = getattr(self.subs, "find_by_tax_id", None)
+        if data.tax_id and find_by_tax_id is not None:
+            existing = await find_by_tax_id(
+                data.tax_id, country=data.country,
+            )
+            if existing is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "A subcontractor with this tax_id already exists "
+                        f"for country {data.country or '?'}."
+                    ),
+                )
         entity = Subcontractor(
             contact_id=data.contact_id,
             legal_name=data.legal_name,
@@ -495,11 +536,24 @@ class SubcontractorService:
             notes=data.notes,
             created_by=user_id,
         )
-        await self.subs.create(entity)
+        try:
+            await self.subs.create(entity)
+        except IntegrityError:
+            # Two concurrent POSTs raced past the read-then-write check
+            # above. Translate to 409 so callers retry intelligently.
+            await self.session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A subcontractor with this tax_id already exists.",
+            ) from None
         event_bus.publish_detached(
             "subcontractors.subcontractor.created",
             {"subcontractor_id": str(entity.id), "legal_name": entity.legal_name},
             source_module="subcontractors",
+        )
+        logger.info(
+            "subcontractor.created id=%s name=%s by=%s",
+            entity.id, entity.legal_name, user_id or "<anon>",
         )
         return entity
 
@@ -514,6 +568,16 @@ class SubcontractorService:
     ) -> Subcontractor:
         await self.get_subcontractor(sub_id)
         fields = data.model_dump(exclude_unset=True)
+        # Defence-in-depth: even if a future schema regression re-introduces
+        # ``rating_score`` on the update payload, the service must never
+        # accept it through this gate.
+        for derived in _DERIVED_FIELDS_ON_SUB:
+            if derived in fields:
+                fields.pop(derived, None)
+                logger.warning(
+                    "Refusing PATCH to derived field %s on sub=%s",
+                    derived, sub_id,
+                )
         if fields:
             await self.subs.update_fields(sub_id, **fields)
         entity = await self.get_subcontractor(sub_id)
@@ -537,6 +601,12 @@ class SubcontractorService:
             primary=data.primary,
         )
         await self.contacts.create(entity)
+        # PII-safe log line — never interpolate raw e-mail / phone.
+        logger.info(
+            "subcontractor_contact.created id=%s sub=%s role=%s email=%s phone=%s",
+            entity.id, data.subcontractor_id, data.role or "<none>",
+            _redact_email(data.email), _redact_phone(data.phone),
+        )
         return entity
 
     async def update_contact(
@@ -549,6 +619,12 @@ class SubcontractorService:
         if fields:
             await self.contacts.update_fields(contact_id, **fields)
             await self.session.refresh(entity)
+            # Log only field *names* — values may carry new PII the
+            # operator should not see in centralised log storage.
+            logger.info(
+                "subcontractor_contact.updated id=%s changed=%s",
+                contact_id, sorted(fields.keys()),
+            )
         return entity
 
     async def delete_contact(self, contact_id: uuid.UUID) -> None:
@@ -1156,18 +1232,35 @@ class SubcontractorService:
         agreements = await self.agreements.list_for_subcontractor(sub_id)
         active_agreements = sum(1 for a in agreements if a.status == "active")
 
-        open_payments = 0
-        for ag in agreements:
-            payments = await self.payments.list_for_agreement(ag.id)
-            open_payments += sum(
-                1
-                for p in payments
-                if p.status in ("submitted", "foreman_approved", "finance_approved")
-            )
-
-        pending_retention = Decimal("0")
-        for ag in agreements:
-            pending_retention += await self.retention_balance(ag.id)
+        # R5: collapse N+1 — single COUNT over all of this sub's agreements
+        # and a single SUM(GROUP BY) over the retention ledger. Old code
+        # fired 2 queries per agreement; for a sub with 30 agreements that
+        # was 60 round-trips per dashboard hit.
+        agreement_ids = [a.id for a in agreements]
+        count_batched = getattr(self.payments, "count_open_for_agreements", None)
+        if count_batched is not None:
+            open_payments = await count_batched(agreement_ids)
+        else:
+            open_payments = 0
+            for ag in agreements:
+                payments = await self.payments.list_for_agreement(ag.id)
+                open_payments += sum(
+                    1
+                    for p in payments
+                    if p.status in (
+                        "submitted", "foreman_approved", "finance_approved",
+                    )
+                )
+        balance_batched = getattr(self.retention, "balance_for_agreements", None)
+        if balance_batched is not None:
+            balances = await balance_batched(agreement_ids)
+            pending_retention = Decimal("0")
+            for accrued, released in balances.values():
+                pending_retention += Decimal(accrued) - Decimal(released)
+        else:
+            pending_retention = Decimal("0")
+            for ag in agreements:
+                pending_retention += await self.retention_balance(ag.id)
 
         ref = today or date.today()
         certs = await self.certs.list_by_subcontractor(sub_id)

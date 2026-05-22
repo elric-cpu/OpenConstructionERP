@@ -8,12 +8,14 @@ lives on :class:`CrmService`.
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from datetime import UTC, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING, Any, Iterable
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 
 from app.core.events import event_bus
 from app.modules.crm.models import (
@@ -55,6 +57,51 @@ if TYPE_CHECKING:
     )
 
 logger = logging.getLogger(__name__)
+
+
+# ── PII redaction (GDPR Art. 5(1)(c) data-minimisation in logs) ────────────
+#
+# Round-5 audit (v4.3.0): Lead.contact_email / Lead.contact_phone were
+# previously written into INFO log records by ``create_lead`` /
+# ``convert_lead`` via the generic ``logger.info("CRM lead created: %s", ...)``
+# pattern. Lead emails and phones are PII; once they hit syslog / journald
+# they outlive the row itself and survive every GDPR "forget" request.
+# Mirror the ``contacts`` module: redact at the boundary, never log raw
+# values, never put raw values in audit ``details``.
+
+
+def _redact_email(email: str | None) -> str:
+    """Return ``j***@example.com`` so support can still triage by domain."""
+    if not email:
+        return "<no-email>"
+    if "@" not in email:
+        return "<redacted>"
+    local, _, domain = email.partition("@")
+    return f"{local[:1]}***@{domain}" if local else f"***@{domain}"
+
+
+def _redact_phone(phone: str | None) -> str:
+    """Return ``+49…567`` — preserves dial-code + last 3 digits only."""
+    if not phone:
+        return "<no-phone>"
+    cleaned = re.sub(r"\D", "", phone)
+    if len(cleaned) <= 4:
+        return "<redacted>"
+    prefix = phone[:3] if phone.startswith("+") else cleaned[:2]
+    return f"{prefix}…{cleaned[-3:]}"
+
+
+def _safe_lead_label(lead: Any) -> str:
+    """Build a log-safe label from a Lead row. Never interpolates raw PII."""
+    name = getattr(lead, "contact_name", None) or ""
+    # First name + last-initial only — full names are also PII under most
+    # interpretations of GDPR Art. 4(1).
+    parts = name.split()
+    if not parts:
+        return "<lead:?>"
+    if len(parts) == 1:
+        return f"<lead:{parts[0][:1]}>"
+    return f"<lead:{parts[0]} {parts[-1][:1]}>"
 
 
 # ── State machines ─────────────────────────────────────────────────────────
@@ -356,10 +403,14 @@ def convert_opportunity_to_project_payload(opportunity: Any) -> dict[str, Any]:
     Used by the Projects module subscriber that auto-creates a Project on
     ``crm.opportunity.won`` events.
     """
+    # Estimated value goes downstream into Project.budget — keep it as a
+    # str-formatted Decimal so the subscriber casts back to Decimal without
+    # the float-binary-rounding hop. Round-5 audit fixed a ~1-cent drift on
+    # round-trip for values >= $10M.
     return {
         "name": getattr(opportunity, "title", "") or "Opportunity Project",
         "description": getattr(opportunity, "description", "") or "",
-        "estimated_value": float(_opp_value(opportunity)),
+        "estimated_value": str(_opp_value(opportunity)),
         "currency": getattr(opportunity, "currency", "") or "",
         "owner_user_id": (
             str(opportunity.owner_user_id)
@@ -447,18 +498,59 @@ class CrmService:
     # ── Leads ────────────────────────────────────────────────────────────
 
     async def create_lead(self, data: LeadCreate, user_id: str | None = None) -> Lead:
+        # Lead-dedup race: two concurrent inbound webhooks for the same
+        # email both passed Pydantic + auth, both call create_lead in
+        # parallel, both hit INSERT. Without a guard the second one
+        # returns a 500 (no unique index) OR a 200 with a silent
+        # duplicate row (with index). Round-5 audit: pre-check (best
+        # effort), then translate any IntegrityError on the INSERT
+        # itself to 409 — mirrors the contacts module pattern.
+        normalised_email = (
+            data.contact_email.strip().lower()
+            if data.contact_email
+            else None
+        )
+        if normalised_email:
+            existing = await self.lead_repo.find_by_email(normalised_email)
+            # Only block when the existing row is still in an "active" state.
+            # disqualified / converted leads are historical and must not stop
+            # a fresh inbound for the same person months later.
+            if existing is not None and existing.status in ("new", "qualifying", "qualified"):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"An active lead with email '{_redact_email(normalised_email)}' "
+                        f"already exists (id={existing.id})."
+                    ),
+                )
+
         lead = Lead(
             account_id=data.account_id,
             contact_name=data.contact_name,
-            contact_email=data.contact_email,
+            contact_email=normalised_email,
             contact_phone=data.contact_phone,
             source=data.source,
             status=data.status,
             assigned_to=data.assigned_to,
             qualification_notes=data.qualification_notes,
         )
-        await self.lead_repo.create(lead)
-        logger.info("CRM lead created: %s", lead.id)
+        try:
+            await self.lead_repo.create(lead)
+        except IntegrityError:
+            # Race winner already inserted. Roll back our flushed state and
+            # surface as 409 so the caller can fetch the existing row.
+            await self.session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A lead with this email already exists.",
+            ) from None
+        # PII-safe log: never interpolate raw email / phone.
+        logger.info(
+            "CRM lead created: id=%s label=%s email=%s",
+            lead.id,
+            _safe_lead_label(lead),
+            _redact_email(normalised_email),
+        )
         return lead
 
     async def get_lead(self, lead_id: uuid.UUID) -> Lead:
@@ -480,6 +572,84 @@ class CrmService:
     async def delete_lead(self, lead_id: uuid.UUID) -> None:
         await self.get_lead(lead_id)
         await self.lead_repo.delete(lead_id)
+
+    async def forget_lead(
+        self, lead_id: uuid.UUID, user_id: str | None = None
+    ) -> dict[str, Any]:
+        """GDPR Art. 17 right-to-erasure for a lead and its trail.
+
+        Unlike ``delete_lead`` (which removes the row but leaves PII trapped
+        in audit logs and activity bodies), this:
+
+        * Nulls / scrubs every PII column on the Lead row itself (preserves
+          the row so downstream foreign keys — e.g. converted_opportunity_id
+          — stay valid; auditors still see "a lead existed").
+        * Scrubs PII bodies / subjects on every CrmActivity linked to the
+          lead.
+        * Writes an audit-log entry recording **who** triggered the erasure
+          and **when**, so the org can prove compliance.
+        * Logs only the redacted label — never the raw values being erased.
+
+        Returns a small summary dict so the API can report what was touched
+        (counts only; never the values).
+        """
+        lead = await self.get_lead(lead_id)
+        original_label = _safe_lead_label(lead)
+        scrub_marker = f"<erased:{datetime.now(UTC).date().isoformat()}>"
+
+        # 1. Scrub the lead row itself. Keep status / lifecycle so audit
+        #    counts (e.g. win-rate denominators) stay consistent.
+        await self.lead_repo.update_fields(
+            lead_id,
+            contact_name=scrub_marker,
+            contact_email=None,
+            contact_phone=None,
+            qualification_notes="",
+        )
+
+        # 2. Scrub linked activities.
+        activities, _ = await self.activity_repo.list_all(
+            limit=10000, lead_id=lead_id
+        )
+        for act in activities:
+            await self.activity_repo.update_fields(
+                act.id,
+                subject=scrub_marker,
+                body="",
+            )
+
+        # 3. Audit-log the action (best-effort; never block the erasure).
+        try:
+            from app.core.audit import audit_log
+
+            await audit_log(
+                self.session,
+                action="forget",
+                entity_type="crm_lead",
+                entity_id=str(lead_id),
+                user_id=user_id,
+                details={
+                    "label": original_label,
+                    "activities_scrubbed": len(activities),
+                    "reason": "gdpr_art_17",
+                },
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning("CRM forget_lead: audit-log write skipped")
+
+        logger.info(
+            "CRM lead erased (GDPR): id=%s label=%s by=%s "
+            "activities_scrubbed=%s",
+            lead_id,
+            original_label,
+            user_id,
+            len(activities),
+        )
+        return {
+            "lead_id": str(lead_id),
+            "activities_scrubbed": len(activities),
+            "erased_at": datetime.now(UTC).isoformat(),
+        }
 
     def _check_lead_transition(self, current: str, target: str) -> None:
         if target not in allowed_lead_transitions(current):
@@ -613,7 +783,12 @@ class CrmService:
             },
             source_module="crm",
         )
-        logger.info("CRM lead %s converted → opportunity %s", lead_id, opp.id)
+        logger.info(
+            "CRM lead %s (%s) converted → opportunity %s",
+            lead_id,
+            _safe_lead_label(lead),
+            opp.id,
+        )
         return lead, opp
 
     # ── Opportunities ────────────────────────────────────────────────────
@@ -827,6 +1002,26 @@ class CrmService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Cannot win an opportunity with status '{opp.status}'",
             )
+        # Validate win_reason_code against the catalogue. ``lost`` already
+        # checks lost_reason_code; ``won`` was previously a silent no-op
+        # accepting any free-text string, including codes from the lost-only
+        # side of the catalogue — that broke win-rate dashboards segmented
+        # by reason. Round-5 audit closes the gap.
+        if win_reason_code is not None:
+            reason = await self.reason_repo.get_by_code(win_reason_code)
+            if reason is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Unknown win_reason_code '{win_reason_code}'",
+                )
+            if not reason.is_win_reason:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Reason '{win_reason_code}' is not flagged as a win "
+                        "reason in the catalogue"
+                    ),
+                )
         won_at_iso = won_at or datetime.now(UTC).date().isoformat()
         fields: dict[str, Any] = {
             "status": "won",
@@ -834,10 +1029,6 @@ class CrmService:
             "probability_percent": 100,
             "weighted_value": _q2(_opp_value(opp)),
         }
-        if win_reason_code is not None:
-            # Stored on lost_reason_code column? No — we keep a separate column
-            # purpose-specific (lost_reason_code). Win reason is logged in event only.
-            pass
         await self.opportunity_repo.update_fields(opportunity_id, **fields)
         await self.session.refresh(opp)
 
@@ -972,10 +1163,30 @@ class CrmService:
     # ── Activities ───────────────────────────────────────────────────────
 
     async def create_activity(
-        self, data: ActivityCreate, user_id: str | None = None
+        self,
+        data: ActivityCreate,
+        user_id: str | None = None,
     ) -> CrmActivity:
+        # Activity-owner spoofing: before v4.3.0 the request body's
+        # ``owner_user_id`` was trusted blindly — a regular EDITOR could
+        # POST {"owner_user_id": "<sales-director-uuid>", ...} and falsely
+        # attribute a touch to anyone in the org, corrupting per-rep
+        # activity dashboards and commission reports. Round-5 audit:
+        # always pin owner_user_id to the calling user.
+        current_uuid = _to_uuid_or_none(user_id)
+        if (
+            data.owner_user_id is not None
+            and current_uuid is not None
+            and data.owner_user_id != current_uuid
+        ):
+            logger.warning(
+                "CRM: discarding owner_user_id spoof attempt by user=%s "
+                "(claimed=%s)",
+                user_id,
+                data.owner_user_id,
+            )
         activity = CrmActivity(
-            owner_user_id=data.owner_user_id or _to_uuid_or_none(user_id),
+            owner_user_id=current_uuid,
             account_id=data.account_id,
             opportunity_id=data.opportunity_id,
             lead_id=data.lead_id,

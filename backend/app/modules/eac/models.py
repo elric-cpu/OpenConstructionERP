@@ -370,6 +370,13 @@ class EacRunResultItem(Base):
     __table_args__ = (
         Index("ix_eac_run_result_run_rule", "run_id", "rule_id"),
         Index("ix_eac_run_result_tenant", "tenant_id"),
+        # Standalone FK-column index on rule_id. The compound index above
+        # is leftmost-prefixed on run_id so queries that filter only by
+        # rule_id (e.g., "all results across runs for a given rule")
+        # cannot use it and degrade to seq-scans on a hot table.
+        # Flagged by the v4.3 Round-3 Wave A FK-index audit; backed by
+        # alembic migration v3099.
+        Index("ix_eac_run_result_rule_id", "rule_id"),
     )
 
     run_id: Mapped[uuid.UUID] = mapped_column(

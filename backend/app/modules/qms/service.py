@@ -301,6 +301,19 @@ class QMSService:
             raise ValueError(
                 f"Cannot sign an inspection in status '{inspection.status}'",
             )
+        # Dedup: one (user, role) signature per inspection. Two distinct
+        # roles on the same user are still allowed (e.g. GC inspector +
+        # designer reviewer when one person wears both hats).
+        existing = await self.repo.list_signatures(inspection_id)
+        for prior in existing:
+            if (
+                prior.signer_user_id == data.signer_user_id
+                and prior.signer_role == data.signer_role
+            ):
+                raise ValueError(
+                    "Signer has already signed this inspection in role "
+                    f"'{data.signer_role}'",
+                )
         sig = QMSInspectionSignature(
             inspection_id=inspection_id,
             signer_user_id=data.signer_user_id,
@@ -375,6 +388,12 @@ class QMSService:
             },
             source_module="qms",
         )
+        logger.info(
+            "QMS inspection completed: project=%s id=%s result=%s "
+            "signatures=%d/%d",
+            inspection.project_id, inspection_id, result,
+            len(sigs), required_sigs,
+        )
         return inspection
 
     # ── NCR ────────────────────────────────────────────────────────────
@@ -388,6 +407,19 @@ class QMSService:
                 raised_by_uuid = uuid.UUID(user_id)
             except (TypeError, ValueError):
                 raised_by_uuid = None
+
+        # Money / currency consistency. Either both empty or both set;
+        # silent acceptance of an amount without a currency makes COPQ
+        # rollups currency-blind, which masks FX errors downstream.
+        if (
+            data.cost_impact_amount is not None
+            and data.cost_impact_amount > 0
+            and not data.cost_impact_currency
+        ):
+            raise ValueError(
+                "cost_impact_currency is required when cost_impact_amount "
+                "is provided",
+            )
 
         ncr = QMSNCR(
             project_id=data.project_id,
@@ -403,6 +435,14 @@ class QMSService:
             linked_inspection_id=data.linked_inspection_id,
         )
         ncr = await self.repo.create_ncr(ncr)
+
+        logger.info(
+            "QMS NCR raised: project=%s id=%s severity=%s "
+            "cost_impact=%s %s",
+            ncr.project_id, ncr.id, ncr.severity,
+            ncr.cost_impact_amount if ncr.cost_impact_amount is not None else "0",
+            ncr.cost_impact_currency or "-",
+        )
 
         event_bus.publish_detached(
             "qms.ncr.raised",
@@ -540,6 +580,13 @@ class QMSService:
                 "severity": ncr.severity,
             },
             source_module="qms",
+        )
+        logger.info(
+            "QMS NCR closed: project=%s id=%s severity=%s actions=%d "
+            "cost_impact=%s %s",
+            ncr.project_id, ncr_id, ncr.severity, len(actions),
+            ncr.cost_impact_amount if ncr.cost_impact_amount is not None else "0",
+            ncr.cost_impact_currency or "-",
         )
         return ncr
 
@@ -841,6 +888,36 @@ class QMSService:
 
     # ── Analytics ──────────────────────────────────────────────────────
 
+    async def _resolve_project_currency(
+        self, project_id: uuid.UUID, fallback: str,
+    ) -> str:
+        """Resolve the active currency for a COPQ-style report.
+
+        If the caller passed an explicit non-empty value we honour it
+        (FX-converted upstream). Otherwise fall back to
+        ``Project.currency``. Empty string is returned only if the
+        project lookup fails and no fallback was provided — callers
+        should surface that as a "currency unknown" indicator rather
+        than silently substituting ``EUR``/``USD``.
+        """
+        if fallback:
+            return fallback
+        try:
+            # Lazy import to keep the QMS module loadable without a
+            # ``projects`` module in minimal test fixtures.
+            from app.modules.projects.repository import ProjectRepository
+
+            proj_repo = ProjectRepository(self.session)
+            project = await proj_repo.get_by_id(project_id)
+            if project is not None:
+                return getattr(project, "currency", "") or ""
+        except Exception:  # noqa: BLE001 — defensive log-and-degrade
+            logger.exception(
+                "QMS COPQ: project currency lookup failed for %s",
+                project_id,
+            )
+        return ""
+
     async def compute_copq(
         self,
         project_id: uuid.UUID,
@@ -862,13 +939,23 @@ class QMSService:
         rework_total = per_punch * Decimal(open_punch)
         copq_total = ncr_total + rework_total
 
+        resolved_currency = await self._resolve_project_currency(
+            project_id, currency,
+        )
+
+        logger.info(
+            "QMS COPQ computed: project=%s ncr=%s rework=%s total=%s %s",
+            project_id, ncr_total, rework_total, copq_total,
+            resolved_currency or "-",
+        )
+
         return {
             "project_id": project_id,
             "ncr_cost_total": ncr_total,
             "open_punch_count": open_punch,
             "rework_cost_estimate": rework_total,
             "copq_total": copq_total,
-            "currency": currency,
+            "currency": resolved_currency,
         }
 
     async def compute_first_pass_yield(
@@ -910,6 +997,17 @@ class QMSService:
         rework_total = per_punch * Decimal(open_punch)
         copq_total = ncr_total + rework_total + warranty + delay
 
+        resolved_currency = await self._resolve_project_currency(
+            project_id, currency,
+        )
+
+        logger.info(
+            "QMS COPQ-detailed: project=%s ncr=%s rework=%s warranty=%s "
+            "delay=%s total=%s %s",
+            project_id, ncr_total, rework_total, warranty, delay,
+            copq_total, resolved_currency or "-",
+        )
+
         return {
             "project_id": project_id,
             "ncr_cost_total": ncr_total,
@@ -918,7 +1016,7 @@ class QMSService:
             "warranty_cost": warranty,
             "delay_penalty_cost": delay,
             "copq_total": copq_total,
-            "currency": currency,
+            "currency": resolved_currency,
         }
 
     async def compute_fpy_trend(
@@ -1066,6 +1164,10 @@ class QMSService:
 
         copq_data = await self.compute_copq_detailed(project_id, currency=currency)
         open_punch = copq_data["open_punch_count"]
+        # Mirror copq_detailed's currency resolution so the management
+        # review report doesn't return a different label than the COPQ
+        # numbers embedded within it.
+        resolved_currency = copq_data["currency"]
 
         # Heuristic recommendations based on simple thresholds.
         recs: list[str] = []
@@ -1103,7 +1205,7 @@ class QMSService:
             "ncrs_closed": ncrs_closed,
             "first_pass_yield": round(fpy, 4),
             "copq_total": copq_data["copq_total"],
-            "currency": currency,
+            "currency": resolved_currency,
             "inspections_total": inspections_total,
             "inspections_passed": inspections_passed,
             "inspections_failed": inspections_failed,

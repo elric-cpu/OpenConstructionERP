@@ -2,12 +2,58 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+# ── R5 validators ─────────────────────────────────────────────────────────
+# Currency must be a 3-letter ISO-4217 code OR empty (caller-driven default).
+_ISO4217_RE = re.compile(r"^[A-Z]{3}$|^$")
+# Strip CR/LF + NUL from free-form text that flows into logs / events /
+# notification subjects. Mirrors the v4.2.4 correspondence subject fix.
+_CRLF_RE = re.compile(r"[\r\n\x00]")
+
+
+def _strip_crlf(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return _CRLF_RE.sub(" ", value).strip()
+
+
+def _validate_currency(value: str | None) -> str | None:
+    """Reject obviously-wrong currency codes; allow empty (means inherit)."""
+    if value is None:
+        return None
+    upper = value.upper()
+    if not _ISO4217_RE.fullmatch(upper):
+        raise ValueError(
+            f"currency must be a 3-letter ISO-4217 code (got {value!r})",
+        )
+    return upper
+
+
+def _safe_document_url(value: str | None) -> str | None:
+    """Reject document URLs that would let a caller pivot to SSRF / LFI.
+
+    Permitted shapes: empty / None, a bare relative path under ``uploads/``
+    or ``s3://`` / ``https://`` (TLS only). Reject ``file://``, ``http://``,
+    backslash traversal, scheme-less absolute paths and anything carrying
+    CR/LF / NUL.
+    """
+    if value is None or value == "":
+        return value
+    if _CRLF_RE.search(value):
+        raise ValueError("document_url must not contain control characters")
+    lowered = value.lower().strip()
+    if lowered.startswith(("file://", "http://", "ftp://", "javascript:")):
+        raise ValueError(f"document_url scheme not permitted: {value!r}")
+    if ".." in lowered or lowered.startswith(("/", "\\")) or "\\" in lowered:
+        raise ValueError("document_url must be a relative upload path or https/s3 URL")
+    return value
 
 # ── Subcontractor ────────────────────────────────────────────────────────
 
@@ -38,7 +84,14 @@ class SubcontractorCreate(SubcontractorBase):
 
 
 class SubcontractorUpdate(BaseModel):
-    """Partial update for Subcontractor."""
+    """Partial update for Subcontractor.
+
+    R5: ``rating_score`` is *deliberately* not editable here — it is the
+    rolled-up output of :class:`SubcontractorRating` rows and must only
+    be written through :meth:`SubcontractorService.update_rating` /
+    ``bump_rating_from_event`` (both gated by ``subcontractors.rate``).
+    Letting an EDITOR PATCH the score directly is rating tampering.
+    """
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -50,7 +103,6 @@ class SubcontractorUpdate(BaseModel):
         default=None,
         pattern=r"^(pending|approved|suspended|rejected)$",
     )
-    rating_score: Decimal | None = Field(default=None, ge=0, le=100)
     country: str | None = Field(default=None, max_length=2)
     address: dict[str, Any] | None = None
     website: str | None = Field(default=None, max_length=500)
@@ -106,6 +158,23 @@ class PrequalRequest(BaseModel):
     questionnaire: dict[str, Any] = Field(default_factory=dict)
     score: int | None = Field(default=None, ge=0, le=100)
 
+    @field_validator("questionnaire")
+    @classmethod
+    def _bounded_questionnaire(cls, value: dict[str, Any]) -> dict[str, Any]:
+        """Cap questionnaire shape to defend the scorer against a DoS
+        payload: 200 top-level keys, 4 KB per scalar value. Beyond that
+        the form is almost certainly garbage."""
+        if len(value) > 200:
+            raise ValueError("questionnaire may not exceed 200 questions")
+        for key, item in value.items():
+            if len(str(key)) > 200:
+                raise ValueError("questionnaire keys are capped at 200 chars")
+            if isinstance(item, str) and len(item) > 4096:
+                raise ValueError(
+                    f"questionnaire answer for {key!r} exceeds 4096 chars",
+                )
+        return value
+
 
 class BlockRequest(BaseModel):
     """Hard-block a subcontractor from bidding / payment with a reason."""
@@ -113,6 +182,14 @@ class BlockRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     reason: str = Field(..., min_length=1, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def _no_crlf(cls, value: str) -> str:
+        out = _strip_crlf(value)
+        if not out:
+            raise ValueError("reason must not be empty after CR/LF stripping")
+        return out
 
 
 class InsuranceExpiryEntry(BaseModel):
@@ -234,6 +311,27 @@ class CertificateCreate(BaseModel):
     document_url: str | None = Field(default=None, max_length=1000)
     notes: str | None = None
 
+    @field_validator("document_url")
+    @classmethod
+    def _safe_url(cls, value: str | None) -> str | None:
+        return _safe_document_url(value)
+
+    @field_validator("valid_until")
+    @classmethod
+    def _expiry_sane(cls, value: date | None, info: Any) -> date | None:
+        """Reject backdated expiry (``valid_until < issue_date``) and
+        absurd 100-year-out values that hint at a typo or bypass attempt."""
+        if value is None:
+            return value
+        issue = info.data.get("issue_date") if hasattr(info, "data") else None
+        if issue is not None and value < issue:
+            raise ValueError(
+                "valid_until must be on or after issue_date",
+            )
+        if value.year > 2100:
+            raise ValueError("valid_until year is out of range")
+        return value
+
 
 class CertificateUpdate(BaseModel):
     """Partial update for Certificate."""
@@ -247,6 +345,18 @@ class CertificateUpdate(BaseModel):
     document_url: str | None = Field(default=None, max_length=1000)
     revoked: bool | None = None
     notes: str | None = None
+
+    @field_validator("document_url")
+    @classmethod
+    def _safe_url(cls, value: str | None) -> str | None:
+        return _safe_document_url(value)
+
+    @field_validator("valid_until")
+    @classmethod
+    def _expiry_sane(cls, value: date | None) -> date | None:
+        if value is not None and value.year > 2100:
+            raise ValueError("valid_until year is out of range")
+        return value
 
 
 class CertificateResponse(BaseModel):
@@ -288,6 +398,11 @@ class AgreementCreate(BaseModel):
     retention_release_event: str | None = Field(default=None, max_length=120)
     notes: str | None = None
 
+    @field_validator("currency")
+    @classmethod
+    def _currency_iso(cls, value: str) -> str:
+        return _validate_currency(value) or ""
+
 
 class AgreementUpdate(BaseModel):
     """Partial update for SubcontractAgreement."""
@@ -306,6 +421,11 @@ class AgreementUpdate(BaseModel):
         pattern=r"^(draft|active|completed|terminated)$",
     )
     notes: str | None = None
+
+    @field_validator("currency")
+    @classmethod
+    def _currency_iso(cls, value: str | None) -> str | None:
+        return _validate_currency(value)
 
 
 class AgreementResponse(BaseModel):
@@ -419,6 +539,11 @@ class PaymentApplicationCreate(BaseModel):
     currency: str = Field(default="", max_length=3)
     lines: list[PaymentApplicationLineCreate] = Field(default_factory=list)
 
+    @field_validator("currency")
+    @classmethod
+    def _currency_iso(cls, value: str) -> str:
+        return _validate_currency(value) or ""
+
 
 class PaymentApplicationUpdate(BaseModel):
     """Partial update for PaymentApplication."""
@@ -430,6 +555,16 @@ class PaymentApplicationUpdate(BaseModel):
     gross_amount: Decimal | None = Field(default=None, ge=0)
     currency: str | None = Field(default=None, max_length=3)
     rejection_reason: str | None = None
+
+    @field_validator("currency")
+    @classmethod
+    def _currency_iso(cls, value: str | None) -> str | None:
+        return _validate_currency(value)
+
+    @field_validator("rejection_reason")
+    @classmethod
+    def _no_crlf_reason(cls, value: str | None) -> str | None:
+        return _strip_crlf(value)
 
 
 class PaymentApplicationResponse(BaseModel):
@@ -488,6 +623,14 @@ class RetentionReleasePayload(BaseModel):
     agreement_id: UUID
     amount: Decimal = Field(..., gt=0)
     reason: str = Field(..., min_length=1, max_length=255)
+
+    @field_validator("reason")
+    @classmethod
+    def _no_crlf(cls, value: str) -> str:
+        out = _strip_crlf(value)
+        if not out:
+            raise ValueError("reason must not be empty after CR/LF stripping")
+        return out
 
 
 # ── Rating ──────────────────────────────────────────────────────────────

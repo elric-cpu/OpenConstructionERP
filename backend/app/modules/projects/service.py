@@ -7,6 +7,7 @@ Stateless service layer. Handles:
 - Event publishing on create/update/delete
 """
 
+import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -16,6 +17,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
 from app.core.events import event_bus
+
+# Per-process lock + reservation set guarding ``_generate_project_code``.
+# The Project model does NOT carry a DB-level UniqueConstraint on
+# ``project_code`` (would require an alembic migration to add safely),
+# so two concurrent ``create_project`` calls could otherwise both
+# observe ``max_seq=16`` (their own session can't see each other's
+# uncommitted rows) and both mint ``PRJ-2026-0017``. The lock serialises
+# the *generation* critical section; the reservation set tracks codes
+# in-flight (inserted but not yet committed) so the same lock turn that
+# generates a code also marks it reserved — the next acquirer skips
+# anything reserved, even if the DB hasn't committed it yet.
+_PROJECT_CODE_LOCK = asyncio.Lock()
+_PROJECT_CODE_RESERVED: set[str] = set()
+_PROJECT_CODE_MAX_RETRIES = 50
 
 _logger_ev = __import__("logging").getLogger(__name__ + ".events")
 _logger_audit = __import__("logging").getLogger(__name__ + ".audit")
@@ -73,14 +88,57 @@ class ProjectService:
     async def _generate_project_code(self) -> str:
         """Generate the next project code in the format PRJ-{YEAR}-{SEQ:04d}.
 
-        Scans existing codes matching the current year's prefix and increments
-        the sequence number.  Falls back to 0001 if no codes exist yet.
+        Race-safe across concurrent ``create_project`` calls in the same
+        process via ``_PROJECT_CODE_LOCK`` + ``_PROJECT_CODE_RESERVED``
+        (Project.project_code has no DB-level UniqueConstraint — see
+        model). Within the critical section we both (a) check the DB for
+        the highest committed sequence number and (b) skip any sequence
+        currently reserved by another in-flight create that has not yet
+        committed. The chosen code is added to the reservation set
+        immediately; ``create_project`` removes it from the set after
+        commit (or rollback) so the slot is recyclable on failure.
         """
         year = datetime.now(UTC).year
         prefix = f"PRJ-{year}-"
-        max_seq = await self.repo.max_project_code_seq(prefix)
-        next_seq = (max_seq or 0) + 1
-        return f"{prefix}{next_seq:04d}"
+        async with _PROJECT_CODE_LOCK:
+            # Prune reservations that the DB has now confirmed — keeps
+            # the set bounded and prevents stale entries from artificially
+            # skipping slots in long-running processes.
+            stale: list[str] = []
+            for entry in list(_PROJECT_CODE_RESERVED):
+                if not entry.startswith(prefix):
+                    continue
+                if await self.repo.project_code_exists(entry):
+                    stale.append(entry)
+            for entry in stale:
+                _PROJECT_CODE_RESERVED.discard(entry)
+
+            max_seq = await self.repo.max_project_code_seq(prefix) or 0
+            # Also factor in any codes currently reserved (in-flight,
+            # uncommitted) so we don't hand the same number to two
+            # concurrent creates that opened their sessions before
+            # either committed.
+            for entry in _PROJECT_CODE_RESERVED:
+                if not entry.startswith(prefix):
+                    continue
+                try:
+                    seq = int(entry[len(prefix):].split("-", 1)[0])
+                except ValueError:
+                    continue
+                if seq > max_seq:
+                    max_seq = seq
+            for attempt in range(_PROJECT_CODE_MAX_RETRIES):
+                candidate = f"{prefix}{max_seq + 1 + attempt:04d}"
+                if candidate in _PROJECT_CODE_RESERVED:
+                    continue
+                if not await self.repo.project_code_exists(candidate):
+                    _PROJECT_CODE_RESERVED.add(candidate)
+                    return candidate
+            # Extremely unlikely — fall through with a UUID-shard suffix
+            # so we never block a create_project call.
+            candidate = f"{prefix}{max_seq + 1:04d}-{uuid.uuid4().hex[:6]}"
+            _PROJECT_CODE_RESERVED.add(candidate)
+            return candidate
 
     # ── Create ────────────────────────────────────────────────────────────
 
@@ -90,10 +148,20 @@ class ProjectService:
         owner_id: uuid.UUID,
     ) -> Project:
         """Create a new project owned by the given user."""
-        # Auto-generate project_code if not explicitly provided
+        # Auto-generate project_code if not explicitly provided. The
+        # generator reserves the code in ``_PROJECT_CODE_RESERVED`` so a
+        # second concurrent create can't reuse it before this session
+        # commits. Once we've passed the flush below (row is in the DB),
+        # the next generator can rely on ``max_project_code_seq`` for it,
+        # so we release the reservation immediately after a successful
+        # flush. On any exception before that point, we still release in
+        # the ``finally`` clause so a failed create doesn't permanently
+        # burn the reserved slot.
         project_code = data.project_code
+        reserved_code: str | None = None
         if not project_code:
             project_code = await self._generate_project_code()
+            reserved_code = project_code
 
         project = Project(
             name=data.name,
@@ -125,7 +193,20 @@ class ProjectService:
             default_vat_rate=data.default_vat_rate,
             custom_units=list(data.custom_units or []),
         )
-        project = await self.repo.create(project)
+        try:
+            project = await self.repo.create(project)
+        except Exception:
+            # Insert failed before any commit — recycle the slot so a
+            # retry doesn't unnecessarily skip it.
+            if reserved_code is not None:
+                _PROJECT_CODE_RESERVED.discard(reserved_code)
+            raise
+        # NB: we intentionally keep ``reserved_code`` in the set until the
+        # caller commits — on SQLite the flushed row isn't visible to
+        # other sessions' ``max_project_code_seq`` until the outer
+        # session commits, and the request lifecycle (``get_session``)
+        # commits on success. The generator's pre-lock prune step below
+        # GC's reservations whose code is now committed in the DB.
 
         await _safe_publish(
             "projects.project.created",
@@ -213,14 +294,47 @@ class ProjectService:
             is_admin=is_admin,
         )
 
+    # ── Internal helpers ──────────────────────────────────────────────────
+
+    async def _project_has_boq_positions(self, project_id: uuid.UUID) -> bool:
+        """Return True if the project owns at least one BOQ position.
+
+        Best-effort: if the BOQ models can't be imported (test envs with
+        a minimal module set) we return False so the currency guard
+        doesn't block a legitimate update — the guard is a safety net,
+        not a hard schema invariant.
+        """
+        try:
+            from sqlalchemy import func as _func, select as _select  # noqa: PLC0415
+
+            from app.modules.boq.models import BOQ, Position  # noqa: PLC0415
+
+            stmt = _select(_func.count(Position.id)).join(
+                BOQ, BOQ.id == Position.boq_id,
+            ).where(BOQ.project_id == project_id)
+            count = (await self.session.execute(stmt)).scalar_one() or 0
+            return count > 0
+        except Exception:
+            return False
+
     # ── Update ────────────────────────────────────────────────────────────
 
     async def update_project(
         self,
         project_id: uuid.UUID,
         data: ProjectUpdate,
+        *,
+        force_currency_change: bool = False,
     ) -> Project:
-        """Update project fields. Raises 404 if not found."""
+        """Update project fields. Raises 404 if not found.
+
+        If ``currency`` is being changed AND the project already has BOQ
+        positions stored, the update is rejected with HTTP 409 unless
+        ``force_currency_change=True`` (or the patch carries
+        ``metadata.allow_currency_change == True``). Silently flipping
+        the base currency from EUR to USD while existing positions stay
+        priced in EUR corrupts every rollup downstream.
+        """
         project = await self.get_project(project_id)
 
         fields = data.model_dump(exclude_unset=True)
@@ -231,6 +345,36 @@ class ProjectService:
 
         if not fields:
             return project
+
+        # ── Currency-change guard ──────────────────────────────────────
+        # A no-op (same value, just re-normalised) is always allowed; a
+        # real change requires either explicit force or zero BOQ positions
+        # so we never silently break a live project's rollups. Snapshot
+        # the prior currency BEFORE the update so we can both decide on
+        # the guard AND surface a meaningful ``currency_changed`` event
+        # below (post-refresh ``project.currency`` would be the new one).
+        prior_currency = project.currency
+        new_currency = fields.get("currency")
+        currency_actually_changed = (
+            new_currency is not None and new_currency != prior_currency
+        )
+        if currency_actually_changed and not force_currency_change:
+            metadata_override = (
+                fields.get("metadata_") or {}
+            ).get("allow_currency_change") is True
+            if not metadata_override and await self._project_has_boq_positions(
+                project_id,
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "Project currency cannot be changed once BOQ "
+                        "positions exist — existing rollups would be "
+                        "silently mis-converted. Either clear BOQs first "
+                        "or set metadata.allow_currency_change=true to "
+                        "acknowledge the impact."
+                    ),
+                )
 
         await self.repo.update_fields(project_id, **fields)
 
@@ -259,6 +403,22 @@ class ProjectService:
             },
             source_module="oe_projects",
         )
+
+        # If the base currency actually moved, surface a dedicated event
+        # so BOQ / costs / reporting subscribers can re-rollup or warn.
+        # ``project`` has been refreshed by this point so its ``.currency``
+        # is the new value — compare against the pre-update snapshot.
+        if currency_actually_changed:
+            await _safe_publish(
+                "projects.project.currency_changed",
+                {
+                    "project_id": str(project_id),
+                    "from_currency": prior_currency,
+                    "to_currency": new_currency,
+                    "force": bool(force_currency_change),
+                },
+                source_module="oe_projects",
+            )
 
         await _safe_audit(
             self.session,

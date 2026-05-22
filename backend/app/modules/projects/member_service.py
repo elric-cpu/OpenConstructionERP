@@ -158,6 +158,14 @@ async def add_project_member(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
         )
+    # Inactive (deactivated / soft-deleted) users must never be re-added
+    # to a project — they can't log in anyway, and silently adding them
+    # creates dangling membership rows the admin UI then has to clean up.
+    if not getattr(user, "is_active", True):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot add a deactivated user to a project",
+        )
 
     membership = TeamMembership(
         team_id=team.id, user_id=data.user_id, role=data.role

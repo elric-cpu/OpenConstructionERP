@@ -5,6 +5,7 @@ import uuid
 from typing import Any
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.submittals.models import Submittal
@@ -12,6 +13,20 @@ from app.modules.submittals.repository import SubmittalRepository
 from app.modules.submittals.schemas import SubmittalCreate, SubmittalUpdate
 
 logger = logging.getLogger(__name__)
+
+# Max attempts when ``next_submittal_number`` collides under concurrent
+# creates. Five gives ample slack for high-throughput contention without
+# letting a buggy / faulty unique-constraint state pin the request loop.
+_MAX_NUMBER_RETRIES = 5
+
+# Transitions a non-MANAGER caller is allowed to drive via PATCH
+# ``/{id}`` alone. Anything that approves, rejects, or closes a submittal
+# is funnelled through the dedicated ``/submit``, ``/review``, ``/approve``
+# endpoints so the role-gate and audit logging in those handlers cannot
+# be bypassed by a plain editor PATCHing ``status=approved`` directly.
+_PATCH_ALLOWED_STATUSES: frozenset[str] = frozenset(
+    {"draft", "submitted", "under_review"}
+)
 
 
 async def _safe_publish(name: str, data: dict, source_module: str = "oe_submittals") -> None:
@@ -22,6 +37,42 @@ async def _safe_publish(name: str, data: dict, source_module: str = "oe_submitta
         event_bus.publish_detached(name, data, source_module=source_module)
     except Exception as exc:
         logger.debug("Event publish failed for %s: %s", name, exc)
+
+
+def _log_state_change(
+    *,
+    submittal_id: uuid.UUID | str,
+    submittal_number: str | None,
+    project_id: uuid.UUID | str | None,
+    prior_status: str,
+    new_status: str,
+    actor_id: str | None,
+    revision: int | None = None,
+    extra: dict[str, Any] | None = None,
+) -> None:
+    """Emit a single structured log line for an FSM transition.
+
+    The log payload is JSON-friendly (flat key/value pairs) so the prod
+    log shipper can index ``from_status`` / ``to_status`` / ``actor`` for
+    submittal-cycle dashboards. Calling this in addition to
+    :func:`audit_log.log_activity` is intentional — the audit row lands
+    in a DB table the customer can wipe, the log line lands on the
+    immutable log-shipper sink.
+    """
+    payload: dict[str, Any] = {
+        "event": "submittal.state_change",
+        "submittal_id": str(submittal_id),
+        "submittal_number": submittal_number,
+        "project_id": str(project_id) if project_id is not None else None,
+        "from_status": prior_status,
+        "to_status": new_status,
+        "actor_id": actor_id,
+        "revision": revision,
+    }
+    if extra:
+        payload.update({k: v for k, v in extra.items() if k not in payload})
+    logger.info("submittal.state_change %s", payload)
+
 
 # ── Allowed submittal status transitions ──────────────────────────────────────
 
@@ -53,9 +104,16 @@ class SubmittalService:
 
         Ball-in-court defaults to the submitting organization's creator when
         status is 'draft', or to the reviewer when status is 'submitted'.
-        """
-        submittal_number = await self.repo.next_submittal_number(data.project_id)
 
+        Concurrent-create race: ``next_submittal_number`` computes the next
+        ordinal from ``MAX(suffix)+1`` which has TOCTOU semantics. Two
+        parallel POSTs can read the same MAX and both attempt to insert
+        ``SUB-005``. The unique constraint on
+        ``(project_id, submittal_number)`` (alembic
+        ``v3099_submittals_unique_number``) turns the second insert into
+        ``IntegrityError`` and we simply re-roll the number. After
+        ``_MAX_NUMBER_RETRIES`` collisions we surface 409 rather than spin.
+        """
         # Auto-set ball_in_court based on initial status
         ball_in_court = data.ball_in_court
         if ball_in_court is None:
@@ -64,33 +122,63 @@ class SubmittalService:
             elif user_id is not None:
                 ball_in_court = user_id
 
-        submittal = Submittal(
-            project_id=data.project_id,
-            submittal_number=submittal_number,
-            title=data.title,
-            spec_section=data.spec_section,
-            submittal_type=data.submittal_type,
-            status=data.status,
-            ball_in_court=ball_in_court,
-            current_revision=data.current_revision,
-            submitted_by_org=data.submitted_by_org,
-            reviewer_id=data.reviewer_id,
-            approver_id=data.approver_id,
-            date_submitted=data.date_submitted,
-            date_required=data.date_required,
-            date_returned=data.date_returned,
-            linked_boq_item_ids=data.linked_boq_item_ids,
-            created_by=user_id,
-            metadata_=data.metadata,
-        )
-        submittal = await self.repo.create(submittal)
-        logger.info(
-            "Submittal created: %s (%s) for project %s",
-            submittal_number,
-            data.submittal_type,
+        last_exc: Exception | None = None
+        for attempt in range(_MAX_NUMBER_RETRIES):
+            submittal_number = await self.repo.next_submittal_number(data.project_id)
+            submittal = Submittal(
+                project_id=data.project_id,
+                submittal_number=submittal_number,
+                title=data.title,
+                spec_section=data.spec_section,
+                submittal_type=data.submittal_type,
+                status=data.status,
+                ball_in_court=ball_in_court,
+                current_revision=data.current_revision,
+                submitted_by_org=data.submitted_by_org,
+                reviewer_id=data.reviewer_id,
+                approver_id=data.approver_id,
+                date_submitted=data.date_submitted,
+                date_required=data.date_required,
+                date_returned=data.date_returned,
+                linked_boq_item_ids=data.linked_boq_item_ids,
+                created_by=user_id,
+                metadata_=data.metadata,
+            )
+            try:
+                submittal = await self.repo.create(submittal)
+            except IntegrityError as exc:
+                last_exc = exc
+                logger.warning(
+                    "Submittal-number collision on attempt %d for project %s "
+                    "(number=%s); retrying",
+                    attempt + 1,
+                    data.project_id,
+                    submittal_number,
+                )
+                continue
+            logger.info(
+                "Submittal created: %s (%s) for project %s",
+                submittal_number,
+                data.submittal_type,
+                data.project_id,
+            )
+            return submittal
+
+        # All retries exhausted — translate to 409 so the caller can retry
+        # at the HTTP layer with a clear contract.
+        logger.error(
+            "Submittal-number collision still unresolved after %d retries "
+            "for project %s",
+            _MAX_NUMBER_RETRIES,
             data.project_id,
         )
-        return submittal
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Could not allocate a unique submittal number after "
+                f"{_MAX_NUMBER_RETRIES} attempts; please retry."
+            ),
+        ) from last_exc
 
     async def get_submittal(self, submittal_id: uuid.UUID) -> Submittal:
         submittal = await self.repo.get_by_id(submittal_id)
@@ -148,17 +236,40 @@ class SubmittalService:
                         f"{', '.join(sorted(allowed)) or 'none'}"
                     ),
                 )
+            # Approval / rejection / closure must go through the role-
+            # gated handlers — a plain editor with ``submittals.update``
+            # would otherwise be able to PATCH ``status=approved`` and
+            # bypass the MANAGER gate on ``/approve`` + the rate limiter.
+            if new_status not in _PATCH_ALLOWED_STATUSES:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        f"Transition to '{new_status}' must be performed via the "
+                        "dedicated /submit, /review, or /approve endpoint."
+                    ),
+                )
 
         if not fields:
             return submittal
 
+        prior_status = submittal.status
         await self.repo.update_fields(submittal_id, **fields)
-        # ``update_fields`` calls ``session.expire_all`` — any subsequent lazy
-        # attribute access on the stale ORM object triggers MissingGreenlet
-        # under async context. Re-fetch a fresh row instead of calling
+        # ``update_fields`` expires the row — any subsequent lazy attribute
+        # access on the stale ORM object triggers MissingGreenlet under
+        # async context. Re-fetch a fresh row instead of calling
         # ``session.refresh`` so downstream callers see loaded columns.
         fresh = await self.repo.get_by_id(submittal_id)
         logger.info("Submittal updated: %s (fields=%s)", submittal_id, list(fields.keys()))
+        if new_status is not None and new_status != prior_status:
+            _log_state_change(
+                submittal_id=submittal_id,
+                submittal_number=getattr(fresh or submittal, "submittal_number", None),
+                project_id=getattr(fresh or submittal, "project_id", None),
+                prior_status=prior_status,
+                new_status=new_status,
+                actor_id=None,  # PATCH path: actor visible only at router layer
+                extra={"source": "patch"},
+            )
         return fresh or submittal
 
     async def delete_submittal(self, submittal_id: uuid.UUID) -> None:
@@ -193,8 +304,7 @@ class SubmittalService:
             "date_returned": None,
         }
 
-        # Revision management:
-        # First submit → revision 1; resubmit → previous + 1.
+        # Revision management: First submit → revision 1; resubmit → previous + 1.
         current_rev = submittal.current_revision or 0
         if submittal.status == "revise_and_resubmit":
             fields["current_revision"] = current_rev + 1
@@ -205,7 +315,7 @@ class SubmittalService:
         if submittal.reviewer_id:
             fields["ball_in_court"] = str(submittal.reviewer_id)
 
-        # Snapshot attributes BEFORE update_fields (expire_all detaches lazy
+        # Snapshot attributes BEFORE update_fields (expire detaches lazy
         # columns). Re-fetch after so returned object has fresh values.
         project_id_s = str(submittal.project_id)
         title_s = submittal.title
@@ -250,10 +360,23 @@ class SubmittalService:
             },
         )
 
+        new_rev = fresh.current_revision if fresh else fields.get(
+            "current_revision", current_rev,
+        )
         logger.info(
             "Submittal submitted: %s (rev %s)",
             submittal_id,
-            fresh.current_revision if fresh else fields.get("current_revision", current_rev),
+            new_rev,
+        )
+        _log_state_change(
+            submittal_id=submittal_id,
+            submittal_number=submittal_number_s,
+            project_id=project_id_s,
+            prior_status=prior_status,
+            new_status="submitted",
+            actor_id=created_by_s,
+            revision=new_rev,
+            extra={"source": "submit", "reviewer_id": reviewer_id_s},
         )
         return fresh or submittal
 
@@ -294,6 +417,7 @@ class SubmittalService:
         project_id_s = str(submittal.project_id)
         title_s = submittal.title
         created_by_s = str(submittal.created_by) if submittal.created_by else None
+        submittal_number_s = getattr(submittal, "submittal_number", None)
 
         prior_status = submittal.status
         await self.repo.update_fields(submittal_id, **fields)
@@ -329,7 +453,6 @@ class SubmittalService:
             },
         )
 
-        submittal_number_s = getattr(submittal, "submittal_number", None)
         if new_status == "rejected":
             await _safe_publish(
                 "submittal.rejected",
@@ -358,6 +481,15 @@ class SubmittalService:
             )
 
         logger.info("Submittal reviewed: %s -> %s by %s", submittal_id, new_status, reviewer_id)
+        _log_state_change(
+            submittal_id=submittal_id,
+            submittal_number=submittal_number_s,
+            project_id=project_id_s,
+            prior_status=prior_status,
+            new_status=new_status,
+            actor_id=reviewer_id,
+            extra={"source": "review", "decision": new_status},
+        )
         return fresh or submittal
 
     async def approve_submittal(
@@ -404,6 +536,7 @@ class SubmittalService:
         project_id_s = str(submittal.project_id)
         title_s = submittal.title
         created_by_s = str(submittal.created_by) if submittal.created_by else None
+        submittal_number_s = getattr(submittal, "submittal_number", None)
 
         prior_status = submittal.status
         await self.repo.update_fields(submittal_id, **fields)
@@ -438,4 +571,13 @@ class SubmittalService:
         )
 
         logger.info("Submittal approved: %s by %s", submittal_id, approver_id)
+        _log_state_change(
+            submittal_id=submittal_id,
+            submittal_number=submittal_number_s,
+            project_id=project_id_s,
+            prior_status=prior_status,
+            new_status="approved",
+            actor_id=approver_id,
+            extra={"source": "approve"},
+        )
         return fresh or submittal

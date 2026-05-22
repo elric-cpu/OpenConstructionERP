@@ -115,7 +115,9 @@ export function InstallConverterPrompt({
 
   if (!open) return null;
 
-  const formatLabel = converterId.toUpperCase();
+  // #153 guard — defensive: caller can mount the prompt before converterId
+  // has been resolved (race during RVT upload), so coerce to string.
+  const formatLabel = (converterId ?? '').toUpperCase();
   const converterName =
     converter?.name ??
     t('bim.install_prompt_default_converter_name', {
