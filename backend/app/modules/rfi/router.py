@@ -323,17 +323,32 @@ async def batch_delete_rfis(
     body: BulkDeleteRequest,
     user_id: CurrentUserId,
     session: SessionDep,
+    payload: CurrentUserPayload,
 ) -> dict:
-    """Delete multiple RFIs in one request."""
+    """Delete multiple RFIs in one request.
+
+    BUG-RFI-BULK-ADMIN: the previous implementation derived the
+    "allowed projects" set from ``ProjectRepository.list_for_user(
+    owner_id=user_id)`` with no ``is_admin=True`` escape hatch, so an
+    admin trying to bulk-delete RFIs across projects they don't
+    personally own silently got zero rows deleted. Propagate the JWT
+    role into ``list_for_user`` so admin-level cleanup actually works.
+    """
     from sqlalchemy import select as _select
 
     from app.core.bulk_ops import bulk_delete
     from app.modules.projects.repository import ProjectRepository
     from app.modules.rfi.models import RFI
 
+    is_admin = (payload.get("role") or "").lower() == "admin"
+
     proj_repo = ProjectRepository(session)
     owned_projects, _ = await proj_repo.list_for_user(
-        owner_id=user_id, offset=0, limit=10000, exclude_archived=False
+        owner_id=user_id,
+        offset=0,
+        limit=10000,
+        exclude_archived=False,
+        is_admin=is_admin,
     )
     owned_project_ids = {str(p.id) for p in owned_projects}
 
@@ -344,8 +359,8 @@ async def batch_delete_rfis(
 
     deleted = await bulk_delete(session, RFI, allowed)
     logger.info(
-        "Bulk delete RFIs: requested=%d deleted=%d user=%s",
-        len(body.ids), deleted, user_id,
+        "Bulk delete RFIs: requested=%d deleted=%d user=%s admin=%s",
+        len(body.ids), deleted, user_id, is_admin,
     )
     return {"requested": len(body.ids), "deleted": deleted}
 
@@ -359,8 +374,12 @@ async def batch_update_rfi_status(
     body: BulkStatusRequest,
     user_id: CurrentUserId,
     session: SessionDep,
+    payload: CurrentUserPayload,
 ) -> dict:
-    """Bulk-update status on multiple RFIs."""
+    """Bulk-update status on multiple RFIs.
+
+    BUG-RFI-BULK-ADMIN: see ``batch_delete_rfis`` — same is_admin gap.
+    """
     from sqlalchemy import select as _select
 
     from app.core.bulk_ops import bulk_update_status
@@ -374,9 +393,15 @@ async def batch_update_rfi_status(
             detail=f"Invalid status. Allowed: {sorted(allowed_statuses)}",
         )
 
+    is_admin = (payload.get("role") or "").lower() == "admin"
+
     proj_repo = ProjectRepository(session)
     owned_projects, _ = await proj_repo.list_for_user(
-        owner_id=user_id, offset=0, limit=10000, exclude_archived=False
+        owner_id=user_id,
+        offset=0,
+        limit=10000,
+        exclude_archived=False,
+        is_admin=is_admin,
     )
     owned_project_ids = {str(p.id) for p in owned_projects}
 

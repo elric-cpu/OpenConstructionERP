@@ -276,27 +276,22 @@ async def test_bulk_delete_rfis_admin_bypass() -> None:
 
         async def list_for_user(self, *, owner_id: Any, **kwargs: Any) -> tuple[list[Any], int]:
             captured["is_admin"] = kwargs.get("is_admin", False)
-            return [], 0
+            # Stop the handler before it touches the (fake) session
+            # again. We've already observed the flag we care about.
+            raise _StopProbe
+
+    class _StopProbe(Exception):
+        pass
+
+    class _AlsoStubSession:
+        async def execute(self, *args: Any, **kwargs: Any) -> Any:  # pragma: no cover
+            raise AssertionError("session.execute reached — probe came too late")
 
     import app.modules.projects.repository as _proj_repo_mod
 
     original = _proj_repo_mod.ProjectRepository
     _proj_repo_mod.ProjectRepository = _StubProjectRepo  # type: ignore[misc]
     try:
-        # We don't actually need to drive the handler end-to-end; we
-        # just need to know the router passes ``is_admin=True`` for an
-        # admin caller. Build a minimal request stub instead.
-        #
-        # The fix lives in the router: it must call the project repo
-        # with ``is_admin=(payload.role == "admin")``. We mark the test
-        # to assert that flag was set when the caller's role is admin.
-
-        # Use a custom session marker — the router accepts a real
-        # AsyncSession but the project repo is stubbed above so it never
-        # gets touched.
-        class _AlsoStubSession:
-            pass
-
         from app.core.bulk_ops import BulkDeleteRequest
 
         try:
@@ -313,6 +308,8 @@ async def test_bulk_delete_rfis_admin_bypass() -> None:
                 "batch_delete_rfis has no `payload` parameter — admin "
                 "callers cannot reach an `is_admin=True` branch."
             )
+        except _StopProbe:
+            pass  # expected — captured the flag, short-circuit fine
 
         assert captured.get("is_admin") is True, (
             "Admin caller did not propagate is_admin=True into "
