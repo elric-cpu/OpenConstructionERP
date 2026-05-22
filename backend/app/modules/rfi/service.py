@@ -398,10 +398,27 @@ class RFIService:
         neutralised by ``verify_project_access`` at the router boundary.
         """
         rfi = await self.get_rfi(rfi_id)
-        if rfi.status in ("closed", "void"):
+        # BUG-RFI-FSM-RESPOND: ``respond_to_rfi`` used to block only
+        # ``closed`` / ``void``, which silently let a ``draft`` (or
+        # already-``answered``) RFI leap straight to ``answered`` —
+        # bypassing the documented ``draft → open → answered`` flow
+        # and overwriting any prior response without a state-change
+        # log entry. We now constrain the transition to the single
+        # value ``_RFI_STATUS_TRANSITIONS`` permits as a source for
+        # ``answered`` (``open``).
+        allowed_source_for_answer = {
+            src
+            for src, targets in _RFI_STATUS_TRANSITIONS.items()
+            if "answered" in targets
+        }
+        if rfi.status not in allowed_source_for_answer:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot respond to an RFI with status '{rfi.status}'",
+                detail=(
+                    f"Cannot respond to an RFI with status '{rfi.status}'. "
+                    f"Allowed source states: "
+                    f"{', '.join(sorted(allowed_source_for_answer)) or 'none'}."
+                ),
             )
 
         # R5 / BUG-RFI-ROLE: identity verification.
