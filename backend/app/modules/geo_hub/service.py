@@ -827,11 +827,29 @@ class GeoHubService:
         anchor_alt = float(anchor.alt)
         heading = float(req.heading_deg or Decimal("0"))
 
-        rotated = (
-            [_rotate_element(e, heading) for e in elements]
-            if heading
-            else elements
-        )
+        if heading:
+            # Rotate every element AABB around the *combined* footprint
+            # centre, not the local origin (0, 0, 0). Canonical exports
+            # are not guaranteed to be project-centred — many converters
+            # use site coordinates with the origin at the surveyor's
+            # benchmark which can be hundreds of metres from the
+            # building. Rotating around the origin then translates the
+            # whole project away from the anchor; rotating around the
+            # combined centre keeps the building anchored.
+            from app.modules.geo_hub.tile_pipeline import compute_aabb
+
+            combined = compute_aabb(elements)
+            if combined.is_empty():
+                pivot_x = pivot_y = 0.0
+            else:
+                pivot_x = (combined.min_x + combined.max_x) / 2.0
+                pivot_y = (combined.min_y + combined.max_y) / 2.0
+            rotated = [
+                _rotate_element(e, heading, pivot_x=pivot_x, pivot_y=pivot_y)
+                for e in elements
+            ]
+        else:
+            rotated = elements
 
         tileset_json, b3dm_bytes, build = build_tile_artifacts(
             rotated,
@@ -1142,12 +1160,22 @@ def _bim_element_to_canonical(element: Any) -> dict[str, Any]:
     }
 
 
-def _rotate_element(element: dict[str, Any], heading_deg: float) -> dict[str, Any]:
+def _rotate_element(
+    element: dict[str, Any],
+    heading_deg: float,
+    *,
+    pivot_x: float = 0.0,
+    pivot_y: float = 0.0,
+) -> dict[str, Any]:
     """Rotate a canonical element's AABB around the local Z (up) axis.
 
-    Replaces the AABB with the axis-aligned envelope of the rotated box
-    so the downstream pipeline still sees an AABB. Loses orientation
-    fidelity by design — heading is a coarse hint, not a transform.
+    Rotates the four XY corners around (``pivot_x``, ``pivot_y``) — the
+    caller is expected to pass the project's combined-AABB centre so a
+    site-coordinate canonical export does not drift away from its
+    geographic anchor under non-zero heading. Replaces the AABB with
+    the axis-aligned envelope of the rotated box so the downstream
+    pipeline still sees an AABB. Loses orientation fidelity by design —
+    heading is a coarse hint, not a transform.
     """
     import math as _math
 
@@ -1162,11 +1190,15 @@ def _rotate_element(element: dict[str, Any], heading_deg: float) -> dict[str, An
     rad = _math.radians(heading_deg)
     cos_r = _math.cos(rad)
     sin_r = _math.sin(rad)
+    # Rotate around the supplied pivot: shift -> rotate -> shift back.
     corners_xy = [
-        (min_x, min_y), (max_x, min_y), (max_x, max_y), (min_x, max_y),
+        (min_x - pivot_x, min_y - pivot_y),
+        (max_x - pivot_x, min_y - pivot_y),
+        (max_x - pivot_x, max_y - pivot_y),
+        (min_x - pivot_x, max_y - pivot_y),
     ]
-    xs = [cx * cos_r - cy * sin_r for cx, cy in corners_xy]
-    ys = [cx * sin_r + cy * cos_r for cx, cy in corners_xy]
+    xs = [cx * cos_r - cy * sin_r + pivot_x for cx, cy in corners_xy]
+    ys = [cx * sin_r + cy * cos_r + pivot_y for cx, cy in corners_xy]
     new_geom = dict(geom)
     new_geom["aabb"] = [
         min(xs), min(ys), min_z, max(xs), max(ys), max_z,

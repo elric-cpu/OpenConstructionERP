@@ -298,3 +298,69 @@ class TestCoordTransforms:
     def test_transform_identity_short_circuits(self):
         out = transform(4326, 4326, 52.52, 13.40)
         assert out == (52.52, 13.40, 0.0)
+
+
+# ── Heading rotation (_rotate_element pivot) ─────────────────────────────
+
+
+class TestRotateElement:
+    """``_rotate_element`` must rotate around the supplied pivot, not the
+    local origin — otherwise canonical exports whose origin is hundreds
+    of metres from the building footprint get translated *away* from
+    their geographic anchor on any non-zero heading.
+    """
+
+    def test_180_rotation_around_centroid_preserves_footprint(self):
+        from app.modules.geo_hub.service import _rotate_element
+
+        # 1 m x 1 m box positioned 1000 m east of the local origin —
+        # this is realistic when the surveyor's benchmark is far from
+        # the building.
+        element = {
+            "id": "wall_001",
+            "geometry": {"aabb": [1000.0, 500.0, 0.0, 1001.0, 501.0, 3.0]},
+        }
+        pivot_x = 1000.5
+        pivot_y = 500.5
+        rotated = _rotate_element(
+            element, 180.0, pivot_x=pivot_x, pivot_y=pivot_y,
+        )
+        new_aabb = rotated["geometry"]["aabb"]
+        # After a 180 rotation around the centroid, the box must overlap
+        # its original footprint within numerical noise.
+        assert abs(new_aabb[0] - 1000.0) < 1e-6
+        assert abs(new_aabb[1] - 500.0) < 1e-6
+        assert abs(new_aabb[3] - 1001.0) < 1e-6
+        assert abs(new_aabb[4] - 501.0) < 1e-6
+        assert new_aabb[2] == 0.0
+        assert new_aabb[5] == 3.0
+
+    def test_rotation_around_origin_translates_far_off_box(self):
+        """Regression: rotating around (0,0) flings a remote box across
+        the map — exactly the bug the pivot parameter fixes.
+        """
+        from app.modules.geo_hub.service import _rotate_element
+
+        element = {
+            "id": "wall_001",
+            "geometry": {"aabb": [1000.0, 500.0, 0.0, 1001.0, 501.0, 3.0]},
+        }
+        # Old behaviour (pivot_x=pivot_y=0) — should be visibly displaced.
+        rotated = _rotate_element(element, 180.0, pivot_x=0.0, pivot_y=0.0)
+        new_aabb = rotated["geometry"]["aabb"]
+        # Now the box centre is roughly at (-1000.5, -500.5) — far from
+        # the original (1000.5, 500.5).
+        assert new_aabb[0] < -500
+        assert new_aabb[1] < -250
+
+    def test_zero_heading_is_noop(self):
+        from app.modules.geo_hub.service import _rotate_element
+
+        element = {
+            "id": "wall_001",
+            "geometry": {"aabb": [1.0, 2.0, 0.0, 3.0, 4.0, 5.0]},
+        }
+        rotated = _rotate_element(element, 0.0, pivot_x=2.0, pivot_y=3.0)
+        new_aabb = rotated["geometry"]["aabb"]
+        for original, after in zip(element["geometry"]["aabb"], new_aabb):
+            assert abs(original - after) < 1e-9
