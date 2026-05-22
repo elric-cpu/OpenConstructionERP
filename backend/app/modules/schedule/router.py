@@ -78,19 +78,16 @@ async def _verify_schedule_project_owner(
     session: SessionDep,
     project_id: uuid.UUID,
     user_id: str,
-    payload: dict | None = None,
+    payload: dict | None = None,  # noqa: ARG001 — kept for API compat; verify_project_access reads role from DB
 ) -> None:
-    """‌⁠‍Verify the current user owns the project. Admins bypass."""
-    if payload and payload.get("role") == "admin":
-        return
-    from app.modules.projects.repository import ProjectRepository
+    """‌⁠‍Verify the current user owns the project. Admins bypass.
 
-    project_repo = ProjectRepository(session)
-    project = await project_repo.get_by_id(project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if str(project.owner_id) != user_id:
-        raise HTTPException(status_code=403, detail="You do not have access to this project")
+    Returns HTTP 404 on both "project missing" and "access denied" so the
+    endpoint can't be turned into a UUID-existence oracle — matches the
+    convention used by ``verify_project_access`` everywhere else in the
+    codebase.
+    """
+    await verify_project_access(project_id, user_id, session)
 
 
 async def _verify_schedule_owner(
@@ -98,20 +95,16 @@ async def _verify_schedule_owner(
     session: SessionDep,
     schedule_id: uuid.UUID,
     user_id: str,
-    payload: dict | None = None,
+    payload: dict | None = None,  # noqa: ARG001 — kept for API compat
 ) -> object:
-    """‌⁠‍Load a schedule and verify the user owns its project. Admins bypass."""
-    if payload and payload.get("role") == "admin":
-        return await service.get_schedule(schedule_id)
-    schedule = await service.get_schedule(schedule_id)
-    from app.modules.projects.repository import ProjectRepository
+    """‌⁠‍Load a schedule and verify the user owns its project. Admins bypass.
 
-    project_repo = ProjectRepository(session)
-    project = await project_repo.get_by_id(schedule.project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    if str(project.owner_id) != user_id:
-        raise HTTPException(status_code=403, detail="You do not have access to this schedule")
+    Returns HTTP 404 on cross-tenant access (existence-oracle safe) so the
+    schedule_id can't be enumerated by a foreign tenant. Matches the
+    platform-wide convention enforced by ``verify_project_access``.
+    """
+    schedule = await service.get_schedule(schedule_id)
+    await verify_project_access(schedule.project_id, user_id, session)
     return schedule
 
 
