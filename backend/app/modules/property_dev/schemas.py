@@ -699,12 +699,20 @@ class HandoverCompleteRequest(BaseModel):
     notes: str | None = None
 
 
+_SNAG_CATEGORY_PATTERN = (
+    r"^(cosmetic|functional|structural|mechanical|electrical|plumbing|"
+    r"finishing|exterior|general|safety)$"
+)
+
+
 class SnagCreate(BaseModel):
     """Create a snag entry."""
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
     handover_id: UUID
+    buyer_id: UUID | None = None
+    category: str = Field(default="general", pattern=_SNAG_CATEGORY_PATTERN)
     location_in_plot: str | None = Field(default=None, max_length=255)
     severity: str = Field(
         default="minor", pattern=r"^(cosmetic|minor|major|safety)$"
@@ -714,6 +722,7 @@ class SnagCreate(BaseModel):
         default="open", pattern=r"^(open|in_progress|fixed|wont_fix)$"
     )
     reported_at: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    cost_impact: Decimal = Field(default=Decimal("0"), ge=Decimal("0"))
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -722,6 +731,7 @@ class SnagUpdate(BaseModel):
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
+    category: str | None = Field(default=None, pattern=_SNAG_CATEGORY_PATTERN)
     location_in_plot: str | None = Field(default=None, max_length=255)
     severity: str | None = Field(
         default=None, pattern=r"^(cosmetic|minor|major|safety)$"
@@ -732,6 +742,7 @@ class SnagUpdate(BaseModel):
     )
     fixed_at: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     fix_notes: str | None = None
+    cost_impact: Decimal | None = Field(default=None, ge=Decimal("0"))
     metadata: dict[str, Any] | None = None
 
 
@@ -742,6 +753,8 @@ class SnagResponse(BaseModel):
 
     id: UUID
     handover_id: UUID
+    buyer_id: UUID | None = None
+    category: str = "general"
     location_in_plot: str | None = None
     severity: str = "minor"
     description: str = ""
@@ -749,6 +762,9 @@ class SnagResponse(BaseModel):
     reported_at: str | None = None
     fixed_at: str | None = None
     fix_notes: str | None = None
+    cost_impact: Decimal = Decimal("0")
+    photos: list[str] = Field(default_factory=list)
+    linked_punch_item_id: UUID | None = None
     metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
     created_at: datetime
     updated_at: datetime

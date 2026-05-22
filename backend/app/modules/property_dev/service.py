@@ -1506,14 +1506,34 @@ class PropertyDevService:
     async def create_snag(self, data: SnagCreate) -> Snag:
         obj = Snag(
             handover_id=data.handover_id,
+            buyer_id=data.buyer_id,
+            category=data.category,
             location_in_plot=data.location_in_plot,
             severity=data.severity,
             description=data.description,
             status=data.status,
             reported_at=data.reported_at or _today_iso(),
+            cost_impact=data.cost_impact,
             metadata_=data.metadata,
         )
-        return await self.snags.create(obj)
+        snag = await self.snags.create(obj)
+        # Surface the snag on the cross-module event bus. Subscribers
+        # (punchlist auto-bridge, BI dashboards, ...) listen on
+        # ``property_dev.snag.created``. Best-effort: never blocks.
+        event_bus.publish_detached(
+            "property_dev.snag.created",
+            data={
+                "snag_id": str(snag.id),
+                "handover_id": str(snag.handover_id),
+                "buyer_id": str(snag.buyer_id) if snag.buyer_id else None,
+                "category": snag.category,
+                "severity": snag.severity,
+                "description": snag.description[:200],
+                "cost_impact": str(snag.cost_impact),
+            },
+            source_module="property_dev",
+        )
+        return snag
 
     async def get_snag(self, s_id: uuid.UUID) -> Snag:
         obj = await self.snags.get_by_id(s_id)
@@ -1548,6 +1568,20 @@ class PropertyDevService:
         await self.snags.update_fields(
             s_id, status="wont_fix", fix_notes=fix_notes
         )
+        return await self.get_snag(s_id)
+
+    async def add_snag_photo(self, s_id: uuid.UUID, photo_path: str) -> Snag:
+        """Append a relative photo path to ``snag.photos``.
+
+        The router validates the magic bytes + writes the file to disk
+        before calling this; the service just stores the path so the
+        photos array stays in sync with what's on the filesystem.
+        """
+        snag = await self.get_snag(s_id)
+        existing = list(snag.photos or [])
+        if photo_path not in existing:
+            existing.append(photo_path)
+            await self.snags.update_fields(s_id, photos=existing)
         return await self.get_snag(s_id)
 
     # ── Warranty ────────────────────────────────────────────────────────

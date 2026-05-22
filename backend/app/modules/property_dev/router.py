@@ -10,8 +10,27 @@ import uuid
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+import logging
+from pathlib import Path
 
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Response,
+    UploadFile,
+    status,
+)
+
+from app.core.file_signature import (
+    ALLOWED_PHOTO_TYPES,
+    SIGNATURE_BYTES_REQUIRED,
+    FileSignatureMismatch,
+    mime_for_signature,
+    require as require_signature,
+)
 from app.dependencies import CurrentUserPayload, RequirePermission, SessionDep
 from app.modules.property_dev.schemas import (
     BlockCreate,
@@ -1010,6 +1029,71 @@ async def wont_fix_snag(
     return SnagResponse.model_validate(
         await service.mark_snag_wont_fix(s_id, fix_notes=fix_notes)
     )
+
+
+# Directory where snag photos live on disk. Mirrors punchlist's layout.
+_SNAG_PHOTOS_DIR = Path("uploads/snag/photos")
+_snag_logger = logging.getLogger(__name__)
+
+
+@router.post("/snags/{s_id}/photos/", response_model=SnagResponse)
+async def upload_snag_photo(
+    s_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
+    file: UploadFile = File(...),
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.fix_snag")),
+) -> SnagResponse:
+    """Upload a photo for a snag.
+
+    Content-type headers are attacker-controlled, so we validate the raw
+    magic bytes against :data:`ALLOWED_PHOTO_TYPES` (jpeg, png, gif,
+    webp, heic, heif, tiff). SVG and any other format are rejected with
+    415. Mirrors the closure in
+    :func:`app.modules.punchlist.router.upload_photo`.
+    """
+    await _verify_owner_via_snag(session, s_id, user_payload)
+
+    try:
+        content = await file.read()
+    except Exception:
+        _snag_logger.exception("Unable to read snag photo upload %s", s_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to read uploaded photo",
+        )
+
+    try:
+        detected = require_signature(
+            content[:SIGNATURE_BYTES_REQUIRED],
+            ALLOWED_PHOTO_TYPES,
+            filename=file.filename,
+        )
+    except FileSignatureMismatch as exc:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=str(exc),
+        )
+    _ = mime_for_signature(detected)  # validated; not stored on Snag yet.
+
+    _SNAG_PHOTOS_DIR.mkdir(parents=True, exist_ok=True)
+    ext = Path(file.filename or "photo.jpg").suffix or ".jpg"
+    filename = f"{s_id}_{uuid.uuid4().hex[:8]}{ext}"
+    filepath = _SNAG_PHOTOS_DIR / filename
+
+    try:
+        filepath.write_bytes(content)
+    except Exception:
+        _snag_logger.exception("Unable to save snag photo %s", s_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to save photo — storage error",
+        )
+
+    photo_path = f"snag/photos/{filename}"
+    snag = await service.add_snag_photo(s_id, photo_path)
+    return SnagResponse.model_validate(snag)
 
 
 # ── Warranty Claims ─────────────────────────────────────────────────────

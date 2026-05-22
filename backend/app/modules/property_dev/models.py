@@ -506,7 +506,22 @@ class HandoverDoc(Base):
 
 
 class Snag(Base):
-    """A defect noted during/after handover."""
+    """A defect noted during/after handover.
+
+    ``buyer_id`` is a nullable cross-link to the buyer who raised it (when
+    raised post-handover via the buyer portal); during the handover
+    ceremony itself snags are usually surveyor-raised and ``buyer_id``
+    is left NULL.
+
+    ``cost_impact`` is the estimated repair cost. Stored as
+    ``Numeric(18, 2)`` so monetary rollups stay Decimal-exact.
+
+    ``category`` aligns with the punchlist categories so the snag ->
+    punchlist auto-bridge can copy it 1:1.
+
+    ``photos`` is a JSON list of relative paths (uploaded via magic-byte
+    gated /api/v1/property-dev/snags/{id}/photos/).
+    """
 
     __tablename__ = "oe_property_dev_snag"
 
@@ -514,6 +529,18 @@ class Snag(Base):
         GUID(),
         ForeignKey("oe_property_dev_handover.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
+    )
+    # Optional cross-link: who raised it (buyer-portal snags). NULL for
+    # surveyor / contractor / project-team raised snags.
+    buyer_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(),
+        ForeignKey("oe_property_dev_buyer.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    category: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="general", server_default="general",
         index=True,
     )
     location_in_plot: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -527,6 +554,20 @@ class Snag(Base):
     reported_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
     fixed_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
     fix_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Estimated repair cost. Decimal so rollups stay exact.
+    cost_impact: Mapped[Decimal] = mapped_column(
+        Numeric(18, 2), nullable=False, default=Decimal("0"), server_default="0",
+    )
+    # Relative paths under uploads/snag/photos/. Magic-byte gated upload.
+    photos: Mapped[list] = mapped_column(  # type: ignore[assignment]
+        JSON, nullable=False, default=list, server_default="[]",
+    )
+    # Best-effort link to the auto-created punchlist item. NOT a FK
+    # (cross-module); plain UUID string. NULL when bridge skipped or
+    # punchlist module disabled.
+    linked_punch_item_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(), nullable=True
+    )
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         "metadata", JSON, nullable=False, default=dict, server_default="{}"
     )
