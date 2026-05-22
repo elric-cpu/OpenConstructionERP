@@ -1206,6 +1206,38 @@ async def test_workforce_summary_aggregates_entries() -> None:
 
 
 @pytest.mark.asyncio
+async def test_workforce_summary_stable_after_close() -> None:
+    """Regression: `close_diary` used to mutate ``diary.labour_count`` by
+    folding entries' metadata onto it. A later call to
+    ``workforce_summary_for_diary`` then re-counted the same entries on
+    top of the inflated base, double-counting them.
+
+    The summary must be idempotent across the close transition.
+    """
+    svc = _make_service()
+    diary = await svc.create_diary(_diary_payload(), user_id="u")
+    # Pre-existing entry that carries a labour count.
+    entry = SimpleNamespace(
+        id=uuid.uuid4(), diary_id=diary.id, entry_type="visitor",
+        entry_time=datetime(2026, 4, 10, 9, tzinfo=UTC),
+        title="Crew", description=None,
+        source_module=None, source_ref=None, author_id=None,
+        photo_ids=[], metadata_={"labour_count": 4, "company": "Alpha"},
+    )
+    svc.entry_repo.rows[entry.id] = entry
+
+    before = await svc.workforce_summary_for_diary(diary.id)
+    with patch("app.modules.daily_diary.service.event_bus.publish_detached"):
+        await svc.close_diary(diary.id, user_id="u")
+    after = await svc.workforce_summary_for_diary(diary.id)
+
+    assert before["labour_count"] == after["labour_count"], (
+        "workforce summary must not change just because the diary was closed"
+    )
+    assert before["equipment_count"] == after["equipment_count"]
+
+
+@pytest.mark.asyncio
 async def test_emit_workforce_summary_publishes_event() -> None:
     svc = _make_service()
     diary = await svc.create_diary(_diary_payload(), user_id="u")

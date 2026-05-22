@@ -580,19 +580,25 @@ class DailyDiaryService:
         *,
         user_id: str | None = None,
     ) -> DailyDiary:
-        """Transition diary open→closed; emit ``daily_diary.closed``."""
+        """Transition diary open→closed; emit ``daily_diary.closed``.
+
+        ``labour_count`` / ``equipment_count`` on the diary row are the
+        site-supervisor's HEADER counts and are intentionally NOT mutated
+        here. The authoritative roll-up (header + entries) is computed
+        on demand by :meth:`workforce_summary_for_diary` so that:
+
+            * closing is idempotent — re-running it does not silently
+              keep inflating the counts;
+            * the workforce summary is internally consistent (header +
+              entries) regardless of whether the diary is open or closed.
+
+        Mutating the field here previously double-counted entries when
+        :meth:`workforce_summary_for_diary` ran after close: the diary
+        base was already inflated, and the summary then added the same
+        entries on top of it again.
+        """
         diary = await self.get_diary(diary_id)
         _ensure_can_transition(diary.status, "closed")
-
-        entries = await self.entry_repo.list_for_diary(diary_id)
-        # Aggregate labour/equipment counts from entries metadata if present.
-        labour_count = diary.labour_count
-        equipment_count = diary.equipment_count
-        for entry in entries:
-            meta = entry.metadata_ or {}
-            if isinstance(meta, dict):
-                labour_count += int(meta.get("labour_count", 0) or 0)
-                equipment_count += int(meta.get("equipment_count", 0) or 0)
 
         now = datetime.now(UTC)
         closed_by_uuid: uuid.UUID | None = None
@@ -607,8 +613,6 @@ class DailyDiaryService:
             status="closed",
             closed_at=now,
             closed_by=closed_by_uuid,
-            labour_count=labour_count,
-            equipment_count=equipment_count,
         )
         await self.session.refresh(diary)
         event_bus.publish_detached(
