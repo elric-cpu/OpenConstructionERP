@@ -838,6 +838,7 @@ def _build_preview_response(extracted: dict, ai_used: bool) -> ImportPreviewResp
 
 @router.post("/import-summary/")
 async def import_meeting_summary(
+    session: SessionDep,
     project_id: uuid.UUID = Query(...),
     file: UploadFile = File(...),
     preview: bool = Query(default=False),
@@ -858,6 +859,14 @@ async def import_meeting_summary(
             The caller can then present the data for user review and call
             this endpoint again with preview=false to create the meeting.
     """
+    # Project-ownership gate — pre-fix this endpoint accepted project_id
+    # from the query string and went straight to file parsing / meeting
+    # create with no cross-tenant verification, letting any user with the
+    # meetings.create role inject meetings + documents into a foreign
+    # project. ``verify_project_access`` returns 404 (not 403) so the
+    # endpoint can't double as a UUID-existence oracle.
+    await verify_project_access(project_id, str(user_id) if user_id else "", session)
+
     if not file.filename:
         raise HTTPException(status_code=400, detail="Filename is required")
 
