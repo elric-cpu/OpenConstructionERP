@@ -7,7 +7,36 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+# Regex for an ISO-4217 3-letter currency code (uppercase).
+_CURRENCY_PATTERN = r"^[A-Z]{3}$"
+
+# R6 enum patterns — kept in module scope so router + tests can re-use.
+_LEAD_SOURCE_PATTERN = (
+    r"^(web_form|walk_in|broker|referral|portal|other)$"
+)
+_LEAD_STATUS_PATTERN = (
+    r"^(new|qualified|viewing_scheduled|visited|quotation_sent|"
+    r"negotiating|converted|lost|disqualified)$"
+)
+_RESERVATION_STATUS_PATTERN = (
+    r"^(active|expired|converted|cancelled|refunded)$"
+)
+_SPA_STATUS_PATTERN = (
+    r"^(draft|sent_for_signature|partially_signed|signed|countersigned|"
+    r"registered|cancelled)$"
+)
+_SCHEDULE_STATUS_PATTERN = r"^(active|completed|suspended|cancelled)$"
+_INSTALMENT_STATUS_PATTERN = (
+    r"^(pending|due|overdue|paid|waived|cancelled)$"
+)
+_PARTY_ROLE_PATTERN = (
+    r"^(primary|co_owner|guarantor|power_of_attorney)$"
+)
+_RESERVATION_NUMBER_PATTERN = r"^RES-[A-Z0-9-]{1,40}-\d{5}$"
+_CONTRACT_NUMBER_PATTERN = r"^SPA-[A-Z0-9-]{1,40}-\d{5}$"
 
 # ── Development ─────────────────────────────────────────────────────────
 
@@ -961,3 +990,532 @@ class DevelopmentPnLResponse(BaseModel):
     avg_sale_price: Decimal = Decimal("0")
     open_warranty_count: int = 0
     open_snag_count: int = 0
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# R6 — Lead / Reservation / SalesContract / PaymentSchedule / ContractParty
+# ──────────────────────────────────────────────────────────────────────────
+
+
+def _strict_currency_validator(value: str | None) -> str | None:
+    """Coerce empty-string to None; uppercase + validate 3-letter ISO."""
+    if value is None or value == "":
+        return value
+    value = value.upper()
+    if len(value) != 3 or not value.isalpha():
+        raise ValueError("currency must be a 3-letter ISO code")
+    return value
+
+
+# ── Lead ────────────────────────────────────────────────────────────────
+
+
+class LeadCreate(BaseModel):
+    """Create a new lead at the top of the funnel."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    development_id: UUID | None = None
+    tenant_id: UUID | None = None
+    source: str = Field(default="other", pattern=_LEAD_SOURCE_PATTERN)
+    lead_score: Decimal = Field(default=Decimal("0"), ge=0, le=100)
+    assigned_agent_user_id: UUID | None = None
+    status: str = Field(default="new", pattern=_LEAD_STATUS_PATTERN)
+    nurture_stage: str | None = None
+    full_name: str = Field(default="", max_length=255)
+    email: str = Field(default="", max_length=255)
+    phone: str | None = Field(default=None, max_length=40)
+    language: str = Field(default="en", max_length=10)
+    budget_min: Decimal | None = Field(default=None, ge=0)
+    budget_max: Decimal | None = Field(default=None, ge=0)
+    currency: str = Field(default="", max_length=8)
+    preferred_house_type_id: UUID | None = None
+    notes: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("currency")
+    @classmethod
+    def _v_currency(cls, v: str) -> str:
+        return _strict_currency_validator(v) or ""
+
+
+class LeadUpdate(BaseModel):
+    """Partial update for a lead."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    development_id: UUID | None = None
+    source: str | None = Field(default=None, pattern=_LEAD_SOURCE_PATTERN)
+    lead_score: Decimal | None = Field(default=None, ge=0, le=100)
+    assigned_agent_user_id: UUID | None = None
+    status: str | None = Field(default=None, pattern=_LEAD_STATUS_PATTERN)
+    nurture_stage: str | None = None
+    full_name: str | None = Field(default=None, max_length=255)
+    email: str | None = Field(default=None, max_length=255)
+    phone: str | None = Field(default=None, max_length=40)
+    language: str | None = Field(default=None, max_length=10)
+    budget_min: Decimal | None = Field(default=None, ge=0)
+    budget_max: Decimal | None = Field(default=None, ge=0)
+    currency: str | None = Field(default=None, max_length=8)
+    preferred_house_type_id: UUID | None = None
+    notes: str | None = None
+    metadata: dict[str, Any] | None = None
+
+    @field_validator("currency")
+    @classmethod
+    def _v_currency(cls, v: str | None) -> str | None:
+        return _strict_currency_validator(v)
+
+
+class LeadResponse(BaseModel):
+    """Lead returned from the API."""
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    development_id: UUID | None = None
+    tenant_id: UUID | None = None
+    source: str = "other"
+    lead_score: Decimal = Decimal("0")
+    assigned_agent_user_id: UUID | None = None
+    status: str = "new"
+    nurture_stage: str | None = None
+    full_name: str = ""
+    email: str = ""
+    phone: str | None = None
+    language: str = "en"
+    budget_min: Decimal | None = None
+    budget_max: Decimal | None = None
+    currency: str = ""
+    preferred_house_type_id: UUID | None = None
+    notes: str | None = None
+    converted_to_buyer_id: UUID | None = None
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, validation_alias="metadata_"
+    )
+    created_at: datetime
+    updated_at: datetime
+
+
+class LeadConvertToReservationRequest(BaseModel):
+    """Convert a Lead into a Reservation on a plot."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    plot_id: UUID
+    deposit_amount: Decimal = Field(..., ge=0)
+    currency: str = Field(..., min_length=3, max_length=3)
+    cooling_off_days: int = Field(default=7, ge=0, le=90)
+    expires_at: str | None = Field(
+        default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"
+    )
+    # Optional Buyer-shadow creation. When True a Buyer row is materialised
+    # from the Lead data so downstream modules (selections, handover, ...)
+    # have something to link against.
+    create_buyer: bool = True
+
+    @field_validator("currency")
+    @classmethod
+    def _v_currency(cls, v: str) -> str:
+        return _strict_currency_validator(v) or ""
+
+
+# ── Reservation ─────────────────────────────────────────────────────────
+
+
+class ReservationCreate(BaseModel):
+    """Create a standalone reservation."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    plot_id: UUID
+    lead_id: UUID | None = None
+    buyer_id: UUID | None = None
+    tenant_id: UUID | None = None
+    # Auto-generated when omitted — see ``next_reservation_number``.
+    reservation_number: str | None = Field(
+        default=None, pattern=_RESERVATION_NUMBER_PATTERN
+    )
+    deposit_amount: Decimal = Field(..., ge=0)
+    currency: str = Field(..., min_length=3, max_length=3)
+    cooling_off_days: int = Field(default=7, ge=0, le=90)
+    expires_at: str | None = Field(
+        default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"
+    )
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("currency")
+    @classmethod
+    def _v_currency(cls, v: str) -> str:
+        return _strict_currency_validator(v) or ""
+
+
+class ReservationUpdate(BaseModel):
+    """Partial update for a reservation (limited fields — FSM elsewhere)."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    expires_at: str | None = Field(
+        default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"
+    )
+    cooling_off_days: int | None = Field(default=None, ge=0, le=90)
+    metadata: dict[str, Any] | None = None
+
+
+class ReservationResponse(BaseModel):
+    """Reservation returned from the API."""
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    plot_id: UUID
+    lead_id: UUID | None = None
+    buyer_id: UUID | None = None
+    tenant_id: UUID | None = None
+    reservation_number: str
+    deposit_amount: Decimal = Decimal("0")
+    currency: str = ""
+    deposit_paid_at: datetime | None = None
+    cooling_off_days: int = 7
+    cooling_off_until: str | None = None
+    expires_at: str | None = None
+    status: str = "active"
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, validation_alias="metadata_"
+    )
+    created_at: datetime
+    updated_at: datetime
+
+
+class ReservationConvertToSpaRequest(BaseModel):
+    """Convert a Reservation into a SalesContract (SPA)."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    contract_number: str | None = Field(
+        default=None, pattern=_CONTRACT_NUMBER_PATTERN
+    )
+    signing_date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
+    governing_law: str = Field(default="", max_length=16)
+    language: str = Field(default="en", max_length=10)
+    total_value: Decimal = Field(..., ge=0)
+    currency: str = Field(..., min_length=3, max_length=3)
+    total_price_breakdown: dict[str, Any] = Field(default_factory=dict)
+    terms_version: str = Field(default="", max_length=80)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("currency")
+    @classmethod
+    def _v_currency(cls, v: str) -> str:
+        return _strict_currency_validator(v) or ""
+
+
+# ── SalesContract (SPA) ─────────────────────────────────────────────────
+
+
+class SalesContractCreate(BaseModel):
+    """Create a draft SPA. Multi-buyer parties added via ContractParty."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    contract_number: str | None = Field(
+        default=None, pattern=_CONTRACT_NUMBER_PATTERN
+    )
+    plot_id: UUID
+    reservation_id: UUID | None = None
+    tenant_id: UUID | None = None
+    signing_date: str | None = Field(
+        default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"
+    )
+    governing_law: str = Field(default="", max_length=16)
+    language: str = Field(default="en", max_length=10)
+    total_price_breakdown: dict[str, Any] = Field(default_factory=dict)
+    total_value: Decimal = Field(default=Decimal("0"), ge=0)
+    currency: str = Field(default="", max_length=3)
+    e_sign_envelope_id: str | None = Field(default=None, max_length=255)
+    parent_contract_id: UUID | None = None
+    revision_number: int = Field(default=1, ge=1)
+    terms_version: str = Field(default="", max_length=80)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("currency")
+    @classmethod
+    def _v_currency(cls, v: str) -> str:
+        return _strict_currency_validator(v) or ""
+
+
+class SalesContractUpdate(BaseModel):
+    """Partial update for a draft SPA."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    signing_date: str | None = Field(
+        default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"
+    )
+    governing_law: str | None = Field(default=None, max_length=16)
+    language: str | None = Field(default=None, max_length=10)
+    total_price_breakdown: dict[str, Any] | None = None
+    total_value: Decimal | None = Field(default=None, ge=0)
+    currency: str | None = Field(default=None, max_length=3)
+    e_sign_envelope_id: str | None = Field(default=None, max_length=255)
+    terms_version: str | None = Field(default=None, max_length=80)
+    metadata: dict[str, Any] | None = None
+
+    @field_validator("currency")
+    @classmethod
+    def _v_currency(cls, v: str | None) -> str | None:
+        return _strict_currency_validator(v)
+
+
+class SalesContractResponse(BaseModel):
+    """SPA returned from the API."""
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    contract_number: str
+    plot_id: UUID
+    reservation_id: UUID | None = None
+    tenant_id: UUID | None = None
+    signing_date: str | None = None
+    governing_law: str = ""
+    language: str = "en"
+    total_price_breakdown: dict[str, Any] = Field(default_factory=dict)
+    total_value: Decimal = Decimal("0")
+    currency: str = ""
+    e_sign_envelope_id: str | None = None
+    status: str = "draft"
+    parent_contract_id: UUID | None = None
+    revision_number: int = 1
+    terms_version: str = ""
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, validation_alias="metadata_"
+    )
+    created_at: datetime
+    updated_at: datetime
+
+
+class SalesContractSendForSignatureRequest(BaseModel):
+    """Trigger envelope creation + email-out to all parties."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    e_sign_envelope_id: str | None = Field(default=None, max_length=255)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SalesContractSignRequest(BaseModel):
+    """Countersign — developer side. Buyer-side signing is per-party."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    signing_date: str | None = Field(
+        default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"
+    )
+
+
+# ── PaymentSchedule ─────────────────────────────────────────────────────
+
+
+class PaymentScheduleCreate(BaseModel):
+    """Create a payment schedule attached to an SPA."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    sales_contract_id: UUID
+    tenant_id: UUID | None = None
+    currency: str = Field(..., min_length=3, max_length=3)
+    total_amount: Decimal = Field(..., ge=0)
+    late_fee_pct: Decimal = Field(default=Decimal("0"), ge=0, le=100)
+    grace_period_days: int = Field(default=0, ge=0, le=365)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("currency")
+    @classmethod
+    def _v_currency(cls, v: str) -> str:
+        return _strict_currency_validator(v) or ""
+
+
+class PaymentScheduleUpdate(BaseModel):
+    """Partial update for an active schedule (rates, grace)."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    late_fee_pct: Decimal | None = Field(default=None, ge=0, le=100)
+    grace_period_days: int | None = Field(default=None, ge=0, le=365)
+    metadata: dict[str, Any] | None = None
+
+
+class PaymentScheduleResponse(BaseModel):
+    """PaymentSchedule returned from the API."""
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    sales_contract_id: UUID
+    tenant_id: UUID | None = None
+    currency: str = ""
+    total_amount: Decimal = Decimal("0")
+    late_fee_pct: Decimal = Decimal("0")
+    grace_period_days: int = 0
+    status: str = "active"
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, validation_alias="metadata_"
+    )
+    created_at: datetime
+    updated_at: datetime
+
+
+# ── Instalment ──────────────────────────────────────────────────────────
+
+
+class InstalmentCreate(BaseModel):
+    """Create one instalment line."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    schedule_id: UUID
+    sequence: int = Field(..., ge=1)
+    milestone_label: str = Field(default="", max_length=255)
+    milestone_event: str = Field(default="", max_length=80)
+    due_date: str | None = Field(
+        default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"
+    )
+    amount: Decimal = Field(..., ge=0)
+    invoice_ref: str | None = Field(default=None, max_length=255)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class InstalmentUpdate(BaseModel):
+    """Partial update for an instalment line."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    milestone_label: str | None = Field(default=None, max_length=255)
+    milestone_event: str | None = Field(default=None, max_length=80)
+    due_date: str | None = Field(
+        default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"
+    )
+    amount: Decimal | None = Field(default=None, ge=0)
+    invoice_ref: str | None = Field(default=None, max_length=255)
+    metadata: dict[str, Any] | None = None
+
+
+class InstalmentResponse(BaseModel):
+    """Instalment returned from the API."""
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    schedule_id: UUID
+    sequence: int
+    milestone_label: str = ""
+    milestone_event: str = ""
+    due_date: str | None = None
+    amount: Decimal = Decimal("0")
+    amount_paid: Decimal = Decimal("0")
+    paid_at: datetime | None = None
+    status: str = "pending"
+    late_fee_accrued: Decimal = Decimal("0")
+    invoice_ref: str | None = None
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, validation_alias="metadata_"
+    )
+    created_at: datetime
+    updated_at: datetime
+
+
+class InstalmentMarkPaidRequest(BaseModel):
+    """Apply a payment against an instalment."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    amount: Decimal = Field(..., gt=0)
+    paid_at: datetime | None = None
+    invoice_ref: str | None = Field(default=None, max_length=255)
+
+
+class InstalmentWaiveRequest(BaseModel):
+    """Manager waiver of an instalment (e.g. goodwill resolution)."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    reason: str = Field(default="", max_length=500)
+
+
+# ── ContractParty ───────────────────────────────────────────────────────
+
+
+class ContractPartyCreate(BaseModel):
+    """Add a Buyer to a SalesContract as a party."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    sales_contract_id: UUID
+    buyer_id: UUID
+    ownership_pct: Decimal = Field(..., ge=0, le=100)
+    party_role: str = Field(default="primary", pattern=_PARTY_ROLE_PATTERN)
+    signing_order: int = Field(default=0, ge=0)
+    signature_ref: str | None = Field(default=None, max_length=255)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("ownership_pct")
+    @classmethod
+    def _v_ownership_decimals(cls, v: Decimal) -> Decimal:
+        # Allow up to 2 decimal places.
+        q = v.quantize(Decimal("0.01"))
+        if q != v:
+            raise ValueError("ownership_pct supports at most 2 decimals")
+        return v
+
+
+class ContractPartyUpdate(BaseModel):
+    """Mutate a party (typically ownership_pct or signed_at)."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    ownership_pct: Decimal | None = Field(default=None, ge=0, le=100)
+    party_role: str | None = Field(default=None, pattern=_PARTY_ROLE_PATTERN)
+    signing_order: int | None = Field(default=None, ge=0)
+    signed_at: datetime | None = None
+    signature_ref: str | None = Field(default=None, max_length=255)
+    metadata: dict[str, Any] | None = None
+
+
+class ContractPartyResponse(BaseModel):
+    """ContractParty returned from the API."""
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    sales_contract_id: UUID
+    buyer_id: UUID
+    ownership_pct: Decimal = Decimal("0")
+    party_role: str = "primary"
+    signing_order: int = 0
+    signed_at: datetime | None = None
+    signature_ref: str | None = None
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, validation_alias="metadata_"
+    )
+    created_at: datetime
+    updated_at: datetime
+
+
+class ReservationExpiryBatchResponse(BaseModel):
+    """Result of /reservations/expire-overdue."""
+
+    expired_count: int = 0
+    expired_ids: list[UUID] = Field(default_factory=list)
+
+
+# Marker for tooling — re-export _CURRENCY_PATTERN to suppress lint
+# warning about unused module-scope constants when only schemas import.
+_USED_SENTINELS = (
+    _CURRENCY_PATTERN,
+    _LEAD_STATUS_PATTERN,
+    _RESERVATION_STATUS_PATTERN,
+    _SPA_STATUS_PATTERN,
+    _SCHEDULE_STATUS_PATTERN,
+    _INSTALMENT_STATUS_PATTERN,
+)

@@ -23,12 +23,19 @@ from app.modules.property_dev.models import (
     BuyerOptionGroup,
     BuyerSelection,
     BuyerSelectionItem,
+    ContractParty,
     Development,
     Handover,
     HandoverDoc,
     HouseType,
     HouseTypeVariant,
+    Instalment,
+    Lead,
+    PaymentSchedule,
     Plot,
+    Reservation,
+    SalesContract,
+    SalesContractRevision,
     Snag,
     WarrantyClaim,
 )
@@ -39,12 +46,19 @@ from app.modules.property_dev.repository import (
     BuyerRepository,
     BuyerSelectionItemRepository,
     BuyerSelectionRepository,
+    ContractPartyRepository,
     DevelopmentRepository,
     HandoverDocRepository,
     HandoverRepository,
     HouseTypeRepository,
     HouseTypeVariantRepository,
+    InstalmentRepository,
+    LeadRepository,
+    PaymentScheduleRepository,
     PlotRepository,
+    ReservationRepository,
+    SalesContractRepository,
+    SalesContractRevisionRepository,
     SnagRepository,
     WarrantyClaimRepository,
 )
@@ -60,6 +74,8 @@ from app.modules.property_dev.schemas import (
     BuyerSelectionItemCreate,
     BuyerSelectionUpdate,
     BuyerUpdate,
+    ContractPartyCreate,
+    ContractPartyUpdate,
     DevelopmentCreate,
     DevelopmentUpdate,
     HandoverCompleteRequest,
@@ -71,9 +87,25 @@ from app.modules.property_dev.schemas import (
     HouseTypeUpdate,
     HouseTypeVariantCreate,
     HouseTypeVariantUpdate,
+    InstalmentCreate,
+    InstalmentMarkPaidRequest,
+    InstalmentUpdate,
+    InstalmentWaiveRequest,
+    LeadConvertToReservationRequest,
+    LeadCreate,
+    LeadUpdate,
+    PaymentScheduleCreate,
+    PaymentScheduleUpdate,
     PlotCreate,
     PlotReserveRequest,
     PlotUpdate,
+    ReservationConvertToSpaRequest,
+    ReservationCreate,
+    ReservationUpdate,
+    SalesContractCreate,
+    SalesContractSendForSignatureRequest,
+    SalesContractSignRequest,
+    SalesContractUpdate,
     SnagCreate,
     SnagUpdate,
     WarrantyClaimCreate,
@@ -124,6 +156,97 @@ _WARRANTY_TRANSITIONS: dict[str, set[str]] = {
     "rejected": {"closed"},
     "closed": set(),
 }
+
+
+# ── R6 FSMs ─────────────────────────────────────────────────────────────
+
+
+_LEAD_TRANSITIONS: dict[str, set[str]] = {
+    "new": {"qualified", "lost", "disqualified"},
+    "qualified": {
+        "viewing_scheduled",
+        "quotation_sent",
+        "negotiating",
+        "lost",
+        "disqualified",
+    },
+    "viewing_scheduled": {"visited", "lost", "disqualified"},
+    "visited": {
+        "quotation_sent",
+        "negotiating",
+        "converted",
+        "lost",
+        "disqualified",
+    },
+    "quotation_sent": {"negotiating", "converted", "lost"},
+    "negotiating": {"quotation_sent", "converted", "lost"},
+    "converted": set(),
+    "lost": set(),
+    "disqualified": set(),
+}
+
+
+_RESERVATION_TRANSITIONS: dict[str, set[str]] = {
+    "active": {"converted", "expired", "cancelled", "refunded"},
+    "converted": set(),
+    "expired": {"refunded"},
+    "cancelled": {"refunded"},
+    "refunded": set(),
+}
+
+
+_SPA_TRANSITIONS: dict[str, set[str]] = {
+    "draft": {"sent_for_signature", "cancelled"},
+    "sent_for_signature": {"partially_signed", "signed", "cancelled"},
+    "partially_signed": {"signed", "cancelled"},
+    "signed": {"countersigned", "cancelled"},
+    "countersigned": {"registered", "cancelled"},
+    "registered": set(),
+    "cancelled": set(),
+}
+
+
+_PAYMENT_SCHEDULE_TRANSITIONS: dict[str, set[str]] = {
+    "active": {"suspended", "completed", "cancelled"},
+    "suspended": {"active", "cancelled"},
+    "completed": set(),
+    "cancelled": set(),
+}
+
+
+_INSTALMENT_TRANSITIONS: dict[str, set[str]] = {
+    "pending": {"due", "waived", "cancelled"},
+    "due": {"overdue", "paid", "waived", "cancelled"},
+    "overdue": {"paid", "waived", "cancelled"},
+    "paid": set(),
+    "waived": set(),
+    "cancelled": set(),
+}
+
+
+def allowed_lead_transitions(current: str) -> set[str]:
+    """Return the set of next valid Lead statuses."""
+    return set(_LEAD_TRANSITIONS.get(current, set()))
+
+
+def allowed_reservation_transitions(current: str) -> set[str]:
+    """Return the set of next valid Reservation statuses."""
+    return set(_RESERVATION_TRANSITIONS.get(current, set()))
+
+
+def allowed_spa_transitions(current: str) -> set[str]:
+    """Return the set of next valid SalesContract statuses."""
+    return set(_SPA_TRANSITIONS.get(current, set()))
+
+
+def allowed_payment_schedule_transitions(current: str) -> set[str]:
+    """Return the set of next valid PaymentSchedule statuses."""
+    return set(_PAYMENT_SCHEDULE_TRANSITIONS.get(current, set()))
+
+
+def allowed_instalment_transitions(current: str) -> set[str]:
+    """Return the set of next valid Instalment statuses."""
+    return set(_INSTALMENT_TRANSITIONS.get(current, set()))
 
 
 def allowed_plot_transitions(current: str) -> set[str]:
@@ -595,6 +718,14 @@ class PropertyDevService:
         self.snags = SnagRepository(session)
         self.warranty = WarrantyClaimRepository(session)
         self.pipeline = BuyerPipelineQueries(session)
+        # ── R6 ─────────────────────────────────────────────────────
+        self.leads = LeadRepository(session)
+        self.reservations = ReservationRepository(session)
+        self.sales_contracts = SalesContractRepository(session)
+        self.sales_contract_revisions = SalesContractRevisionRepository(session)
+        self.payment_schedules = PaymentScheduleRepository(session)
+        self.instalments = InstalmentRepository(session)
+        self.contract_parties = ContractPartyRepository(session)
 
     # ── Development ─────────────────────────────────────────────────────
 
@@ -1715,6 +1846,1112 @@ class PropertyDevService:
         }
 
 
+    # ════════════════════════════════════════════════════════════════════
+    # R6 — Lead / Reservation / SPA / PaymentSchedule / ContractParty
+    # ════════════════════════════════════════════════════════════════════
+
+    # ── Lead ────────────────────────────────────────────────────────────
+
+    async def create_lead(self, data: LeadCreate) -> Lead:
+        """Create a new lead at the top of the funnel."""
+        if data.preferred_house_type_id is not None:
+            ht = await self.house_types.get_by_id(data.preferred_house_type_id)
+            if ht is None:
+                raise HTTPException(
+                    status_code=422, detail="preferred_house_type not found"
+                )
+        if data.development_id is not None:
+            dev = await self.developments.get_by_id(data.development_id)
+            if dev is None:
+                raise HTTPException(
+                    status_code=422, detail="development not found"
+                )
+        obj = Lead(
+            development_id=data.development_id,
+            tenant_id=data.tenant_id,
+            source=data.source,
+            lead_score=data.lead_score,
+            assigned_agent_user_id=data.assigned_agent_user_id,
+            status=data.status,
+            nurture_stage=data.nurture_stage,
+            full_name=data.full_name,
+            email=data.email,
+            phone=data.phone,
+            language=data.language,
+            budget_min=data.budget_min,
+            budget_max=data.budget_max,
+            currency=data.currency or "",
+            preferred_house_type_id=data.preferred_house_type_id,
+            notes=data.notes,
+            metadata_=data.metadata,
+        )
+        lead = await self.leads.create(obj)
+        event_bus.publish_detached(
+            "property_dev.lead.created",
+            data={
+                "lead_id": str(lead.id),
+                "development_id": (
+                    str(lead.development_id) if lead.development_id else None
+                ),
+                "source": lead.source,
+                "status": lead.status,
+                "email": lead.email,
+            },
+            source_module="property_dev",
+        )
+        return lead
+
+    async def get_lead(self, lead_id: uuid.UUID) -> Lead:
+        obj = await self.leads.get_by_id(lead_id)
+        if obj is None:
+            raise HTTPException(status_code=404, detail="Lead not found")
+        return obj
+
+    async def update_lead(
+        self, lead_id: uuid.UUID, data: LeadUpdate
+    ) -> Lead:
+        lead = await self.get_lead(lead_id)
+        fields = _dump(data)
+        new_status = fields.get("status")
+        if new_status:
+            _ensure_transition(
+                "lead", lead.status, new_status, allowed_lead_transitions
+            )
+        await self.leads.update_fields(lead_id, **fields)
+        return await self.get_lead(lead_id)
+
+    async def delete_lead(self, lead_id: uuid.UUID) -> None:
+        await self.get_lead(lead_id)
+        await self.leads.delete(lead_id)
+
+    async def convert_lead_to_reservation(
+        self,
+        lead_id: uuid.UUID,
+        data: LeadConvertToReservationRequest,
+    ) -> Reservation:
+        """Convert a Lead → Reservation (+ optionally a Buyer shadow).
+
+        Publishes ``property_dev.lead.converted``.
+
+        Raises:
+            HTTPException(409) if the lead is in a terminal state.
+            HTTPException(422) if plot is missing or doesn't accept new
+                reservations (status='sold' or 'handed_over').
+        """
+        lead = await self.get_lead(lead_id)
+        if lead.status in {"converted", "lost", "disqualified"}:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Lead in status '{lead.status}' cannot convert",
+            )
+        plot = await self.plots.get_by_id(data.plot_id)
+        if plot is None:
+            raise HTTPException(status_code=422, detail="plot not found")
+        if plot.status in {"sold", "handed_over"}:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Plot {plot.plot_number} not available for reservation",
+            )
+
+        # Optionally materialise a Buyer shadow.
+        buyer: Buyer | None = None
+        if data.create_buyer:
+            dev_id = lead.development_id or plot.development_id
+            buyer_obj = Buyer(
+                development_id=dev_id,
+                plot_id=plot.id,
+                full_name=lead.full_name,
+                email=lead.email,
+                phone=lead.phone,
+                language=lead.language or "en",
+                status="reserved",
+                currency=data.currency,
+                deposit_amount=data.deposit_amount,
+                deposit_paid_at=_today_iso(),
+                metadata_=dict(lead.metadata_ or {}),
+            )
+            buyer = await self.buyers.create(buyer_obj)
+
+        reservation = await self._create_reservation_internal(
+            plot=plot,
+            lead_id=lead.id,
+            buyer_id=buyer.id if buyer is not None else None,
+            tenant_id=lead.tenant_id,
+            deposit_amount=data.deposit_amount,
+            currency=data.currency,
+            cooling_off_days=data.cooling_off_days,
+            expires_at=data.expires_at,
+            metadata={"converted_from_lead": str(lead_id)},
+        )
+
+        # Mark lead converted.
+        await self.leads.update_fields(
+            lead_id,
+            status="converted",
+            converted_to_buyer_id=buyer.id if buyer is not None else None,
+        )
+        # Flip plot to reserved unless already past reservation gate.
+        if plot.status in {"planned", "under_construction", "ready"}:
+            await self.plots.update_fields(plot.id, status="reserved")
+
+        event_bus.publish_detached(
+            "property_dev.lead.converted",
+            data={
+                "lead_id": str(lead_id),
+                "reservation_id": str(reservation.id),
+                "buyer_id": str(buyer.id) if buyer is not None else None,
+                "plot_id": str(plot.id),
+                "deposit_amount": str(reservation.deposit_amount),
+                "currency": reservation.currency,
+            },
+            source_module="property_dev",
+        )
+        return reservation
+
+    # ── Reservation ─────────────────────────────────────────────────────
+
+    async def _next_reservation_number(self, plot: Plot) -> str:
+        """Compute the next per-development reservation number.
+
+        Numbering format: ``RES-{development_code}-{seq:05d}`` where
+        ``seq`` is the count of reservations on this plot + 1.
+        """
+        dev = await self.developments.get_by_id(plot.development_id)
+        dev_code = (dev.code if dev else "DEV").upper()
+        seq = await self.reservations.next_sequence_for_plot(plot.id)
+        return f"RES-{dev_code}-{seq:05d}"
+
+    async def _create_reservation_internal(
+        self,
+        *,
+        plot: Plot,
+        lead_id: uuid.UUID | None,
+        buyer_id: uuid.UUID | None,
+        tenant_id: uuid.UUID | None,
+        deposit_amount: Decimal,
+        currency: str,
+        cooling_off_days: int,
+        expires_at: str | None,
+        reservation_number: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> Reservation:
+        if reservation_number is None:
+            reservation_number = await self._next_reservation_number(plot)
+        today = datetime.now(UTC).date()
+        cooling_off_until = (
+            today + timedelta(days=cooling_off_days)
+        ).isoformat()
+        obj = Reservation(
+            plot_id=plot.id,
+            lead_id=lead_id,
+            buyer_id=buyer_id,
+            tenant_id=tenant_id,
+            reservation_number=reservation_number,
+            deposit_amount=deposit_amount,
+            currency=currency,
+            deposit_paid_at=datetime.now(UTC),
+            cooling_off_days=cooling_off_days,
+            cooling_off_until=cooling_off_until,
+            expires_at=expires_at,
+            status="active",
+            metadata_=metadata or {},
+        )
+        reservation = await self.reservations.create(obj)
+        event_bus.publish_detached(
+            "property_dev.reservation.created",
+            data={
+                "reservation_id": str(reservation.id),
+                "plot_id": str(plot.id),
+                "lead_id": str(lead_id) if lead_id else None,
+                "buyer_id": str(buyer_id) if buyer_id else None,
+                "deposit_amount": str(deposit_amount),
+                "currency": currency,
+            },
+            source_module="property_dev",
+        )
+        return reservation
+
+    async def create_reservation(self, data: ReservationCreate) -> Reservation:
+        plot = await self.plots.get_by_id(data.plot_id)
+        if plot is None:
+            raise HTTPException(status_code=422, detail="plot not found")
+        if plot.status in {"sold", "handed_over"}:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Plot {plot.plot_number} not available for reservation",
+            )
+        # Validate lead/buyer ids if provided.
+        if data.lead_id is not None and await self.leads.get_by_id(data.lead_id) is None:
+            raise HTTPException(status_code=422, detail="lead not found")
+        if data.buyer_id is not None and await self.buyers.get_by_id(data.buyer_id) is None:
+            raise HTTPException(status_code=422, detail="buyer not found")
+        return await self._create_reservation_internal(
+            plot=plot,
+            lead_id=data.lead_id,
+            buyer_id=data.buyer_id,
+            tenant_id=data.tenant_id,
+            deposit_amount=data.deposit_amount,
+            currency=data.currency,
+            cooling_off_days=data.cooling_off_days,
+            expires_at=data.expires_at,
+            reservation_number=data.reservation_number,
+            metadata=data.metadata,
+        )
+
+    async def get_reservation(self, r_id: uuid.UUID) -> Reservation:
+        obj = await self.reservations.get_by_id(r_id)
+        if obj is None:
+            raise HTTPException(status_code=404, detail="Reservation not found")
+        return obj
+
+    async def update_reservation(
+        self, r_id: uuid.UUID, data: ReservationUpdate
+    ) -> Reservation:
+        res = await self.get_reservation(r_id)
+        if res.status != "active":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Reservation in status '{res.status}' is read-only",
+            )
+        fields = _dump(data)
+        if fields:
+            await self.reservations.update_fields(r_id, **fields)
+        return await self.get_reservation(r_id)
+
+    async def cancel_reservation(self, r_id: uuid.UUID) -> Reservation:
+        res = await self.get_reservation(r_id)
+        _ensure_transition(
+            "reservation",
+            res.status,
+            "cancelled",
+            allowed_reservation_transitions,
+        )
+        await self.reservations.update_fields(r_id, status="cancelled")
+        cancelled = await self.get_reservation(r_id)
+        # Free plot if it was held for this reservation.
+        plot = await self.plots.get_by_id(cancelled.plot_id)
+        if plot is not None and plot.status == "reserved":
+            await self.plots.update_fields(plot.id, status="planned")
+        event_bus.publish_detached(
+            "property_dev.reservation.cancelled",
+            data={
+                "reservation_id": str(r_id),
+                "plot_id": str(cancelled.plot_id),
+            },
+            source_module="property_dev",
+        )
+        return cancelled
+
+    async def expire_reservation(self, r_id: uuid.UUID) -> Reservation:
+        res = await self.get_reservation(r_id)
+        _ensure_transition(
+            "reservation",
+            res.status,
+            "expired",
+            allowed_reservation_transitions,
+        )
+        await self.reservations.update_fields(r_id, status="expired")
+        expired = await self.get_reservation(r_id)
+        # Free plot if it was held.
+        plot = await self.plots.get_by_id(expired.plot_id)
+        if plot is not None and plot.status == "reserved":
+            await self.plots.update_fields(plot.id, status="planned")
+        event_bus.publish_detached(
+            "property_dev.reservation.expired",
+            data={
+                "reservation_id": str(r_id),
+                "plot_id": str(expired.plot_id),
+            },
+            source_module="property_dev",
+        )
+        return expired
+
+    async def expire_overdue_reservations(self) -> list[uuid.UUID]:
+        """Expire every active reservation whose ``expires_at`` is past.
+
+        Returns the list of expired reservation IDs. Safe to call from a
+        cron-driven endpoint or from a daily job; idempotent.
+        """
+        today = datetime.now(UTC).date().isoformat()
+        expired = await self.reservations.find_expired(today_iso=today)
+        out: list[uuid.UUID] = []
+        for res in expired:
+            try:
+                await self.expire_reservation(res.id)
+                out.append(res.id)
+            except HTTPException:
+                # Transition conflict (already mutated by another path) —
+                # skip, do not abort the batch.
+                continue
+        return out
+
+    async def convert_reservation_to_spa(
+        self,
+        r_id: uuid.UUID,
+        data: ReservationConvertToSpaRequest,
+    ) -> SalesContract:
+        res = await self.get_reservation(r_id)
+        if res.status != "active":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Reservation in status '{res.status}' cannot convert",
+            )
+        plot = await self.plots.get_by_id(res.plot_id)
+        if plot is None:
+            raise HTTPException(
+                status_code=409, detail="Plot for reservation has gone away"
+            )
+
+        contract_number = data.contract_number or await self._next_contract_number(
+            plot
+        )
+        obj = SalesContract(
+            contract_number=contract_number,
+            plot_id=plot.id,
+            reservation_id=r_id,
+            tenant_id=res.tenant_id,
+            signing_date=data.signing_date,
+            governing_law=data.governing_law or "",
+            language=data.language or "en",
+            total_price_breakdown=data.total_price_breakdown,
+            total_value=data.total_value,
+            currency=data.currency,
+            status="draft",
+            terms_version=data.terms_version,
+            metadata_=data.metadata,
+        )
+        spa = await self.sales_contracts.create(obj)
+
+        # Mark reservation converted + buyer/plot transition.
+        await self.reservations.update_fields(r_id, status="converted")
+        if res.buyer_id is not None:
+            buyer = await self.buyers.get_by_id(res.buyer_id)
+            if buyer is not None and buyer.status == "reserved":
+                await self.buyers.update_fields(
+                    res.buyer_id,
+                    status="contracted",
+                    contract_value=data.total_value,
+                    currency=data.currency,
+                    contract_signed_at=data.signing_date,
+                )
+        if plot.status == "reserved":
+            await self.plots.update_fields(plot.id, status="sold")
+
+        # Default payment schedule (single milestone @ spa_signed).
+        await self._create_default_payment_schedule(spa)
+
+        event_bus.publish_detached(
+            "property_dev.spa.created",
+            data={
+                "spa_id": str(spa.id),
+                "plot_id": str(plot.id),
+                "reservation_id": str(r_id),
+                "total_value": str(spa.total_value),
+                "currency": spa.currency,
+            },
+            source_module="property_dev",
+        )
+        return spa
+
+    # ── SalesContract ──────────────────────────────────────────────────
+
+    async def _next_contract_number(self, plot: Plot) -> str:
+        dev = await self.developments.get_by_id(plot.development_id)
+        dev_code = (dev.code if dev else "DEV").upper()
+        seq = await self.sales_contracts.next_sequence_for_plot(plot.id)
+        return f"SPA-{dev_code}-{seq:05d}"
+
+    async def _create_default_payment_schedule(
+        self, spa: SalesContract
+    ) -> PaymentSchedule:
+        """Create a single-line ``spa_signed`` schedule by default."""
+        schedule_obj = PaymentSchedule(
+            sales_contract_id=spa.id,
+            tenant_id=spa.tenant_id,
+            currency=spa.currency,
+            total_amount=spa.total_value,
+            status="active",
+            metadata_={"auto_created": True},
+        )
+        schedule = await self.payment_schedules.create(schedule_obj)
+        await self.instalments.create(
+            Instalment(
+                schedule_id=schedule.id,
+                sequence=1,
+                milestone_label="Full balance @ SPA signature",
+                milestone_event="spa_signed",
+                due_date=spa.signing_date,
+                amount=spa.total_value,
+                status="pending",
+            )
+        )
+        return schedule
+
+    async def create_spa(self, data: SalesContractCreate) -> SalesContract:
+        plot = await self.plots.get_by_id(data.plot_id)
+        if plot is None:
+            raise HTTPException(status_code=422, detail="plot not found")
+        contract_number = data.contract_number or await self._next_contract_number(
+            plot
+        )
+        obj = SalesContract(
+            contract_number=contract_number,
+            plot_id=plot.id,
+            reservation_id=data.reservation_id,
+            tenant_id=data.tenant_id,
+            signing_date=data.signing_date,
+            governing_law=data.governing_law or "",
+            language=data.language or "en",
+            total_price_breakdown=data.total_price_breakdown,
+            total_value=data.total_value,
+            currency=data.currency or "",
+            e_sign_envelope_id=data.e_sign_envelope_id,
+            status="draft",
+            parent_contract_id=data.parent_contract_id,
+            revision_number=data.revision_number,
+            terms_version=data.terms_version,
+            metadata_=data.metadata,
+        )
+        spa = await self.sales_contracts.create(obj)
+        event_bus.publish_detached(
+            "property_dev.spa.draft_created",
+            data={
+                "spa_id": str(spa.id),
+                "plot_id": str(plot.id),
+                "total_value": str(spa.total_value),
+                "currency": spa.currency,
+            },
+            source_module="property_dev",
+        )
+        return spa
+
+    async def get_spa(self, spa_id: uuid.UUID) -> SalesContract:
+        obj = await self.sales_contracts.get_by_id(spa_id)
+        if obj is None:
+            raise HTTPException(status_code=404, detail="SalesContract not found")
+        return obj
+
+    async def update_spa(
+        self, spa_id: uuid.UUID, data: SalesContractUpdate
+    ) -> SalesContract:
+        spa = await self.get_spa(spa_id)
+        if spa.status not in {"draft", "sent_for_signature"}:
+            raise HTTPException(
+                status_code=409,
+                detail=f"SalesContract in status '{spa.status}' is read-only",
+            )
+        fields = _dump(data)
+        if fields:
+            await self.sales_contracts.update_fields(spa_id, **fields)
+        return await self.get_spa(spa_id)
+
+    async def delete_spa(self, spa_id: uuid.UUID) -> None:
+        spa = await self.get_spa(spa_id)
+        if spa.status != "draft":
+            raise HTTPException(
+                status_code=409,
+                detail="Only draft SalesContracts can be deleted",
+            )
+        await self.sales_contracts.delete(spa_id)
+
+    async def send_spa_for_signature(
+        self,
+        spa_id: uuid.UUID,
+        data: SalesContractSendForSignatureRequest,
+    ) -> SalesContract:
+        spa = await self.get_spa(spa_id)
+        _ensure_transition(
+            "spa",
+            spa.status,
+            "sent_for_signature",
+            allowed_spa_transitions,
+        )
+        # Require at least one party with role=primary.
+        parties = await self.contract_parties.list_for_contract(spa_id)
+        if not any(p.party_role == "primary" for p in parties):
+            raise HTTPException(
+                status_code=409,
+                detail="SalesContract has no primary party — cannot send",
+            )
+        fields: dict[str, Any] = {"status": "sent_for_signature"}
+        if data.e_sign_envelope_id is not None:
+            fields["e_sign_envelope_id"] = data.e_sign_envelope_id
+        await self.sales_contracts.update_fields(spa_id, **fields)
+        sent = await self.get_spa(spa_id)
+        event_bus.publish_detached(
+            "property_dev.spa.sent_for_signature",
+            data={
+                "spa_id": str(spa_id),
+                "envelope_id": sent.e_sign_envelope_id,
+                "party_count": len(parties),
+            },
+            source_module="property_dev",
+        )
+        return sent
+
+    async def sign_spa(
+        self, spa_id: uuid.UUID, data: SalesContractSignRequest
+    ) -> SalesContract:
+        """Counter-sign the SPA on the developer side."""
+        spa = await self.get_spa(spa_id)
+        # Allow counter-sign from signed → countersigned (typical path)
+        # or from sent_for_signature when buyer + developer co-sign at once.
+        if spa.status == "signed":
+            target = "countersigned"
+        elif spa.status in {"sent_for_signature", "partially_signed"}:
+            target = "signed"
+        else:
+            raise HTTPException(
+                status_code=409,
+                detail=f"SalesContract in status '{spa.status}' cannot be signed",
+            )
+        _ensure_transition("spa", spa.status, target, allowed_spa_transitions)
+        fields: dict[str, Any] = {"status": target}
+        if data.signing_date and not spa.signing_date:
+            fields["signing_date"] = data.signing_date
+        await self.sales_contracts.update_fields(spa_id, **fields)
+        signed = await self.get_spa(spa_id)
+
+        # Auto-activate the linked payment schedule on countersign.
+        if target == "countersigned":
+            schedule = await self.payment_schedules.get_for_contract(spa_id)
+            if schedule is not None and schedule.status == "active":
+                # Schedule already active → fire spa_signed milestone.
+                await self._fire_milestone(spa_id, "spa_signed")
+
+        event_bus.publish_detached(
+            "property_dev.spa.signed",
+            data={
+                "spa_id": str(spa_id),
+                "plot_id": str(signed.plot_id),
+                "status": signed.status,
+                "signing_date": signed.signing_date,
+            },
+            source_module="property_dev",
+        )
+        return signed
+
+    async def cancel_spa(self, spa_id: uuid.UUID) -> SalesContract:
+        spa = await self.get_spa(spa_id)
+        _ensure_transition(
+            "spa", spa.status, "cancelled", allowed_spa_transitions
+        )
+        await self.sales_contracts.update_fields(spa_id, status="cancelled")
+        # Suspend the schedule.
+        schedule = await self.payment_schedules.get_for_contract(spa_id)
+        if schedule is not None and schedule.status == "active":
+            await self.payment_schedules.update_fields(
+                schedule.id, status="cancelled"
+            )
+        event_bus.publish_detached(
+            "property_dev.spa.cancelled",
+            data={"spa_id": str(spa_id)},
+            source_module="property_dev",
+        )
+        return await self.get_spa(spa_id)
+
+    # ── PaymentSchedule ────────────────────────────────────────────────
+
+    async def create_payment_schedule(
+        self, data: PaymentScheduleCreate
+    ) -> PaymentSchedule:
+        spa = await self.get_spa(data.sales_contract_id)
+        existing = await self.payment_schedules.get_for_contract(spa.id)
+        if existing is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="PaymentSchedule already exists for this SPA",
+            )
+        obj = PaymentSchedule(
+            sales_contract_id=spa.id,
+            tenant_id=data.tenant_id,
+            currency=data.currency,
+            total_amount=data.total_amount,
+            late_fee_pct=data.late_fee_pct,
+            grace_period_days=data.grace_period_days,
+            status="active",
+            metadata_=data.metadata,
+        )
+        return await self.payment_schedules.create(obj)
+
+    async def get_payment_schedule(
+        self, schedule_id: uuid.UUID
+    ) -> PaymentSchedule:
+        obj = await self.payment_schedules.get_by_id(schedule_id)
+        if obj is None:
+            raise HTTPException(
+                status_code=404, detail="PaymentSchedule not found"
+            )
+        return obj
+
+    async def update_payment_schedule(
+        self, schedule_id: uuid.UUID, data: PaymentScheduleUpdate
+    ) -> PaymentSchedule:
+        await self.get_payment_schedule(schedule_id)
+        fields = _dump(data)
+        if fields:
+            await self.payment_schedules.update_fields(schedule_id, **fields)
+        return await self.get_payment_schedule(schedule_id)
+
+    async def activate_payment_schedule(
+        self, schedule_id: uuid.UUID
+    ) -> PaymentSchedule:
+        """Activate a suspended schedule and mark the first pending line due."""
+        schedule = await self.get_payment_schedule(schedule_id)
+        if schedule.status == "active":
+            # Idempotent — but still mark first pending instalment due.
+            await self._mark_first_pending_due(schedule_id)
+            return schedule
+        _ensure_transition(
+            "payment_schedule",
+            schedule.status,
+            "active",
+            allowed_payment_schedule_transitions,
+        )
+        await self.payment_schedules.update_fields(schedule_id, status="active")
+        await self._mark_first_pending_due(schedule_id)
+        activated = await self.get_payment_schedule(schedule_id)
+        event_bus.publish_detached(
+            "property_dev.payment_schedule.activated",
+            data={
+                "schedule_id": str(schedule_id),
+                "sales_contract_id": str(activated.sales_contract_id),
+            },
+            source_module="property_dev",
+        )
+        return activated
+
+    async def suspend_payment_schedule(
+        self, schedule_id: uuid.UUID
+    ) -> PaymentSchedule:
+        schedule = await self.get_payment_schedule(schedule_id)
+        _ensure_transition(
+            "payment_schedule",
+            schedule.status,
+            "suspended",
+            allowed_payment_schedule_transitions,
+        )
+        await self.payment_schedules.update_fields(
+            schedule_id, status="suspended"
+        )
+        return await self.get_payment_schedule(schedule_id)
+
+    async def _mark_first_pending_due(self, schedule_id: uuid.UUID) -> None:
+        instalments = await self.instalments.list_for_schedule(schedule_id)
+        for ins in instalments:
+            if ins.status == "pending":
+                await self.instalments.update_fields(ins.id, status="due")
+                break
+
+    # ── Instalment ─────────────────────────────────────────────────────
+
+    async def create_instalment(self, data: InstalmentCreate) -> Instalment:
+        schedule = await self.get_payment_schedule(data.schedule_id)
+        if schedule.status not in {"active", "suspended"}:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Schedule in status '{schedule.status}' is read-only",
+            )
+        obj = Instalment(
+            schedule_id=schedule.id,
+            sequence=data.sequence,
+            milestone_label=data.milestone_label,
+            milestone_event=data.milestone_event,
+            due_date=data.due_date,
+            amount=data.amount,
+            status="pending",
+            invoice_ref=data.invoice_ref,
+            metadata_=data.metadata,
+        )
+        return await self.instalments.create(obj)
+
+    async def get_instalment(self, ins_id: uuid.UUID) -> Instalment:
+        obj = await self.instalments.get_by_id(ins_id)
+        if obj is None:
+            raise HTTPException(status_code=404, detail="Instalment not found")
+        return obj
+
+    async def update_instalment(
+        self, ins_id: uuid.UUID, data: InstalmentUpdate
+    ) -> Instalment:
+        ins = await self.get_instalment(ins_id)
+        if ins.status in {"paid", "waived", "cancelled"}:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Instalment in status '{ins.status}' is read-only",
+            )
+        fields = _dump(data)
+        if fields:
+            await self.instalments.update_fields(ins_id, **fields)
+        return await self.get_instalment(ins_id)
+
+    async def mark_instalment_paid(
+        self,
+        ins_id: uuid.UUID,
+        data: InstalmentMarkPaidRequest,
+    ) -> Instalment:
+        ins = await self.get_instalment(ins_id)
+        if ins.status in {"paid", "waived", "cancelled"}:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Instalment in status '{ins.status}' is read-only",
+            )
+        amount = Decimal(str(data.amount))
+        if amount <= 0:
+            raise HTTPException(
+                status_code=422, detail="amount must be > 0"
+            )
+        current_paid = Decimal(str(ins.amount_paid or 0))
+        new_paid = current_paid + amount
+        owed = Decimal(str(ins.amount or 0))
+        # Allow over-pay tolerance of 0.01 (rounding); else 422.
+        if new_paid > owed + Decimal("0.01"):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"payment {amount} exceeds outstanding "
+                    f"{owed - current_paid}"
+                ),
+            )
+        new_status = "paid" if new_paid >= owed - Decimal("0.01") else ins.status
+        if new_status == "paid":
+            _ensure_transition(
+                "instalment",
+                ins.status,
+                "paid",
+                allowed_instalment_transitions,
+            )
+        fields: dict[str, Any] = {
+            "amount_paid": new_paid.quantize(Decimal("0.01")),
+        }
+        if new_status == "paid":
+            fields["status"] = "paid"
+            fields["paid_at"] = (
+                data.paid_at or datetime.now(UTC)
+            )
+        if data.invoice_ref:
+            fields["invoice_ref"] = data.invoice_ref
+        await self.instalments.update_fields(ins_id, **fields)
+        updated = await self.get_instalment(ins_id)
+
+        # Schedule completion check.
+        if new_status == "paid":
+            await self._maybe_complete_schedule(updated.schedule_id)
+
+        event_bus.publish_detached(
+            "property_dev.instalment.paid",
+            data={
+                "instalment_id": str(ins_id),
+                "schedule_id": str(updated.schedule_id),
+                "amount_paid": str(amount),
+                "amount_total_paid": str(new_paid),
+                "status": updated.status,
+            },
+            source_module="property_dev",
+        )
+        # Cashflow signal for finance.
+        event_bus.publish_detached(
+            "finance.cashflow.actual_received",
+            data={
+                "source_module": "property_dev",
+                "source_id": str(ins_id),
+                "schedule_id": str(updated.schedule_id),
+                "amount": str(amount),
+            },
+            source_module="property_dev",
+        )
+        return updated
+
+    async def issue_instalment_demand(
+        self, ins_id: uuid.UUID
+    ) -> Instalment:
+        """Emit a demand-letter event for the correspondence module.
+
+        The correspondence module subscribes to
+        ``correspondence.outbound.requested`` and is responsible for
+        templating, signing and sending. This method only stages the
+        intent + records it on the instalment metadata.
+        """
+        ins = await self.get_instalment(ins_id)
+        if ins.status in {"paid", "waived", "cancelled"}:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Instalment in status '{ins.status}' — no demand",
+            )
+        # Mark overdue if past due_date.
+        today = datetime.now(UTC).date().isoformat()
+        if (
+            ins.due_date
+            and ins.due_date < today
+            and ins.status in {"pending", "due"}
+        ):
+            _ensure_transition(
+                "instalment",
+                ins.status,
+                "overdue",
+                allowed_instalment_transitions,
+            )
+            await self.instalments.update_fields(ins_id, status="overdue")
+
+        event_bus.publish_detached(
+            "correspondence.outbound.requested",
+            data={
+                "template": "INSTALMENT_DEMAND",
+                "instalment_id": str(ins_id),
+                "schedule_id": str(ins.schedule_id),
+                "amount_outstanding": str(
+                    (Decimal(str(ins.amount or 0))
+                     - Decimal(str(ins.amount_paid or 0)))
+                ),
+                "due_date": ins.due_date,
+                "milestone_label": ins.milestone_label,
+            },
+            source_module="property_dev",
+        )
+        return await self.get_instalment(ins_id)
+
+    async def waive_instalment(
+        self, ins_id: uuid.UUID, data: InstalmentWaiveRequest
+    ) -> Instalment:
+        ins = await self.get_instalment(ins_id)
+        _ensure_transition(
+            "instalment",
+            ins.status,
+            "waived",
+            allowed_instalment_transitions,
+        )
+        md = dict(ins.metadata_ or {})
+        md["waiver_reason"] = data.reason
+        md["waived_at"] = datetime.now(UTC).isoformat()
+        await self.instalments.update_fields(
+            ins_id, status="waived", metadata_=md
+        )
+        await self._maybe_complete_schedule(ins.schedule_id)
+        event_bus.publish_detached(
+            "property_dev.instalment.waived",
+            data={
+                "instalment_id": str(ins_id),
+                "schedule_id": str(ins.schedule_id),
+                "reason": data.reason,
+            },
+            source_module="property_dev",
+        )
+        return await self.get_instalment(ins_id)
+
+    async def accrue_late_fees_daily(self) -> dict[str, Any]:
+        """Accrue one day of late fees on every overdue instalment.
+
+        Late fee delta = ``schedule.late_fee_pct / 100 * outstanding``.
+        Pure no-op when no schedules have a non-zero fee.
+        """
+        today = datetime.now(UTC).date().isoformat()
+        overdue = await self.instalments.list_overdue(today_iso=today)
+        touched = 0
+        total_accrued = Decimal("0")
+        for ins in overdue:
+            schedule = await self.payment_schedules.get_by_id(ins.schedule_id)
+            if schedule is None or schedule.status != "active":
+                continue
+            pct = Decimal(str(schedule.late_fee_pct or 0))
+            if pct <= 0:
+                continue
+            grace = schedule.grace_period_days or 0
+            try:
+                due = date.fromisoformat(ins.due_date)
+            except (TypeError, ValueError):
+                continue
+            today_d = date.fromisoformat(today)
+            if (today_d - due).days <= grace:
+                continue
+            outstanding = (
+                Decimal(str(ins.amount or 0))
+                - Decimal(str(ins.amount_paid or 0))
+            )
+            if outstanding <= 0:
+                continue
+            delta = (outstanding * pct / Decimal("100") / Decimal("365"))
+            delta = delta.quantize(Decimal("0.01"))
+            if delta <= 0:
+                continue
+            new_accrued = (
+                Decimal(str(ins.late_fee_accrued or 0)) + delta
+            ).quantize(Decimal("0.01"))
+            # Move pending → overdue if not already.
+            new_status = "overdue" if ins.status != "overdue" else ins.status
+            await self.instalments.update_fields(
+                ins.id,
+                late_fee_accrued=new_accrued,
+                status=new_status,
+            )
+            touched += 1
+            total_accrued += delta
+        return {
+            "touched_count": touched,
+            "total_accrued": total_accrued,
+        }
+
+    async def _maybe_complete_schedule(self, schedule_id: uuid.UUID) -> None:
+        """If all instalments are paid/waived → mark schedule completed."""
+        items = await self.instalments.list_for_schedule(schedule_id)
+        if not items:
+            return
+        if all(i.status in {"paid", "waived", "cancelled"} for i in items):
+            await self.payment_schedules.update_fields(
+                schedule_id, status="completed"
+            )
+            event_bus.publish_detached(
+                "property_dev.payment_schedule.completed",
+                data={"schedule_id": str(schedule_id)},
+                source_module="property_dev",
+            )
+
+    async def _fire_milestone(
+        self, spa_id: uuid.UUID, milestone_event: str
+    ) -> int:
+        """Mark every pending instalment matching ``milestone_event`` as due.
+
+        Returns the number of instalments touched.
+        """
+        # All instalments on this SPA whose milestone matches.
+        ins_rows = await self.instalments.list_for_contract(spa_id)
+        touched = 0
+        for ins in ins_rows:
+            if (
+                ins.milestone_event == milestone_event
+                and ins.status == "pending"
+            ):
+                await self.instalments.update_fields(ins.id, status="due")
+                touched += 1
+        return touched
+
+    # ── ContractParty ──────────────────────────────────────────────────
+
+    async def add_contract_party(
+        self, data: ContractPartyCreate
+    ) -> ContractParty:
+        spa = await self.get_spa(data.sales_contract_id)
+        if spa.status not in {"draft", "sent_for_signature"}:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"SalesContract in status '{spa.status}' is "
+                    "locked — no party changes"
+                ),
+            )
+        buyer = await self.buyers.get_by_id(data.buyer_id)
+        if buyer is None:
+            raise HTTPException(status_code=422, detail="buyer not found")
+        existing = await self.contract_parties.find_existing(
+            spa.id, data.buyer_id
+        )
+        if existing is not None:
+            raise HTTPException(
+                status_code=409, detail="Buyer is already a party"
+            )
+        # Validate sum of ownership_pct including the new row.
+        parties = await self.contract_parties.list_for_contract(spa.id)
+        current_total = sum(
+            (Decimal(str(p.ownership_pct or 0)) for p in parties),
+            Decimal("0"),
+        )
+        new_total = current_total + Decimal(str(data.ownership_pct))
+        if new_total > Decimal("100"):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"ownership_pct sum would be {new_total} > 100"
+                ),
+            )
+        obj = ContractParty(
+            sales_contract_id=spa.id,
+            buyer_id=data.buyer_id,
+            ownership_pct=data.ownership_pct,
+            party_role=data.party_role,
+            signing_order=data.signing_order,
+            signature_ref=data.signature_ref,
+            metadata_=data.metadata,
+        )
+        party = await self.contract_parties.create(obj)
+        event_bus.publish_detached(
+            "property_dev.contract_party.added",
+            data={
+                "spa_id": str(spa.id),
+                "buyer_id": str(data.buyer_id),
+                "party_id": str(party.id),
+                "ownership_pct": str(party.ownership_pct),
+                "party_role": party.party_role,
+                "ownership_total": str(new_total),
+            },
+            source_module="property_dev",
+        )
+        return party
+
+    async def get_contract_party(self, party_id: uuid.UUID) -> ContractParty:
+        obj = await self.contract_parties.get_by_id(party_id)
+        if obj is None:
+            raise HTTPException(
+                status_code=404, detail="ContractParty not found"
+            )
+        return obj
+
+    async def update_contract_party(
+        self, party_id: uuid.UUID, data: ContractPartyUpdate
+    ) -> ContractParty:
+        party = await self.get_contract_party(party_id)
+        fields = _dump(data)
+        # Validate ownership-sum if pct is changing.
+        if "ownership_pct" in fields and fields["ownership_pct"] is not None:
+            spa = await self.get_spa(party.sales_contract_id)
+            if spa.status not in {"draft", "sent_for_signature"}:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"SPA in status '{spa.status}' — ownership "
+                        "is locked"
+                    ),
+                )
+            parties = await self.contract_parties.list_for_contract(
+                party.sales_contract_id
+            )
+            new_total = Decimal("0")
+            for p in parties:
+                if p.id == party_id:
+                    new_total += Decimal(str(fields["ownership_pct"]))
+                else:
+                    new_total += Decimal(str(p.ownership_pct or 0))
+            if new_total > Decimal("100"):
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"ownership_pct sum would be {new_total} > 100"
+                    ),
+                )
+        await self.contract_parties.update_fields(party_id, **fields)
+        return await self.get_contract_party(party_id)
+
+    async def remove_contract_party(self, party_id: uuid.UUID) -> None:
+        party = await self.get_contract_party(party_id)
+        spa = await self.get_spa(party.sales_contract_id)
+        if spa.status not in {"draft", "sent_for_signature"}:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"SPA in status '{spa.status}' — parties are "
+                    "locked"
+                ),
+            )
+        await self.contract_parties.delete(party_id)
+        event_bus.publish_detached(
+            "property_dev.contract_party.removed",
+            data={
+                "spa_id": str(party.sales_contract_id),
+                "buyer_id": str(party.buyer_id),
+                "party_id": str(party_id),
+            },
+            source_module="property_dev",
+        )
+
+
 # ── Helpers ─────────────────────────────────────────────────────────────
 
 
@@ -1730,8 +2967,13 @@ __all__ = [
     "PropertyDevService",
     "allowed_buyer_transitions",
     "allowed_handover_transitions",
+    "allowed_instalment_transitions",
+    "allowed_lead_transitions",
+    "allowed_payment_schedule_transitions",
     "allowed_plot_transitions",
+    "allowed_reservation_transitions",
     "allowed_selection_transitions",
+    "allowed_spa_transitions",
     "allowed_warranty_transitions",
     "can_modify_selection",
     "compute_buyer_selection_total",

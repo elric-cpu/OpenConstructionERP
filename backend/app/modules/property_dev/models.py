@@ -23,6 +23,7 @@ External references (kept as plain UUID columns, NO FK):
 from __future__ import annotations
 
 import uuid
+from datetime import datetime  # noqa: F401  — used in Mapped[datetime] annotations
 from decimal import Decimal
 
 from sqlalchemy import (
@@ -290,14 +291,15 @@ class BuyerOption(Base):
 
 
 class Buyer(Base):
-    """A buyer / lead linked to a plot (eventually)."""
+    """A buyer / lead linked to a plot (eventually).
+
+    Note: The historical ``UniqueConstraint(plot_id)`` was dropped in
+    v3103 to support multi-buyer SPAs via :class:`ContractParty`
+    (joint ownership, co-borrowers, guarantors). Application logic
+    must enforce one-primary-buyer-per-plot at the service layer.
+    """
 
     __tablename__ = "oe_property_dev_buyer"
-    __table_args__ = (
-        UniqueConstraint(
-            "plot_id", name="uq_oe_property_dev_buyer_plot"
-        ),
-    )
 
     development_id: Mapped[uuid.UUID] = mapped_column(
         GUID(),
@@ -559,23 +561,413 @@ class WarrantyClaim(Base):
         )
 
 
+# ── R6: Lead / Reservation / SalesContract / PaymentSchedule ────────────
+
+
+class Lead(Base):
+    """A sales lead — separate from :class:`Buyer`.
+
+    A Lead can predate any plot/buyer relationship (top-of-funnel). On
+    conversion the service creates a Reservation (and optionally a
+    Buyer) and sets ``converted_to_buyer_id``.
+    """
+
+    __tablename__ = "oe_property_dev_lead"
+
+    development_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(),
+        ForeignKey("oe_property_dev_development.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    # Multi-tenant column — nullable for single-tenant deployments.
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(), nullable=True, index=True
+    )
+    source: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="other", index=True
+    )
+    lead_score: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), nullable=False, default=Decimal("0")
+    )
+    assigned_agent_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(), nullable=True, index=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="new", index=True
+    )
+    nurture_stage: Mapped[str | None] = mapped_column(Text, nullable=True)
+    full_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    email: Mapped[str] = mapped_column(
+        String(255), nullable=False, default="", index=True
+    )
+    phone: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    language: Mapped[str] = mapped_column(String(10), nullable=False, default="en")
+    budget_min: Mapped[Decimal | None] = mapped_column(Numeric(15, 2), nullable=True)
+    budget_max: Mapped[Decimal | None] = mapped_column(Numeric(15, 2), nullable=True)
+    currency: Mapped[str] = mapped_column(String(8), nullable=False, default="")
+    preferred_house_type_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(),
+        ForeignKey("oe_property_dev_house_type.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    converted_to_buyer_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(),
+        ForeignKey("oe_property_dev_buyer.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        "metadata", JSON, nullable=False, default=dict, server_default="{}"
+    )
+
+    def __repr__(self) -> str:
+        return f"<Lead {self.full_name!s} ({self.status}/{self.source})>"
+
+
+class Reservation(Base):
+    """A standalone plot reservation backed by a deposit.
+
+    FSM: ``active`` -> ``converted | expired | cancelled``. Terminal
+    states are ``converted`` / ``expired`` / ``cancelled`` /
+    ``refunded`` — once entered the row is read-only at the service
+    layer.
+    """
+
+    __tablename__ = "oe_property_dev_reservation"
+    __table_args__ = (
+        UniqueConstraint(
+            "plot_id",
+            "reservation_number",
+            name="uq_oe_property_dev_reservation_plot_number",
+        ),
+    )
+
+    plot_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_property_dev_plot.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    lead_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(),
+        ForeignKey("oe_property_dev_lead.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    buyer_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(),
+        ForeignKey("oe_property_dev_buyer.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(), nullable=True, index=True
+    )
+    reservation_number: Mapped[str] = mapped_column(String(80), nullable=False)
+    deposit_amount: Mapped[Decimal] = mapped_column(
+        Numeric(15, 2), nullable=False, default=Decimal("0")
+    )
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="")
+    deposit_paid_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    cooling_off_days: Mapped[int] = mapped_column(Integer, nullable=False, default=7)
+    cooling_off_until: Mapped[str | None] = mapped_column(  # ISO date
+        String(20), nullable=True
+    )
+    expires_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="active", index=True
+    )
+    metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        "metadata", JSON, nullable=False, default=dict, server_default="{}"
+    )
+
+    def __repr__(self) -> str:
+        return f"<Reservation {self.reservation_number} ({self.status})>"
+
+
+class SalesContract(Base):
+    """Sale & Purchase Agreement (SPA) for a plot.
+
+    Multi-buyer is supported through :class:`ContractParty` rows;
+    each contract may have one ``primary`` party and any number of
+    ``co_owner`` / ``guarantor`` / ``power_of_attorney`` parties whose
+    ``ownership_pct`` must sum to 100 (enforced in service).
+    """
+
+    __tablename__ = "oe_property_dev_sales_contract"
+    __table_args__ = (
+        UniqueConstraint(
+            "plot_id",
+            "contract_number",
+            name="uq_oe_property_dev_sales_contract_plot_number",
+        ),
+    )
+
+    contract_number: Mapped[str] = mapped_column(String(80), nullable=False)
+    plot_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_property_dev_plot.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    reservation_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(),
+        ForeignKey("oe_property_dev_reservation.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(), nullable=True, index=True
+    )
+    signing_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # ISO 3166-2 region code (e.g. "DE-BE", "GB-ENG"). Optional —
+    # falls back to the development's jurisdiction at write time.
+    governing_law: Mapped[str] = mapped_column(String(16), nullable=False, default="")
+    language: Mapped[str] = mapped_column(String(10), nullable=False, default="en")
+    # {base, vat, stamp_duty, legal_fees, options_value, discounts}
+    total_price_breakdown: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        JSON, nullable=False, default=dict, server_default="{}"
+    )
+    total_value: Mapped[Decimal] = mapped_column(
+        Numeric(15, 2), nullable=False, default=Decimal("0")
+    )
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="")
+    e_sign_envelope_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="draft", index=True
+    )
+    parent_contract_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(),
+        ForeignKey("oe_property_dev_sales_contract.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    revision_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # Template-version reference (e.g. "spa-template-v3.2").
+    terms_version: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        "metadata", JSON, nullable=False, default=dict, server_default="{}"
+    )
+
+    def __repr__(self) -> str:
+        return f"<SalesContract {self.contract_number} ({self.status})>"
+
+
+class SalesContractRevision(Base):
+    """Versioned terms snapshot of a :class:`SalesContract`.
+
+    Captures the full terms blob each time the contract is amended so
+    later disputes can prove which exact wording was in force at any
+    given signing date.
+    """
+
+    __tablename__ = "oe_property_dev_sales_contract_revision"
+    __table_args__ = (
+        UniqueConstraint(
+            "contract_id",
+            "revision_number",
+            name="uq_oe_property_dev_sales_contract_revision_rev",
+        ),
+    )
+
+    contract_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_property_dev_sales_contract.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    terms_blob: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        JSON, nullable=False, default=dict, server_default="{}"
+    )
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
+
+    def __repr__(self) -> str:
+        return (
+            f"<SalesContractRevision contract={self.contract_id} "
+            f"rev={self.revision_number}>"
+        )
+
+
+class PaymentSchedule(Base):
+    """Parent payment schedule per :class:`SalesContract` (1:1).
+
+    The schedule's instalments fire on either an absolute ``due_date``
+    or a milestone event (e.g. ``foundation_complete``) that is
+    published by the ``schedule`` module.
+    """
+
+    __tablename__ = "oe_property_dev_payment_schedule"
+    __table_args__ = (
+        UniqueConstraint(
+            "sales_contract_id",
+            name="uq_oe_property_dev_payment_schedule_contract",
+        ),
+    )
+
+    sales_contract_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_property_dev_sales_contract.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(), nullable=True, index=True
+    )
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="")
+    total_amount: Mapped[Decimal] = mapped_column(
+        Numeric(15, 2), nullable=False, default=Decimal("0")
+    )
+    late_fee_pct: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), nullable=False, default=Decimal("0")
+    )
+    grace_period_days: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="active", index=True
+    )
+    metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        "metadata", JSON, nullable=False, default=dict, server_default="{}"
+    )
+
+    def __repr__(self) -> str:
+        return f"<PaymentSchedule contract={self.sales_contract_id} ({self.status})>"
+
+
+class Instalment(Base):
+    """A single instalment line inside a :class:`PaymentSchedule`.
+
+    Becomes ``due`` when its ``milestone_event`` fires or the date
+    rolls past ``due_date``. Late-fee accrual is a daily delta of
+    ``schedule.late_fee_pct * outstanding`` after the grace period.
+    """
+
+    __tablename__ = "oe_property_dev_instalment"
+    __table_args__ = (
+        UniqueConstraint(
+            "schedule_id",
+            "sequence",
+            name="uq_oe_property_dev_instalment_schedule_seq",
+        ),
+    )
+
+    schedule_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_property_dev_payment_schedule.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    milestone_label: Mapped[str] = mapped_column(
+        String(255), nullable=False, default=""
+    )
+    # When this event publishes through the event bus the line moves to
+    # ``due`` (e.g. ``reservation`` | ``spa_signed`` | ``foundation_complete``
+    # | ``structure_complete`` | ``handover``).
+    milestone_event: Mapped[str] = mapped_column(
+        String(80), nullable=False, default="", index=True
+    )
+    due_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    amount: Mapped[Decimal] = mapped_column(
+        Numeric(15, 2), nullable=False, default=Decimal("0")
+    )
+    amount_paid: Mapped[Decimal] = mapped_column(
+        Numeric(15, 2), nullable=False, default=Decimal("0")
+    )
+    paid_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="pending", index=True
+    )
+    late_fee_accrued: Mapped[Decimal] = mapped_column(
+        Numeric(15, 2), nullable=False, default=Decimal("0")
+    )
+    invoice_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        "metadata", JSON, nullable=False, default=dict, server_default="{}"
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<Instalment schedule={self.schedule_id} #{self.sequence} "
+            f"({self.status})>"
+        )
+
+
+class ContractParty(Base):
+    """Junction row connecting a buyer to a :class:`SalesContract`.
+
+    Supports multi-buyer SPAs (joint ownership, co-borrowers,
+    guarantors, PoA). ``ownership_pct`` of all parties in a contract
+    must sum to exactly 100 — enforced at the service layer.
+    """
+
+    __tablename__ = "oe_property_dev_contract_party"
+    __table_args__ = (
+        UniqueConstraint(
+            "sales_contract_id",
+            "buyer_id",
+            name="uq_oe_property_dev_contract_party_contract_buyer",
+        ),
+    )
+
+    sales_contract_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_property_dev_sales_contract.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    buyer_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_property_dev_buyer.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    ownership_pct: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), nullable=False, default=Decimal("0")
+    )
+    party_role: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="primary"
+    )
+    signing_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    signed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    signature_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        "metadata", JSON, nullable=False, default=dict, server_default="{}"
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<ContractParty contract={self.sales_contract_id} "
+            f"buyer={self.buyer_id} ({self.party_role}/{self.ownership_pct}%)>"
+        )
+
+
 __all__ = [
     "Buyer",
     "BuyerOption",
     "BuyerOptionGroup",
     "BuyerSelection",
     "BuyerSelectionItem",
+    "ContractParty",
     "Development",
     "Handover",
     "HandoverDoc",
     "HouseType",
     "HouseTypeVariant",
+    "Instalment",
+    "Lead",
+    "PaymentSchedule",
     "Plot",
+    "Reservation",
+    "SalesContract",
+    "SalesContractRevision",
     "Snag",
     "WarrantyClaim",
 ]
 
 
-# Unused import sentinels for tooling: DateTime is used implicitly through
-# String(20) ISO date columns; suppress lint by referencing here.
-_unused = (DateTime, Date)
+# Unused import sentinel for tooling: ``Date`` referenced solely to keep
+# lint happy while we transition String(20) date columns to real Date.
+_unused = (Date,)

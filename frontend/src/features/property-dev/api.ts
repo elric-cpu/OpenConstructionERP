@@ -500,3 +500,517 @@ export function rejectWarrantyClaim(id: string): Promise<WarrantyClaim> {
 export function closeWarrantyClaim(id: string): Promise<WarrantyClaim> {
   return apiPost<WarrantyClaim>(`${BASE}/warranty/${id}/close`, {});
 }
+
+/* ── R6: Lead / Reservation / SPA / PaymentSchedule / Instalment / ContractParty ── */
+
+export type LeadSource =
+  | 'web_form'
+  | 'walk_in'
+  | 'broker'
+  | 'referral'
+  | 'portal'
+  | 'other';
+export type LeadStatus =
+  | 'new'
+  | 'qualified'
+  | 'viewing_scheduled'
+  | 'visited'
+  | 'quotation_sent'
+  | 'negotiating'
+  | 'converted'
+  | 'lost'
+  | 'disqualified';
+export type ReservationStatus =
+  | 'active'
+  | 'expired'
+  | 'converted'
+  | 'cancelled'
+  | 'refunded';
+export type SpaStatus =
+  | 'draft'
+  | 'sent_for_signature'
+  | 'partially_signed'
+  | 'signed'
+  | 'countersigned'
+  | 'registered'
+  | 'cancelled';
+export type PaymentScheduleStatus =
+  | 'active'
+  | 'completed'
+  | 'suspended'
+  | 'cancelled';
+export type InstalmentStatus =
+  | 'pending'
+  | 'due'
+  | 'overdue'
+  | 'paid'
+  | 'waived'
+  | 'cancelled';
+export type ContractPartyRole =
+  | 'primary'
+  | 'co_owner'
+  | 'guarantor'
+  | 'power_of_attorney';
+
+export interface Lead {
+  id: string;
+  development_id: string | null;
+  tenant_id: string | null;
+  source: LeadSource;
+  lead_score: number | string;
+  assigned_agent_user_id: string | null;
+  status: LeadStatus;
+  nurture_stage: string | null;
+  full_name: string;
+  email: string;
+  phone: string | null;
+  language: string;
+  budget_min: number | string | null;
+  budget_max: number | string | null;
+  currency: string;
+  preferred_house_type_id: string | null;
+  notes: string | null;
+  converted_to_buyer_id: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Reservation {
+  id: string;
+  plot_id: string;
+  lead_id: string | null;
+  buyer_id: string | null;
+  tenant_id: string | null;
+  reservation_number: string;
+  deposit_amount: number | string;
+  currency: string;
+  deposit_paid_at: string | null;
+  cooling_off_days: number;
+  cooling_off_until: string | null;
+  expires_at: string | null;
+  status: ReservationStatus;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SalesContract {
+  id: string;
+  contract_number: string;
+  plot_id: string;
+  reservation_id: string | null;
+  tenant_id: string | null;
+  signing_date: string | null;
+  governing_law: string;
+  language: string;
+  total_price_breakdown: Record<string, unknown>;
+  total_value: number | string;
+  currency: string;
+  e_sign_envelope_id: string | null;
+  status: SpaStatus;
+  parent_contract_id: string | null;
+  revision_number: number;
+  terms_version: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PaymentSchedule {
+  id: string;
+  sales_contract_id: string;
+  tenant_id: string | null;
+  currency: string;
+  total_amount: number | string;
+  late_fee_pct: number | string;
+  grace_period_days: number;
+  status: PaymentScheduleStatus;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Instalment {
+  id: string;
+  schedule_id: string;
+  sequence: number;
+  milestone_label: string;
+  milestone_event: string;
+  due_date: string | null;
+  amount: number | string;
+  amount_paid: number | string;
+  paid_at: string | null;
+  status: InstalmentStatus;
+  late_fee_accrued: number | string;
+  invoice_ref: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ContractParty {
+  id: string;
+  sales_contract_id: string;
+  buyer_id: string;
+  ownership_pct: number | string;
+  party_role: ContractPartyRole;
+  signing_order: number;
+  signed_at: string | null;
+  signature_ref: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateLeadPayload {
+  development_id?: string;
+  source?: LeadSource;
+  lead_score?: number | string;
+  assigned_agent_user_id?: string;
+  status?: LeadStatus;
+  full_name?: string;
+  email?: string;
+  phone?: string;
+  language?: string;
+  budget_min?: number | string;
+  budget_max?: number | string;
+  currency?: string;
+  preferred_house_type_id?: string;
+  notes?: string;
+}
+
+export interface UpdateLeadPayload {
+  source?: LeadSource;
+  lead_score?: number | string;
+  assigned_agent_user_id?: string;
+  status?: LeadStatus;
+  nurture_stage?: string;
+  full_name?: string;
+  email?: string;
+  phone?: string | null;
+  language?: string;
+  budget_min?: number | string | null;
+  budget_max?: number | string | null;
+  currency?: string;
+  notes?: string;
+}
+
+export interface LeadConvertToReservationPayload {
+  plot_id: string;
+  deposit_amount: number | string;
+  currency: string;
+  cooling_off_days?: number;
+  expires_at?: string;
+  create_buyer?: boolean;
+}
+
+export interface CreateReservationPayload {
+  plot_id: string;
+  lead_id?: string;
+  buyer_id?: string;
+  reservation_number?: string;
+  deposit_amount: number | string;
+  currency: string;
+  cooling_off_days?: number;
+  expires_at?: string;
+}
+
+export interface ConvertReservationToSpaPayload {
+  contract_number?: string;
+  signing_date: string;
+  governing_law?: string;
+  language?: string;
+  total_value: number | string;
+  currency: string;
+  total_price_breakdown?: Record<string, unknown>;
+  terms_version?: string;
+}
+
+export interface ContractPartyCreatePayload {
+  sales_contract_id: string;
+  buyer_id: string;
+  ownership_pct: number | string;
+  party_role?: ContractPartyRole;
+  signing_order?: number;
+  signature_ref?: string;
+}
+
+/**
+ * FSM transition maps mirroring the backend service. Used by UI to
+ * render only allowed next states. Server remains source-of-truth.
+ */
+export const allowedLeadTransitions: Record<LeadStatus, LeadStatus[]> = {
+  new: ['new', 'qualified', 'lost', 'disqualified'],
+  qualified: [
+    'qualified',
+    'viewing_scheduled',
+    'quotation_sent',
+    'negotiating',
+    'lost',
+    'disqualified',
+  ],
+  viewing_scheduled: ['viewing_scheduled', 'visited', 'lost', 'disqualified'],
+  visited: [
+    'visited',
+    'quotation_sent',
+    'negotiating',
+    'converted',
+    'lost',
+    'disqualified',
+  ],
+  quotation_sent: ['quotation_sent', 'negotiating', 'converted', 'lost'],
+  negotiating: ['negotiating', 'quotation_sent', 'converted', 'lost'],
+  converted: ['converted'],
+  lost: ['lost'],
+  disqualified: ['disqualified'],
+};
+
+export const allowedSpaTransitions: Record<SpaStatus, SpaStatus[]> = {
+  draft: ['draft', 'sent_for_signature', 'cancelled'],
+  sent_for_signature: [
+    'sent_for_signature',
+    'partially_signed',
+    'signed',
+    'cancelled',
+  ],
+  partially_signed: ['partially_signed', 'signed', 'cancelled'],
+  signed: ['signed', 'countersigned', 'cancelled'],
+  countersigned: ['countersigned', 'registered', 'cancelled'],
+  registered: ['registered'],
+  cancelled: ['cancelled'],
+};
+
+/* ── Lead endpoints ────────────────────────────────────────────────── */
+
+export function listLeads(params?: {
+  development_id?: string;
+  status?: LeadStatus;
+  source?: LeadSource;
+  assigned_agent_user_id?: string;
+  offset?: number;
+  limit?: number;
+}): Promise<Lead[]> {
+  const qs = new URLSearchParams();
+  if (params?.development_id) qs.set('development_id', params.development_id);
+  if (params?.status) qs.set('status', params.status);
+  if (params?.source) qs.set('source', params.source);
+  if (params?.assigned_agent_user_id)
+    qs.set('assigned_agent_user_id', params.assigned_agent_user_id);
+  if (params?.offset !== undefined) qs.set('offset', String(params.offset));
+  if (params?.limit !== undefined) qs.set('limit', String(params.limit));
+  const q = qs.toString();
+  return apiGet<Lead[]>(`${BASE}/leads/${q ? `?${q}` : ''}`);
+}
+
+export function createLead(data: CreateLeadPayload): Promise<Lead> {
+  return apiPost<Lead>(`${BASE}/leads/`, data);
+}
+
+export function getLead(id: string): Promise<Lead> {
+  return apiGet<Lead>(`${BASE}/leads/${id}`);
+}
+
+export function updateLead(id: string, data: UpdateLeadPayload): Promise<Lead> {
+  return apiPatch<Lead>(`${BASE}/leads/${id}`, data);
+}
+
+export function deleteLead(id: string): Promise<void> {
+  return apiDelete(`${BASE}/leads/${id}`);
+}
+
+export function convertLeadToReservation(
+  id: string,
+  data: LeadConvertToReservationPayload,
+): Promise<Reservation> {
+  return apiPost<Reservation>(
+    `${BASE}/leads/${id}/convert-to-reservation`,
+    data,
+  );
+}
+
+/* ── Reservation endpoints ─────────────────────────────────────────── */
+
+export function listReservations(params?: {
+  plot_id?: string;
+  development_id?: string;
+  status?: ReservationStatus;
+  offset?: number;
+  limit?: number;
+}): Promise<Reservation[]> {
+  const qs = new URLSearchParams();
+  if (params?.plot_id) qs.set('plot_id', params.plot_id);
+  if (params?.development_id) qs.set('development_id', params.development_id);
+  if (params?.status) qs.set('status', params.status);
+  if (params?.offset !== undefined) qs.set('offset', String(params.offset));
+  if (params?.limit !== undefined) qs.set('limit', String(params.limit));
+  const q = qs.toString();
+  return apiGet<Reservation[]>(`${BASE}/reservations/${q ? `?${q}` : ''}`);
+}
+
+export function createReservation(
+  data: CreateReservationPayload,
+): Promise<Reservation> {
+  return apiPost<Reservation>(`${BASE}/reservations/`, data);
+}
+
+export function getReservation(id: string): Promise<Reservation> {
+  return apiGet<Reservation>(`${BASE}/reservations/${id}`);
+}
+
+export function cancelReservation(id: string): Promise<Reservation> {
+  return apiPost<Reservation>(`${BASE}/reservations/${id}/cancel`, {});
+}
+
+export function expireReservation(id: string): Promise<Reservation> {
+  return apiPost<Reservation>(`${BASE}/reservations/${id}/expire`, {});
+}
+
+export function expireOverdueReservations(): Promise<{
+  expired_count: number;
+  expired_ids: string[];
+}> {
+  return apiPost<{ expired_count: number; expired_ids: string[] }>(
+    `${BASE}/reservations/expire-overdue`,
+    {},
+  );
+}
+
+export function convertReservationToSpa(
+  id: string,
+  data: ConvertReservationToSpaPayload,
+): Promise<SalesContract> {
+  return apiPost<SalesContract>(
+    `${BASE}/reservations/${id}/convert-to-spa`,
+    data,
+  );
+}
+
+/* ── SalesContract (SPA) endpoints ────────────────────────────────── */
+
+export function listSalesContracts(params: {
+  plot_id: string;
+  status?: SpaStatus;
+}): Promise<SalesContract[]> {
+  const qs = new URLSearchParams({ plot_id: params.plot_id });
+  if (params.status) qs.set('status', params.status);
+  return apiGet<SalesContract[]>(`${BASE}/sales-contracts/?${qs.toString()}`);
+}
+
+export function getSalesContract(id: string): Promise<SalesContract> {
+  return apiGet<SalesContract>(`${BASE}/sales-contracts/${id}`);
+}
+
+export function sendSpaForSignature(
+  id: string,
+  data: { e_sign_envelope_id?: string } = {},
+): Promise<SalesContract> {
+  return apiPost<SalesContract>(
+    `${BASE}/sales-contracts/${id}/send-for-signature`,
+    data,
+  );
+}
+
+export function signSalesContract(
+  id: string,
+  data: { signing_date?: string } = {},
+): Promise<SalesContract> {
+  return apiPost<SalesContract>(`${BASE}/sales-contracts/${id}/sign`, data);
+}
+
+export function cancelSalesContract(id: string): Promise<SalesContract> {
+  return apiPost<SalesContract>(`${BASE}/sales-contracts/${id}/cancel`, {});
+}
+
+/* ── Payment schedules + instalments ──────────────────────────────── */
+
+export function getPaymentSchedule(id: string): Promise<PaymentSchedule> {
+  return apiGet<PaymentSchedule>(`${BASE}/payment-schedules/${id}`);
+}
+
+export function activatePaymentSchedule(id: string): Promise<PaymentSchedule> {
+  return apiPost<PaymentSchedule>(
+    `${BASE}/payment-schedules/${id}/activate`,
+    {},
+  );
+}
+
+export function suspendPaymentSchedule(id: string): Promise<PaymentSchedule> {
+  return apiPost<PaymentSchedule>(
+    `${BASE}/payment-schedules/${id}/suspend`,
+    {},
+  );
+}
+
+export function listInstalments(params: {
+  schedule_id?: string;
+  sales_contract_id?: string;
+  status?: InstalmentStatus;
+}): Promise<Instalment[]> {
+  const qs = new URLSearchParams();
+  if (params.schedule_id) qs.set('schedule_id', params.schedule_id);
+  if (params.sales_contract_id)
+    qs.set('sales_contract_id', params.sales_contract_id);
+  if (params.status) qs.set('status', params.status);
+  return apiGet<Instalment[]>(`${BASE}/instalments/?${qs.toString()}`);
+}
+
+export function markInstalmentPaid(
+  id: string,
+  data: { amount: number | string; paid_at?: string; invoice_ref?: string },
+): Promise<Instalment> {
+  return apiPost<Instalment>(`${BASE}/instalments/${id}/mark-paid`, data);
+}
+
+export function issueInstalmentDemand(id: string): Promise<Instalment> {
+  return apiPost<Instalment>(`${BASE}/instalments/${id}/issue-demand`, {});
+}
+
+export function waiveInstalment(
+  id: string,
+  data: { reason?: string } = {},
+): Promise<Instalment> {
+  return apiPost<Instalment>(`${BASE}/instalments/${id}/waive`, data);
+}
+
+export function accrueLateFees(): Promise<{
+  touched_count: number;
+  total_accrued: string;
+}> {
+  return apiPost<{ touched_count: number; total_accrued: string }>(
+    `${BASE}/instalments/accrue-late-fees`,
+    {},
+  );
+}
+
+/* ── Contract parties (multi-buyer junction) ──────────────────────── */
+
+export function listContractParties(
+  sales_contract_id: string,
+): Promise<ContractParty[]> {
+  const qs = new URLSearchParams({ sales_contract_id });
+  return apiGet<ContractParty[]>(`${BASE}/contract-parties/?${qs.toString()}`);
+}
+
+export function addContractParty(
+  data: ContractPartyCreatePayload,
+): Promise<ContractParty> {
+  return apiPost<ContractParty>(`${BASE}/contract-parties/`, data);
+}
+
+export function updateContractParty(
+  id: string,
+  data: {
+    ownership_pct?: number | string;
+    party_role?: ContractPartyRole;
+    signing_order?: number;
+    signed_at?: string;
+    signature_ref?: string;
+  },
+): Promise<ContractParty> {
+  return apiPatch<ContractParty>(`${BASE}/contract-parties/${id}`, data);
+}
+
+export function removeContractParty(id: string): Promise<void> {
+  return apiDelete(`${BASE}/contract-parties/${id}`);
+}

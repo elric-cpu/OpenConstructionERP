@@ -18,12 +18,19 @@ from app.modules.property_dev.models import (
     BuyerOptionGroup,
     BuyerSelection,
     BuyerSelectionItem,
+    ContractParty,
     Development,
     Handover,
     HandoverDoc,
     HouseType,
     HouseTypeVariant,
+    Instalment,
+    Lead,
+    PaymentSchedule,
     Plot,
+    Reservation,
+    SalesContract,
+    SalesContractRevision,
     Snag,
     WarrantyClaim,
 )
@@ -538,3 +545,267 @@ class BuyerPipelineQueries:
             if in_window:
                 out.append((plot, buyer))
         return out
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# R6 — Lead / Reservation / SalesContract / PaymentSchedule / ContractParty
+# ──────────────────────────────────────────────────────────────────────────
+
+
+class LeadRepository(_BaseRepo):
+    """Data access for :class:`Lead` rows."""
+
+    model = Lead
+
+    async def list_filtered(
+        self,
+        *,
+        development_id: uuid.UUID | None = None,
+        status: str | None = None,
+        source: str | None = None,
+        assigned_agent_user_id: uuid.UUID | None = None,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> tuple[list[Lead], int]:
+        base = select(Lead)
+        if development_id is not None:
+            base = base.where(Lead.development_id == development_id)
+        if status is not None:
+            base = base.where(Lead.status == status)
+        if source is not None:
+            base = base.where(Lead.source == source)
+        if assigned_agent_user_id is not None:
+            base = base.where(Lead.assigned_agent_user_id == assigned_agent_user_id)
+        total = (
+            await self.session.execute(
+                select(func.count()).select_from(base.subquery())
+            )
+        ).scalar_one()
+        stmt = base.order_by(Lead.created_at.desc()).offset(offset).limit(limit)
+        rows = (await self.session.execute(stmt)).scalars().all()
+        return list(rows), total
+
+    async def find_by_email_in_dev(
+        self, development_id: uuid.UUID, email: str
+    ) -> Lead | None:
+        if not email:
+            return None
+        stmt = select(Lead).where(
+            Lead.development_id == development_id,
+            func.lower(Lead.email) == email.lower(),
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+
+class ReservationRepository(_BaseRepo):
+    """Data access for :class:`Reservation` rows."""
+
+    model = Reservation
+
+    async def list_filtered(
+        self,
+        *,
+        plot_id: uuid.UUID | None = None,
+        development_id: uuid.UUID | None = None,
+        status: str | None = None,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> tuple[list[Reservation], int]:
+        base = select(Reservation)
+        if plot_id is not None:
+            base = base.where(Reservation.plot_id == plot_id)
+        if development_id is not None:
+            # Join via Plot to filter by development.
+            base = base.join(Plot, Plot.id == Reservation.plot_id).where(
+                Plot.development_id == development_id
+            )
+        if status is not None:
+            base = base.where(Reservation.status == status)
+        total = (
+            await self.session.execute(
+                select(func.count()).select_from(base.subquery())
+            )
+        ).scalar_one()
+        stmt = (
+            base.order_by(Reservation.created_at.desc()).offset(offset).limit(limit)
+        )
+        rows = (await self.session.execute(stmt)).scalars().all()
+        return list(rows), total
+
+    async def list_active_reservations(
+        self, *, plot_id: uuid.UUID | None = None
+    ) -> list[Reservation]:
+        stmt = select(Reservation).where(Reservation.status == "active")
+        if plot_id is not None:
+            stmt = stmt.where(Reservation.plot_id == plot_id)
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def find_expired(self, *, today_iso: str) -> list[Reservation]:
+        """Return active reservations whose ``expires_at`` is past today."""
+        stmt = select(Reservation).where(
+            Reservation.status == "active",
+            Reservation.expires_at.is_not(None),
+            Reservation.expires_at < today_iso,
+        )
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def next_sequence_for_plot(self, plot_id: uuid.UUID) -> int:
+        """Return next per-plot reservation sequence (max+1)."""
+        stmt = (
+            select(func.count())
+            .select_from(Reservation)
+            .where(Reservation.plot_id == plot_id)
+        )
+        existing = (await self.session.execute(stmt)).scalar_one()
+        return int(existing) + 1
+
+
+class SalesContractRepository(_BaseRepo):
+    """Data access for :class:`SalesContract` rows."""
+
+    model = SalesContract
+
+    async def list_for_plot(
+        self,
+        plot_id: uuid.UUID,
+        *,
+        status: str | None = None,
+    ) -> list[SalesContract]:
+        stmt = select(SalesContract).where(SalesContract.plot_id == plot_id)
+        if status is not None:
+            stmt = stmt.where(SalesContract.status == status)
+        stmt = stmt.order_by(SalesContract.created_at.desc())
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def next_sequence_for_plot(self, plot_id: uuid.UUID) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(SalesContract)
+            .where(SalesContract.plot_id == plot_id)
+        )
+        existing = (await self.session.execute(stmt)).scalar_one()
+        return int(existing) + 1
+
+
+class SalesContractRevisionRepository(_BaseRepo):
+    """Data access for :class:`SalesContractRevision` rows."""
+
+    model = SalesContractRevision
+
+    async def list_for_contract(
+        self, contract_id: uuid.UUID
+    ) -> list[SalesContractRevision]:
+        stmt = (
+            select(SalesContractRevision)
+            .where(SalesContractRevision.contract_id == contract_id)
+            .order_by(SalesContractRevision.revision_number.desc())
+        )
+        return list((await self.session.execute(stmt)).scalars().all())
+
+
+class PaymentScheduleRepository(_BaseRepo):
+    """Data access for :class:`PaymentSchedule` rows."""
+
+    model = PaymentSchedule
+
+    async def get_for_contract(
+        self, contract_id: uuid.UUID
+    ) -> PaymentSchedule | None:
+        stmt = select(PaymentSchedule).where(
+            PaymentSchedule.sales_contract_id == contract_id
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+
+class InstalmentRepository(_BaseRepo):
+    """Data access for :class:`Instalment` rows."""
+
+    model = Instalment
+
+    async def list_for_schedule(
+        self,
+        schedule_id: uuid.UUID,
+        *,
+        status: str | None = None,
+    ) -> list[Instalment]:
+        stmt = select(Instalment).where(Instalment.schedule_id == schedule_id)
+        if status is not None:
+            stmt = stmt.where(Instalment.status == status)
+        stmt = stmt.order_by(Instalment.sequence)
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def list_for_contract(
+        self, contract_id: uuid.UUID
+    ) -> list[Instalment]:
+        stmt = (
+            select(Instalment)
+            .join(
+                PaymentSchedule,
+                PaymentSchedule.id == Instalment.schedule_id,
+            )
+            .where(PaymentSchedule.sales_contract_id == contract_id)
+            .order_by(Instalment.sequence)
+        )
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def list_due_for_milestone(self, event: str) -> list[Instalment]:
+        """Find pending instalments whose milestone_event matches ``event``."""
+        stmt = select(Instalment).where(
+            Instalment.milestone_event == event,
+            Instalment.status == "pending",
+        )
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def list_overdue(self, *, today_iso: str) -> list[Instalment]:
+        stmt = select(Instalment).where(
+            Instalment.status.in_(("pending", "due")),
+            Instalment.due_date.is_not(None),
+            Instalment.due_date < today_iso,
+        )
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def compute_outstanding_for_schedule(
+        self, schedule_id: uuid.UUID
+    ) -> dict[str, Any]:
+        rows = await self.list_for_schedule(schedule_id)
+        from decimal import Decimal as _D
+        total = _D("0")
+        paid = _D("0")
+        outstanding = _D("0")
+        for r in rows:
+            total += _D(str(r.amount or 0))
+            paid += _D(str(r.amount_paid or 0))
+            if r.status not in ("paid", "waived", "cancelled"):
+                outstanding += _D(str(r.amount or 0)) - _D(str(r.amount_paid or 0))
+        return {
+            "schedule_id": schedule_id,
+            "total_amount": total,
+            "amount_paid": paid,
+            "outstanding": outstanding,
+            "line_count": len(rows),
+        }
+
+
+class ContractPartyRepository(_BaseRepo):
+    """Data access for :class:`ContractParty` junction rows."""
+
+    model = ContractParty
+
+    async def list_for_contract(
+        self, contract_id: uuid.UUID
+    ) -> list[ContractParty]:
+        stmt = (
+            select(ContractParty)
+            .where(ContractParty.sales_contract_id == contract_id)
+            .order_by(ContractParty.signing_order)
+        )
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def find_existing(
+        self, contract_id: uuid.UUID, buyer_id: uuid.UUID
+    ) -> ContractParty | None:
+        stmt = select(ContractParty).where(
+            ContractParty.sales_contract_id == contract_id,
+            ContractParty.buyer_id == buyer_id,
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()

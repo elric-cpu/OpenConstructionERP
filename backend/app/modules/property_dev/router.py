@@ -31,6 +31,9 @@ from app.modules.property_dev.schemas import (
     BuyerSelectionResponse,
     BuyerSelectionUpdate,
     BuyerUpdate,
+    ContractPartyCreate,
+    ContractPartyResponse,
+    ContractPartyUpdate,
     DepositForfeitureResponse,
     DevelopmentCreate,
     DevelopmentDashboard,
@@ -51,12 +54,34 @@ from app.modules.property_dev.schemas import (
     HouseTypeVariantCreate,
     HouseTypeVariantResponse,
     HouseTypeVariantUpdate,
+    InstalmentCreate,
+    InstalmentMarkPaidRequest,
+    InstalmentResponse,
+    InstalmentUpdate,
+    InstalmentWaiveRequest,
+    LeadConvertToReservationRequest,
+    LeadCreate,
+    LeadResponse,
+    LeadUpdate,
+    PaymentScheduleCreate,
+    PaymentScheduleResponse,
+    PaymentScheduleUpdate,
     PlotCreate,
     PlotPricingResponse,
     PlotReserveRequest,
     PlotResponse,
     PlotUpdate,
     ReservationCalendarResponse,
+    ReservationConvertToSpaRequest,
+    ReservationCreate,
+    ReservationExpiryBatchResponse,
+    ReservationResponse,
+    ReservationUpdate,
+    SalesContractCreate,
+    SalesContractResponse,
+    SalesContractSendForSignatureRequest,
+    SalesContractSignRequest,
+    SalesContractUpdate,
     SalesKanbanResponse,
     SnagCreate,
     SnagResponse,
@@ -1162,3 +1187,835 @@ async def development_pnl(
     """Revenue + deposits + open-issues rollup for a development."""
     payload = await service.development_pnl(dev_id)
     return DevelopmentPnLResponse(**payload)
+
+
+# ════════════════════════════════════════════════════════════════════════
+# R6 — Lead / Reservation / SPA / PaymentSchedule / Instalment /
+#       ContractParty
+# ════════════════════════════════════════════════════════════════════════
+
+
+async def _verify_owner_via_plot(
+    session: SessionDep,
+    plot_id: uuid.UUID,
+    payload: dict[str, Any],
+) -> None:
+    """Generic IDOR closure walking plot → development → project owner.
+
+    Collapses "exists but not yours" to 404 to avoid leaking UUID
+    existence. Admins bypass.
+    """
+    is_admin = payload.get("role") == "admin"
+    user_id = payload.get("sub") or payload.get("user_id")
+    if user_id is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+
+    from app.modules.projects.repository import ProjectRepository
+    from app.modules.property_dev.repository import (
+        DevelopmentRepository,
+        PlotRepository,
+    )
+
+    plot = await PlotRepository(session).get_by_id(plot_id)
+    if plot is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    if is_admin:
+        return
+    dev = await DevelopmentRepository(session).get_by_id(plot.development_id)
+    if dev is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    project = await ProjectRepository(session).get_by_id(dev.project_id)
+    if project is None or str(project.owner_id) != str(user_id):
+        raise HTTPException(status_code=404, detail="Resource not found")
+
+
+async def _verify_owner_via_development(
+    session: SessionDep,
+    dev_id: uuid.UUID,
+    payload: dict[str, Any],
+) -> None:
+    """IDOR closure walking development → project owner."""
+    is_admin = payload.get("role") == "admin"
+    user_id = payload.get("sub") or payload.get("user_id")
+    if user_id is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+
+    from app.modules.projects.repository import ProjectRepository
+    from app.modules.property_dev.repository import DevelopmentRepository
+
+    dev = await DevelopmentRepository(session).get_by_id(dev_id)
+    if dev is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    if is_admin:
+        return
+    project = await ProjectRepository(session).get_by_id(dev.project_id)
+    if project is None or str(project.owner_id) != str(user_id):
+        raise HTTPException(status_code=404, detail="Resource not found")
+
+
+async def _verify_owner_via_lead(
+    session: SessionDep,
+    lead_id: uuid.UUID,
+    payload: dict[str, Any],
+) -> None:
+    """IDOR closure for Lead (lead → development → project owner).
+
+    Leads without a development_id are owner-less by design (top-of-funnel
+    inbound webhooks); they are accessible by any authenticated user with
+    the right permission level but never escape into another tenant since
+    they carry no project-scoped data.
+    """
+    is_admin = payload.get("role") == "admin"
+    user_id = payload.get("sub") or payload.get("user_id")
+    if user_id is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+
+    from app.modules.property_dev.repository import LeadRepository
+
+    lead = await LeadRepository(session).get_by_id(lead_id)
+    if lead is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    if is_admin or lead.development_id is None:
+        return
+    await _verify_owner_via_development(session, lead.development_id, payload)
+
+
+async def _verify_owner_via_reservation(
+    session: SessionDep,
+    r_id: uuid.UUID,
+    payload: dict[str, Any],
+) -> None:
+    from app.modules.property_dev.repository import ReservationRepository
+
+    res = await ReservationRepository(session).get_by_id(r_id)
+    if res is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    await _verify_owner_via_plot(session, res.plot_id, payload)
+
+
+async def _verify_owner_via_spa(
+    session: SessionDep,
+    spa_id: uuid.UUID,
+    payload: dict[str, Any],
+) -> None:
+    from app.modules.property_dev.repository import SalesContractRepository
+
+    spa = await SalesContractRepository(session).get_by_id(spa_id)
+    if spa is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    await _verify_owner_via_plot(session, spa.plot_id, payload)
+
+
+async def _verify_owner_via_schedule(
+    session: SessionDep,
+    schedule_id: uuid.UUID,
+    payload: dict[str, Any],
+) -> None:
+    from app.modules.property_dev.repository import PaymentScheduleRepository
+
+    sched = await PaymentScheduleRepository(session).get_by_id(schedule_id)
+    if sched is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    await _verify_owner_via_spa(session, sched.sales_contract_id, payload)
+
+
+async def _verify_owner_via_instalment(
+    session: SessionDep,
+    ins_id: uuid.UUID,
+    payload: dict[str, Any],
+) -> None:
+    from app.modules.property_dev.repository import InstalmentRepository
+
+    ins = await InstalmentRepository(session).get_by_id(ins_id)
+    if ins is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    await _verify_owner_via_schedule(session, ins.schedule_id, payload)
+
+
+async def _verify_owner_via_party(
+    session: SessionDep,
+    party_id: uuid.UUID,
+    payload: dict[str, Any],
+) -> None:
+    from app.modules.property_dev.repository import ContractPartyRepository
+
+    party = await ContractPartyRepository(session).get_by_id(party_id)
+    if party is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    await _verify_owner_via_spa(session, party.sales_contract_id, payload)
+
+
+# ── Leads ───────────────────────────────────────────────────────────────
+
+
+@router.get("/leads/", response_model=list[LeadResponse])
+async def list_leads(
+    development_id: uuid.UUID | None = Query(default=None),
+    status: str | None = Query(default=None),
+    source: str | None = Query(default=None),
+    assigned_agent_user_id: uuid.UUID | None = Query(default=None),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.lead.read")),
+) -> list[LeadResponse]:
+    rows, _ = await service.leads.list_filtered(
+        development_id=development_id,
+        status=status,
+        source=source,
+        assigned_agent_user_id=assigned_agent_user_id,
+        offset=offset,
+        limit=limit,
+    )
+    return [LeadResponse.model_validate(r) for r in rows]
+
+
+@router.post("/leads/", response_model=LeadResponse, status_code=201)
+async def create_lead(
+    data: LeadCreate,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.lead.create")),
+) -> LeadResponse:
+    return LeadResponse.model_validate(await service.create_lead(data))
+
+
+@router.get("/leads/{lead_id}", response_model=LeadResponse)
+async def get_lead(
+    lead_id: uuid.UUID,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.lead.read")),
+) -> LeadResponse:
+    await _verify_owner_via_lead(session, lead_id, payload)
+    return LeadResponse.model_validate(await service.get_lead(lead_id))
+
+
+@router.patch("/leads/{lead_id}", response_model=LeadResponse)
+async def update_lead(
+    lead_id: uuid.UUID,
+    data: LeadUpdate,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.lead.update")),
+) -> LeadResponse:
+    await _verify_owner_via_lead(session, lead_id, payload)
+    return LeadResponse.model_validate(await service.update_lead(lead_id, data))
+
+
+@router.delete("/leads/{lead_id}", status_code=204)
+async def delete_lead(
+    lead_id: uuid.UUID,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.lead.delete")),
+) -> None:
+    await _verify_owner_via_lead(session, lead_id, payload)
+    await service.delete_lead(lead_id)
+
+
+@router.post(
+    "/leads/{lead_id}/convert-to-reservation",
+    response_model=ReservationResponse,
+    status_code=201,
+)
+async def convert_lead_to_reservation(
+    lead_id: uuid.UUID,
+    data: LeadConvertToReservationRequest,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.lead.convert")),
+) -> ReservationResponse:
+    await _verify_owner_via_lead(session, lead_id, payload)
+    await _verify_owner_via_plot(session, data.plot_id, payload)
+    return ReservationResponse.model_validate(
+        await service.convert_lead_to_reservation(lead_id, data)
+    )
+
+
+# ── Reservations ────────────────────────────────────────────────────────
+
+
+@router.get("/reservations/", response_model=list[ReservationResponse])
+async def list_reservations(
+    plot_id: uuid.UUID | None = Query(default=None),
+    development_id: uuid.UUID | None = Query(default=None),
+    status: str | None = Query(default=None),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.reservation.read")),
+) -> list[ReservationResponse]:
+    rows, _ = await service.reservations.list_filtered(
+        plot_id=plot_id,
+        development_id=development_id,
+        status=status,
+        offset=offset,
+        limit=limit,
+    )
+    return [ReservationResponse.model_validate(r) for r in rows]
+
+
+@router.post(
+    "/reservations/", response_model=ReservationResponse, status_code=201,
+)
+async def create_reservation(
+    data: ReservationCreate,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.reservation.create")),
+) -> ReservationResponse:
+    await _verify_owner_via_plot(session, data.plot_id, payload)
+    return ReservationResponse.model_validate(
+        await service.create_reservation(data)
+    )
+
+
+@router.post(
+    "/reservations/expire-overdue",
+    response_model=ReservationExpiryBatchResponse,
+)
+async def expire_overdue_reservations(
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.reservation.expire")),
+) -> ReservationExpiryBatchResponse:
+    """Admin/cron endpoint — expire every active reservation past
+    ``expires_at``. Idempotent + safe to schedule daily.
+    """
+    ids = await service.expire_overdue_reservations()
+    return ReservationExpiryBatchResponse(
+        expired_count=len(ids), expired_ids=ids
+    )
+
+
+@router.get("/reservations/{r_id}", response_model=ReservationResponse)
+async def get_reservation(
+    r_id: uuid.UUID,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.reservation.read")),
+) -> ReservationResponse:
+    await _verify_owner_via_reservation(session, r_id, payload)
+    return ReservationResponse.model_validate(
+        await service.get_reservation(r_id)
+    )
+
+
+@router.patch("/reservations/{r_id}", response_model=ReservationResponse)
+async def update_reservation(
+    r_id: uuid.UUID,
+    data: ReservationUpdate,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.reservation.update")),
+) -> ReservationResponse:
+    await _verify_owner_via_reservation(session, r_id, payload)
+    return ReservationResponse.model_validate(
+        await service.update_reservation(r_id, data)
+    )
+
+
+@router.post(
+    "/reservations/{r_id}/cancel", response_model=ReservationResponse,
+)
+async def cancel_reservation(
+    r_id: uuid.UUID,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.reservation.cancel")),
+) -> ReservationResponse:
+    await _verify_owner_via_reservation(session, r_id, payload)
+    return ReservationResponse.model_validate(
+        await service.cancel_reservation(r_id)
+    )
+
+
+@router.post(
+    "/reservations/{r_id}/expire", response_model=ReservationResponse,
+)
+async def expire_reservation(
+    r_id: uuid.UUID,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.reservation.expire")),
+) -> ReservationResponse:
+    await _verify_owner_via_reservation(session, r_id, payload)
+    return ReservationResponse.model_validate(
+        await service.expire_reservation(r_id)
+    )
+
+
+@router.post(
+    "/reservations/{r_id}/convert-to-spa",
+    response_model=SalesContractResponse,
+    status_code=201,
+)
+async def convert_reservation_to_spa(
+    r_id: uuid.UUID,
+    data: ReservationConvertToSpaRequest,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.spa.draft")),
+) -> SalesContractResponse:
+    await _verify_owner_via_reservation(session, r_id, payload)
+    return SalesContractResponse.model_validate(
+        await service.convert_reservation_to_spa(r_id, data)
+    )
+
+
+# ── SalesContracts (SPAs) ───────────────────────────────────────────────
+
+
+@router.get("/sales-contracts/", response_model=list[SalesContractResponse])
+async def list_sales_contracts(
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    plot_id: uuid.UUID = Query(...),
+    status: str | None = Query(default=None),
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.read")),
+) -> list[SalesContractResponse]:
+    await _verify_owner_via_plot(session, plot_id, payload)
+    rows = await service.sales_contracts.list_for_plot(plot_id, status=status)
+    return [SalesContractResponse.model_validate(r) for r in rows]
+
+
+@router.post(
+    "/sales-contracts/",
+    response_model=SalesContractResponse,
+    status_code=201,
+)
+async def create_sales_contract(
+    data: SalesContractCreate,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.spa.draft")),
+) -> SalesContractResponse:
+    await _verify_owner_via_plot(session, data.plot_id, payload)
+    return SalesContractResponse.model_validate(await service.create_spa(data))
+
+
+@router.get(
+    "/sales-contracts/{spa_id}", response_model=SalesContractResponse,
+)
+async def get_sales_contract(
+    spa_id: uuid.UUID,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.read")),
+) -> SalesContractResponse:
+    await _verify_owner_via_spa(session, spa_id, payload)
+    return SalesContractResponse.model_validate(await service.get_spa(spa_id))
+
+
+@router.patch(
+    "/sales-contracts/{spa_id}", response_model=SalesContractResponse,
+)
+async def update_sales_contract(
+    spa_id: uuid.UUID,
+    data: SalesContractUpdate,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.spa.draft")),
+) -> SalesContractResponse:
+    await _verify_owner_via_spa(session, spa_id, payload)
+    return SalesContractResponse.model_validate(
+        await service.update_spa(spa_id, data)
+    )
+
+
+@router.delete("/sales-contracts/{spa_id}", status_code=204)
+async def delete_sales_contract(
+    spa_id: uuid.UUID,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.spa.cancel")),
+) -> None:
+    await _verify_owner_via_spa(session, spa_id, payload)
+    await service.delete_spa(spa_id)
+
+
+@router.post(
+    "/sales-contracts/{spa_id}/send-for-signature",
+    response_model=SalesContractResponse,
+)
+async def send_spa_for_signature(
+    spa_id: uuid.UUID,
+    data: SalesContractSendForSignatureRequest,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.spa.send")),
+) -> SalesContractResponse:
+    await _verify_owner_via_spa(session, spa_id, payload)
+    return SalesContractResponse.model_validate(
+        await service.send_spa_for_signature(spa_id, data)
+    )
+
+
+@router.post(
+    "/sales-contracts/{spa_id}/sign", response_model=SalesContractResponse,
+)
+async def sign_sales_contract(
+    spa_id: uuid.UUID,
+    data: SalesContractSignRequest,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.spa.sign")),
+) -> SalesContractResponse:
+    await _verify_owner_via_spa(session, spa_id, payload)
+    return SalesContractResponse.model_validate(
+        await service.sign_spa(spa_id, data)
+    )
+
+
+@router.post(
+    "/sales-contracts/{spa_id}/cancel", response_model=SalesContractResponse,
+)
+async def cancel_sales_contract(
+    spa_id: uuid.UUID,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.spa.cancel")),
+) -> SalesContractResponse:
+    await _verify_owner_via_spa(session, spa_id, payload)
+    return SalesContractResponse.model_validate(await service.cancel_spa(spa_id))
+
+
+# ── PaymentSchedules ────────────────────────────────────────────────────
+
+
+@router.post(
+    "/payment-schedules/",
+    response_model=PaymentScheduleResponse,
+    status_code=201,
+)
+async def create_payment_schedule(
+    data: PaymentScheduleCreate,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(
+        RequirePermission("property_dev.payment_schedule.activate")
+    ),
+) -> PaymentScheduleResponse:
+    await _verify_owner_via_spa(session, data.sales_contract_id, payload)
+    return PaymentScheduleResponse.model_validate(
+        await service.create_payment_schedule(data)
+    )
+
+
+@router.get(
+    "/payment-schedules/{schedule_id}",
+    response_model=PaymentScheduleResponse,
+)
+async def get_payment_schedule(
+    schedule_id: uuid.UUID,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.read")),
+) -> PaymentScheduleResponse:
+    await _verify_owner_via_schedule(session, schedule_id, payload)
+    return PaymentScheduleResponse.model_validate(
+        await service.get_payment_schedule(schedule_id)
+    )
+
+
+@router.patch(
+    "/payment-schedules/{schedule_id}",
+    response_model=PaymentScheduleResponse,
+)
+async def update_payment_schedule(
+    schedule_id: uuid.UUID,
+    data: PaymentScheduleUpdate,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(
+        RequirePermission("property_dev.payment_schedule.activate")
+    ),
+) -> PaymentScheduleResponse:
+    await _verify_owner_via_schedule(session, schedule_id, payload)
+    return PaymentScheduleResponse.model_validate(
+        await service.update_payment_schedule(schedule_id, data)
+    )
+
+
+@router.post(
+    "/payment-schedules/{schedule_id}/activate",
+    response_model=PaymentScheduleResponse,
+)
+async def activate_payment_schedule(
+    schedule_id: uuid.UUID,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(
+        RequirePermission("property_dev.payment_schedule.activate")
+    ),
+) -> PaymentScheduleResponse:
+    await _verify_owner_via_schedule(session, schedule_id, payload)
+    return PaymentScheduleResponse.model_validate(
+        await service.activate_payment_schedule(schedule_id)
+    )
+
+
+@router.post(
+    "/payment-schedules/{schedule_id}/suspend",
+    response_model=PaymentScheduleResponse,
+)
+async def suspend_payment_schedule(
+    schedule_id: uuid.UUID,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(
+        RequirePermission("property_dev.payment_schedule.suspend")
+    ),
+) -> PaymentScheduleResponse:
+    await _verify_owner_via_schedule(session, schedule_id, payload)
+    return PaymentScheduleResponse.model_validate(
+        await service.suspend_payment_schedule(schedule_id)
+    )
+
+
+# ── Instalments ─────────────────────────────────────────────────────────
+
+
+@router.get("/instalments/", response_model=list[InstalmentResponse])
+async def list_instalments(
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    schedule_id: uuid.UUID | None = Query(default=None),
+    sales_contract_id: uuid.UUID | None = Query(default=None),
+    status: str | None = Query(default=None),
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.read")),
+) -> list[InstalmentResponse]:
+    if schedule_id is not None:
+        await _verify_owner_via_schedule(session, schedule_id, payload)
+        rows = await service.instalments.list_for_schedule(
+            schedule_id, status=status
+        )
+    elif sales_contract_id is not None:
+        await _verify_owner_via_spa(session, sales_contract_id, payload)
+        rows = await service.instalments.list_for_contract(sales_contract_id)
+        if status:
+            rows = [r for r in rows if r.status == status]
+    else:
+        raise HTTPException(
+            status_code=422,
+            detail="schedule_id or sales_contract_id required",
+        )
+    return [InstalmentResponse.model_validate(r) for r in rows]
+
+
+@router.post(
+    "/instalments/", response_model=InstalmentResponse, status_code=201,
+)
+async def create_instalment(
+    data: InstalmentCreate,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(
+        RequirePermission("property_dev.payment_schedule.activate")
+    ),
+) -> InstalmentResponse:
+    await _verify_owner_via_schedule(session, data.schedule_id, payload)
+    return InstalmentResponse.model_validate(
+        await service.create_instalment(data)
+    )
+
+
+@router.get("/instalments/{ins_id}", response_model=InstalmentResponse)
+async def get_instalment(
+    ins_id: uuid.UUID,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.read")),
+) -> InstalmentResponse:
+    await _verify_owner_via_instalment(session, ins_id, payload)
+    return InstalmentResponse.model_validate(
+        await service.get_instalment(ins_id)
+    )
+
+
+@router.patch("/instalments/{ins_id}", response_model=InstalmentResponse)
+async def update_instalment(
+    ins_id: uuid.UUID,
+    data: InstalmentUpdate,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(
+        RequirePermission("property_dev.payment_schedule.activate")
+    ),
+) -> InstalmentResponse:
+    await _verify_owner_via_instalment(session, ins_id, payload)
+    return InstalmentResponse.model_validate(
+        await service.update_instalment(ins_id, data)
+    )
+
+
+@router.post(
+    "/instalments/{ins_id}/mark-paid",
+    response_model=InstalmentResponse,
+)
+async def mark_instalment_paid(
+    ins_id: uuid.UUID,
+    data: InstalmentMarkPaidRequest,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(
+        RequirePermission("property_dev.instalment.mark_paid")
+    ),
+) -> InstalmentResponse:
+    await _verify_owner_via_instalment(session, ins_id, payload)
+    return InstalmentResponse.model_validate(
+        await service.mark_instalment_paid(ins_id, data)
+    )
+
+
+@router.post(
+    "/instalments/{ins_id}/issue-demand", response_model=InstalmentResponse,
+)
+async def issue_instalment_demand(
+    ins_id: uuid.UUID,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(
+        RequirePermission("property_dev.instalment.issue_demand")
+    ),
+) -> InstalmentResponse:
+    await _verify_owner_via_instalment(session, ins_id, payload)
+    return InstalmentResponse.model_validate(
+        await service.issue_instalment_demand(ins_id)
+    )
+
+
+@router.post(
+    "/instalments/{ins_id}/waive", response_model=InstalmentResponse,
+)
+async def waive_instalment(
+    ins_id: uuid.UUID,
+    data: InstalmentWaiveRequest,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(
+        RequirePermission("property_dev.instalment.waive")
+    ),
+) -> InstalmentResponse:
+    await _verify_owner_via_instalment(session, ins_id, payload)
+    return InstalmentResponse.model_validate(
+        await service.waive_instalment(ins_id, data)
+    )
+
+
+@router.post(
+    "/instalments/accrue-late-fees",
+    response_model=dict,
+)
+async def accrue_late_fees(
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.instalment.waive")),
+) -> dict:
+    """Admin/cron endpoint — accrue one day of late fees on all overdue
+    instalments. Idempotent on the day-stamp; safe to schedule daily.
+    """
+    result = await service.accrue_late_fees_daily()
+    return {
+        "touched_count": result["touched_count"],
+        "total_accrued": str(result["total_accrued"]),
+    }
+
+
+# ── ContractParties (multi-buyer junction) ──────────────────────────────
+
+
+@router.get(
+    "/contract-parties/", response_model=list[ContractPartyResponse],
+)
+async def list_contract_parties(
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    sales_contract_id: uuid.UUID = Query(...),
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.read")),
+) -> list[ContractPartyResponse]:
+    await _verify_owner_via_spa(session, sales_contract_id, payload)
+    rows = await service.contract_parties.list_for_contract(sales_contract_id)
+    return [ContractPartyResponse.model_validate(r) for r in rows]
+
+
+@router.post(
+    "/contract-parties/",
+    response_model=ContractPartyResponse,
+    status_code=201,
+)
+async def add_contract_party(
+    data: ContractPartyCreate,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(
+        RequirePermission("property_dev.contract_party.add")
+    ),
+) -> ContractPartyResponse:
+    await _verify_owner_via_spa(session, data.sales_contract_id, payload)
+    return ContractPartyResponse.model_validate(
+        await service.add_contract_party(data)
+    )
+
+
+@router.patch(
+    "/contract-parties/{party_id}", response_model=ContractPartyResponse,
+)
+async def update_contract_party(
+    party_id: uuid.UUID,
+    data: ContractPartyUpdate,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(
+        RequirePermission("property_dev.contract_party.update_ownership")
+    ),
+) -> ContractPartyResponse:
+    await _verify_owner_via_party(session, party_id, payload)
+    return ContractPartyResponse.model_validate(
+        await service.update_contract_party(party_id, data)
+    )
+
+
+@router.delete("/contract-parties/{party_id}", status_code=204)
+async def remove_contract_party(
+    party_id: uuid.UUID,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(
+        RequirePermission("property_dev.contract_party.remove")
+    ),
+) -> None:
+    await _verify_owner_via_party(session, party_id, payload)
+    await service.remove_contract_party(party_id)
