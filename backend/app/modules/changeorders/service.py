@@ -62,6 +62,46 @@ async def _safe_publish(name: str, data: dict, source_module: str = "") -> None:
         logger.debug("Event publish skipped: %s", name)
 
 
+async def _safe_audit(
+    session: AsyncSession,
+    *,
+    actor_id: str | uuid.UUID | None,
+    order_id: uuid.UUID,
+    from_status: str,
+    to_status: str,
+    reason: str | None = None,
+    metadata: dict | None = None,
+) -> None:
+    """Write an ActivityLog row for a CO status transition.
+
+    Wrapped in try/except so an audit-log failure (e.g. a partially
+    migrated DB without ``oe_activity_log``) never rolls back the
+    business transition. The audit row sits in the same SQLAlchemy
+    session as the status write, so commit semantics are atomic: both
+    or neither land.
+    """
+    try:
+        from app.core.audit_log import log_activity
+
+        await log_activity(
+            session,
+            actor_id=actor_id,
+            entity_type="change_order",
+            entity_id=str(order_id),
+            action="status_changed",
+            from_status=from_status,
+            to_status=to_status,
+            reason=reason,
+            metadata=dict(metadata or {}),
+        )
+    except Exception:
+        logger.warning(
+            "ActivityLog write skipped for change_order %s (%s → %s)",
+            order_id, from_status, to_status,
+            exc_info=True,
+        )
+
+
 # Valid status transitions
 VALID_TRANSITIONS: dict[str, list[str]] = {
     "draft": ["submitted"],
@@ -318,6 +358,11 @@ class ChangeOrderService:
         """Submit a change order for approval."""
         order = await self.get_order(order_id)
         self._validate_transition(order.status, "submitted")
+        # Snapshot the from-status so the audit row records the
+        # transition accurately even after update_fields() expires the
+        # in-memory order.
+        from_status = order.status
+        code_snapshot = order.code
 
         now = datetime.now(UTC).isoformat()[:19]
         await self.repo.update_fields(
@@ -326,9 +371,21 @@ class ChangeOrderService:
             submitted_by=user_id,
             submitted_at=now,
         )
+        # Audit trail: every CO status transition writes an
+        # ActivityLog row so dispute timelines (FIDIC, ISO 9001, SCL
+        # Protocol) can be reproduced byte-for-byte. The session ties
+        # the audit row to the same transaction as the status write.
+        await _safe_audit(
+            self.session,
+            actor_id=user_id,
+            order_id=order_id,
+            from_status=from_status,
+            to_status="submitted",
+            metadata={"code": code_snapshot},
+        )
         await self.session.refresh(order)
 
-        logger.info("Change order submitted: %s by %s", order.code, user_id)
+        logger.info("Change order submitted: %s by %s", code_snapshot, user_id)
         return order
 
     async def approve_order(
@@ -400,11 +457,25 @@ class ChangeOrderService:
         currency_s = order.currency
 
         now = datetime.now(UTC).isoformat()[:19]
+        from_status_snapshot = order.status
         await self.repo.update_fields(
             order_id,
             status="approved",
             approved_by=user_id,
             approved_at=now,
+        )
+        await _safe_audit(
+            self.session,
+            actor_id=user_id,
+            order_id=order_id,
+            from_status=from_status_snapshot,
+            to_status="approved",
+            metadata={
+                "code": code_s,
+                "cost_impact": str(cost_impact_s),
+                "currency": currency_s,
+                "via_chain": _from_chain,
+            },
         )
 
         # Writeback: project.budget_estimate += cost_impact. Stored as string
@@ -787,6 +858,9 @@ class ChangeOrderService:
         order = await self.get_order(order_id)
         await self._assert_not_self_approval(order, user_id, "reject")
         self._validate_transition(order.status, "rejected")
+        # Snapshot pre-transition state for the audit row.
+        from_status = order.status
+        code_snapshot = order.code
 
         now = datetime.now(UTC).isoformat()[:19]
         await self.repo.update_fields(
@@ -794,6 +868,14 @@ class ChangeOrderService:
             status="rejected",
             rejected_by=user_id,
             rejected_at=now,
+        )
+        await _safe_audit(
+            self.session,
+            actor_id=user_id,
+            order_id=order_id,
+            from_status=from_status,
+            to_status="rejected",
+            metadata={"code": code_snapshot},
         )
         fresh = await self.repo.get_by_id(order_id)
 
@@ -1262,6 +1344,20 @@ class ChangeOrderService:
                 rejected_by=user_id,
                 rejected_at=now,
                 current_approval_step=None,
+            )
+            # Audit row records the rejection point so the chain
+            # timeline shows exactly which step killed the CO.
+            await _safe_audit(
+                self.session,
+                actor_id=user_id,
+                order_id=order_id,
+                from_status="submitted",
+                to_status="rejected",
+                reason=comments,
+                metadata={
+                    "via_chain": True,
+                    "step_order": cursor,
+                },
             )
             await _safe_publish(
                 "changeorders.approval.advanced",
