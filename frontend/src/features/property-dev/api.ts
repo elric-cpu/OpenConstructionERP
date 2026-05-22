@@ -923,6 +923,50 @@ export function cancelSalesContract(id: string): Promise<SalesContract> {
   return apiPost<SalesContract>(`${BASE}/sales-contracts/${id}/cancel`, {});
 }
 
+/* ── Tax / VAT / Stamp-duty quote ──────────────────────────────────── */
+
+export interface TaxQuotePayload {
+  jurisdiction?: string;
+  region_subcode?: string;
+  is_first_home?: boolean;
+  is_additional_property?: boolean;
+  vat_rate_class?: string;
+  absd_buyer_profile?: string;
+  emirate?: string;
+  include_overdue?: boolean;
+}
+
+export interface TaxQuoteLine {
+  line: string;
+  amount: string;
+}
+
+export interface ContractTaxQuote {
+  jurisdiction: string;
+  region_subcode: string | null;
+  currency: string;
+  net: string;
+  vat: string;
+  stamp_duty: string;
+  transfer_fee: string;
+  registration_fee: string;
+  absd: string;
+  late_interest: string;
+  subtotal_taxes: string;
+  grand_total: string;
+  breakdown: TaxQuoteLine[];
+}
+
+export function fetchContractTaxQuote(
+  contractId: string,
+  payload: TaxQuotePayload = {},
+): Promise<ContractTaxQuote> {
+  return apiPost<ContractTaxQuote>(
+    `${BASE}/sales-contracts/${contractId}/tax-quote`,
+    payload,
+  );
+}
+
 /* ── Payment schedules + instalments ──────────────────────────────── */
 
 export function getPaymentSchedule(id: string): Promise<PaymentSchedule> {

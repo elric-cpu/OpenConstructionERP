@@ -10,7 +10,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-
 # Regex for an ISO-4217 3-letter currency code (uppercase).
 _CURRENCY_PATTERN = r"^[A-Z]{3}$"
 
@@ -1607,7 +1606,7 @@ class PhaseCreate(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def _check_dates(self) -> "PhaseCreate":
+    def _check_dates(self) -> PhaseCreate:
         _validate_iso_date_order(
             self.planned_start, self.planned_end, field_pair="phase"
         )
@@ -1841,7 +1840,7 @@ class CommissionAgreementCreate(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def _check_structure(self) -> "CommissionAgreementCreate":
+    def _check_structure(self) -> CommissionAgreementCreate:
         """Validate the JSONB structure with plain-Python checks.
 
         We *don't* delegate to PercentCommissionStructure.model_validate
@@ -2197,7 +2196,7 @@ class PriceMatrixCreate(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def _check_dates(self) -> "PriceMatrixCreate":
+    def _check_dates(self) -> PriceMatrixCreate:
         _validate_iso_date_order(
             self.effective_from, self.effective_to, field_pair="price_matrix"
         )
@@ -2283,6 +2282,53 @@ class RegulatorReportResponse(BaseModel):
     pdf_base64: str = ""
 
 
+# ── Tax / VAT / Stamp-duty quote ────────────────────────────────────────
+
+
+class TaxQuotePayload(BaseModel):
+    """Request body for ``POST /sales-contracts/{id}/tax-quote``."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    jurisdiction: str | None = Field(default=None, max_length=4)
+    region_subcode: str | None = Field(default=None, max_length=8)
+    is_first_home: bool = False
+    is_additional_property: bool = False
+    vat_rate_class: str = Field(default="standard", max_length=40)
+    absd_buyer_profile: str | None = Field(default=None, max_length=40)
+    emirate: str | None = Field(default=None, max_length=40)
+    include_overdue: bool = True
+
+
+class TaxQuoteLineItem(BaseModel):
+    """A single breakdown line in a tax quote."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    line: str
+    amount: Decimal
+
+
+class ContractTaxQuote(BaseModel):
+    """Response model for ``POST /sales-contracts/{id}/tax-quote``."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    jurisdiction: str
+    region_subcode: str | None = None
+    currency: str = ""
+    net: Decimal = Decimal("0")
+    vat: Decimal = Decimal("0")
+    stamp_duty: Decimal = Decimal("0")
+    transfer_fee: Decimal = Decimal("0")
+    registration_fee: Decimal = Decimal("0")
+    absd: Decimal = Decimal("0")
+    late_interest: Decimal = Decimal("0")
+    subtotal_taxes: Decimal = Decimal("0")
+    grand_total: Decimal = Decimal("0")
+    breakdown: list[TaxQuoteLineItem] = Field(default_factory=list)
+
+
 __all_task_138__ = (
     "BlockCreate",
     "BlockResponse",
@@ -2317,4 +2363,8 @@ __all_task_138__ = (
     "PriceMatrixRule",
     "PriceMatrixUpdate",
     "RegulatorReportResponse",
+    # ── Tax engine (jurisdiction-aware) ─────────────────────────────
+    "ContractTaxQuote",
+    "TaxQuoteLineItem",
+    "TaxQuotePayload",
 )

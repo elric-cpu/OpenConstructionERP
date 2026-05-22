@@ -14,6 +14,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.dependencies import CurrentUserPayload, RequirePermission, SessionDep
 from app.modules.property_dev.schemas import (
+    BlockCreate,
+    BlockResponse,
+    BlockUpdate,
+    BrokerCreate,
+    BrokerResponse,
+    BrokerUpdate,
     BuyerCancelRequest,
     BuyerConfiguratorResponse,
     BuyerContractRequest,
@@ -31,15 +37,29 @@ from app.modules.property_dev.schemas import (
     BuyerSelectionResponse,
     BuyerSelectionUpdate,
     BuyerUpdate,
+    CommissionAccrualPayRequest,
+    CommissionAccrualResponse,
+    CommissionAgreementCreate,
+    CommissionAgreementResponse,
+    CommissionAgreementUpdate,
     ContractPartyCreate,
     ContractPartyResponse,
     ContractPartyUpdate,
+    ContractTaxQuote,
     DepositForfeitureResponse,
     DevelopmentCreate,
     DevelopmentDashboard,
     DevelopmentPnLResponse,
     DevelopmentResponse,
     DevelopmentUpdate,
+    EscrowAccountCreate,
+    EscrowAccountResponse,
+    EscrowAccountUpdate,
+    EscrowBalanceResponse,
+    EscrowTransactionCreate,
+    EscrowTransactionReconcileRequest,
+    EscrowTransactionResponse,
+    EscrowTransactionUpdate,
     HandoverBundleResponse,
     HandoverCompleteRequest,
     HandoverCreate,
@@ -66,11 +86,20 @@ from app.modules.property_dev.schemas import (
     PaymentScheduleCreate,
     PaymentScheduleResponse,
     PaymentScheduleUpdate,
+    PhaseCreate,
+    PhaseResponse,
+    PhaseUpdate,
     PlotCreate,
     PlotPricingResponse,
     PlotReserveRequest,
     PlotResponse,
     PlotUpdate,
+    PriceMatrixBulkRecomputeResponse,
+    PriceMatrixCreate,
+    PriceMatrixPreviewResponse,
+    PriceMatrixResponse,
+    PriceMatrixUpdate,
+    RegulatorReportResponse,
     ReservationCalendarResponse,
     ReservationConvertToSpaRequest,
     ReservationCreate,
@@ -86,39 +115,10 @@ from app.modules.property_dev.schemas import (
     SnagCreate,
     SnagResponse,
     SnagUpdate,
+    TaxQuotePayload,
     WarrantyClaimCreate,
     WarrantyClaimResponse,
     WarrantyClaimUpdate,
-)
-from app.modules.property_dev.schemas import (
-    BlockCreate,
-    BlockResponse,
-    BlockUpdate,
-    BrokerCreate,
-    BrokerResponse,
-    BrokerUpdate,
-    CommissionAccrualPayRequest,
-    CommissionAccrualResponse,
-    CommissionAgreementCreate,
-    CommissionAgreementResponse,
-    CommissionAgreementUpdate,
-    EscrowAccountCreate,
-    EscrowAccountResponse,
-    EscrowAccountUpdate,
-    EscrowBalanceResponse,
-    EscrowTransactionCreate,
-    EscrowTransactionReconcileRequest,
-    EscrowTransactionResponse,
-    EscrowTransactionUpdate,
-    PhaseCreate,
-    PhaseResponse,
-    PhaseUpdate,
-    PriceMatrixBulkRecomputeResponse,
-    PriceMatrixCreate,
-    PriceMatrixPreviewResponse,
-    PriceMatrixResponse,
-    PriceMatrixUpdate,
-    RegulatorReportResponse,
 )
 from app.modules.property_dev.service import (
     PropertyDevService,
@@ -1726,6 +1726,78 @@ async def cancel_sales_contract(
 ) -> SalesContractResponse:
     await _verify_owner_via_spa(session, spa_id, payload)
     return SalesContractResponse.model_validate(await service.cancel_spa(spa_id))
+
+
+@router.post(
+    "/sales-contracts/{spa_id}/tax-quote",
+    response_model=ContractTaxQuote,
+)
+async def quote_sales_contract_taxes(
+    spa_id: uuid.UUID,
+    data: TaxQuotePayload,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.read")),
+) -> ContractTaxQuote:
+    """Compute jurisdiction-aware taxes for a SalesContract.
+
+    Routes UK SDLT progressive bands, DE state-specific Grunderwerbsteuer,
+    UAE DLD transfer fee, IN GST + state stamp duty, SG BSD + ABSD,
+    AU state stamp duty, US state transfer tax — all data-driven via
+    ``data/tax_rates.yaml``. Returns Decimal amounts (2 dp HALF_UP)
+    plus a human-readable breakdown for invoice rendering.
+    """
+    # IDOR — close cross-tenant read first (404 not 403 = no UUID oracle).
+    await _verify_owner_via_spa(session, spa_id, payload)
+
+    from app.modules.property_dev.tax_engine import (
+        MissingRegionSubcodeError,
+        UnknownRateClassError,
+        UnsupportedJurisdictionError,
+    )
+
+    try:
+        result = await service.quote_contract_taxes(
+            spa_id,
+            jurisdiction=data.jurisdiction,
+            region_subcode=data.region_subcode,
+            is_first_home=data.is_first_home,
+            is_additional_property=data.is_additional_property,
+            vat_rate_class=data.vat_rate_class,
+            absd_buyer_profile=data.absd_buyer_profile,
+            emirate=data.emirate,
+            include_overdue=data.include_overdue,
+        )
+    except UnsupportedJurisdictionError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "unsupported_jurisdiction",
+                "jurisdiction": exc.jurisdiction,
+                "supported": exc.supported,
+                "message": str(exc),
+            },
+        )
+    except MissingRegionSubcodeError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "missing_region_subcode",
+                "jurisdiction": exc.jurisdiction,
+                "supported": exc.supported,
+                "message": str(exc),
+            },
+        )
+    except UnknownRateClassError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "unknown_rate_class",
+                "message": str(exc),
+            },
+        )
+    return ContractTaxQuote.model_validate(result)
 
 
 # ── PaymentSchedules ────────────────────────────────────────────────────

@@ -44,7 +44,6 @@ from app.modules.property_dev.models import (
     PriceMatrix,
     Reservation,
     SalesContract,
-    SalesContractRevision,
     Snag,
     WarrantyClaim,
 )
@@ -2499,6 +2498,149 @@ class PropertyDevService:
         )
         return await self.get_spa(spa_id)
 
+    # ── Tax / VAT / Stamp-duty quote ───────────────────────────────────
+
+    async def quote_contract_taxes(
+        self,
+        contract_id: uuid.UUID,
+        *,
+        jurisdiction: str | None = None,
+        region_subcode: str | None = None,
+        is_first_home: bool = False,
+        is_additional_property: bool = False,
+        vat_rate_class: str = "standard",
+        absd_buyer_profile: str | None = None,
+        emirate: str | None = None,
+        include_overdue: bool = True,
+    ) -> dict[str, Any]:
+        """Compute jurisdiction-aware taxes for a SalesContract.
+
+        Thin async wrapper over :mod:`app.modules.property_dev.tax_engine`.
+        Resolves the contract → development → project chain, derives a
+        sensible default jurisdiction (when not supplied by the caller),
+        gathers overdue instalments and returns a fully itemised quote.
+
+        Args:
+            contract_id: SalesContract.id.
+            jurisdiction: Override jurisdiction ISO-3166 alpha-2. When
+                None, taken from ``SalesContract.governing_law`` (ISO
+                3166-2 form, e.g. ``"DE-BE"``) or the development
+                metadata ``country_code`` key.
+            region_subcode: e.g. ``"BE"`` for Berlin, ``"MH"`` for
+                Maharashtra. When None and governing_law has a hyphen,
+                the suffix is used.
+            is_first_home: UK first-time-buyer relief flag.
+            is_additional_property: UK 3 % surcharge / second-home flag.
+            vat_rate_class: VAT/GST class key.
+            absd_buyer_profile: SG ABSD buyer profile.
+            emirate: UAE emirate when jurisdiction is AE.
+            include_overdue: when True, include late-interest accrual
+                for every instalment whose ``due_date`` is in the past
+                and ``status`` is overdue/due. Default True.
+
+        Returns:
+            The full ``compute_total_taxes_for_contract`` payload.
+
+        Raises:
+            HTTPException 404: contract not found.
+            tax_engine.UnsupportedJurisdictionError: jurisdiction not in table.
+            tax_engine.MissingRegionSubcodeError: subcode needed but not given.
+        """
+        # Local import avoids module-load cost when the endpoint isn't used.
+        from app.modules.property_dev.tax_engine import (
+            compute_total_taxes_for_contract,
+        )
+
+        spa = await self.get_spa(contract_id)
+
+        # ── 1. Resolve jurisdiction + region_subcode if not provided ──
+        resolved_jurisdiction = jurisdiction
+        resolved_subcode = region_subcode
+        if resolved_jurisdiction is None:
+            gov = (spa.governing_law or "").strip().upper()
+            if gov:
+                parts = gov.split("-", 1)
+                resolved_jurisdiction = parts[0]
+                if resolved_subcode is None and len(parts) == 2:
+                    resolved_subcode = parts[1]
+        if resolved_jurisdiction is None:
+            # Fall back to development metadata.
+            plot = await self.get_plot(spa.plot_id)
+            dev = await self.get_development(plot.development_id)
+            md = dev.metadata_ or {}
+            resolved_jurisdiction = (
+                md.get("country_code")
+                or md.get("jurisdiction")
+                or ""
+            ).strip().upper() or None
+            if resolved_subcode is None:
+                resolved_subcode = (
+                    md.get("region_subcode") or md.get("state") or None
+                )
+                if isinstance(resolved_subcode, str):
+                    resolved_subcode = resolved_subcode.strip().upper()
+
+        # Effective-on = contract signing date (defaults to today).
+        effective_on: date | None = None
+        if spa.signing_date:
+            try:
+                effective_on = date.fromisoformat(spa.signing_date[:10])
+            except (TypeError, ValueError):
+                effective_on = None
+
+        # ── 2. Collect overdue instalments for late-interest accrual ──
+        overdue_lines: list[dict[str, Any]] = []
+        if include_overdue:
+            schedule = await self.payment_schedules.get_for_contract(
+                contract_id
+            )
+            if schedule is not None:
+                rows = await self.instalments.list_for_schedule(schedule.id)
+                today = date.today()
+                for row in rows:
+                    if row.status not in {"overdue", "due"}:
+                        continue
+                    due_dt: date | None = None
+                    if row.due_date:
+                        try:
+                            due_dt = date.fromisoformat(row.due_date[:10])
+                        except (TypeError, ValueError):
+                            due_dt = None
+                    if due_dt is None or due_dt >= today:
+                        continue
+                    overdue_lines.append(
+                        {
+                            "sequence": row.sequence,
+                            "amount": str(row.amount - row.amount_paid),
+                            "due_date": row.due_date,
+                            "paid_date": None,
+                        }
+                    )
+
+        # ── 3. Build the engine input ─────────────────────────────────
+        contract_input: dict[str, Any] = {
+            "net": spa.total_value,
+            "currency": spa.currency,
+        }
+        # If the SPA's price breakdown carries an explicit ``net`` line,
+        # prefer that — it captures discounts/options the engine can't see.
+        breakdown = spa.total_price_breakdown or {}
+        if isinstance(breakdown, dict) and breakdown.get("net"):
+            contract_input["net"] = breakdown["net"]
+
+        return compute_total_taxes_for_contract(
+            contract_input,
+            resolved_jurisdiction or "",
+            region_subcode=resolved_subcode,
+            is_first_home=is_first_home,
+            is_additional_property=is_additional_property,
+            vat_rate_class=vat_rate_class,
+            effective_on=effective_on,
+            absd_buyer_profile=absd_buyer_profile,
+            emirate=emirate,
+            overdue_instalments=overdue_lines if overdue_lines else None,
+        )
+
     # ── PaymentSchedule ────────────────────────────────────────────────
 
     async def create_payment_schedule(
@@ -2749,8 +2891,8 @@ class PropertyDevService:
                 "instalment_id": str(ins_id),
                 "schedule_id": str(ins.schedule_id),
                 "amount_outstanding": str(
-                    (Decimal(str(ins.amount or 0))
-                     - Decimal(str(ins.amount_paid or 0)))
+                    Decimal(str(ins.amount or 0))
+                     - Decimal(str(ins.amount_paid or 0))
                 ),
                 "due_date": ins.due_date,
                 "milestone_label": ins.milestone_label,
@@ -3186,7 +3328,7 @@ def compute_plot_price_breakdown(
 # shims at the bottom of this file.
 
 
-async def _svc_create_broker(svc: "PropertyDevService", data: Any) -> Broker:
+async def _svc_create_broker(svc: PropertyDevService, data: Any) -> Broker:
     obj = Broker(
         tenant_id=data.tenant_id,
         name=data.name,
@@ -3202,7 +3344,7 @@ async def _svc_create_broker(svc: "PropertyDevService", data: Any) -> Broker:
     return await svc.brokers.create(obj)
 
 
-async def _svc_get_broker(svc: "PropertyDevService", broker_id: uuid.UUID) -> Broker:
+async def _svc_get_broker(svc: PropertyDevService, broker_id: uuid.UUID) -> Broker:
     obj = await svc.brokers.get_by_id(broker_id)
     if obj is None:
         raise HTTPException(status_code=404, detail="Broker not found")
@@ -3210,7 +3352,7 @@ async def _svc_get_broker(svc: "PropertyDevService", broker_id: uuid.UUID) -> Br
 
 
 async def _svc_update_broker(
-    svc: "PropertyDevService", broker_id: uuid.UUID, data: Any,
+    svc: PropertyDevService, broker_id: uuid.UUID, data: Any,
 ) -> Broker:
     await _svc_get_broker(svc, broker_id)
     fields = _dump(data)
@@ -3222,7 +3364,7 @@ async def _svc_update_broker(
 
 
 async def _svc_verify_broker_kyc(
-    svc: "PropertyDevService", broker_id: uuid.UUID,
+    svc: PropertyDevService, broker_id: uuid.UUID,
 ) -> Broker:
     broker = await _svc_get_broker(svc, broker_id)
     if broker.kyc_status == "verified":
@@ -3235,7 +3377,7 @@ async def _svc_verify_broker_kyc(
 
 
 async def _svc_create_agreement(
-    svc: "PropertyDevService", data: Any,
+    svc: PropertyDevService, data: Any,
 ) -> CommissionAgreement:
     await _svc_get_broker(svc, data.broker_id)
     if data.development_id is not None:
@@ -3259,7 +3401,7 @@ async def _svc_create_agreement(
 
 
 async def _svc_get_agreement(
-    svc: "PropertyDevService", agreement_id: uuid.UUID,
+    svc: PropertyDevService, agreement_id: uuid.UUID,
 ) -> CommissionAgreement:
     obj = await svc.commission_agreements.get_by_id(agreement_id)
     if obj is None:
@@ -3268,7 +3410,7 @@ async def _svc_get_agreement(
 
 
 async def _svc_update_agreement(
-    svc: "PropertyDevService", agreement_id: uuid.UUID, data: Any,
+    svc: PropertyDevService, agreement_id: uuid.UUID, data: Any,
 ) -> CommissionAgreement:
     await _svc_get_agreement(svc, agreement_id)
     fields = _dump(data)
@@ -3281,7 +3423,7 @@ async def _svc_update_agreement(
 
 
 async def _svc_compute_commission_on_event(
-    svc: "PropertyDevService",
+    svc: PropertyDevService,
     *,
     event_type: str,
     development_id: uuid.UUID,
@@ -3351,7 +3493,7 @@ async def _svc_compute_commission_on_event(
 
 
 async def _svc_approve_commission(
-    svc: "PropertyDevService",
+    svc: PropertyDevService,
     accrual_id: uuid.UUID,
     user_id: uuid.UUID | None = None,
 ) -> CommissionAccrual:
@@ -3389,7 +3531,7 @@ async def _svc_approve_commission(
 
 
 async def _svc_pay_commission(
-    svc: "PropertyDevService",
+    svc: PropertyDevService,
     accrual_id: uuid.UUID,
     payment_ref: str,
     user_id: uuid.UUID | None = None,
@@ -3432,7 +3574,7 @@ async def _svc_pay_commission(
 
 
 async def _svc_create_escrow_account(
-    svc: "PropertyDevService", data: Any,
+    svc: PropertyDevService, data: Any,
 ) -> EscrowAccount:
     await svc.get_development(data.development_id)
     obj = EscrowAccount(
@@ -3451,7 +3593,7 @@ async def _svc_create_escrow_account(
 
 
 async def _svc_get_escrow_account(
-    svc: "PropertyDevService", account_id: uuid.UUID,
+    svc: PropertyDevService, account_id: uuid.UUID,
 ) -> EscrowAccount:
     obj = await svc.escrow_accounts.get_by_id(account_id)
     if obj is None:
@@ -3460,7 +3602,7 @@ async def _svc_get_escrow_account(
 
 
 async def _svc_update_escrow_account(
-    svc: "PropertyDevService", account_id: uuid.UUID, data: Any,
+    svc: PropertyDevService, account_id: uuid.UUID, data: Any,
 ) -> EscrowAccount:
     await _svc_get_escrow_account(svc, account_id)
     await svc.escrow_accounts.update_fields(account_id, **_dump(data))
@@ -3468,7 +3610,7 @@ async def _svc_update_escrow_account(
 
 
 async def _svc_create_escrow_transaction(
-    svc: "PropertyDevService", data: Any,
+    svc: PropertyDevService, data: Any,
 ) -> EscrowTransaction:
     account = await _svc_get_escrow_account(svc, data.escrow_account_id)
     if account.currency and data.currency.upper() != account.currency.upper():
@@ -3509,7 +3651,7 @@ async def _svc_create_escrow_transaction(
 
 
 async def _svc_reconcile_escrow_transaction(
-    svc: "PropertyDevService",
+    svc: PropertyDevService,
     tx_id: uuid.UUID,
     bank_ref: str,
     user_id: uuid.UUID | None = None,
@@ -3551,7 +3693,7 @@ async def _svc_reconcile_escrow_transaction(
 
 
 async def _svc_compute_escrow_balance(
-    svc: "PropertyDevService",
+    svc: PropertyDevService,
     account_id: uuid.UUID,
     *,
     as_of_date: str | None = None,
@@ -3570,7 +3712,7 @@ async def _svc_compute_escrow_balance(
 
 
 async def _svc_create_price_matrix(
-    svc: "PropertyDevService", data: Any,
+    svc: PropertyDevService, data: Any,
 ) -> PriceMatrix:
     await svc.get_development(data.development_id)
     rules_dump: list[dict[str, Any]] = []
@@ -3598,7 +3740,7 @@ async def _svc_create_price_matrix(
 
 
 async def _svc_get_price_matrix(
-    svc: "PropertyDevService", matrix_id: uuid.UUID,
+    svc: PropertyDevService, matrix_id: uuid.UUID,
 ) -> PriceMatrix:
     obj = await svc.price_matrices.get_by_id(matrix_id)
     if obj is None:
@@ -3607,7 +3749,7 @@ async def _svc_get_price_matrix(
 
 
 async def _svc_update_price_matrix(
-    svc: "PropertyDevService", matrix_id: uuid.UUID, data: Any,
+    svc: PropertyDevService, matrix_id: uuid.UUID, data: Any,
 ) -> PriceMatrix:
     await _svc_get_price_matrix(svc, matrix_id)
     fields = _dump(data)
@@ -3636,7 +3778,7 @@ async def _svc_update_price_matrix(
 
 
 async def _svc_activate_price_matrix(
-    svc: "PropertyDevService", matrix_id: uuid.UUID,
+    svc: PropertyDevService, matrix_id: uuid.UUID,
 ) -> PriceMatrix:
     matrix = await _svc_get_price_matrix(svc, matrix_id)
     if matrix.status == "active":
@@ -3657,7 +3799,7 @@ async def _svc_activate_price_matrix(
 
 
 async def _svc_compute_plot_price(
-    svc: "PropertyDevService",
+    svc: PropertyDevService,
     plot_id: uuid.UUID,
     *,
     on_date: str | None = None,
@@ -3696,7 +3838,7 @@ async def _svc_compute_plot_price(
 
 
 async def _svc_bulk_recompute_dev_prices(
-    svc: "PropertyDevService", dev_id: uuid.UUID,
+    svc: PropertyDevService, dev_id: uuid.UUID,
 ) -> dict[str, Any]:
     dev = await svc.get_development(dev_id)
     dev_id_value = dev.id
@@ -3749,7 +3891,7 @@ async def _svc_bulk_recompute_dev_prices(
 # ── Phase / Block ──────────────────────────────────────────────────────
 
 
-async def _svc_create_phase(svc: "PropertyDevService", data: Any) -> Phase:
+async def _svc_create_phase(svc: PropertyDevService, data: Any) -> Phase:
     await svc.get_development(data.development_id)
     obj = Phase(
         development_id=data.development_id,
@@ -3764,7 +3906,7 @@ async def _svc_create_phase(svc: "PropertyDevService", data: Any) -> Phase:
     return await svc.phases.create(obj)
 
 
-async def _svc_get_phase(svc: "PropertyDevService", phase_id: uuid.UUID) -> Phase:
+async def _svc_get_phase(svc: PropertyDevService, phase_id: uuid.UUID) -> Phase:
     obj = await svc.phases.get_by_id(phase_id)
     if obj is None:
         raise HTTPException(status_code=404, detail="Phase not found")
@@ -3772,14 +3914,14 @@ async def _svc_get_phase(svc: "PropertyDevService", phase_id: uuid.UUID) -> Phas
 
 
 async def _svc_update_phase(
-    svc: "PropertyDevService", phase_id: uuid.UUID, data: Any,
+    svc: PropertyDevService, phase_id: uuid.UUID, data: Any,
 ) -> Phase:
     await _svc_get_phase(svc, phase_id)
     await svc.phases.update_fields(phase_id, **_dump(data))
     return await _svc_get_phase(svc, phase_id)
 
 
-async def _svc_create_block(svc: "PropertyDevService", data: Any) -> Block:
+async def _svc_create_block(svc: PropertyDevService, data: Any) -> Block:
     await _svc_get_phase(svc, data.phase_id)
     obj = Block(
         phase_id=data.phase_id,
@@ -3795,7 +3937,7 @@ async def _svc_create_block(svc: "PropertyDevService", data: Any) -> Block:
     return await svc.blocks.create(obj)
 
 
-async def _svc_get_block(svc: "PropertyDevService", block_id: uuid.UUID) -> Block:
+async def _svc_get_block(svc: PropertyDevService, block_id: uuid.UUID) -> Block:
     obj = await svc.blocks.get_by_id(block_id)
     if obj is None:
         raise HTTPException(status_code=404, detail="Block not found")
@@ -3803,7 +3945,7 @@ async def _svc_get_block(svc: "PropertyDevService", block_id: uuid.UUID) -> Bloc
 
 
 async def _svc_update_block(
-    svc: "PropertyDevService", block_id: uuid.UUID, data: Any,
+    svc: PropertyDevService, block_id: uuid.UUID, data: Any,
 ) -> Block:
     await _svc_get_block(svc, block_id)
     await svc.blocks.update_fields(block_id, **_dump(data))
@@ -3908,7 +4050,7 @@ def _render_regulator_pdf(
 
 
 async def _svc_collect_regulator_summary(
-    svc: "PropertyDevService", dev_id: uuid.UUID, quarter: str,
+    svc: PropertyDevService, dev_id: uuid.UUID, quarter: str,
 ) -> tuple[Development, dict[str, Any]]:
     """Aggregate the disclosure metrics for one development + quarter."""
     dev = await svc.get_development(dev_id)
@@ -3950,7 +4092,7 @@ async def _svc_collect_regulator_summary(
 
 
 async def _svc_generate_regulator_report(
-    svc: "PropertyDevService", dev_id: uuid.UUID, quarter: str, regulator: str,
+    svc: PropertyDevService, dev_id: uuid.UUID, quarter: str, regulator: str,
 ) -> dict[str, Any]:
     """Generic per-regulator report generator. RERA / MAHARERA / 214-ФЗ
     differ in title + label set but the data extraction logic is shared.
@@ -4052,19 +4194,19 @@ PropertyDevService.generate_regulator_report = (  # type: ignore[attr-defined]
 
 
 async def _svc_generate_regulator_report_RERA(
-    svc: "PropertyDevService", dev_id: uuid.UUID, quarter: str,
+    svc: PropertyDevService, dev_id: uuid.UUID, quarter: str,
 ) -> dict[str, Any]:
     return await _svc_generate_regulator_report(svc, dev_id, quarter, "RERA")
 
 
 async def _svc_generate_regulator_report_MAHARERA(
-    svc: "PropertyDevService", dev_id: uuid.UUID, quarter: str,
+    svc: PropertyDevService, dev_id: uuid.UUID, quarter: str,
 ) -> dict[str, Any]:
     return await _svc_generate_regulator_report(svc, dev_id, quarter, "MAHARERA")
 
 
 async def _svc_generate_regulator_report_214FZ(
-    svc: "PropertyDevService", dev_id: uuid.UUID, quarter: str,
+    svc: PropertyDevService, dev_id: uuid.UUID, quarter: str,
 ) -> dict[str, Any]:
     return await _svc_generate_regulator_report(svc, dev_id, quarter, "214_FZ")
 
