@@ -429,6 +429,50 @@ async def test_release_retention_rejects_non_numeric_custom_schedule_value() -> 
     assert exc.value.status_code == 400
 
 
+# ── 4b. create_contract must always start in 'draft' ─────────────────────
+
+
+@pytest.mark.asyncio
+async def test_create_contract_forces_draft_status() -> None:
+    """The lifecycle FSM (draft → active → suspended/completed/terminated)
+    is enforced by transition endpoints that stamp signed_at and emit
+    the contracts.contract.signed event. A POST /contracts/ that lets
+    the caller pre-set status='active' would skip both, producing a
+    contract that's commercially live but has no audit trail of being
+    signed and no notification reaching downstream finance / dashboards.
+
+    The fix forces status='draft' on create regardless of payload.
+    """
+    from app.modules.contracts.schemas import ContractCreate
+    from app.modules.contracts.service import ContractsService
+
+    class _RecordingRepo(_StubContractRepo):
+        async def create(self, contract: Any) -> Any:
+            if getattr(contract, "id", None) is None:
+                contract.id = uuid.uuid4()
+            self.rows[contract.id] = contract
+            return contract
+
+    svc = ContractsService.__new__(ContractsService)
+    svc.session = _StubSession()
+    svc.contract_repo = _RecordingRepo()
+
+    data = ContractCreate(
+        code="CT-FORCE",
+        title="Force-draft",
+        contract_type="lump_sum",
+        project_id=uuid.uuid4(),
+        # Caller tries to sneak in an active status to bypass the FSM.
+        status="active",
+    )
+    contract = await svc.create_contract(data, user_id="u-1")
+    assert contract.status == "draft", (
+        "POST /contracts/ must always create in 'draft' state; "
+        f"got {contract.status!r}. The sign / suspend / terminate "
+        "transition endpoints are the only path that may change status."
+    )
+
+
 # ── 5. 100% retention edge — fully-released contract is idempotent ───────
 
 

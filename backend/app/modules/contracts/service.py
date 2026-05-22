@@ -567,6 +567,12 @@ class ContractsService:
                 },
             )
 
+        # Contracts always start in 'draft'. The FSM (draft → active →
+        # suspended / completed / terminated) is enforced by dedicated
+        # transition endpoints that stamp signed_at and emit
+        # contracts.contract.signed. Letting the caller pre-set status
+        # would bypass both, producing a commercially-live contract
+        # with no signed-audit-trail and no event reaching finance.
         contract = Contract(
             code=data.code,
             title=data.title,
@@ -581,8 +587,8 @@ class ContractsService:
             currency=data.currency,
             retention_percent=Decimal(str(data.retention_percent or 0)),
             retention_release_event=data.retention_release_event,
-            status=data.status,
-            signed_at=data.signed_at,
+            status="draft",
+            signed_at=None,
             terms=data.terms,
             created_by=user_id,
             metadata_=data.metadata,
