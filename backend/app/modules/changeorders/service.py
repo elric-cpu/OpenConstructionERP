@@ -1137,6 +1137,26 @@ class ChangeOrderService:
                 ),
             )
 
+        # Four-eyes principle (extends BUG-353): the submitter cannot
+        # also be an approver on their own CO's chain. The single-step
+        # ``approve_order`` / ``reject_order`` paths enforce this via
+        # ``_assert_not_self_approval``; without the equivalent guard
+        # here a scope author could discreetly slot themselves into the
+        # chain (e.g. as step 2 of 3) and silently rubber-stamp their
+        # own change — defeating the multi-approver requirement that
+        # the chain exists to encode.
+        if order.submitted_by:
+            submitter_s = str(order.submitted_by)
+            if any(str(aid) == submitter_s for aid in approver_user_ids):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        "The change-order submitter cannot be an approver "
+                        "on their own chain (four-eyes principle). Remove "
+                        "the submitter from the approver list."
+                    ),
+                )
+
         rows: list[ChangeOrderApproval] = []
         for step, approver_id in enumerate(approver_user_ids, start=1):
             row = ChangeOrderApproval(
