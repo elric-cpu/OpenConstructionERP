@@ -62,11 +62,42 @@ class SnapshotRepository:
         return snapshots, total
 
     async def get_latest_for_project(self, project_id: uuid.UUID) -> CostSnapshot | None:
-        """Get the most recent snapshot for a project (by period desc)."""
+        """Get the most recent *real* monthly snapshot for a project.
+
+        What-if scenarios store their result as a CostSnapshot row with a
+        ``wif:<short-id>:YYYY-MM`` period (so they cannot collide with the
+        ``(project_id, period)`` unique index introduced in migration
+        v3108). Those scenario rows must NEVER masquerade as the latest
+        real snapshot — otherwise the dashboard SPI/CPI flips to scenario
+        values the moment someone runs a what-if. Filter them out.
+        """
         stmt = (
             select(CostSnapshot)
-            .where(CostSnapshot.project_id == project_id)
+            .where(
+                CostSnapshot.project_id == project_id,
+                ~CostSnapshot.period.like("wif:%"),
+            )
             .order_by(CostSnapshot.period.desc())
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+
+    async def get_for_project_period(
+        self, project_id: uuid.UUID, period: str
+    ) -> CostSnapshot | None:
+        """Return the snapshot for ``(project_id, period)`` if one exists.
+
+        Used by ``create_snapshot`` to reject duplicate periods at the
+        service layer with a clean 409, backstopped by the DB unique
+        index added in migration v3108.
+        """
+        stmt = (
+            select(CostSnapshot)
+            .where(
+                CostSnapshot.project_id == project_id,
+                CostSnapshot.period == period,
+            )
             .limit(1)
         )
         result = await self.session.execute(stmt)

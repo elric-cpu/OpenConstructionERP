@@ -53,6 +53,14 @@ class _StubSnapshotRepo:
         matches = [s for s in self.rows.values() if s.project_id == project_id]
         return matches[-1] if matches else None
 
+    async def get_for_project_period(
+        self, project_id: uuid.UUID, period: str
+    ) -> Any:
+        for snap in self.rows.values():
+            if snap.project_id == project_id and snap.period == period:
+                return snap
+        return None
+
     async def list_for_project(
         self,
         project_id: uuid.UUID,

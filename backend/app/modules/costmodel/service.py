@@ -111,12 +111,36 @@ class CostModelService:
         Computes SPI and CPI from the provided planned/earned/actual values
         if they are not explicitly set.
 
+        R5 audit (May 2026): ``(project_id, period)`` must be unique.
+        Pre-audit two snapshots for the same period silently coexisted —
+        ``get_latest_for_project`` then picked one arbitrarily and EVM
+        rollups flapped between them. The DB-level unique index added in
+        migration v3108 is the belt to this in-process suspenders.
+
         Args:
             data: Snapshot creation payload.
 
         Returns:
             The newly created snapshot.
+
+        Raises:
+            HTTPException: 409 if a snapshot already exists for
+                ``(project_id, period)``.
         """
+        # ── Duplicate-period guard (R5 audit) ────────────────────────────
+        existing = await self.snapshot_repo.get_for_project_period(
+            data.project_id, data.period
+        )
+        if existing is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Snapshot for period {data.period} already exists for "
+                    "this project. Update the existing snapshot instead "
+                    "(PATCH /5d/snapshots/{snapshot_id})."
+                ),
+            )
+
         spi = data.spi
         cpi = data.cpi
 
@@ -870,10 +894,14 @@ class CostModelService:
         delta_pct = _variance_pct(original_eac, adjusted_eac) * -1.0 if original_eac > 0.0 else 0.0
 
         # ── Step 5: Create a snapshot recording the scenario ───────────────
+        # Scenarios use a 'wif:<short-id>:YYYY-MM' period so the unique
+        # (project_id, period) index added in v3108 cannot reject a
+        # legitimate what-if just because the real monthly snapshot also
+        # exists for this calendar month.
         from datetime import date
 
         today = date.today()
-        period = f"{today.year:04d}-{today.month:02d}"
+        period = f"wif:{uuid.uuid4().hex[:8]}:{today.year:04d}-{today.month:02d}"
 
         snapshot = CostSnapshot(
             project_id=project_id,

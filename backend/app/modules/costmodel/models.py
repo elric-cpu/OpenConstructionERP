@@ -29,7 +29,16 @@ class CostSnapshot(Base):
         nullable=False,
         index=True,
     )
-    period: Mapped[str] = mapped_column(String(10), nullable=False, doc="YYYY-MM format, e.g. '2026-04'")
+    period: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        doc=(
+            "YYYY-MM for regular monthly snapshots. What-if scenarios use a "
+            "prefixed key like 'wif:<short-id>:YYYY-MM' so they cannot "
+            "collide with the (project_id, period) unique index that pins "
+            "real monthly snapshots (R5 audit, May 2026)."
+        ),
+    )
     planned_cost: Mapped[str] = mapped_column(
         String(50), nullable=False, default="0", doc="BCWS — Budgeted Cost of Work Scheduled"
     )
