@@ -366,6 +366,99 @@ async def test_import_summary_handles_nonstandard_due_date_hints(
 
 
 @pytest.mark.asyncio
+async def test_create_meeting_rejects_foreign_document_ids(
+    http_client, two_meetings_tenants,
+):
+    """A meeting's ``document_ids`` array must NOT cross project boundaries.
+
+    Pre-fix the meetings router accepted any UUID in the
+    ``document_ids`` list and stored it verbatim — meaning tenant A
+    could attach a document_id that resolves to a confidential
+    document inside tenant B's project. The document fetch endpoint
+    is itself IDOR-safe (separate gate) so the file body never
+    actually leaks, but the *reference* persisted on A's meeting
+    sticks around forever and (a) leaks the existence of B's
+    documents into A's meeting payload, and (b) breaks data integrity
+    by allowing dangling cross-project FKs that no team can clean up
+    without superuser DB access.
+
+    The fix validates every document_id at create + update time and
+    rejects the request with 422 if any document_id belongs to a
+    different project. The integrity rule is symmetric — neither
+    tenant can cross-link.
+    """
+    a = two_meetings_tenants["a"]
+
+    # Spin up a second project owned by A and create a document inside
+    # it. Then try to attach that document_id to a meeting in the
+    # FIRST project (also owned by A). Even within a single tenant
+    # this must be rejected because the integrity invariant is
+    # per-project, not per-tenant.
+    proj2 = await http_client.post(
+        "/api/v1/projects/",
+        json={
+            "name": f"Meetings-A-2 {uuid.uuid4().hex[:6]}",
+            "description": "second project of A — used for cross-project FK test",
+            "currency": "EUR",
+        },
+        headers=a["headers"],
+    )
+    assert proj2.status_code == 201, proj2.text
+    project_b = proj2.json()["id"]
+
+    # Stuff a Document into project_b directly via the ORM (going
+    # through the upload endpoint pulls in MIME / magic-byte
+    # detection which is overkill for this audit).
+    from sqlalchemy import select
+
+    from app.database import async_session_factory
+    from app.modules.documents.models import Document
+
+    async with async_session_factory() as s:
+        # owner uid: pull from A's first meeting to keep test
+        # self-contained without depending on the fixture's user_id.
+        doc = Document(
+            project_id=uuid.UUID(project_b),
+            name="confidential.pdf",
+            description="document inside project_b — must not be linkable from project_a meeting",
+            category="correspondence",
+            file_size=100,
+            mime_type="application/pdf",
+            file_path="/tmp/never-read.pdf",
+            version=1,
+            uploaded_by="",
+            tags=[],
+        )
+        s.add(doc)
+        await s.commit()
+        # Read back to get the assigned UUID.
+        row = (
+            await s.execute(
+                select(Document).where(Document.project_id == uuid.UUID(project_b))
+            )
+        ).scalars().first()
+        foreign_document_id = str(row.id)
+
+    # Try to create a meeting in project_a referencing the foreign doc.
+    resp = await http_client.post(
+        "/api/v1/meetings/",
+        json={
+            "project_id": a["project_id"],
+            "meeting_type": "progress",
+            "title": "Tries to cross-link a foreign doc",
+            "meeting_date": "2026-05-08",
+            "status": "scheduled",
+            "document_ids": [foreign_document_id],
+        },
+        headers=a["headers"],
+    )
+    assert resp.status_code in (400, 404, 422), (
+        f"INTEGRITY: meeting accepted foreign-project document_id: "
+        f"{resp.status_code} {resp.text!r}"
+    )
+
+
+@pytest.mark.asyncio
 async def test_owner_can_still_read_own_meeting(http_client, two_meetings_tenants):
     a = two_meetings_tenants["a"]
     resp = await http_client.get(
