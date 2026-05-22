@@ -208,6 +208,11 @@ class InspectionService:
             )
 
         inspection = await self.get_inspection(inspection_id)
+        # FSM gate: ``complete`` is the scheduled → in_progress → completed
+        # capstone transition. We accept it from ``in_progress`` (normal
+        # path) and from ``scheduled`` (one-step shortcut for short
+        # inspections — auto-walks through in_progress). Anything else
+        # (completed / cancelled / failed) is a 400.
         if inspection.status == "completed":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -217,6 +222,22 @@ class InspectionService:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot complete a cancelled inspection",
+            )
+        if inspection.status == "failed":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Inspection is in 'failed' state — reschedule it first "
+                    "(failed → scheduled) before completing again."
+                ),
+            )
+        if inspection.status not in ("scheduled", "in_progress"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Cannot complete inspection from status "
+                    f"'{inspection.status}'. Must be 'scheduled' or 'in_progress'."
+                ),
             )
 
         await self.repo.update_fields(
