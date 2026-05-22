@@ -277,3 +277,53 @@ class TestFromCanonical:
         body = res.json()
         meta = body.get("metadata") or body.get("metadata_") or {}
         assert meta.get("heading_deg") == 45.0
+
+    @pytest.mark.asyncio
+    async def test_elements_with_no_geometry_returns_422(
+        self, http_client, tenant_a,
+    ):
+        """An import whose elements all lack usable bounding boxes must
+        fail loudly with 422 instead of persisting a degenerate tileset.
+
+        A degenerate tileset (region collapsed to the anchor point,
+        feature_count=0) would render invisibly in Cesium and would
+        poison the reuse short-circuit on the next generate call.
+        """
+        from app.database import async_session_factory
+        from app.modules.bim_hub.models import BIMElement, BIMModel
+
+        await _create_anchor(http_client, tenant_a)
+        async with async_session_factory() as s:
+            model = BIMModel(
+                project_id=uuid.UUID(tenant_a["project_id"]),
+                name="No-geometry Model",
+                model_format="ifc",
+                version="1",
+                status="ready",
+                element_count=2,
+            )
+            s.add(model)
+            await s.flush()
+            for i in range(2):
+                # Elements with no bbox, no extrusion, no area/volume —
+                # _element_geometry_aabb returns None for each.
+                s.add(
+                    BIMElement(
+                        model_id=model.id,
+                        stable_id=f"empty-{i:03d}",
+                        element_type="annotation",
+                        properties={},
+                        quantities={},
+                        bounding_box={},
+                    )
+                )
+            await s.commit()
+            model_id = model.id
+
+        res = await http_client.post(
+            f"/api/v1/geo-hub/from-canonical/{model_id}",
+            json={},
+            headers=tenant_a["headers"],
+        )
+        assert res.status_code == 422, res.text
+        assert res.json()["detail"] == "canonical_elements_have_no_geometry"

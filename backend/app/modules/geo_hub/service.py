@@ -857,6 +857,17 @@ class GeoHubService:
             anchor_lon=anchor_lon,
             anchor_alt=anchor_alt,
         )
+        # Refuse to persist a tileset that has no usable geometry — the
+        # b3dm wrapper would still serialize, the region would collapse
+        # to the anchor point, and Cesium would render an invisible tile.
+        # That state would also poison the reuse short-circuit on the
+        # next generate call. Better to fail loudly so the caller fixes
+        # the upstream import.
+        if build.feature_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="canonical_elements_have_no_geometry",
+            )
         tileset_id = uuid.uuid4()
         tileset_uri, _content_uri = await upload_artifacts(
             tileset_id=tileset_id,
