@@ -1,4 +1,4 @@
-/**​‌‍ ⁠
+/** 
  * ColorByPropertyPanel UI tests — v3.13.0 W6.6.
  *
  * Mocks the ElementManager surface the panel touches

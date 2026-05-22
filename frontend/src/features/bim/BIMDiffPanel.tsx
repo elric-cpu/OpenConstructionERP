@@ -143,7 +143,7 @@ export default function BIMDiffPanel({
       <div className="flex items-center justify-between px-3 py-2 border-b border-border-light bg-surface-secondary">
         <h3 className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-content-primary">
           <GitCompare size={13} className="text-oe-blue" />
-          {t('bim.diff_title', { defaultValue: 'Compare versions‌⁠‍' })}
+          {t('bim.diff_title', { defaultValue: 'Compare versions' })}
         </h3>
         <button
           type="button"
@@ -161,7 +161,7 @@ export default function BIMDiffPanel({
           className="block text-[10px] font-semibold uppercase tracking-wider text-content-tertiary mb-1"
         >
           {t('bim.diff_compare_against', {
-            defaultValue: 'Compare against (older version)‌⁠‍',
+            defaultValue: 'Compare against (older version)',
           })}
         </label>
         <select
@@ -175,10 +175,10 @@ export default function BIMDiffPanel({
           <option value="">
             {candidates.length === 0
               ? t('bim.diff_no_candidates', {
-                  defaultValue: 'No other model versions in this project‌⁠‍',
+                  defaultValue: 'No other model versions in this project',
                 })
               : t('bim.diff_pick_model', {
-                  defaultValue: 'Select a model to compare…‌⁠‍',
+                  defaultValue: 'Select a model to compare…',
                 })}
           </option>
           {candidates.map((m) => (
@@ -194,7 +194,7 @@ export default function BIMDiffPanel({
           <p className="px-3 py-4 text-[11px] text-content-tertiary italic">
             {t('bim.diff_prompt', {
               defaultValue:
-                'Pick an older version above to see what changed. Added elements turn green, modified amber, deleted red.‌⁠‍',
+                'Pick an older version above to see what changed. Added elements turn green, modified amber, deleted red.',
             })}
           </p>
         ) : diffQuery.isLoading ? (

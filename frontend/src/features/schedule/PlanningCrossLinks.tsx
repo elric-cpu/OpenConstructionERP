@@ -46,13 +46,13 @@ export function PlanningCrossLinks({ active }: { active: PlanningRouteKey }) {
       key: 'schedule',
       to: '/schedule',
       icon: CalendarDays,
-      label: t('planning.link_schedule', { defaultValue: '4D Schedule‌⁠‍' }),
+      label: t('planning.link_schedule', { defaultValue: '4D Schedule' }),
     },
     {
       key: 'schedule-advanced',
       to: '/schedule-advanced',
       icon: GitBranch,
-      label: t('planning.link_schedule_advanced', { defaultValue: 'Last Planner‌⁠‍' }),
+      label: t('planning.link_schedule_advanced', { defaultValue: 'Last Planner' }),
     },
     {
       key: 'tasks',
@@ -64,19 +64,19 @@ export function PlanningCrossLinks({ active }: { active: PlanningRouteKey }) {
       key: '5d',
       to: '/5d',
       icon: DollarSign,
-      label: t('planning.link_5d', { defaultValue: '5D Cost Model‌⁠‍' }),
+      label: t('planning.link_5d', { defaultValue: '5D Cost Model' }),
     },
     {
       key: 'risks',
       to: '/risks',
       icon: ShieldAlert,
-      label: t('planning.link_risks', { defaultValue: 'Risk Register‌⁠‍' }),
+      label: t('planning.link_risks', { defaultValue: 'Risk Register' }),
     },
     {
       key: 'meetings',
       to: '/meetings',
       icon: Users,
-      label: t('planning.link_meetings', { defaultValue: 'Meetings‌⁠‍' }),
+      label: t('planning.link_meetings', { defaultValue: 'Meetings' }),
     },
   ];
 

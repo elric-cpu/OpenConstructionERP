@@ -197,7 +197,7 @@ function RowActions({
           editBlocked
             ? editBlockedReason ||
               t('variations.edit_blocked', {
-                defaultValue: 'This record can no longer be edited‌⁠‍',
+                defaultValue: 'This record can no longer be edited',
               })
             : t('common.edit', { defaultValue: 'Edit' })
         }
@@ -209,7 +209,7 @@ function RowActions({
         variant="ghost"
         size="sm"
         onClick={onDelete}
-        title={t('common.delete', { defaultValue: 'Delete‌⁠‍' })}
+        title={t('common.delete', { defaultValue: 'Delete' })}
         className="!p-1 text-content-quaternary hover:text-red-500 h-auto"
       >
         <Trash2 size={13} />
@@ -298,7 +298,7 @@ export function VariationsPage() {
       setSelected(null);
       addToast({
         type: 'success',
-        title: t('variations.deleted', { defaultValue: 'Deleted‌⁠‍' }),
+        title: t('variations.deleted', { defaultValue: 'Deleted' }),
       });
     },
     onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),
@@ -307,10 +307,10 @@ export function VariationsPage() {
   const handleDelete = async (kind: Tab, id: string) => {
     const ok = await confirm({
       title: t('variations.confirm_delete_title', {
-        defaultValue: 'Delete this record?‌⁠‍',
+        defaultValue: 'Delete this record?',
       }),
       message: t('variations.confirm_delete_msg', {
-        defaultValue: 'This record will be permanently deleted. This cannot be undone.‌⁠‍',
+        defaultValue: 'This record will be permanently deleted. This cannot be undone.',
       }),
       confirmLabel: t('common.delete', { defaultValue: 'Delete' }),
       variant: 'danger',

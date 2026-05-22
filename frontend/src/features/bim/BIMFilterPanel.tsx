@@ -751,16 +751,16 @@ export default function BIMFilterPanel({
   // Label for the types section changes depending on model format
   const typesSectionTitle =
     format === 'rvt'
-      ? t('bim.filter_revit_categories', { defaultValue: 'Revit Categories‌⁠‍' })
+      ? t('bim.filter_revit_categories', { defaultValue: 'Revit Categories' })
       : format === 'ifc'
-        ? t('bim.filter_ifc_entities', { defaultValue: 'IFC Entities‌⁠‍' })
-        : t('bim.filter_types', { defaultValue: 'Element Types‌⁠‍' });
+        ? t('bim.filter_ifc_entities', { defaultValue: 'IFC Entities' })
+        : t('bim.filter_types', { defaultValue: 'Element Types' });
 
   const typeGroupLabel =
     format === 'rvt'
-      ? t('bim.filter_group_category', { defaultValue: 'by Category‌⁠‍' })
+      ? t('bim.filter_group_category', { defaultValue: 'by Category' })
       : format === 'ifc'
-        ? t('bim.filter_group_entity', { defaultValue: 'by Entity‌⁠‍' })
+        ? t('bim.filter_group_entity', { defaultValue: 'by Entity' })
         : t('bim.filter_group_type', { defaultValue: 'by Type' });
 
   return (

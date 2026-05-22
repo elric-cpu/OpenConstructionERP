@@ -108,18 +108,18 @@ function WorkflowIntro() {
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-content-primary">
             {t('portal.intro_title', {
-              defaultValue: 'Give outsiders exactly what they need — nothing more‌⁠‍',
+              defaultValue: 'Give outsiders exactly what they need — nothing more',
             })}
           </p>
           <p className="mt-1 text-xs leading-relaxed text-content-secondary">
             {t('portal.intro_body', {
               defaultValue:
-                'Invite a client, investor or subcontractor with a magic link, then Grant Access — one rule per resource (a single project, document or invoice) and one permission (view, comment, submit or sign). Every view, download and signature they make is recorded in the audit log with IP and timestamp. Revoke access any time; nothing is visible until you explicitly grant it.‌⁠‍',
+                'Invite a client, investor or subcontractor with a magic link, then Grant Access — one rule per resource (a single project, document or invoice) and one permission (view, comment, submit or sign). Every view, download and signature they make is recorded in the audit log with IP and timestamp. Revoke access any time; nothing is visible until you explicitly grant it.',
             })}
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <span className="text-2xs font-medium uppercase tracking-wide text-content-tertiary">
-              {t('portal.intro_connects', { defaultValue: 'Connects to‌⁠‍' })}
+              {t('portal.intro_connects', { defaultValue: 'Connects to' })}
             </span>
             <button
               type="button"
@@ -127,7 +127,7 @@ function WorkflowIntro() {
               className="inline-flex items-center gap-1 rounded-full border border-border-light bg-surface-primary px-2.5 py-1 text-xs font-medium text-content-secondary transition-colors hover:border-oe-blue hover:text-oe-blue"
             >
               {t('portal.intro_link_subs', {
-                defaultValue: 'Subcontractors‌⁠‍',
+                defaultValue: 'Subcontractors',
               })}
               <ArrowRight size={11} />
             </button>
@@ -137,7 +137,7 @@ function WorkflowIntro() {
               className="inline-flex items-center gap-1 rounded-full border border-border-light bg-surface-primary px-2.5 py-1 text-xs font-medium text-content-secondary transition-colors hover:border-oe-blue hover:text-oe-blue"
             >
               {t('portal.intro_link_files', {
-                defaultValue: 'Project documents‌⁠‍',
+                defaultValue: 'Project documents',
               })}
               <ArrowRight size={11} />
             </button>

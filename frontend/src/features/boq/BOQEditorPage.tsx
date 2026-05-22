@@ -267,7 +267,7 @@ export function BOQEditorPage() {
       addRecent({
         type: 'boq',
         id: boqId,
-        title: boq.name || t('boq.untitled', { defaultValue: 'Untitled BOQ‌⁠‍' }),
+        title: boq.name || t('boq.untitled', { defaultValue: 'Untitled BOQ' }),
         url: `/boq/${boqId}`,
       });
     }
@@ -402,17 +402,17 @@ export function BOQEditorPage() {
         addToast({
           type: 'success',
           title: t('boq.reuse_code_title', {
-            defaultValue: 'Reused code {{code}}‌⁠‍',
+            defaultValue: 'Reused code {{code}}',
             code: addedPosition.reference_code ?? addedPosition.ordinal,
           }),
           message: t('boq.reuse_code_msg', {
             defaultValue:
-              'Linked instance created — {{count}} positions share this code. Its quantity is independently editable.‌⁠‍',
+              'Linked instance created — {{count}} positions share this code. Its quantity is independently editable.',
             count: sharedCount,
           }),
         });
       } else {
-        addToast({ type: 'success', title: t('boq.position_added', { defaultValue: 'Position added‌⁠‍' }), message: t('boq.position_added_edit_hint', { defaultValue: 'Type the description, then Tab through unit, quantity & rate‌⁠‍' }) });
+        addToast({ type: 'success', title: t('boq.position_added', { defaultValue: 'Position added' }), message: t('boq.position_added_edit_hint', { defaultValue: 'Type the description, then Tab through unit, quantity & rate' }) });
         // Open the freshly-added leaf row directly in inline edit on its
         // Description cell so the user types straight away instead of
         // hunting for a cell to click. Skipped on undo/redo restore so a
@@ -439,7 +439,7 @@ export function BOQEditorPage() {
       isUndoRedoInProgressRef.current = false;
     },
     onError: (err: Error) => {
-      addToast({ type: 'error', title: t('boq.add_failed', { defaultValue: 'Failed to add position‌⁠‍' }), message: err.message });
+      addToast({ type: 'error', title: t('boq.add_failed', { defaultValue: 'Failed to add position' }), message: err.message });
     },
   });
 
@@ -536,11 +536,11 @@ export function BOQEditorPage() {
         addToast({
           type: 'info',
           title: t('boq.link_propagated_title', {
-            defaultValue: 'Definition propagated‌⁠‍',
+            defaultValue: 'Definition propagated',
           }),
           message: t('boq.link_propagated_msg', {
             defaultValue:
-              'Updated {{count}} linked position(s) across this project.‌⁠‍',
+              'Updated {{count}} linked position(s) across this project.',
             count: prop.propagated_to,
           }),
         });
@@ -558,11 +558,11 @@ export function BOQEditorPage() {
         addToast({
           type: 'info',
           title: t('boq.resource_link_propagated_title', {
-            defaultValue: 'Resource definition propagated‌⁠‍',
+            defaultValue: 'Resource definition propagated',
           }),
           message: t('boq.resource_link_propagated_msg', {
             defaultValue:
-              'Updated the shared resource on {{count}} other position(s) across this project.‌⁠‍',
+              'Updated the shared resource on {{count}} other position(s) across this project.',
             count: prop.resource_propagated_to,
           }),
         });
@@ -585,13 +585,13 @@ export function BOQEditorPage() {
           {
             type: 'warning',
             title: t('boq.link_unlinked_title', {
-              defaultValue: 'Position unlinked from shared code‌⁠‍',
+              defaultValue: 'Position unlinked from shared code',
             }),
             message:
               unlinkWarning ??
               t('boq.link_unlinked_msg', {
                 defaultValue:
-                  'Your edit changed this linked copy, so it no longer follows the shared code. If you did not mean to diverge it, change its code back instead.‌⁠‍',
+                  'Your edit changed this linked copy, so it no longer follows the shared code. If you did not mean to diverge it, change its code back instead.',
               }),
           },
           { duration: 9000 },
@@ -603,7 +603,7 @@ export function BOQEditorPage() {
       if (ctx?.previous !== undefined) {
         queryClient.setQueryData(['boq', boqId], ctx.previous);
       }
-      addToast({ type: 'error', title: t('boq.update_failed', { defaultValue: 'Failed to update position‌⁠‍' }), message: err.message });
+      addToast({ type: 'error', title: t('boq.update_failed', { defaultValue: 'Failed to update position' }), message: err.message });
     },
   });
 
@@ -2190,11 +2190,11 @@ export function BOQEditorPage() {
       addToast({
         type: 'success',
         title: t('boq.unlink_done_title', {
-          defaultValue: 'Position unlinked‌⁠‍',
+          defaultValue: 'Position unlinked',
         }),
         message: t('boq.unlink_done_msg', {
           defaultValue:
-            'Code {{code}} kept. This position no longer follows the shared code; its values were preserved.‌⁠‍',
+            'Code {{code}} kept. This position no longer follows the shared code; its values were preserved.',
           code: updated.reference_code ?? updated.ordinal,
         }),
       });
@@ -2203,7 +2203,7 @@ export function BOQEditorPage() {
       addToast({
         type: 'error',
         title: t('boq.unlink_failed', {
-          defaultValue: 'Failed to unlink position‌⁠‍',
+          defaultValue: 'Failed to unlink position',
         }),
         message: err instanceof Error ? err.message : '',
       });

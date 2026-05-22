@@ -6,7 +6,7 @@
 // Opens from the supplier name in any PO row and surfaces three KPI tiles
 // (on-time delivery %, qty variance %, GR rejection rate) plus the
 // trailing-12-month PO summary. The data comes from
-// GET /v1/procurement/suppliers/{contact_id}/scorecard.‌⁠‍
+// GET /v1/procurement/suppliers/{contact_id}/scorecard.
 
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';

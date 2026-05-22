@@ -154,18 +154,18 @@ export function CarbonPage() {
   return (
     <div className="space-y-5">
       <Breadcrumb
-        items={[{ label: t('carbon.title', { defaultValue: 'Carbon & Sustainability‌⁠‍' }) }]}
+        items={[{ label: t('carbon.title', { defaultValue: 'Carbon & Sustainability' }) }]}
       />
 
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold text-content-primary">
-            {t('carbon.title', { defaultValue: 'Carbon & Sustainability‌⁠‍' })}
+            {t('carbon.title', { defaultValue: 'Carbon & Sustainability' })}
           </h1>
           <p className="mt-1 text-sm text-content-secondary">
             {t('carbon.subtitle', {
               defaultValue:
-                'Embodied + scope 1/2/3 emissions, EPDs, reduction targets and GHG reports.‌⁠‍',
+                'Embodied + scope 1/2/3 emissions, EPDs, reduction targets and GHG reports.',
             })}
           </p>
         </div>
@@ -177,7 +177,7 @@ export function CarbonPage() {
               onClick={() => setCreateInvOpen(true)}
               disabled={!effectiveProjectId}
             >
-              {t('carbon.new_inventory', { defaultValue: 'New Inventory‌⁠‍' })}
+              {t('carbon.new_inventory', { defaultValue: 'New Inventory' })}
             </Button>
           )}
           {tab === 'targets' && (
@@ -187,7 +187,7 @@ export function CarbonPage() {
               onClick={() => setCreateTargetOpen(true)}
               disabled={!effectiveProjectId}
             >
-              {t('carbon.new_target', { defaultValue: 'New Target‌⁠‍' })}
+              {t('carbon.new_target', { defaultValue: 'New Target' })}
             </Button>
           )}
           {tab === 'epds' && (

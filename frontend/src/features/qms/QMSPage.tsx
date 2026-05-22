@@ -210,16 +210,16 @@ export function QMSPage() {
 
   return (
     <div className="space-y-5">
-      <Breadcrumb items={[{ label: t('qms.title', { defaultValue: 'Quality Management‌⁠‍' }) }]} />
+      <Breadcrumb items={[{ label: t('qms.title', { defaultValue: 'Quality Management' }) }]} />
 
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold text-content-primary">
-            {t('qms.title', { defaultValue: 'Quality Management‌⁠‍' })}
+            {t('qms.title', { defaultValue: 'Quality Management' })}
           </h1>
           <p className="mt-1 text-sm text-content-secondary">
             {t('qms.subtitle', {
-              defaultValue: 'ITP plans, inspections, NCRs, punch list and audits in one place.‌⁠‍',
+              defaultValue: 'ITP plans, inspections, NCRs, punch list and audits in one place.',
             })}
           </p>
         </div>
@@ -231,12 +231,12 @@ export function QMSPage() {
       <SectionIntro
         storageKey="qms"
         title={t('qms.intro_title', {
-          defaultValue: 'One quality system, five linked registers‌⁠‍',
+          defaultValue: 'One quality system, five linked registers',
         })}
       >
         {t('qms.intro_body', {
           defaultValue:
-            'QMS ties together the full ISO 9001 quality chain: ITP plans define hold/witness points → Inspections sign them off → failed checks raise NCRs → NCRs with cost impact escalate to a Variation and feed the Cost of Poor Quality (COPQ) rollup → Punch items track close-out → Audits cover the management system. Pick a project, then move through the tabs left-to-right.‌⁠‍',
+            'QMS ties together the full ISO 9001 quality chain: ITP plans define hold/witness points → Inspections sign them off → failed checks raise NCRs → NCRs with cost impact escalate to a Variation and feed the Cost of Poor Quality (COPQ) rollup → Punch items track close-out → Audits cover the management system. Pick a project, then move through the tabs left-to-right.',
         })}
       </SectionIntro>
 

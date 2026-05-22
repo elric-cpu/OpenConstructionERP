@@ -1067,10 +1067,10 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
             {!iconified && (
               <span className="min-w-0 flex-1">
                 <span className="block text-xs font-semibold text-content-primary leading-tight">
-                  {t('nav.add_module', { defaultValue: 'Add module‌⁠‍' })}
+                  {t('nav.add_module', { defaultValue: 'Add module' })}
                 </span>
                 <span className="block text-[10px] text-content-tertiary leading-tight mt-0.5 truncate">
-                  {t('nav.add_module_hint', { defaultValue: 'Build your own · developer guide‌⁠‍' })}
+                  {t('nav.add_module_hint', { defaultValue: 'Build your own · developer guide' })}
                 </span>
               </span>
             )}
@@ -1114,12 +1114,12 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
               <span className="min-w-0 flex-1">
                 <span className="block text-xs font-semibold text-content-primary leading-tight">
                   {t('nav.request_custom_module', {
-                    defaultValue: 'Request a custom module‌⁠‍',
+                    defaultValue: 'Request a custom module',
                   })}
                 </span>
                 <span className="block text-[10px] text-content-tertiary leading-tight mt-0.5 truncate">
                   {t('nav.request_custom_module_hint', {
-                    defaultValue: 'Missing something? Tell us what you need‌⁠‍',
+                    defaultValue: 'Missing something? Tell us what you need',
                   })}
                 </span>
               </span>
@@ -1285,7 +1285,7 @@ function NavGroupSection({
       <button
         onClick={onToggle}
         aria-expanded={!isCollapsed}
-        aria-label={isCollapsed ? t('common.expand_section', { defaultValue: 'Expand {{label}}‌⁠‍', label }) : t('common.collapse_section', { defaultValue: 'Collapse {{label}}‌⁠‍', label })}
+        aria-label={isCollapsed ? t('common.expand_section', { defaultValue: 'Expand {{label}}', label }) : t('common.collapse_section', { defaultValue: 'Collapse {{label}}', label })}
         className="mt-3 mb-0.5 flex w-full items-center justify-between px-2.5 group cursor-pointer"
       >
         <span className="text-2xs font-medium uppercase tracking-wider text-content-tertiary group-hover:text-content-secondary transition-colors">
@@ -1640,7 +1640,7 @@ export function FloatingRecentButton() {
       {open && (
         <div className="absolute bottom-12 end-0 w-72 rounded-xl border border-border-light bg-surface-primary shadow-xl overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-150">
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-border-light">
-            <span className="text-xs font-semibold text-content-primary">{t('nav.recent', { defaultValue: 'Recent‌⁠‍' })}</span>
+            <span className="text-xs font-semibold text-content-primary">{t('nav.recent', { defaultValue: 'Recent' })}</span>
             <button onClick={() => setOpen(false)} className="p-0.5 rounded text-content-tertiary hover:text-content-primary">
               <X size={14} />
             </button>

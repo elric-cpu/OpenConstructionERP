@@ -1,4 +1,4 @@
-/**​‌‍ ⁠
+/** 
  * SelectionSetsPanel UI tests — v3.13.0 W6.6.
  *
  * Renders the panel against a mocked SelectionManager (just an object with

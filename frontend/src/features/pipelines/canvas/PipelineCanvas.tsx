@@ -291,11 +291,11 @@ function PipelineCanvasInner({
         addToast({
           type: 'warning',
           title: t('pipeline.connect.incompatible_title', {
-            defaultValue: "These steps can't be connected‌⁠‍",
+            defaultValue: "These steps can't be connected",
           }),
           message: t('pipeline.connect.incompatible_body', {
             defaultValue:
-              'This output is a {{from}}; that input expects a {{to}}.‌⁠‍',
+              'This output is a {{from}}; that input expects a {{to}}.',
             from: srcPort
               ? t(getPortTokens(srcPort.dataType).labelKey, {
                   defaultValue: getPortTokens(srcPort.dataType).labelDefault,
@@ -428,7 +428,7 @@ function PipelineCanvasInner({
       className="relative h-full w-full"
       role="application"
       aria-label={t('pipeline.canvas.aria', {
-        defaultValue: 'Pipeline editor canvas‌⁠‍',
+        defaultValue: 'Pipeline editor canvas',
       })}
       aria-describedby="pipeline-canvas-hint"
       tabIndex={0}
@@ -439,7 +439,7 @@ function PipelineCanvasInner({
       <span id="pipeline-canvas-hint" className="sr-only">
         {t('pipeline.canvas.hint', {
           defaultValue:
-            'Drag steps from the palette, connect their ports, then press Run.‌⁠‍',
+            'Drag steps from the palette, connect their ports, then press Run.',
         })}
       </span>
       <ReactFlow
@@ -481,7 +481,7 @@ function PipelineCanvasInner({
           <span className="sr-only">
             {t('pipeline.canvas.legend_sr', {
               defaultValue:
-                'Edge colour, shape and dash together encode the data type.‌⁠‍',
+                'Edge colour, shape and dash together encode the data type.',
             })}
           </span>
         </Panel>

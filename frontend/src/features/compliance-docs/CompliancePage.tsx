@@ -57,7 +57,7 @@ export function CompliancePage({ projectId }: CompliancePageProps) {
       });
       toast({
         title: t('compliance.toast.deleted', {
-          defaultValue: 'Compliance document deleted.‌⁠‍',
+          defaultValue: 'Compliance document deleted.',
         }),
         type: 'success',
       });
@@ -65,7 +65,7 @@ export function CompliancePage({ projectId }: CompliancePageProps) {
     onError: () => {
       toast({
         title: t('compliance.toast.delete_failed', {
-          defaultValue: 'Failed to delete compliance document.‌⁠‍',
+          defaultValue: 'Failed to delete compliance document.',
         }),
         type: 'error',
       });
@@ -86,11 +86,11 @@ export function CompliancePage({ projectId }: CompliancePageProps) {
       <EmptyState
         icon={<ShieldCheck size={48} strokeWidth={1.5} />}
         title={t('compliance.empty.no_project_title', {
-          defaultValue: 'Open a project‌⁠‍',
+          defaultValue: 'Open a project',
         })}
         description={t('compliance.empty.no_project_description', {
           defaultValue:
-            'Compliance documents are scoped to a project — open one first.‌⁠‍',
+            'Compliance documents are scoped to a project — open one first.',
         })}
       />
     );
@@ -102,7 +102,7 @@ export function CompliancePage({ projectId }: CompliancePageProps) {
         <div>
           <h2 className="text-base font-semibold text-content-primary">
             {t('compliance.page.title', {
-              defaultValue: 'Compliance documents‌⁠‍',
+              defaultValue: 'Compliance documents',
             })}
           </h2>
           <p className="text-xs text-content-tertiary">

@@ -368,12 +368,12 @@ export function LoginPage() {
         {/* Stats row */}
         <div className="mt-5 flex items-center gap-5 animate-stagger-in" style={{ animationDelay: '180ms' }}>
           {[
-            { value: '55K+', label: t('login.stat_costs', { defaultValue: 'cost items‌⁠‍' }) },
-            { value: '24', label: t('login.stat_langs', { defaultValue: 'languages‌⁠‍' }) },
-            { value: '48', label: t('login.stat_regions', { defaultValue: 'regions‌⁠‍' }) },
-            { value: '6', label: t('login.stat_cad', { defaultValue: 'CAD formats‌⁠‍' }) },
-            { value: '100+', label: t('login.stat_modules', { defaultValue: 'modules‌⁠‍' }) },
-            { value: '12', label: t('login.stat_sections', { defaultValue: 'sections‌⁠‍' }) },
+            { value: '55K+', label: t('login.stat_costs', { defaultValue: 'cost items' }) },
+            { value: '24', label: t('login.stat_langs', { defaultValue: 'languages' }) },
+            { value: '48', label: t('login.stat_regions', { defaultValue: 'regions' }) },
+            { value: '6', label: t('login.stat_cad', { defaultValue: 'CAD formats' }) },
+            { value: '100+', label: t('login.stat_modules', { defaultValue: 'modules' }) },
+            { value: '12', label: t('login.stat_sections', { defaultValue: 'sections' }) },
           ].map((s) => (
             <div key={s.label} className="text-center">
               <div className="text-[22px] font-semibold text-content-primary tracking-tight">{s.value}</div>

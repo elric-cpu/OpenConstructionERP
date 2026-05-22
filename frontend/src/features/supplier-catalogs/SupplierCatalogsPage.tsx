@@ -155,16 +155,16 @@ export function SupplierCatalogsPage() {
 
   return (
     <div className="space-y-5">
-      <Breadcrumb items={[{ label: t('supplier_catalogs.title', { defaultValue: 'Supplier Catalogs‌⁠‍' }) }]} />
+      <Breadcrumb items={[{ label: t('supplier_catalogs.title', { defaultValue: 'Supplier Catalogs' }) }]} />
 
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold text-content-primary">
-            {t('supplier_catalogs.title', { defaultValue: 'Supplier Catalogs‌⁠‍' })}
+            {t('supplier_catalogs.title', { defaultValue: 'Supplier Catalogs' })}
           </h1>
           <p className="mt-1 text-sm text-content-secondary">
             {t('supplier_catalogs.subtitle', {
-              defaultValue: 'Vendors, item catalogs, price comparison, requisitions, POs and warehouses.‌⁠‍',
+              defaultValue: 'Vendors, item catalogs, price comparison, requisitions, POs and warehouses.',
             })}
           </p>
         </div>
@@ -176,12 +176,12 @@ export function SupplierCatalogsPage() {
       <PipelineBanner
         intro={t('supplier_catalogs.pipeline_intro', {
           defaultValue:
-            'The buying chain: register vendors and their priced catalogs, raise a requisition, convert it to a purchase order, then three-way match the invoice on receipt. Catalog prices feed the cost database.‌⁠‍',
+            'The buying chain: register vendors and their priced catalogs, raise a requisition, convert it to a purchase order, then three-way match the invoice on receipt. Catalog prices feed the cost database.',
         })}
         steps={[
           {
             label: t('supplier_catalogs.step_costs', {
-              defaultValue: 'Cost Database‌⁠‍',
+              defaultValue: 'Cost Database',
             }),
             to: '/costs',
           },

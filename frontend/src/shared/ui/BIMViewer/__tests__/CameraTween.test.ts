@@ -1,5 +1,5 @@
 /**
- * ‌⁠‍CameraTween unit tests (W6.6).
+ * CameraTween unit tests (W6.6).
  *
  * Verifies the cubic ease curve, per-frame interpolation, and the
  * cancellation contract — once cancelled, onComplete must NOT fire so

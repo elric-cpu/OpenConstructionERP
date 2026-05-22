@@ -1,4 +1,4 @@
-/**​‌‍ ⁠
+/** 
  * SelectionSetsPanel — right-rail panel for named selection sets.
  *
  * Part of v3.13.0 W6.6 "BIM Viewer Pro UX". Lists per-model selection sets

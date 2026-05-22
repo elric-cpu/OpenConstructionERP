@@ -232,7 +232,7 @@ describe('CollaborationBar with ConnectionStatus', () => {
     // i18n suffix), so use a node-content matcher and tolerate ZW chars.
     expect(
       screen.getByText((_content, el) => {
-        const txt = el?.textContent?.replace(/[​-‏⁠﻿]/g, '') ?? '';
+        const txt = el?.textContent?.replace(/[-]/g, '') ?? '';
         return txt === '2 online';
       }),
     ).toBeInTheDocument();

@@ -197,7 +197,7 @@ export function MatchProgressCard({
         id: 'init',
         startSec: 0,
         label: t('match_progress.stage_init', {
-          defaultValue: 'Preparing session‌⁠‍',
+          defaultValue: 'Preparing session',
         }),
         Icon: Sparkles,
       },
@@ -205,7 +205,7 @@ export function MatchProgressCard({
         id: 'elements',
         startSec: 2,
         label: t('match_progress.stage_elements', {
-          defaultValue: 'Loading elements‌⁠‍',
+          defaultValue: 'Loading elements',
         }),
         Icon: Layers,
       },
@@ -213,7 +213,7 @@ export function MatchProgressCard({
         id: 'ranking',
         startSec: 5,
         label: t('match_progress.stage_ranking', {
-          defaultValue: 'Ranking candidates‌⁠‍',
+          defaultValue: 'Ranking candidates',
         }),
         Icon: Search,
       },
@@ -221,7 +221,7 @@ export function MatchProgressCard({
         id: 'save',
         startSec: 22,
         label: t('match_progress.stage_save', {
-          defaultValue: 'Saving results‌⁠‍',
+          defaultValue: 'Saving results',
         }),
         Icon: Save,
       },
@@ -229,7 +229,7 @@ export function MatchProgressCard({
         id: 'done',
         startSec: 28,
         label: t('match_progress.stage_done', {
-          defaultValue: 'Wrapping up‌⁠‍',
+          defaultValue: 'Wrapping up',
         }),
         Icon: Database,
       },

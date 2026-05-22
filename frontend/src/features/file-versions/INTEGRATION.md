@@ -31,7 +31,7 @@ Locate this block (around line 233–250):
     ...
   >
     <Download size={13} />
-    {t('files.actions.download', { defaultValue: 'Download‌⁠‍' })}
+    {t('files.actions.download', { defaultValue: 'Download' })}
   </a>
 )}
 <button
@@ -51,7 +51,7 @@ button:
 {row.download_url && (
   <a href={row.download_url} ...>
     <Download size={13} />
-    {t('files.actions.download', { defaultValue: 'Download‌⁠‍' })}
+    {t('files.actions.download', { defaultValue: 'Download' })}
   </a>
 )}
 

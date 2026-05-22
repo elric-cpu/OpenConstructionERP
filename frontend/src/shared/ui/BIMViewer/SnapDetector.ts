@@ -1,5 +1,5 @@
 /**
- * ‌⁠‍SnapDetector — screen-space snap refinement for the BIM ruler (W6.6).
+ * SnapDetector — screen-space snap refinement for the BIM ruler (W6.6).
  *
  * Raycaster.intersectObjects() returns an arbitrary point on the picked
  * triangle. That is the wrong granularity for engineering measurements: the

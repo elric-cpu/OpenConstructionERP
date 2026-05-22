@@ -1,5 +1,5 @@
 /**
- * ‌⁠‍SnapDetector unit tests — verify vertex / edge_midpoint / edge_perp
+ * SnapDetector unit tests — verify vertex / edge_midpoint / edge_perp
  * priority and the screen-space radius gating.
  *
  * Uses a real BufferGeometry + camera and stubs canvas.getBoundingClientRect

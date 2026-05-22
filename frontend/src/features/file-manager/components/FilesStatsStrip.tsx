@@ -59,9 +59,9 @@ export function FilesStatsStrip({ tree, locations }: FilesStatsStripProps) {
 
   const backendRaw = locations?.storage_backend ?? '';
   const backendLabel = backendRaw === 's3'
-    ? t('files.stats_backend_s3', { defaultValue: 'S3-compatible‌⁠‍' })
+    ? t('files.stats_backend_s3', { defaultValue: 'S3-compatible' })
     : backendRaw === 'local'
-      ? t('files.stats_backend_local', { defaultValue: 'Local disk‌⁠‍' })
+      ? t('files.stats_backend_local', { defaultValue: 'Local disk' })
       : '—';
 
   return (
@@ -70,17 +70,17 @@ export function FilesStatsStrip({ tree, locations }: FilesStatsStripProps) {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-4 py-3">
         <Metric
           icon={<FileText size={14} />}
-          label={t('files.stats_total', { defaultValue: 'Total files‌⁠‍' })}
+          label={t('files.stats_total', { defaultValue: 'Total files' })}
           value={stats.totalFiles.toLocaleString()}
         />
         <Metric
           icon={<HardDrive size={14} />}
-          label={t('files.stats_size', { defaultValue: 'Total size‌⁠‍' })}
+          label={t('files.stats_size', { defaultValue: 'Total size' })}
           value={fmtBytes(stats.totalBytes)}
         />
         <Metric
           icon={<Layers size={14} />}
-          label={t('files.stats_categories', { defaultValue: 'Categories‌⁠‍' })}
+          label={t('files.stats_categories', { defaultValue: 'Categories' })}
           value={`${stats.populated} / ${tree?.length ?? 8}`}
         />
         <Metric

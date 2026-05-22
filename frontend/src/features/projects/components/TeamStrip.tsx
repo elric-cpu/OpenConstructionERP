@@ -126,7 +126,7 @@ function MemberListModal({
       role="dialog"
       aria-modal="true"
       aria-label={t('projects.team.modal_members_title', {
-        defaultValue: 'Project members‌⁠‍',
+        defaultValue: 'Project members',
       })}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
       onClick={onClose}
@@ -138,7 +138,7 @@ function MemberListModal({
         <div className="flex items-center justify-between border-b border-border-light px-4 py-3">
           <h2 className="text-base font-semibold text-content-primary">
             {t('projects.team.modal_members_title', {
-              defaultValue: 'Project members‌⁠‍',
+              defaultValue: 'Project members',
             })}
           </h2>
           <button
@@ -176,7 +176,7 @@ function MemberListModal({
                   onClick={() => onRemove(m.user_id)}
                   className="text-content-tertiary hover:text-semantic-error transition-colors"
                   aria-label={t('projects.team.remove_member', {
-                    defaultValue: 'Remove member‌⁠‍',
+                    defaultValue: 'Remove member',
                   })}
                   data-testid="team-strip-remove-btn"
                 >
@@ -225,7 +225,7 @@ function AddMemberModal({
       role="dialog"
       aria-modal="true"
       aria-label={t('projects.team.modal_add_title', {
-        defaultValue: 'Add member‌⁠‍',
+        defaultValue: 'Add member',
       })}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
       onClick={onClose}
@@ -239,7 +239,7 @@ function AddMemberModal({
         <div className="flex items-center justify-between border-b border-border-light px-4 py-3">
           <h2 className="text-base font-semibold text-content-primary">
             {t('projects.team.modal_add_title', {
-              defaultValue: 'Add member‌⁠‍',
+              defaultValue: 'Add member',
             })}
           </h2>
           <button

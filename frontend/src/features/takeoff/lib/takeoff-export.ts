@@ -21,7 +21,7 @@
  * the inline overlay-drawing logic in `TakeoffViewerModule.tsx`
  * (`useEffect` around line 561) — keeping the visual fidelity 1:1.
  * Any future tweak to the live overlay rendering should be mirrored
- * here so the exported PDF matches what the user sees on screen.‌⁠‍
+ * here so the exported PDF matches what the user sees on screen.
  */
 
 import type { jsPDF as JsPDF } from 'jspdf';

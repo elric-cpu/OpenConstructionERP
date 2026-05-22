@@ -71,7 +71,7 @@ export function ModelLinkReviewPanel({
         addToast({
           type: 'info',
           title: t('boq.model_review_no_links', {
-            defaultValue: 'No model links in this BOQ‌⁠‍',
+            defaultValue: 'No model links in this BOQ',
           }),
         });
       }
@@ -80,7 +80,7 @@ export function ModelLinkReviewPanel({
       addToast({
         type: 'error',
         title: t('boq.model_review_refresh_failed', {
-          defaultValue: 'Refresh from model failed‌⁠‍',
+          defaultValue: 'Refresh from model failed',
         }),
         message: e.message,
       });
@@ -96,7 +96,7 @@ export function ModelLinkReviewPanel({
       addToast({
         type: 'success',
         title: t('boq.model_review_applied', {
-          defaultValue: '{{count}} quantity update(s) applied‌⁠‍',
+          defaultValue: '{{count}} quantity update(s) applied',
           count: res.applied,
         }),
       });
@@ -108,7 +108,7 @@ export function ModelLinkReviewPanel({
       addToast({
         type: 'error',
         title: t('boq.model_review_apply_failed', {
-          defaultValue: 'Apply failed‌⁠‍',
+          defaultValue: 'Apply failed',
         }),
         message: e.message,
       });
@@ -138,7 +138,7 @@ export function ModelLinkReviewPanel({
         role="dialog"
         aria-modal="true"
         aria-label={t('boq.model_review_title', {
-          defaultValue: 'Model quantity review‌⁠‍',
+          defaultValue: 'Model quantity review',
         })}
         className="relative ml-auto flex h-full w-[420px] flex-col bg-surface-elevated border-l border-border shadow-2xl animate-slide-in-right"
       >

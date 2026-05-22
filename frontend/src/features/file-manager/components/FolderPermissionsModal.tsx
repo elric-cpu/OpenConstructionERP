@@ -175,7 +175,7 @@ export function FolderPermissionsModal({
       invalidate();
       addToast({
         type: 'success',
-        title: t('files.permissions.grant', { defaultValue: 'Grant access‌⁠‍' }),
+        title: t('files.permissions.grant', { defaultValue: 'Grant access' }),
       });
     } catch (e) {
       const msg = (e as Error).message;
@@ -183,10 +183,10 @@ export function FolderPermissionsModal({
       const isDuplicate = /409|already/i.test(msg);
       const friendly = isDuplicate
         ? t('files.permissions.error_duplicate', {
-            defaultValue: 'This member already has access at this level.‌⁠‍',
+            defaultValue: 'This member already has access at this level.',
           })
         : t('files.permissions.error_grant', {
-            defaultValue: 'Could not grant access.‌⁠‍',
+            defaultValue: 'Could not grant access.',
           });
       setGrantError(friendly);
     } finally {
@@ -199,7 +199,7 @@ export function FolderPermissionsModal({
     const name = row.user_full_name || row.user_email || row.user_id;
     const confirm = window.confirm(
       t('files.permissions.revoke_confirm', {
-        defaultValue: 'Revoke access for {{name}}?‌⁠‍',
+        defaultValue: 'Revoke access for {{name}}?',
         name,
       }),
     );
@@ -212,7 +212,7 @@ export function FolderPermissionsModal({
       addToast({
         type: 'error',
         title: t('files.permissions.error_revoke', {
-          defaultValue: 'Could not revoke access.‌⁠‍',
+          defaultValue: 'Could not revoke access.',
         }),
       });
     } finally {

@@ -87,7 +87,7 @@ interface ChangeOrder {
 }
 
 /**
- * ‌⁠‍Decode the ``sub`` (subject / user id) claim from a JWT access token.
+ * Decode the ``sub`` (subject / user id) claim from a JWT access token.
  *
  * Backend ``CurrentUserId`` reads the same claim, so matching against it
  * client-side is the cleanest way to tell whether the logged-in user is
@@ -134,11 +134,11 @@ const STATUS_COLORS: Record<string, 'neutral' | 'blue' | 'success' | 'warning' |
 
 function getReasonLabels(t: (key: string, opts?: Record<string, unknown>) => string): Record<string, string> {
   return {
-    client_request: t('changeorders.reason_client_request', { defaultValue: 'Client Request‌⁠‍' }),
-    design_change: t('changeorders.reason_design_change', { defaultValue: 'Design Change‌⁠‍' }),
-    unforeseen: t('changeorders.reason_unforeseen', { defaultValue: 'Unforeseen Conditions‌⁠‍' }),
-    regulatory: t('changeorders.reason_regulatory', { defaultValue: 'Regulatory‌⁠‍' }),
-    error: t('changeorders.reason_error', { defaultValue: 'Error/Omission‌⁠‍' }),
+    client_request: t('changeorders.reason_client_request', { defaultValue: 'Client Request' }),
+    design_change: t('changeorders.reason_design_change', { defaultValue: 'Design Change' }),
+    unforeseen: t('changeorders.reason_unforeseen', { defaultValue: 'Unforeseen Conditions' }),
+    regulatory: t('changeorders.reason_regulatory', { defaultValue: 'Regulatory' }),
+    error: t('changeorders.reason_error', { defaultValue: 'Error/Omission' }),
   };
 }
 
@@ -518,7 +518,7 @@ function AddItemDialog({
 /* ── Approval Chain Builder ────────────────────────────────────────────── */
 
 /**
- * ‌⁠‍Minimal approver-id picker — accepts one UUID per line so an admin can
+ * Minimal approver-id picker — accepts one UUID per line so an admin can
  * paste a list of user ids without needing the full users-directory
  * search-and-select widget. The full picker can replace this textarea
  * later without changing the API surface.

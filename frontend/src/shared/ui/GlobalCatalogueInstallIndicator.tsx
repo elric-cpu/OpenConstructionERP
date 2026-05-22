@@ -143,7 +143,7 @@ export function GlobalCatalogueInstallIndicator() {
           {!isActive && primary.status === 'ready' && (
             <p className="text-[10px] text-emerald-600 mt-0.5">
               {t('catalogue_install.indicator_ready', {
-                defaultValue: 'Ready to use‌⁠‍',
+                defaultValue: 'Ready to use',
               })}
             </p>
           )}
@@ -165,14 +165,14 @@ export function GlobalCatalogueInstallIndicator() {
           <Database size={14} className="text-emerald-600" />
           <span className="text-xs font-semibold text-content-primary">
             {t('catalogue_install.indicator_title', {
-              defaultValue: 'Catalogue installs‌⁠‍',
+              defaultValue: 'Catalogue installs',
             })}
           </span>
         </div>
         <button
           onClick={() => setExpanded(false)}
           className="p-1 rounded hover:bg-surface-secondary text-content-tertiary"
-          aria-label={t('common.collapse', { defaultValue: 'Collapse‌⁠‍' })}
+          aria-label={t('common.collapse', { defaultValue: 'Collapse' })}
         >
           <ChevronDown size={14} />
         </button>
@@ -232,7 +232,7 @@ function JobRow({ job, onDismiss }: { job: CatalogueInstallJob; onDismiss: () =>
         {isError && (
           <p className="text-[10px] text-red-500 mt-0.5 line-clamp-2">
             {job.errorMessage ||
-              t('catalogue_install.indicator_error', { defaultValue: 'Install failed‌⁠‍' })}
+              t('catalogue_install.indicator_error', { defaultValue: 'Install failed' })}
           </p>
         )}
         <div className="mt-1.5 flex items-center gap-2">
@@ -240,7 +240,7 @@ function JobRow({ job, onDismiss }: { job: CatalogueInstallJob; onDismiss: () =>
             onClick={onDismiss}
             className="text-[10px] text-content-quaternary hover:text-content-secondary ms-auto"
           >
-            {t('common.dismiss', { defaultValue: 'Dismiss‌⁠‍' })}
+            {t('common.dismiss', { defaultValue: 'Dismiss' })}
           </button>
         </div>
       </div>

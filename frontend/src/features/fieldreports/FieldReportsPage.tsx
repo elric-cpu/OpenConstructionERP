@@ -221,7 +221,7 @@ export function FieldReportsPage() {
     mutationFn: createFieldReport,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['fieldreports'] });
-      addToast({ type: 'success', title: '', message: t('fieldreports.created', { defaultValue: 'Field report created‌⁠‍' }) });
+      addToast({ type: 'success', title: '', message: t('fieldreports.created', { defaultValue: 'Field report created' }) });
       setShowModal(false);
       setEditingReport(null);
     },
@@ -235,7 +235,7 @@ export function FieldReportsPage() {
       updateFieldReport(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['fieldreports'] });
-      addToast({ type: 'success', title: '', message: t('fieldreports.updated', { defaultValue: 'Field report updated‌⁠‍' }) });
+      addToast({ type: 'success', title: '', message: t('fieldreports.updated', { defaultValue: 'Field report updated' }) });
       setShowModal(false);
       setEditingReport(null);
     },
@@ -248,7 +248,7 @@ export function FieldReportsPage() {
     mutationFn: deleteFieldReport,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['fieldreports'] });
-      addToast({ type: 'success', title: '', message: t('fieldreports.deleted', { defaultValue: 'Field report deleted‌⁠‍' }) });
+      addToast({ type: 'success', title: '', message: t('fieldreports.deleted', { defaultValue: 'Field report deleted' }) });
     },
     onError: (err: Error) => {
       addToast({ type: 'error', title: t('common.error', { defaultValue: 'Error' }), message: err.message });
@@ -259,7 +259,7 @@ export function FieldReportsPage() {
     mutationFn: submitFieldReport,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['fieldreports'] });
-      addToast({ type: 'success', title: '', message: t('fieldreports.submitted', { defaultValue: 'Report submitted for approval‌⁠‍' }) });
+      addToast({ type: 'success', title: '', message: t('fieldreports.submitted', { defaultValue: 'Report submitted for approval' }) });
     },
     onError: (err: Error) => {
       addToast({ type: 'error', title: t('common.error', { defaultValue: 'Error' }), message: err.message });
@@ -270,7 +270,7 @@ export function FieldReportsPage() {
     mutationFn: approveFieldReport,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['fieldreports'] });
-      addToast({ type: 'success', title: '', message: t('fieldreports.approved', { defaultValue: 'Report approved‌⁠‍' }) });
+      addToast({ type: 'success', title: '', message: t('fieldreports.approved', { defaultValue: 'Report approved' }) });
     },
     onError: (err: Error) => {
       addToast({ type: 'error', title: t('common.error', { defaultValue: 'Error' }), message: err.message });

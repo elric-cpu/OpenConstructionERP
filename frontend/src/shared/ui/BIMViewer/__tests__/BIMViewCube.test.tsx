@@ -1,5 +1,5 @@
 /**
- * ‌⁠‍BIMViewCube tests — verifies face buttons are present and each one
+ * BIMViewCube tests — verifies face buttons are present and each one
  * calls SceneManager.setViewPreset() with the correct preset name (W6.6).
  *
  * WHY: We can't exercise the WebGL raycast in jsdom — three.js has no

@@ -149,18 +149,18 @@ function WorkflowIntro() {
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-content-primary">
             {t('equipment.intro_title', {
-              defaultValue: 'Track utilisation, cost and safety per asset‌⁠‍',
+              defaultValue: 'Track utilisation, cost and safety per asset',
             })}
           </p>
           <p className="mt-1 text-xs leading-relaxed text-content-secondary">
             {t('equipment.intro_body', {
               defaultValue:
-                'Register every owned, rented or leased machine. Open an asset to see utilisation, fuel cost month-to-date, open maintenance work orders and certification expiry. An asset whose status is not "active", or whose required inspection has expired, is automatically blocked from new resource assignments — keeping unsafe plant off site.‌⁠‍',
+                'Register every owned, rented or leased machine. Open an asset to see utilisation, fuel cost month-to-date, open maintenance work orders and certification expiry. An asset whose status is not "active", or whose required inspection has expired, is automatically blocked from new resource assignments — keeping unsafe plant off site.',
             })}
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <span className="text-2xs font-medium uppercase tracking-wide text-content-tertiary">
-              {t('equipment.intro_connects', { defaultValue: 'Connects to‌⁠‍' })}
+              {t('equipment.intro_connects', { defaultValue: 'Connects to' })}
             </span>
             <button
               type="button"
@@ -168,7 +168,7 @@ function WorkflowIntro() {
               className="inline-flex items-center gap-1 rounded-full border border-border-light bg-surface-primary px-2.5 py-1 text-xs font-medium text-content-secondary transition-colors hover:border-oe-blue hover:text-oe-blue"
             >
               {t('equipment.intro_link_resources', {
-                defaultValue: 'Resource assignments‌⁠‍',
+                defaultValue: 'Resource assignments',
               })}
               <ArrowRight size={11} />
             </button>
@@ -178,7 +178,7 @@ function WorkflowIntro() {
               className="inline-flex items-center gap-1 rounded-full border border-border-light bg-surface-primary px-2.5 py-1 text-xs font-medium text-content-secondary transition-colors hover:border-oe-blue hover:text-oe-blue"
             >
               {t('equipment.intro_link_finance', {
-                defaultValue: 'Cost & Finance‌⁠‍',
+                defaultValue: 'Cost & Finance',
               })}
               <ArrowRight size={11} />
             </button>

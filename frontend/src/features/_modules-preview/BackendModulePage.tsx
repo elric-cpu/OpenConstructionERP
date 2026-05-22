@@ -22,7 +22,7 @@ export function BackendModulePage({
       .join(' '),
   });
   const description = t(`backend_modules.${moduleKey}.desc`, {
-    defaultValue: 'Backend API is live. The interactive UI for this module is in progress.‌⁠‍',
+    defaultValue: 'Backend API is live. The interactive UI for this module is in progress.',
   });
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
@@ -34,7 +34,7 @@ export function BackendModulePage({
               <Sparkles size={22} strokeWidth={2.25} />
             </span>
             <span className="inline-flex items-center rounded-full bg-white/15 text-white text-[11px] font-semibold uppercase tracking-wide px-2.5 py-0.5">
-              {t('backend_modules.badge', { defaultValue: 'Backend API live‌⁠‍' })}
+              {t('backend_modules.badge', { defaultValue: 'Backend API live' })}
             </span>
           </div>
           <h1 className="text-3xl font-semibold leading-tight">{title}</h1>
@@ -45,11 +45,11 @@ export function BackendModulePage({
       <div className="grid sm:grid-cols-2 gap-4 mt-6">
         <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5">
           <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-3">
-            {t('backend_modules.endpoints_title', { defaultValue: 'API endpoints‌⁠‍' })}
+            {t('backend_modules.endpoints_title', { defaultValue: 'API endpoints' })}
           </h2>
           <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
             {t('backend_modules.endpoints_body', {
-              defaultValue: 'All routes are mounted and authenticated. Browse the OpenAPI spec to explore models, schemas, and try requests.‌⁠‍',
+              defaultValue: 'All routes are mounted and authenticated. Browse the OpenAPI spec to explore models, schemas, and try requests.',
             })}
           </p>
           <a
@@ -58,7 +58,7 @@ export function BackendModulePage({
             rel="noopener noreferrer"
             className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-violet-600 dark:text-violet-400 hover:underline"
           >
-            {t('backend_modules.open_api', { defaultValue: 'Open API docs‌⁠‍' })}
+            {t('backend_modules.open_api', { defaultValue: 'Open API docs' })}
             <ExternalLink size={14} />
           </a>
           <div className="mt-3 rounded-md bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-2 font-mono text-xs text-slate-700 dark:text-slate-300">

@@ -87,8 +87,8 @@ export function FileContextMenu({
     addToast({
       type: ok ? 'success' : 'error',
       title: ok
-        ? t('files.context.link_copied', { defaultValue: 'Link copied‌⁠‍' })
-        : t('files.context.copy_failed', { defaultValue: 'Could not copy link‌⁠‍' }),
+        ? t('files.context.link_copied', { defaultValue: 'Link copied' })
+        : t('files.context.copy_failed', { defaultValue: 'Could not copy link' }),
     });
     onClose();
   }
@@ -107,7 +107,7 @@ export function FileContextMenu({
       <MenuItem
         icon={<ExternalLink size={13} />}
         label={t('files.context.open_in', {
-          defaultValue: 'Open in {{module}}‌⁠‍',
+          defaultValue: 'Open in {{module}}',
           module: moduleLabel,
         })}
         onClick={() => {
@@ -118,7 +118,7 @@ export function FileContextMenu({
       {row.download_url && (
         <MenuItem
           icon={<Download size={13} />}
-          label={t('files.context.download', { defaultValue: 'Download‌⁠‍' })}
+          label={t('files.context.download', { defaultValue: 'Download' })}
           onClick={() => {
             window.open(row.download_url ?? undefined, '_blank', 'noopener,noreferrer');
             onClose();
@@ -128,7 +128,7 @@ export function FileContextMenu({
       {row.download_url && (
         <MenuItem
           icon={<LinkIcon size={13} />}
-          label={t('files.context.copy_link', { defaultValue: 'Copy link‌⁠‍' })}
+          label={t('files.context.copy_link', { defaultValue: 'Copy link' })}
           onClick={handleCopyLink}
         />
       )}

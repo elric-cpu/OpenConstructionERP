@@ -710,7 +710,7 @@ export function CreateProjectModal({
         addToast({
           type: 'warning',
           title: t('project_wizard.profile_apply_failed', {
-            defaultValue: 'Project created, but the module setup could not be applied — you can re-run it from Project Settings.‌⁠‍',
+            defaultValue: 'Project created, but the module setup could not be applied — you can re-run it from Project Settings.',
           }),
         });
       }
@@ -731,10 +731,10 @@ export function CreateProjectModal({
         type: 'success',
         title: isEdit
           ? t('project_wizard.setup_updated', {
-              defaultValue: 'Project setup updated‌⁠‍',
+              defaultValue: 'Project setup updated',
             })
           : t('toasts.project_created', {
-              defaultValue: 'Project created successfully‌⁠‍',
+              defaultValue: 'Project created successfully',
             }),
       });
       // Navigate away — no focus return here (we're leaving the page).
@@ -742,7 +742,7 @@ export function CreateProjectModal({
       navigate(`/projects/${project.id}`);
     },
     onError: (error: Error) => {
-      addToast({ type: 'error', title: t('toasts.project_create_failed', { defaultValue: 'Failed to create project‌⁠‍' }), message: error.message });
+      addToast({ type: 'error', title: t('toasts.project_create_failed', { defaultValue: 'Failed to create project' }), message: error.message });
     },
   });
 
@@ -802,7 +802,7 @@ export function CreateProjectModal({
   const submitBlockReason = (() => {
     if (!trimmedName)
       return t('project_wizard.need_name', {
-        defaultValue: 'Enter a project name (step 1).‌⁠‍',
+        defaultValue: 'Enter a project name (step 1).',
       });
     if (!effectiveRegion)
       return t('project_wizard.need_region', {

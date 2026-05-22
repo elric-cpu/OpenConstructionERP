@@ -123,10 +123,10 @@ export function SheetsIndexPage() {
       {/* Breadcrumb */}
       <Breadcrumb
         items={[
-          { label: t('nav.dashboard', { defaultValue: 'Dashboard‌⁠‍' }), to: '/' },
+          { label: t('nav.dashboard', { defaultValue: 'Dashboard' }), to: '/' },
           { label: t('files.title', { defaultValue: 'Files' }), to: '/files' },
           ...(projectName ? [{ label: projectName }] : []),
-          { label: t('sheets.title', { defaultValue: 'Sheets‌⁠‍' }) },
+          { label: t('sheets.title', { defaultValue: 'Sheets' }) },
         ]}
         className="mb-4"
       />
@@ -135,12 +135,12 @@ export function SheetsIndexPage() {
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-content-primary">
-            {t('sheets.page_title', { defaultValue: 'Drawing Sheets‌⁠‍' })}
+            {t('sheets.page_title', { defaultValue: 'Drawing Sheets' })}
           </h1>
           <p className="mt-1 text-sm text-content-secondary">
             {t('sheets.subtitle', {
               defaultValue:
-                'Indexed drawing sheets across project documents — filter by discipline or search by number, title, revision.‌⁠‍',
+                'Indexed drawing sheets across project documents — filter by discipline or search by number, title, revision.',
             })}
           </p>
         </div>
@@ -152,7 +152,7 @@ export function SheetsIndexPage() {
           <AlertTriangle size={18} className="text-amber-600 shrink-0" />
           <div>
             <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
-              {t('common.no_project_selected', { defaultValue: 'No project selected‌⁠‍' })}
+              {t('common.no_project_selected', { defaultValue: 'No project selected' })}
             </p>
             <p className="text-xs text-amber-600 dark:text-amber-400">
               {t('common.select_project_hint', {

@@ -207,7 +207,7 @@ export function ActivityDrawer({
   }, [open]);
 
   const unknownActorLabel = t('files.activity.actor_unknown', {
-    defaultValue: 'Unknown user‌⁠‍',
+    defaultValue: 'Unknown user',
   });
 
   return (
@@ -247,7 +247,7 @@ export function ActivityDrawer({
               className="flex items-center gap-1.5 text-sm font-semibold text-content-primary"
             >
               <Activity size={14} strokeWidth={2} />
-              {t('files.activity.title', { defaultValue: 'Activity‌⁠‍' })}
+              {t('files.activity.title', { defaultValue: 'Activity' })}
               {totalCount > 0 && (
                 <span className="text-2xs font-normal text-content-quaternary tabular-nums">
                   ({totalCount})
@@ -425,11 +425,11 @@ function ActivityEmptyState() {
         className="mx-auto mb-2 text-content-quaternary"
       />
       <p className="text-xs font-medium text-content-secondary">
-        {t('files.activity.empty_title', { defaultValue: 'No activity yet‌⁠‍' })}
+        {t('files.activity.empty_title', { defaultValue: 'No activity yet' })}
       </p>
       <p className="mt-1 text-2xs text-content-tertiary">
         {t('files.activity.empty_hint', {
-          defaultValue: 'Uploads, renames, and other changes will show up here.‌⁠‍',
+          defaultValue: 'Uploads, renames, and other changes will show up here.',
         })}
       </p>
     </div>
@@ -456,7 +456,7 @@ function ActivityErrorState({
       />
       <p className="text-xs font-medium text-content-secondary">
         {t('files.activity.error_title', {
-          defaultValue: "Couldn't load activity‌⁠‍",
+          defaultValue: "Couldn't load activity",
         })}
       </p>
       <p className="mt-1 text-2xs text-content-tertiary">

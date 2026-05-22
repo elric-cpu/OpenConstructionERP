@@ -67,7 +67,7 @@ export function FileGrid({ items, selectedIds, onSelect, onOpen, isLoading }: Fi
     return (
       <div className="flex flex-col items-center justify-center py-16 px-6 text-center text-content-tertiary">
         <File size={28} className="mb-3 opacity-60" />
-        <p className="text-sm">{t('files.empty', { defaultValue: 'No files match your filters.‌⁠‍' })}</p>
+        <p className="text-sm">{t('files.empty', { defaultValue: 'No files match your filters.' })}</p>
       </div>
     );
   }
@@ -91,7 +91,7 @@ export function FileGrid({ items, selectedIds, onSelect, onOpen, isLoading }: Fi
                 : 'border-border-light hover:border-border hover:shadow-sm',
             )}
             title={t('files.tile.tooltip', {
-              defaultValue: '{{name}} — double-click to open in {{module}}‌⁠‍',
+              defaultValue: '{{name}} — double-click to open in {{module}}',
               name: row.name,
               module: moduleLabel,
             })}
@@ -173,7 +173,7 @@ export function FileGrid({ items, selectedIds, onSelect, onOpen, isLoading }: Fi
             >
               <span className="truncate max-w-[120px]">
                 {t('files.actions.open_in_short', {
-                  defaultValue: 'Open in {{module}}‌⁠‍',
+                  defaultValue: 'Open in {{module}}',
                   module: moduleLabel,
                 })}
               </span>

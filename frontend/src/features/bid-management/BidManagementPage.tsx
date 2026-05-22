@@ -187,16 +187,16 @@ export function BidManagementPage() {
     return (
       <div className="space-y-5">
         <Breadcrumb
-          items={[{ label: t('bid_management.title', { defaultValue: 'Bid Management‌⁠‍' }) }]}
+          items={[{ label: t('bid_management.title', { defaultValue: 'Bid Management' }) }]}
         />
         <EmptyState
           icon={<PackageIcon size={22} />}
           title={t('bid_management.no_project', {
-            defaultValue: 'Select a project to manage bid packages‌⁠‍',
+            defaultValue: 'Select a project to manage bid packages',
           })}
           description={t('bid_management.no_project_desc', {
             defaultValue:
-              'Bid Management is project-scoped — create or open a project, then return here.‌⁠‍',
+              'Bid Management is project-scoped — create or open a project, then return here.',
           })}
         />
       </div>
@@ -206,13 +206,13 @@ export function BidManagementPage() {
   return (
     <div className="space-y-5">
       <Breadcrumb
-        items={[{ label: t('bid_management.title', { defaultValue: 'Bid Management‌⁠‍' }) }]}
+        items={[{ label: t('bid_management.title', { defaultValue: 'Bid Management' }) }]}
       />
 
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold text-content-primary">
-            {t('bid_management.title', { defaultValue: 'Bid Management‌⁠‍' })}
+            {t('bid_management.title', { defaultValue: 'Bid Management' })}
           </h1>
           <p className="mt-1 text-sm text-content-secondary">
             {t('bid_management.subtitle', {

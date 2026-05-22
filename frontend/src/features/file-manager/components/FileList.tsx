@@ -79,12 +79,12 @@ export function FileList({
             <Header field="name" label={t('files.col.name', { defaultValue: 'Name' })} />
             <Header field="kind" label={t('files.col.kind', { defaultValue: 'Type' })} />
             <Header field="size" label={t('files.col.size', { defaultValue: 'Size' })} align="right" />
-            <Header field="modified" label={t('files.col.modified', { defaultValue: 'Modified‌⁠‍' })} align="right" />
+            <Header field="modified" label={t('files.col.modified', { defaultValue: 'Modified' })} align="right" />
             <th className="px-3 py-2 text-2xs font-medium uppercase tracking-wider text-content-tertiary">
-              {t('files.col.discipline', { defaultValue: 'Discipline‌⁠‍' })}
+              {t('files.col.discipline', { defaultValue: 'Discipline' })}
             </th>
             <th className="px-3 py-2 text-2xs font-medium uppercase tracking-wider text-content-tertiary">
-              {t('files.col.open_in', { defaultValue: 'Open in‌⁠‍' })}
+              {t('files.col.open_in', { defaultValue: 'Open in' })}
             </th>
           </tr>
         </thead>
@@ -102,7 +102,7 @@ export function FileList({
           ) : items.length === 0 ? (
             <tr>
               <td colSpan={6} className="px-3 py-12 text-center text-sm text-content-tertiary">
-                {t('files.empty', { defaultValue: 'No files match your filters.‌⁠‍' })}
+                {t('files.empty', { defaultValue: 'No files match your filters.' })}
               </td>
             </tr>
           ) : (

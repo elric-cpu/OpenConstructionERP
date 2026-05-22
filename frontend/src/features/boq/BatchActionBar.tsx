@@ -130,13 +130,13 @@ export function BatchActionBar({
       <div
         className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 animate-slide-up"
         role="toolbar"
-        aria-label={t('boq.batch_actions', { defaultValue: 'Batch actions‌⁠‍' })}
+        aria-label={t('boq.batch_actions', { defaultValue: 'Batch actions' })}
       >
         <div className="flex items-center gap-3 rounded-2xl border border-border-light bg-surface-elevated shadow-xl px-5 py-3">
           {/* Selection count */}
           <span className="text-sm font-medium text-content-primary tabular-nums whitespace-nowrap">
             {t('boq.n_selected', {
-              defaultValue: '{{count}} positions selected‌⁠‍',
+              defaultValue: '{{count}} positions selected',
               count,
             })}
           </span>
@@ -148,11 +148,11 @@ export function BatchActionBar({
           <button
             type="button"
             onClick={handleDeleteClick}
-            aria-label={t('boq.batch_delete', { defaultValue: 'Delete selected‌⁠‍' })}
+            aria-label={t('boq.batch_delete', { defaultValue: 'Delete selected' })}
             className="inline-flex items-center gap-1.5 rounded-lg bg-semantic-error/10 px-3 py-1.5 text-xs font-medium text-semantic-error hover:bg-semantic-error/20 transition-colors"
           >
             <Trash2 size={14} />
-            {t('boq.batch_delete', { defaultValue: 'Delete selected‌⁠‍' })}
+            {t('boq.batch_delete', { defaultValue: 'Delete selected' })}
           </button>
 
           {/* Change unit */}
@@ -160,7 +160,7 @@ export function BatchActionBar({
             <button
               type="button"
               onClick={() => setUnitDropdownOpen((prev) => !prev)}
-              aria-label={t('boq.batch_change_unit', { defaultValue: 'Change unit‌⁠‍' })}
+              aria-label={t('boq.batch_change_unit', { defaultValue: 'Change unit' })}
               aria-expanded={unitDropdownOpen}
               aria-haspopup="listbox"
               className="inline-flex items-center gap-1.5 rounded-lg bg-oe-blue-subtle px-3 py-1.5 text-xs font-medium text-oe-blue hover:bg-oe-blue-subtle/80 transition-colors"
@@ -194,11 +194,11 @@ export function BatchActionBar({
             <button
               type="button"
               onClick={() => setFactorDialog({ kind: 'rate', value: '1.10' })}
-              aria-label={t('boq.batch_rate_factor', { defaultValue: 'Multiply rate by factor‌⁠‍' })}
+              aria-label={t('boq.batch_rate_factor', { defaultValue: 'Multiply rate by factor' })}
               className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition-colors"
             >
               <Percent size={14} />
-              {t('boq.batch_rate_factor', { defaultValue: 'Multiply rate‌⁠‍' })}
+              {t('boq.batch_rate_factor', { defaultValue: 'Multiply rate' })}
             </button>
           )}
 
@@ -207,11 +207,11 @@ export function BatchActionBar({
             <button
               type="button"
               onClick={() => setFactorDialog({ kind: 'quantity', value: '1.00' })}
-              aria-label={t('boq.batch_qty_factor', { defaultValue: 'Multiply quantity by factor‌⁠‍' })}
+              aria-label={t('boq.batch_qty_factor', { defaultValue: 'Multiply quantity by factor' })}
               className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 transition-colors"
             >
               <Hash size={14} />
-              {t('boq.batch_qty_factor', { defaultValue: 'Multiply qty‌⁠‍' })}
+              {t('boq.batch_qty_factor', { defaultValue: 'Multiply qty' })}
             </button>
           )}
 
@@ -220,11 +220,11 @@ export function BatchActionBar({
             <button
               type="button"
               onClick={() => setClassDialog({ standard: 'din276', code: '' })}
-              aria-label={t('boq.batch_set_classification', { defaultValue: 'Set classification‌⁠‍' })}
+              aria-label={t('boq.batch_set_classification', { defaultValue: 'Set classification' })}
               className="inline-flex items-center gap-1.5 rounded-lg bg-purple-500/10 px-3 py-1.5 text-xs font-medium text-purple-700 dark:text-purple-300 hover:bg-purple-500/20 transition-colors"
             >
               <Tag size={14} />
-              {t('boq.batch_set_classification', { defaultValue: 'Classification‌⁠‍' })}
+              {t('boq.batch_set_classification', { defaultValue: 'Classification' })}
             </button>
           )}
 
@@ -310,16 +310,16 @@ export function BatchActionBar({
             aria-modal="true"
             aria-label={
               factorDialog.kind === 'rate'
-                ? t('boq.batch_rate_factor_title', { defaultValue: 'Multiply rate by factor‌⁠‍' })
-                : t('boq.batch_qty_factor_title', { defaultValue: 'Multiply quantity by factor‌⁠‍' })
+                ? t('boq.batch_rate_factor_title', { defaultValue: 'Multiply rate by factor' })
+                : t('boq.batch_qty_factor_title', { defaultValue: 'Multiply quantity by factor' })
             }
             className="relative z-10 w-full max-w-sm mx-4 rounded-2xl border border-border-light bg-surface-elevated shadow-xl animate-scale-in focus:outline-none"
           >
             <div className="px-6 pt-6 pb-4">
               <h2 className="text-base font-semibold text-content-primary">
                 {factorDialog.kind === 'rate'
-                  ? t('boq.batch_rate_factor_title', { defaultValue: 'Multiply rate by factor‌⁠‍' })
-                  : t('boq.batch_qty_factor_title', { defaultValue: 'Multiply quantity by factor‌⁠‍' })}
+                  ? t('boq.batch_rate_factor_title', { defaultValue: 'Multiply rate by factor' })
+                  : t('boq.batch_qty_factor_title', { defaultValue: 'Multiply quantity by factor' })}
               </h2>
               <p className="mt-1 text-xs text-content-secondary">
                 {t('boq.batch_factor_hint', {
@@ -329,7 +329,7 @@ export function BatchActionBar({
               </p>
               <label className="mt-4 block">
                 <span className="text-xs font-medium text-content-secondary">
-                  {t('boq.batch_factor_label', { defaultValue: 'Factor (> 0)‌⁠‍' })}
+                  {t('boq.batch_factor_label', { defaultValue: 'Factor (> 0)' })}
                 </span>
                 <input
                   autoFocus
@@ -343,7 +343,7 @@ export function BatchActionBar({
                     if (e.key === 'Enter') handleConfirmFactor();
                   }}
                   className="mt-1 w-full h-9 rounded-md border border-border bg-surface-primary px-3 text-sm font-mono text-content-primary focus:outline-none focus:ring-2 focus:ring-oe-blue/30"
-                  aria-label={t('boq.batch_factor_label', { defaultValue: 'Factor (> 0)‌⁠‍' })}
+                  aria-label={t('boq.batch_factor_label', { defaultValue: 'Factor (> 0)' })}
                 />
               </label>
             </div>
@@ -378,12 +378,12 @@ export function BatchActionBar({
           <div
             role="dialog"
             aria-modal="true"
-            aria-label={t('boq.batch_set_classification', { defaultValue: 'Set classification‌⁠‍' })}
+            aria-label={t('boq.batch_set_classification', { defaultValue: 'Set classification' })}
             className="relative z-10 w-full max-w-sm mx-4 rounded-2xl border border-border-light bg-surface-elevated shadow-xl animate-scale-in focus:outline-none"
           >
             <div className="px-6 pt-6 pb-4">
               <h2 className="text-base font-semibold text-content-primary">
-                {t('boq.batch_set_classification', { defaultValue: 'Set classification‌⁠‍' })}
+                {t('boq.batch_set_classification', { defaultValue: 'Set classification' })}
               </h2>
               <p className="mt-1 text-xs text-content-secondary">
                 {t('boq.batch_class_hint', {
@@ -393,7 +393,7 @@ export function BatchActionBar({
               </p>
               <label className="mt-4 block">
                 <span className="text-xs font-medium text-content-secondary">
-                  {t('boq.batch_class_standard', { defaultValue: 'Standard‌⁠‍' })}
+                  {t('boq.batch_class_standard', { defaultValue: 'Standard' })}
                 </span>
                 <select
                   value={classDialog.standard}
@@ -412,7 +412,7 @@ export function BatchActionBar({
               </label>
               <label className="mt-3 block">
                 <span className="text-xs font-medium text-content-secondary">
-                  {t('boq.batch_class_code', { defaultValue: 'Code‌⁠‍' })}
+                  {t('boq.batch_class_code', { defaultValue: 'Code' })}
                 </span>
                 <input
                   autoFocus
@@ -432,7 +432,7 @@ export function BatchActionBar({
                         : '03 30 00'
                   }
                   className="mt-1 w-full h-9 rounded-md border border-border bg-surface-primary px-3 text-sm font-mono text-content-primary focus:outline-none focus:ring-2 focus:ring-oe-blue/30"
-                  aria-label={t('boq.batch_class_code', { defaultValue: 'Code‌⁠‍' })}
+                  aria-label={t('boq.batch_class_code', { defaultValue: 'Code' })}
                 />
               </label>
             </div>

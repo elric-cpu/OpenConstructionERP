@@ -254,12 +254,12 @@ export default function BIMRightPanelTabs({
   }[] = [
     {
       id: 'properties',
-      label: t('bim.tab_properties', { defaultValue: 'Properties‌⁠‍' }),
+      label: t('bim.tab_properties', { defaultValue: 'Properties' }),
       icon: ClipboardList,
     },
     {
       id: 'layers',
-      label: t('bim.tab_layers', { defaultValue: 'Layers‌⁠‍' }),
+      label: t('bim.tab_layers', { defaultValue: 'Layers' }),
       icon: Layers,
     },
     {
@@ -279,7 +279,7 @@ export default function BIMRightPanelTabs({
     },
     {
       id: 'groups',
-      label: t('bim.tab_groups', { defaultValue: 'Groups‌⁠‍' }),
+      label: t('bim.tab_groups', { defaultValue: 'Groups' }),
       icon: Folders,
     },
     {
@@ -295,7 +295,7 @@ export default function BIMRightPanelTabs({
       <div
         role="tablist"
         aria-label={t('bim.right_panel_tabs_aria', {
-          defaultValue: 'BIM right panel tabs‌⁠‍',
+          defaultValue: 'BIM right panel tabs',
         })}
         className="flex items-stretch border-b border-border-light bg-surface-secondary"
       >
@@ -323,7 +323,7 @@ export default function BIMRightPanelTabs({
         <button
           type="button"
           onClick={onClose}
-          aria-label={t('bim.right_panel_close', { defaultValue: 'Close panel‌⁠‍' })}
+          aria-label={t('bim.right_panel_close', { defaultValue: 'Close panel' })}
           className="flex items-center justify-center px-2 text-content-tertiary hover:text-content-primary hover:bg-surface-tertiary"
         >
           <X size={14} />

@@ -111,7 +111,7 @@ export function ImportWizard({ open, onClose }: ImportWizardProps) {
       setStep('result');
       addToast({
         type: 'success',
-        title: t('files.import.success_title', { defaultValue: 'Bundle imported‌⁠‍' }),
+        title: t('files.import.success_title', { defaultValue: 'Bundle imported' }),
       });
     } catch (e) {
       setError((e as Error).message);
@@ -121,14 +121,14 @@ export function ImportWizard({ open, onClose }: ImportWizardProps) {
   }
 
   const modeLabels: Record<ImportMode, string> = {
-    new_project: t('files.import.mode_new', { defaultValue: 'Create a new project‌⁠‍' }),
-    merge_into_existing: t('files.import.mode_merge', { defaultValue: 'Merge into existing project‌⁠‍' }),
-    replace_existing: t('files.import.mode_replace', { defaultValue: 'Replace existing project‌⁠‍' }),
+    new_project: t('files.import.mode_new', { defaultValue: 'Create a new project' }),
+    merge_into_existing: t('files.import.mode_merge', { defaultValue: 'Merge into existing project' }),
+    replace_existing: t('files.import.mode_replace', { defaultValue: 'Replace existing project' }),
   };
 
   const modeHints: Record<ImportMode, string> = {
     new_project: t('files.import.mode_new_hint', {
-      defaultValue: 'Safest. New IDs everywhere; nothing in your workspace changes.‌⁠‍',
+      defaultValue: 'Safest. New IDs everywhere; nothing in your workspace changes.',
     }),
     merge_into_existing: t('files.import.mode_merge_hint', {
       defaultValue: 'Adds rows to a chosen project. Existing IDs are skipped.',

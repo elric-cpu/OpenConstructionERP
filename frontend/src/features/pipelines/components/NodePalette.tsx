@@ -94,7 +94,7 @@ function PaletteItem({ def }: { def: NodeTypeDef }) {
             <span
               className="shrink-0 rounded bg-black/5 px-1 text-2xs font-medium uppercase tracking-wide dark:bg-white/10"
               title={t('pipeline.palette.module_chip', {
-                defaultValue: 'Touches the {{module}} module‌⁠‍',
+                defaultValue: 'Touches the {{module}} module',
                 module: def.module,
               })}
             >
@@ -105,10 +105,10 @@ function PaletteItem({ def }: { def: NodeTypeDef }) {
             <span
               className="shrink-0 rounded bg-amber-200 px-1 text-2xs font-semibold text-amber-800 dark:bg-amber-800 dark:text-amber-100"
               title={t('pipeline.palette.writes_chip', {
-                defaultValue: 'This step writes data — needs a gate before it‌⁠‍',
+                defaultValue: 'This step writes data — needs a gate before it',
               })}
             >
-              {t('pipeline.palette.writes', { defaultValue: 'writes‌⁠‍' })}
+              {t('pipeline.palette.writes', { defaultValue: 'writes' })}
             </span>
           )}
         </span>
@@ -163,7 +163,7 @@ export function NodePalette({
         <button
           type="button"
           aria-label={t('pipeline.palette.expand', {
-            defaultValue: 'Expand palette‌⁠‍',
+            defaultValue: 'Expand palette',
           })}
           onClick={onToggleCollapsed}
           className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-surface-tertiary"
@@ -186,7 +186,7 @@ export function NodePalette({
       data-tour="pipeline-palette"
       className="flex h-full w-[260px] shrink-0 flex-col border-e border-border bg-surface-secondary"
       aria-label={t('pipeline.palette.aria', {
-        defaultValue: 'Node palette‌⁠‍',
+        defaultValue: 'Node palette',
       })}
     >
       <header className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">

@@ -141,18 +141,18 @@ function WorkflowIntro() {
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-content-primary">
             {t('daily_diary.intro_title', {
-              defaultValue: 'One signed record per site day‌⁠‍',
+              defaultValue: 'One signed record per site day',
             })}
           </p>
           <p className="mt-1 text-xs leading-relaxed text-content-secondary">
             {t('daily_diary.intro_body', {
               defaultValue:
-                'Each day, open the diary and log weather, headcount, deliveries and events, attach site photos, then close and sign it. A signed diary is sealed with a sha256 fingerprint — it becomes tamper-evident evidence for delay claims, progress verification and dispute resolution.‌⁠‍',
+                'Each day, open the diary and log weather, headcount, deliveries and events, attach site photos, then close and sign it. A signed diary is sealed with a sha256 fingerprint — it becomes tamper-evident evidence for delay claims, progress verification and dispute resolution.',
             })}
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <span className="text-2xs font-medium uppercase tracking-wide text-content-tertiary">
-              {t('daily_diary.intro_connects', { defaultValue: 'Feeds into‌⁠‍' })}
+              {t('daily_diary.intro_connects', { defaultValue: 'Feeds into' })}
             </span>
             <button
               type="button"
@@ -160,7 +160,7 @@ function WorkflowIntro() {
               className="inline-flex items-center gap-1 rounded-full border border-border-light bg-surface-primary px-2.5 py-1 text-xs font-medium text-content-secondary transition-colors hover:border-oe-blue hover:text-oe-blue"
             >
               {t('daily_diary.intro_link_schedule', {
-                defaultValue: 'Schedule progress‌⁠‍',
+                defaultValue: 'Schedule progress',
               })}
               <ArrowRight size={11} />
             </button>
@@ -177,7 +177,7 @@ function WorkflowIntro() {
               onClick={() => navigate('/files')}
               className="inline-flex items-center gap-1 rounded-full border border-border-light bg-surface-primary px-2.5 py-1 text-xs font-medium text-content-secondary transition-colors hover:border-oe-blue hover:text-oe-blue"
             >
-              {t('daily_diary.intro_link_files', { defaultValue: 'Site photos‌⁠‍' })}
+              {t('daily_diary.intro_link_files', { defaultValue: 'Site photos' })}
               <ArrowRight size={11} />
             </button>
           </div>

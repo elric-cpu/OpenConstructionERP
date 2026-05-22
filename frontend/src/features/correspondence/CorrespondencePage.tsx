@@ -179,7 +179,7 @@ function CreateCorrespondenceModal({
       title={
         isEdit
           ? t('correspondence.edit_entry', { defaultValue: 'Edit Entry' })
-          : t('correspondence.new_entry', { defaultValue: 'New Entry‌⁠‍' })
+          : t('correspondence.new_entry', { defaultValue: 'New Entry' })
       }
       footer={
         <>
@@ -203,11 +203,11 @@ function CreateCorrespondenceModal({
     >
       {/* Direction + Type pickers, side-by-side */}
       <WideModalSection columns={2}>
-        <WideModalField label={t('correspondence.field_direction', { defaultValue: 'Direction‌⁠‍' })}>
+        <WideModalField label={t('correspondence.field_direction', { defaultValue: 'Direction' })}>
           <div
             className="grid grid-cols-2 gap-3"
             role="radiogroup"
-            aria-label={t('correspondence.field_direction', { defaultValue: 'Direction‌⁠‍' })}
+            aria-label={t('correspondence.field_direction', { defaultValue: 'Direction' })}
           >
             {(['incoming', 'outgoing'] as CorrespondenceDirection[]).map((dir) => {
               const cfg = DIRECTION_CARD_CONFIG[dir];
@@ -276,11 +276,11 @@ function CreateCorrespondenceModal({
 
       {/* Details section — full-width subject */}
       <WideModalSection
-        title={t('correspondence.section_details', { defaultValue: 'Correspondence Details‌⁠‍' })}
+        title={t('correspondence.section_details', { defaultValue: 'Correspondence Details' })}
         columns={2}
       >
         <WideModalField
-          label={t('correspondence.field_subject', { defaultValue: 'Subject‌⁠‍' })}
+          label={t('correspondence.field_subject', { defaultValue: 'Subject' })}
           required
           span={2}
           htmlFor="corr-subject"

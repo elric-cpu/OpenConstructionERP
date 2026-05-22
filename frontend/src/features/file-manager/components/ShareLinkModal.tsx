@@ -121,7 +121,7 @@ export function ShareLinkModal({ open, row, onClose }: ShareLinkModalProps) {
       addToast({
         type: 'error',
         title: t('files.share.error_create', {
-          defaultValue: 'Could not create the share link.‌⁠‍',
+          defaultValue: 'Could not create the share link.',
         }),
       });
     } finally {
@@ -152,7 +152,7 @@ export function ShareLinkModal({ open, row, onClose }: ShareLinkModalProps) {
       addToast({
         type: 'error',
         title: t('files.share.error_revoke', {
-          defaultValue: 'Could not revoke the share link.‌⁠‍',
+          defaultValue: 'Could not revoke the share link.',
         }),
         message: (e as Error).message,
       });
@@ -183,7 +183,7 @@ export function ShareLinkModal({ open, row, onClose }: ShareLinkModalProps) {
             >
               <Share2 size={14} strokeWidth={2.25} />
               {t('files.share.title', {
-                defaultValue: 'Password-protected share link‌⁠‍',
+                defaultValue: 'Password-protected share link',
               })}
             </h2>
             <p className="text-2xs text-content-tertiary truncate" title={row.name}>
@@ -210,7 +210,7 @@ export function ShareLinkModal({ open, row, onClose }: ShareLinkModalProps) {
               >
                 <Lock size={10} className="inline-block me-1 -mt-0.5" />
                 {t('files.share.password_label', {
-                  defaultValue: 'Password (optional)‌⁠‍',
+                  defaultValue: 'Password (optional)',
                 })}
               </label>
               <input
@@ -219,7 +219,7 @@ export function ShareLinkModal({ open, row, onClose }: ShareLinkModalProps) {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder={t('files.share.password_placeholder', {
-                  defaultValue: 'Leave blank for an open link‌⁠‍',
+                  defaultValue: 'Leave blank for an open link',
                 })}
                 autoComplete="off"
                 className="w-full h-9 px-3 rounded-lg border border-border-light bg-surface-primary text-sm text-content-primary placeholder:text-content-quaternary focus:outline-none focus:ring-2 focus:ring-oe-blue/50"

@@ -98,17 +98,17 @@ export function ModelLinkPanel({
       setQuantityField('');
       addToast({
         type: 'success',
-        title: t('boq.model_link_created', { defaultValue: 'Model link created‌⁠‍' }),
+        title: t('boq.model_link_created', { defaultValue: 'Model link created' }),
         message: t('boq.model_link_created_hint', {
           defaultValue:
-            'The quantity is not changed yet — use “Refresh from model” then Apply to pull it in.‌⁠‍',
+            'The quantity is not changed yet — use “Refresh from model” then Apply to pull it in.',
         }),
       });
     },
     onError: (e: Error) => {
       addToast({
         type: 'error',
-        title: t('boq.model_link_failed', { defaultValue: 'Could not create model link‌⁠‍' }),
+        title: t('boq.model_link_failed', { defaultValue: 'Could not create model link' }),
         message: e.message,
       });
     },
@@ -120,14 +120,14 @@ export function ModelLinkPanel({
       queryClient.invalidateQueries({ queryKey: ['quantity-links', positionId] });
       addToast({
         type: 'success',
-        title: t('boq.model_link_deleted', { defaultValue: 'Model link removed‌⁠‍' }),
+        title: t('boq.model_link_deleted', { defaultValue: 'Model link removed' }),
       });
     },
     onError: (e: Error) => {
       addToast({
         type: 'error',
         title: t('boq.model_link_delete_failed', {
-          defaultValue: 'Could not remove model link‌⁠‍',
+          defaultValue: 'Could not remove model link',
         }),
         message: e.message,
       });

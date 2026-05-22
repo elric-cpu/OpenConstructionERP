@@ -158,7 +158,7 @@ export function BIMContextMenu({ menu, actions, onClose }: BIMContextMenuProps) 
           <>
             <div className="text-xs font-bold text-content-primary">
               {t('bim.ctx_multi_header', {
-                defaultValue: '{{count}} elements selected‌⁠‍',
+                defaultValue: '{{count}} elements selected',
                 count,
               })}
             </div>
@@ -192,12 +192,12 @@ export function BIMContextMenu({ menu, actions, onClose }: BIMContextMenuProps) 
           <>
             <MenuItem
               icon={ZoomIn}
-              label={t('bim.ctx_zoom', { defaultValue: 'Zoom to element‌⁠‍' })}
+              label={t('bim.ctx_zoom', { defaultValue: 'Zoom to element' })}
               onClick={() => { actions.onZoomToElement?.(); onClose(); }}
             />
             <MenuItem
               icon={Clipboard}
-              label={t('bim.ctx_copy_props', { defaultValue: 'Copy properties‌⁠‍' })}
+              label={t('bim.ctx_copy_props', { defaultValue: 'Copy properties' })}
               onClick={() => { actions.onCopyProperties?.(); onClose(); }}
             />
             <MenuDivider />
@@ -210,10 +210,10 @@ export function BIMContextMenu({ menu, actions, onClose }: BIMContextMenuProps) 
           label={
             isMulti
               ? t('bim.ctx_add_n_boq', {
-                  defaultValue: 'Add {{count}} to BOQ‌⁠‍',
+                  defaultValue: 'Add {{count}} to BOQ',
                   count,
                 })
-              : t('bim.ctx_add_boq', { defaultValue: 'Add to BOQ‌⁠‍' })
+              : t('bim.ctx_add_boq', { defaultValue: 'Add to BOQ' })
           }
           onClick={() => { actions.onAddToBOQ?.(); onClose(); }}
         />
@@ -282,7 +282,7 @@ export function BIMContextMenu({ menu, actions, onClose }: BIMContextMenuProps) 
             nothing is hidden so the menu doesn't lie. */}
         <MenuItem
           icon={RotateCcw}
-          label={t('bim.ctx_show_all', { defaultValue: 'Show all‌⁠‍' })}
+          label={t('bim.ctx_show_all', { defaultValue: 'Show all' })}
           onClick={() => { actions.onShowAll?.(); onClose(); }}
           disabled={!actions.hasHidden}
           testId="bim-ctx-show-all"

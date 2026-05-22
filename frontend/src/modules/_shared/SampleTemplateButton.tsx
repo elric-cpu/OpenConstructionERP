@@ -75,7 +75,7 @@ export function SampleTemplateButton({ template }: { template: CountryTemplate }
     const lines = [header, sectionRow, row1, row2]
       .map((r) => r.map((c) => escapeCSV(String(c))).join(','))
       .join('\r\n');
-    const blob = new Blob(['﻿' + lines], { type: 'text/csv;charset=utf-8' });
+    const blob = new Blob(['' + lines], { type: 'text/csv;charset=utf-8' });
     triggerDownload(
       blob,
       `${template.countryCode}_${template.classification || 'BOQ'}_sample_template.csv`,
@@ -93,7 +93,7 @@ export function SampleTemplateButton({ template }: { template: CountryTemplate }
         <FileSpreadsheet size={14} className="text-oe-blue shrink-0" />
         <span className="flex-1 text-left">
           {t('exchange.expected_layout', {
-            defaultValue: 'Expected file layout — {{standard}}‌⁠‍',
+            defaultValue: 'Expected file layout — {{standard}}',
             standard: template.classification || template.name,
           })}
         </span>
@@ -107,7 +107,7 @@ export function SampleTemplateButton({ template }: { template: CountryTemplate }
           <p className="text-2xs text-content-tertiary leading-relaxed">
             {t('exchange.layout_help', {
               defaultValue:
-                'Columns are read in this order (no header row required). Mandatory columns must contain a value in every priced line. Section/heading rows use “** Title **” in the description and leave quantity blank.‌⁠‍',
+                'Columns are read in this order (no header row required). Mandatory columns must contain a value in every priced line. Section/heading rows use “** Title **” in the description and leave quantity blank.',
             })}
           </p>
           <div className="flex flex-wrap gap-1.5">
@@ -117,8 +117,8 @@ export function SampleTemplateButton({ template }: { template: CountryTemplate }
                 className="inline-flex items-center gap-1 rounded bg-surface-tertiary/60 px-2 py-0.5 text-2xs text-content-secondary"
                 title={
                   required.has(k)
-                    ? t('exchange.col_required', { defaultValue: 'Required‌⁠‍' })
-                    : t('exchange.col_optional', { defaultValue: 'Optional‌⁠‍' })
+                    ? t('exchange.col_required', { defaultValue: 'Required' })
+                    : t('exchange.col_optional', { defaultValue: 'Optional' })
                 }
               >
                 <span className="font-mono text-content-quaternary">{i + 1}</span>
@@ -133,7 +133,7 @@ export function SampleTemplateButton({ template }: { template: CountryTemplate }
           </div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-2xs text-content-quaternary">
             <span>
-              {t('exchange.accepted_formats', { defaultValue: 'Accepted‌⁠‍' })}:{' '}
+              {t('exchange.accepted_formats', { defaultValue: 'Accepted' })}:{' '}
               <span className="font-mono">{template.acceptedExtensions.join('  ')}</span>
             </span>
             <span>

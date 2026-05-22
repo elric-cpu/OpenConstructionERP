@@ -68,21 +68,21 @@ export function FileTree({ nodes, selectedId, onSelect, isLoading, projectId }: 
         <div className="px-3 pt-3 pb-3 border-b border-border-light">
           <div className="flex items-center gap-1.5 mb-2 text-2xs font-medium uppercase tracking-wider text-content-tertiary">
             <HardDrive size={11} strokeWidth={2} />
-            <span>{t('files.tree.storage_used', { defaultValue: 'Storage used‌⁠‍' })}</span>
+            <span>{t('files.tree.storage_used', { defaultValue: 'Storage used' })}</span>
           </div>
           <div className="text-base font-semibold text-content-primary tabular-nums">
             {fmtBytes(totalBytes)}
           </div>
           <div className="text-[10px] text-content-tertiary mb-2">
             {t('files.tree.file_count', {
-              defaultValue: '{{count}} files‌⁠‍',
+              defaultValue: '{{count}} files',
               count: totalCount,
             })}
           </div>
           <div
             className="flex h-1.5 w-full overflow-hidden rounded-full bg-surface-tertiary"
             role="img"
-            aria-label={t('files.tree.storage_breakdown', { defaultValue: 'Storage by category‌⁠‍' })}
+            aria-label={t('files.tree.storage_breakdown', { defaultValue: 'Storage by category' })}
           >
             {storageBreakdown.map((node) => {
               const kind = node.id.replace(/^category:/, '') as FileKind;
@@ -102,7 +102,7 @@ export function FileTree({ nodes, selectedId, onSelect, isLoading, projectId }: 
 
       <div className="px-3 pt-3 pb-2">
         <div className="text-2xs font-medium uppercase tracking-wider text-content-tertiary px-2 mb-1">
-          {t('files.tree.title', { defaultValue: 'Categories‌⁠‍' })}
+          {t('files.tree.title', { defaultValue: 'Categories' })}
         </div>
 
         <button
@@ -117,7 +117,7 @@ export function FileTree({ nodes, selectedId, onSelect, isLoading, projectId }: 
         >
           <Folder size={14} className="shrink-0" />
           <span className="flex-1 truncate">
-            {t('files.tree.all', { defaultValue: 'All files‌⁠‍' })}
+            {t('files.tree.all', { defaultValue: 'All files' })}
           </span>
           <span className="text-2xs text-content-tertiary tabular-nums">{totalCount}</span>
         </button>

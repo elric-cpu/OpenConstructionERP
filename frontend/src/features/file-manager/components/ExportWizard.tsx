@@ -83,7 +83,7 @@ export function ExportWizard({ open, projectId, projectName, onClose }: ExportWi
       const result = await downloadBundle(projectId, options, fallback);
       addToast({
         type: 'success',
-        title: t('files.export.success_title', { defaultValue: 'Bundle downloaded‌⁠‍' }),
+        title: t('files.export.success_title', { defaultValue: 'Bundle downloaded' }),
         message: `${result.filename} (${fmtBytes(result.sizeBytes)})`,
       });
       onClose();
@@ -95,10 +95,10 @@ export function ExportWizard({ open, projectId, projectName, onClose }: ExportWi
   }
 
   const scopeLabels: Record<BundleScope, string> = {
-    metadata_only: t('files.export.scope_metadata', { defaultValue: 'Metadata only‌⁠‍' }),
-    documents: t('files.export.scope_documents', { defaultValue: 'Documents‌⁠‍' }),
-    bim: t('files.export.scope_bim', { defaultValue: 'BIM models‌⁠‍' }),
-    dwg: t('files.export.scope_dwg', { defaultValue: 'DWG drawings‌⁠‍' }),
+    metadata_only: t('files.export.scope_metadata', { defaultValue: 'Metadata only' }),
+    documents: t('files.export.scope_documents', { defaultValue: 'Documents' }),
+    bim: t('files.export.scope_bim', { defaultValue: 'BIM models' }),
+    dwg: t('files.export.scope_dwg', { defaultValue: 'DWG drawings' }),
     full: t('files.export.scope_full', { defaultValue: 'Full project' }),
   };
 

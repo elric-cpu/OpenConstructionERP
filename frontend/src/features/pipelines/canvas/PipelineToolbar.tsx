@@ -96,7 +96,7 @@ export function PipelineToolbar({
     <div
       role="toolbar"
       aria-label={t('pipeline.toolbar.aria', {
-        defaultValue: 'Pipeline toolbar‌⁠‍',
+        defaultValue: 'Pipeline toolbar',
       })}
       data-testid={testId ?? 'pipeline-toolbar'}
       className="flex h-11 items-center gap-2 border-b border-border bg-surface-primary px-3"
@@ -121,14 +121,14 @@ export function PipelineToolbar({
       <span className="h-6 w-px bg-border" aria-hidden="true" />
 
       <TBtn
-        label={t('pipeline.toolbar.fit', { defaultValue: 'Fit view‌⁠‍' })}
+        label={t('pipeline.toolbar.fit', { defaultValue: 'Fit view' })}
         testId="pipeline-fit"
         icon={<Maximize2 size={14} aria-hidden="true" />}
         onClick={onFitView}
       />
       <TBtn
         label={t('pipeline.toolbar.explain', {
-          defaultValue: 'Explain this pipeline‌⁠‍',
+          defaultValue: 'Explain this pipeline',
         })}
         testId="pipeline-explain"
         icon={<Sparkles size={14} aria-hidden="true" />}
@@ -141,7 +141,7 @@ export function PipelineToolbar({
           className="ms-1 inline-flex items-center gap-1 rounded-md border border-semantic-warning/40 bg-semantic-warning-bg px-2 py-1 text-xs font-medium text-semantic-warning"
         >
           {t('pipeline.toolbar.issues', {
-            defaultValue: '{{count}} issue(s)‌⁠‍',
+            defaultValue: '{{count}} issue(s)',
             count: issueCount,
           })}
         </span>

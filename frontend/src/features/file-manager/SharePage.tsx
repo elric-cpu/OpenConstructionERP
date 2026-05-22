@@ -104,7 +104,7 @@ export function SharePage() {
       if (msg === 'UNAUTHORIZED') {
         setError(
           t('share.page.bad_password', {
-            defaultValue: 'Wrong password. Please try again.‌⁠‍',
+            defaultValue: 'Wrong password. Please try again.',
           }),
         );
       } else {
@@ -125,12 +125,12 @@ export function SharePage() {
         <div className="rounded-2xl border border-border-light bg-surface-elevated shadow-xl p-6 sm:p-8 space-y-5">
           <div className="text-center">
             <h1 className="text-base font-semibold text-content-primary">
-              {t('share.page.title', { defaultValue: 'Shared file‌⁠‍' })}
+              {t('share.page.title', { defaultValue: 'Shared file' })}
             </h1>
             <p className="mt-1 text-xs text-content-tertiary">
               {t('share.page.subtitle', {
                 defaultValue:
-                  'Someone shared a file with you via OpenConstructionERP.‌⁠‍',
+                  'Someone shared a file with you via OpenConstructionERP.',
               })}
             </p>
           </div>
@@ -140,7 +140,7 @@ export function SharePage() {
             <div className="flex flex-col items-center gap-2 py-6 text-content-tertiary">
               <Loader2 size={20} className="animate-spin" />
               <p className="text-xs">
-                {t('share.page.loading', { defaultValue: 'Loading link…‌⁠‍' })}
+                {t('share.page.loading', { defaultValue: 'Loading link…' })}
               </p>
             </div>
           )}
@@ -158,7 +158,7 @@ export function SharePage() {
               />
               <h2 className="text-sm font-semibold text-content-primary">
                 {t('share.page.not_found_title', {
-                  defaultValue: 'Link not found‌⁠‍',
+                  defaultValue: 'Link not found',
                 })}
               </h2>
               <p className="text-xs text-content-secondary">

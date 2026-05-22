@@ -203,10 +203,10 @@ function AddContactModal({
     const e: Record<string, string> = {};
     const hasName = form.first_name.trim() || form.last_name.trim();
     if (!form.company_name.trim() && !hasName) {
-      e.company_name = t('contacts.company_or_name_required', { defaultValue: 'Company name or contact name is required‌⁠‍' });
+      e.company_name = t('contacts.company_or_name_required', { defaultValue: 'Company name or contact name is required' });
     }
     if (form.country.trim() && form.country.trim().length !== 2) {
-      e.country = t('contacts.country_code_invalid', { defaultValue: 'Country code must be exactly 2 letters (ISO 3166-1 alpha-2, e.g. DE, US, GB)‌⁠‍' });
+      e.country = t('contacts.country_code_invalid', { defaultValue: 'Country code must be exactly 2 letters (ISO 3166-1 alpha-2, e.g. DE, US, GB)' });
     }
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -225,7 +225,7 @@ function AddContactModal({
       size="xl"
       title={
         isEdit
-          ? t('contacts.edit_contact', { defaultValue: 'Edit Contact‌⁠‍' })
+          ? t('contacts.edit_contact', { defaultValue: 'Edit Contact' })
           : t('contacts.add_contact', { defaultValue: 'Add Contact' })
       }
       footer={

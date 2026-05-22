@@ -62,7 +62,7 @@ function CreateAddendumDialog({
       addToast({
         type: 'success',
         title: t('tendering.addendum.created', {
-          defaultValue: 'Addendum created‌⁠‍',
+          defaultValue: 'Addendum created',
         }),
       });
     },
@@ -259,7 +259,7 @@ export function AddendumList({ packageId }: Props) {
       addToast({
         type: 'success',
         title: t('tendering.addendum.published_toast', {
-          defaultValue: 'Addendum published‌⁠‍',
+          defaultValue: 'Addendum published',
         }),
       });
     },

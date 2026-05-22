@@ -9,7 +9,7 @@
  *   DELETE /v1/clash/projects/{pid}/runs/{rid}
  *   GET    /v1/clash/projects/{pid}/runs/{rid}/results
  *   PATCH  /v1/clash/projects/{pid}/runs/{rid}/results/{cid}
- *   POST   /v1/clash/projects/{pid}/runs/{rid}/export-bcf‌⁠‍
+ *   POST   /v1/clash/projects/{pid}/runs/{rid}/export-bcf
  */
 
 import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/lib/api';

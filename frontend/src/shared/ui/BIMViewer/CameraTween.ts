@@ -1,5 +1,5 @@
 /**
- * ‌⁠‍CameraTween — pure rAF-driven interpolator between two camera states.
+ * CameraTween — pure rAF-driven interpolator between two camera states.
  *
  * Used by SceneManager.flyTo() and the View Cube to smoothly animate
  * the camera between viewpoints. Has zero dependency on three.js or

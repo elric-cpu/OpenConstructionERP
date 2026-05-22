@@ -85,7 +85,7 @@ export function CreateComplianceDocModal({
       });
       toast({
         title: t('compliance.toast.created', {
-          defaultValue: 'Compliance document created.‌⁠‍',
+          defaultValue: 'Compliance document created.',
         }),
         type: 'success',
       });
@@ -97,7 +97,7 @@ export function CreateComplianceDocModal({
         err instanceof ApiError && err.message
           ? err.message
           : t('compliance.toast.create_failed', {
-              defaultValue: 'Failed to create compliance document.‌⁠‍',
+              defaultValue: 'Failed to create compliance document.',
             });
       toast({ title: msg, type: 'error' });
     },
@@ -125,7 +125,7 @@ export function CreateComplianceDocModal({
             className="text-base font-semibold text-content-primary"
           >
             {t('compliance.modal.create_title', {
-              defaultValue: 'New compliance document‌⁠‍',
+              defaultValue: 'New compliance document',
             })}
           </div>
           <button
@@ -141,7 +141,7 @@ export function CreateComplianceDocModal({
         <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
           <label className="col-span-1 sm:col-span-2 flex flex-col gap-1 text-xs">
             <span className="text-content-secondary">
-              {t('compliance.field.doc_type', { defaultValue: 'Document type‌⁠‍' })}
+              {t('compliance.field.doc_type', { defaultValue: 'Document type' })}
             </span>
             <select
               value={docType}
@@ -170,7 +170,7 @@ export function CreateComplianceDocModal({
 
           <label className="flex flex-col gap-1 text-xs">
             <span className="text-content-secondary">
-              {t('compliance.field.issuer', { defaultValue: 'Issuer‌⁠‍' })}
+              {t('compliance.field.issuer', { defaultValue: 'Issuer' })}
             </span>
             <Input
               value={issuer}

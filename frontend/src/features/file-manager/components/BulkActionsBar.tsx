@@ -244,9 +244,9 @@ export function BulkActionsBar({ selectedRows, projectId, onClear }: BulkActions
       } else if (summary.deleted === 0) {
         addToast({
           type: 'error',
-          title: t('files.bulk.delete_failed', { defaultValue: 'Bulk delete failed‌⁠‍' }),
+          title: t('files.bulk.delete_failed', { defaultValue: 'Bulk delete failed' }),
           message: t('files.bulk.delete_all_failed', {
-            defaultValue: 'None of the {{count}} selected file(s) could be deleted.‌⁠‍',
+            defaultValue: 'None of the {{count}} selected file(s) could be deleted.',
             count: summary.total,
           }),
         });
@@ -254,12 +254,12 @@ export function BulkActionsBar({ selectedRows, projectId, onClear }: BulkActions
         addToast({
           type: 'warning',
           title: t('files.bulk.delete_partial', {
-            defaultValue: '{{deleted}} of {{total}} deleted‌⁠‍',
+            defaultValue: '{{deleted}} of {{total}} deleted',
             deleted: summary.deleted,
             total: summary.total,
           }),
           message: t('files.bulk.delete_partial_detail', {
-            defaultValue: '{{failed}} file(s) could not be deleted.‌⁠‍',
+            defaultValue: '{{failed}} file(s) could not be deleted.',
             failed: summary.failed,
           }),
         });

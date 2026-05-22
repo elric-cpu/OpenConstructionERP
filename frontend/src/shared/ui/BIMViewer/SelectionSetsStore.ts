@@ -1,4 +1,4 @@
-/**​‌‍ ⁠
+/** 
  * SelectionSetsStore — localStorage-backed named selection sets per BIM model.
  *
  * Part of v3.13.0 W6.6 "BIM Viewer Pro UX". A "selection set" is a named,

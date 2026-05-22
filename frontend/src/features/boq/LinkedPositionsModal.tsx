@@ -55,10 +55,10 @@ export function LinkedPositionsModal({
   const isLinked = !!data?.linked && (data?.total_count ?? 0) > 1;
 
   const modalTitle = t('boq.linked_positions_title', {
-    defaultValue: 'Linked positions‌⁠‍',
+    defaultValue: 'Linked positions',
   });
   const subtitleOpts: Record<string, unknown> = {
-    defaultValue: 'Code {{code}} — viewing from position {{ordinal}}‌⁠‍',
+    defaultValue: 'Code {{code}} — viewing from position {{ordinal}}',
     code: data?.reference_code ?? positionOrdinal,
     ordinal: positionOrdinal,
   };
@@ -74,7 +74,7 @@ export function LinkedPositionsModal({
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
-            {t('common.close', { defaultValue: 'Close‌⁠‍' })}
+            {t('common.close', { defaultValue: 'Close' })}
           </Button>
           {isLinked && (
             <Button
@@ -90,7 +90,7 @@ export function LinkedPositionsModal({
               }
             >
               {t('boq.unlink_this', {
-                defaultValue: 'Unlink this position‌⁠‍',
+                defaultValue: 'Unlink this position',
               })}
             </Button>
           )}
@@ -101,7 +101,7 @@ export function LinkedPositionsModal({
         <div className="flex items-center justify-center gap-2 py-12 text-content-tertiary">
           <Loader2 size={18} className="animate-spin" />
           <span className="text-sm">
-            {t('common.loading', { defaultValue: 'Loading…‌⁠‍' })}
+            {t('common.loading', { defaultValue: 'Loading…' })}
           </span>
         </div>
       )}
@@ -109,7 +109,7 @@ export function LinkedPositionsModal({
       {isError && (
         <div className="py-12 text-center text-sm text-content-tertiary">
           {t('boq.linked_positions_error', {
-            defaultValue: 'Could not load linked positions.‌⁠‍',
+            defaultValue: 'Could not load linked positions.',
           })}
         </div>
       )}
@@ -125,7 +125,7 @@ export function LinkedPositionsModal({
               <p className="text-sm text-content-secondary">
                 {t('boq.linked_positions_none', {
                   defaultValue:
-                    'This position is standalone — no other position shares its code.‌⁠‍',
+                    'This position is standalone — no other position shares its code.',
                 })}
               </p>
             </div>
@@ -134,7 +134,7 @@ export function LinkedPositionsModal({
               <p className="mb-3 text-xs text-content-tertiary">
                 {t('boq.linked_positions_count', {
                   defaultValue:
-                    '{{total}} positions share this code ({{instances}} linked instance(s)). The master is the definition of record; editing it propagates to every instance in this project.‌⁠‍',
+                    '{{total}} positions share this code ({{instances}} linked instance(s)). The master is the definition of record; editing it propagates to every instance in this project.',
                   total: data.total_count,
                   instances: data.instance_count,
                 })}
@@ -158,10 +158,10 @@ export function LinkedPositionsModal({
                       title={
                         m.is_master
                           ? t('boq.link_role_master', {
-                              defaultValue: 'Master (definition of record)‌⁠‍',
+                              defaultValue: 'Master (definition of record)',
                             })
                           : t('boq.link_role_instance', {
-                              defaultValue: 'Linked instance‌⁠‍',
+                              defaultValue: 'Linked instance',
                             })
                       }
                     >
@@ -177,13 +177,13 @@ export function LinkedPositionsModal({
                     <span className="min-w-0 flex-1 truncate text-content-primary">
                       {m.description ||
                         t('boq.no_description', {
-                          defaultValue: '(no description)‌⁠‍',
+                          defaultValue: '(no description)',
                         })}
                     </span>
                     {m.is_master && (
                       <span className="shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-600 dark:text-amber-400">
                         {t('boq.link_master_badge', {
-                          defaultValue: 'Master‌⁠‍',
+                          defaultValue: 'Master',
                         })}
                       </span>
                     )}

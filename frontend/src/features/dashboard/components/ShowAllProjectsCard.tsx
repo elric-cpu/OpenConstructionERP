@@ -26,19 +26,19 @@ export function ShowAllProjectsCard({ totalCount, hiddenCount, style }: ShowAllP
           <Layers size={18} strokeWidth={1.75} />
         </div>
         <div className="text-sm font-semibold text-content-primary">
-          {t('dashboard.show_all_projects', { defaultValue: 'View all projects‌⁠‍' })}
+          {t('dashboard.show_all_projects', { defaultValue: 'View all projects' })}
         </div>
         {hiddenCount > 0 && (
           <div className="text-2xs text-content-tertiary">
             {t('dashboard.show_all_more', {
-              defaultValue: '+{{count}} more‌⁠‍',
+              defaultValue: '+{{count}} more',
               count: hiddenCount,
             })}
           </div>
         )}
         <div className="text-2xs text-content-quaternary tabular-nums">
           {t('dashboard.show_all_total', {
-            defaultValue: '{{count}} total‌⁠‍',
+            defaultValue: '{{count}} total',
             count: totalCount,
           })}
         </div>

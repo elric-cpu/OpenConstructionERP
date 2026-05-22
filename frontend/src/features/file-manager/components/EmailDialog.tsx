@@ -85,19 +85,19 @@ export function EmailDialog({ open, row, onClose }: EmailDialogProps) {
     } else {
       addToast({
         type: 'error',
-        title: t('files.toast.copy_failed', { defaultValue: 'Could not copy link‌⁠‍' }),
+        title: t('files.toast.copy_failed', { defaultValue: 'Could not copy link' }),
       });
     }
   }
 
   const sampleSubject = t('files.email.sample_subject', {
-    defaultValue: 'File: {{name}}‌⁠‍',
+    defaultValue: 'File: {{name}}',
     name: row.name,
   });
   const sampleBody = link
     ? t('files.email.sample_body', {
         defaultValue:
-          'Hi,\n\nHere is the file you asked about — {{name}} ({{size}}).\nDownload link (expires {{expires}}):\n{{url}}\n\n— sent from OpenConstructionERP‌⁠‍',
+          'Hi,\n\nHere is the file you asked about — {{name}} ({{size}}).\nDownload link (expires {{expires}}):\n{{url}}\n\n— sent from OpenConstructionERP',
         name: row.name,
         size: fmtBytes(link.size_bytes),
         expires: new Date(link.expires_at).toLocaleString(),
@@ -122,7 +122,7 @@ export function EmailDialog({ open, row, onClose }: EmailDialogProps) {
         <div className="flex items-center justify-between px-5 py-3 border-b border-border-light">
           <div className="min-w-0">
             <h2 className="text-sm font-semibold text-content-primary">
-              {t('files.email.title', { defaultValue: 'Share via email‌⁠‍' })}
+              {t('files.email.title', { defaultValue: 'Share via email' })}
             </h2>
             <p className="text-2xs text-content-tertiary truncate" title={row.name}>
               {row.name}
@@ -142,7 +142,7 @@ export function EmailDialog({ open, row, onClose }: EmailDialogProps) {
           <div>
             <label className="block text-2xs font-medium uppercase tracking-wider text-content-tertiary mb-1.5">
               <Clock size={10} className="inline-block me-1 -mt-0.5" />
-              {t('files.email.ttl', { defaultValue: 'Link expires after‌⁠‍' })}
+              {t('files.email.ttl', { defaultValue: 'Link expires after' })}
             </label>
             <div className="flex flex-wrap gap-1.5">
               {TTL_PRESETS.map((p) => (

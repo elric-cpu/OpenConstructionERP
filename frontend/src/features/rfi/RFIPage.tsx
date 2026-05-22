@@ -508,8 +508,8 @@ function CreateRFIModal({
 
   const validate = (): boolean => {
     const e: Record<string, string> = {};
-    if (!form.subject.trim()) e.subject = t('validation.required', { defaultValue: 'This field is required‌⁠‍' });
-    if (!form.question.trim()) e.question = t('validation.required', { defaultValue: 'This field is required‌⁠‍' });
+    if (!form.subject.trim()) e.subject = t('validation.required', { defaultValue: 'This field is required' });
+    if (!form.question.trim()) e.question = t('validation.required', { defaultValue: 'This field is required' });
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -525,11 +525,11 @@ function CreateRFIModal({
       onClose={onClose}
       busy={isPending}
       size="xl"
-      title={t('rfi.new_rfi', { defaultValue: 'New RFI‌⁠‍' })}
+      title={t('rfi.new_rfi', { defaultValue: 'New RFI' })}
       subtitle={
         projectName
           ? t('common.creating_in_project', {
-              defaultValue: 'In {{project}}‌⁠‍',
+              defaultValue: 'In {{project}}',
               project: projectName,
             })
           : undefined

@@ -328,7 +328,7 @@ export function UpdateNotification({ forceShow = false, hideDismiss = false }: U
           type="button"
           onClick={() => setShowFullModal(true)}
           aria-label={t('update.open_details', {
-            defaultValue: 'View update details for v{{version}}‌⁠‍',
+            defaultValue: 'View update details for v{{version}}',
             version: release.version,
           })}
           className="w-full text-left"
@@ -356,7 +356,7 @@ export function UpdateNotification({ forceShow = false, hideDismiss = false }: U
                 v{CURRENT_VERSION} → v{release.version}
               </span>
               <span className="shrink-0 inline-flex items-center rounded-full bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
-                {t('update.new_available', { defaultValue: 'available‌⁠‍' })}
+                {t('update.new_available', { defaultValue: 'available' })}
               </span>
             </div>
             {(relativeDate || (grouped && grouped.totalCount > 0)) && (
@@ -376,7 +376,7 @@ export function UpdateNotification({ forceShow = false, hideDismiss = false }: U
               </div>
             )}
             <div className="mt-2 flex items-center justify-end gap-1 text-[11px] font-semibold text-blue-600 dark:text-sky-300">
-              {t('update.details', { defaultValue: 'Details‌⁠‍' })}
+              {t('update.details', { defaultValue: 'Details' })}
               <ExternalLink size={11} />
             </div>
           </div>
@@ -384,7 +384,7 @@ export function UpdateNotification({ forceShow = false, hideDismiss = false }: U
         {!hideDismiss && (
           <button
             onClick={handleDismiss}
-            aria-label={t('common.dismiss', { defaultValue: 'Dismiss‌⁠‍' })}
+            aria-label={t('common.dismiss', { defaultValue: 'Dismiss' })}
             className="absolute top-1.5 right-1.5 flex h-5 w-5 items-center justify-center rounded text-sky-500/70 hover:text-blue-700 hover:bg-sky-500/20 dark:hover:bg-sky-400/20 transition-colors"
           >
             <X size={11} />

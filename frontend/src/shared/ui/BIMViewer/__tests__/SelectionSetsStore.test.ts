@@ -1,4 +1,4 @@
-/**​‌‍ ⁠
+/** 
  * SelectionSetsStore unit tests — v3.13.0 W6.6.
  *
  * Covers the contract of the localStorage-backed selection-set store:

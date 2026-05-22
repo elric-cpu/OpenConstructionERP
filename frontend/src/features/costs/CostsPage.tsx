@@ -270,7 +270,7 @@ function RegionTabBar({
         ))}
         <span className="ms-3 text-xs text-content-tertiary inline-flex items-center gap-2">
           <Loader2 size={12} className="animate-spin" />
-          {t('costs.loading_databases', { defaultValue: 'Loading databases…‌⁠‍' })}
+          {t('costs.loading_databases', { defaultValue: 'Loading databases…' })}
         </span>
       </div>
     );
@@ -287,13 +287,13 @@ function RegionTabBar({
       >
         <EmptyState
           icon={<Database size={28} strokeWidth={1.5} />}
-          title={t('costs.no_database_loaded', { defaultValue: 'No database loaded‌⁠‍' })}
+          title={t('costs.no_database_loaded', { defaultValue: 'No database loaded' })}
           description={t('costs.import_first_hint', {
-            defaultValue: 'Import a regional cost database to start searching 55,000+ items.‌⁠‍',
+            defaultValue: 'Import a regional cost database to start searching 55,000+ items.',
           })}
           action={{
             label: t('costs.import_regional_database', {
-              defaultValue: 'Import a regional database‌⁠‍',
+              defaultValue: 'Import a regional database',
             }),
             onClick: () => navigate('/costs/import'),
           }}
@@ -394,7 +394,7 @@ function RegionTabBar({
         <button
           onClick={() => navigate('/costs/import')}
           className="flex items-center gap-1.5 shrink-0 rounded-t-lg px-3 py-2.5 border-b-2 border-transparent text-content-tertiary hover:text-oe-blue hover:bg-oe-blue-subtle/10 transition-all duration-fast ease-oe"
-          title={t('costs.import_database', { defaultValue: 'Import database‌⁠‍' })}
+          title={t('costs.import_database', { defaultValue: 'Import database' })}
         >
           <Plus size={14} />
           <span className="text-sm font-medium whitespace-nowrap">

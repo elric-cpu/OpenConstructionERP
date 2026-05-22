@@ -226,19 +226,19 @@ export function PropertyDevPage() {
     <div className="space-y-5">
       <Breadcrumb
         items={[
-          { label: t('propdev.title', { defaultValue: 'Property Development‌⁠‍' }) },
+          { label: t('propdev.title', { defaultValue: 'Property Development' }) },
         ]}
       />
 
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold text-content-primary">
-            {t('propdev.title', { defaultValue: 'Property Development‌⁠‍' })}
+            {t('propdev.title', { defaultValue: 'Property Development' })}
           </h1>
           <p className="mt-1 text-sm text-content-secondary">
             {t('propdev.subtitle', {
               defaultValue:
-                'Developments, plots, buyer journeys, handovers and warranty claims.‌⁠‍',
+                'Developments, plots, buyer journeys, handovers and warranty claims.',
             })}
           </p>
         </div>
@@ -248,9 +248,9 @@ export function PropertyDevPage() {
           onClick={() => setCreateOpen(true)}
         >
           {tab === 'developments'
-            ? t('propdev.new_development', { defaultValue: 'New Development‌⁠‍' })
+            ? t('propdev.new_development', { defaultValue: 'New Development' })
             : tab === 'plots'
-              ? t('propdev.new_plot', { defaultValue: 'New Plot‌⁠‍' })
+              ? t('propdev.new_plot', { defaultValue: 'New Plot' })
               : tab === 'house_types'
                 ? t('propdev.new_house_type', { defaultValue: 'New House Type' })
                 : tab === 'buyers'

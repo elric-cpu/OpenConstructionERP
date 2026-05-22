@@ -1,5 +1,5 @@
 /**
- * ‌⁠‍BIMViewCube — Revit-style View Cube widget for the BIM viewer (W6.6).
+ * BIMViewCube — Revit-style View Cube widget for the BIM viewer (W6.6).
  *
  * Self-contained 3-D widget pinned top-right of the viewer. The cube
  * mirrors the main camera's orientation in real time; clicking any face

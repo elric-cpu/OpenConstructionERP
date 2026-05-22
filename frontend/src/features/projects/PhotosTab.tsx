@@ -158,10 +158,10 @@ export function PhotosTab({ projectId }: PhotosTabProps): React.ReactElement {
         <EmptyState
           icon={<ImageIcon size={28} strokeWidth={1.5} />}
           title={t('projects.photos.no_project', {
-            defaultValue: 'No active project‌⁠‍',
+            defaultValue: 'No active project',
           })}
           description={t('projects.photos.no_project_desc', {
-            defaultValue: 'Open a project to view and upload photos.‌⁠‍',
+            defaultValue: 'Open a project to view and upload photos.',
           })}
         />
       </div>
@@ -190,11 +190,11 @@ export function PhotosTab({ projectId }: PhotosTabProps): React.ReactElement {
           <EmptyState
             icon={<ImageIcon size={28} strokeWidth={1.5} />}
             title={t('projects.photos.empty_title', {
-              defaultValue: 'No photos yet‌⁠‍',
+              defaultValue: 'No photos yet',
             })}
             description={t('projects.photos.empty_desc', {
               defaultValue:
-                'Upload site photos to keep visual records alongside the project.‌⁠‍',
+                'Upload site photos to keep visual records alongside the project.',
             })}
             action={
               <Button
@@ -204,7 +204,7 @@ export function PhotosTab({ projectId }: PhotosTabProps): React.ReactElement {
                 onClick={() => setUploadOpen(true)}
                 data-testid="photos-tab-upload-empty"
               >
-                {t('projects.photos.upload_cta', { defaultValue: 'Upload photos‌⁠‍' })}
+                {t('projects.photos.upload_cta', { defaultValue: 'Upload photos' })}
               </Button>
             }
           />

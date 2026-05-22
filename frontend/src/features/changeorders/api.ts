@@ -1,7 +1,7 @@
 // DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 // Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 /**
- * ‌⁠‍Change-orders feature API client.
+ * Change-orders feature API client.
  *
  * Thin wrappers around the backend's approval-chain endpoints. Each
  * function returns the typed payload so callers can drop straight into

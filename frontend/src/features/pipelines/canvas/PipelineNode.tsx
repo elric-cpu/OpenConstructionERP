@@ -183,7 +183,7 @@ export function PipelineNode({ id, data, selected }: PipelineNodeProps) {
             onKeyDown={handleTitleKeyDown}
             autoFocus
             aria-label={t('pipeline.node.rename', {
-              defaultValue: 'Rename node‌⁠‍',
+              defaultValue: 'Rename node',
             })}
             className="h-6 w-full rounded border border-border bg-white px-1 text-sm dark:bg-gray-900"
           />
@@ -197,7 +197,7 @@ export function PipelineNode({ id, data, selected }: PipelineNodeProps) {
             }}
             className="truncate text-start font-medium hover:underline"
             title={t('pipeline.node.rename_hint', {
-              defaultValue: 'Double-click to rename‌⁠‍',
+              defaultValue: 'Double-click to rename',
             })}
           >
             {node.title}
@@ -207,7 +207,7 @@ export function PipelineNode({ id, data, selected }: PipelineNodeProps) {
           <span
             className="ms-1 shrink-0 rounded bg-violet-200 px-1 text-2xs font-semibold text-violet-800 dark:bg-violet-800 dark:text-violet-100"
             title={t('pipeline.node.ai_confidence', {
-              defaultValue: 'AI suggestion — review the confidence score‌⁠‍',
+              defaultValue: 'AI suggestion — review the confidence score',
             })}
           >
             {t('pipeline.node.ai_badge', { defaultValue: 'AI' })}
@@ -216,7 +216,7 @@ export function PipelineNode({ id, data, selected }: PipelineNodeProps) {
         <button
           type="button"
           aria-label={t('pipeline.node.help', {
-            defaultValue: 'What this node does‌⁠‍',
+            defaultValue: 'What this node does',
           })}
           aria-expanded={showHelp}
           onClick={() => setShowHelp((v) => !v)}
@@ -232,7 +232,7 @@ export function PipelineNode({ id, data, selected }: PipelineNodeProps) {
           type="button"
           aria-label={
             node.expanded
-              ? t('pipeline.node.collapse', { defaultValue: 'Collapse‌⁠‍' })
+              ? t('pipeline.node.collapse', { defaultValue: 'Collapse' })
               : t('pipeline.node.expand', { defaultValue: 'Expand' })
           }
           data-testid={`pipeline-node-toggle-${id}`}

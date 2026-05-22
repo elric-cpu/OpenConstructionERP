@@ -102,7 +102,7 @@ export default function InputBar({ onSend, onClear, hasMessages, isStreaming, su
             }}
           >
             <MessageSquarePlus size={13} strokeWidth={1.85} />
-            {t('chat.new_chat', { defaultValue: 'New chat‌⁠‍' })}
+            {t('chat.new_chat', { defaultValue: 'New chat' })}
           </button>
         </div>
       )}
@@ -168,8 +168,8 @@ export default function InputBar({ onSend, onClear, hasMessages, isStreaming, su
           disabled={isStreaming}
           placeholder={
             isStreaming
-              ? t('chat.responding', { defaultValue: 'AI is responding...‌⁠‍' })
-              : t('chat.placeholder', { defaultValue: 'Ask anything about your ERP data...‌⁠‍' })
+              ? t('chat.responding', { defaultValue: 'AI is responding...' })
+              : t('chat.placeholder', { defaultValue: 'Ask anything about your ERP data...' })
           }
           rows={1}
           style={{
@@ -199,7 +199,7 @@ export default function InputBar({ onSend, onClear, hasMessages, isStreaming, su
           type="button"
           onClick={handleSend}
           disabled={!canSend}
-          aria-label={t('chat.send_message', { defaultValue: 'Send message‌⁠‍' })}
+          aria-label={t('chat.send_message', { defaultValue: 'Send message' })}
           style={{
             width: 40,
             height: 40,
@@ -230,7 +230,7 @@ export default function InputBar({ onSend, onClear, hasMessages, isStreaming, su
           textAlign: 'center',
         }}
       >
-        {t('chat.kbd_hint', { defaultValue: 'Enter to send · Shift+Enter for newline‌⁠‍' })}
+        {t('chat.kbd_hint', { defaultValue: 'Enter to send · Shift+Enter for newline' })}
       </div>
     </div>
   );

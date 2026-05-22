@@ -110,7 +110,7 @@ export function CompactProjectCard({
           </div>
           {status === 'archived' && (
             <span className="inline-flex items-center rounded-md bg-surface-secondary px-1.5 py-0.5 text-2xs font-medium text-content-tertiary">
-              {t('projects.status_archived', { defaultValue: 'Archived‌⁠‍' })}
+              {t('projects.status_archived', { defaultValue: 'Archived' })}
             </span>
           )}
         </div>
@@ -151,7 +151,7 @@ export function CompactProjectCard({
         <div className="px-3.5 pb-2">
           <div className="rounded-lg border border-border-light bg-gradient-to-br from-oe-blue-subtle/60 via-surface-elevated to-surface-elevated px-3 py-1.5">
             <div className="text-[10px] font-medium uppercase tracking-wider text-content-tertiary">
-              {t('projects.card_total_value', { defaultValue: 'Total value‌⁠‍' })}
+              {t('projects.card_total_value', { defaultValue: 'Total value' })}
             </div>
             <div className="mt-0.5 flex items-baseline gap-1.5">
               <span className="text-base font-bold tabular-nums text-content-primary">

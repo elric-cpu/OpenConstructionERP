@@ -78,8 +78,8 @@ export function SectionIntro({
         <button
           type="button"
           onClick={dismiss}
-          aria-label={t('common.dismiss', { defaultValue: 'Dismiss‌⁠‍' })}
-          title={t('common.dismiss', { defaultValue: 'Dismiss‌⁠‍' })}
+          aria-label={t('common.dismiss', { defaultValue: 'Dismiss' })}
+          title={t('common.dismiss', { defaultValue: 'Dismiss' })}
           className="shrink-0 rounded-md p-1 text-content-tertiary transition-colors hover:bg-surface-secondary hover:text-content-primary"
         >
           <X size={14} />

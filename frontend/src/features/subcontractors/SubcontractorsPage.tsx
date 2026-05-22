@@ -227,19 +227,19 @@ export function SubcontractorsPage() {
     <div className="space-y-5">
       <Breadcrumb
         items={[
-          { label: t('subcontractors.title', { defaultValue: 'Subcontractors‌⁠‍' }) },
+          { label: t('subcontractors.title', { defaultValue: 'Subcontractors' }) },
         ]}
       />
 
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold text-content-primary">
-            {t('subcontractors.title', { defaultValue: 'Subcontractors‌⁠‍' })}
+            {t('subcontractors.title', { defaultValue: 'Subcontractors' })}
           </h1>
           <p className="mt-1 text-sm text-content-secondary">
             {t('subcontractors.subtitle', {
               defaultValue:
-                'Manage subcontractor prequalifications, scopes, payments and ratings.‌⁠‍',
+                'Manage subcontractor prequalifications, scopes, payments and ratings.',
             })}
           </p>
         </div>
@@ -248,14 +248,14 @@ export function SubcontractorsPage() {
           icon={<Plus size={14} />}
           onClick={() => setCreateOpen(true)}
         >
-          {t('subcontractors.new', { defaultValue: 'New Subcontractor‌⁠‍' })}
+          {t('subcontractors.new', { defaultValue: 'New Subcontractor' })}
         </Button>
       </div>
 
       <PipelineBanner
         intro={t('subcontractors.pipeline_intro', {
           defaultValue:
-            'Subcontractors are your prequalified supply chain. Approved firms can be invited to bid packages, bound by subcontract agreements, and paid via payment applications — with certificates and ratings gating eligibility.‌⁠‍',
+            'Subcontractors are your prequalified supply chain. Approved firms can be invited to bid packages, bound by subcontract agreements, and paid via payment applications — with certificates and ratings gating eligibility.',
         })}
         steps={[
           {

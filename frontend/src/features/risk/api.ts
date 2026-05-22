@@ -6,7 +6,7 @@
  *     — Run a Monte Carlo (PERT) simulation across the project's risks.
  *
  * The result is also persisted on every risk row's ``last_simulation``
- * JSON column server-side so a page refresh keeps the drill-down.‌⁠‍
+ * JSON column server-side so a page refresh keeps the drill-down.
  */
 
 import { apiPost } from '@/shared/lib/api';
@@ -59,7 +59,7 @@ export interface RiskSimulationResult {
  * The backend permission required is ``risk.read`` (re-used from the
  * existing risk endpoints). Returns the full result snapshot — the
  * caller can render histogram + tornado directly without an extra
- * fetch.‌⁠‍
+ * fetch.
  */
 export async function simulateRisk(
   projectId: string,

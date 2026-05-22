@@ -1,5 +1,5 @@
 /**
- * Single source of truth​‌‍⁠​‌‍⁠​‌‍⁠​‌‍⁠ for the app version.
+ * Single source of truth for the app version.
  *
  * The string is injected by Vite from `package.json` at build time via the
  * `__APP_VERSION__` define (see `vite.config.ts`). Bumping `package.json`

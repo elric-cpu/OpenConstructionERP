@@ -244,12 +244,12 @@ function StatusIndicator({ status, lastTested }: { status: AIConnectionStatus; l
         <div className="flex items-center gap-2 text-sm">
           <CheckCircle2 size={16} className="text-semantic-success" />
           <span className="text-semantic-success font-medium">
-            {t('settings.ai_connected', { defaultValue: 'Connected‌⁠‍' })}
+            {t('settings.ai_connected', { defaultValue: 'Connected' })}
           </span>
           {lastTested && (
             <span className="text-content-tertiary text-xs">
               {t('settings.ai_last_tested', {
-                defaultValue: '(last tested: {{time}})‌⁠‍',
+                defaultValue: '(last tested: {{time}})',
                 time: formatTimeAgo(lastTested),
               })}
             </span>
@@ -261,7 +261,7 @@ function StatusIndicator({ status, lastTested }: { status: AIConnectionStatus; l
         <div className="flex items-center gap-2 text-sm">
           <XCircle size={16} className="text-semantic-error" />
           <span className="text-semantic-error font-medium">
-            {t('settings.ai_error', { defaultValue: 'Connection error‌⁠‍' })}
+            {t('settings.ai_error', { defaultValue: 'Connection error' })}
           </span>
         </div>
       );
@@ -271,7 +271,7 @@ function StatusIndicator({ status, lastTested }: { status: AIConnectionStatus; l
         <div className="flex items-center gap-2 text-sm">
           <AlertCircle size={16} className="text-content-tertiary" />
           <span className="text-content-tertiary">
-            {t('settings.ai_not_configured', { defaultValue: 'Not configured‌⁠‍' })}
+            {t('settings.ai_not_configured', { defaultValue: 'Not configured' })}
           </span>
         </div>
       );
@@ -283,7 +283,7 @@ function useFormatTimeAgo() {
   return (dateStr: string): string => {
     const diff = Date.now() - new Date(dateStr).getTime();
     const mins = Math.floor(diff / 60000);
-    if (mins < 1) return t('settings.time_just_now', { defaultValue: 'just now‌⁠‍' });
+    if (mins < 1) return t('settings.time_just_now', { defaultValue: 'just now' });
     if (mins < 60) return t('settings.time_minutes_ago', { defaultValue: '{{count}}m ago', count: mins });
     const hours = Math.floor(mins / 60);
     if (hours < 24) return t('settings.time_hours_ago', { defaultValue: '{{count}}h ago', count: hours });

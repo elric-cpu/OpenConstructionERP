@@ -66,6 +66,37 @@ jobs:
       - name: Run tests with pytest
         run: pytest
 
+  zero-width-guard:
+    name: Block zero-width Unicode characters
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Scan frontend/src and marketing-site
+        # Zero-width and bidi-isolate Unicode characters embedded in
+        # i18n defaultValue strings crashed React reconciliation on
+        # /contracts when Google Translate mutated the DOM (task #135 /
+        # R6). The fix stripped 9000+ occurrences across 363 files; this
+        # guard blocks reintroduction. ESLint catches them inside .ts/
+        # .tsx files via no-irregular-whitespace, but ESLint does not
+        # cover U+2066-U+2069 (bidi isolates) and is not run on
+        # .md/.html/.py — so we also grep here.
+        run: |
+          set +e
+          grep -rP '[\x{200B}-\x{200F}\x{2060}-\x{2064}\x{2066}-\x{2069}\x{FEFF}]' \
+            --include='*.ts' --include='*.tsx' --include='*.js' --include='*.jsx' \
+            --include='*.css' --include='*.html' --include='*.md' --include='*.py' \
+            --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=build \
+            frontend/src/ marketing-site/ 2>/dev/null \
+            | grep -v 'frontend/src/app/locales/ar.ts'
+          rc=$?
+          if [ $rc -eq 0 ]; then
+            echo "::error::Zero-width Unicode characters found — strip them with python scripts/strip_zero_width.py"
+            exit 1
+          fi
+          exit 0
+
   frontend:
     name: Frontend CI
     runs-on: ubuntu-latest

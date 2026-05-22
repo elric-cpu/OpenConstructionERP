@@ -117,7 +117,7 @@ export function BIMCRSPanel({
       <div className="flex items-center gap-1.5 mb-1">
         <Globe2 size={12} className="shrink-0" />
         <span className="text-[10px] font-semibold uppercase tracking-wide">
-          {t('bim.crs.label', { defaultValue: 'Detected CRS‌⁠‍' })}
+          {t('bim.crs.label', { defaultValue: 'Detected CRS' })}
         </span>
       </div>
 
@@ -131,7 +131,7 @@ export function BIMCRSPanel({
             {confidencePct != null && (
               <>
                 <span className="mx-1">·</span>
-                {t('bim.crs.confidence', { defaultValue: 'confidence‌⁠‍' })} {confidencePct}%
+                {t('bim.crs.confidence', { defaultValue: 'confidence' })} {confidencePct}%
               </>
             )}
             {method && (
@@ -146,7 +146,7 @@ export function BIMCRSPanel({
         <div className="text-[11px] leading-snug">
           {t('bim.crs.unknown', {
             defaultValue:
-              'CRS could not be auto-detected — model uses local coordinates.‌⁠‍',
+              'CRS could not be auto-detected — model uses local coordinates.',
           })}
         </div>
       )}
@@ -160,7 +160,7 @@ export function BIMCRSPanel({
                      transition-colors"
           data-testid="bim-crs-set-button"
         >
-          {t('bim.crs.set', { defaultValue: 'Set CRS‌⁠‍' })}
+          {t('bim.crs.set', { defaultValue: 'Set CRS' })}
           <ChevronDown size={10} />
         </button>
       )}
@@ -173,7 +173,7 @@ export function BIMCRSPanel({
         >
           <div className="px-3 py-2 text-[10px] uppercase tracking-wide
                           text-content-tertiary border-b border-border-light">
-            {t('bim.crs.pick_or_paste', { defaultValue: 'Pick a CRS or paste EPSG‌⁠‍' })}
+            {t('bim.crs.pick_or_paste', { defaultValue: 'Pick a CRS or paste EPSG' })}
           </div>
           <div className="max-h-56 overflow-y-auto">
             {optionsToShow.map((opt) => (

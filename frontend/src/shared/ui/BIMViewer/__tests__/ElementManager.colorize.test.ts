@@ -1,4 +1,4 @@
-/**​‌‍ ⁠
+/** 
  * ElementManager color-by-property + hide/isolate tests — v3.13.0 W6.6.
  *
  * Exercises three new public surfaces on ElementManager:

@@ -149,15 +149,15 @@ function InlineRespondForm({
         onChange={(e) => setResponse(e.target.value)}
         rows={5}
         placeholder={t('rfi.response_placeholder', {
-          defaultValue: 'Enter your response...‌⁠‍',
+          defaultValue: 'Enter your response...',
         })}
-        aria-label={t('rfi.field_response', { defaultValue: 'Response‌⁠‍' })}
+        aria-label={t('rfi.field_response', { defaultValue: 'Response' })}
         className="w-full rounded-lg border border-border bg-surface-primary px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-oe-blue/30 focus:border-oe-blue resize-none"
         autoFocus
       />
       <div className="flex items-center gap-2 justify-end">
         <Button variant="ghost" size="sm" onClick={onCancel} disabled={isPending}>
-          {t('common.cancel', { defaultValue: 'Cancel‌⁠‍' })}
+          {t('common.cancel', { defaultValue: 'Cancel' })}
         </Button>
         <Button
           variant="primary"
@@ -170,7 +170,7 @@ function InlineRespondForm({
           ) : (
             <MessageSquare size={14} className="mr-1.5" />
           )}
-          {t('rfi.submit_response', { defaultValue: 'Submit Response‌⁠‍' })}
+          {t('rfi.submit_response', { defaultValue: 'Submit Response' })}
         </Button>
       </div>
     </div>
@@ -275,7 +275,7 @@ export function RFIDetailPage() {
       addToast({
         type: 'success',
         title: t('rfi.responded', {
-          defaultValue: 'Response submitted successfully‌⁠‍',
+          defaultValue: 'Response submitted successfully',
         }),
       });
     },

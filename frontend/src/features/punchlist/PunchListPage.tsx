@@ -160,22 +160,22 @@ function StatsCards({ summary }: { summary: PunchSummary | undefined }) {
       cls: 'text-semantic-error',
     },
     {
-      label: t('punch.stat_in_progress', { defaultValue: 'In Progress‌⁠‍' }),
+      label: t('punch.stat_in_progress', { defaultValue: 'In Progress' }),
       value: byStatus['in_progress'] ?? 0,
       cls: 'text-amber-700 dark:text-amber-400',
     },
     {
-      label: t('punch.stat_resolved', { defaultValue: 'Resolved‌⁠‍' }),
+      label: t('punch.stat_resolved', { defaultValue: 'Resolved' }),
       value: byStatus['resolved'] ?? 0,
       cls: 'text-oe-blue',
     },
     {
-      label: t('punch.stat_overdue', { defaultValue: 'Overdue‌⁠‍' }),
+      label: t('punch.stat_overdue', { defaultValue: 'Overdue' }),
       value: overdue,
       cls: overdue > 0 ? 'text-semantic-error' : 'text-content-primary',
     },
     {
-      label: t('punch.stat_avg_close', { defaultValue: 'Avg Days to Close‌⁠‍' }),
+      label: t('punch.stat_avg_close', { defaultValue: 'Avg Days to Close' }),
       value: avgDays != null ? `${avgDays}d` : '-',
       cls: 'text-content-primary',
     },

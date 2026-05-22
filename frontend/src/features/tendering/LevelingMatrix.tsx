@@ -129,7 +129,7 @@ export function LevelingMatrix({ packageId, currency }: Props) {
       addToast({
         type: 'success',
         title: t('tendering.leveling.run_success', {
-          defaultValue: 'Bid leveling complete‌⁠‍',
+          defaultValue: 'Bid leveling complete',
         }),
       });
     },

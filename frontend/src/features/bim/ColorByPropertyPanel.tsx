@@ -1,5 +1,5 @@
 /**
- * ColorByPropertyPanel‌⁠‍ — right-rail panel that lets the user re-colour BIM
+ * ColorByPropertyPanel — right-rail panel that lets the user re-colour BIM
  * elements by an arbitrary property and pick from a small set of palettes
  * (categorical, sequential, diverging, or a domain-specific fire-rating
  * lookup).  The legend below the controls stays in lock-step with the live
@@ -149,7 +149,7 @@ export default function ColorByPropertyPanel({
         <PaletteIcon size={14} className="text-content-tertiary" />
         <h3 className="text-xs font-semibold text-content-primary uppercase tracking-wide">
           {t('bim.color_by_property_title', {
-            defaultValue: 'Color by property‌⁠‍',
+            defaultValue: 'Color by property',
           })}
         </h3>
       </div>
@@ -157,7 +157,7 @@ export default function ColorByPropertyPanel({
       {/* Property picker */}
       <label className="flex flex-col gap-1 text-[11px] text-content-secondary">
         <span>
-          {t('bim.color_property_label', { defaultValue: 'Property‌⁠‍' })}
+          {t('bim.color_property_label', { defaultValue: 'Property' })}
         </span>
         <select
           value={propertyKey}
@@ -182,7 +182,7 @@ export default function ColorByPropertyPanel({
       {/* Palette picker */}
       <label className="flex flex-col gap-1 text-[11px] text-content-secondary">
         <span>
-          {t('bim.color_palette_label', { defaultValue: 'Palette‌⁠‍' })}
+          {t('bim.color_palette_label', { defaultValue: 'Palette' })}
         </span>
         <select
           value={palette}
@@ -249,7 +249,7 @@ export default function ColorByPropertyPanel({
       {/* Legend */}
       <div className="flex flex-col gap-1">
         <div className="text-[10px] font-semibold uppercase tracking-wide text-content-tertiary">
-          {t('bim.color_legend', { defaultValue: 'Legend‌⁠‍' })}
+          {t('bim.color_legend', { defaultValue: 'Legend' })}
         </div>
         {palette === 'categorical-12' || palette === 'fire-rating' ? (
           <CategoricalLegend

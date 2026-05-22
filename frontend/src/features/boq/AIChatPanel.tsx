@@ -74,7 +74,7 @@ export function AIChatPanel({
       const currency = context.currency || '';
       const summary = hasItems
         ? t('boq.ai_generated_summary', {
-            defaultValue: 'Generated {{count}} positions totalling {{total}} {{currency}}.‌⁠‍',
+            defaultValue: 'Generated {{count}} positions totalling {{total}} {{currency}}.',
             count: response.items.length,
             total: total.toLocaleString(i18n.language, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
             currency,
@@ -94,7 +94,7 @@ export function AIChatPanel({
           response.message ||
           t('boq.ai_no_answer', {
             defaultValue:
-              'The assistant did not return an answer. Please rephrase or try again.‌⁠‍',
+              'The assistant did not return an answer. Please rephrase or try again.',
           });
 
       // Add assistant response
@@ -119,7 +119,7 @@ export function AIChatPanel({
       setMessages((prev) => prev.filter((m) => m.id !== 'loading'));
 
       let errorText = t('boq.ai_chat_error', {
-        defaultValue: 'AI request failed. Please try again.‌⁠‍',
+        defaultValue: 'AI request failed. Please try again.',
       });
 
       if (error instanceof ApiError) {
@@ -233,7 +233,7 @@ export function AIChatPanel({
         <div className="flex items-center gap-2">
           <Sparkles size={16} className="text-oe-blue" />
           <h2 className="text-sm font-semibold text-content-primary">
-            {t('boq.ai_assistant', { defaultValue: 'AI Assistant‌⁠‍' })}
+            {t('boq.ai_assistant', { defaultValue: 'AI Assistant' })}
           </h2>
         </div>
         <button
@@ -256,7 +256,7 @@ export function AIChatPanel({
             <p className="text-sm text-content-secondary max-w-[260px]">
               {t('boq.ai_welcome', {
                 defaultValue:
-                  'Ask me anything about construction, methods, materials or pricing — or ask me to generate BOQ positions, e.g. "Add MEP items for a 5-story office building".‌⁠‍',
+                  'Ask me anything about construction, methods, materials or pricing — or ask me to generate BOQ positions, e.g. "Add MEP items for a 5-story office building".',
               })}
             </p>
           </div>
@@ -294,7 +294,7 @@ export function AIChatPanel({
                       className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-oe-blue hover:underline"
                     >
                       <Settings size={11} />
-                      {t('boq.go_to_settings', { defaultValue: 'Go to Settings‌⁠‍' })}
+                      {t('boq.go_to_settings', { defaultValue: 'Go to Settings' })}
                     </a>
                   )}
                 </div>

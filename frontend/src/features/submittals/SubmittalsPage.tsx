@@ -177,7 +177,7 @@ function SubmittalFormModal({
       title={
         isEdit
           ? t('submittals.edit_submittal', { defaultValue: 'Edit Submittal' })
-          : t('submittals.new_submittal', { defaultValue: 'New Submittal‌⁠‍' })
+          : t('submittals.new_submittal', { defaultValue: 'New Submittal' })
       }
       footer={
         <>
@@ -207,7 +207,7 @@ function SubmittalFormModal({
           htmlFor={`${idPrefix}-title`}
           error={
             titleError
-              ? t('submittals.title_required', { defaultValue: 'Title is required‌⁠‍' })
+              ? t('submittals.title_required', { defaultValue: 'Title is required' })
               : undefined
           }
         >
@@ -219,7 +219,7 @@ function SubmittalFormModal({
               setTouched(true);
             }}
             placeholder={t('submittals.title_placeholder', {
-              defaultValue: 'e.g. Structural Steel Shop Drawings - Level 3‌⁠‍',
+              defaultValue: 'e.g. Structural Steel Shop Drawings - Level 3',
             })}
             className={clsx(
               inputCls,
@@ -230,7 +230,7 @@ function SubmittalFormModal({
         </WideModalField>
 
         <WideModalField
-          label={t('submittals.field_spec_section', { defaultValue: 'Spec Section‌⁠‍' })}
+          label={t('submittals.field_spec_section', { defaultValue: 'Spec Section' })}
           required
           htmlFor={`${idPrefix}-spec-section`}
           error={

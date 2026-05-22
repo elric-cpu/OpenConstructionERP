@@ -80,6 +80,20 @@ export default [
       // to satisfy reportUnusedDisableDirectives without installing the plugin
       'react-hooks/exhaustive-deps': 'off',
       'react-hooks/rules-of-hooks': 'off',
+
+      // Block zero-width and bidi-isolate Unicode characters that crash
+      // React's reconciler when browser extensions (Google Translate,
+      // ad blockers) mutate the DOM. See R6 / task #135.
+      // The character set covers U+200B-200F, U+2060-2064, U+2066-2069, U+FEFF.
+      'no-irregular-whitespace': [
+        'error',
+        {
+          skipStrings: false,
+          skipComments: false,
+          skipRegExps: false,
+          skipTemplates: false,
+        },
+      ],
     },
   },
 

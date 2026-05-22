@@ -74,7 +74,7 @@ export function UploadDialog({
       if (!projectId) {
         addToast({
           type: 'error',
-          title: t('files.upload_no_project', { defaultValue: 'No active project‌⁠‍' }),
+          title: t('files.upload_no_project', { defaultValue: 'No active project' }),
         });
         return;
       }
@@ -97,7 +97,7 @@ export function UploadDialog({
           filename: file.name,
           status: 'processing',
           progress: 0,
-          message: t('files.uploading', { defaultValue: 'Uploading…‌⁠‍' }),
+          message: t('files.uploading', { defaultValue: 'Uploading…' }),
         });
 
         // Fire-and-forget — same pattern as DocumentsPage so progress
@@ -144,7 +144,7 @@ export function UploadDialog({
               updateQueueTask(taskId, {
                 status: 'completed',
                 progress: 100,
-                message: t('files.uploaded', { defaultValue: 'Uploaded‌⁠‍' }),
+                message: t('files.uploaded', { defaultValue: 'Uploaded' }),
                 completedAt: Date.now(),
               });
               queryClient.invalidateQueries({ queryKey: [fileManagerKeys.tree, projectId] });
@@ -163,7 +163,7 @@ export function UploadDialog({
       addToast({
         type: 'info',
         title: t('files.upload_queued', {
-          defaultValue: '{{count}} file(s) queued‌⁠‍',
+          defaultValue: '{{count}} file(s) queued',
           count: validFiles.length,
         }),
       });
@@ -191,7 +191,7 @@ export function UploadDialog({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label={t('files.upload', { defaultValue: 'Upload files‌⁠‍' })}
+      aria-label={t('files.upload', { defaultValue: 'Upload files' })}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-lg animate-fade-in"
       onClick={onClose}
     >

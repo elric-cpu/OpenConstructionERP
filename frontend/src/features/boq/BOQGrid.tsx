@@ -1558,11 +1558,11 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
           addToast({
             type: 'warning',
             title: t('collab_locks.lock_conflict_title', {
-              defaultValue: 'Someone is editing this‌⁠‍',
+              defaultValue: 'Someone is editing this',
             }),
             message: t('collab_locks.lock_conflict_toast', {
               defaultValue:
-                'Locked by {{name}}. Try again in {{seconds}} seconds.‌⁠‍',
+                'Locked by {{name}}. Try again in {{seconds}} seconds.',
               name: result.conflict.current_holder_name,
               seconds: result.conflict.remaining_seconds,
             }),
@@ -2013,7 +2013,7 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
           addToast(
             {
               type: 'error',
-              title: t('boq.paste_failed', { defaultValue: 'Could not paste — invalid data or read-only cells‌⁠‍' }),
+              title: t('boq.paste_failed', { defaultValue: 'Could not paste — invalid data or read-only cells' }),
             },
             { duration: 3000 },
           );
@@ -2021,7 +2021,7 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
           addToast(
             {
               type: 'success',
-              title: t('boq.value_pasted', { defaultValue: 'Value pasted‌⁠‍' }),
+              title: t('boq.value_pasted', { defaultValue: 'Value pasted' }),
             },
             { duration: 2000 },
           );
@@ -2090,7 +2090,7 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
             {
               type: 'success',
               title: t('boq.fill_down_done', {
-                defaultValue: 'Filled down to {{count}} rows‌⁠‍',
+                defaultValue: 'Filled down to {{count}} rows',
                 count: String(filled),
               } as Record<string, string>),
             },
@@ -2131,7 +2131,7 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
           {
             type: 'success',
             title: t('boq.date_inserted', {
-              defaultValue: 'Inserted today ({{date}})‌⁠‍',
+              defaultValue: 'Inserted today ({{date}})',
               date: today,
             } as Record<string, string>),
           },
@@ -2459,7 +2459,7 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
                 {/* Resources section */}
                 {hasResources && (
                   <CtxItem icon={isExpanded ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}
-                    label={isExpanded ? t('boq.collapse_resources', { defaultValue: 'Collapse Resources‌⁠‍' }) : t('boq.expand_resources', { defaultValue: 'Expand Resources' })}
+                    label={isExpanded ? t('boq.collapse_resources', { defaultValue: 'Collapse Resources' }) : t('boq.expand_resources', { defaultValue: 'Expand Resources' })}
                     onClick={() => { toggleResources(d.id as string); closeContextMenu(); }}
                   />
                 )}
@@ -2519,7 +2519,7 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
                     )}
                     {onUnlinkPosition && (
                       <CtxItem icon={<Link2Off size={14}/>}
-                        label={t('boq.unlink_this', { defaultValue: 'Unlink this position‌⁠‍' })}
+                        label={t('boq.unlink_this', { defaultValue: 'Unlink this position' })}
                         onClick={() => { onUnlinkPosition(d.id as string); closeContextMenu(); }}
                       />
                     )}

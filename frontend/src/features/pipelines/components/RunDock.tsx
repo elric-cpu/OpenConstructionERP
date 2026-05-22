@@ -73,8 +73,8 @@ export function RunDock({
           aria-expanded={expanded}
           aria-label={
             expanded
-              ? t('pipeline.dock.collapse', { defaultValue: 'Collapse run dock‌⁠‍' })
-              : t('pipeline.dock.expand', { defaultValue: 'Expand run dock‌⁠‍' })
+              ? t('pipeline.dock.collapse', { defaultValue: 'Collapse run dock' })
+              : t('pipeline.dock.expand', { defaultValue: 'Expand run dock' })
           }
           className="flex items-center gap-1.5 rounded px-1 py-0.5 font-medium text-content-secondary hover:bg-surface-secondary"
         >
@@ -100,7 +100,7 @@ export function RunDock({
           {run.status && run.status !== 'done' && run.status !== 'success' && (
             <span className="tabular-nums text-content-tertiary">
               {t('pipeline.dock.progress', {
-                defaultValue: '{{pct}}%‌⁠‍',
+                defaultValue: '{{pct}}%',
                 pct: Math.round(run.progress),
               })}
             </span>
@@ -141,7 +141,7 @@ export function RunDock({
                 {k === 'run'
                   ? t('pipeline.dock.tab_run', { defaultValue: 'Run' })
                   : t('pipeline.dock.tab_history', {
-                      defaultValue: 'History‌⁠‍',
+                      defaultValue: 'History',
                     })}
               </button>
             ))}
@@ -153,7 +153,7 @@ export function RunDock({
                 <p className="py-6 text-center text-xs text-content-tertiary">
                   {t('pipeline.dock.no_steps', {
                     defaultValue:
-                      'Add steps and press Run to watch data flow through your pipeline.‌⁠‍',
+                      'Add steps and press Run to watch data flow through your pipeline.',
                   })}
                 </p>
               ) : (

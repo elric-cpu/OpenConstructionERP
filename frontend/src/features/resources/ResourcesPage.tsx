@@ -144,25 +144,25 @@ function WorkflowIntro() {
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-content-primary">
             {t('resources.intro_title', {
-              defaultValue: 'Plan who works where, and when‌⁠‍',
+              defaultValue: 'Plan who works where, and when',
             })}
           </p>
           <p className="mt-1 text-xs leading-relaxed text-content-secondary">
             {t('resources.intro_body', {
               defaultValue:
-                'Register people, crews and equipment, then put them to work: a foreman raises a Request for what they need, a dispatcher Fulfils it by matching an available resource, and the resulting Assignment reserves that resource for a date range — with double-booking conflicts flagged automatically. Confirmed assignments are the source of truth for who is on site each day.‌⁠‍',
+                'Register people, crews and equipment, then put them to work: a foreman raises a Request for what they need, a dispatcher Fulfils it by matching an available resource, and the resulting Assignment reserves that resource for a date range — with double-booking conflicts flagged automatically. Confirmed assignments are the source of truth for who is on site each day.',
             })}
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <span className="text-2xs font-medium uppercase tracking-wide text-content-tertiary">
-              {t('resources.intro_connects', { defaultValue: 'Connects to‌⁠‍' })}
+              {t('resources.intro_connects', { defaultValue: 'Connects to' })}
             </span>
             <button
               type="button"
               onClick={() => navigate('/schedule')}
               className="inline-flex items-center gap-1 rounded-full border border-border-light bg-surface-primary px-2.5 py-1 text-xs font-medium text-content-secondary transition-colors hover:border-oe-blue hover:text-oe-blue"
             >
-              {t('resources.intro_link_schedule', { defaultValue: '4D Schedule‌⁠‍' })}
+              {t('resources.intro_link_schedule', { defaultValue: '4D Schedule' })}
               <ArrowRight size={11} />
             </button>
             <button
@@ -179,7 +179,7 @@ function WorkflowIntro() {
               className="inline-flex items-center gap-1 rounded-full border border-border-light bg-surface-primary px-2.5 py-1 text-xs font-medium text-content-secondary transition-colors hover:border-oe-blue hover:text-oe-blue"
             >
               {t('resources.intro_link_equipment', {
-                defaultValue: 'Equipment fleet‌⁠‍',
+                defaultValue: 'Equipment fleet',
               })}
               <ArrowRight size={11} />
             </button>

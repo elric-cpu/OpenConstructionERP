@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""‌⁠‍Demo registration API with email verification.
+"""Demo registration API with email verification.
 
 Flow:
 1. POST /register -> saves with verified=false, sends confirmation email
@@ -103,7 +103,7 @@ _JUNK_NAME_LITERALS: frozenset[str] = frozenset({
 
 
 def _validate_real_identity(data: dict) -> tuple[bool, str | None, str | None]:
-    """‌⁠‍Reject obviously-fake demo signups.
+    """Reject obviously-fake demo signups.
 
     Returns (ok, field, message). When ok is False, field names the
     offending input ("firstName" / "lastName" / "email") and message
@@ -260,7 +260,7 @@ def _send_resend(to, subject, html_body):
 
 
 def make_license_admin_email(data, ref_id):
-    """‌⁠‍Internal notification to admin with full lead details."""
+    """Internal notification to admin with full lead details."""
     name = f"{data.get('firstName', '')} {data.get('lastName', '')}".strip()
     tier_key = (data.get("tier") or "").lower()
     tier_label = TIER_LABELS.get(tier_key, tier_key or "—")

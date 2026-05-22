@@ -306,7 +306,7 @@ export function ScheduleAdvancedPage() {
         items={[
           {
             label: t('schedule_advanced.title', {
-              defaultValue: 'Last Planner / CPM‌⁠‍',
+              defaultValue: 'Last Planner / CPM',
             }),
           },
         ]}
@@ -318,12 +318,12 @@ export function ScheduleAdvancedPage() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold text-content-primary">
-            {t('schedule_advanced.title', { defaultValue: 'Last Planner / CPM‌⁠‍' })}
+            {t('schedule_advanced.title', { defaultValue: 'Last Planner / CPM' })}
           </h1>
           <p className="mt-1 text-sm text-content-secondary">
             {t('schedule_advanced.subtitle', {
               defaultValue:
-                'Pull-planning, lookaheads, weekly commitments, constraints and baselines.‌⁠‍',
+                'Pull-planning, lookaheads, weekly commitments, constraints and baselines.',
             })}
           </p>
         </div>
@@ -351,7 +351,7 @@ export function ScheduleAdvancedPage() {
       <InfoHint
         text={t('schedule_advanced.what_is_lps', {
           defaultValue:
-            'The Last Planner System is pull-based production control that complements the 4D Schedule. Master schedule sets milestones, Phase Plans pull work backwards from them, Look-Aheads (6 weeks) make work ready by removing constraints, and Weekly Work Plans capture crew commitments. PPC (Percent Plan Complete) and constraint logs measure reliability. Use the 4D Schedule for the CPM critical path; use this for what the team actually commits to do next.‌⁠‍',
+            'The Last Planner System is pull-based production control that complements the 4D Schedule. Master schedule sets milestones, Phase Plans pull work backwards from them, Look-Aheads (6 weeks) make work ready by removing constraints, and Weekly Work Plans capture crew commitments. PPC (Percent Plan Complete) and constraint logs measure reliability. Use the 4D Schedule for the CPM critical path; use this for what the team actually commits to do next.',
         })}
       />
 
@@ -360,7 +360,7 @@ export function ScheduleAdvancedPage() {
         <nav className="flex gap-1 -mb-px overflow-x-auto">
           {(
             [
-              { id: 'master', label: t('schedule_advanced.tab_master', { defaultValue: 'Master‌⁠‍' }), icon: Calendar },
+              { id: 'master', label: t('schedule_advanced.tab_master', { defaultValue: 'Master' }), icon: Calendar },
               { id: 'phases', label: t('schedule_advanced.tab_phases', { defaultValue: 'Phase Plans' }), icon: LayoutGrid },
               { id: 'look_ahead', label: t('schedule_advanced.tab_look_ahead', { defaultValue: 'Look-Ahead' }), icon: Clock },
               { id: 'weekly', label: t('schedule_advanced.tab_weekly', { defaultValue: 'Weekly Plan' }), icon: ClipboardCheck },
@@ -616,7 +616,7 @@ function MasterTab({
       <InfoHint
         text={t('schedule_advanced.master_hint', {
           defaultValue:
-            'Select a master schedule to make it the working plan for the Phases, Look-Ahead, Weekly and Constraints tabs. Use the row actions to rename it, change its planned dates and status, or delete it.‌⁠‍',
+            'Select a master schedule to make it the working plan for the Phases, Look-Ahead, Weekly and Constraints tabs. Use the row actions to rename it, change its planned dates and status, or delete it.',
         })}
       />
 

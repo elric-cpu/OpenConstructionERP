@@ -227,7 +227,7 @@ function CreateTransmittalModal({
       onClose={onClose}
       busy={isPending}
       size="xl"
-      title={t('transmittals.new_transmittal', { defaultValue: 'New Transmittal‌⁠‍' })}
+      title={t('transmittals.new_transmittal', { defaultValue: 'New Transmittal' })}
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={isPending}>
@@ -248,13 +248,13 @@ function CreateTransmittalModal({
     >
       <WideModalSection columns={2}>
         <WideModalField
-          label={t('transmittals.field_subject', { defaultValue: 'Subject‌⁠‍' })}
+          label={t('transmittals.field_subject', { defaultValue: 'Subject' })}
           required
           span={2}
           htmlFor="tr-subject"
           error={
             subjectError
-              ? t('transmittals.subject_required', { defaultValue: 'Subject is required‌⁠‍' })
+              ? t('transmittals.subject_required', { defaultValue: 'Subject is required' })
               : undefined
           }
         >
@@ -266,7 +266,7 @@ function CreateTransmittalModal({
               setTouched(true);
             }}
             placeholder={t('transmittals.subject_placeholder', {
-              defaultValue: 'e.g. Structural drawings for approval - Rev C‌⁠‍',
+              defaultValue: 'e.g. Structural drawings for approval - Rev C',
             })}
             className={clsx(
               inputCls,

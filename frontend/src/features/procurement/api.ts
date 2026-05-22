@@ -4,7 +4,7 @@
  * Wave 2 / T4 introduces two read endpoints (3-way match status + supplier
  * scorecard) that the procurement UI surfaces. The existing list / create
  * calls still live inline in `ProcurementPage.tsx`; this module is a
- * landing pad for the new clients and any future additions.‌⁠‍
+ * landing pad for the new clients and any future additions.
  */
 
 import { apiGet } from '@/shared/lib/api';

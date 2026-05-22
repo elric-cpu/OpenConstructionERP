@@ -203,18 +203,18 @@ function WorkflowIntro() {
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-content-primary">
             {t('service.intro_title', {
-              defaultValue: 'From customer call to billed visit‌⁠‍',
+              defaultValue: 'From customer call to billed visit',
             })}
           </p>
           <p className="mt-1 text-xs leading-relaxed text-content-secondary">
             {t('service.intro_body', {
               defaultValue:
-                'Set up a service Contract for a customer, register the Assets it covers, then log a Ticket whenever something needs attention. Dispatching a ticket creates a Work Order that schedules an engineer; once completed with a debrief it can be Billed. Work the tabs left-to-right — each step unlocks the next.‌⁠‍',
+                'Set up a service Contract for a customer, register the Assets it covers, then log a Ticket whenever something needs attention. Dispatching a ticket creates a Work Order that schedules an engineer; once completed with a debrief it can be Billed. Work the tabs left-to-right — each step unlocks the next.',
             })}
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <span className="text-2xs font-medium uppercase tracking-wide text-content-tertiary">
-              {t('service.intro_connects', { defaultValue: 'Connects to‌⁠‍' })}
+              {t('service.intro_connects', { defaultValue: 'Connects to' })}
             </span>
             <button
               type="button"
@@ -222,7 +222,7 @@ function WorkflowIntro() {
               className="inline-flex items-center gap-1 rounded-full border border-border-light bg-surface-primary px-2.5 py-1 text-xs font-medium text-content-secondary transition-colors hover:border-oe-blue hover:text-oe-blue"
             >
               {t('service.intro_link_contacts', {
-                defaultValue: 'Customers (Contacts)‌⁠‍',
+                defaultValue: 'Customers (Contacts)',
               })}
               <ArrowRight size={11} />
             </button>
@@ -232,7 +232,7 @@ function WorkflowIntro() {
               className="inline-flex items-center gap-1 rounded-full border border-border-light bg-surface-primary px-2.5 py-1 text-xs font-medium text-content-secondary transition-colors hover:border-oe-blue hover:text-oe-blue"
             >
               {t('service.intro_link_subs', {
-                defaultValue: 'Subcontractors‌⁠‍',
+                defaultValue: 'Subcontractors',
               })}
               <ArrowRight size={11} />
             </button>

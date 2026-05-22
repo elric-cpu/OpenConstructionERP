@@ -59,7 +59,7 @@ export function BIMModelPicker({
         )}
       >
         <Loader2 className="w-4 h-4 animate-spin" />
-        {t('bim.loading_models', { defaultValue: 'Loading BIM models…‌⁠‍' })}
+        {t('bim.loading_models', { defaultValue: 'Loading BIM models…' })}
       </div>
     );
   }
@@ -70,7 +70,7 @@ export function BIMModelPicker({
         <span className="text-sm text-content-tertiary">
           {emptyMessage ??
             t('bim.no_models_in_project', {
-              defaultValue: 'No BIM models in this project yet.‌⁠‍',
+              defaultValue: 'No BIM models in this project yet.',
             })}
         </span>
         <Link
@@ -78,7 +78,7 @@ export function BIMModelPicker({
           className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-oe-blue/40 text-oe-blue text-xs hover:bg-oe-blue/5"
         >
           <Plus className="w-3.5 h-3.5" />
-          {t('bim.upload_model', { defaultValue: 'Upload BIM model‌⁠‍' })}
+          {t('bim.upload_model', { defaultValue: 'Upload BIM model' })}
         </Link>
       </div>
     );
@@ -98,7 +98,7 @@ export function BIMModelPicker({
             title={
               !isReady
                 ? t('bim.model_not_ready', {
-                    defaultValue: 'Model not ready yet ({{status}})‌⁠‍',
+                    defaultValue: 'Model not ready yet ({{status}})',
                     status: m.status,
                   })
                 : `${m.name} · ${m.element_count} elements · ${m.storey_count} storeys`
@@ -129,7 +129,7 @@ export function BIMModelPicker({
         className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-border px-3 py-2 text-sm text-content-tertiary hover:border-oe-blue/40 hover:text-oe-blue"
       >
         <Plus className="w-3.5 h-3.5" />
-        {t('bim.upload_short', { defaultValue: 'Upload‌⁠‍' })}
+        {t('bim.upload_short', { defaultValue: 'Upload' })}
       </Link>
     </div>
   );

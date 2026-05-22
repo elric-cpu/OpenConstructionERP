@@ -1,5 +1,5 @@
 /**
- * ‌⁠‍ClipManager — section cap hatching tests.
+ * ClipManager — section cap hatching tests.
  *
  * Cover the cap geometry/orientation maths, the public setCap* API
  * validation, and lifecycle (enable → disable → re-enable disposes and

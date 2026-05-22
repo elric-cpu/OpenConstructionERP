@@ -255,19 +255,19 @@ export function ContractsPage() {
     <div className="space-y-5">
       <Breadcrumb
         items={[
-          { label: t('contracts.title', { defaultValue: 'Contracts‌⁠‍' }) },
+          { label: t('contracts.title', { defaultValue: 'Contracts' }) },
         ]}
       />
 
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold text-content-primary">
-            {t('contracts.title', { defaultValue: 'Contracts‌⁠‍' })}
+            {t('contracts.title', { defaultValue: 'Contracts' })}
           </h1>
           <p className="mt-1 text-sm text-content-secondary">
             {t('contracts.subtitle', {
               defaultValue:
-                'Type-aware contracts with schedule of values, retention, claims and final accounts.‌⁠‍',
+                'Type-aware contracts with schedule of values, retention, claims and final accounts.',
             })}
           </p>
         </div>
@@ -281,8 +281,8 @@ export function ContractsPage() {
           disabled={!projectId}
         >
           {tab === 'claims'
-            ? t('contracts.new_claim', { defaultValue: 'New Claim‌⁠‍' })
-            : t('contracts.new_contract', { defaultValue: 'New Contract‌⁠‍' })}
+            ? t('contracts.new_claim', { defaultValue: 'New Claim' })
+            : t('contracts.new_contract', { defaultValue: 'New Contract' })}
         </Button>
       </div>
 

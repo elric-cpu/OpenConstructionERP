@@ -245,12 +245,12 @@ export function BIMConverterStatusBanner({
         addToast({
           type: 'success',
           title: t('bim.converter_install_success_title', {
-            defaultValue: 'Converter installed‌⁠‍',
+            defaultValue: 'Converter installed',
           }),
           message:
             result.message ||
             t('bim.converter_install_success_msg', {
-              defaultValue: 'Installed {{name}} ({{size}} MB)‌⁠‍',
+              defaultValue: 'Installed {{name}} ({{size}} MB)',
               name,
               size: sizeMb,
             }),
@@ -264,10 +264,10 @@ export function BIMConverterStatusBanner({
         const sourcePresent = Boolean(result.apt_source_present);
         const title = sourcePresent
           ? t('bim.converter_install_linux_short_title', {
-              defaultValue: 'One apt command to finish‌⁠‍',
+              defaultValue: 'One apt command to finish',
             })
           : t('bim.converter_install_linux_setup_title', {
-              defaultValue: 'One-time apt setup‌⁠‍',
+              defaultValue: 'One-time apt setup',
             });
         const instructions = result.instructions
           ? `\n\n${result.instructions}`
@@ -288,7 +288,7 @@ export function BIMConverterStatusBanner({
         addToast({
           type: 'warning',
           title: t('bim.converter_install_unsupported_title', {
-            defaultValue: 'Auto-install not available‌⁠‍',
+            defaultValue: 'Auto-install not available',
           }),
           message:
             result.message || `${name} can't be auto-installed on this OS.`,
@@ -297,7 +297,7 @@ export function BIMConverterStatusBanner({
         addToast({
           type: 'warning',
           title: t('bim.converter_install_problem_title', {
-            defaultValue: 'Converter install incomplete‌⁠‍',
+            defaultValue: 'Converter install incomplete',
           }),
           message:
             result.message || `${name} install did not complete cleanly.`,

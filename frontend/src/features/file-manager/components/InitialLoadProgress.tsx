@@ -68,7 +68,7 @@ export function InitialLoadProgress({
           </div>
           <div className="flex-1 min-w-0">
             <h2 className="text-base font-semibold text-content-primary leading-tight">
-              {t('files.loading.title', { defaultValue: 'Preparing your file manager‌⁠‍' })}
+              {t('files.loading.title', { defaultValue: 'Preparing your file manager' })}
             </h2>
             {projectName ? (
               <p className="text-xs text-content-tertiary truncate mt-0.5" title={projectName}>
@@ -77,7 +77,7 @@ export function InitialLoadProgress({
             ) : (
               <p className="text-xs text-content-tertiary mt-0.5">
                 {t('files.loading.subtitle', {
-                  defaultValue: 'Gathering documents, BIM models, drawings and photos…‌⁠‍',
+                  defaultValue: 'Gathering documents, BIM models, drawings and photos…',
                 })}
               </p>
             )}
@@ -94,7 +94,7 @@ export function InitialLoadProgress({
         <div className="flex items-center justify-between text-2xs text-content-tertiary mb-4 tabular-nums">
           <span>
             {t('files.loading.step_of', {
-              defaultValue: 'Step {{n}} of {{total}}‌⁠‍',
+              defaultValue: 'Step {{n}} of {{total}}',
               n: Math.min(doneCount + 1, steps.length),
               total: steps.length,
             })}
@@ -136,7 +136,7 @@ export function InitialLoadProgress({
         <p className="mt-5 text-2xs text-content-quaternary text-center leading-snug">
           {t('files.loading.hint', {
             defaultValue:
-              'This usually takes a few seconds. Larger projects with many BIM models can take longer.‌⁠‍',
+              'This usually takes a few seconds. Larger projects with many BIM models can take longer.',
           })}
         </p>
       </div>

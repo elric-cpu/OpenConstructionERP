@@ -77,14 +77,14 @@ export function MarkupCommentsDrawer({ markupId, onClose }: Props): JSX.Element 
       qc.invalidateQueries({ queryKey: ['markup-comment-counts'] });
       addToast({
         type: 'success',
-        title: t('takeoff.markup.comment_added', { defaultValue: 'Comment added‌⁠‍' }),
+        title: t('takeoff.markup.comment_added', { defaultValue: 'Comment added' }),
       });
     },
     onError: (e: Error) => {
       addToast({
         type: 'error',
         title: t('takeoff.markup.comment_failed', {
-          defaultValue: 'Could not add comment‌⁠‍',
+          defaultValue: 'Could not add comment',
         }),
         message: e.message,
       });
@@ -99,14 +99,14 @@ export function MarkupCommentsDrawer({ markupId, onClose }: Props): JSX.Element 
       qc.invalidateQueries({ queryKey: ['markup-comment-counts'] });
       addToast({
         type: 'success',
-        title: t('takeoff.markup.comment_deleted', { defaultValue: 'Comment deleted‌⁠‍' }),
+        title: t('takeoff.markup.comment_deleted', { defaultValue: 'Comment deleted' }),
       });
     },
     onError: (e: Error) => {
       addToast({
         type: 'error',
         title: t('takeoff.markup.comment_delete_failed', {
-          defaultValue: 'Could not delete comment‌⁠‍',
+          defaultValue: 'Could not delete comment',
         }),
         message: e.message,
       });
@@ -128,7 +128,7 @@ export function MarkupCommentsDrawer({ markupId, onClose }: Props): JSX.Element 
       className="fixed inset-y-0 right-0 z-40 flex h-full w-96 max-w-full flex-col border-l border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900"
       role="dialog"
       aria-label={t('takeoff.markup.comments_drawer', {
-        defaultValue: 'Markup comments‌⁠‍',
+        defaultValue: 'Markup comments',
       })}
     >
       <header className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">

@@ -202,7 +202,7 @@ describe('PhasePlans tab', () => {
     expect(dialog).toBeInTheDocument();
     expect(screen.getByText(/delete phase/i)).toBeInTheDocument();
     // Cancel — must NOT call delete. ConfirmDialog's "Cancel" label embeds
-    // zero-width steganography chars so the visible string is e.g. "Cancel‌⁠‍".
+    // zero-width steganography chars so the visible string is e.g. "Cancel".
     // Match the first button inside the dialog (cancel is left of confirm).
     const dialogButtons = dialog.querySelectorAll('button');
     fireEvent.click(dialogButtons[0]);

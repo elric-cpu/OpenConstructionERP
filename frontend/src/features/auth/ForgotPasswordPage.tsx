@@ -112,13 +112,13 @@ export function ForgotPasswordPage() {
               </h2>
               <p className="text-sm text-content-secondary mb-2">
                 {t('auth.reset_sent_generic', {
-                  defaultValue: "If an account exists for {{email}}, we've sent password reset instructions.‌⁠‍",
+                  defaultValue: "If an account exists for {{email}}, we've sent password reset instructions.",
                   email,
                 })}
               </p>
               <p className="text-xs text-content-tertiary mb-6">
                 {t('auth.reset_check_spam', {
-                  defaultValue: "Didn't receive it? Check your spam folder or try again in a few minutes.‌⁠‍",
+                  defaultValue: "Didn't receive it? Check your spam folder or try again in a few minutes.",
                 })}
               </p>
               <Link

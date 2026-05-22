@@ -13,7 +13,7 @@
  *      sensitivity contributors, sorted desc).
  *
  * Currency is data-driven — when the project has no currency set we
- * render currency-less numbers rather than mislabelling.‌⁠‍
+ * render currency-less numbers rather than mislabelling.
  */
 
 import { useMemo, useState } from 'react';

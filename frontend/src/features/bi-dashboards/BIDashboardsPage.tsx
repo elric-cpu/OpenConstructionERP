@@ -184,19 +184,19 @@ export function BIDashboardsPage() {
     <div className="space-y-5">
       <Breadcrumb
         items={[
-          { label: t('bi.title', { defaultValue: 'BI & Dashboards‌⁠‍' }) },
+          { label: t('bi.title', { defaultValue: 'BI & Dashboards' }) },
         ]}
       />
 
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-semibold text-content-primary">
-            {t('bi.title', { defaultValue: 'BI & Dashboards‌⁠‍' })}
+            {t('bi.title', { defaultValue: 'BI & Dashboards' })}
           </h1>
           <p className="mt-1 text-sm text-content-secondary">
             {t('bi.subtitle', {
               defaultValue:
-                'KPIs, scheduled reports, executive dashboards and alert rules — all in one place.‌⁠‍',
+                'KPIs, scheduled reports, executive dashboards and alert rules — all in one place.',
             })}
           </p>
         </div>
@@ -207,9 +207,9 @@ export function BIDashboardsPage() {
             onClick={() => setCreateOpen(true)}
           >
             {tab === 'dashboards'
-              ? t('bi.new_dashboard', { defaultValue: 'New Dashboard‌⁠‍' })
+              ? t('bi.new_dashboard', { defaultValue: 'New Dashboard' })
               : tab === 'reports'
-                ? t('bi.new_report', { defaultValue: 'New Report‌⁠‍' })
+                ? t('bi.new_report', { defaultValue: 'New Report' })
                 : t('bi.new_alert', { defaultValue: 'New Alert' })}
           </Button>
         )}

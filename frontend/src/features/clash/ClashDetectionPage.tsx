@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Clash Detection â€” geometric AABB interference / clearance coordination
  * over canonical BIM elements, with a disciplineÃ—discipline clash matrix,
  * a Navisworks/Solibri-grade clash-review workspace and one-click BCF export.

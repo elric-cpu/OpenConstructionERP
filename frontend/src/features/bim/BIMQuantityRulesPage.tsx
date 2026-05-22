@@ -413,10 +413,10 @@ function RuleEditorModal({
 
   const modeTitle =
     mode === 'edit'
-      ? t('bim_rules.edit_rule', { defaultValue: 'Edit rule‌⁠‍' })
+      ? t('bim_rules.edit_rule', { defaultValue: 'Edit rule' })
       : mode === 'duplicate'
-        ? t('bim_rules.duplicate_rule', { defaultValue: 'Duplicate rule‌⁠‍' })
-        : t('bim_rules.new_rule', { defaultValue: 'New rule‌⁠‍' });
+        ? t('bim_rules.duplicate_rule', { defaultValue: 'Duplicate rule' })
+        : t('bim_rules.new_rule', { defaultValue: 'New rule' });
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
@@ -460,7 +460,7 @@ function RuleEditorModal({
                 value={form.name}
                 onChange={(e) => updateField('name', e.target.value)}
                 placeholder={t('bim_rules.field_name_placeholder', {
-                  defaultValue: 'e.g. Exterior walls — concrete‌⁠‍',
+                  defaultValue: 'e.g. Exterior walls — concrete',
                 })}
                 className="w-full rounded-lg border border-border-light bg-surface-primary px-3 py-2 text-sm text-content-primary focus:border-oe-blue focus:outline-none focus:ring-1 focus:ring-oe-blue"
               />
@@ -472,7 +472,7 @@ function RuleEditorModal({
                 htmlFor="rule-element-type"
                 className="mb-1 block text-xs font-medium text-content-secondary"
               >
-                {t('bim_rules.field_element_type', { defaultValue: 'Element type filter‌⁠‍' })}
+                {t('bim_rules.field_element_type', { defaultValue: 'Element type filter' })}
               </label>
               <input
                 id="rule-element-type"

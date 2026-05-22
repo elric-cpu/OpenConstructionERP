@@ -101,7 +101,7 @@ export function BOQCompareDrawer({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={t('boq.compare_title', { defaultValue: 'Compare estimates‌⁠‍' })}
+        aria-label={t('boq.compare_title', { defaultValue: 'Compare estimates' })}
         className="relative ml-auto flex h-full w-[560px] flex-col bg-surface-elevated border-l border-border shadow-2xl animate-slide-in-right"
       >
         {/* Header */}
@@ -109,7 +109,7 @@ export function BOQCompareDrawer({
           <div className="flex items-center gap-2">
             <GitCompare size={16} className="text-oe-blue" />
             <h3 className="text-sm font-semibold text-content-primary">
-              {t('boq.compare_title', { defaultValue: 'Compare estimates‌⁠‍' })}
+              {t('boq.compare_title', { defaultValue: 'Compare estimates' })}
             </h3>
           </div>
           <button
@@ -125,7 +125,7 @@ export function BOQCompareDrawer({
         <div className="border-b border-border p-3 space-y-2">
           <label className="block">
             <span className="block text-2xs font-medium text-content-secondary mb-1">
-              {t('boq.compare_against', { defaultValue: 'Compare against‌⁠‍' })}
+              {t('boq.compare_against', { defaultValue: 'Compare against' })}
             </span>
             <select
               value={otherId}
@@ -133,7 +133,7 @@ export function BOQCompareDrawer({
               className="w-full rounded-lg border border-border-light bg-surface-primary px-3 py-2 text-sm text-content-primary focus:outline-none focus:ring-2 focus:ring-oe-blue/30"
             >
               <option value="">
-                {t('boq.compare_pick', { defaultValue: '— Select a BOQ —‌⁠‍' })}
+                {t('boq.compare_pick', { defaultValue: '— Select a BOQ —' })}
               </option>
               {otherChoices.map((b) => (
                 <option key={b.id} value={b.id}>
@@ -150,7 +150,7 @@ export function BOQCompareDrawer({
               className="accent-oe-blue"
             />
             {t('boq.compare_hide_unchanged', {
-              defaultValue: 'Hide unchanged lines‌⁠‍',
+              defaultValue: 'Hide unchanged lines',
             })}
           </label>
         </div>

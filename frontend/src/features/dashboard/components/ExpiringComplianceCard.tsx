@@ -34,12 +34,12 @@ export function ExpiringComplianceCard({
         <div>
           <h3 className="text-sm font-semibold text-content-primary">
             {t('compliance.widget.title', {
-              defaultValue: 'Expiring compliance‌⁠‍',
+              defaultValue: 'Expiring compliance',
             })}
           </h3>
           <p className="text-xs text-content-tertiary">
             {t('compliance.widget.subtitle', {
-              defaultValue: 'Insurance, permits, bonds nearing expiry.‌⁠‍',
+              defaultValue: 'Insurance, permits, bonds nearing expiry.',
             })}
           </p>
         </div>
@@ -59,10 +59,10 @@ export function ExpiringComplianceCard({
         <EmptyState
           icon={<ShieldCheck size={32} strokeWidth={1.5} />}
           title={t('compliance.widget.empty_title', {
-            defaultValue: 'Nothing expiring soon‌⁠‍',
+            defaultValue: 'Nothing expiring soon',
           })}
           description={t('compliance.widget.empty_description', {
-            defaultValue: 'All tracked documents are current.‌⁠‍',
+            defaultValue: 'All tracked documents are current.',
           })}
         />
       ) : (
@@ -79,7 +79,7 @@ export function ExpiringComplianceCard({
                 <div className="text-xs text-content-tertiary tabular-nums">
                   {row.expires_at} ·{' '}
                   {t('compliance.widget.days_left', {
-                    defaultValue: '{{n}}d left‌⁠‍',
+                    defaultValue: '{{n}}d left',
                     n: row.days_until_expiry,
                   })}
                 </div>

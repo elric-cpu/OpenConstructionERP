@@ -291,7 +291,7 @@ function CreatePackageDialog({
     onSuccess: () => {
       onCreated();
       onClose();
-      addToast({ type: 'success', title: t('toasts.package_created', { defaultValue: 'Tender package created‌⁠‍' }) });
+      addToast({ type: 'success', title: t('toasts.package_created', { defaultValue: 'Tender package created' }) });
     },
     onError: (error: Error) => {
       addToast({ type: 'error', title: t('toasts.error', { defaultValue: 'Error' }), message: error.message });
@@ -413,7 +413,7 @@ function AddBidDialog({
     onSuccess: () => {
       onCreated();
       onClose();
-      addToast({ type: 'success', title: t('toasts.bid_submitted', { defaultValue: 'Bid submitted‌⁠‍' }) });
+      addToast({ type: 'success', title: t('toasts.bid_submitted', { defaultValue: 'Bid submitted' }) });
     },
     onError: (error: Error) => {
       addToast({ type: 'error', title: t('toasts.error', { defaultValue: 'Error' }), message: error.message });
@@ -531,7 +531,7 @@ function PackageCard({
           <div className="mt-0.5 flex items-center gap-3 text-xs text-content-secondary">
             <span className="flex items-center gap-1">
               <FileText size={12} />
-              {t('tendering.bid_count', { defaultValue: '{{count}} bids‌⁠‍', count: pkg.bid_count })}
+              {t('tendering.bid_count', { defaultValue: '{{count}} bids', count: pkg.bid_count })}
             </span>
             {pkg.deadline && (
               <span className="flex items-center gap-1">
@@ -770,7 +770,7 @@ function PackageDetail({
       queryClient.invalidateQueries({ queryKey: ['tendering-package', packageId] });
       queryClient.invalidateQueries({ queryKey: ['tendering-comparison', packageId] });
       queryClient.invalidateQueries({ queryKey: ['tendering-packages'] });
-      addToast({ type: 'success', title: t('toasts.bid_awarded', { defaultValue: 'Bid awarded‌⁠‍' }) });
+      addToast({ type: 'success', title: t('toasts.bid_awarded', { defaultValue: 'Bid awarded' }) });
     },
     onError: (error: Error) => {
       addToast({ type: 'error', title: t('toasts.error', { defaultValue: 'Error' }), message: error.message });
@@ -786,7 +786,7 @@ function PackageDetail({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tendering-package', packageId] });
       queryClient.invalidateQueries({ queryKey: ['tendering-packages'] });
-      addToast({ type: 'success', title: t('toasts.status_updated', { defaultValue: 'Status updated‌⁠‍' }) });
+      addToast({ type: 'success', title: t('toasts.status_updated', { defaultValue: 'Status updated' }) });
     },
     onError: (error: Error) => {
       addToast({ type: 'error', title: t('toasts.error', { defaultValue: 'Error' }), message: error.message });

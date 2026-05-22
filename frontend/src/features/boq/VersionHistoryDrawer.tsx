@@ -143,13 +143,13 @@ export function VersionHistoryDrawer({ boqId, isOpen, onClose }: VersionHistoryD
       setNewLabel('');
       useToastStore.getState().addToast({
         type: 'success',
-        title: t('boq.snapshot_created', { defaultValue: 'Snapshot saved‌⁠‍' }),
+        title: t('boq.snapshot_created', { defaultValue: 'Snapshot saved' }),
       });
     },
     onError: (e: Error) => {
       useToastStore.getState().addToast({
         type: 'error',
-        title: t('boq.snapshot_failed', { defaultValue: 'Failed to save snapshot‌⁠‍' }),
+        title: t('boq.snapshot_failed', { defaultValue: 'Failed to save snapshot' }),
         message: e.message,
       });
     },
@@ -163,13 +163,13 @@ export function VersionHistoryDrawer({ boqId, isOpen, onClose }: VersionHistoryD
       setConfirmRestoreId(null);
       useToastStore.getState().addToast({
         type: 'success',
-        title: t('boq.snapshot_restored', { defaultValue: 'Snapshot restored‌⁠‍' }),
+        title: t('boq.snapshot_restored', { defaultValue: 'Snapshot restored' }),
       });
     },
     onError: (e: Error) => {
       useToastStore.getState().addToast({
         type: 'error',
-        title: t('boq.restore_failed', { defaultValue: 'Failed to restore snapshot‌⁠‍' }),
+        title: t('boq.restore_failed', { defaultValue: 'Failed to restore snapshot' }),
         message: e.message,
       });
     },
@@ -197,7 +197,7 @@ export function VersionHistoryDrawer({ boqId, isOpen, onClose }: VersionHistoryD
       useToastStore.getState().addToast({
         type: 'success',
         title: t('boq.field_restored', {
-          defaultValue: 'Restored field "{{field}}"‌⁠‍',
+          defaultValue: 'Restored field "{{field}}"',
           field: variables.field,
         } as Record<string, string>),
       });
@@ -206,7 +206,7 @@ export function VersionHistoryDrawer({ boqId, isOpen, onClose }: VersionHistoryD
       useToastStore.getState().addToast({
         type: 'error',
         title: t('boq.field_restore_failed', {
-          defaultValue: 'Could not restore field‌⁠‍',
+          defaultValue: 'Could not restore field',
         }),
         message: e.message,
       });
@@ -295,7 +295,7 @@ export function VersionHistoryDrawer({ boqId, isOpen, onClose }: VersionHistoryD
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={t('boq.version_history', { defaultValue: 'Version History‌⁠‍' })}
+        aria-label={t('boq.version_history', { defaultValue: 'Version History' })}
         className="relative ml-auto flex h-full w-96 flex-col bg-surface-elevated border-l border-border shadow-2xl animate-slide-in-right"
       >
         {/* Header */}

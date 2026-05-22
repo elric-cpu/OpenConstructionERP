@@ -45,7 +45,7 @@ export function AboutPage() {
           </div>
           <h1 className="text-3xl font-bold text-content-primary tracking-tight">OpenConstructionERP</h1>
           <p className="mt-2 text-base text-content-secondary">
-            {t('about.tagline', { defaultValue: 'The #1 open-source platform for construction cost estimation, project management and resource control‌⁠‍' })}
+            {t('about.tagline', { defaultValue: 'The #1 open-source platform for construction cost estimation, project management and resource control' })}
           </p>
           <div className="mt-3 flex items-center justify-center lg:justify-start gap-3 text-sm text-content-tertiary">
             <span className="font-mono">v{APP_VERSION}</span>
@@ -117,7 +117,7 @@ export function AboutPage() {
           <div className="flex items-center gap-2 mb-4">
             <Award size={18} className="text-amber-500" />
             <h2 className="text-lg font-semibold text-content-primary">
-              {t('about.platform_title', { defaultValue: 'Platform Capabilities‌⁠‍' })}
+              {t('about.platform_title', { defaultValue: 'Platform Capabilities' })}
             </h2>
           </div>
           {/* Stats — one row on wide screens (6 tiles × 1 row) so the card
@@ -126,12 +126,12 @@ export function AboutPage() {
               shorter tile readable at narrower widths. */}
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2.5">
             {[
-              { value: '55K+', label: t('about.stat_costs', { defaultValue: 'Cost Items (CWICR)‌⁠‍' }) },
-              { value: '24', label: t('about.stat_langs', { defaultValue: 'Languages‌⁠‍' }) },
-              { value: '48', label: t('about.stat_regions', { defaultValue: 'Regional Databases‌⁠‍' }) },
+              { value: '55K+', label: t('about.stat_costs', { defaultValue: 'Cost Items (CWICR)' }) },
+              { value: '24', label: t('about.stat_langs', { defaultValue: 'Languages' }) },
+              { value: '48', label: t('about.stat_regions', { defaultValue: 'Regional Databases' }) },
               { value: '6', label: t('about.stat_cad_formats', { defaultValue: 'CAD/BIM formats supported' }) },
-              { value: '100+', label: t('about.stat_modules', { defaultValue: 'Backend modules‌⁠‍' }) },
-              { value: '12', label: t('about.stat_sections', { defaultValue: 'Menu sections‌⁠‍' }) },
+              { value: '100+', label: t('about.stat_modules', { defaultValue: 'Backend modules' }) },
+              { value: '12', label: t('about.stat_sections', { defaultValue: 'Menu sections' }) },
             ].map((s, i) => (
               <div key={i} className="text-center rounded-xl bg-surface-secondary/50 px-2 py-3">
                 <div className="text-xl font-bold text-content-primary leading-none">{s.value}</div>
