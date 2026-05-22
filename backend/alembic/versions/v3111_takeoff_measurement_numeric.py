@@ -44,8 +44,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "v3107_takeoff_measurement_numeric"
-down_revision: Union[str, Sequence[str], None] = "v3106_geo_hub_init"
+revision: str = "v3111_takeoff_measurement_numeric"
+down_revision: Union[str, Sequence[str], None] = "v3110_propdev_snag_buyer_cost_photos"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

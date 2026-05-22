@@ -39,8 +39,8 @@ import sqlalchemy as sa
 from alembic import op
 
 
-revision: str = "v3107_propdev_snag_buyer_cost_photos"
-down_revision: Union[str, Sequence[str], None] = "v3106_geo_hub_init"
+revision: str = "v3110_propdev_snag_buyer_cost_photos"
+down_revision: Union[str, Sequence[str], None] = "v3109_costmodel_geo_merge"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
