@@ -1056,6 +1056,120 @@ def test_extract_exif_gps_non_image_returns_none() -> None:
     assert extract_exif_gps(b"not an image, just text") is None
 
 
+# ── Photo / video MIME and size enforcement ──────────────────────────────
+
+
+def test_photo_create_rejects_svg_mime() -> None:
+    """SVG is renderable as inline HTML — must never reach diary photos."""
+    from pydantic import ValidationError as _VE
+
+    with pytest.raises(_VE):
+        DiaryPhotoCreate(
+            project_id=PROJECT_ID,
+            taken_at=datetime(2026, 4, 10, 12, tzinfo=UTC),
+            file_url="http://x/a.svg",
+            mime_type="image/svg+xml",
+        )
+
+
+def test_photo_create_rejects_text_html_mime() -> None:
+    """Client-declared text/html MUST be rejected at the schema layer."""
+    from pydantic import ValidationError as _VE
+
+    with pytest.raises(_VE):
+        DiaryPhotoCreate(
+            project_id=PROJECT_ID,
+            taken_at=datetime(2026, 4, 10, 12, tzinfo=UTC),
+            file_url="http://x/a.html",
+            mime_type="text/html",
+        )
+
+
+def test_photo_create_rejects_oversize_file_bytes() -> None:
+    """A 5 GB photo is nonsense — cap is 200 MB."""
+    from pydantic import ValidationError as _VE
+
+    with pytest.raises(_VE):
+        DiaryPhotoCreate(
+            project_id=PROJECT_ID,
+            taken_at=datetime(2026, 4, 10, 12, tzinfo=UTC),
+            file_url="http://x/a.jpg",
+            file_size_bytes=5 * 1024 * 1024 * 1024,  # 5 GB
+        )
+
+
+def test_video_create_rejects_non_video_mime() -> None:
+    """A claimed ``text/html`` video MUST be rejected at the schema layer."""
+    from pydantic import ValidationError as _VE
+
+    from app.modules.daily_diary.schemas import DiaryVideoCreate
+
+    with pytest.raises(_VE):
+        DiaryVideoCreate(
+            project_id=PROJECT_ID,
+            recorded_at=datetime(2026, 4, 10, 12, tzinfo=UTC),
+            file_url="http://x/a.mp4",
+            mime_type="text/html",  # not a video MIME
+        )
+
+
+def test_video_create_accepts_mp4_mime() -> None:
+    """Sanity-check the video allow-list."""
+    from app.modules.daily_diary.schemas import DiaryVideoCreate
+
+    obj = DiaryVideoCreate(
+        project_id=PROJECT_ID,
+        recorded_at=datetime(2026, 4, 10, 12, tzinfo=UTC),
+        file_url="http://x/a.mp4",
+        mime_type="video/mp4",
+    )
+    assert obj.mime_type == "video/mp4"
+
+
+def test_video_create_rejects_implausible_duration() -> None:
+    """30-day duration is almost certainly a unit-conversion mistake."""
+    from pydantic import ValidationError as _VE
+
+    from app.modules.daily_diary.schemas import DiaryVideoCreate
+
+    with pytest.raises(_VE):
+        DiaryVideoCreate(
+            project_id=PROJECT_ID,
+            recorded_at=datetime(2026, 4, 10, 12, tzinfo=UTC),
+            file_url="http://x/a.mp4",
+            duration_seconds=30 * 24 * 3600,
+        )
+
+
+def test_exif_gps_endpoint_magic_byte_rejects_svg() -> None:
+    """``/photos/extract-gps`` is base64-only; verify the magic-byte gate
+    rejects an SVG payload (raw text starting with ``<svg``).
+
+    The endpoint MUST reject before passing bytes into Pillow / EXIF
+    machinery — that's the whole point of the gate. This is a contract
+    test on the underlying ``require`` helper that the router wires in.
+    """
+    from app.core.file_signature import (
+        ALLOWED_PHOTO_TYPES,
+        FileSignatureMismatch,
+    )
+    from app.core.file_signature import require as require_signature
+
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg"><script/></svg>'
+    with pytest.raises(FileSignatureMismatch):
+        require_signature(svg[:16], ALLOWED_PHOTO_TYPES)
+
+
+def test_exif_gps_endpoint_magic_byte_accepts_jpeg_head() -> None:
+    """A valid JPEG header passes the magic-byte gate."""
+    from app.core.file_signature import ALLOWED_PHOTO_TYPES
+    from app.core.file_signature import require as require_signature
+
+    jpeg = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00"
+    detected = require_signature(jpeg[:16], ALLOWED_PHOTO_TYPES)
+    assert detected == "jpeg"
+
+
 # ── Workforce summary cross-module event ─────────────────────────────────
 
 

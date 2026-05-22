@@ -23,9 +23,23 @@ _SIGNER_ROLE_RE = r"^(owner|supervisor|inspector|client)$"
 # so it MUST be constrained to the platform image allow-list — otherwise a
 # caller could persist e.g. ``text/html`` and the UI would trust it. Mirrors
 # documents.ALLOWED_IMAGE_TYPES (+ avif, which site cameras now emit).
+# SVG is explicitly NOT in this set — it can carry arbitrary script payload
+# and the UI would render it inline.
 _PHOTO_MIME_RE = (
     r"^image/(jpeg|png|gif|webp|heic|heif|avif|tiff)$"
 )
+# Video MIME — site recorders emit mp4/quicktime/webm/AVI; absolutely no
+# ``text/*`` / ``application/*`` / ``image/svg+xml`` allowed (a maliciously
+# stored MIME would be served back verbatim and trusted by the UI).
+_VIDEO_MIME_RE = (
+    r"^video/(mp4|quicktime|webm|x-msvideo|x-matroska|3gpp|3gpp2|mpeg)$"
+)
+# Caps for file_size_bytes — preventing nonsense values that would distort
+# storage-quota dashboards and break downstream aggregation. 5 GB matches
+# what a long drone-flight clip realistically produces; nothing in a site
+# diary should ever be larger than that.
+_MAX_PHOTO_BYTES = 200 * 1024 * 1024       # 200 MB
+_MAX_VIDEO_BYTES = 5 * 1024 * 1024 * 1024  # 5 GB
 
 
 # ── DailyDiary ───────────────────────────────────────────────────────────
@@ -243,7 +257,7 @@ class DiaryPhotoCreate(BaseModel):
     mime_type: str = Field(
         default="image/jpeg", max_length=80, pattern=_PHOTO_MIME_RE
     )
-    file_size_bytes: int = Field(default=0, ge=0)
+    file_size_bytes: int = Field(default=0, ge=0, le=_MAX_PHOTO_BYTES)
     description: str | None = Field(default=None, max_length=20000)
     tags: list[str] = Field(default_factory=list)
     is_360: bool = False
@@ -308,8 +322,14 @@ class DiaryVideoCreate(BaseModel):
     recorded_at: datetime
     file_url: str = Field(..., min_length=1, max_length=2000)
     thumbnail_url: str | None = Field(default=None, max_length=2000)
-    duration_seconds: int = Field(default=0, ge=0)
-    file_size_bytes: int = Field(default=0, ge=0)
+    # 24h hard cap — a site video longer than a calendar day is nonsense and
+    # almost certainly indicates a unit-mistake (e.g. milliseconds in a
+    # ``seconds`` field) that would corrupt the SCL bundle hash.
+    duration_seconds: int = Field(default=0, ge=0, le=86_400)
+    file_size_bytes: int = Field(default=0, ge=0, le=_MAX_VIDEO_BYTES)
+    mime_type: str | None = Field(
+        default=None, max_length=80, pattern=_VIDEO_MIME_RE,
+    )
     description: str | None = Field(default=None, max_length=20000)
     tags: list[str] = Field(default_factory=list)
 
@@ -321,7 +341,10 @@ class DiaryVideoUpdate(BaseModel):
 
     diary_id: UUID | None = None
     thumbnail_url: str | None = Field(default=None, max_length=2000)
-    duration_seconds: int | None = Field(default=None, ge=0)
+    duration_seconds: int | None = Field(default=None, ge=0, le=86_400)
+    mime_type: str | None = Field(
+        default=None, max_length=80, pattern=_VIDEO_MIME_RE,
+    )
     description: str | None = Field(default=None, max_length=20000)
     tags: list[str] | None = None
 

@@ -13,6 +13,12 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 
+from app.core.file_signature import (
+    ALLOWED_PHOTO_TYPES,
+    SIGNATURE_BYTES_REQUIRED,
+    FileSignatureMismatch,
+    require as require_signature,
+)
 from app.dependencies import (
     CurrentUserId,
     RequirePermission,
@@ -1009,7 +1015,14 @@ async def extract_photo_gps(
     payload: ExifGPSRequest,
     _perm: None = Depends(RequirePermission("daily_diary.upload_photo")),
 ) -> ExifGPSResponse:
-    """Extract GPS coordinates from an uploaded image's EXIF metadata."""
+    """Extract GPS coordinates from an uploaded image's EXIF metadata.
+
+    The base64 payload is gated by magic-byte detection against the photo
+    allow-list (jpeg/png/gif/webp/heic/heif/tiff). SVG, scripts, PE / ELF
+    binaries — anything that is not an actual raster image — is rejected
+    with 415 BEFORE Pillow ever sees the bytes. This stops a caller from
+    using the EXIF endpoint as a generic file-sniffer / parser-fuzz vector.
+    """
     import base64
 
     try:
@@ -1017,6 +1030,17 @@ async def extract_photo_gps(
     except (ValueError, TypeError) as exc:
         from fastapi import HTTPException
         raise HTTPException(422, f"Invalid base64 image: {exc}") from exc
+    # Magic-byte gate FIRST — Pillow is happy to attempt to decode all sorts
+    # of formats and an attacker-shaped payload could exercise its parsers
+    # in unexpected ways. The detector reads only the first 16 bytes.
+    try:
+        require_signature(
+            raw[:SIGNATURE_BYTES_REQUIRED],
+            ALLOWED_PHOTO_TYPES,
+        )
+    except FileSignatureMismatch as exc:
+        from fastapi import HTTPException
+        raise HTTPException(415, str(exc)) from exc
     gps = extract_exif_gps(raw)
     if gps is None:
         return ExifGPSResponse(found=False)
