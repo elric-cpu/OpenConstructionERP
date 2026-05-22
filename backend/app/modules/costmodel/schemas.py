@@ -278,7 +278,16 @@ class EVMResponse(BaseModel):
     eac: float = Field(0.0, description="Estimate At Completion — BAC / CPI")
     etc: float = Field(0.0, description="Estimate To Complete — EAC - AC")
     vac: float = Field(0.0, description="Variance At Completion — BAC - EAC")
-    tcpi: float = Field(0.0, description="To-Complete Performance Index — (BAC - EV) / (BAC - AC)")
+    tcpi: float | None = Field(
+        None,
+        description=(
+            "To-Complete Performance Index — (BAC - EV) / (BAC - AC). "
+            "Returns ``null`` when BAC <= AC: the denominator is zero or "
+            "negative (project is already at-or-over budget), making TCPI "
+            "mathematically undefined. Pre-audit this case was masked as "
+            "``0.0`` which dashboards mis-rendered as 'perfect efficiency'."
+        ),
+    )
     time_elapsed_pct: float = Field(0.0, description="Percentage of project duration elapsed (0.0 - 100.0)")
     schedule_progress_pct: float = Field(0.0, description="Weighted average schedule progress (0.0 - 100.0)")
     status: str = Field(

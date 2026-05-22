@@ -779,7 +779,17 @@ class CostModelService:
         eac = _safe_divide(bac, cpi) if cpi != 0.0 else bac
         etc = max(0.0, eac - ac)
         vac = bac - eac
-        tcpi = _safe_divide(bac - ev, bac - ac)
+        # TCPI is mathematically undefined when (BAC - AC) <= 0: the
+        # project is at-or-over budget so "work remaining vs cash
+        # remaining" has no finite answer. Pre-audit this returned 0.0
+        # via _safe_divide, which dashboards mis-rendered as "perfect
+        # efficiency required". Surface None so the UI can label N/A.
+        tcpi: float | None
+        remaining_budget = bac - ac
+        if remaining_budget <= 0.0:
+            tcpi = None
+        else:
+            tcpi = (bac - ev) / remaining_budget
 
         # ── Step 4: Determine project health status ────────────────────────
         # When we have no schedule signal at all, any SPI-based classification
@@ -820,7 +830,7 @@ class CostModelService:
             eac=round(eac, 2),
             etc=round(etc, 2),
             vac=round(vac, 2),
-            tcpi=round(tcpi, 4),
+            tcpi=round(tcpi, 4) if tcpi is not None else None,
             time_elapsed_pct=round(time_elapsed_pct, 2),
             schedule_progress_pct=round(schedule_progress_pct, 2),
             status=evm_status,
