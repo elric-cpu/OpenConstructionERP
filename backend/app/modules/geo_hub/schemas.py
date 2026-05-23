@@ -24,6 +24,7 @@ _OVERLAY_KIND_PATTERN = (
     r"^(boundary|survey|contour|drone_photo|site_plan|easement|"
     r"flood_zone|clash_marker|incident|field_report|risk_zone)$"
 )
+_RASTER_OVERLAY_KIND_PATTERN = r"^(pdf|dwg|image)$"
 _REGION_CODE_PATTERN = r"^[A-Z]{2}(-[A-Z0-9]{1,3})?$"
 
 
@@ -403,6 +404,149 @@ class KMLImportRequest(BaseModel):
     style: dict[str, Any] = Field(default_factory=dict)
 
 
+# ── GeoRasterOverlay (PDF / DWG / image pinned to globe surface) ────────
+
+
+def _check_corners(v: list[Any]) -> list[Any]:
+    """Validate a 4-point corners array of ``[lon, lat]`` pairs.
+
+    The frontend always sends ``[NW, NE, SE, SW]``. We tolerate an empty
+    list on create (the service falls back to the project anchor bbox)
+    but reject any partially-formed shape.
+    """
+    if not v:
+        return v
+    if len(v) != 4:
+        raise ValueError("corners_geojson must contain exactly 4 points")
+    for point in v:
+        if not isinstance(point, (list, tuple)) or len(point) != 2:
+            raise ValueError(
+                "each corner must be a 2-element [lon, lat] array"
+            )
+        lon, lat = point
+        try:
+            lon_d = Decimal(str(lon))
+            lat_d = Decimal(str(lat))
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError("corner coords must be numeric") from exc
+        if not (Decimal("-180") <= lon_d <= Decimal("180")):
+            raise ValueError("corner longitude out of range")
+        if not (Decimal("-90") <= lat_d <= Decimal("90")):
+            raise ValueError("corner latitude out of range")
+    return v
+
+
+def _check_crop_polygon(v: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Light GeoJSON Polygon shape check — defers full validation to client."""
+    if v is None:
+        return None
+    if not isinstance(v, dict):
+        raise ValueError("crop_polygon_geojson must be a GeoJSON object")
+    if v.get("type") != "Polygon":
+        raise ValueError("crop_polygon_geojson must be type Polygon")
+    coords = v.get("coordinates")
+    if not isinstance(coords, list) or not coords:
+        raise ValueError("crop_polygon_geojson.coordinates must be non-empty")
+    ring = coords[0]
+    if not isinstance(ring, list) or len(ring) < 3:
+        raise ValueError("crop_polygon_geojson outer ring needs >= 3 points")
+    for point in ring:
+        if not isinstance(point, (list, tuple)) or len(point) != 2:
+            raise ValueError("crop polygon points must be [lon, lat] pairs")
+    return v
+
+
+class GeoRasterOverlayCreate(BaseModel):
+    """Create a raster overlay record (usually via upload endpoint)."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    project_id: UUID
+    name: str = Field(default="", max_length=255)
+    source_kind: str = Field(
+        default="image", pattern=_RASTER_OVERLAY_KIND_PATTERN,
+    )
+    source_blob_url: str | None = Field(default=None, max_length=500)
+    source_page: int = Field(default=1, ge=1, le=10_000)
+    raster_blob_url: str | None = Field(default=None, max_length=500)
+    raster_width_px: int = Field(default=0, ge=0, le=200_000)
+    raster_height_px: int = Field(default=0, ge=0, le=200_000)
+    corners_geojson: list[Any] = Field(default_factory=list)
+    rotation_deg: Decimal = Field(default=Decimal("0"), ge=-720, le=720)
+    opacity: Decimal = Field(default=Decimal("0.7"), ge=0, le=1)
+    crop_polygon_geojson: dict[str, Any] | None = None
+    z_order: int = Field(default=0, ge=-1000, le=1000)
+    visible: bool = True
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    _v_corners = field_validator("corners_geojson")(  # type: ignore[arg-type, misc]
+        lambda cls, v: _check_corners(v)
+    )
+    _v_crop = field_validator("crop_polygon_geojson")(  # type: ignore[arg-type, misc]
+        lambda cls, v: _check_crop_polygon(v)
+    )
+
+
+class GeoRasterOverlayUpdate(BaseModel):
+    """Partial update — corners, opacity, crop polygon, visibility."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    name: str | None = Field(default=None, max_length=255)
+    corners_geojson: list[Any] | None = None
+    rotation_deg: Decimal | None = Field(default=None, ge=-720, le=720)
+    opacity: Decimal | None = Field(default=None, ge=0, le=1)
+    crop_polygon_geojson: dict[str, Any] | None = None
+    z_order: int | None = Field(default=None, ge=-1000, le=1000)
+    visible: bool | None = None
+    metadata: dict[str, Any] | None = None
+
+    @field_validator("corners_geojson")
+    @classmethod
+    def _v_corners(cls, v: list[Any] | None) -> list[Any] | None:
+        return None if v is None else _check_corners(v)
+
+    @field_validator("crop_polygon_geojson")
+    @classmethod
+    def _v_crop(
+        cls, v: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        return _check_crop_polygon(v)
+
+
+class GeoRasterOverlayResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    project_id: UUID
+    name: str = ""
+    source_kind: str = "image"
+    source_blob_url: str | None = None
+    source_page: int = 1
+    raster_blob_url: str | None = None
+    raster_width_px: int = 0
+    raster_height_px: int = 0
+    corners_geojson: list[Any] = Field(default_factory=list)
+    rotation_deg: Decimal = Decimal("0")
+    opacity: Decimal = Decimal("0.7")
+    crop_polygon_geojson: dict[str, Any] | None = None
+    z_order: int = 0
+    visible: bool = True
+    created_by: UUID | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict, alias="metadata_")
+    created_at: datetime
+    updated_at: datetime
+
+
+class RasterOverlayUploadResponse(BaseModel):
+    """Lightweight response for the PDF / image upload endpoints."""
+
+    model_config = ConfigDict()
+
+    overlay: GeoRasterOverlayResponse
+    page_count: int = 1
+
+
 # ── TileGenerationJob ────────────────────────────────────────────────────
 
 
@@ -524,6 +668,10 @@ __all__ = [
     "GeoOverlayCreate",
     "GeoOverlayResponse",
     "GeoOverlayUpdate",
+    "GeoRasterOverlayCreate",
+    "GeoRasterOverlayResponse",
+    "GeoRasterOverlayUpdate",
+    "RasterOverlayUploadResponse",
     "HSEPinResponse",
     "ImageryLayerCreate",
     "ImageryLayerResponse",

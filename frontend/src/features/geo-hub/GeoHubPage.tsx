@@ -48,6 +48,8 @@ import { fetchAnchoredProjects } from './api';
 import type { GeoCameraState, GeoCursorCoords } from './CesiumViewer';
 import { GeoModePicker } from './GeoModePicker';
 import { GeoOverlayHud } from './GeoOverlayHud';
+import { OverlayLayer } from './OverlayLayer';
+import { OverlayPanel, type OverlayEditMode } from './OverlayPanel';
 import type { AnchoredProject, GeoPinBundle } from './types';
 
 const CesiumViewer = lazy(() =>
@@ -406,6 +408,17 @@ export function GeoHubPage() {
   const [panelCollapsed, setPanelCollapsed] = useState<boolean>(
     readPanelCollapsed,
   );
+  // Raster overlay state — scoped to the focused or active project so a
+  // user on the global view can pin overlays onto their primary project
+  // without leaving the page.
+  const [activeOverlayId, setActiveOverlayId] = useState<string | null>(
+    null,
+  );
+  const [overlayEditMode, setOverlayEditMode] =
+    useState<OverlayEditMode>('idle');
+  const [cesiumRuntime, setCesiumRuntime] = useState<
+    { cesium: unknown; viewer: unknown } | null
+  >(null);
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
@@ -595,6 +608,7 @@ export function GeoHubPage() {
             }
             onMouseMove={setCursorCoords}
             onCameraChange={setCameraState}
+            onViewerReady={setCesiumRuntime}
             overlay={
               <>
                 <GeoOverlayHud
@@ -614,6 +628,32 @@ export function GeoHubPage() {
                   collapsed={panelCollapsed}
                   onToggleCollapsed={() => setPanelCollapsed((v) => !v)}
                 />
+                {/* Raster overlay panel — only meaningful when a project
+                    is in context. Uses the focused project (clicked in
+                    the rail) or falls back to the user's active project. */}
+                {(focusedProjectId || activeProjectId) && (
+                  <>
+                    <OverlayPanel
+                      projectId={focusedProjectId ?? activeProjectId ?? ''}
+                      activeOverlayId={activeOverlayId}
+                      editMode={overlayEditMode}
+                      onSelectOverlay={(id) => {
+                        setActiveOverlayId(id);
+                        if (id === null) setOverlayEditMode('idle');
+                      }}
+                      onChangeEditMode={setOverlayEditMode}
+                    />
+                    <OverlayLayer
+                      projectId={focusedProjectId ?? activeProjectId ?? ''}
+                      cesium={cesiumRuntime?.cesium ?? null}
+                      viewer={cesiumRuntime?.viewer ?? null}
+                      activeOverlayId={activeOverlayId}
+                      editMode={overlayEditMode}
+                      onSelectOverlay={setActiveOverlayId}
+                      onChangeEditMode={setOverlayEditMode}
+                    />
+                  </>
+                )}
                 {/* Empty-state card only when the fetch succeeded and we
                     really do have zero anchored projects — never on
                     error, never while loading. */}

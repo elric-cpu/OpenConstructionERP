@@ -5,16 +5,20 @@
  * Backed by /api/v1/geo-hub/ — see backend/app/modules/geo_hub/router.py
  */
 
-import { apiDelete, apiGet, apiPatch, apiPost } from '@/shared/lib/api';
+import { apiDelete, apiGet, apiPatch, apiPost, ApiError } from '@/shared/lib/api';
+import { useAuthStore } from '@/stores/useAuthStore';
 
 import type {
   AnchoredProject,
   DiaryPhotoPin,
   GeoAnchor,
   GeoOverlay,
+  GeoRasterOverlay,
+  GeoRasterOverlayPatch,
   HSEPin,
   ImageryLayer,
   MapConfig,
+  PdfOverlayUploadResponse,
   PunchlistPin,
   TerrainSource,
   TileJob,
@@ -253,4 +257,120 @@ export function fetchDiaryPhotoPins(
   return apiGet<DiaryPhotoPin[]>(
     `${BASE}/projects/${projectId}/diary-photo-pins?limit=${limit}`,
   );
+}
+
+/* ── Raster overlays (PDF / DWG / image pinned on the globe) ─────────── */
+
+const RASTER_BASE = `${BASE}/raster-overlays`;
+
+export function listRasterOverlays(
+  projectId: string,
+  options?: { includeHidden?: boolean },
+): Promise<GeoRasterOverlay[]> {
+  const qs = new URLSearchParams({ project_id: projectId });
+  if (options?.includeHidden !== undefined) {
+    qs.set('include_hidden', String(options.includeHidden));
+  }
+  return apiGet<GeoRasterOverlay[]>(`${RASTER_BASE}/?${qs.toString()}`);
+}
+
+export function getRasterOverlay(id: string): Promise<GeoRasterOverlay> {
+  return apiGet<GeoRasterOverlay>(`${RASTER_BASE}/${id}`);
+}
+
+export function updateRasterOverlay(
+  id: string,
+  body: GeoRasterOverlayPatch,
+): Promise<GeoRasterOverlay> {
+  return apiPatch<GeoRasterOverlay, GeoRasterOverlayPatch>(
+    `${RASTER_BASE}/${id}`,
+    body,
+  );
+}
+
+export function deleteRasterOverlay(id: string): Promise<void> {
+  return apiDelete(`${RASTER_BASE}/${id}`);
+}
+
+/**
+ * Multipart uploads need their own fetch — the standard `apiPost` JSON
+ * helper hard-codes `Content-Type: application/json` which would break
+ * the multipart boundary. We rebuild the auth + accept headers locally
+ * so the upload still flows through the same auth gate.
+ */
+async function multipartUpload<T>(
+  path: string,
+  formData: FormData,
+): Promise<T> {
+  const token = useAuthStore.getState().accessToken;
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    'X-DDC-Client': 'OE/1.0',
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(`/api${path}`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+  if (!res.ok) {
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      body = await res.text();
+    }
+    throw new ApiError(res.status, res.statusText, body);
+  }
+  if (res.status === 204) return undefined as T;
+  return (await res.json()) as T;
+}
+
+export function uploadPdfRasterOverlay(
+  projectId: string,
+  file: File,
+  options?: { page?: number; name?: string | null },
+): Promise<PdfOverlayUploadResponse> {
+  const fd = new FormData();
+  fd.append('project_id', projectId);
+  fd.append('page', String(options?.page ?? 1));
+  if (options?.name) fd.append('name', options.name);
+  fd.append('file', file);
+  return multipartUpload<PdfOverlayUploadResponse>(
+    `${RASTER_BASE}/upload-pdf`,
+    fd,
+  );
+}
+
+export function uploadImageRasterOverlay(
+  projectId: string,
+  file: File,
+  options?: { name?: string | null },
+): Promise<GeoRasterOverlay> {
+  const fd = new FormData();
+  fd.append('project_id', projectId);
+  if (options?.name) fd.append('name', options.name);
+  fd.append('file', file);
+  return multipartUpload<GeoRasterOverlay>(
+    `${RASTER_BASE}/upload-image`,
+    fd,
+  );
+}
+
+export function rasterOverlayFromDwg(
+  cadImportId: string,
+  options?: { projectId?: string; name?: string | null },
+): Promise<GeoRasterOverlay> {
+  const qs = new URLSearchParams();
+  if (options?.projectId) qs.set('project_id', options.projectId);
+  if (options?.name) qs.set('name', options.name);
+  const path = `${RASTER_BASE}/from-dwg/${cadImportId}${
+    qs.toString() ? `?${qs.toString()}` : ''
+  }`;
+  return apiPost<GeoRasterOverlay>(path, {});
+}
+
+/** Resolve the public URL used by Cesium's SingleTileImageryProvider. */
+export function rasterOverlayImageUrl(id: string): string {
+  return `/api${RASTER_BASE}/${id}/raster.png`;
 }

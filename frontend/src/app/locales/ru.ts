@@ -6507,6 +6507,37 @@ const resource = {
     "accommodation.confirm.check_out_early": "Выселить до запланированной даты?",
     "accommodation.detail.load_failed": "Не удалось загрузить размещение.",
     // --- /Accommodation module ---
+
+    // --- растровые оверлеи (PDF / DWG / изображение на глобусе) ---
+    "geo.overlays.title": "Оверлеи",
+    "geo.overlays.aria": "Растровые оверлеи",
+    "geo.overlays.add": "Добавить",
+    "geo.overlays.expand": "Показать оверлеи",
+    "geo.overlays.collapse": "Скрыть оверлеи",
+    "geo.overlays.counter": "{{count}} на глобусе",
+    "geo.overlays.counter_loading": "Загрузка…",
+    "geo.overlays.loading": "Загрузка оверлеев…",
+    "geo.overlays.empty": "Оверлеев пока нет. Нажмите «Добавить», чтобы прикрепить PDF или изображение к глобусу.",
+    "geo.overlays.untitled": "Безымянный оверлей",
+    "geo.overlays.hide": "Скрыть",
+    "geo.overlays.show": "Показать",
+    "geo.overlays.opacity": "Прозрачность",
+    "geo.overlays.edit_corners": "Править углы",
+    "geo.overlays.crop": "Обрезать",
+    "geo.overlays.delete_confirm": "Удалить этот оверлей? Можно загрузить заново позже.",
+    "geo.overlays.upload_title": "Добавить оверлей на глобус",
+    "geo.overlays.tab_pdf": "Страница PDF",
+    "geo.overlays.tab_image": "Изображение",
+    "geo.overlays.pdf_hint": "Загрузите PDF. Первая страница будет растеризована и привязана к местоположению проекта.",
+    "geo.overlays.image_hint": "Загрузите PNG или JPEG-изображение объекта. Перетащите углы на глобусе для подгонки.",
+    "geo.overlays.uploading": "Загрузка…",
+    "geo.overlays.max_hint": "До 25 МБ; проверка magic-byte на сервере.",
+    "geo.overlays.toast_uploaded": "Оверлей добавлен на глобус",
+    "geo.overlays.toast_upload_failed": "Ошибка загрузки",
+    "geo.overlays.toast_patch_failed": "Не удалось сохранить изменение оверлея",
+    "geo.overlays.toast_delete_failed": "Не удалось удалить оверлей",
+    "geo.overlays.crop_too_few": "Для обрезки нужно минимум 3 точки",
+    // --- /geo overlays ---
   }
 } as { translation: Record<string, string> };
 

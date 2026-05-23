@@ -94,6 +94,15 @@ interface CesiumViewerProps {
    * ellipsoid. Cesium debounces the underlying event itself.
    */
   onCameraChange?: (state: GeoCameraState) => void;
+  /**
+   * Lifecycle hook for parents that need direct access to the Cesium
+   * runtime (raster overlay placement, custom primitives, etc.).
+   * ``null`` is forwarded on teardown so the parent can clear any
+   * primitives it added before the viewer is destroyed.
+   */
+  onViewerReady?: (
+    payload: { cesium: unknown; viewer: unknown } | null,
+  ) => void;
 }
 
 /** Stable signature for the viewer effect: rebuild only when the
@@ -255,6 +264,7 @@ export function CesiumViewer({
   overlay,
   onMouseMove,
   onCameraChange,
+  onViewerReady,
 }: CesiumViewerProps) {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -336,6 +346,15 @@ export function CesiumViewer({
         viewerRef.current = v;
         cesiumRef.current = cesium;
         v.shadows = true;
+        // Surface the runtime to overlay children (raster overlays draw
+        // imagery layers directly into the viewer). Best-effort try-catch
+        // because a misbehaving callback must never block viewer boot.
+        try {
+          onViewerReady?.({ cesium, viewer: v });
+        } catch (cbErr) {
+          // eslint-disable-next-line no-console
+          console.warn('[geo_hub] onViewerReady callback threw', cbErr);
+        }
 
         if (mapConfig?.anchor) {
           const lat = Number(mapConfig.anchor.lat);
@@ -544,6 +563,12 @@ export function CesiumViewer({
       cesiumRef.current = null;
       pinEntitiesRef.current = [];
       loadedTilesetsRef.current = new Map();
+      try {
+        onViewerReady?.(null);
+      } catch (cbErr) {
+        // eslint-disable-next-line no-console
+        console.warn('[geo_hub] onViewerReady teardown threw', cbErr);
+      }
     };
     // ``signature`` collapses ``mapConfig`` into a stable string that
     // only changes when something the viewer actually renders changes.

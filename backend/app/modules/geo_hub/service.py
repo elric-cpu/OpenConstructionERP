@@ -17,6 +17,7 @@ from app.modules.geo_hub.geojson_io import kml_to_geojson, validate_geojson
 from app.modules.geo_hub.models import (
     GeoAnchor,
     GeoOverlay,
+    GeoRasterOverlay,
     GeoViewpoint,
     ImageryLayer,
     TerrainSource,
@@ -26,6 +27,7 @@ from app.modules.geo_hub.models import (
 from app.modules.geo_hub.repository import (
     GeoAnchorRepository,
     GeoOverlayRepository,
+    GeoRasterOverlayRepository,
     ImageryLayerRepository,
     TerrainSourceRepository,
     TileJobRepository,
@@ -39,6 +41,8 @@ from app.modules.geo_hub.schemas import (
     GeoJSONImportRequest,
     GeoOverlayCreate,
     GeoOverlayUpdate,
+    GeoRasterOverlayCreate,
+    GeoRasterOverlayUpdate,
     ImageryLayerCreate,
     ImageryLayerUpdate,
     KMLImportRequest,
@@ -134,6 +138,7 @@ class GeoHubService:
         self.terrain = TerrainSourceRepository(session)
         self.viewpoints = ViewpointRepository(session)
         self.overlays = GeoOverlayRepository(session)
+        self.raster_overlays = GeoRasterOverlayRepository(session)
         self.jobs = TileJobRepository(session)
 
     # ── IDOR helper ─────────────────────────────────────────────────────
@@ -753,6 +758,381 @@ class GeoHubService:
         )
         await self.overlays.delete(overlay_id)
 
+    # ── GeoRasterOverlay (PDF / DWG / image on the globe) ──────────────
+
+    async def list_raster_overlays(
+        self,
+        project_id: uuid.UUID,
+        *,
+        payload: dict[str, Any] | None = None,
+        include_hidden: bool = True,
+    ) -> list[GeoRasterOverlay]:
+        await self._verify_project_owner(
+            project_id, payload, not_found_detail="Project not found",
+        )
+        return await self.raster_overlays.list_for_project(
+            project_id, include_hidden=include_hidden,
+        )
+
+    async def get_raster_overlay(
+        self,
+        overlay_id: uuid.UUID,
+        *,
+        payload: dict[str, Any] | None = None,
+    ) -> GeoRasterOverlay:
+        obj = await self.raster_overlays.get_active(overlay_id)
+        if obj is None:
+            raise HTTPException(status_code=404, detail="Overlay not found")
+        await self._verify_project_owner(
+            obj.project_id, payload, not_found_detail="Overlay not found",
+        )
+        return obj
+
+    async def create_raster_overlay(
+        self,
+        data: GeoRasterOverlayCreate,
+        *,
+        payload: dict[str, Any] | None = None,
+    ) -> GeoRasterOverlay:
+        await self._verify_project_owner(
+            data.project_id, payload, not_found_detail="Project not found",
+        )
+        corners = data.corners_geojson or await self._default_corners_for_project(
+            data.project_id,
+        )
+        obj = GeoRasterOverlay(
+            project_id=data.project_id,
+            name=data.name,
+            source_kind=data.source_kind,
+            source_blob_url=data.source_blob_url,
+            source_page=data.source_page,
+            raster_blob_url=data.raster_blob_url,
+            raster_width_px=data.raster_width_px,
+            raster_height_px=data.raster_height_px,
+            corners_geojson=corners,
+            rotation_deg=data.rotation_deg,
+            opacity=data.opacity,
+            crop_polygon_geojson=data.crop_polygon_geojson,
+            z_order=data.z_order,
+            visible=data.visible,
+            created_by=_extract_user_id(payload),
+            metadata_=data.metadata,
+        )
+        return await self.raster_overlays.create(obj)
+
+    async def update_raster_overlay(
+        self,
+        overlay_id: uuid.UUID,
+        data: GeoRasterOverlayUpdate,
+        *,
+        payload: dict[str, Any] | None = None,
+    ) -> GeoRasterOverlay:
+        # IDOR-check by reading once before the update; ``expire_all`` in
+        # ``update_fields`` would otherwise invalidate the ORM attribute
+        # cache and trigger a lazy-load that explodes with ``MissingGreenlet``
+        # under an async session.
+        await self.get_raster_overlay(overlay_id, payload=payload)
+        await self.raster_overlays.update_fields(overlay_id, **_dump(data))
+        return await self.get_raster_overlay(overlay_id, payload=payload)
+
+    async def delete_raster_overlay(
+        self,
+        overlay_id: uuid.UUID,
+        *,
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        obj = await self.get_raster_overlay(overlay_id, payload=payload)
+        await self.raster_overlays.soft_delete(obj.id)
+
+    async def upload_pdf_overlay(
+        self,
+        project_id: uuid.UUID,
+        *,
+        filename: str,
+        content: bytes,
+        page: int = 1,
+        name: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> tuple[GeoRasterOverlay, int]:
+        """Validate the PDF, rasterise the requested page, persist overlay."""
+        from app.core.file_signature import (
+            SIGNATURE_BYTES_REQUIRED,
+            FileSignatureMismatch,
+        )
+        from app.core.file_signature import require as require_signature
+        from app.modules.geo_hub.raster_pipeline import pdf_to_png
+
+        try:
+            require_signature(
+                content[:SIGNATURE_BYTES_REQUIRED],
+                frozenset({"pdf"}),
+                filename=filename,
+            )
+        except FileSignatureMismatch as exc:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail=str(exc),
+            ) from exc
+
+        try:
+            png_bytes, w, h, page_count = pdf_to_png(content, page=page)
+        except (ValueError, RuntimeError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"PDF rasterisation failed: {exc}",
+            ) from exc
+
+        source_key, raster_key = await self._store_overlay_blobs(
+            project_id=project_id,
+            filename=filename,
+            source_bytes=content,
+            raster_bytes=png_bytes,
+        )
+
+        overlay = await self.create_raster_overlay(
+            GeoRasterOverlayCreate(
+                project_id=project_id,
+                name=name or filename,
+                source_kind="pdf",
+                source_blob_url=source_key,
+                source_page=page,
+                raster_blob_url=raster_key,
+                raster_width_px=w,
+                raster_height_px=h,
+                metadata={
+                    "original_filename": filename,
+                    "page_count": page_count,
+                },
+            ),
+            payload=payload,
+        )
+        return overlay, page_count
+
+    async def upload_image_overlay(
+        self,
+        project_id: uuid.UUID,
+        *,
+        filename: str,
+        content: bytes,
+        name: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> GeoRasterOverlay:
+        """Validate PNG/JPEG bytes, persist the image as both source + raster."""
+        from app.core.file_signature import (
+            SIGNATURE_BYTES_REQUIRED,
+            FileSignatureMismatch,
+        )
+        from app.core.file_signature import require as require_signature
+        from app.modules.geo_hub.raster_pipeline import image_dimensions
+
+        try:
+            require_signature(
+                content[:SIGNATURE_BYTES_REQUIRED],
+                frozenset({"png", "jpeg"}),
+                filename=filename,
+            )
+        except FileSignatureMismatch as exc:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail=str(exc),
+            ) from exc
+
+        try:
+            w, h = image_dimensions(content)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Image not parseable: {exc}",
+            ) from exc
+
+        # For images source == raster — store once, point both at it.
+        source_key, _ = await self._store_overlay_blobs(
+            project_id=project_id,
+            filename=filename,
+            source_bytes=content,
+            raster_bytes=None,
+        )
+        return await self.create_raster_overlay(
+            GeoRasterOverlayCreate(
+                project_id=project_id,
+                name=name or filename,
+                source_kind="image",
+                source_blob_url=source_key,
+                raster_blob_url=source_key,
+                raster_width_px=w,
+                raster_height_px=h,
+                metadata={"original_filename": filename},
+            ),
+            payload=payload,
+        )
+
+    async def overlay_from_dwg(
+        self,
+        cad_import_id: uuid.UUID,
+        *,
+        project_id: uuid.UUID | None = None,
+        name: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> GeoRasterOverlay:
+        """Rasterise an already-converted DWG (canonical JSON) and persist."""
+        import json as _json
+
+        from app.modules.bim_hub.repository import BIMModelRepository
+        from app.modules.geo_hub.raster_pipeline import dwg_top_view_to_png
+
+        bim_model = await BIMModelRepository(self.session).get(cad_import_id)
+        if bim_model is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="cad_import_not_found",
+            )
+        resolved_project_id = project_id or bim_model.project_id
+        if str(resolved_project_id) != str(bim_model.project_id):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="cad_import_not_found",
+            )
+        await self._verify_project_owner(
+            resolved_project_id,
+            payload,
+            not_found_detail="cad_import_not_found",
+        )
+
+        canonical: dict[str, Any] = {}
+        if bim_model.canonical_file_path:
+            try:
+                from app.core.storage import get_storage_backend
+
+                backend = get_storage_backend()
+                blob = await backend.get(bim_model.canonical_file_path)
+                canonical = _json.loads(blob.decode("utf-8"))
+            except (FileNotFoundError, ValueError, OSError, _json.JSONDecodeError):
+                logger.warning(
+                    "geo_hub: canonical_file_path unreadable for %s",
+                    bim_model.id,
+                )
+
+        try:
+            png_bytes, w, h = dwg_top_view_to_png(canonical)
+        except (ValueError, RuntimeError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"DWG rasterisation failed: {exc}",
+            ) from exc
+
+        # Persist the rasterised PNG only; the source remains the BIM
+        # model's canonical file path (a back-reference, not a fresh
+        # upload).
+        source_key, raster_key = await self._store_overlay_blobs(
+            project_id=resolved_project_id,
+            filename=f"{bim_model.name or 'dwg'}.png",
+            source_bytes=None,
+            raster_bytes=png_bytes,
+        )
+        return await self.create_raster_overlay(
+            GeoRasterOverlayCreate(
+                project_id=resolved_project_id,
+                name=name or bim_model.name or "DWG overlay",
+                source_kind="dwg",
+                source_blob_url=bim_model.canonical_file_path,
+                raster_blob_url=raster_key,
+                raster_width_px=w,
+                raster_height_px=h,
+                metadata={
+                    "cad_import_id": str(cad_import_id),
+                    "bim_model_name": bim_model.name or "",
+                },
+            ),
+            payload=payload,
+        )
+
+    async def get_raster_overlay_bytes(
+        self,
+        overlay_id: uuid.UUID,
+        *,
+        payload: dict[str, Any] | None = None,
+    ) -> bytes:
+        """IDOR-checked PNG fetch used by ``GET …/raster.png``."""
+        obj = await self.get_raster_overlay(overlay_id, payload=payload)
+        if not obj.raster_blob_url:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="raster_missing",
+            )
+        try:
+            from app.core.storage import get_storage_backend
+
+            backend = get_storage_backend()
+            return await backend.get(obj.raster_blob_url)
+        except (FileNotFoundError, OSError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="raster_missing",
+            ) from exc
+
+    async def _default_corners_for_project(
+        self, project_id: uuid.UUID,
+    ) -> list[list[float]]:
+        """Return a small bbox centered on the project anchor.
+
+        ~250 m square (a rough city-block) — large enough to be visible
+        on a satellite map, small enough that the user immediately sees
+        they need to drag it into place. Falls back to a placeholder
+        bbox near 0,0 when the project has no anchor yet.
+        """
+        anchor = await self.anchors.get_by_project(project_id)
+        if anchor is None:
+            return [
+                [0.0011, 0.0011],
+                [0.0011, -0.0011],
+                [-0.0011, -0.0011],
+                [-0.0011, 0.0011],
+            ]
+        lat = float(anchor.lat)
+        lon = float(anchor.lon)
+        # ~250 m at the equator. We let it scale-distort at high
+        # latitudes because the user is expected to drag corners anyway.
+        delta = 0.00225
+        return [
+            [lon - delta, lat + delta],
+            [lon + delta, lat + delta],
+            [lon + delta, lat - delta],
+            [lon - delta, lat - delta],
+        ]
+
+    async def _store_overlay_blobs(
+        self,
+        *,
+        project_id: uuid.UUID,
+        filename: str,
+        source_bytes: bytes | None,
+        raster_bytes: bytes | None,
+    ) -> tuple[str | None, str | None]:
+        """Write source + raster blobs through the configured storage backend.
+
+        Returns ``(source_key_or_None, raster_key_or_None)``. Either may
+        be ``None`` when the caller did not supply that side (image
+        passthrough reuses one blob for both; DWG never uploads a fresh
+        source).
+        """
+        from app.core.storage import get_storage_backend
+
+        backend = get_storage_backend()
+        # Keys are deliberately scoped under a per-project prefix so a
+        # future per-project delete sweep can take them out wholesale.
+        base = f"geo_hub/overlays/{project_id}"
+        safe_name = _safe_filename(filename)
+        unique = uuid.uuid4().hex[:12]
+        source_key: str | None = None
+        raster_key: str | None = None
+        if source_bytes is not None:
+            source_key = f"{base}/{unique}-source-{safe_name}"
+            await backend.put(source_key, source_bytes)
+        if raster_bytes is not None:
+            raster_key = f"{base}/{unique}-raster.png"
+            await backend.put(raster_key, raster_bytes)
+        return source_key, raster_key
+
     # ── Canonical -> 3D Tileset packaging ───────────────────────────────
 
     async def package_canonical_as_tileset(
@@ -1328,6 +1708,21 @@ def _rotate_element(
     new_element = dict(element)
     new_element["geometry"] = new_geom
     return new_element
+
+
+def _safe_filename(name: str) -> str:
+    """Return a filename stripped of path separators + non-ASCII bytes.
+
+    Storage keys are flat strings — backends differ wildly on what they
+    accept. We allow ASCII alphanumerics, dots, dashes, underscores;
+    everything else collapses to ``_``. Length is capped so a
+    pathological filename can't blow past S3 key limits.
+    """
+    import re
+
+    base = re.sub(r"[^A-Za-z0-9._\-]+", "_", name or "file")
+    base = base.strip("._-") or "file"
+    return base[:120]
 
 
 def _extract_user_id(

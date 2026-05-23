@@ -11,7 +11,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, File, Form, Query, Response, UploadFile
 
 from app.dependencies import CurrentUserPayload, RequirePermission, SessionDep
 from app.modules.geo_hub.schemas import (
@@ -25,6 +25,8 @@ from app.modules.geo_hub.schemas import (
     GeoOverlayCreate,
     GeoOverlayResponse,
     GeoOverlayUpdate,
+    GeoRasterOverlayResponse,
+    GeoRasterOverlayUpdate,
     HSEPinResponse,
     ImageryLayerCreate,
     ImageryLayerResponse,
@@ -32,6 +34,7 @@ from app.modules.geo_hub.schemas import (
     KMLImportRequest,
     MapConfigResponse,
     PunchlistPinResponse,
+    RasterOverlayUploadResponse,
     TerrainSourceCreate,
     TerrainSourceResponse,
     TerrainSourceUpdate,
@@ -522,6 +525,172 @@ async def export_geojson(
     _perm: None = Depends(RequirePermission("geo_hub.read")),
 ) -> dict[str, Any]:
     return await service.export_geojson(project_id, payload=payload, kind=kind)
+
+
+# ── Raster overlays (PDF / DWG / image pinned on the globe) ─────────────
+#
+# Kept on a separate ``/raster-overlays/`` path prefix so they do not
+# collide with the existing GeoJSON / KML ``/overlays/`` endpoints. The
+# two backings are intentionally distinct: GeoOverlay carries vector
+# features for boundaries / scans / clash markers; GeoRasterOverlay
+# carries a rasterised image plus four corner cartographic coords.
+
+
+@router.get(
+    "/raster-overlays/", response_model=list[GeoRasterOverlayResponse],
+)
+async def list_raster_overlays(
+    project_id: uuid.UUID = Query(...),
+    include_hidden: bool = Query(default=True),
+    service: GeoHubService = Depends(_svc),
+    payload: CurrentUserPayload = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("geo_hub.read")),
+) -> list[GeoRasterOverlayResponse]:
+    rows = await service.list_raster_overlays(
+        project_id, payload=payload, include_hidden=include_hidden,
+    )
+    return [GeoRasterOverlayResponse.model_validate(r) for r in rows]
+
+
+@router.get(
+    "/raster-overlays/{overlay_id}",
+    response_model=GeoRasterOverlayResponse,
+)
+async def get_raster_overlay(
+    overlay_id: uuid.UUID,
+    service: GeoHubService = Depends(_svc),
+    payload: CurrentUserPayload = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("geo_hub.read")),
+) -> GeoRasterOverlayResponse:
+    obj = await service.get_raster_overlay(overlay_id, payload=payload)
+    return GeoRasterOverlayResponse.model_validate(obj)
+
+
+@router.patch(
+    "/raster-overlays/{overlay_id}",
+    response_model=GeoRasterOverlayResponse,
+)
+async def update_raster_overlay(
+    overlay_id: uuid.UUID,
+    data: GeoRasterOverlayUpdate,
+    service: GeoHubService = Depends(_svc),
+    payload: CurrentUserPayload = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("geo_hub.write")),
+) -> GeoRasterOverlayResponse:
+    obj = await service.update_raster_overlay(
+        overlay_id, data, payload=payload,
+    )
+    return GeoRasterOverlayResponse.model_validate(obj)
+
+
+@router.delete("/raster-overlays/{overlay_id}", status_code=204)
+async def delete_raster_overlay(
+    overlay_id: uuid.UUID,
+    service: GeoHubService = Depends(_svc),
+    payload: CurrentUserPayload = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("geo_hub.write")),
+) -> Response:
+    await service.delete_raster_overlay(overlay_id, payload=payload)
+    return Response(status_code=204)
+
+
+@router.post(
+    "/raster-overlays/upload-pdf",
+    response_model=RasterOverlayUploadResponse,
+    status_code=201,
+)
+async def upload_pdf_raster_overlay(
+    project_id: uuid.UUID = Form(...),
+    page: int = Form(default=1),
+    name: str | None = Form(default=None),
+    file: UploadFile = File(...),
+    service: GeoHubService = Depends(_svc),
+    payload: CurrentUserPayload = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("geo_hub.write")),
+) -> RasterOverlayUploadResponse:
+    """Upload a PDF, rasterise page ``page`` to PNG, persist an overlay."""
+    content = await file.read()
+    overlay, page_count = await service.upload_pdf_overlay(
+        project_id,
+        filename=file.filename or "upload.pdf",
+        content=content,
+        page=page,
+        name=name,
+        payload=payload,
+    )
+    return RasterOverlayUploadResponse(
+        overlay=GeoRasterOverlayResponse.model_validate(overlay),
+        page_count=page_count,
+    )
+
+
+@router.post(
+    "/raster-overlays/upload-image",
+    response_model=GeoRasterOverlayResponse,
+    status_code=201,
+)
+async def upload_image_raster_overlay(
+    project_id: uuid.UUID = Form(...),
+    name: str | None = Form(default=None),
+    file: UploadFile = File(...),
+    service: GeoHubService = Depends(_svc),
+    payload: CurrentUserPayload = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("geo_hub.write")),
+) -> GeoRasterOverlayResponse:
+    """Upload a PNG/JPEG image and pin it to the project anchor bbox."""
+    content = await file.read()
+    overlay = await service.upload_image_overlay(
+        project_id,
+        filename=file.filename or "upload.png",
+        content=content,
+        name=name,
+        payload=payload,
+    )
+    return GeoRasterOverlayResponse.model_validate(overlay)
+
+
+@router.post(
+    "/raster-overlays/from-dwg/{cad_import_id}",
+    response_model=GeoRasterOverlayResponse,
+    status_code=201,
+)
+async def raster_overlay_from_dwg(
+    cad_import_id: uuid.UUID,
+    project_id: uuid.UUID | None = Query(default=None),
+    name: str | None = Query(default=None),
+    service: GeoHubService = Depends(_svc),
+    payload: CurrentUserPayload = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("geo_hub.write")),
+) -> GeoRasterOverlayResponse:
+    """Render the canonical-JSON top-view of a converted DWG to PNG."""
+    obj = await service.overlay_from_dwg(
+        cad_import_id,
+        project_id=project_id,
+        name=name,
+        payload=payload,
+    )
+    return GeoRasterOverlayResponse.model_validate(obj)
+
+
+@router.get(
+    "/raster-overlays/{overlay_id}/raster.png",
+    responses={200: {"content": {"image/png": {}}}},
+)
+async def get_raster_overlay_image(
+    overlay_id: uuid.UUID,
+    service: GeoHubService = Depends(_svc),
+    payload: CurrentUserPayload = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("geo_hub.read")),
+) -> Response:
+    blob = await service.get_raster_overlay_bytes(overlay_id, payload=payload)
+    # ``Cache-Control: private`` because the bytes are tenant-scoped —
+    # public caches must not store them. ``max-age`` short so Cesium's
+    # SingleTileImageryProvider doesn't pin a stale crop.
+    return Response(
+        content=blob,
+        media_type="image/png",
+        headers={"Cache-Control": "private, max-age=300"},
+    )
 
 
 # ── Anchored projects (Global map pin layer) ────────────────────────────

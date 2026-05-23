@@ -249,3 +249,55 @@ export interface AnchoredProject {
   region_code: string | null;
   address: string | null;
 }
+
+/* ── Raster overlays (PDF / DWG / image pinned on the globe) ─────────── */
+
+export type RasterOverlayKind = 'pdf' | 'dwg' | 'image';
+
+/**
+ * GeoJSON-style polygon (Type + coordinates only — no Feature wrapper).
+ * The outer ring of ``coordinates`` is the crop boundary on the imagery.
+ */
+export interface CropPolygon {
+  type: 'Polygon';
+  coordinates: [number, number][][];
+}
+
+/** Mirrors backend ``GeoRasterOverlayResponse``. */
+export interface GeoRasterOverlay {
+  id: string;
+  project_id: string;
+  name: string;
+  source_kind: RasterOverlayKind;
+  source_blob_url: string | null;
+  source_page: number;
+  raster_blob_url: string | null;
+  raster_width_px: number;
+  raster_height_px: number;
+  /** ``[NW, NE, SE, SW]`` as ``[lon, lat]`` pairs. */
+  corners_geojson: [number, number][];
+  rotation_deg: string;
+  opacity: string;
+  crop_polygon_geojson: CropPolygon | null;
+  z_order: number;
+  visible: boolean;
+  created_by: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GeoRasterOverlayPatch {
+  name?: string;
+  corners_geojson?: [number, number][];
+  rotation_deg?: string;
+  opacity?: string;
+  crop_polygon_geojson?: CropPolygon | null;
+  z_order?: number;
+  visible?: boolean;
+}
+
+export interface PdfOverlayUploadResponse {
+  overlay: GeoRasterOverlay;
+  page_count: number;
+}

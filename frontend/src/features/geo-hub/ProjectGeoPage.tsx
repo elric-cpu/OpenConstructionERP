@@ -39,6 +39,8 @@ import type { GeoCameraState, GeoCursorCoords } from './CesiumViewer';
 import { GeoEmptyState, type GeoEmptyKind } from './GeoEmptyState';
 import { GeoModePicker } from './GeoModePicker';
 import { GeoOverlayHud } from './GeoOverlayHud';
+import { OverlayLayer } from './OverlayLayer';
+import { OverlayPanel, type OverlayEditMode } from './OverlayPanel';
 import { TilesetSidebar } from './TilesetSidebar';
 import type { GeoPinBundle, Tileset } from './types';
 
@@ -133,6 +135,18 @@ export function ProjectGeoPage() {
   const [panelCollapsed, setPanelCollapsed] = useState<boolean>(
     readTilesetsCollapsed,
   );
+  // Raster overlay editing state — lifted here so OverlayPanel and
+  // OverlayLayer agree on which overlay is being edited and in which mode.
+  const [activeOverlayId, setActiveOverlayId] = useState<string | null>(
+    null,
+  );
+  const [overlayEditMode, setOverlayEditMode] =
+    useState<OverlayEditMode>('idle');
+  // Cesium runtime ref, populated by ``CesiumViewer.onViewerReady`` so
+  // the overlay layer can attach its imagery + interaction handlers.
+  const [cesiumRuntime, setCesiumRuntime] = useState<
+    { cesium: unknown; viewer: unknown } | null
+  >(null);
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
@@ -336,6 +350,7 @@ export function ProjectGeoPage() {
               focusedTilesetId={focusedTilesetId}
               onMouseMove={setCursorCoords}
               onCameraChange={setCameraState}
+              onViewerReady={setCesiumRuntime}
               overlay={
                 <>
                   <GeoOverlayHud
@@ -362,6 +377,25 @@ export function ProjectGeoPage() {
                       })
                     }
                     onFocus={(ts) => setFocusedId(ts.id)}
+                  />
+                  <OverlayPanel
+                    projectId={projectId}
+                    activeOverlayId={activeOverlayId}
+                    editMode={overlayEditMode}
+                    onSelectOverlay={(id) => {
+                      setActiveOverlayId(id);
+                      if (id === null) setOverlayEditMode('idle');
+                    }}
+                    onChangeEditMode={setOverlayEditMode}
+                  />
+                  <OverlayLayer
+                    projectId={projectId}
+                    cesium={cesiumRuntime?.cesium ?? null}
+                    viewer={cesiumRuntime?.viewer ?? null}
+                    activeOverlayId={activeOverlayId}
+                    editMode={overlayEditMode}
+                    onSelectOverlay={setActiveOverlayId}
+                    onChangeEditMode={setOverlayEditMode}
                   />
                   {emptyKind && (
                     <GeoEmptyState kind={emptyKind} projectId={projectId} />

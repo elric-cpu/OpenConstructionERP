@@ -416,9 +416,111 @@ class TileGenerationJob(Base):
     )
 
 
+# ── GeoRasterOverlay ─────────────────────────────────────────────────────
+
+
+class GeoRasterOverlay(Base):
+    """Raster overlay pinned to the globe surface.
+
+    Backs the "PDF/DWG/image on the globe" feature: a user uploads a
+    PDF page, picks a rasterised DWG top-view, or drops an image; the
+    backend rasterises it to PNG; the frontend places it as a Cesium
+    ``SingleTileImageryProvider`` whose rectangle / corner cartographic
+    coordinates are stored here so the placement survives reloads.
+
+    ``source_kind`` selects which optional source-blob references apply:
+
+    ====================  ====================================================
+    source_kind           ``source_blob_url``
+    ====================  ====================================================
+    ``pdf``               key to the uploaded PDF
+    ``dwg``               key to the canonical-JSON projection of a converted
+                          DWG (we store the raster in ``raster_blob_url``)
+    ``image``             same as ``raster_blob_url`` (no separate source)
+    ====================  ====================================================
+
+    ``corners_geojson`` is a 4-element GeoJSON-style coords array (no
+    Feature wrapper) holding ``[NW, NE, SE, SW]`` as ``[lon, lat]`` pairs.
+    ``crop_polygon_geojson``, when present, is a full GeoJSON Polygon
+    that the frontend applies as a ``ClippingPolygonCollection`` on the
+    imagery layer so users can crop irrelevant edges away. We deliberately
+    do not enforce GeoJSON schema at the column level — Pydantic
+    validates on the way in; the JSON column is the storage primitive.
+    """
+
+    __tablename__ = "oe_geo_hub_raster_overlay"
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_projects_project.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    # One of ``pdf``, ``dwg``, ``image`` — Pydantic enforces the enum.
+    source_kind: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="image", index=True,
+    )
+    source_blob_url: Mapped[str | None] = mapped_column(
+        String(500), nullable=True,
+    )
+    # 1-based PDF page index. Always 1 for non-PDF kinds.
+    source_page: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1",
+    )
+    raster_blob_url: Mapped[str | None] = mapped_column(
+        String(500), nullable=True,
+    )
+    raster_width_px: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+    )
+    raster_height_px: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+    )
+    # GeoJSON-style coord array: [[nw_lon, nw_lat], [ne_lon, ne_lat],
+    # [se_lon, se_lat], [sw_lon, sw_lat]]. Defaults to an empty list so
+    # the create-from-upload path can stamp the project anchor's bbox.
+    corners_geojson: Mapped[list] = mapped_column(  # type: ignore[assignment]
+        JSON, nullable=False, default=list, server_default="[]",
+    )
+    rotation_deg: Mapped[Decimal] = mapped_column(
+        Numeric(7, 3), nullable=False, default=Decimal("0"),
+        server_default="0",
+    )
+    opacity: Mapped[Decimal] = mapped_column(
+        Numeric(4, 3), nullable=False, default=Decimal("0.7"),
+        server_default="0.7",
+    )
+    # GeoJSON Polygon (with type/coordinates) or NULL when no crop set.
+    crop_polygon_geojson: Mapped[dict | None] = mapped_column(  # type: ignore[assignment]
+        JSON, nullable=True,
+    )
+    z_order: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+    )
+    visible: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="1",
+    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(), nullable=True,
+    )
+    # Soft-delete sentinel. Endpoints filter out non-null rows; a
+    # purge sweep can later hard-delete after a grace period.
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True,
+    )
+    metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        "metadata", JSON, nullable=False, default=dict, server_default="{}",
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<GeoRasterOverlay {self.id} ({self.source_kind} / {self.name})>"
+
+
 __all__ = [
     "GeoAnchor",
     "GeoOverlay",
+    "GeoRasterOverlay",
     "ImageryLayer",
     "TerrainSource",
     "TileGenerationJob",

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.geo_hub.models import (
     GeoAnchor,
     GeoOverlay,
+    GeoRasterOverlay,
     GeoViewpoint,
     ImageryLayer,
     TerrainSource,
@@ -249,6 +250,62 @@ class GeoOverlayRepository(_BaseRepo):
         return res.scalars().first()
 
 
+# ── GeoRasterOverlay ─────────────────────────────────────────────────────
+
+
+class GeoRasterOverlayRepository(_BaseRepo):
+    """Data access for raster overlays — soft-delete aware."""
+
+    model = GeoRasterOverlay
+
+    async def get_active(
+        self, entity_id: uuid.UUID,
+    ) -> GeoRasterOverlay | None:
+        """Return the row only when it isn't soft-deleted."""
+        obj = await self.get_by_id(entity_id)
+        if obj is None or obj.deleted_at is not None:
+            return None
+        return obj
+
+    async def list_for_project(
+        self,
+        project_id: uuid.UUID,
+        *,
+        include_hidden: bool = True,
+        offset: int = 0,
+        limit: int = 200,
+    ) -> list[GeoRasterOverlay]:
+        stmt = (
+            select(GeoRasterOverlay)
+            .where(GeoRasterOverlay.project_id == project_id)
+            .where(GeoRasterOverlay.deleted_at.is_(None))
+        )
+        if not include_hidden:
+            stmt = stmt.where(GeoRasterOverlay.visible.is_(True))
+        stmt = (
+            stmt.order_by(
+                GeoRasterOverlay.z_order.asc(),
+                GeoRasterOverlay.created_at.asc(),
+            )
+            .offset(offset)
+            .limit(limit)
+        )
+        res = await self.session.execute(stmt)
+        return list(res.scalars().all())
+
+    async def soft_delete(self, entity_id: uuid.UUID) -> None:
+        from datetime import UTC, datetime
+
+        stmt = (
+            update(GeoRasterOverlay)
+            .where(GeoRasterOverlay.id == entity_id)
+            .where(GeoRasterOverlay.deleted_at.is_(None))
+            .values(deleted_at=datetime.now(UTC))
+        )
+        await self.session.execute(stmt)
+        await self.session.flush()
+
+
 # ── TileGenerationJob ────────────────────────────────────────────────────
 
 
@@ -293,6 +350,7 @@ class TileJobRepository(_BaseRepo):
 __all__ = [
     "GeoAnchorRepository",
     "GeoOverlayRepository",
+    "GeoRasterOverlayRepository",
     "ImageryLayerRepository",
     "TerrainSourceRepository",
     "TileJobRepository",

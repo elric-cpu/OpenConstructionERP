@@ -6512,6 +6512,37 @@ const resource = {
     "accommodation.confirm.check_out_early": "Vor dem geplanten Enddatum auschecken?",
     "accommodation.detail.load_failed": "Unterkunft konnte nicht geladen werden.",
     // --- /Accommodation module ---
+
+    // --- raster overlays (PDF / DWG / Bild auf dem Globus) ---
+    "geo.overlays.title": "Überlagerungen",
+    "geo.overlays.aria": "Raster-Überlagerungen",
+    "geo.overlays.add": "Hinzufügen",
+    "geo.overlays.expand": "Überlagerungen anzeigen",
+    "geo.overlays.collapse": "Überlagerungen ausblenden",
+    "geo.overlays.counter": "{{count}} auf dem Globus angeheftet",
+    "geo.overlays.counter_loading": "Lade…",
+    "geo.overlays.loading": "Lade Überlagerungen…",
+    "geo.overlays.empty": "Noch keine Überlagerungen. Klicken Sie auf Hinzufügen, um ein PDF oder Bild auf dem Globus zu platzieren.",
+    "geo.overlays.untitled": "Unbenannte Überlagerung",
+    "geo.overlays.hide": "Ausblenden",
+    "geo.overlays.show": "Anzeigen",
+    "geo.overlays.opacity": "Deckkraft",
+    "geo.overlays.edit_corners": "Ecken bearbeiten",
+    "geo.overlays.crop": "Zuschneiden",
+    "geo.overlays.delete_confirm": "Diese Überlagerung löschen? Sie können sie später erneut hochladen.",
+    "geo.overlays.upload_title": "Überlagerung auf den Globus hinzufügen",
+    "geo.overlays.tab_pdf": "PDF-Seite",
+    "geo.overlays.tab_image": "Bild",
+    "geo.overlays.pdf_hint": "Laden Sie ein PDF hoch. Die erste Seite wird rasterisiert und am Projektstandort angeheftet.",
+    "geo.overlays.image_hint": "Laden Sie ein PNG- oder JPEG-Lagebild hoch. Verschieben Sie die Ecken auf dem Globus.",
+    "geo.overlays.uploading": "Hochladen…",
+    "geo.overlays.max_hint": "Max. 25 MB; serverseitig per Magic-Byte validiert.",
+    "geo.overlays.toast_uploaded": "Überlagerung dem Globus hinzugefügt",
+    "geo.overlays.toast_upload_failed": "Upload fehlgeschlagen",
+    "geo.overlays.toast_patch_failed": "Änderung der Überlagerung konnte nicht gespeichert werden",
+    "geo.overlays.toast_delete_failed": "Überlagerung konnte nicht gelöscht werden",
+    "geo.overlays.crop_too_few": "Zuschneidepolygon benötigt mindestens 3 Punkte",
+    // --- /geo overlays ---
   }
 } as { translation: Record<string, string> };
 
