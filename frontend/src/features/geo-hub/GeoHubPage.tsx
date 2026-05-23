@@ -15,12 +15,13 @@
  * map config to load.
  */
 
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Globe2 } from 'lucide-react';
 
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 
+import type { GeoCameraState, GeoCursorCoords } from './CesiumViewer';
 import { GeoModePicker } from './GeoModePicker';
 import { GeoOverlayHud } from './GeoOverlayHud';
 
@@ -31,6 +32,10 @@ const CesiumViewer = lazy(() =>
 export function GeoHubPage() {
   const { t } = useTranslation();
   const activeProjectId = useProjectContextStore((s) => s.activeProjectId);
+  const [cursorCoords, setCursorCoords] = useState<GeoCursorCoords | null>(
+    null,
+  );
+  const [cameraState, setCameraState] = useState<GeoCameraState | null>(null);
 
   return (
     <div className="flex h-full w-full flex-col">
@@ -80,12 +85,15 @@ export function GeoHubPage() {
         >
           <CesiumViewer
             mode="global"
+            onMouseMove={setCursorCoords}
+            onCameraChange={setCameraState}
             overlay={
               <GeoOverlayHud
-                cursorLat={null}
-                cursorLon={null}
-                altitudeM={null}
-                active={false}
+                cursorLat={cursorCoords?.lat ?? null}
+                cursorLon={cursorCoords?.lon ?? null}
+                altitudeM={cameraState?.cameraAltitudeM ?? null}
+                headingDeg={cameraState?.headingDeg ?? null}
+                active
               />
             }
           />

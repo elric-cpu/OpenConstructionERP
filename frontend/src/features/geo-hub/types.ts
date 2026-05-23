@@ -170,3 +170,61 @@ export interface MapConfig {
   viewpoints: Viewpoint[];
   active_jobs: TileJob[];
 }
+
+/* ── Cross-module geo pin layers (HSE / Punchlist / Daily Diary) ─────── */
+
+/**
+ * Mirrors backend ``HSEPinResponse`` in
+ * ``backend/app/modules/geo_hub/schemas.py``.
+ */
+export interface HSEPin {
+  incident_id: string;
+  incident_number: string;
+  title: string | null;
+  incident_type: string;
+  severity: string;
+  status: string;
+  lat: number;
+  lon: number;
+}
+
+/**
+ * Mirrors backend ``PunchlistPinResponse`` in
+ * ``backend/app/modules/geo_hub/schemas.py``.
+ */
+export interface PunchlistPin {
+  item_id: string;
+  title: string;
+  priority: string;
+  status: string;
+  category: string | null;
+  lat: number;
+  lon: number;
+}
+
+/**
+ * Mirrors backend ``DiaryPhotoPinResponse`` in
+ * ``backend/app/modules/geo_hub/schemas.py``.
+ */
+export interface DiaryPhotoPin {
+  photo_id: string;
+  diary_id: string | null;
+  taken_at: string;
+  thumbnail_url: string | null;
+  file_url: string;
+  is_360: boolean;
+  is_drone: boolean;
+  lat: number;
+  lon: number;
+}
+
+/**
+ * Combined cross-module pin bundle handed to the Cesium viewer. Each
+ * list is independently fetched so a backend hiccup on one module
+ * doesn't black out the whole map.
+ */
+export interface GeoPinBundle {
+  hse: HSEPin[];
+  punchlist: PunchlistPin[];
+  diary: DiaryPhotoPin[];
+}

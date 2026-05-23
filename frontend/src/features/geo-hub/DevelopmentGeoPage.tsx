@@ -17,6 +17,7 @@ import { Boxes, AlertTriangle } from 'lucide-react';
 import { apiGet } from '@/shared/lib/api';
 
 import { getMapConfig } from './api';
+import type { GeoCameraState, GeoCursorCoords } from './CesiumViewer';
 import { GeoEmptyState, type GeoEmptyKind } from './GeoEmptyState';
 import { GeoModePicker } from './GeoModePicker';
 import { GeoOverlayHud } from './GeoOverlayHud';
@@ -66,6 +67,10 @@ export function DevelopmentGeoPage() {
 
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => new Set());
   const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [cursorCoords, setCursorCoords] = useState<GeoCursorCoords | null>(
+    null,
+  );
+  const [cameraState, setCameraState] = useState<GeoCameraState | null>(null);
 
   const tilesets = mapConfig.data?.tilesets;
   const emptyKind = useMemo(
@@ -164,13 +169,16 @@ export function DevelopmentGeoPage() {
               <CesiumViewer
                 mode="development"
                 mapConfig={mapConfig.data}
+                onMouseMove={setCursorCoords}
+                onCameraChange={setCameraState}
                 overlay={
                   <>
                     <GeoOverlayHud
-                      cursorLat={null}
-                      cursorLon={null}
-                      altitudeM={null}
-                      active={false}
+                      cursorLat={cursorCoords?.lat ?? null}
+                      cursorLon={cursorCoords?.lon ?? null}
+                      altitudeM={cameraState?.cameraAltitudeM ?? null}
+                      headingDeg={cameraState?.headingDeg ?? null}
+                      active
                     />
                     {emptyKind && (
                       <GeoEmptyState kind={emptyKind} projectId={projectId} />

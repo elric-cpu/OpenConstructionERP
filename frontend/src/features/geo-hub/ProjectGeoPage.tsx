@@ -25,12 +25,18 @@ import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { MapPinned, AlertTriangle } from 'lucide-react';
 
-import { getMapConfig } from './api';
+import {
+  fetchDiaryPhotoPins,
+  fetchHsePins,
+  fetchPunchlistPins,
+  getMapConfig,
+} from './api';
+import type { GeoCameraState, GeoCursorCoords } from './CesiumViewer';
 import { GeoEmptyState, type GeoEmptyKind } from './GeoEmptyState';
 import { GeoModePicker } from './GeoModePicker';
 import { GeoOverlayHud } from './GeoOverlayHud';
 import { TilesetSidebar } from './TilesetSidebar';
-import type { Tileset } from './types';
+import type { GeoPinBundle, Tileset } from './types';
 
 const CesiumViewer = lazy(() =>
   import('./CesiumViewer').then((m) => ({ default: m.CesiumViewer })),
@@ -63,8 +69,46 @@ export function ProjectGeoPage() {
     staleTime: 30_000,
   });
 
+  // Cross-module pin layers — three independent queries so a hiccup on
+  // one module doesn't black out the others. Each falls back to an
+  // empty list on failure so the map still renders the tilesets.
+  const hsePinsQuery = useQuery({
+    queryKey: ['geo-hub', 'hse-pins', projectId],
+    queryFn: () => fetchHsePins(projectId!),
+    enabled: Boolean(projectId),
+    staleTime: 30_000,
+  });
+  const punchlistPinsQuery = useQuery({
+    queryKey: ['geo-hub', 'punchlist-pins', projectId],
+    queryFn: () => fetchPunchlistPins(projectId!),
+    enabled: Boolean(projectId),
+    staleTime: 30_000,
+  });
+  const diaryPinsQuery = useQuery({
+    queryKey: ['geo-hub', 'diary-photo-pins', projectId],
+    queryFn: () => fetchDiaryPhotoPins(projectId!),
+    enabled: Boolean(projectId),
+    staleTime: 30_000,
+  });
+
+  const pins = useMemo<GeoPinBundle>(
+    () => ({
+      hse: hsePinsQuery.data ?? [],
+      punchlist: punchlistPinsQuery.data ?? [],
+      diary: diaryPinsQuery.data ?? [],
+    }),
+    [hsePinsQuery.data, punchlistPinsQuery.data, diaryPinsQuery.data],
+  );
+
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(() => new Set());
   const [focusedId, setFocusedId] = useState<string | null>(null);
+  // Live HUD state, fed by ``CesiumViewer`` via ``onMouseMove`` /
+  // ``onCameraChange``. ``null`` cursor → HUD shows em-dashes; ``null``
+  // camera → north arrow stays at 0°.
+  const [cursorCoords, setCursorCoords] = useState<GeoCursorCoords | null>(
+    null,
+  );
+  const [cameraState, setCameraState] = useState<GeoCameraState | null>(null);
 
   const tilesets = data?.tilesets;
   const emptyKind = useMemo(
@@ -174,13 +218,17 @@ export function ProjectGeoPage() {
               <CesiumViewer
                 mode="project"
                 mapConfig={data}
+                pins={pins}
+                onMouseMove={setCursorCoords}
+                onCameraChange={setCameraState}
                 overlay={
                   <>
                     <GeoOverlayHud
-                      cursorLat={null}
-                      cursorLon={null}
-                      altitudeM={null}
-                      active={false}
+                      cursorLat={cursorCoords?.lat ?? null}
+                      cursorLon={cursorCoords?.lon ?? null}
+                      altitudeM={cameraState?.cameraAltitudeM ?? null}
+                      headingDeg={cameraState?.headingDeg ?? null}
+                      active
                     />
                     {emptyKind && (
                       <GeoEmptyState kind={emptyKind} projectId={projectId} />

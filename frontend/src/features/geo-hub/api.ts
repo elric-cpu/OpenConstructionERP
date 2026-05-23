@@ -8,10 +8,13 @@
 import { apiDelete, apiGet, apiPatch, apiPost } from '@/shared/lib/api';
 
 import type {
+  DiaryPhotoPin,
   GeoAnchor,
   GeoOverlay,
+  HSEPin,
   ImageryLayer,
   MapConfig,
+  PunchlistPin,
   TerrainSource,
   TileJob,
   Tileset,
@@ -202,4 +205,33 @@ export function exportGeoJSON(
 
 export function deleteOverlay(id: string): Promise<void> {
   return apiDelete(`${BASE}/overlays/${id}`);
+}
+
+/* ── Cross-module geo pin layers ─────────────────────────────────────── */
+
+export function fetchHsePins(
+  projectId: string,
+  limit = 500,
+): Promise<HSEPin[]> {
+  return apiGet<HSEPin[]>(
+    `${BASE}/projects/${projectId}/hse-pins?limit=${limit}`,
+  );
+}
+
+export function fetchPunchlistPins(
+  projectId: string,
+  limit = 500,
+): Promise<PunchlistPin[]> {
+  return apiGet<PunchlistPin[]>(
+    `${BASE}/projects/${projectId}/punchlist-pins?limit=${limit}`,
+  );
+}
+
+export function fetchDiaryPhotoPins(
+  projectId: string,
+  limit = 500,
+): Promise<DiaryPhotoPin[]> {
+  return apiGet<DiaryPhotoPin[]>(
+    `${BASE}/projects/${projectId}/diary-photo-pins?limit=${limit}`,
+  );
 }

@@ -24,23 +24,88 @@ function makeCesiumStub() {
   const destroy = vi.fn();
   const add = vi.fn();
   const fromUrl = vi.fn(async (url: string) => ({ url }));
+  // Minimal canvas + camera-event stubs so the live-HUD wiring exercises
+  // its setInputAction / camera.changed branches without throwing.
+  // Listeners are kept in arrays so individual tests can introspect or
+  // fire synthetic events when they want to assert HUD plumbing.
+  const inputActions = new Map<number, (m: { endPosition: { x: number; y: number } }) => void>();
+  const cameraListeners: Array<() => void> = [];
+  const canvas = document.createElement('canvas');
+  const ssehDestroy = vi.fn();
+  const ScreenSpaceEventHandler = vi.fn().mockImplementation(() => ({
+    setInputAction: vi.fn((cb, type) => inputActions.set(type, cb)),
+    removeInputAction: vi.fn((type) => inputActions.delete(type)),
+    destroy: ssehDestroy,
+  }));
   return {
     flyTo,
     destroy,
     add,
     fromUrl,
+    canvas,
+    inputActions,
+    cameraListeners,
+    ScreenSpaceEventHandler,
+    ssehDestroy,
     module: {
       Viewer: vi.fn().mockImplementation(() => ({
         destroy,
-        camera: { flyTo },
-        scene: { primitives: { add } },
+        camera: {
+          flyTo,
+          heading: 0,
+          positionCartographic: { longitude: 0, latitude: 0, height: 1000 },
+          changed: {
+            addEventListener: (cb: () => void) => {
+              cameraListeners.push(cb);
+              return () => {
+                const idx = cameraListeners.indexOf(cb);
+                if (idx >= 0) cameraListeners.splice(idx, 1);
+              };
+            },
+            removeEventListener: (cb: () => void) => {
+              const idx = cameraListeners.indexOf(cb);
+              if (idx >= 0) cameraListeners.splice(idx, 1);
+            },
+          },
+        },
+        scene: {
+          primitives: { add },
+          canvas,
+          pickPosition: vi.fn(() => ({ x: 1, y: 2, z: 3 })),
+        },
+        entities: {
+          add: vi.fn((e) => e),
+          remove: vi.fn(() => true),
+          removeAll: vi.fn(),
+          values: [],
+        },
         shadows: false,
       })),
       Cartesian3: {
         fromDegrees: vi.fn((lon, lat, alt) => ({ lon, lat, alt })),
       },
+      Cartographic: {
+        fromCartesian: vi.fn(() => ({
+          longitude: 0.1,
+          latitude: 0.2,
+          height: 42,
+        })),
+      },
+      Color: {
+        RED: 'red',
+        ORANGE: 'orange',
+        DODGERBLUE: 'dodgerblue',
+        WHITE: 'white',
+        fromCssColorString: vi.fn((css: string) => css),
+      },
       EllipsoidTerrainProvider: vi.fn(),
       Cesium3DTileset: { fromUrl },
+      ScreenSpaceEventHandler,
+      ScreenSpaceEventType: { MOUSE_MOVE: 15 },
+      Math: {
+        toDegrees: (r: number) => (r * 180) / Math.PI,
+        TWO_PI: Math.PI * 2,
+      },
     },
   };
 }
@@ -176,6 +241,110 @@ describe('CesiumViewer', () => {
     });
     unmount();
     expect(stub.destroy).toHaveBeenCalled();
+  });
+
+  it('emits camera state synchronously after the viewer comes up', async () => {
+    // The HUD reads camera altitude + heading via ``onCameraChange``.
+    // We seed the viewer with a non-trivial position (heading π/2 →
+    // 90°, height 750 m) and assert the callback fires with those
+    // values once init completes — without the caller having to nudge
+    // the camera.
+    const stub = makeCesiumStub();
+    // Patch the viewer factory to seed heading + altitude on the camera.
+    stub.module.Viewer = vi.fn().mockImplementation(() => ({
+      destroy: stub.destroy,
+      camera: {
+        flyTo: stub.flyTo,
+        heading: Math.PI / 2,
+        positionCartographic: { longitude: 0, latitude: 0, height: 750 },
+        changed: {
+          addEventListener: (cb: () => void) => {
+            stub.cameraListeners.push(cb);
+            return () => {
+              const idx = stub.cameraListeners.indexOf(cb);
+              if (idx >= 0) stub.cameraListeners.splice(idx, 1);
+            };
+          },
+          removeEventListener: vi.fn(),
+        },
+      },
+      scene: {
+        primitives: { add: stub.add },
+        canvas: stub.canvas,
+        pickPosition: vi.fn(() => ({ x: 1, y: 2, z: 3 })),
+      },
+      entities: {
+        add: vi.fn((e) => e),
+        remove: vi.fn(() => true),
+        removeAll: vi.fn(),
+        values: [],
+      },
+      shadows: false,
+    }));
+    vi.doMock('cesium', () => stub.module);
+    const onCameraChange = vi.fn();
+    render(
+      <CesiumViewer mode="global" onCameraChange={onCameraChange} />,
+    );
+    await waitFor(() => {
+      expect(onCameraChange).toHaveBeenCalled();
+    });
+    const last = onCameraChange.mock.calls.at(-1)?.[0];
+    expect(last.headingDeg).toBeCloseTo(90, 5);
+    expect(last.cameraAltitudeM).toBe(750);
+  });
+
+  it('forwards mouse-move picks as cursor coordinates', async () => {
+    // Simulates the user moving the pointer over the globe. The stub
+    // captures the registered MOUSE_MOVE input action; we invoke it
+    // directly with a synthetic endPosition then assert the throttled
+    // rAF flush delivers a {lat, lon, altitudeM} to the parent.
+    const stub = makeCesiumStub();
+    vi.doMock('cesium', () => stub.module);
+    const onMouseMove = vi.fn();
+    render(
+      <CesiumViewer mode="global" onMouseMove={onMouseMove} />,
+    );
+    // Wait for the input action to be registered (eventType 15 = MOUSE_MOVE).
+    await waitFor(() => {
+      expect(stub.inputActions.has(15)).toBe(true);
+    });
+    const handler = stub.inputActions.get(15)!;
+    handler({ endPosition: { x: 100, y: 200 } });
+    // The flush is scheduled via rAF; rAF in JSDOM resolves on
+    // microtask tick.
+    await waitFor(() => {
+      expect(onMouseMove).toHaveBeenCalled();
+    });
+    const coords = onMouseMove.mock.calls.at(-1)?.[0];
+    expect(coords).not.toBeNull();
+    expect(coords.lat).toBeCloseTo((0.2 * 180) / Math.PI, 5);
+    expect(coords.lon).toBeCloseTo((0.1 * 180) / Math.PI, 5);
+    expect(coords.altitudeM).toBe(42);
+  });
+
+  it('tears down the input handler and camera listener on unmount', async () => {
+    // Live-HUD listeners must not outlive the viewer. We grab the
+    // input-handler destroy spy + the camera-listener array, then
+    // assert both are zeroed after unmount.
+    const stub = makeCesiumStub();
+    vi.doMock('cesium', () => stub.module);
+    const { unmount } = render(
+      <CesiumViewer
+        mode="global"
+        onMouseMove={vi.fn()}
+        onCameraChange={vi.fn()}
+      />,
+    );
+    await waitFor(() => {
+      expect(stub.module.Viewer).toHaveBeenCalled();
+    });
+    // Listener should be registered once during init (the immediate
+    // emit doesn't add another).
+    expect(stub.cameraListeners.length).toBeGreaterThan(0);
+    unmount();
+    expect(stub.ssehDestroy).toHaveBeenCalled();
+    expect(stub.cameraListeners.length).toBe(0);
   });
 
   it('does not rebuild the viewer when only the mapConfig object reference changes', async () => {

@@ -28,6 +28,11 @@ interface GeoOverlayHudProps {
   cursorLon: number | null;
   /** Current camera altitude over the ellipsoid, in metres. */
   altitudeM: number | null;
+  /**
+   * Camera heading in degrees clockwise from north (0..360). When null
+   * the north arrow renders fixed at the top (decorative-only fallback).
+   */
+  headingDeg?: number | null;
   /** True when the underlying Cesium viewer is up and the HUD is live. */
   active: boolean;
 }
@@ -69,17 +74,30 @@ export function GeoOverlayHud({
   cursorLat,
   cursorLon,
   altitudeM,
+  headingDeg,
   active,
 }: GeoOverlayHudProps) {
   const { t } = useTranslation();
   const scale = scaleBarFor(altitudeM);
+  // Cesium reports heading clockwise from north — we want the compass
+  // needle to rotate counter-clockwise so that the rose stays oriented
+  // to true north regardless of camera bearing.
+  const headingRotation =
+    active && headingDeg !== null && headingDeg !== undefined && Number.isFinite(headingDeg)
+      ? -headingDeg
+      : 0;
 
   return (
     <>
       {/* Top-right: north arrow + altitude */}
       <div className="pointer-events-none absolute top-3 right-3 z-10 flex flex-col items-end gap-1.5">
         <div className={GLASS_CARD} aria-label={t('geo_hub.hud.north', { defaultValue: 'North' })}>
-          <Compass size={12} strokeWidth={2} className="text-emerald-300" />
+          <Compass
+            size={12}
+            strokeWidth={2}
+            className="text-emerald-300 transition-transform duration-150 ease-out"
+            style={{ transform: `rotate(${headingRotation}deg)` }}
+          />
           <span className="uppercase tracking-wider">
             {t('geo_hub.hud.north_short', { defaultValue: 'N' })}
           </span>
