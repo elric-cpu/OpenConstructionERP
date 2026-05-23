@@ -349,11 +349,19 @@ def _send_smtp(to, subject, html_body, text_body=""):
     if text_body:
         msg.attach(MIMEText(text_body, "plain", "utf-8"))
     msg.attach(MIMEText(html_body, "html", "utf-8"))
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as s:
-        s.starttls()
-        if SMTP_USER:
-            s.login(SMTP_USER, SMTP_PASS)
-        s.sendmail(SMTP_FROM, [to], msg.as_string())
+    # Port 465 is implicit TLS (SMTPS), 587/25 are plain + STARTTLS.
+    # Mixing them hangs forever — Hostinger uses 465 with SSL on connect.
+    if int(SMTP_PORT) == 465:
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=15) as s:
+            if SMTP_USER:
+                s.login(SMTP_USER, SMTP_PASS)
+            s.sendmail(SMTP_FROM, [to], msg.as_string())
+    else:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as s:
+            s.starttls()
+            if SMTP_USER:
+                s.login(SMTP_USER, SMTP_PASS)
+            s.sendmail(SMTP_FROM, [to], msg.as_string())
     return True
 
 
