@@ -80,8 +80,19 @@ export { NotFoundPage } from './NotFoundPage';
 
 export { CountryFlag } from './CountryFlag';
 
+export { CountryCombobox, CUSTOM_SENTINEL } from './CountryCombobox';
+export type { CountryComboboxProps } from './CountryCombobox';
+
 export { OnboardingTour, DEFAULT_TOUR_STEPS, ONBOARDING_STORAGE_KEY } from './OnboardingTour';
 export type { TourStep } from './OnboardingTour';
+
+export {
+  ProductTour,
+  DEFAULT_PRODUCT_TOUR_STEPS,
+  TOUR_COMPLETED_KEY,
+  TOUR_START_EVENT,
+} from './ProductTour';
+export type { ProductTourStep, ProductTourProps } from './ProductTour';
 
 export { GlobalProgress, useProgressStore } from './GlobalProgress';
 

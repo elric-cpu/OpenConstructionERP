@@ -40,6 +40,7 @@ import {
   LayoutGrid,
 } from 'lucide-react';
 import { Card, CardHeader, CardContent, Button, Badge, Skeleton, ActivityFeed as CrossModuleActivityFeed, EmptyState } from '@/shared/ui';
+import { WhatsNewCard } from '@/shared/ui/WhatsNewCard';
 import BIMCoverageCard from './BIMCoverageCard';
 import { CompactProjectCard } from './components/CompactProjectCard';
 import { DashboardProjectsMap } from './components/DashboardProjectsMap';
@@ -1997,6 +1998,11 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-5 animate-fade-in">
+      {/* "What's new in vX.Y.Z" release-notes card. Self-gates on a
+          localStorage `oe_whats_new_seen_<version>` flag so it only
+          appears once per release per browser. Sits above the hero so
+          the user sees release highlights before the dashboard hero. */}
+      <WhatsNewCard />
       {/* ─── 1. Hero · row A — greeting + primary actions ────────────────
           Compressed from the previous 6-row hero (audit 2026-05-11): the
           greeting and the 3 CTAs share a single line on desktop; row B

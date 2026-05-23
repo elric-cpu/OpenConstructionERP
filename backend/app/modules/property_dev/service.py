@@ -240,7 +240,11 @@ _PAYMENT_SCHEDULE_TRANSITIONS: dict[str, set[str]] = {
 
 
 _INSTALMENT_TRANSITIONS: dict[str, set[str]] = {
-    "pending": {"due", "waived", "cancelled"},
+    # Allow ``pending → paid`` directly so an early payment from the
+    # buyer (before the demand-letter / "due" transition has fired)
+    # doesn't 409. Real-world UX: the user marks paid the moment they
+    # see funds — they shouldn't have to flip the row to ``due`` first.
+    "pending": {"due", "paid", "waived", "cancelled"},
     "due": {"overdue", "paid", "waived", "cancelled"},
     "overdue": {"paid", "waived", "cancelled"},
     "paid": set(),
@@ -1153,16 +1157,61 @@ class PropertyDevService:
         except (ValueError, TypeError):
             created_by = None
 
+        # Pricing sanity: if both ends supplied, max must be ≥ min.
+        if (
+            data.typical_price_min is not None
+            and data.typical_price_max is not None
+            and data.typical_price_max < data.typical_price_min
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="typical_price_max must be ≥ typical_price_min",
+            )
+        currency = data.currency.upper() if data.currency else None
+        construction_type = (
+            data.construction_type.strip().lower() or None
+            if data.construction_type
+            else None
+        )
+        energy_class = (
+            data.energy_class.strip() or None if data.energy_class else None
+        )
+        sales_channel = (
+            data.sales_channel.strip().lower() or None
+            if data.sales_channel
+            else None
+        )
+        # Tags: dedupe + strip + drop empties, preserve order.
+        tags_clean: list[str] = []
+        for raw in (data.tags or []):
+            t = (raw or "").strip()
+            if t and t not in tags_clean:
+                tags_clean.append(t)
+
         obj = PropertyDevHouseType(
             project_id=data.project_id,
             country_code=(
                 data.country_code.upper() if data.country_code else None
             ),
+            region_label=(data.region_label.strip() or None)
+            if data.region_label
+            else None,
             code=data.code.upper(),
             name=data.name,
             description=data.description,
             area_typical_m2=data.area_typical_m2,
             floors_typical=data.floors_typical,
+            typical_bedrooms=data.typical_bedrooms,
+            typical_bathrooms=data.typical_bathrooms,
+            parking_spots=data.parking_spots,
+            typical_price_min=data.typical_price_min,
+            typical_price_max=data.typical_price_max,
+            currency=currency,
+            construction_type=construction_type,
+            energy_class=energy_class,
+            sales_channel=sales_channel,
+            image_url=data.image_url,
+            tags=tags_clean,
             is_preset=False,
             created_by=created_by,
         )
@@ -1198,6 +1247,47 @@ class PropertyDevService:
         payload = data.model_dump(exclude_unset=True)
         if "country_code" in payload and payload["country_code"]:
             payload["country_code"] = payload["country_code"].upper()
+        if "region_label" in payload and payload["region_label"]:
+            payload["region_label"] = payload["region_label"].strip() or None
+        if "currency" in payload and payload["currency"]:
+            payload["currency"] = payload["currency"].upper()
+        if "construction_type" in payload and payload["construction_type"]:
+            payload["construction_type"] = (
+                payload["construction_type"].strip().lower() or None
+            )
+        if "sales_channel" in payload and payload["sales_channel"]:
+            payload["sales_channel"] = (
+                payload["sales_channel"].strip().lower() or None
+            )
+        if "energy_class" in payload and payload["energy_class"]:
+            payload["energy_class"] = payload["energy_class"].strip() or None
+        # Pricing sanity (against the merged effective values).
+        new_min = (
+            payload.get("typical_price_min")
+            if "typical_price_min" in payload
+            else obj.typical_price_min
+        )
+        new_max = (
+            payload.get("typical_price_max")
+            if "typical_price_max" in payload
+            else obj.typical_price_max
+        )
+        if (
+            new_min is not None
+            and new_max is not None
+            and new_max < new_min
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="typical_price_max must be ≥ typical_price_min",
+            )
+        if "tags" in payload and payload["tags"] is not None:
+            tags_clean: list[str] = []
+            for raw in payload["tags"]:
+                t = (raw or "").strip()
+                if t and t not in tags_clean:
+                    tags_clean.append(t)
+            payload["tags"] = tags_clean
         for key, value in payload.items():
             setattr(obj, key, value)
         await self.session.flush()
@@ -1460,7 +1550,28 @@ class PropertyDevService:
 
     # ── Buyer ───────────────────────────────────────────────────────────
 
-    async def create_buyer(self, data: BuyerCreate) -> Buyer:
+    async def create_buyer(
+        self,
+        data: BuyerCreate,
+        *,
+        sync_to_contacts: bool = True,
+        tenant_id: str | None = None,
+    ) -> Buyer:
+        """Create a Buyer row and (by default) sync it to the Contacts directory.
+
+        ``sync_to_contacts``:
+            When True (default for UI-driven flows) the bridge finds-or-
+            creates a Contact for the buyer's email and links it via
+            ``buyer.contact_id``. The contact's ``module_tags`` array
+            picks up ``'property_dev_buyer'``.
+
+            Set to False for portal-driven flows where the buyer signs
+            up anonymously and we don't yet want a directory entry.
+
+        ``tenant_id``:
+            The caller's user id — used to scope the contact lookup.
+            Falls back to None (admin / system context) when omitted.
+        """
         obj = Buyer(
             development_id=data.development_id,
             plot_id=data.plot_id,
@@ -1474,7 +1585,20 @@ class PropertyDevService:
             currency=data.currency,
             metadata_=data.metadata,
         )
-        return await self.buyers.create(obj)
+        created = await self.buyers.create(obj)
+        if sync_to_contacts and (created.email or created.full_name):
+            try:
+                from app.modules.contacts import bridge as _contacts_bridge
+
+                await _contacts_bridge.ensure_contact_for_buyer(
+                    self.session, created, tenant_id=tenant_id
+                )
+            except Exception:  # noqa: BLE001 — bridge is best-effort
+                logger.exception(
+                    "Contacts bridge failed for buyer %s; continuing without link",
+                    created.id,
+                )
+        return created
 
     async def get_buyer(self, b_id: uuid.UUID) -> Buyer:
         obj = await self.buyers.get_by_id(b_id)
@@ -1524,7 +1648,24 @@ class PropertyDevService:
                 detail="Currency must be a 3-letter ISO code",
             )
         await self.buyers.update_fields(b_id, **fields)
-        return await self.get_buyer(b_id)
+        updated = await self.get_buyer(b_id)
+        # Mirror canonical fields back to the linked Contact if any of
+        # name/email/phone were touched. Best-effort: a missing/broken
+        # contact never breaks the buyer update flow.
+        if updated.contact_id is not None and any(
+            k in fields for k in ("full_name", "email", "phone")
+        ):
+            try:
+                from app.modules.contacts import bridge as _contacts_bridge
+
+                await _contacts_bridge.mirror_buyer_fields_to_contact(
+                    self.session, updated
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "Contacts mirror failed for buyer %s; continuing", updated.id
+                )
+        return updated
 
     async def delete_buyer(self, b_id: uuid.UUID) -> None:
         await self.get_buyer(b_id)
@@ -2442,8 +2583,23 @@ class PropertyDevService:
 
     # ── Lead ────────────────────────────────────────────────────────────
 
-    async def create_lead(self, data: LeadCreate) -> Lead:
-        """Create a new lead at the top of the funnel."""
+    async def create_lead(
+        self,
+        data: LeadCreate,
+        *,
+        sync_to_contacts: bool = True,
+        tenant_id: str | None = None,
+    ) -> Lead:
+        """Create a new lead at the top of the funnel.
+
+        ``sync_to_contacts`` (default True): find-or-create a Contact
+        for the lead's email and link it. The contact picks up the
+        ``'property_dev_lead'`` module tag. See
+        :mod:`app.modules.contacts.bridge` for the full rationale.
+
+        ``tenant_id``: caller's user id — scopes the contact lookup.
+        Falls back to ``data.tenant_id`` when None.
+        """
         if data.preferred_house_type_id is not None:
             ht = await self.house_types.get_by_id(data.preferred_house_type_id)
             if ht is None:
@@ -2476,6 +2632,27 @@ class PropertyDevService:
             metadata_=data.metadata,
         )
         lead = await self.leads.create(obj)
+        if sync_to_contacts and (lead.email or lead.full_name):
+            # Resolve the tenant: an explicit caller-supplied id wins;
+            # otherwise fall back to data.tenant_id (legacy payload
+            # form). The bridge writes the FK back onto ``lead`` and
+            # flushes so the next read sees the link.
+            resolved_tenant = (
+                tenant_id
+                if tenant_id is not None
+                else (str(data.tenant_id) if data.tenant_id else None)
+            )
+            try:
+                from app.modules.contacts import bridge as _contacts_bridge
+
+                await _contacts_bridge.ensure_contact_for_lead(
+                    self.session, lead, tenant_id=resolved_tenant
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "Contacts bridge failed for lead %s; continuing without link",
+                    lead.id,
+                )
         event_bus.publish_detached(
             "property_dev.lead.created",
             data={
@@ -2508,7 +2685,22 @@ class PropertyDevService:
                 "lead", lead.status, new_status, allowed_lead_transitions
             )
         await self.leads.update_fields(lead_id, **fields)
-        return await self.get_lead(lead_id)
+        updated = await self.get_lead(lead_id)
+        # Mirror canonical fields back to the linked Contact (best-effort).
+        if updated.contact_id is not None and any(
+            k in fields for k in ("full_name", "email", "phone")
+        ):
+            try:
+                from app.modules.contacts import bridge as _contacts_bridge
+
+                await _contacts_bridge.mirror_lead_fields_to_contact(
+                    self.session, updated
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "Contacts mirror failed for lead %s; continuing", updated.id
+                )
+        return updated
 
     async def delete_lead(self, lead_id: uuid.UUID) -> None:
         await self.get_lead(lead_id)
@@ -2840,6 +3032,29 @@ class PropertyDevService:
                     currency=data.currency,
                     contract_signed_at=data.signing_date,
                 )
+            # Auto-create the primary ContractParty so the SPA can move
+            # straight into the "send for signature" step. Without this
+            # the user was stuck on a draft SPA that the FSM rejected with
+            # "SalesContract has no primary party — cannot send" and had
+            # no UI affordance to add a party (root cause of "Sales
+            # Contracts не работает": the only convert-from-reservation
+            # path produced a dead-end SPA).
+            try:
+                await self.contract_parties.create(
+                    ContractParty(
+                        sales_contract_id=spa.id,
+                        buyer_id=res_buyer_id_snap,
+                        ownership_pct=Decimal("100"),
+                        party_role="primary",
+                        signing_order=0,
+                    )
+                )
+            except Exception:  # noqa: BLE001
+                # Auto-party creation must NEVER block SPA creation —
+                # if it fails (e.g. on a future race) the SPA still
+                # exists and the user can add the party manually via
+                # the contract-parties endpoint.
+                pass
         if plot_status_before == "reserved":
             await self.plots.update_fields(plot_id_snap, status="sold")
 
@@ -3229,15 +3444,29 @@ class PropertyDevService:
         spa = await self.get_spa(contract_id)
         existing = await self.payment_schedules.get_for_contract(spa.id)
         if existing is not None and existing.status in {"active", "completed"}:
-            # Refuse to rebuild a live schedule — caller must explicitly
-            # suspend it first or roll a new SPA revision.
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    f"PaymentSchedule in status '{existing.status}' is live —"
-                    " suspend it first or create a new SPA revision."
-                ),
+            # The convert-reservation-to-spa flow always creates a default
+            # ``active`` 1-line schedule (so finance has *something* to
+            # post against immediately). Allow a from-template rebuild
+            # over that default IFF nothing has been paid yet — otherwise
+            # the user is stuck (UX dead-end the user reported as
+            # "Payment Schedules не работает"). The strict 409 still
+            # applies to schedules with any paid/waived/cancelled rows.
+            existing_md = dict(existing.metadata_ or {})
+            ins_rows = await self.instalments.list_for_schedule(existing.id)
+            has_real_activity = any(
+                r.status in {"paid", "waived", "overdue", "due"}
+                or (r.amount_paid and Decimal(str(r.amount_paid)) > 0)
+                for r in ins_rows
             )
+            if not (existing_md.get("auto_created") and not has_real_activity):
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"PaymentSchedule in status '{existing.status}' is "
+                        "live with paid instalments — suspend it first or "
+                        "create a new SPA revision."
+                    ),
+                )
 
         tmpl = PAYMENT_SCHEDULE_TEMPLATES[template_key]
         total_value = Decimal(str(spa.total_value or 0))

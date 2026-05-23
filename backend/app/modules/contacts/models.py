@@ -76,6 +76,38 @@ class Contact(Base):
     # General
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    # ── Module bridge ──────────────────────────────────────────────
+    # ``module_tags`` records which modules this contact participates
+    # in. Multi-valued (a single contact may be a ``property_dev_lead``
+    # AND a ``property_dev_buyer`` AND a ``broker`` simultaneously) so
+    # we store it as a JSON list of opaque short identifiers. The
+    # canonical set is maintained in ``app.modules.contacts.bridge``;
+    # third-party modules add their own tag values without a registry
+    # update.
+    module_tags: Mapped[list] = mapped_column(  # type: ignore[assignment]
+        JSON,
+        nullable=False,
+        default=list,
+        server_default="[]",
+    )
+    # ``custom_properties`` is a dict keyed by module name where each
+    # module stores optional extension fields that don't justify a real
+    # column on the Contact table. Example payload::
+    #
+    #   {
+    #     "property_dev": {"preferred_contact_method": "email"},
+    #     "crm":         {"acquisition_campaign": "spring2026"},
+    #   }
+    #
+    # Modules MUST namespace their bucket under their own module name
+    # to avoid key collisions.
+    custom_properties: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
     # Tenant scoping. In single-tenant installs this equals the creator's
     # user id — contacts are siloed per user. Introduced in v2.3.1 to
     # replace the ``created_by`` IDOR proxy: ``created_by`` remains as an

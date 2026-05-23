@@ -2145,7 +2145,9 @@ const resource = {
     "nav.group_operations": "Field Operations",
     "nav.group_operations_desc": "Daily site operations — service tickets, equipment, diary, subcontractor portal, resources",
     "nav.group_commercial": "Commercial",
-    "nav.group_commercial_desc": "Commercial pipeline — CRM, contracts, bids, variations, suppliers, property development",
+    "nav.group_commercial_desc": "Commercial pipeline — CRM, contracts, bids, variations, suppliers",
+    "nav.group_property": "Real Estate Development",
+    "nav.group_property_desc": "Property developer workflows — plots, buyers, sales contracts, handovers, warranties",
     "nav.group_bi": "Analytics",
     "nav.group_bi_desc": "BI dashboards built on warehouse projections",
     "nav.group_analytics": "Analytics & Reports",
@@ -3703,6 +3705,16 @@ const resource = {
     "contacts.search_placeholder": "Search contacts...",
     "contacts.showing_count": "Showing {{count}} contacts",
     "contacts.title": "Contacts",
+    // ── Module bridge tags (v3117) ──
+    // Friendly labels for the JSON ``module_tags`` array that lives on
+    // each Contact row. The badge label uses the localised string;
+    // unknown tags fall back to the raw value with underscores
+    // replaced by spaces.
+    "contacts.module_tag_property_dev_lead": "PropDev Lead",
+    "contacts.module_tag_property_dev_buyer": "PropDev Buyer",
+    "contacts.module_tag_broker": "Broker",
+    "contacts.module_tag_vendor": "Vendor",
+    "contacts.module_tag_subcontractor": "Subcontractor",
     "correspondence.col_date": "Date",
     "correspondence.col_direction": "Direction",
     "correspondence.col_docs": "Docs",
@@ -6578,6 +6590,22 @@ const resource = {
     "tour.step_counter": "Step {{current}} of {{total}}",
     "tour.confirm_skip": "Skip the product tour? You can re-launch it from the Help menu.",
     // --- /Product tour ---
+    // --- Header: newsletter Subscribe pill + popover (centered in topbar) ---
+    "header.subscribe.button": "Subscribe to news",
+    "header.subscribe.subscribed": "Subscribed",
+    "header.subscribe.title": "Get release notes by email",
+    "header.subscribe.email_placeholder": "you@example.com",
+    "header.subscribe.cta": "Subscribe",
+    "header.subscribe.cancel": "Cancel",
+    "header.subscribe.success": "Thanks! Check your inbox to confirm.",
+    "header.subscribe.error": "Couldn't subscribe — try again.",
+    "header.subscribe.privacy": "No spam. Unsubscribe anytime.",
+    "header.subscribe.aria": "Subscribe to product news",
+    "header.subscribe.button_short": "Subscribe",
+    "header.subscribe.dev_warning": "Local dev — your address is queued.",
+    "header.subscribe.service_offline": "The subscribe service isn't reachable right now — email us instead.",
+    "header.subscribe.mailto_fallback": "Email us instead →",
+    // --- /Header: newsletter ---
   }
 } as { translation: Record<string, string> };
 

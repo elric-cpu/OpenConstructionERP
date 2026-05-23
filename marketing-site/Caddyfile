@@ -52,6 +52,30 @@ openconstructionerp.com {
     }
   }
 
+  # General contact / custom-build inquiry — used by the inline form on
+  # index.html (#custom-form) and the /contact landing page. Routes to
+  # the in-house SMTP service so the form never touches third-party
+  # mailers (Formspree etc) and survives backend redeploys.
+  handle /api/inquiry {
+    reverse_proxy 172.19.0.1:8891 {
+      rewrite /inquiry
+    }
+  }
+
+  # Newsletter signups (3 forms: footer inline, footer card, popup).
+  handle /api/subscribe {
+    reverse_proxy 172.19.0.1:8891 {
+      rewrite /subscribe
+    }
+  }
+
+  # Partner program application (partners.html #apply-form).
+  handle /api/partners-apply {
+    reverse_proxy 172.19.0.1:8891 {
+      rewrite /partners-apply
+    }
+  }
+
   # ERP App: API calls (absolute /api/ paths from frontend)
   handle /api/* {
     reverse_proxy 172.19.0.1:9090

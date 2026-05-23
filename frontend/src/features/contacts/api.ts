@@ -37,6 +37,17 @@ export interface Contact {
   payment_terms_days: string | null;
   notes: string | null;
   metadata?: Record<string, unknown> | null;
+  // ── Module bridge (v3117) ────────────────────────────────────
+  // ``module_tags`` lists every module this contact participates
+  // in (``property_dev_lead``, ``property_dev_buyer``, ``broker``,
+  // …). The Contacts list shows them as badges and the Lead/Buyer
+  // detail drawer uses them to decide whether the "Convert to …"
+  // button should be visible.
+  module_tags?: string[];
+  // ``custom_properties`` is a per-module bucket dict. Modules
+  // namespace under their own key, e.g.
+  // ``{ "property_dev": { "preferred_contact_method": "email" } }``.
+  custom_properties?: Record<string, Record<string, unknown>>;
   created_at: string;
   updated_at: string;
   // Computed display helpers
@@ -44,6 +55,48 @@ export interface Contact {
   email?: string;
   phone?: string;
   country?: string;
+}
+
+/* ── Module bridge payloads ──────────────────────────────────────── */
+
+/** Module rows linked to a single contact (see GET /contacts/{id}/module-rows). */
+export interface ContactModuleRows {
+  property_dev_leads: Array<{
+    id: string;
+    development_id: string | null;
+    source: string;
+    status: string;
+    lead_score: number;
+    full_name: string;
+    email: string;
+    created_at: string | null;
+  }>;
+  property_dev_buyers: Array<{
+    id: string;
+    development_id: string | null;
+    plot_id: string | null;
+    status: string;
+    contract_value: number;
+    currency: string;
+    full_name: string;
+    email: string;
+    created_at: string | null;
+  }>;
+}
+
+/** Payload for POST /contacts/{id}/convert-to-lead. */
+export interface ConvertContactToLeadPayload {
+  development_id?: string;
+  source?: 'web_form' | 'walk_in' | 'broker' | 'referral' | 'portal' | 'other';
+  lead_score?: number;
+  notes?: string;
+}
+
+/** Payload for POST /contacts/{id}/convert-to-buyer. */
+export interface ConvertContactToBuyerPayload {
+  development_id: string;
+  plot_id?: string;
+  notes?: string;
 }
 
 export interface ContactFilters {
@@ -197,4 +250,64 @@ export function downloadContactsTemplate(): void {
     .catch((err) => {
       if (import.meta.env.DEV) console.error('Template download error:', err);
     });
+}
+
+/* ── Module bridge endpoints ─────────────────────────────────────── */
+
+/**
+ * Materialise a PropDev Lead from this contact.
+ *
+ * Backend route: ``POST /v1/contacts/{id}/convert-to-lead``. The Lead
+ * carries a ``contact_id`` FK back to this contact, and the contact's
+ * ``module_tags`` array picks up ``property_dev_lead``. Returns the
+ * newly created Lead payload (minimal — the PropDev module owns the
+ * full schema and is the destination for the user's next click).
+ */
+export async function convertContactToLead(
+  contactId: string,
+  payload: ConvertContactToLeadPayload = {},
+): Promise<{
+  id: string;
+  contact_id: string;
+  development_id: string | null;
+  source: string;
+  lead_score: number;
+  status: string;
+  full_name: string;
+  email: string;
+}> {
+  return apiPost(`/v1/contacts/${contactId}/convert-to-lead`, payload);
+}
+
+/**
+ * Materialise a PropDev Buyer from this contact.
+ *
+ * Backend route: ``POST /v1/contacts/{id}/convert-to-buyer``. Same
+ * pattern as :func:`convertContactToLead` but for the Buyer entity.
+ */
+export async function convertContactToBuyer(
+  contactId: string,
+  payload: ConvertContactToBuyerPayload,
+): Promise<{
+  id: string;
+  contact_id: string;
+  development_id: string;
+  plot_id: string | null;
+  status: string;
+  full_name: string;
+  email: string;
+}> {
+  return apiPost(`/v1/contacts/${contactId}/convert-to-buyer`, payload);
+}
+
+/**
+ * List every module row (Lead / Buyer / …) linked to this contact.
+ *
+ * Backend route: ``GET /v1/contacts/{id}/module-rows``. Used by the
+ * Contact detail drawer to render the "Linked records" section.
+ */
+export async function fetchContactModuleRows(
+  contactId: string,
+): Promise<ContactModuleRows> {
+  return apiGet(`/v1/contacts/${contactId}/module-rows`);
 }

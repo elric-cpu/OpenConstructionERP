@@ -62,6 +62,7 @@ import { apiGet } from '@/shared/lib/api';
 import { boqApi, normalizePositions, type Position } from '@/features/boq/api';
 import { projectsApi } from '@/features/projects/api';
 import { installBIMConverter } from '@/features/bim/api';
+import { ConverterInstallProgressBar } from '@/features/bim/ConverterInstallProgressBar';
 import {
   fetchDrawings,
   deleteDrawing,
@@ -572,6 +573,14 @@ function OfflineReadyBadge({
                   </>
                 )}
               </button>
+              {installMutation.isPending && (
+                <div className="mt-2">
+                  <ConverterInstallProgressBar
+                    converterId="dwg"
+                    installing={installMutation.isPending}
+                  />
+                </div>
+              )}
               <a
                 href="https://github.com/datadrivenconstruction/cad2data-Revit-IFC-DWG-DGN/tree/main/DDC_WINDOWS_Converters/DDC_CONVERTER_DWG"
                 target="_blank"

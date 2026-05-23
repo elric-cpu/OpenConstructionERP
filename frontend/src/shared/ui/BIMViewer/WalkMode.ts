@@ -139,8 +139,11 @@ export class WalkMode {
     this.controls = new PointerLockControls(this.camera, this.domElement);
     this._enabled = true;
 
-    window.addEventListener('keydown', this.onKeyDown);
-    window.addEventListener('keyup', this.onKeyUp);
+    // `capture: true` ensures we intercept arrow/space/etc BEFORE they
+    // bubble to any panel/sidebar that listens for them (which used to
+    // make panels appear to move alongside the camera).
+    window.addEventListener('keydown', this.onKeyDown, { capture: true });
+    window.addEventListener('keyup', this.onKeyUp, { capture: true });
     this.controls.addEventListener('lock', this.onLock);
     this.controls.addEventListener('unlock', this.onUnlock);
     // Click on the canvas re-acquires pointer lock if the user dropped it
@@ -168,8 +171,8 @@ export class WalkMode {
     this._enabled = false;
     this.stopLoop();
 
-    window.removeEventListener('keydown', this.onKeyDown);
-    window.removeEventListener('keyup', this.onKeyUp);
+    window.removeEventListener('keydown', this.onKeyDown, { capture: true });
+    window.removeEventListener('keyup', this.onKeyUp, { capture: true });
     this.domElement.removeEventListener('click', this.onClickReacquire);
 
     if (this.controls) {
@@ -247,6 +250,25 @@ export class WalkMode {
   }
 
   private handleKey(e: KeyboardEvent, pressed: boolean): void {
+    // No-op outside walk mode — never block keys when the tool is off.
+    if (!this._enabled) return;
+
+    // Never steal keystrokes from form fields / contentEditable surfaces.
+    // If walk mode somehow stayed enabled while the user is typing in an
+    // input, let the browser handle the key normally.
+    const target = e.target as (HTMLElement | null);
+    if (target) {
+      const tag = target.tagName;
+      if (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        (target as HTMLElement).isContentEditable
+      ) {
+        return;
+      }
+    }
+
     switch (e.code) {
       case 'KeyW':
       case 'ArrowUp':
@@ -268,9 +290,6 @@ export class WalkMode {
       case 'Space':
       case 'PageUp':
         this.keys.up = pressed;
-        // Space tends to scroll the page if it leaks past the canvas;
-        // suppress it while walk mode owns the keyboard.
-        if (e.code === 'Space') e.preventDefault();
         break;
       case 'KeyQ':
       case 'PageDown':
@@ -287,7 +306,16 @@ export class WalkMode {
         this.keys.sprint = pressed;
         break;
       default:
-        break;
+        // Unhandled key — let the browser do its normal thing (Esc,
+        // F-keys, browser shortcuts, etc.).
+        return;
     }
+
+    // Reached only when the key matched a walk-mode binding above.
+    // Suppress default browser behaviour (page scroll on arrows /
+    // Space / PageUp / PageDown, Ctrl shortcuts, Shift selection)
+    // AND stop propagation so panel/sidebar handlers never see it.
+    e.preventDefault();
+    e.stopPropagation();
   }
 }

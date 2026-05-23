@@ -779,10 +779,27 @@ async def list_buyers(
 @router.post("/buyers/", response_model=BuyerResponse, status_code=201)
 async def create_buyer(
     data: BuyerCreate,
+    payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
+    sync_to_contacts: bool = Query(
+        default=True,
+        description=(
+            "When true (default), the buyer is mirrored to the Contacts "
+            "directory and the contact picks up the 'property_dev_buyer' "
+            "module tag. Pass false to skip the sync (e.g. for portal-"
+            "driven anonymous signups)."
+        ),
+    ),
     _perm: None = Depends(RequirePermission("property_dev.create")),
 ) -> BuyerResponse:
-    return BuyerResponse.model_validate(await service.create_buyer(data))
+    caller = payload.get("sub") if isinstance(payload, dict) else None
+    return BuyerResponse.model_validate(
+        await service.create_buyer(
+            data,
+            sync_to_contacts=sync_to_contacts,
+            tenant_id=str(caller) if caller else None,
+        )
+    )
 
 
 @router.get("/buyers/{b_id}", response_model=BuyerResponse)
@@ -1924,10 +1941,26 @@ async def list_leads(
 @router.post("/leads/", response_model=LeadResponse, status_code=201)
 async def create_lead(
     data: LeadCreate,
+    payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
+    sync_to_contacts: bool = Query(
+        default=True,
+        description=(
+            "When true (default), the lead is mirrored to the Contacts "
+            "directory and the contact picks up the 'property_dev_lead' "
+            "module tag. Pass false to skip the sync."
+        ),
+    ),
     _perm: None = Depends(RequirePermission("property_dev.lead.create")),
 ) -> LeadResponse:
-    return LeadResponse.model_validate(await service.create_lead(data))
+    caller = payload.get("sub") if isinstance(payload, dict) else None
+    return LeadResponse.model_validate(
+        await service.create_lead(
+            data,
+            sync_to_contacts=sync_to_contacts,
+            tenant_id=str(caller) if caller else None,
+        )
+    )
 
 
 @router.get("/leads/{lead_id}", response_model=LeadResponse)
@@ -1985,6 +2018,88 @@ async def convert_lead_to_reservation(
     return ReservationResponse.model_validate(
         await service.convert_lead_to_reservation(lead_id, data)
     )
+
+
+@router.get(
+    "/leads/{lead_id}/contact",
+    summary="Get the Contacts directory entry linked to a Lead",
+    description=(
+        "Returns the canonical Contact row referenced by ``lead.contact_id`` "
+        "(or 404 if the lead is not linked / the linked contact was deleted). "
+        "Used by the Lead detail drawer to render the 'Linked Contact' card."
+    ),
+)
+async def get_lead_contact(
+    lead_id: uuid.UUID,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.lead.read")),
+) -> dict[str, Any]:
+    """Resolve the contact for ``lead_id`` if linked."""
+    await _verify_owner_via_lead(session, lead_id, payload)
+    lead = await service.get_lead(lead_id)
+    if lead.contact_id is None:
+        raise HTTPException(status_code=404, detail="Lead is not linked to a contact")
+    from app.modules.contacts.models import Contact as _Contact
+
+    contact = await session.get(_Contact, lead.contact_id)
+    if contact is None:
+        raise HTTPException(
+            status_code=404, detail="Linked contact has been deleted"
+        )
+    return {
+        "id": str(contact.id),
+        "contact_type": contact.contact_type,
+        "first_name": contact.first_name,
+        "last_name": contact.last_name,
+        "company_name": contact.company_name,
+        "primary_email": contact.primary_email,
+        "primary_phone": contact.primary_phone,
+        "country_code": contact.country_code,
+        "module_tags": list(contact.module_tags or []),
+    }
+
+
+@router.get(
+    "/buyers/{b_id}/contact",
+    summary="Get the Contacts directory entry linked to a Buyer",
+    description=(
+        "Returns the canonical Contact row referenced by ``buyer.contact_id`` "
+        "(or 404 if the buyer is not linked / the linked contact was "
+        "deleted)."
+    ),
+)
+async def get_buyer_contact(
+    b_id: uuid.UUID,
+    session: SessionDep,
+    payload: CurrentUserPayload,
+    service: PropertyDevService = Depends(_svc),
+    _perm: None = Depends(RequirePermission("property_dev.read")),
+) -> dict[str, Any]:
+    """Resolve the contact for ``b_id`` if linked."""
+    await _verify_buyer_owner(session, b_id, payload)
+    buyer = await service.get_buyer(b_id)
+    if buyer.contact_id is None:
+        raise HTTPException(status_code=404, detail="Buyer is not linked to a contact")
+    from app.modules.contacts.models import Contact as _Contact
+
+    contact = await session.get(_Contact, buyer.contact_id)
+    if contact is None:
+        raise HTTPException(
+            status_code=404, detail="Linked contact has been deleted"
+        )
+    return {
+        "id": str(contact.id),
+        "contact_type": contact.contact_type,
+        "first_name": contact.first_name,
+        "last_name": contact.last_name,
+        "company_name": contact.company_name,
+        "primary_email": contact.primary_email,
+        "primary_phone": contact.primary_phone,
+        "country_code": contact.country_code,
+        "module_tags": list(contact.module_tags or []),
+    }
 
 
 # ── Reservations ────────────────────────────────────────────────────────

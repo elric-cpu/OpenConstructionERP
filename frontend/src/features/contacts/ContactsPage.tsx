@@ -757,6 +757,22 @@ const ContactCard = React.memo(function ContactCard({
         )}
       </div>
 
+      {/* Module-bridge tags (v3117). Shown when the contact participates
+         in PropDev / brokers / vendors / … modules. Each tag is a small
+         badge so the user can spot at a glance which modules reference
+         this contact. */}
+      {contact.module_tags && contact.module_tags.length > 0 && (
+        <div className="mt-2.5 flex flex-wrap gap-1">
+          {contact.module_tags.map((tag) => (
+            <Badge key={tag} size="sm" variant="blue">
+              {t(`contacts.module_tag_${tag}`, {
+                defaultValue: tag.replace(/_/g, ' '),
+              })}
+            </Badge>
+          ))}
+        </div>
+      )}
+
       {/* Bottom row: country + prequal */}
       <div className="mt-3 pt-2.5 border-t border-border-light flex items-center justify-between">
         <div className="flex items-center gap-1.5">

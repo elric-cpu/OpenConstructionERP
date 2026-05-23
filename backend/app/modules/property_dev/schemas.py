@@ -584,6 +584,8 @@ class BuyerResponse(BaseModel):
     development_id: UUID
     plot_id: UUID | None = None
     portal_user_id: UUID | None = None
+    # Contacts module bridge — see app.modules.contacts.bridge.
+    contact_id: UUID | None = None
     full_name: str = ""
     email: str = ""
     phone: str | None = None
@@ -1222,6 +1224,8 @@ class LeadResponse(BaseModel):
     id: UUID
     development_id: UUID | None = None
     tenant_id: UUID | None = None
+    # Contacts module bridge — see app.modules.contacts.bridge.
+    contact_id: UUID | None = None
     source: str = "other"
     lead_score: Decimal = Decimal("0")
     assigned_agent_user_id: UUID | None = None
@@ -2774,11 +2778,37 @@ __all_task_140__ = (
 # ── House Type Catalogue (preset + user-created) ────────────────────────
 
 
+_CONSTRUCTION_TYPES = (
+    "brick",
+    "timber_frame",
+    "concrete",
+    "steel",
+    "mixed",
+    "other",
+)
+_ENERGY_CLASSES = (
+    "A+",
+    "A",
+    "B",
+    "C",
+    "D",
+    "E",
+    "F",
+    "G",
+    "not_applicable",
+)
+_SALES_CHANNELS = ("off_plan", "new_build", "resale")
+
+
 class PropertyDevHouseTypeCreate(BaseModel):
     """Create a custom house-type catalogue entry.
 
     ``project_id`` is required for user-created entries — global presets
     are only inserted via the migration seed, never through the API.
+
+    ``country_code`` may be NULL when the operator picks the "Other /
+    Custom region" option; in that case ``region_label`` should hold the
+    free-text tag (e.g. "EU-wide", "DACH", "Middle East").
     """
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -2790,11 +2820,25 @@ class PropertyDevHouseTypeCreate(BaseModel):
         max_length=2,
         pattern=r"^[A-Z]{2}$",
     )
+    region_label: str | None = Field(default=None, max_length=80)
     code: str = Field(..., min_length=1, max_length=40, pattern=r"^[A-Z0-9_]+$")
     name: str = Field(..., min_length=1, max_length=120)
     description: str | None = None
     area_typical_m2: Decimal | None = Field(default=None, ge=0)
     floors_typical: int | None = Field(default=None, ge=0, le=200)
+    typical_bedrooms: int | None = Field(default=None, ge=0, le=50)
+    typical_bathrooms: int | None = Field(default=None, ge=0, le=50)
+    parking_spots: int | None = Field(default=None, ge=0, le=10)
+    typical_price_min: Decimal | None = Field(default=None, ge=0)
+    typical_price_max: Decimal | None = Field(default=None, ge=0)
+    currency: str | None = Field(
+        default=None, min_length=3, max_length=3, pattern=r"^[A-Z]{3}$"
+    )
+    construction_type: str | None = Field(default=None, max_length=20)
+    energy_class: str | None = Field(default=None, max_length=10)
+    sales_channel: str | None = Field(default=None, max_length=20)
+    image_url: str | None = Field(default=None, max_length=512)
+    tags: list[str] = Field(default_factory=list, max_length=40)
 
 
 class PropertyDevHouseTypeUpdate(BaseModel):
@@ -2816,6 +2860,20 @@ class PropertyDevHouseTypeUpdate(BaseModel):
         max_length=2,
         pattern=r"^[A-Z]{2}$",
     )
+    region_label: str | None = Field(default=None, max_length=80)
+    typical_bedrooms: int | None = Field(default=None, ge=0, le=50)
+    typical_bathrooms: int | None = Field(default=None, ge=0, le=50)
+    parking_spots: int | None = Field(default=None, ge=0, le=10)
+    typical_price_min: Decimal | None = Field(default=None, ge=0)
+    typical_price_max: Decimal | None = Field(default=None, ge=0)
+    currency: str | None = Field(
+        default=None, min_length=3, max_length=3, pattern=r"^[A-Z]{3}$"
+    )
+    construction_type: str | None = Field(default=None, max_length=20)
+    energy_class: str | None = Field(default=None, max_length=10)
+    sales_channel: str | None = Field(default=None, max_length=20)
+    image_url: str | None = Field(default=None, max_length=512)
+    tags: list[str] | None = Field(default=None, max_length=40)
 
 
 class PropertyDevHouseTypeResponse(BaseModel):
@@ -2826,11 +2884,23 @@ class PropertyDevHouseTypeResponse(BaseModel):
     id: UUID
     project_id: UUID | None = None
     country_code: str | None = None
+    region_label: str | None = None
     code: str
     name: str
     description: str | None = None
     area_typical_m2: Decimal | None = None
     floors_typical: int | None = None
+    typical_bedrooms: int | None = None
+    typical_bathrooms: int | None = None
+    parking_spots: int | None = None
+    typical_price_min: Decimal | None = None
+    typical_price_max: Decimal | None = None
+    currency: str | None = None
+    construction_type: str | None = None
+    energy_class: str | None = None
+    sales_channel: str | None = None
+    image_url: str | None = None
+    tags: list[str] = Field(default_factory=list)
     is_preset: bool = False
     created_by: UUID | None = None
     created_at: datetime

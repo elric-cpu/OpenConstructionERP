@@ -23,7 +23,9 @@ import { Suspense, lazy, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { MapPinned, AlertTriangle } from 'lucide-react';
+import { MapPinned, AlertTriangle, ServerCrash } from 'lucide-react';
+
+import { ApiError } from '@/shared/lib/api';
 
 import {
   fetchDiaryPhotoPins,
@@ -63,8 +65,14 @@ export function ProjectGeoPage() {
   const { projectId } = useParams<{ projectId: string }>();
   // Deep-link context — ``?model=<bim_model_or_federation_id>`` focuses the
   // camera onto the matching tileset's boundingSphere once it loads.
+  // ``?plot=<plot_id>``, ``?dev_id=<development_id>``, ``?phase=...`` and
+  // ``?block=...`` further scope what the viewer should highlight.
   const [searchParams] = useSearchParams();
   const focusedModelId = searchParams.get('model');
+  const focusedPlotId = searchParams.get('plot');
+  const focusedDevId = searchParams.get('dev_id') ?? searchParams.get('development');
+  const phaseFilter = searchParams.get('phase');
+  const blockFilter = searchParams.get('block');
 
   const { data, error, isLoading } = useQuery({
     queryKey: ['geo-hub', 'map-config', projectId],
@@ -114,7 +122,25 @@ export function ProjectGeoPage() {
   );
   const [cameraState, setCameraState] = useState<GeoCameraState | null>(null);
 
-  const tilesets = data?.tilesets;
+  // Apply optional ?phase / ?block / ?dev_id deep-link filters to the
+  // tileset list. The map-config endpoint already returns the project's
+  // full set; we narrow client-side so deep-links from PropDev or BIM
+  // can show just the relevant slice. Each filter is matched against
+  // ``Tileset.metadata`` keys; falls through to "no match" when fields
+  // are absent. When none of the filters are present this is a no-op.
+  const allTilesets = data?.tilesets;
+  const tilesets = useMemo(() => {
+    if (!allTilesets) return allTilesets;
+    if (!phaseFilter && !blockFilter && !focusedDevId) return allTilesets;
+    return allTilesets.filter((ts) => {
+      const meta = ts.metadata as Record<string, unknown> | undefined;
+      if (!meta || typeof meta !== 'object') return false;
+      if (phaseFilter && meta['phase_id'] !== phaseFilter) return false;
+      if (blockFilter && meta['block_id'] !== blockFilter) return false;
+      if (focusedDevId && meta['development_id'] !== focusedDevId) return false;
+      return true;
+    });
+  }, [allTilesets, phaseFilter, blockFilter, focusedDevId]);
   const emptyKind = useMemo(
     () => emptyStateFor(Boolean(data?.anchor), tilesets),
     [data?.anchor, tilesets],
@@ -123,23 +149,50 @@ export function ProjectGeoPage() {
   // Resolve ``?model=...`` to a Tileset.id by matching either the
   // polymorphic ``source_id`` (bim_model / federation) or the
   // ``metadata.cad_import_id`` stamped by the canonical-tileset
-  // packager. Falls back to ``null`` so the viewer skips flyTo() when
-  // the user has no in-flight deep-link.
+  // packager. Also honors ``?plot=...`` by matching ``metadata.plot_id``.
+  // Falls back to ``null`` so the viewer skips flyTo() when no deep link
+  // is in flight.
   const focusedTilesetId = useMemo<string | null>(() => {
-    if (!focusedModelId || !tilesets || tilesets.length === 0) return null;
-    const hit = tilesets.find((ts) => {
-      if (ts.source_id === focusedModelId) return true;
-      const meta = ts.metadata as Record<string, unknown> | undefined;
-      if (meta && typeof meta === 'object') {
-        const cad = meta['cad_import_id'];
-        if (typeof cad === 'string' && cad === focusedModelId) return true;
-        const fed = meta['federation_id'];
-        if (typeof fed === 'string' && fed === focusedModelId) return true;
+    const list = tilesets;
+    if (!list || list.length === 0) return null;
+    if (!focusedModelId && !focusedPlotId) return null;
+    const hit = list.find((ts) => {
+      if (focusedModelId) {
+        if (ts.source_id === focusedModelId) return true;
+        const meta = ts.metadata as Record<string, unknown> | undefined;
+        if (meta && typeof meta === 'object') {
+          const cad = meta['cad_import_id'];
+          if (typeof cad === 'string' && cad === focusedModelId) return true;
+          const fed = meta['federation_id'];
+          if (typeof fed === 'string' && fed === focusedModelId) return true;
+        }
+      }
+      if (focusedPlotId) {
+        const meta = ts.metadata as Record<string, unknown> | undefined;
+        if (meta && typeof meta === 'object') {
+          if (meta['plot_id'] === focusedPlotId) return true;
+        }
       }
       return false;
     });
     return hit?.id ?? null;
-  }, [focusedModelId, tilesets]);
+  }, [focusedModelId, focusedPlotId, tilesets]);
+
+  // 404 from /api/v1/geo-hub/map-config means either project doesn't
+  // exist (user follows a broken deep-link) or backend is stale. Either
+  // way the actionable hint is different from the generic error — we
+  // expose it so the page can render the right banner.
+  const isStaleBackend =
+    error instanceof ApiError && error.status === 404;
+
+  // Compose the viewer's map config with the filtered tileset list so
+  // the Cesium scene only loads what the deep-link asked for. Cheap —
+  // we only override one field on the existing bundle when filtered.
+  const viewerMapConfig = useMemo(() => {
+    if (!data) return data;
+    if (tilesets === allTilesets) return data;
+    return { ...data, tilesets: tilesets ?? [] };
+  }, [data, tilesets, allTilesets]);
 
   if (!projectId) {
     return (
@@ -190,13 +243,19 @@ export function ProjectGeoPage() {
             </span>
           </div>
         )}
+        <p className="hidden flex-1 truncate text-xs text-content-tertiary md:block">
+          {t('geo_hub.project_subtitle', {
+            defaultValue:
+              'Drag to rotate · scroll to zoom · click a pin to inspect',
+          })}
+        </p>
         <div className="ml-auto">
           <GeoModePicker current="project" projectId={projectId} />
         </div>
       </header>
       <div className="flex flex-1 overflow-hidden">
         <TilesetSidebar
-          tilesets={data?.tilesets}
+          tilesets={tilesets}
           isLoading={isLoading}
           hiddenIds={hiddenIds}
           focusedId={focusedId}
@@ -213,14 +272,26 @@ export function ProjectGeoPage() {
         <main className="relative flex-1 overflow-hidden bg-slate-900">
           {error && (
             <div className="absolute inset-0 z-20 flex items-center justify-center p-6">
-              <div className="inline-flex max-w-md items-start gap-3 rounded-lg border border-red-300/40 bg-red-950/60 px-4 py-3 text-sm text-red-100 shadow-md backdrop-blur-md">
-                <AlertTriangle size={16} className="mt-0.5 shrink-0 text-red-300" />
-                <span>
-                  {t('geo_hub.load_failed', {
-                    defaultValue: 'Could not load geo data for this project.',
-                  })}
-                </span>
-              </div>
+              {isStaleBackend ? (
+                <div className="inline-flex max-w-md items-start gap-3 rounded-lg border border-amber-300/40 bg-amber-950/60 px-4 py-3 text-sm text-amber-100 shadow-md backdrop-blur-md">
+                  <ServerCrash size={16} className="mt-0.5 shrink-0 text-amber-300" />
+                  <span>
+                    {t('geo_hub.project_stale_backend', {
+                      defaultValue:
+                        'The geo service is starting up or out of date. Reload in a moment, or contact your admin to restart the backend.',
+                    })}
+                  </span>
+                </div>
+              ) : (
+                <div className="inline-flex max-w-md items-start gap-3 rounded-lg border border-red-300/40 bg-red-950/60 px-4 py-3 text-sm text-red-100 shadow-md backdrop-blur-md">
+                  <AlertTriangle size={16} className="mt-0.5 shrink-0 text-red-300" />
+                  <span>
+                    {t('geo_hub.load_failed', {
+                      defaultValue: 'Could not load geo data for this project.',
+                    })}
+                  </span>
+                </div>
+              )}
             </div>
           )}
           {!error && isLoading && (
@@ -242,7 +313,7 @@ export function ProjectGeoPage() {
             >
               <CesiumViewer
                 mode="project"
-                mapConfig={data}
+                mapConfig={viewerMapConfig}
                 pins={pins}
                 focusedTilesetId={focusedTilesetId}
                 onMouseMove={setCursorCoords}

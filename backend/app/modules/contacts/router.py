@@ -10,6 +10,11 @@ Endpoints:
     GET    /{contact_id}    — Get single contact
     PATCH  /{contact_id}    — Update contact (auth required)
     DELETE /{contact_id}    — Soft-delete contact (auth required)
+
+Module-bridge endpoints (see app.modules.contacts.bridge):
+    POST   /{contact_id}/convert-to-lead   — Create a PropDev Lead linked
+    POST   /{contact_id}/convert-to-buyer  — Create a PropDev Buyer linked
+    GET    /{contact_id}/module-rows       — List all module rows linked
 """
 
 import csv
@@ -17,10 +22,12 @@ import io
 import logging
 import re
 import uuid
+from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1019,3 +1026,220 @@ async def delete_contact(
     """Soft-delete a contact (set is_active=False)."""
     await _require_contact_access(session, contact_id, user_id)
     await service.deactivate_contact(contact_id, user_id=user_id)
+
+
+# ── Module bridge endpoints ──────────────────────────────────────────────────
+#
+# These wire the Contacts directory together with module-specific entities
+# (PropDev Lead / Buyer, eventually Broker / Vendor / Subcontractor) so a
+# contact is the canonical person record and each module references it via
+# its own ``contact_id`` FK. See ``app.modules.contacts.bridge`` for the full
+# rationale and helper functions.
+
+
+class _ConvertToLeadRequest(BaseModel):
+    """Payload for ``POST /{contact_id}/convert-to-lead``."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    development_id: uuid.UUID | None = None
+    source: str = Field(
+        default="other",
+        pattern=r"^(web_form|walk_in|broker|referral|portal|other)$",
+    )
+    lead_score: Decimal = Field(default=Decimal("0"), ge=0, le=100)
+    notes: str | None = Field(default=None, max_length=5000)
+
+
+class _ConvertToBuyerRequest(BaseModel):
+    """Payload for ``POST /{contact_id}/convert-to-buyer``."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    development_id: uuid.UUID
+    plot_id: uuid.UUID | None = None
+    notes: str | None = Field(default=None, max_length=5000)
+
+
+@router.post(
+    "/{contact_id}/convert-to-lead",
+    summary="Convert contact to a PropDev Lead",
+    description=(
+        "Create a property_dev Lead row that references this Contact. "
+        "The Contact picks up the ``property_dev_lead`` module tag if not "
+        "already present. Returns the newly created Lead payload."
+    ),
+)
+async def convert_contact_to_lead(
+    contact_id: uuid.UUID,
+    payload: _ConvertToLeadRequest,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contacts.update")),
+) -> dict[str, Any]:
+    """Materialise a PropDev Lead linked to this contact.
+
+    Cross-module call. We import the property_dev service inline so the
+    contacts module stays loadable in installs without property_dev.
+    """
+    contact = await _require_contact_access(session, contact_id, user_id)
+
+    # Lazy import: property_dev is an optional module dependency from
+    # the contacts module's perspective. If the install doesn't have it
+    # we return 422 with a clear message rather than 500.
+    try:
+        from app.modules.property_dev.models import Lead
+        from app.modules.contacts import bridge as _contacts_bridge
+    except ImportError as exc:  # pragma: no cover — install guard
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Property Development module not installed.",
+        ) from exc
+
+    full_name = " ".join(
+        p for p in (contact.first_name or "", contact.last_name or "") if p
+    ).strip() or contact.company_name or ""
+
+    lead = Lead(
+        development_id=payload.development_id,
+        tenant_id=None,  # tenant scoping is via contact_id link + RBAC
+        source=payload.source,
+        lead_score=payload.lead_score,
+        status="new",
+        full_name=full_name,
+        email=(contact.primary_email or ""),
+        phone=contact.primary_phone,
+        language="en",
+        currency="",
+        notes=payload.notes,
+        contact_id=contact.id,
+        metadata_={},
+    )
+    session.add(lead)
+    await session.flush()
+
+    # Idempotently tag the contact as a property_dev_lead.
+    if _contacts_bridge.PROPERTY_DEV_LEAD_TAG not in (contact.module_tags or []):
+        contact.module_tags = list(contact.module_tags or []) + [
+            _contacts_bridge.PROPERTY_DEV_LEAD_TAG
+        ]
+        await session.flush()
+
+    await session.commit()
+    logger.info(
+        "Contact %s converted to PropDev Lead %s by user %s",
+        contact_id,
+        lead.id,
+        user_id,
+    )
+    return {
+        "id": str(lead.id),
+        "contact_id": str(contact.id),
+        "development_id": (
+            str(lead.development_id) if lead.development_id else None
+        ),
+        "source": lead.source,
+        "lead_score": float(lead.lead_score or 0),
+        "status": lead.status,
+        "full_name": lead.full_name,
+        "email": lead.email,
+    }
+
+
+@router.post(
+    "/{contact_id}/convert-to-buyer",
+    summary="Convert contact to a PropDev Buyer",
+    description=(
+        "Create a property_dev Buyer row that references this Contact. "
+        "The Contact picks up the ``property_dev_buyer`` module tag if "
+        "not already present. Returns the newly created Buyer payload."
+    ),
+)
+async def convert_contact_to_buyer(
+    contact_id: uuid.UUID,
+    payload: _ConvertToBuyerRequest,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contacts.update")),
+) -> dict[str, Any]:
+    """Materialise a PropDev Buyer linked to this contact."""
+    contact = await _require_contact_access(session, contact_id, user_id)
+
+    try:
+        from app.modules.property_dev.models import Buyer
+        from app.modules.contacts import bridge as _contacts_bridge
+    except ImportError as exc:  # pragma: no cover
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Property Development module not installed.",
+        ) from exc
+
+    full_name = " ".join(
+        p for p in (contact.first_name or "", contact.last_name or "") if p
+    ).strip() or contact.company_name or ""
+
+    buyer = Buyer(
+        development_id=payload.development_id,
+        plot_id=payload.plot_id,
+        full_name=full_name,
+        email=(contact.primary_email or ""),
+        phone=contact.primary_phone,
+        language="en",
+        status="lead",
+        currency="",
+        contact_id=contact.id,
+        metadata_={"notes": payload.notes} if payload.notes else {},
+    )
+    session.add(buyer)
+    await session.flush()
+
+    if _contacts_bridge.PROPERTY_DEV_BUYER_TAG not in (contact.module_tags or []):
+        contact.module_tags = list(contact.module_tags or []) + [
+            _contacts_bridge.PROPERTY_DEV_BUYER_TAG
+        ]
+        await session.flush()
+
+    await session.commit()
+    logger.info(
+        "Contact %s converted to PropDev Buyer %s by user %s",
+        contact_id,
+        buyer.id,
+        user_id,
+    )
+    return {
+        "id": str(buyer.id),
+        "contact_id": str(contact.id),
+        "development_id": str(buyer.development_id),
+        "plot_id": str(buyer.plot_id) if buyer.plot_id else None,
+        "status": buyer.status,
+        "full_name": buyer.full_name,
+        "email": buyer.email,
+    }
+
+
+@router.get(
+    "/{contact_id}/module-rows",
+    summary="List all module rows linked to a contact",
+    description=(
+        "Returns every Lead / Buyer / (eventually) Broker / Vendor / "
+        "Subcontractor row that references this contact. The shape is a "
+        "dict keyed by module-tag name so the frontend can render each "
+        "section independently."
+    ),
+)
+async def list_contact_module_rows(
+    contact_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("contacts.read")),
+) -> dict[str, Any]:
+    """Return all module rows linked to a contact."""
+    await _require_contact_access(session, contact_id, user_id)
+    try:
+        from app.modules.contacts import bridge as _contacts_bridge
+
+        rows = await _contacts_bridge.list_module_rows_for_contact(session, contact_id)
+    except ImportError:
+        # PropDev not installed — return empty buckets.
+        rows = {"property_dev_leads": [], "property_dev_buyers": []}
+    return rows

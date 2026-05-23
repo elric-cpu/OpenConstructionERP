@@ -12,9 +12,9 @@ import { Suspense, lazy, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Boxes, AlertTriangle } from 'lucide-react';
+import { Boxes, AlertTriangle, ServerCrash } from 'lucide-react';
 
-import { apiGet } from '@/shared/lib/api';
+import { ApiError, apiGet } from '@/shared/lib/api';
 
 import { getMapConfig } from './api';
 import type { GeoCameraState, GeoCursorCoords } from './CesiumViewer';
@@ -49,12 +49,16 @@ function emptyStateFor(
 export function DevelopmentGeoPage() {
   const { t } = useTranslation();
   const { devId } = useParams<{ devId: string }>();
-  // ``?phase=`` and ``?block=`` narrow the visible tilesets further —
+  // ``?phase=`` / ``?block=`` narrow the visible tilesets further —
   // matched against ``Tileset.metadata.phase_id`` / ``block_id`` so the
   // dev-scoped map can paint a single phase or block on demand.
+  // ``?plot=`` is honored when PropDev links a specific plot to the
+  // dev map — we resolve it to a focused tileset further down so the
+  // camera flies to that plot's bounding sphere on arrival.
   const [searchParams] = useSearchParams();
   const phaseFilter = searchParams.get('phase');
   const blockFilter = searchParams.get('block');
+  const focusedPlotId = searchParams.get('plot');
 
   const development = useQuery({
     queryKey: ['property-dev', 'development', devId],
@@ -114,9 +118,26 @@ export function DevelopmentGeoPage() {
     [mapConfig.data?.anchor, tilesets],
   );
 
+  // Resolve ``?plot=...`` to a Tileset.id by matching
+  // ``metadata.plot_id`` so the camera flies to the plot's bounding
+  // sphere instead of leaving the user at the development centroid.
+  const focusedTilesetId = useMemo<string | null>(() => {
+    if (!focusedPlotId || !tilesets || tilesets.length === 0) return null;
+    const hit = tilesets.find((ts) => {
+      const meta = ts.metadata as Record<string, unknown> | undefined;
+      if (!meta || typeof meta !== 'object') return false;
+      return meta['plot_id'] === focusedPlotId;
+    });
+    return hit?.id ?? null;
+  }, [focusedPlotId, tilesets]);
+
   const projectId = development.data?.project_id ?? null;
   const loading = development.isLoading || mapConfig.isLoading;
   const error = development.error || mapConfig.error;
+  // 404 on either dependency = stale backend / unknown dev → friendlier
+  // hint than the generic load-failed banner.
+  const isStaleBackend =
+    error instanceof ApiError && error.status === 404;
 
   return (
     <div className="flex h-full w-full flex-col">
@@ -175,14 +196,26 @@ export function DevelopmentGeoPage() {
         <main className="relative flex-1 overflow-hidden bg-slate-900">
           {error && (
             <div className="absolute inset-0 z-20 flex items-center justify-center p-6">
-              <div className="inline-flex max-w-md items-start gap-3 rounded-lg border border-red-300/40 bg-red-950/60 px-4 py-3 text-sm text-red-100 shadow-md backdrop-blur-md">
-                <AlertTriangle size={16} className="mt-0.5 shrink-0 text-red-300" />
-                <span>
-                  {t('geo_hub.load_failed', {
-                    defaultValue: 'Could not load geo data for this project.',
-                  })}
-                </span>
-              </div>
+              {isStaleBackend ? (
+                <div className="inline-flex max-w-md items-start gap-3 rounded-lg border border-amber-300/40 bg-amber-950/60 px-4 py-3 text-sm text-amber-100 shadow-md backdrop-blur-md">
+                  <ServerCrash size={16} className="mt-0.5 shrink-0 text-amber-300" />
+                  <span>
+                    {t('geo_hub.project_stale_backend', {
+                      defaultValue:
+                        'The geo service is starting up or out of date. Reload in a moment, or contact your admin to restart the backend.',
+                    })}
+                  </span>
+                </div>
+              ) : (
+                <div className="inline-flex max-w-md items-start gap-3 rounded-lg border border-red-300/40 bg-red-950/60 px-4 py-3 text-sm text-red-100 shadow-md backdrop-blur-md">
+                  <AlertTriangle size={16} className="mt-0.5 shrink-0 text-red-300" />
+                  <span>
+                    {t('geo_hub.load_failed', {
+                      defaultValue: 'Could not load geo data for this project.',
+                    })}
+                  </span>
+                </div>
+              )}
             </div>
           )}
           {!error && loading && (
@@ -205,6 +238,7 @@ export function DevelopmentGeoPage() {
               <CesiumViewer
                 mode="development"
                 mapConfig={viewerMapConfig}
+                focusedTilesetId={focusedTilesetId}
                 onMouseMove={setCursorCoords}
                 onCameraChange={setCameraState}
                 overlay={

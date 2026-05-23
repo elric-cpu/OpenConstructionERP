@@ -156,6 +156,14 @@ export interface Buyer {
   development_id: string;
   plot_id: string | null;
   portal_user_id: string | null;
+  /**
+   * Contacts module bridge (v3117). When set, the canonical person
+   * data (name, email, phone) lives in the Contacts module — the
+   * Buyer keeps only buyer-specific fields. The bridge is best-effort,
+   * so legacy rows (created before v3117) and portal-anonymous buyers
+   * may legitimately have this NULL.
+   */
+  contact_id: string | null;
   full_name: string;
   email: string;
   phone: string | null;
@@ -492,11 +500,23 @@ export interface HouseTypeCatalogueEntry {
   id: string;
   project_id: string | null;
   country_code: string | null;
+  region_label: string | null;
   code: string;
   name: string;
   description: string | null;
   area_typical_m2: string | null;
   floors_typical: number | null;
+  typical_bedrooms: number | null;
+  typical_bathrooms: number | null;
+  parking_spots: number | null;
+  typical_price_min: string | null;
+  typical_price_max: string | null;
+  currency: string | null;
+  construction_type: string | null;
+  energy_class: string | null;
+  sales_channel: string | null;
+  image_url: string | null;
+  tags: string[];
   is_preset: boolean;
   created_by: string | null;
   created_at: string;
@@ -506,11 +526,23 @@ export interface HouseTypeCatalogueEntry {
 export interface CreateHouseTypeCataloguePayload {
   project_id: string;
   country_code?: string | null;
+  region_label?: string | null;
   code: string;
   name: string;
   description?: string | null;
   area_typical_m2?: number | string | null;
   floors_typical?: number | null;
+  typical_bedrooms?: number | null;
+  typical_bathrooms?: number | null;
+  parking_spots?: number | null;
+  typical_price_min?: number | string | null;
+  typical_price_max?: number | string | null;
+  currency?: string | null;
+  construction_type?: string | null;
+  energy_class?: string | null;
+  sales_channel?: string | null;
+  image_url?: string | null;
+  tags?: string[];
 }
 
 export interface UpdateHouseTypeCataloguePayload {
@@ -519,6 +551,18 @@ export interface UpdateHouseTypeCataloguePayload {
   area_typical_m2?: number | string | null;
   floors_typical?: number | null;
   country_code?: string | null;
+  region_label?: string | null;
+  typical_bedrooms?: number | null;
+  typical_bathrooms?: number | null;
+  parking_spots?: number | null;
+  typical_price_min?: number | string | null;
+  typical_price_max?: number | string | null;
+  currency?: string | null;
+  construction_type?: string | null;
+  energy_class?: string | null;
+  sales_channel?: string | null;
+  image_url?: string | null;
+  tags?: string[];
 }
 
 export function fetchHouseTypes(
@@ -565,8 +609,37 @@ export function listBuyers(params: {
   return apiGet<Buyer[]>(`${BASE}/buyers/?${qs.toString()}`);
 }
 
-export function createBuyer(data: CreateBuyerPayload): Promise<Buyer> {
-  return apiPost<Buyer>(`${BASE}/buyers/`, data);
+/**
+ * Create a Buyer. When ``syncToContacts`` is true (default) the
+ * Contacts module gets a mirror entry tagged ``property_dev_buyer``
+ * (find-or-create by email; see the backend bridge for details). Pass
+ * false for portal-driven anonymous signups.
+ */
+export function createBuyer(
+  data: CreateBuyerPayload,
+  opts: { syncToContacts?: boolean } = {},
+): Promise<Buyer> {
+  const { syncToContacts = true } = opts;
+  const qs = syncToContacts ? '' : '?sync_to_contacts=false';
+  return apiPost<Buyer>(`${BASE}/buyers/${qs}`, data);
+}
+
+/**
+ * Fetch the Contacts directory entry linked to a Buyer (or 404 if not linked).
+ * Used by the Buyer detail drawer to render the "Linked Contact" card.
+ */
+export function getBuyerContact(buyerId: string): Promise<{
+  id: string;
+  contact_type: string;
+  first_name: string | null;
+  last_name: string | null;
+  company_name: string | null;
+  primary_email: string | null;
+  primary_phone: string | null;
+  country_code: string | null;
+  module_tags: string[];
+}> {
+  return apiGet(`${BASE}/buyers/${buyerId}/contact`);
 }
 
 export function contractBuyer(
@@ -930,6 +1003,13 @@ export interface Lead {
   id: string;
   development_id: string | null;
   tenant_id: string | null;
+  /**
+   * Contacts module bridge (v3117). When set, the canonical person
+   * data (name, email, phone) lives in the Contacts module — the
+   * Lead keeps only lead-specific fields (score, source, status, …).
+   * Best-effort: legacy rows (pre-v3117) may have this NULL.
+   */
+  contact_id: string | null;
   source: LeadSource;
   lead_score: number | string;
   assigned_agent_user_id: string | null;
@@ -1177,8 +1257,36 @@ export function listLeads(params?: {
   return apiGet<Lead[]>(`${BASE}/leads/${q ? `?${q}` : ''}`);
 }
 
-export function createLead(data: CreateLeadPayload): Promise<Lead> {
-  return apiPost<Lead>(`${BASE}/leads/`, data);
+/**
+ * Fetch the Contacts directory entry linked to a Lead (or 404 if not linked).
+ */
+export function getLeadContact(leadId: string): Promise<{
+  id: string;
+  contact_type: string;
+  first_name: string | null;
+  last_name: string | null;
+  company_name: string | null;
+  primary_email: string | null;
+  primary_phone: string | null;
+  country_code: string | null;
+  module_tags: string[];
+}> {
+  return apiGet(`${BASE}/leads/${leadId}/contact`);
+}
+
+/**
+ * Create a Lead. ``syncToContacts`` defaults to true — the Contacts
+ * directory gets a mirror entry tagged ``property_dev_lead``. Pass
+ * false to skip the sync (rare; mostly used by automated importers
+ * that already manage contacts separately).
+ */
+export function createLead(
+  data: CreateLeadPayload,
+  opts: { syncToContacts?: boolean } = {},
+): Promise<Lead> {
+  const { syncToContacts = true } = opts;
+  const qs = syncToContacts ? '' : '?sync_to_contacts=false';
+  return apiPost<Lead>(`${BASE}/leads/${qs}`, data);
 }
 
 export function getLead(id: string): Promise<Lead> {

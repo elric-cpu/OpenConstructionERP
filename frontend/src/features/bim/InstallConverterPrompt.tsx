@@ -23,6 +23,7 @@ import {
   installBIMConverter,
   type BIMConvertersResponse,
 } from './api';
+import { ConverterInstallProgressBar } from './ConverterInstallProgressBar';
 import { useToastStore } from '@/stores/useToastStore';
 
 interface InstallConverterPromptProps {
@@ -198,6 +199,25 @@ export function InstallConverterPrompt({
                 'The install typically takes 1–2 minutes. Your file will be retried automatically once the converter is ready.',
             })}
           </p>
+
+          {installing && (
+            <div
+              className="rounded-lg border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/30 px-3 py-2.5"
+              data-testid="install-prompt-progress"
+            >
+              <p className="text-[11px] font-semibold text-sky-700 dark:text-sky-300 mb-1.5">
+                {t('bim.install_prompt_in_progress', {
+                  defaultValue: 'Installing {{converterName}}…',
+                  converterName,
+                })}
+              </p>
+              <ConverterInstallProgressBar
+                converterId={converterId}
+                installing={installing}
+                sizeMb={converterSizeMb}
+              />
+            </div>
+          )}
 
           {localError && (
             <div className="flex items-start gap-2 p-2.5 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800">

@@ -22,6 +22,7 @@ import { APP_VERSION, APP_BUILD_FINGERPRINT } from '@/shared/lib/version';
 import { useToastStore } from '@/stores/useToastStore';
 import { useI18nReady } from '@/shared/lib/useI18nReady';
 import { SupportUsButton } from './SupportUsButton';
+import { SubscribeButton } from './SubscribeButton';
 
 /** Map English page titles (passed from App.tsx routes) to i18n keys. */
 const TITLE_I18N_MAP: Record<string, string> = {
@@ -134,7 +135,14 @@ export function Header({ title, onMenuClick }: HeaderProps) {
       {/* Right side — three zones separated by hairline dividers.
           Zone 2: Search · Zone 3: Notifications + Help · Zone 4: Account
           (Upload + Language + User). Each zone has internal `gap-1`,
-          dividers between zones are 1px hairlines. */}
+          dividers between zones are 1px hairlines.
+
+          SubscribeButton lives in Zone 3 next to HelpMenu (sized to
+          match the Support pill — same h-8 icon-with-label format on
+          desktop, icon-only on mobile). It used to sit absolutely
+          centred across the header but that created awkward visual
+          tension with the project switcher on the left; planted next
+          to Support/Help, the two CTAs read as a coherent cluster. */}
       <div className="flex items-center gap-2">
         {/* ── Zone 2 (Search) ──────────────────────────────────────── */}
         <button
@@ -179,6 +187,11 @@ export function Header({ title, onMenuClick }: HeaderProps) {
         <NotificationBell />
         <SupportUsButton />
         <BugReportMenu />
+        {/* Subscribe sits just left of Help so the two "ask the user
+            for something light" CTAs (Support / Subscribe) bracket the
+            bug + help buttons. Sky-blue accent distinguishes Subscribe
+            from the neutral Help and amber Support. */}
+        <SubscribeButton />
         <HelpMenu />
 
         {/* Hairline divider between Zone 3 and Zone 4. */}
@@ -612,7 +625,7 @@ function HelpMenu() {
   };
 
   return (
-    <div className="relative hidden sm:block" ref={ref}>
+    <div className="relative hidden sm:block" ref={ref} data-testid="header-help-menu">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -1067,7 +1080,7 @@ function ProjectSwitcher() {
   }, [projects, activeProjectId, clearProject]);
 
   return (
-    <div className="relative hidden sm:block" ref={ref}>
+    <div className="relative hidden sm:block" ref={ref} data-testid="header-project-picker">
       {/* Split-button — visibly the most-used surface in the app. Left half
           opens the active project's detail; right half (chevron) opens
           the switcher dropdown. Two distinct visual modes:

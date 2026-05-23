@@ -28,16 +28,20 @@ import {
   ArrowRightCircle,
   Filter,
   Layers,
-  Boxes,
   Briefcase,
-  Calculator,
-  Landmark,
   ChevronDown,
   BookmarkCheck,
+  Lock,
   Receipt,
   FileText,
   Send,
   DollarSign,
+  House,
+  LayoutGrid,
+  MapPin,
+  CalendarClock,
+  UserCircle2,
+  Link as LinkIcon,
 } from 'lucide-react';
 import {
   Button,
@@ -495,76 +499,103 @@ export function PropertyDevPage() {
         ]}
       />
 
-      {/* Tabs — grouped into 3 lifecycle rows so 16 items stay readable
-          without horizontal scroll on any viewport. Order within each
-          group is unchanged. */}
-      <div className="border-b border-border-light space-y-3 pb-1">
+      {/* Tabs — compact icon-button grid grouped into 3 lifecycle rows.
+          Each tab is a square (~64px) with icon on top + label below.
+          Active tab gets a solid accent fill; tooltip exposes a 1-line
+          description for clarity. Order within each group is unchanged. */}
+      <div className="rounded-2xl border border-border-light bg-white/60 backdrop-blur-sm px-3 py-3 space-y-3">
         {(
           [
             {
               key: 'master_data',
               label: t('propdev.tab_group.master_data', { defaultValue: 'Master data' }),
               items: [
-                { id: 'overview', label: t('propdev.overview', { defaultValue: 'Overview' }), icon: LayoutDashboard },
-                { id: 'developments', label: t('propdev.developments', { defaultValue: 'Developments' }), icon: Building2 },
-                { id: 'phases', label: t('propdev.phases', { defaultValue: 'Phases' }), icon: Layers },
-                { id: 'blocks', label: t('propdev.blocks', { defaultValue: 'Blocks' }), icon: Boxes },
-                { id: 'plots', label: t('propdev.plots', { defaultValue: 'Plots' }), icon: Grid3X3 },
-                { id: 'house_types', label: t('propdev.house_types', { defaultValue: 'House Types' }), icon: Home },
+                { id: 'overview', label: t('propdev.overview', { defaultValue: 'Overview' }), icon: Home, tip: t('propdev.tab.overview.tooltip', { defaultValue: 'Portfolio KPIs and pipeline snapshot' }) },
+                { id: 'developments', label: t('propdev.developments', { defaultValue: 'Developments' }), icon: Building2, tip: t('propdev.tab.developments.tooltip', { defaultValue: 'Top-level real-estate projects' }) },
+                { id: 'phases', label: t('propdev.phases', { defaultValue: 'Phases' }), icon: Layers, tip: t('propdev.tab.phases.tooltip', { defaultValue: 'Construction & sales phases within a development' }) },
+                { id: 'blocks', label: t('propdev.blocks', { defaultValue: 'Blocks' }), icon: LayoutGrid, tip: t('propdev.tab.blocks.tooltip', { defaultValue: 'Building blocks / towers per phase' }) },
+                { id: 'plots', label: t('propdev.plots', { defaultValue: 'Plots' }), icon: MapPin, tip: t('propdev.tab.plots.tooltip', { defaultValue: 'Inventory of sellable units' }) },
+                { id: 'house_types', label: t('propdev.house_types', { defaultValue: 'House Types' }), icon: House, tip: t('propdev.tab.house_types.tooltip', { defaultValue: 'Reusable unit templates and variants' }) },
               ],
             },
             {
               key: 'sales',
               label: t('propdev.tab_group.sales', { defaultValue: 'Sales lifecycle' }),
               items: [
-                { id: 'leads', label: t('propdev.leads', { defaultValue: 'Leads' }), icon: UserPlus },
-                { id: 'buyers', label: t('propdev.buyers', { defaultValue: 'Buyers' }), icon: Users },
-                { id: 'reservations', label: t('propdev.reservations', { defaultValue: 'Reservations' }), icon: BookmarkCheck },
-                { id: 'spa', label: t('propdev.spa', { defaultValue: 'Sales Contracts' }), icon: FileSignature },
-                { id: 'payment_schedule', label: t('propdev.payment_schedule', { defaultValue: 'Payment Schedules' }), icon: Receipt },
+                { id: 'leads', label: t('propdev.leads', { defaultValue: 'Leads' }), icon: UserPlus, tip: t('propdev.tab.leads.tooltip', { defaultValue: 'Inbound prospects before becoming buyers' }) },
+                { id: 'buyers', label: t('propdev.buyers', { defaultValue: 'Buyers' }), icon: Users, tip: t('propdev.tab.buyers.tooltip', { defaultValue: 'Qualified buyers and KYC records' }) },
+                { id: 'reservations', label: t('propdev.reservations', { defaultValue: 'Reservations' }), icon: BookmarkCheck, tip: t('propdev.tab.reservations.tooltip', { defaultValue: 'Unit holds and deposit reservations' }) },
+                { id: 'spa', label: t('propdev.spa', { defaultValue: 'Sales Contracts' }), icon: FileSignature, tip: t('propdev.tab.spa.tooltip', { defaultValue: 'Sale & Purchase Agreements (SPAs)' }) },
+                { id: 'payment_schedule', label: t('propdev.payment_schedule', { defaultValue: 'Payment Schedules' }), icon: CalendarClock, tip: t('propdev.tab.payment_schedule.tooltip', { defaultValue: 'Milestone-based buyer installments' }) },
               ],
             },
             {
               key: 'operations',
               label: t('propdev.tab_group.operations', { defaultValue: 'Operations' }),
               items: [
-                { id: 'brokers', label: t('propdev.brokers', { defaultValue: 'Brokers' }), icon: Briefcase },
-                { id: 'price_matrix', label: t('propdev.price_matrix', { defaultValue: 'Price Matrix' }), icon: Calculator },
-                { id: 'escrow', label: t('propdev.escrow', { defaultValue: 'Escrow' }), icon: Landmark },
-                { id: 'handovers', label: t('propdev.handovers', { defaultValue: 'Handovers' }), icon: Key },
-                { id: 'warranty', label: t('propdev.warranty', { defaultValue: 'Warranty Claims' }), icon: ShieldAlert },
+                { id: 'brokers', label: t('propdev.brokers', { defaultValue: 'Brokers' }), icon: Briefcase, tip: t('propdev.tab.brokers.tooltip', { defaultValue: 'External agents and commission tracking' }) },
+                { id: 'price_matrix', label: t('propdev.price_matrix', { defaultValue: 'Price Matrix' }), icon: Grid3X3, tip: t('propdev.tab.price_matrix.tooltip', { defaultValue: 'Floor / view / orientation price factors' }) },
+                { id: 'escrow', label: t('propdev.escrow', { defaultValue: 'Escrow' }), icon: Lock, tip: t('propdev.tab.escrow.tooltip', { defaultValue: 'Trust accounts and released funds' }) },
+                { id: 'handovers', label: t('propdev.handovers', { defaultValue: 'Handovers' }), icon: Key, tip: t('propdev.tab.handovers.tooltip', { defaultValue: 'Unit handover events and snags' }) },
+                { id: 'warranty', label: t('propdev.warranty', { defaultValue: 'Warranty Claims' }), icon: ShieldAlert, tip: t('propdev.tab.warranty.tooltip', { defaultValue: 'Post-handover defect claims' }) },
               ],
             },
           ] as {
             key: string;
             label: string;
-            items: { id: Tab; label: string; icon: React.ElementType }[];
+            items: { id: Tab; label: string; icon: React.ElementType; tip: string }[];
           }[]
         ).map((group) => (
           <div key={group.key}>
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-content-tertiary mb-1 px-1">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-content-tertiary mb-1.5 px-1">
               {group.label}
             </div>
-            <nav className="flex flex-wrap gap-1" aria-label={group.label}>
+            <nav
+              className="flex flex-wrap gap-1.5"
+              aria-label={group.label}
+              role="tablist"
+            >
               {group.items.map((tabItem) => {
                 const Icon = tabItem.icon;
+                const active = tab === tabItem.id;
                 return (
                   <button
                     key={tabItem.id}
                     type="button"
+                    role="tab"
+                    aria-selected={active}
+                    aria-label={tabItem.label}
+                    title={`${tabItem.label} — ${tabItem.tip}`}
                     onClick={() => {
                       setTab(tabItem.id);
                       setSearch('');
                     }}
                     className={clsx(
-                      'flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap',
-                      tab === tabItem.id
-                        ? 'border-oe-blue text-oe-blue'
-                        : 'border-transparent text-content-secondary hover:text-content-primary',
+                      'group relative flex flex-col items-center justify-center gap-1',
+                      'h-[64px] w-[64px] md:h-[68px] md:w-[72px]',
+                      'rounded-xl border text-center transition-all duration-150',
+                      'focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/60 focus-visible:ring-offset-1',
+                      active
+                        ? 'border-oe-blue bg-oe-blue text-white shadow-sm shadow-oe-blue/30'
+                        : 'border-transparent bg-white/50 text-content-secondary hover:bg-white hover:text-content-primary hover:border-border-light hover:-translate-y-px',
                     )}
                   >
-                    <Icon size={14} />
-                    {tabItem.label}
+                    <Icon
+                      size={20}
+                      className={clsx(
+                        'transition-colors',
+                        active ? 'text-white' : 'text-content-secondary group-hover:text-oe-blue',
+                      )}
+                      aria-hidden="true"
+                    />
+                    <span
+                      className={clsx(
+                        'text-[10px] leading-tight font-medium line-clamp-2 px-1',
+                        active ? 'text-white' : 'text-content-secondary group-hover:text-content-primary',
+                      )}
+                    >
+                      {tabItem.label}
+                    </span>
                   </button>
                 );
               })}
@@ -719,11 +750,15 @@ export function PropertyDevPage() {
         <SpaTab
           developmentId={selectedDevId}
           plots={allPlots}
+          onJumpToReservations={() => setTab('reservations')}
+          onJumpToPaymentSchedules={() => setTab('payment_schedule')}
         />
       ) : tab === 'payment_schedule' ? (
         <PaymentScheduleTab
           developmentId={selectedDevId}
           plots={allPlots}
+          onJumpToReservations={() => setTab('reservations')}
+          onJumpToSpa={() => setTab('spa')}
         />
       ) : tab === 'price_matrix' ? (
         <PriceMatrixTab developmentId={selectedDevId} plots={allPlots} />
@@ -1908,7 +1943,23 @@ function BuyersTab({
                       className="border-t border-border-light hover:bg-surface-secondary cursor-pointer focus:bg-surface-secondary focus:outline-none focus:ring-1 focus:ring-oe-blue/40"
                     >
                       <td className="px-4 py-2 font-medium">
-                        {b.full_name || '—'}
+                        <span className="inline-flex items-center gap-1.5">
+                          {b.full_name || '—'}
+                          {b.contact_id && (
+                            <span
+                              title={t('propdev.linked_contact_hint', {
+                                defaultValue:
+                                  'Linked to a Contacts directory entry',
+                              })}
+                              className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-oe-blue/10 text-oe-blue"
+                              aria-label={t('propdev.linked_contact_aria', {
+                                defaultValue: 'Linked to Contacts',
+                              })}
+                            >
+                              <UserCircle2 size={11} aria-hidden="true" />
+                            </span>
+                          )}
+                        </span>
                       </td>
                       <td className="px-4 py-2 text-xs text-content-secondary">
                         {b.email}
@@ -2229,7 +2280,23 @@ function LeadsTab({
                       className="border-t border-border-light hover:bg-surface-secondary cursor-pointer focus:bg-surface-secondary focus:outline-none focus:ring-1 focus:ring-oe-blue/40"
                     >
                       <td className="px-4 py-2 font-medium">
-                        {l.full_name || '—'}
+                        <span className="inline-flex items-center gap-1.5">
+                          {l.full_name || '—'}
+                          {l.contact_id && (
+                            <span
+                              title={t('propdev.linked_contact_hint', {
+                                defaultValue:
+                                  'Linked to a Contacts directory entry',
+                              })}
+                              className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-oe-blue/10 text-oe-blue"
+                              aria-label={t('propdev.linked_contact_aria', {
+                                defaultValue: 'Linked to Contacts',
+                              })}
+                            >
+                              <UserCircle2 size={11} aria-hidden="true" />
+                            </span>
+                          )}
+                        </span>
                       </td>
                       <td className="px-4 py-2 text-xs text-content-secondary">
                         {l.email || '—'}
@@ -2601,8 +2668,113 @@ function LeadDetailDrawer({
             </p>
           </Card>
         )}
+
+        <LinkedContactCard
+          contactId={lead.contact_id ?? null}
+          fallbackName={lead.full_name || lead.email}
+        />
       </div>
     </SideDrawer>
+  );
+}
+
+/* ─── Linked Contact card ──────────────────────────────────────────
+ *
+ * Shared between Lead + Buyer detail drawers. When the row carries a
+ * ``contact_id`` we surface a small card with the canonical contact
+ * label + module tags + a direct "Open in Contacts" link. When
+ * ``contact_id`` is null we hide the card entirely (legacy rows or
+ * portal-anonymous buyers).
+ *
+ * The contact data is fetched lazily — the drawer renders fine
+ * without the bridge data; the card only lights up once the fetch
+ * completes. A 404 (contact deleted) is treated as "no link" and the
+ * card hides itself.
+ */
+function LinkedContactCard({
+  contactId,
+  fallbackName,
+}: {
+  contactId: string | null;
+  fallbackName: string;
+}) {
+  const { t } = useTranslation();
+  // Lazy-import the contacts API to avoid a hard module-load coupling
+  // when the contacts feature isn't bundled.
+  const contactQuery = useQuery({
+    queryKey: ['contact-bridge', contactId],
+    enabled: !!contactId,
+    queryFn: async () => {
+      const { apiGet } = await import('@/shared/lib/api');
+      return apiGet<{
+        id: string;
+        contact_type: string;
+        first_name: string | null;
+        last_name: string | null;
+        company_name: string | null;
+        primary_email: string | null;
+        primary_phone: string | null;
+        country_code: string | null;
+        module_tags: string[];
+      }>(`/v1/contacts/${contactId}`);
+    },
+    retry: false,
+    staleTime: 30_000,
+  });
+
+  if (!contactId) return null;
+
+  const contact = contactQuery.data;
+  const displayName = contact
+    ? [contact.first_name, contact.last_name].filter(Boolean).join(' ') ||
+      contact.company_name ||
+      contact.primary_email ||
+      fallbackName
+    : fallbackName;
+
+  return (
+    <Card padding="sm">
+      <div className="flex items-start gap-2.5">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-oe-blue/10 text-oe-blue shrink-0">
+          <UserCircle2 size={16} aria-hidden="true" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-content-tertiary uppercase tracking-wide">
+              {t('propdev.linked_contact', {
+                defaultValue: 'Linked Contact',
+              })}
+            </span>
+            <Link
+              to="/contacts"
+              className="ml-auto inline-flex items-center gap-1 text-xs text-oe-blue hover:underline"
+            >
+              {t('propdev.open_in_contacts', {
+                defaultValue: 'Open in Contacts',
+              })}
+              <ArrowRight size={11} aria-hidden="true" />
+            </Link>
+          </div>
+          <p className="text-sm font-medium truncate">{displayName}</p>
+          {contact?.primary_email && (
+            <p className="text-xs text-content-secondary truncate">
+              {contact.primary_email}
+            </p>
+          )}
+          {contact?.module_tags && contact.module_tags.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {contact.module_tags.map((tag) => (
+                <Badge key={tag} size="sm" variant="neutral">
+                  {t(`contacts.module_tag_${tag}`, {
+                    defaultValue: tag.replace(/_/g, ' '),
+                  })}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </Card>
   );
 }
 
@@ -3412,9 +3584,13 @@ function ConvertReservationModal({
 function SpaTab({
   developmentId,
   plots,
+  onJumpToReservations,
+  onJumpToPaymentSchedules,
 }: {
   developmentId: string;
   plots: Plot[];
+  onJumpToReservations?: () => void;
+  onJumpToPaymentSchedules?: () => void;
 }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -3422,6 +3598,25 @@ function SpaTab({
   const [statusFilter, setStatusFilter] = useState<SpaStatus | ''>('');
   const [activeSpaId, setActiveSpaId] = useState<string | null>(null);
   const [docId, setDocId] = useState<string | null>(null);
+
+  // Surface convertible reservations directly in the SPA tab so the user
+  // is never stuck on a blank list with no actionable path. Previously the
+  // empty state told them to "Start in the Reservations tab" but offered
+  // no way to get there — the source of "Sales Contracts не работает".
+  const reservationsQ = useQuery({
+    queryKey: ['propdev', 'reservations', developmentId, 'active-for-spa'],
+    queryFn: () =>
+      listReservations({
+        development_id: developmentId,
+        status: 'active',
+        limit: 100,
+      }),
+    enabled: !!developmentId,
+  });
+  const convertibleReservations = reservationsQ.data ?? [];
+  const [convertReservationId, setConvertReservationId] = useState<string | null>(
+    null,
+  );
 
   const q = useQuery({
     queryKey: ['propdev', 'sales-contracts', developmentId, statusFilter],
@@ -3437,6 +3632,9 @@ function SpaTab({
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['propdev', 'sales-contracts', developmentId] });
     qc.invalidateQueries({ queryKey: ['propdev', 'payment-schedules', developmentId] });
+    qc.invalidateQueries({
+      queryKey: ['propdev', 'reservations', developmentId],
+    });
   };
 
   const sendMut = useMutation({
@@ -3504,6 +3702,40 @@ function SpaTab({
         <span className="text-xs text-content-tertiary">
           {t('propdev.n_rows', { defaultValue: '{{n}} rows', n: rows.length })}
         </span>
+        <div className="ml-auto flex items-center gap-2">
+          {convertibleReservations.length > 0 && (
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<ArrowRightCircle size={14} />}
+              onClick={() => {
+                const first = convertibleReservations[0];
+                if (first) setConvertReservationId(first.id);
+              }}
+              title={t('propdev.convert_first_reservation', {
+                defaultValue:
+                  'Convert the most recent active reservation into a Sales Contract',
+              })}
+            >
+              {t('propdev.convert_reservation_short', {
+                defaultValue: 'Convert reservation ({{n}})',
+                n: convertibleReservations.length,
+              })}
+            </Button>
+          )}
+          {onJumpToReservations && (
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<BookmarkCheck size={14} />}
+              onClick={onJumpToReservations}
+            >
+              {t('propdev.go_to_reservations_short', {
+                defaultValue: 'Reservations tab',
+              })}
+            </Button>
+          )}
+        </div>
       </div>
 
       {rows.length === 0 ? (
@@ -3511,10 +3743,38 @@ function SpaTab({
           <EmptyState
             icon={<FileSignature size={22} />}
             title={t('propdev.no_spas', { defaultValue: 'No sales contracts yet' })}
-            description={t('propdev.no_spas_desc', {
-              defaultValue:
-                'Sales contracts are created by converting an active Reservation. Start in the Reservations tab.',
-            })}
+            description={
+              convertibleReservations.length > 0
+                ? t('propdev.no_spas_desc_with_reservations', {
+                    defaultValue:
+                      'There are {{n}} active reservations ready to be converted into a Sales Contract.',
+                    n: convertibleReservations.length,
+                  })
+                : t('propdev.no_spas_desc', {
+                    defaultValue:
+                      'Sales contracts are created by converting an active Reservation. Create one in the Reservations tab first.',
+                  })
+            }
+            action={
+              convertibleReservations.length > 0
+                ? {
+                    label: t('propdev.convert_to_spa', {
+                      defaultValue: 'Convert to SPA',
+                    }),
+                    onClick: () => {
+                      const first = convertibleReservations[0];
+                      if (first) setConvertReservationId(first.id);
+                    },
+                  }
+                : onJumpToReservations
+                  ? {
+                      label: t('propdev.go_to_reservations_cta', {
+                        defaultValue: 'Open Reservations tab',
+                      }),
+                      onClick: onJumpToReservations,
+                    }
+                  : undefined
+            }
           />
         </Card>
       ) : (
@@ -3621,6 +3881,28 @@ function SpaTab({
           plots={plots}
           onClose={() => setActiveSpaId(null)}
           onChanged={invalidate}
+          onJumpToPaymentSchedules={onJumpToPaymentSchedules}
+        />
+      )}
+      {convertReservationId && (
+        <ConvertReservationModal
+          reservationId={convertReservationId}
+          reservation={
+            convertibleReservations.find((r) => r.id === convertReservationId) ??
+            null
+          }
+          plots={plots}
+          onClose={() => setConvertReservationId(null)}
+          onConverted={() => {
+            setConvertReservationId(null);
+            invalidate();
+            addToast({
+              type: 'success',
+              title: t('propdev.spa_created', {
+                defaultValue: 'Sales Contract created',
+              }),
+            });
+          }}
         />
       )}
       {docId && (
@@ -3641,12 +3923,14 @@ function SpaDetailDrawer({
   plots,
   onClose,
   onChanged,
+  onJumpToPaymentSchedules,
 }: {
   spaId: string;
   spas: SalesContract[];
   plots: Plot[];
   onClose: () => void;
   onChanged: () => void;
+  onJumpToPaymentSchedules?: () => void;
 }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -3749,6 +4033,24 @@ function SpaDetailDrawer({
                 >
                   {t('propdev.generate_schedule', { defaultValue: 'Generate Schedule' })}
                 </Button>
+                {schedule && onJumpToPaymentSchedules && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon={<ArrowRight size={12} />}
+                    onClick={() => {
+                      onClose();
+                      onJumpToPaymentSchedules();
+                    }}
+                    title={t('propdev.open_in_schedules_tab', {
+                      defaultValue: 'Open in Payment Schedules tab',
+                    })}
+                  >
+                    {t('propdev.open_in_schedules', {
+                      defaultValue: 'Schedules tab',
+                    })}
+                  </Button>
+                )}
               </div>
             </div>
             {schedule ? (
@@ -4181,9 +4483,13 @@ function GenerateScheduleModal({
 function PaymentScheduleTab({
   developmentId,
   plots,
+  onJumpToReservations,
+  onJumpToSpa,
 }: {
   developmentId: string;
   plots: Plot[];
+  onJumpToReservations?: () => void;
+  onJumpToSpa?: () => void;
 }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -4207,6 +4513,24 @@ function PaymentScheduleTab({
   });
   const schedules = schedulesQ.data ?? [];
   const spas = spasQ.data ?? [];
+
+  // SPAs that *could* have a schedule but don't yet — surfaces directly
+  // as a "Generate schedule" CTA so the user is never stuck looking at
+  // a half-populated tab without any way to act.
+  const scheduledSpaIds = useMemo(
+    () => new Set(schedules.map((sch) => sch.sales_contract_id)),
+    [schedules],
+  );
+  const spasWithoutSchedule = useMemo(
+    () =>
+      spas.filter(
+        (s) => !scheduledSpaIds.has(s.id) && s.status !== 'cancelled',
+      ),
+    [spas, scheduledSpaIds],
+  );
+  const [generateForSpa, setGenerateForSpa] = useState<SalesContract | null>(
+    null,
+  );
 
   const suspendMut = useMutation({
     mutationFn: (id: string) => suspendPaymentSchedule(id),
@@ -4265,17 +4589,118 @@ function PaymentScheduleTab({
         <span className="text-xs text-content-tertiary">
           {t('propdev.n_rows', { defaultValue: '{{n}} rows', n: schedules.length })}
         </span>
+        <div className="ml-auto flex items-center gap-2">
+          {spasWithoutSchedule.length > 0 && (
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<Receipt size={14} />}
+              onClick={() => setGenerateForSpa(spasWithoutSchedule[0] ?? null)}
+              title={t('propdev.generate_schedule_for_spa_help', {
+                defaultValue:
+                  '{{n}} SPA(s) have no payment schedule yet — generate one',
+                n: spasWithoutSchedule.length,
+              })}
+            >
+              {t('propdev.generate_schedule_short', {
+                defaultValue: 'Generate schedule ({{n}})',
+                n: spasWithoutSchedule.length,
+              })}
+            </Button>
+          )}
+          {onJumpToSpa && (
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<FileSignature size={14} />}
+              onClick={onJumpToSpa}
+            >
+              {t('propdev.go_to_spa_tab', {
+                defaultValue: 'Sales Contracts tab',
+              })}
+            </Button>
+          )}
+        </div>
       </div>
+
+      {/* SPAs missing a schedule — surfaced as quick-action chips so the
+          user sees exactly what needs to be done next, without drilling
+          into the SPA detail drawer. */}
+      {spasWithoutSchedule.length > 0 && schedules.length > 0 && (
+        <Card padding="sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-content-secondary mb-2">
+            {t('propdev.spas_missing_schedule', {
+              defaultValue: 'SPAs without a payment schedule',
+            })}
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {spasWithoutSchedule.slice(0, 12).map((s) => {
+              const plot = plots.find((p) => p.id === s.plot_id);
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setGenerateForSpa(s)}
+                  className="inline-flex items-center gap-1.5 rounded border border-oe-blue/40 bg-oe-blue/5 px-2 py-1 text-[11px] font-medium text-oe-blue hover:bg-oe-blue/10"
+                >
+                  <Receipt size={11} />
+                  {s.contract_number}
+                  {plot?.plot_number ? ` · ${plot.plot_number}` : ''}
+                </button>
+              );
+            })}
+            {spasWithoutSchedule.length > 12 && (
+              <span className="text-[11px] text-content-tertiary self-center">
+                {t('propdev.and_n_more', {
+                  defaultValue: '… and {{n}} more',
+                  n: spasWithoutSchedule.length - 12,
+                })}
+              </span>
+            )}
+          </div>
+        </Card>
+      )}
 
       {schedules.length === 0 ? (
         <Card padding="md">
           <EmptyState
             icon={<Receipt size={22} />}
             title={t('propdev.no_schedules', { defaultValue: 'No payment schedules yet' })}
-            description={t('propdev.no_schedules_desc', {
-              defaultValue:
-                'Schedules are created automatically when a reservation is converted to an SPA, or via "Generate Schedule" on the SPA detail.',
-            })}
+            description={
+              spasWithoutSchedule.length > 0
+                ? t('propdev.no_schedules_desc_with_spa', {
+                    defaultValue:
+                      'There are {{n}} signed SPAs ready for a payment schedule. Generate one to break the contract value into milestones.',
+                    n: spasWithoutSchedule.length,
+                  })
+                : spas.length === 0
+                  ? t('propdev.no_schedules_no_spa', {
+                      defaultValue:
+                        'Schedules are created from a Sales Contract. Convert an active Reservation into an SPA first.',
+                    })
+                  : t('propdev.no_schedules_desc', {
+                      defaultValue:
+                        'Schedules are created automatically when a reservation is converted to an SPA, or via "Generate Schedule" on the SPA detail.',
+                    })
+            }
+            action={
+              spasWithoutSchedule.length > 0
+                ? {
+                    label: t('propdev.generate_schedule', {
+                      defaultValue: 'Generate Schedule',
+                    }),
+                    onClick: () =>
+                      setGenerateForSpa(spasWithoutSchedule[0] ?? null),
+                  }
+                : onJumpToReservations
+                  ? {
+                      label: t('propdev.go_to_reservations_cta', {
+                        defaultValue: 'Open Reservations tab',
+                      }),
+                      onClick: onJumpToReservations,
+                    }
+                  : undefined
+            }
           />
         </Card>
       ) : (
@@ -4362,6 +4787,31 @@ function PaymentScheduleTab({
           onClose={() => setActiveScheduleSpaId(null)}
           onChanged={() => {
             qc.invalidateQueries({ queryKey: ['propdev', 'payment-schedules', developmentId] });
+          }}
+        />
+      )}
+      {generateForSpa && (
+        <GenerateScheduleModal
+          spaId={generateForSpa.id}
+          totalValue={generateForSpa.total_value}
+          currency={generateForSpa.currency}
+          signingDate={generateForSpa.signing_date}
+          existingSchedule={null}
+          onClose={() => setGenerateForSpa(null)}
+          onGenerated={() => {
+            setGenerateForSpa(null);
+            qc.invalidateQueries({
+              queryKey: ['propdev', 'payment-schedules', developmentId],
+            });
+            qc.invalidateQueries({
+              queryKey: ['propdev', 'sales-contracts', developmentId, 'for-schedules'],
+            });
+            addToast({
+              type: 'success',
+              title: t('propdev.schedule_generated', {
+                defaultValue: 'Schedule generated',
+              }),
+            });
           }}
         />
       )}
@@ -6277,6 +6727,11 @@ function BuyerDetailDrawer({
           {buyer.status === 'reserved' && (
             <ContractBuyerBlock buyer={buyer} />
           )}
+
+          <LinkedContactCard
+            contactId={buyer.contact_id ?? null}
+            fallbackName={buyer.full_name || buyer.email}
+          />
         </div>
         </>
       )}
@@ -6547,6 +7002,13 @@ function CreateModal({
     lead_score: '0',
     notes: '',
   });
+  // ── Contacts-bridge opt-in (v3117) ──────────────────────────────
+  // Default ON: every new Lead / Buyer also creates/links a Contacts
+  // directory entry with the appropriate module tag. The user can
+  // toggle this off for portal-driven anonymous signups where the
+  // legal entity hasn't been disclosed yet. See the bridge module
+  // doc for the full sync semantics.
+  const [syncToContacts, setSyncToContacts] = useState(true);
 
   const submit = async () => {
     setBusy(true);
@@ -6682,14 +7144,20 @@ function CreateModal({
       } else if (kind === 'buyers') {
         if (!buyerForm.development_id) throw new Error('Development required');
         if (!buyerForm.email) throw new Error('Email required');
-        await createBuyer({
-          development_id: buyerForm.development_id,
-          full_name: buyerForm.full_name,
-          email: buyerForm.email,
-          phone: buyerForm.phone || undefined,
-        });
+        await createBuyer(
+          {
+            development_id: buyerForm.development_id,
+            full_name: buyerForm.full_name,
+            email: buyerForm.email,
+            phone: buyerForm.phone || undefined,
+          },
+          { syncToContacts },
+        );
         addToast({ type: 'success', title: t('propdev.buyer_created', { defaultValue: 'Buyer created' }) });
         qc.invalidateQueries({ queryKey: ['propdev', 'buyers'] });
+        // Invalidate the Contacts list too — the new mirror entry shows up
+        // in the directory immediately when sync_to_contacts is on.
+        if (syncToContacts) qc.invalidateQueries({ queryKey: ['contacts'] });
       } else if (kind === 'leads') {
         if (!leadForm.email && !leadForm.full_name) {
           throw new Error(
@@ -6698,20 +7166,24 @@ function CreateModal({
             }),
           );
         }
-        await createLead({
-          development_id: leadForm.development_id || undefined,
-          full_name: leadForm.full_name || undefined,
-          email: leadForm.email || undefined,
-          phone: leadForm.phone || undefined,
-          source: leadForm.source,
-          lead_score: Number(leadForm.lead_score) || 0,
-          notes: leadForm.notes || undefined,
-        });
+        await createLead(
+          {
+            development_id: leadForm.development_id || undefined,
+            full_name: leadForm.full_name || undefined,
+            email: leadForm.email || undefined,
+            phone: leadForm.phone || undefined,
+            source: leadForm.source,
+            lead_score: Number(leadForm.lead_score) || 0,
+            notes: leadForm.notes || undefined,
+          },
+          { syncToContacts },
+        );
         addToast({
           type: 'success',
           title: t('propdev.lead_created', { defaultValue: 'Lead created' }),
         });
         qc.invalidateQueries({ queryKey: ['propdev', 'leads'] });
+        if (syncToContacts) qc.invalidateQueries({ queryKey: ['contacts'] });
       } else {
         throw new Error('Not supported');
       }
@@ -6870,6 +7342,12 @@ function CreateModal({
               className={inputCls}
             />
           </WideModalField>
+          <div className="sm:col-span-2">
+            <SyncToContactsToggle
+              checked={syncToContacts}
+              onChange={setSyncToContacts}
+            />
+          </div>
         </WideModalSection>
       )}
       {kind === 'leads' && (
@@ -6962,9 +7440,57 @@ function CreateModal({
               className={clsx(inputCls, 'h-auto py-2')}
             />
           </WideModalField>
+          <div className="sm:col-span-2">
+            <SyncToContactsToggle
+              checked={syncToContacts}
+              onChange={setSyncToContacts}
+            />
+          </div>
         </WideModalSection>
       )}
     </WideModal>
+  );
+}
+
+/* ─── Sync-to-contacts toggle ─────────────────────────────────────
+ *
+ * Tiny reusable inline checkbox + explanatory copy. Used by the
+ * CreateLead / CreateBuyer modals so the user can opt out of the
+ * Contacts directory mirror (rare; portal-driven anonymous signups).
+ * Default ON because the directory should normally be authoritative.
+ */
+function SyncToContactsToggle({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <label className="flex items-start gap-2.5 rounded-md border border-border-light bg-surface-secondary/60 p-2.5 cursor-pointer hover:bg-surface-secondary">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="mt-0.5 h-4 w-4 rounded border-border-light text-oe-blue focus:ring-2 focus:ring-oe-blue/40"
+        data-testid="sync-to-contacts-toggle"
+      />
+      <div className="min-w-0">
+        <p className="text-xs font-medium text-content-primary inline-flex items-center gap-1.5">
+          <LinkIcon size={11} aria-hidden="true" />
+          {t('propdev.sync_to_contacts', {
+            defaultValue: 'Sync to Contacts directory',
+          })}
+        </p>
+        <p className="text-[11px] text-content-tertiary mt-0.5 leading-snug">
+          {t('propdev.sync_to_contacts_hint', {
+            defaultValue:
+              'Mirrors this entry into the Contacts module. If a contact with the same email already exists it is linked, otherwise a new contact is created and tagged.',
+          })}
+        </p>
+      </div>
+    </label>
   );
 }
 

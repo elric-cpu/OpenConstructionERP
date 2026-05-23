@@ -23,7 +23,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Globe2, Download } from 'lucide-react';
 
-import type { GeoPinBundle, MapConfig } from './types';
+import type { AnchoredProject, GeoPinBundle, MapConfig } from './types';
 
 type ViewerMode = 'global' | 'project' | 'development';
 
@@ -64,6 +64,15 @@ interface CesiumViewerProps {
    * ``boundingSphere`` or fails to load.
    */
   focusedTilesetId?: string | null;
+  /**
+   * Global Geo Hub only — when set, the viewer flies the camera to
+   * this project's anchor. Page state owns the focus so clicking the
+   * same project twice still re-flies (callers can null + reset).
+   *
+   * No-op in project / development modes (those already focus on their
+   * own anchor at init time).
+   */
+  focusedProject?: AnchoredProject | null;
   /**
    * Optional overlay rendered above the Cesium canvas (HUD, empty
    * states, custom badges). Rendered inside the same relative wrapper
@@ -242,6 +251,7 @@ export function CesiumViewer({
   mapConfig,
   pins,
   focusedTilesetId,
+  focusedProject,
   overlay,
   onMouseMove,
   onCameraChange,
@@ -711,6 +721,37 @@ export function CesiumViewer({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusedTilesetId, cesiumStatus, signature]);
+
+  // ── Focused-project flyTo (global view only) ─────────────────────────
+  //
+  // When a user clicks an anchored-project entry in the left rail we fly
+  // the camera to that anchor at a friendly altitude. Independent of the
+  // tileset focus effect — global mode never has tilesets — and idempotent
+  // for the same project (the effect deps reset on null/reselect).
+  useEffect(() => {
+    if (!focusedProject) return;
+    if (cesiumStatus !== 'loaded') return;
+    const v = viewerRef.current;
+    const cesium = cesiumRef.current;
+    if (!v || !cesium) return;
+    try {
+      const lat = Number(focusedProject.lat);
+      const lon = Number(focusedProject.lon);
+      const alt = Number(focusedProject.alt || 0);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+      v.camera.flyTo({
+        destination: cesium.Cartesian3.fromDegrees(
+          lon,
+          lat,
+          Math.max(alt + 800, 2500),
+        ),
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[geo_hub] focusedProject flyTo failed', err);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusedProject?.project_id, cesiumStatus]);
 
   return (
     <div className="relative h-full w-full">

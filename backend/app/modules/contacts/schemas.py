@@ -183,6 +183,16 @@ class ContactResponse(BaseModel):
     created_by: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
 
+    # ── Module bridge surface ──────────────────────────────────────
+    # ``module_tags`` lists every module this contact participates in
+    # (``property_dev_lead``, ``property_dev_buyer``, ``broker``, …).
+    # See app.modules.contacts.bridge.KNOWN_MODULE_TAGS for the
+    # canonical set; values from third-party modules are accepted.
+    module_tags: list[str] = Field(default_factory=list)
+    # ``custom_properties`` is a per-module bucket dict for optional
+    # extension fields that don't justify a real column.
+    custom_properties: dict[str, Any] = Field(default_factory=dict)
+
     created_at: datetime
     updated_at: datetime
 

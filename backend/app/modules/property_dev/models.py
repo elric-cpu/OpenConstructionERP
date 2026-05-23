@@ -409,6 +409,18 @@ class Buyer(Base):
     )
     # Plain UUID — refers to oe_portal_user.id but NOT a FK (cross-module).
     portal_user_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
+    # ── Contacts bridge ────────────────────────────────────────────
+    # Optional FK back to the canonical contact row in
+    # ``oe_contacts_contact``. The Contact owns name/email/phone as the
+    # single source of truth; the Buyer keeps only buyer-specific
+    # fields (status, contract_value, deposit_*, …). Nullable for
+    # legacy rows + portal-side anonymous buyers.
+    contact_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(),
+        ForeignKey("oe_contacts_contact.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     full_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     email: Mapped[str] = mapped_column(String(255), nullable=False, default="", index=True)
     phone: Mapped[str | None] = mapped_column(String(40), nullable=True)
@@ -777,6 +789,16 @@ class Lead(Base):
     )
     source: Mapped[str] = mapped_column(
         String(40), nullable=False, default="other", index=True
+    )
+    # ── Contacts bridge ────────────────────────────────────────────
+    # Optional FK back to the canonical contact row. The Contact owns
+    # name/email/phone; the Lead keeps lead-specific fields (score,
+    # source, status, …). Nullable for legacy rows.
+    contact_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(),
+        ForeignKey("oe_contacts_contact.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     lead_score: Mapped[Decimal] = mapped_column(
         Numeric(5, 2), nullable=False, default=Decimal("0")
@@ -1616,8 +1638,17 @@ class PropertyDevHouseType(Base):
         index=True,
     )
     # ISO 3166-1 alpha-2 country code; NULL for region-agnostic entries.
+    # Stored upper-case ("DE", "US"). When the operator picks "Other /
+    # Custom region" in the UI we store NULL here and the free-text tag
+    # lands in :attr:`region_label` below.
     country_code: Mapped[str | None] = mapped_column(
         String(2), nullable=True, index=True
+    )
+    # Free-text region label, used either when the operator picks
+    # "Other / Custom region" (e.g. "EU-wide", "DACH", "Middle East") or
+    # as an extra qualifier alongside ``country_code``. Optional.
+    region_label: Mapped[str | None] = mapped_column(
+        String(80), nullable=True
     )
     code: Mapped[str] = mapped_column(String(40), nullable=False)
     name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
@@ -1626,6 +1657,41 @@ class PropertyDevHouseType(Base):
         Numeric(10, 2), nullable=True
     )
     floors_typical: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Layout — purely typical/illustrative, the actual Plot row carries
+    # the source-of-truth quantities. Kept nullable so partial info is OK.
+    typical_bedrooms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    typical_bathrooms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # On-plot parking — typical count of parking spots (driveway + garage
+    # + carport, whichever the operator wants to advertise). Nullable so
+    # multi-family schemes that don't advertise per-unit parking can omit
+    # the value. Capped at 10 by the schema validator.
+    parking_spots: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Pricing — both bounds optional so the operator can store a single-
+    # ended hint ("from 250k", "up to 1.2M"). ``currency`` is ISO 4217.
+    typical_price_min: Mapped[Decimal | None] = mapped_column(
+        Numeric(14, 2), nullable=True
+    )
+    typical_price_max: Mapped[Decimal | None] = mapped_column(
+        Numeric(14, 2), nullable=True
+    )
+    currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    # Free strings so tenants can extend without a schema change. The UI
+    # constrains them to a curated dropdown but the storage stays open.
+    construction_type: Mapped[str | None] = mapped_column(
+        String(20), nullable=True
+    )
+    energy_class: Mapped[str | None] = mapped_column(
+        String(10), nullable=True
+    )
+    sales_channel: Mapped[str | None] = mapped_column(
+        String(20), nullable=True
+    )
+    image_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # Free-form tag list. JSON (not JSONB) because SQLite-compat — this
+    # is settings data, never queried by content.
+    tags: Mapped[list] = mapped_column(  # type: ignore[type-arg]
+        JSON, nullable=False, default=list, server_default="[]"
+    )
     is_preset: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="0", index=True
     )

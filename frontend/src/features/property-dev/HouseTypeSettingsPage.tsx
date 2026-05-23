@@ -4,6 +4,11 @@
  * CRUD over user-created entries in /property-dev/house-type-catalogue/.
  * Presets are listed read-only (no edit / delete) so the operator can see
  * the full inventory but can't accidentally wipe shipped defaults.
+ *
+ * The "New / Edit house type" modal is intentionally polished — it
+ * is the only path through which a tenant exposes their domain
+ * vocabulary to the rest of the app, so a clean, dense, validated form
+ * makes a disproportionate UX impact. See <HouseTypeEditModal>.
  */
 
 import { useMemo, useState } from 'react';
@@ -15,29 +20,25 @@ import {
   Breadcrumb,
   Button,
   Card,
+  CountryFlag,
   EmptyState,
   SkeletonTable,
 } from '@/shared/ui';
-import {
-  WideModal,
-  WideModalField,
-  WideModalSection,
-} from '@/shared/ui/WideModal';
 import { useToastStore } from '@/stores/useToastStore';
 import { getErrorMessage, apiGet } from '@/shared/lib/api';
+import { getCountry } from '@/shared/lib/countries';
 import {
-  createHouseTypeCatalogue,
   deleteHouseTypeCatalogue,
   fetchHouseTypes,
-  updateHouseTypeCatalogue,
   type HouseTypeCatalogueEntry,
 } from './api';
+import { HouseTypeEditModal } from './HouseTypeEditModal';
 
 const inputCls =
   'h-9 w-full rounded-lg border border-border bg-surface-primary px-3 text-sm focus:outline-none focus:ring-2 focus:ring-oe-blue/30 focus:border-oe-blue';
 const labelCls = 'block text-xs font-medium text-content-secondary mb-1';
 
-interface ProjectStub {
+export interface ProjectStub {
   id: string;
   name: string;
 }
@@ -48,11 +49,13 @@ function listProjectsLite(): Promise<ProjectStub[]> {
   );
 }
 
-const COUNTRY_OPTIONS: Array<{ value: string; label: string }> = [
+/** Short country list used only by the top-of-page filter (not the
+ *  modal — the modal uses the full searchable picker). */
+const FILTER_COUNTRY_OPTIONS: Array<{ value: string; label: string }> = [
   { value: '', label: 'All / global' },
   { value: 'DE', label: 'Deutschland (DE)' },
   { value: 'US', label: 'United States (US)' },
-  { value: 'UK', label: 'United Kingdom (UK)' },
+  { value: 'GB', label: 'United Kingdom (GB)' },
   { value: 'RU', label: 'Россия (RU)' },
   { value: 'TR', label: 'Türkiye (TR)' },
   { value: 'FR', label: 'France (FR)' },
@@ -169,7 +172,7 @@ export function HouseTypeSettingsPage() {
               onChange={(e) => setFilterCountry(e.target.value)}
               className={inputCls}
             >
-              {COUNTRY_OPTIONS.map((c) => (
+              {FILTER_COUNTRY_OPTIONS.map((c) => (
                 <option key={c.value || '_all_'} value={c.value}>
                   {c.label}
                 </option>
@@ -254,11 +257,7 @@ export function HouseTypeSettingsPage() {
                       </td>
                       <td className="px-3 py-2 text-content-primary">{entry.name}</td>
                       <td className="px-3 py-2">
-                        {entry.country_code ? (
-                          <Badge variant="blue">{entry.country_code}</Badge>
-                        ) : (
-                          <span className="text-content-tertiary">—</span>
-                        )}
+                        <CountryCell entry={entry} />
                       </td>
                       <td className="px-3 py-2 text-right">
                         <div className="inline-flex gap-1">
@@ -337,11 +336,7 @@ export function HouseTypeSettingsPage() {
                     </td>
                     <td className="px-3 py-2 text-content-primary">{entry.name}</td>
                     <td className="px-3 py-2">
-                      {entry.country_code ? (
-                        <Badge variant="neutral">{entry.country_code}</Badge>
-                      ) : (
-                        <span className="text-content-tertiary">—</span>
-                      )}
+                      <CountryCell entry={entry} variant="neutral" />
                     </td>
                     <td className="px-3 py-2 text-content-secondary">
                       {entry.area_typical_m2 ?? '—'}
@@ -355,7 +350,7 @@ export function HouseTypeSettingsPage() {
       )}
 
       {modalOpen && (
-        <EditModal
+        <HouseTypeEditModal
           entry={editing}
           projects={projects}
           onClose={() => {
@@ -368,251 +363,25 @@ export function HouseTypeSettingsPage() {
   );
 }
 
-function EditModal({
+function CountryCell({
   entry,
-  projects,
-  onClose,
+  variant = 'blue',
 }: {
-  entry: HouseTypeCatalogueEntry | null;
-  projects: ProjectStub[];
-  onClose: () => void;
+  entry: HouseTypeCatalogueEntry;
+  variant?: 'blue' | 'neutral';
 }) {
-  const { t } = useTranslation();
-  const qc = useQueryClient();
-  const addToast = useToastStore((s) => s.addToast);
-  const [busy, setBusy] = useState(false);
-  const [form, setForm] = useState({
-    project_id: entry?.project_id ?? projects[0]?.id ?? '',
-    country_code: entry?.country_code ?? '',
-    code: entry?.code ?? '',
-    name: entry?.name ?? '',
-    description: entry?.description ?? '',
-    area_typical_m2: entry?.area_typical_m2 ?? '',
-    floors_typical: entry?.floors_typical?.toString() ?? '',
-  });
-
-  const isEdit = entry !== null;
-
-  const submit = async () => {
-    setBusy(true);
-    try {
-      if (isEdit) {
-        await updateHouseTypeCatalogue(entry!.id, {
-          name: form.name.trim(),
-          description: form.description.trim() || null,
-          country_code: form.country_code || null,
-          area_typical_m2: form.area_typical_m2
-            ? Number(form.area_typical_m2)
-            : null,
-          floors_typical: form.floors_typical
-            ? Number(form.floors_typical)
-            : null,
-        });
-        addToast({
-          type: 'success',
-          title: t('property_dev.house_type.updated', {
-            defaultValue: 'House type updated',
-          }),
-        });
-      } else {
-        if (!form.project_id) {
-          throw new Error(
-            t('property_dev.house_type.project_required', {
-              defaultValue: 'Project is required.',
-            }),
-          );
-        }
-        const code = form.code
-          .trim()
-          .toUpperCase()
-          .replace(/[^A-Z0-9_]/g, '_');
-        if (!code || !form.name.trim()) {
-          throw new Error(
-            t('property_dev.house_type.code_and_name_required', {
-              defaultValue: 'Both code and name are required.',
-            }),
-          );
-        }
-        await createHouseTypeCatalogue({
-          project_id: form.project_id,
-          country_code: form.country_code || null,
-          code,
-          name: form.name.trim(),
-          description: form.description.trim() || null,
-          area_typical_m2: form.area_typical_m2
-            ? Number(form.area_typical_m2)
-            : null,
-          floors_typical: form.floors_typical
-            ? Number(form.floors_typical)
-            : null,
-        });
-        addToast({
-          type: 'success',
-          title: t('property_dev.house_type.created', {
-            defaultValue: 'House type added',
-          }),
-        });
-      }
-      await qc.invalidateQueries({
-        queryKey: ['propdev', 'house-type-catalogue'],
-      });
-      onClose();
-    } catch (err) {
-      addToast({ type: 'error', title: getErrorMessage(err) });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <WideModal
-      open
-      onClose={onClose}
-      title={
-        isEdit
-          ? t('property_dev.house_type.edit_title', {
-              defaultValue: 'Edit house type',
-            })
-          : t('property_dev.house_type.new', { defaultValue: 'New house type' })
-      }
-      size="lg"
-      busy={busy}
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose} disabled={busy}>
-            {t('common.cancel', { defaultValue: 'Cancel' })}
-          </Button>
-          <Button variant="primary" onClick={submit} loading={busy}>
-            {t('common.save', { defaultValue: 'Save' })}
-          </Button>
-        </>
-      }
-    >
-      <WideModalSection columns={2}>
-        {!isEdit && (
-          <WideModalField
-            label={t('property_dev.house_type.project_label', {
-              defaultValue: 'Project',
-            })}
-            required
-            span={2}
-          >
-            <select
-              value={form.project_id}
-              onChange={(e) =>
-                setForm((s) => ({ ...s, project_id: e.target.value }))
-              }
-              className={inputCls}
-            >
-              <option value="">
-                — {t('common.select', { defaultValue: 'Select' })} —
-              </option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </WideModalField>
-        )}
-        {!isEdit && (
-          <WideModalField
-            label={t('property_dev.house_type.code_label', {
-              defaultValue: 'Code',
-            })}
-            required
-          >
-            <input
-              value={form.code}
-              onChange={(e) => setForm((s) => ({ ...s, code: e.target.value }))}
-              className={inputCls}
-              placeholder="MY_TOWNHOUSE"
-              maxLength={40}
-            />
-          </WideModalField>
-        )}
-        <WideModalField
-          label={t('property_dev.house_type.country_label', {
-            defaultValue: 'Country',
-          })}
-          span={isEdit ? 2 : 1}
-        >
-          <select
-            value={form.country_code}
-            onChange={(e) =>
-              setForm((s) => ({ ...s, country_code: e.target.value }))
-            }
-            className={inputCls}
-          >
-            {COUNTRY_OPTIONS.map((c) => (
-              <option key={c.value || '_all_'} value={c.value}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-        </WideModalField>
-        <WideModalField
-          label={t('property_dev.house_type.name_label', {
-            defaultValue: 'Display name',
-          })}
-          required
-          span={2}
-        >
-          <input
-            value={form.name}
-            onChange={(e) => setForm((s) => ({ ...s, name: e.target.value }))}
-            className={inputCls}
-            maxLength={120}
-          />
-        </WideModalField>
-        <WideModalField
-          label={t('property_dev.house_type.description_label', {
-            defaultValue: 'Description',
-          })}
-          span={2}
-        >
-          <textarea
-            value={form.description}
-            onChange={(e) =>
-              setForm((s) => ({ ...s, description: e.target.value }))
-            }
-            className={inputCls}
-            rows={3}
-          />
-        </WideModalField>
-        <WideModalField
-          label={t('property_dev.house_type.area_typical_label', {
-            defaultValue: 'Typical area (m²)',
-          })}
-        >
-          <input
-            type="number"
-            value={form.area_typical_m2}
-            onChange={(e) =>
-              setForm((s) => ({ ...s, area_typical_m2: e.target.value }))
-            }
-            className={inputCls}
-            min={0}
-            step="0.01"
-          />
-        </WideModalField>
-        <WideModalField
-          label={t('property_dev.house_type.floors_typical_label', {
-            defaultValue: 'Typical floors',
-          })}
-        >
-          <input
-            type="number"
-            value={form.floors_typical}
-            onChange={(e) =>
-              setForm((s) => ({ ...s, floors_typical: e.target.value }))
-            }
-            className={inputCls}
-            min={0}
-            max={200}
-          />
-        </WideModalField>
-      </WideModalSection>
-    </WideModal>
-  );
+  if (entry.region_label && !entry.country_code) {
+    return <Badge variant={variant}>{entry.region_label}</Badge>;
+  }
+  if (entry.country_code) {
+    const c = getCountry(entry.country_code);
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <CountryFlag code={entry.country_code} size={16} />
+        <Badge variant={variant}>{entry.country_code}</Badge>
+        {c && <span className="text-xs text-content-tertiary">{c.name}</span>}
+      </span>
+    );
+  }
+  return <span className="text-content-tertiary">—</span>;
 }
