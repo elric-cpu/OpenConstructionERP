@@ -163,16 +163,41 @@ describe('WalkMode', () => {
     releaseKey('KeyW');
   });
 
-  it('Space and Shift move the camera up and down respectively', () => {
+  it('Space/E/PageUp move the camera up, Q/PageDown/Ctrl move it down', () => {
     wm.enable();
     const startY = camera.position.y;
     pressKey('Space');
     wm.tick(0.5);
     expect(camera.position.y).toBeCloseTo(startY + 1, 6);
     releaseKey('Space');
-    pressKey('ShiftLeft');
+    pressKey('KeyQ');
     wm.tick(0.5);
     expect(camera.position.y).toBeCloseTo(startY, 6);
+    releaseKey('KeyQ');
+    // E mirrors Space, PageDown mirrors Q.
+    pressKey('KeyE');
+    wm.tick(0.5);
+    expect(camera.position.y).toBeCloseTo(startY + 1, 6);
+    releaseKey('KeyE');
+    pressKey('PageDown');
+    wm.tick(0.5);
+    expect(camera.position.y).toBeCloseTo(startY, 6);
+    releaseKey('PageDown');
+  });
+
+  it('Shift acts as a sprint modifier (3× speed) instead of moving down', () => {
+    wm.enable();
+    wm.setFlightSpeed(2);
+    pressKey('KeyW');
+    pressKey('ShiftLeft');
+    wm.tick(0.5);
+    // 2 m/s * 3 (sprint) * 0.5 s = 3 m
+    expect(moveForwardSpy).toHaveBeenLastCalledWith(3);
     releaseKey('ShiftLeft');
+    moveForwardSpy.mockClear();
+    wm.tick(0.5);
+    // Without sprint: 2 * 0.5 = 1 m
+    expect(moveForwardSpy).toHaveBeenLastCalledWith(1);
+    releaseKey('KeyW');
   });
 });

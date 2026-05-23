@@ -85,6 +85,21 @@ export class MeasureTool {
   private subscribers = new Set<MeasurementHandler>();
 
   private onMouseDown = (ev: MouseEvent): void => this.handleClick(ev);
+  /** Suppress the browser context menu while the tool is active so right-
+   *  click can finish / cancel the current measurement. */
+  private onContextMenu = (ev: MouseEvent): void => {
+    if (!this._enabled) return;
+    ev.preventDefault();
+  };
+  /** Escape cancels a pending first-point pick without forcing the user
+   *  to disable the tool. Listens on `window` (not the canvas) because
+   *  some browsers only deliver Escape to the focused document. */
+  private onKeyDown = (ev: KeyboardEvent): void => {
+    if (!this._enabled) return;
+    if (ev.key === 'Escape') {
+      this.clearPending();
+    }
+  };
 
   constructor(args: MeasureToolArgs) {
     this.scene = args.scene;
@@ -102,12 +117,16 @@ export class MeasureTool {
     if (this._enabled) return;
     this._enabled = true;
     this.domElement.addEventListener('mousedown', this.onMouseDown);
+    this.domElement.addEventListener('contextmenu', this.onContextMenu);
+    window.addEventListener('keydown', this.onKeyDown);
   }
 
   disable(): void {
     if (!this._enabled) return;
     this._enabled = false;
     this.domElement.removeEventListener('mousedown', this.onMouseDown);
+    this.domElement.removeEventListener('contextmenu', this.onContextMenu);
+    window.removeEventListener('keydown', this.onKeyDown);
     this.clearPending();
   }
 
@@ -168,6 +187,17 @@ export class MeasureTool {
   /* ── Internals ───────────────────────────────────────────────────── */
 
   private handleClick(ev: MouseEvent): void {
+    // Right-click (button 2) cancels the pending pick. Without this the
+    // only way to back out of a half-finished measurement was to switch
+    // tools — undocumented and frustrating.
+    if (ev.button === 2) {
+      this.clearPending();
+      return;
+    }
+    // Middle-click is reserved for OrbitControls pan in the host viewer;
+    // we ignore it here so it doesn't accidentally drop a measurement
+    // point.
+    if (ev.button !== 0) return;
     const point = this.pick(ev);
     if (!point) return;
 

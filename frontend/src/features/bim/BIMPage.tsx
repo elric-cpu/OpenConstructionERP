@@ -30,6 +30,7 @@ import {
   CheckCircle2,
   AlertCircle,
   ChevronUp,
+  ChevronDown,
   CalendarDays,
   Trash2,
   RotateCcw,
@@ -153,6 +154,44 @@ function ModelFilmstrip({ models, isLoading, activeModelId, onSelectModel, onDel
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(true);
 
+  // Fully-collapsed state: the entire filmstrip shrinks to a slim tab
+  // pinned to the centre of the bottom edge with a single chevron, mirroring
+  // the left-panel collapse pattern. The tab stays clickable so users can
+  // re-expand without hunting through a hamburger menu.
+  if (!expanded) {
+    return (
+      <div className="shrink-0 bg-transparent">
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            aria-expanded={false}
+            aria-label={t('bim.expand_models_filmstrip', {
+              defaultValue: 'Show models filmstrip',
+            })}
+            data-testid="bim-filmstrip-expand"
+            className="group flex items-center gap-1.5 px-3 py-1 rounded-t-md bg-surface-primary/95 backdrop-blur border border-b-0 border-border-light shadow-sm hover:bg-surface-secondary/60 transition-colors"
+            title={t('bim.expand_models_filmstrip', {
+              defaultValue: 'Show models filmstrip',
+            })}
+          >
+            <ChevronUp
+              size={14}
+              className="text-content-tertiary group-hover:text-content-secondary transition-colors"
+            />
+            <Layers size={12} className="text-content-tertiary shrink-0" />
+            <span className="text-[10px] font-medium text-content-secondary">
+              {t('bim.models_label', { defaultValue: 'Models' })}
+            </span>
+            <span className="text-[10px] text-content-tertiary tabular-nums">
+              ({models.length})
+            </span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="shrink-0 bg-surface-primary border-t border-border-light">
       {/* Header — always visible with drag handle, title, and count */}
@@ -161,6 +200,7 @@ function ModelFilmstrip({ models, isLoading, activeModelId, onSelectModel, onDel
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
         aria-label={t('bim.toggle_models_filmstrip', { defaultValue: 'Toggle models filmstrip' })}
+        data-testid="bim-filmstrip-toggle"
         className="flex items-center w-full px-4 py-2 cursor-pointer group hover:bg-surface-secondary/30 transition-colors"
       >
         {/* Drag handle icon */}
@@ -179,19 +219,20 @@ function ModelFilmstrip({ models, isLoading, activeModelId, onSelectModel, onDel
         </span>
         <span className="text-[11px] text-content-tertiary ml-1.5">({models.length})</span>
 
-        {/* Expand/collapse chevron */}
-        <svg
-          className={`ml-auto w-4 h-4 text-content-tertiary transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}
-          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
-        </svg>
+        {/* Collapse chevron — chevron-down icon rotates so the visual cue
+            (arrow points DOWN to collapse, UP to expand) matches the
+            left-panel collapse pattern.  The previous variant rotated a
+            chevron-up which felt backwards to repeated users. */}
+        <ChevronDown
+          size={16}
+          className="ml-auto text-content-tertiary transition-transform duration-200"
+        />
       </button>
 
       {/* Collapsible model cards */}
       <div
         className="overflow-hidden transition-all duration-300 ease-in-out"
-        style={{ maxHeight: expanded ? '120px' : '0px', opacity: expanded ? 1 : 0 }}
+        style={{ maxHeight: '120px', opacity: 1 }}
       >
         <div className="flex items-center gap-3 px-4 pb-2 overflow-x-auto">
           {isLoading ? (

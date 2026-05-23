@@ -519,6 +519,9 @@ export function BIMViewer({
   const walkModeRef = useRef<WalkMode | null>(null);
   const measureToolRef = useRef<MeasureTool | null>(null);
   const [viewerToolsReady, setViewerToolsReady] = useState(false);
+  /** True while WalkMode currently owns the pointer lock — drives the
+   *  on-screen "Mouse: look · WASD: move" hint overlay. */
+  const [walkLocked, setWalkLocked] = useState(false);
   const categoryOpacity = useBIMViewerStore((s) => s.categoryOpacity);
   const hiddenCategories = useBIMViewerStore((s) => s.hiddenCategories);
   const measureActive = useBIMViewerStore((s) => s.measureActive);
@@ -980,6 +983,11 @@ export function BIMViewer({
     sectionBoxRef.current = sectionBox;
     walkModeRef.current = walkModeHelper;
     measureToolRef.current = measureToolHelper;
+    // Drive the on-screen Walk hint from the actual pointer-lock state —
+    // the user sees the overlay only while the cursor is captured.
+    const unsubWalkLock = walkModeHelper.onLockChange((locked) => {
+      setWalkLocked(locked);
+    });
     setViewerToolsReady(true);
 
     // Track mouse position for hover tooltip
@@ -997,6 +1005,7 @@ export function BIMViewer({
     return () => {
       canvas.removeEventListener('mousemove', handleMouseMoveForTooltip);
       unsubscribeHiddenCount();
+      unsubWalkLock();
       clipMgr.dispose();
       measureMgr.dispose();
       // Dispose the additive viewer-tools slice helpers BEFORE the scene
@@ -3116,10 +3125,16 @@ export function BIMViewer({
       </div>
 
       {/* BIMcollab-style additive viewer tools — Section Box / Walk /
-          Measure. Anchored top-right so it stays out of the way of the
-          main toolbar (top-left), selection toolbar (top-centre), and
-          status badges (bottom-right). Renders only once the scene-init
-          effect has built the helper trio. */}
+          Measure. Anchored bottom-left, immediately to the right of the
+          Site Compass ViewCube so the cube + tools form a single floating
+          control cluster (per UX request 2026-05-23). Renders only once
+          the scene-init effect has built the helper trio.
+
+          Cluster math:
+            - ViewCube origin: left = leftPanelOpen ? leftPanelWidth + 16 : 12
+            - ViewCube width:  112 px (BIMViewCube size prop)
+            - Gap to toolbar:  10 px
+          → toolbar leftOffset = cube_origin + 112 + 10 */}
       {viewerToolsReady &&
         sectionBoxRef.current &&
         walkModeRef.current &&
@@ -3128,7 +3143,25 @@ export function BIMViewer({
             sectionBox={sectionBoxRef.current}
             walkMode={walkModeRef.current}
             measureTool={measureToolRef.current}
-            position="top-right"
+            position="bottom-left"
+            leftOffset={(leftPanelOpen ? leftPanelWidth + 16 : 12) + 112 + 10}
+            onBeforeToolEnable={(next) => {
+              // Walk mode CANNOT coexist with OrbitControls — the helper's
+              // own guard throws if controls.enabled is still true. We
+              // disable them here BEFORE the toolbar calls walkMode.enable(),
+              // and re-enable them on the matching `onAfterToolDisable`.
+              if (next === 'walk') {
+                const ctrl = sceneRef.current?.controls;
+                if (ctrl) ctrl.enabled = false;
+              }
+              return true;
+            }}
+            onAfterToolDisable={(prev) => {
+              if (prev === 'walk') {
+                const ctrl = sceneRef.current?.controls;
+                if (ctrl) ctrl.enabled = true;
+              }
+            }}
             onSectionAction={(action) => {
               // Wire section actions to the live selection + element
               // manager when available. The helper itself enforces the
@@ -3178,6 +3211,27 @@ export function BIMViewer({
             }}
           />
         )}
+
+      {/* Walk mode on-screen hint — only visible while the pointer is
+          actually locked (i.e. WASD/mouse actively control the camera).
+          Anchored top-center so the user notices it; auto-disappears when
+          the browser releases pointer lock. */}
+      {walkLocked && (
+        <div
+          className="absolute top-3 start-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900/85 backdrop-blur text-white text-[11px] font-medium shadow-lg pointer-events-none select-none"
+          data-testid="bim-walk-hint"
+          role="status"
+          aria-live="polite"
+        >
+          <Move3d size={12} className="text-sky-300 shrink-0" />
+          <span>
+            {t('viewerTools.walk_hint_overlay', {
+              defaultValue:
+                'Mouse: look · WASD: move · Space/Q: up/down · Shift: sprint · Esc: exit',
+            })}
+          </span>
+        </div>
+      )}
 
       {/* Section / clipping-plane control popover. Anchored under the
           toolbar; mutually-exclusive box vs plane modes with live

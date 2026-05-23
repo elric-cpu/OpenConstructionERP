@@ -5,9 +5,12 @@
  * Controls (mirrors BIMcollab / Navisworks walk mode):
  *   - mouse drag (while locked) → look
  *   - W/A/S/D / arrow keys      → walk
- *   - Space                     → up (fly)
- *   - Shift                     → down (fly)
- *   - ESC                       → release pointer-lock (handled by browser)
+ *   - Q / PageDown / Ctrl       → down
+ *   - E / Space / PageUp        → up
+ *   - Shift                     → sprint (3× speed)
+ *   - ESC                       → release pointer-lock (browser drives it),
+ *                                 callers also listen for Escape on window
+ *                                 to fully disable the tool.
  *
  * Speed: a velocity multiplier (metres / second) is exposed via
  * `setFlightSpeed`.  Default = 2 m/s; recommended UI range is
@@ -33,6 +36,7 @@ export interface WalkModeArgs {
 }
 
 const DEFAULT_SPEED = 2; // m/s
+const SPRINT_MULTIPLIER = 3;
 
 export class WalkMode {
   private camera: THREE.Camera;
@@ -47,6 +51,10 @@ export class WalkMode {
   private _enabled = false;
   private _locked = false;
   private flightSpeed = DEFAULT_SPEED;
+  /** Listeners notified when the pointer-lock state changes. Used by the
+   *  React shell to render an on-screen "Mouse: look · WASD: move" hint
+   *  only while the cursor is actually locked. */
+  private lockListeners = new Set<(locked: boolean) => void>();
 
   /** Active WASD key state. Polled inside `tick()`. */
   private keys: Record<string, boolean> = {
@@ -56,6 +64,7 @@ export class WalkMode {
     right: false,
     up: false,
     down: false,
+    sprint: false,
   };
 
   private animId: number | null = null;
@@ -66,9 +75,22 @@ export class WalkMode {
   private onKeyUp = (e: KeyboardEvent): void => this.handleKey(e, false);
   private onLock = (): void => {
     this._locked = true;
+    for (const l of this.lockListeners) l(true);
   };
   private onUnlock = (): void => {
     this._locked = false;
+    for (const l of this.lockListeners) l(false);
+  };
+  /** Re-acquire pointer lock on a user click after the browser dropped it
+   *  (e.g. user hit Esc but stayed in walk mode, or the initial lock()
+   *  call rejected because it lacked a user gesture). */
+  private onClickReacquire = (): void => {
+    if (!this._enabled || this._locked || !this.controls) return;
+    try {
+      this.controls.lock();
+    } catch {
+      /* still no user gesture; ignore */
+    }
   };
 
   constructor(args: WalkModeArgs) {
@@ -85,6 +107,17 @@ export class WalkMode {
 
   isLocked(): boolean {
     return this._locked;
+  }
+
+  /** Subscribe to pointer-lock state. Returns an unsubscribe fn. The
+   *  listener is called immediately with the current value so the UI
+   *  can render in sync from the first paint. */
+  onLockChange(listener: (locked: boolean) => void): () => void {
+    this.lockListeners.add(listener);
+    listener(this._locked);
+    return () => {
+      this.lockListeners.delete(listener);
+    };
   }
 
   setFlightSpeed(speed: number): void {
@@ -110,14 +143,20 @@ export class WalkMode {
     window.addEventListener('keyup', this.onKeyUp);
     this.controls.addEventListener('lock', this.onLock);
     this.controls.addEventListener('unlock', this.onUnlock);
+    // Click on the canvas re-acquires pointer lock if the user dropped it
+    // (Esc inside the browser releases the cursor without exiting walk
+    // mode in our state machine).
+    this.domElement.addEventListener('click', this.onClickReacquire);
 
     // Request pointer lock immediately so the user can start looking
-    // without a second click. In jsdom this is a no-op stub.
+    // without a second click. In jsdom this is a no-op stub. Browsers
+    // require this call to be inside a user-gesture; the click that
+    // toggled the toolbar button counts, so this usually succeeds.
     try {
       this.controls.lock();
     } catch {
       // Some browsers throw if called without a user gesture; the
-      // caller can call lock() again on the next user click.
+      // canvas-click listener above will pick up the next click.
     }
 
     this.lastTickMs = typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -131,6 +170,7 @@ export class WalkMode {
 
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
+    this.domElement.removeEventListener('click', this.onClickReacquire);
 
     if (this.controls) {
       try {
@@ -145,7 +185,10 @@ export class WalkMode {
       if (typeof c.dispose === 'function') c.dispose();
       this.controls = null;
     }
-    this._locked = false;
+    if (this._locked) {
+      this._locked = false;
+      for (const l of this.lockListeners) l(false);
+    }
     // Reset key state so a leftover key-up arriving after disable()
     // does not poison the next enable().
     for (const k of Object.keys(this.keys)) this.keys[k] = false;
@@ -153,6 +196,7 @@ export class WalkMode {
 
   dispose(): void {
     this.disable();
+    this.lockListeners.clear();
   }
 
   /** Integrate the current WASD/space/shift state into the camera position.
@@ -165,7 +209,8 @@ export class WalkMode {
     // still permits half-second test ticks without scaling them down.
     const dt = Math.min(Math.max(deltaSeconds, 0), 1);
     if (dt === 0) return;
-    const distance = this.flightSpeed * dt;
+    const speed = this.keys.sprint ? this.flightSpeed * SPRINT_MULTIPLIER : this.flightSpeed;
+    const distance = speed * dt;
 
     // Forward/back/left/right are camera-relative; up/down are world-Y.
     if (this.keys.forward) this.controls.moveForward(distance);
@@ -219,12 +264,27 @@ export class WalkMode {
       case 'ArrowRight':
         this.keys.right = pressed;
         break;
+      case 'KeyE':
       case 'Space':
+      case 'PageUp':
         this.keys.up = pressed;
+        // Space tends to scroll the page if it leaks past the canvas;
+        // suppress it while walk mode owns the keyboard.
+        if (e.code === 'Space') e.preventDefault();
+        break;
+      case 'KeyQ':
+      case 'PageDown':
+      case 'ControlLeft':
+      case 'ControlRight':
+        this.keys.down = pressed;
         break;
       case 'ShiftLeft':
       case 'ShiftRight':
-        this.keys.down = pressed;
+        // Shift is the sprint modifier (standard FPS convention).
+        // Previously it doubled as "down" — that was a footgun because
+        // it conflicted with browser default shift behaviour and was
+        // undocumented in the on-screen hint.
+        this.keys.sprint = pressed;
         break;
       default:
         break;
