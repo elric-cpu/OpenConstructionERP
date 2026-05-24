@@ -25,12 +25,15 @@
  *   - Esc handler is registered on mount (and only when active) and
  *     unregistered on close — no global leak.
  *
- * NOTE: This component coexists with the older `OnboardingTour` (which
- * keys off `oe_tour_completed` / `data-tour="..."`).  ProductTour uses a
- * *different* storage key (`oe.tour_completed` — note the dot) and
- * `data-testid` selectors so the two systems do not interfere.  The new
- * tour is the canonical "Take a quick tour" experience surfaced from the
- * WhatsNewCard CTA and the Help menu.
+ * NOTE: ProductTour is the canonical global onboarding tour. The
+ * older `OnboardingTour` (which keys off `oe_tour_completed` — no
+ * dot) is no longer mounted globally; it survives only as a building
+ * block for per-feature custom tours (e.g. the Pipelines page).
+ * ProductTour uses storage key `oe.tour_completed` — note the dot —
+ * and `data-testid` selectors so the two systems do not interfere.
+ * The one-shot migration from the legacy key lives in
+ * `App.tsx`. The "Take a quick tour" CTA in WhatsNewCard and the Help
+ * menu both target ProductTour via the `oe:start-tour` event.
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';

@@ -34,7 +34,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import clsx from 'clsx';
-import { Button, Breadcrumb, EmptyState } from '@/shared/ui';
+import { Button, Breadcrumb, EmptyState, DateDisplay } from '@/shared/ui';
 import { apiGet, apiPost, apiDelete } from '@/shared/lib/api';
 import { PreferencesTab } from './PreferencesTab';
 
@@ -83,17 +83,6 @@ const ICON_MAP: Record<IconCategory, { icon: typeof CheckCircle2; color: string;
   system: { icon: Settings, color: 'text-content-tertiary', bg: 'bg-surface-secondary' },
 };
 
-function formatDateTime(dateStr: string, locale: string): string {
-  const d = new Date(dateStr);
-  return d.toLocaleString(locale, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
 const ACTION_URL_REWRITES: Array<[RegExp, (m: RegExpMatchArray) => string]> = [
   [/^\/risk(\?.*)?$/, (m) => `/risks${m[1] ?? ''}`],
   [/^\/boq\?id=([0-9a-fA-F-]{8,})$/, (m) => `/boq/${m[1]}`],
@@ -129,7 +118,7 @@ const PAGE_SIZE = 50;
 type Filter = 'all' | 'unread' | 'read';
 
 export function NotificationsPage() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -393,7 +382,7 @@ export function NotificationsPage() {
                         <p className="text-xs text-content-secondary mt-0.5">{body}</p>
                       )}
                       <p className="text-[11px] text-content-quaternary mt-1 tabular-nums">
-                        {formatDateTime(n.created_at, i18n.language)}
+                        <DateDisplay value={n.created_at} format="datetime" />
                       </p>
                     </div>
                   </button>
