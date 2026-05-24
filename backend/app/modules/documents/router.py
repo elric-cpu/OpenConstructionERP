@@ -712,11 +712,22 @@ async def serve_photo_thumbnail(
 async def update_photo(
     photo_id: uuid.UUID,
     data: PhotoUpdate,
+    session: SessionDep,
     user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("documents.update")),
     service: PhotoService = Depends(_get_photo_service),
 ) -> PhotoResponse:
-    """Update photo metadata (caption, tags, category)."""
+    """Update photo metadata (caption, tags, category).
+
+    R7 audit: the caller must have access to the photo's parent project
+    — without this guard any user with the ``documents.update``
+    permission could edit a photo belonging to another tenant by
+    guessing its UUID. ``verify_project_access`` collapses missing /
+    cross-tenant into the same 404 surface so the response cannot be
+    used as an enumeration oracle.
+    """
+    photo = await service.get_photo(photo_id)
+    await verify_project_access(photo.project_id, user_id, session)
     photo = await service.update_photo(photo_id, data)
     return _photo_to_response(photo)
 
@@ -727,11 +738,19 @@ async def update_photo(
 @router.delete("/photos/{photo_id}", status_code=204)
 async def delete_photo(
     photo_id: uuid.UUID,
+    session: SessionDep,
     user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("documents.delete")),
     service: PhotoService = Depends(_get_photo_service),
 ) -> None:
-    """Delete a photo and its file."""
+    """Delete a photo and its file.
+
+    R7 audit: cross-tenant IDOR guard. Mirrors ``update_photo`` —
+    without it, knowledge of a UUID was enough to wipe another tenant's
+    site documentation.
+    """
+    photo = await service.get_photo(photo_id)
+    await verify_project_access(photo.project_id, user_id, session)
     await service.delete_photo(photo_id)
 
 
@@ -874,11 +893,19 @@ async def get_sheet(
 async def update_sheet(
     sheet_id: uuid.UUID,
     data: SheetUpdate,
+    session: SessionDep,
     user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("documents.update")),
     service: SheetService = Depends(_get_sheet_service),
 ) -> SheetResponse:
-    """Update sheet metadata (discipline, title, revision, etc.)."""
+    """Update sheet metadata (discipline, title, revision, etc.).
+
+    R7 audit: cross-tenant IDOR guard on the parent project. Without
+    it, ``documents.update`` was enough to mutate any tenant's sheet
+    metadata.
+    """
+    sheet = await service.get_sheet(sheet_id)
+    await verify_project_access(sheet.project_id, user_id, session)
     sheet = await service.update_sheet(sheet_id, data)
     return _sheet_to_response(sheet)
 
@@ -946,6 +973,7 @@ def _bim_link_to_response(link: object) -> DocumentBIMLinkResponse:
 
 @router.get("/bim-links/", response_model=DocumentBIMLinkListResponse)
 async def list_bim_links(
+    session: SessionDep,
     element_id: uuid.UUID | None = Query(default=None),
     document_id: uuid.UUID | None = Query(default=None),
     user_id: CurrentUserId = None,  # type: ignore[assignment]
@@ -957,6 +985,12 @@ async def list_bim_links(
     Exactly one of ``element_id`` or ``document_id`` must be supplied:
     - ``element_id=X`` — every document linked to BIM element X
     - ``document_id=Y`` — every BIM element linked from document Y
+
+    R7 audit: the caller must have access to the project the lookup
+    keys into. Without this guard, ``documents.read`` was enough to
+    enumerate every BIM ↔ document link in the database — a sizable
+    cross-tenant data leak. 404 keeps the surface symmetric with the
+    rest of the documents IDOR contract.
     """
     if (element_id is None) == (document_id is None):
         raise HTTPException(
@@ -964,10 +998,36 @@ async def list_bim_links(
             detail="Exactly one of 'element_id' or 'document_id' must be provided",
         )
 
+    # Resolve the project the query keys into and 404 on missing /
+    # cross-tenant. Inline imports keep the module decoupled at import
+    # time while letting the helper participate in the active session.
+    from app.modules.bim_hub.models import BIMElement, BIMModel
+    from app.modules.documents.models import Document as _DocModel
+
     if element_id is not None:
+        element = await session.get(BIMElement, element_id)
+        if element is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="BIM element not found",
+            )
+        model = await session.get(BIMModel, element.model_id)
+        if model is None or model.project_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="BIM element not found",
+            )
+        await verify_project_access(model.project_id, user_id, session)
         links = await service.list_links_for_element(element_id)
     else:
         assert document_id is not None  # narrowing for type-checkers
+        doc = await session.get(_DocModel, document_id)
+        if doc is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Document not found",
+            )
+        await verify_project_access(doc.project_id, user_id, session)
         links = await service.list_links_for_document(document_id)
 
     items = [_bim_link_to_response(link) for link in links]
@@ -981,11 +1041,44 @@ async def list_bim_links(
 )
 async def create_bim_link(
     payload: DocumentBIMLinkCreate,
+    session: SessionDep,
     user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("documents.create")),
     service: DocumentBIMLinkService = Depends(_get_bim_link_service),
 ) -> DocumentBIMLinkResponse:
-    """Create a new Document ↔ BIM element link."""
+    """Create a new Document ↔ BIM element link.
+
+    R7 audit: enforce project access on BOTH ends of the link before
+    creating it. A caller with only ``documents.create`` previously
+    could splice arbitrary BIM elements to arbitrary documents (no
+    project check) — a clean cross-tenant linkage attack used to
+    surface "phantom" drawings in another tenant's viewer.
+    """
+    from app.modules.bim_hub.models import BIMElement, BIMModel
+    from app.modules.documents.models import Document as _DocModel
+
+    doc = await session.get(_DocModel, payload.document_id)
+    if doc is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found",
+        )
+    await verify_project_access(doc.project_id, user_id, session)
+
+    element = await session.get(BIMElement, payload.bim_element_id)
+    if element is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="BIM element not found",
+        )
+    model = await session.get(BIMModel, element.model_id)
+    if model is None or model.project_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="BIM element not found",
+        )
+    await verify_project_access(model.project_id, user_id, session)
+
     parsed_user_id: uuid.UUID | None = None
     if user_id:
         try:
@@ -1000,11 +1093,33 @@ async def create_bim_link(
 @router.delete("/bim-links/{link_id}", status_code=204)
 async def delete_bim_link(
     link_id: uuid.UUID,
+    session: SessionDep,
     user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("documents.delete")),
     service: DocumentBIMLinkService = Depends(_get_bim_link_service),
 ) -> None:
-    """Delete a Document ↔ BIM element link."""
+    """Delete a Document ↔ BIM element link.
+
+    R7 audit: the caller must have access to the parent document's
+    project before the link is removed. Otherwise the ``documents.delete``
+    grant on tenant A let you wipe links inside tenant B.
+    """
+    from app.modules.documents.models import Document as _DocModel
+    from app.modules.documents.models import DocumentBIMLink as _LinkModel
+
+    link = await session.get(_LinkModel, link_id)
+    if link is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="DocumentBIMLink not found",
+        )
+    doc = await session.get(_DocModel, link.document_id)
+    if doc is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="DocumentBIMLink not found",
+        )
+    await verify_project_access(doc.project_id, user_id, session)
     await service.delete_link(link_id)
 
 

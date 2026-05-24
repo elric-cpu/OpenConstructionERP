@@ -298,15 +298,20 @@ class ShareLinkCreate(BaseModel):
     Both fields are optional:
         * ``password`` — when omitted (or empty), the link is open
           and any recipient who knows the URL can download.
-        * ``expires_in_days`` — when omitted, the link never
-          expires. ``0`` is rejected as a likely typo; callers
-          wanting "immediately expire" should DELETE instead.
+        * ``expires_in_days`` — when omitted, the service defaults to
+          30 days (R7 audit: previously ``None`` meant *never*, which
+          is too permissive for a downloadable file URL — even with
+          password protection, a leaked URL would remain valid until
+          manually revoked). ``0`` is rejected as a likely typo;
+          callers wanting "immediately expire" should DELETE instead.
+          Maximum capped at 365 days (was 3650 / 10 years) so the
+          worst-case lifetime of a leaked token is one calendar year.
     """
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
     password: str | None = Field(default=None, min_length=1, max_length=128)
-    expires_in_days: int | None = Field(default=None, ge=1, le=3650)
+    expires_in_days: int | None = Field(default=None, ge=1, le=365)
 
 
 class ShareLinkResponse(BaseModel):

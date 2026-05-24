@@ -47,6 +47,15 @@ _TOKEN_BYTES = 24
 # ``app.modules.users.service.hash_password``.
 _BCRYPT_ROUNDS = 12
 
+# R7 audit: server-side fallback when the caller omits ``expires_in_days``.
+# Previously a missing value meant "never expires" — a leaked URL would
+# live forever absent a manual revoke call. Defaulting to 30 days caps
+# the blast radius of an unrevoked leak to a single month while still
+# leaving plenty of breathing room for the common "share with the GC for
+# this stage of the project" use case. Callers that genuinely need
+# longer can opt in explicitly (capped at 365 days by the schema).
+_DEFAULT_EXPIRES_IN_DAYS = 30
+
 
 def _hash_password(password: str) -> str:
     """‌⁠‍Bcrypt-hash a share-link password."""
@@ -147,9 +156,13 @@ async def create_share_link(
     if password:
         pw_hash = _hash_password(password)
 
-    expires_at: datetime | None = None
-    if expires_in_days is not None:
-        expires_at = _now() + timedelta(days=expires_in_days)
+    # R7 audit: never mint a never-expires link. Apply the 30-day
+    # default when the caller omits ``expires_in_days`` so a leaked URL
+    # is naturally bounded.
+    effective_days = (
+        expires_in_days if expires_in_days is not None else _DEFAULT_EXPIRES_IN_DAYS
+    )
+    expires_at: datetime = _now() + timedelta(days=effective_days)
 
     row = DocumentShareLink(
         document_id=document_id,
