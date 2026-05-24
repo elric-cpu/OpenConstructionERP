@@ -7,6 +7,7 @@ No business logic — pure data access.
 from __future__ import annotations
 
 import uuid
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import String, and_, cast, func, or_, select, update
@@ -171,8 +172,8 @@ class CostItemRepository:
         region: str | None = None,
         category: str | None = None,
         classification_path: str | None = None,
-        min_rate: float | None = None,
-        max_rate: float | None = None,
+        min_rate: Decimal | float | None = None,
+        max_rate: Decimal | float | None = None,
         offset: int = 0,
         limit: int = 50,
         cursor: tuple[str, str] | None = None,
@@ -263,11 +264,15 @@ class CostItemRepository:
                 expr = _classification_expr(_CLASSIFICATION_DEPTHS[depth_idx])
                 base = base.where(expr == segment)
 
+        # Cast to Float for cross-dialect comparison — the rate column is
+        # String(50) for SQLite Decimal compat (see models.py). Pre-cast
+        # the bound so Decimal inputs (Round-7) don't end up with mixed
+        # precision under PostgreSQL's stricter type promotion.
         if min_rate is not None:
-            base = base.where(cast(CostItem.rate, Float) >= min_rate)
+            base = base.where(cast(CostItem.rate, Float) >= float(min_rate))
 
         if max_rate is not None:
-            base = base.where(cast(CostItem.rate, Float) <= max_rate)
+            base = base.where(cast(CostItem.rate, Float) <= float(max_rate))
 
         # Total count — only when explicitly requested. Cursor-paginated
         # queries skip this since counting on every page is wasteful and

@@ -21,6 +21,7 @@ import io
 import logging
 import re as _re
 import uuid
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +30,16 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.file_signature import (
+    SIGNATURE_BYTES_REQUIRED,
+    FileSignatureMismatch,
+)
+from app.core.file_signature import (
+    detect as detect_signature,
+)
+from app.core.file_signature import (
+    require as require_signature,
+)
 from app.dependencies import (
     CurrentUserId,
     OptionalUserPayload,
@@ -37,17 +48,17 @@ from app.dependencies import (
     SessionDep,
     verify_project_access,
 )
+from app.modules.costs.intelligence import (
+    CostCertaintyService,
+    CostUsageRecorder,
+    RegionalIndexService,
+)
 from app.modules.costs.matcher import (
     MatchResult,
     match_cwicr_for_position,
     match_cwicr_items,
 )
 from app.modules.costs.models import CostItem
-from app.modules.costs.intelligence import (
-    CostCertaintyService,
-    CostUsageRecorder,
-    RegionalIndexService,
-)
 from app.modules.costs.schemas import (
     CategoryTreeNode,
     CertaintyBadge,
@@ -66,6 +77,19 @@ from app.modules.costs.schemas import (
 )
 from app.modules.costs.service import CostItemService
 from app.modules.costs.translations import localize_cost_row
+
+# Round-7 upload safety: cap incoming bulk imports at 25 MB so a renamed
+# binary can't waste arbitrary memory on the parse path before the
+# magic-byte gate has a chance to reject it. A real-world CWICR
+# CSV/Excel of 55K rows is ~8 MB; 25 MB leaves comfortable headroom for
+# annotated columns without exposing the parser to multi-GB blobs.
+_MAX_COST_UPLOAD_BYTES = 25 * 1024 * 1024
+
+# Magic-byte allow-list for the /import/file/ endpoint. ZIP covers OOXML
+# (xlsx); OLE covers legacy .xls; pure CSV has no magic so we accept the
+# ``None`` signature only when the body decodes as text and contains a
+# common delimiter (handled inline in the route).
+_ALLOWED_COST_IMPORT_SIGNATURES: frozenset[str] = frozenset({"zip", "ole"})
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -557,8 +581,8 @@ async def search_cost_items(
             "AND-combined with the other filters."
         ),
     ),
-    min_rate: float | None = Query(default=None, ge=0, description="Minimum rate"),
-    max_rate: float | None = Query(default=None, ge=0, description="Maximum rate"),
+    min_rate: Decimal | None = Query(default=None, ge=0, description="Minimum rate"),
+    max_rate: Decimal | None = Query(default=None, ge=0, description="Maximum rate"),
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     cursor: str | None = Query(
@@ -956,6 +980,7 @@ async def vector_region_stats() -> list[dict]:
 @router.get("/vector/v3-status/")
 async def vector_v3_status(
     db: SessionDep,
+    user: OptionalUserPayload,
     country: str = Query(
         "",
         description=(
@@ -1005,8 +1030,32 @@ async def vector_v3_status(
 
     # Cross-language binding diagnostics — independent of Qdrant probe so
     # the warning fires even when the engine is offline.
+    #
+    # IDOR gate (Round-7): the diagnostics read MatchProjectSettings for
+    # the supplied project. Verify the authenticated caller owns the
+    # project (or is admin) before exposing it. Anonymous callers skip
+    # the diagnostics entirely — surfacing them anonymously would leak
+    # whether arbitrary project UUIDs exist + their bound catalogue.
     if project_id is not None:
-        payload["language_mismatch"] = await _detect_language_mismatch(db, project_id)
+        sub = (user or {}).get("sub") if user else None
+        if sub:
+            try:
+                await verify_project_access(project_id, str(sub), db)
+            except HTTPException:
+                # Caller does not own the project — return the engine
+                # status payload WITHOUT the language_mismatch diagnostic
+                # so we neither 404 the unrelated probe nor leak the row.
+                payload["language_mismatch"] = {
+                    "status": "unknown",
+                    "project_region": "",
+                    "project_language": "",
+                    "bound_catalogue": "",
+                    "bound_language": "",
+                }
+            else:
+                payload["language_mismatch"] = await _detect_language_mismatch(
+                    db, project_id
+                )
 
     if not payload["connected"]:
         payload["error"] = base.get("error", "")
@@ -2637,7 +2686,8 @@ async def import_cost_file(
     Returns:
         Summary with counts of imported, skipped, and error details per row.
     """
-    # Validate file type
+    # Validate file extension (advisory — magic-byte gate below is the
+    # real check; extensions are attacker-controlled).
     filename = (file.filename or "").lower()
     if not filename.endswith((".xlsx", ".csv", ".xls")):
         raise HTTPException(
@@ -2652,6 +2702,62 @@ async def import_cost_file(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Uploaded file is empty.",
         )
+
+    # Round-7 audit: cap upload size BEFORE any parsing so a renamed
+    # binary can't exhaust memory on the openpyxl path. A real-world
+    # CWICR import of 55K rows is well under 10 MB; 25 MB leaves
+    # headroom for richly annotated user catalogs.
+    if len(content) > _MAX_COST_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=(
+                f"Uploaded file is too large "
+                f"({len(content) / (1024 * 1024):.1f} MB > "
+                f"{_MAX_COST_UPLOAD_BYTES / (1024 * 1024):.0f} MB limit). "
+                "Split the catalogue into smaller batches."
+            ),
+        )
+
+    # Round-7 magic-byte gate: filename extension lies; sniff the first
+    # 16 bytes against a hard allow-list. Excel files (xlsx) are ZIP
+    # containers ("PK\x03\x04"); .xls are OLE compound docs; CSVs have
+    # no magic — we accept ``None`` ONLY when the body decodes as text
+    # with a common delimiter.
+    head = content[:SIGNATURE_BYTES_REQUIRED]
+    signature = detect_signature(head)
+    is_csv_request = filename.endswith(".csv")
+    if is_csv_request:
+        # CSV body must decode as text and look like a delimited file.
+        # Reject anything that's actually a binary container masquerading
+        # as ".csv" (the classic .exe → .csv renamed-malware vector).
+        if signature is not None and signature not in {"xml"}:
+            # A real CSV would sniff as None (no magic) — anything we
+            # recognised as a container is a mismatch.
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail=(
+                    f"File extension is .csv but the content is a {signature} "
+                    "container. Re-upload as a real CSV."
+                ),
+            )
+        if b"\x00" in head:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="CSV upload contains NUL bytes — likely a binary file with a renamed extension.",
+            )
+    else:
+        # .xlsx / .xls — must be a real ZIP or OLE container.
+        try:
+            require_signature(
+                head,
+                _ALLOWED_COST_IMPORT_SIGNATURES,
+                filename=file.filename,
+            )
+        except FileSignatureMismatch as exc:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail=str(exc),
+            ) from exc
 
     # Parse rows based on file type
     try:
@@ -4114,7 +4220,12 @@ async def regional_adjust(
     user: OptionalUserPayload,
     region: str = Query(..., min_length=2, max_length=64, description="Region code, e.g. DE_BERLIN"),
     category: str = Query(..., min_length=2, max_length=64, description="Category key"),
-    base_rate: float = Query(..., ge=0, description="Unit rate in the catalogue's currency"),
+    # Round-7: ``Decimal`` for money — FastAPI parses the query string
+    # without going through ``float``. The response model serialises
+    # the values back out as strings so JS clients keep exact precision.
+    base_rate: Decimal = Query(
+        ..., ge=0, description="Unit rate in the catalogue's currency"
+    ),
     subcategory: str | None = Query(
         default=None,
         max_length=64,

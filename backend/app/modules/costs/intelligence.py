@@ -157,29 +157,38 @@ class RegionalIndexService:
         self,
         region_code: str,
         category: str,
-        base_rate: float,
+        base_rate: Decimal | float | str,
         *,
         subcategory: str | None = None,
-    ) -> tuple[float, float, str, date | None]:
+    ) -> tuple[Decimal, Decimal, str, date | None]:
         """Compute ``(adjusted_rate, factor, source, effective_date)``.
 
-        When no index row matches, the factor is ``1.0`` and the source
-        is ``"baseline"`` — the caller's frontend renders the same
-        shape either way.
+        When no index row matches, the factor is ``Decimal("1")`` and the
+        source is ``"baseline"`` — the caller's frontend renders the
+        same shape either way.
+
+        Round-7: returns ``Decimal`` so the multiply is exact (no float
+        intermediates). Pydantic schemas serialise to strings on the wire.
         """
-        if base_rate < 0:
-            base_rate = 0.0
+        base = (
+            base_rate if isinstance(base_rate, Decimal) else Decimal(str(base_rate))
+        )
+        if base < 0:
+            base = Decimal("0")
         row = await self.latest_for_region_category(
             region_code, category, subcategory=subcategory
         )
         if row is None:
-            return base_rate, 1.0, "baseline", None
-        factor = float(row.factor)
+            return base, Decimal("1"), "baseline", None
+        factor: Decimal = (
+            row.factor if isinstance(row.factor, Decimal) else Decimal(str(row.factor))
+        )
         # Guard against an absurd 0-or-negative factor leaking from a
         # bad seed; the badge UI assumes ``factor > 0``.
         if factor <= 0:
-            factor = 1.0
-        adjusted = round(base_rate * factor, 4)
+            factor = Decimal("1")
+        # Quantise to 4 decimal places — matches the legacy round(..., 4).
+        adjusted = (base * factor).quantize(Decimal("0.0001"))
         return adjusted, factor, row.source or "baseline", row.effective_date
 
 
@@ -197,15 +206,26 @@ class CostUsageRecorder:
         cost_item_id: uuid.UUID,
         *,
         project_id: uuid.UUID,
-        unit_rate_at_use: float,
+        unit_rate_at_use: Decimal | float | str,
         context: str = "boq",
         used_by: uuid.UUID | None = None,
     ) -> CostItemUsage:
-        """Insert a usage row. Caller owns the commit."""
+        """Insert a usage row. Caller owns the commit.
+
+        Accepts ``Decimal`` (Round-7 preferred), ``float`` (legacy callers
+        still in flight), or numeric strings — all coerced to ``Decimal``
+        via the ``str()`` round-trip so float imprecision never leaks into
+        the persisted ledger entry.
+        """
+        amount = (
+            unit_rate_at_use
+            if isinstance(unit_rate_at_use, Decimal)
+            else Decimal(str(unit_rate_at_use))
+        )
         row = CostItemUsage(
             cost_item_id=cost_item_id,
             project_id=project_id,
-            unit_rate_at_use=Decimal(str(unit_rate_at_use)),
+            unit_rate_at_use=amount,
             context=context,
             used_by=used_by,
         )

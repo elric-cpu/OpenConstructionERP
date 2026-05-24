@@ -147,32 +147,42 @@ async def http_client(app_instance):
 
 @pytest.mark.asyncio
 async def test_regional_adjust_applies_munich_factor(http_client):
-    """TEST_MUNICH factor 1.12 — 100 € → 112 €."""
+    """TEST_MUNICH factor 1.12 — 100 € → 112 €.
+
+    Round-7 (2026-05-24): money/factor fields surface as Decimal strings
+    on the wire so JSON's float bridge never silently rounds a
+    precision-critical value. Decoders cast via ``Decimal(str)`` for
+    exact comparison.
+    """
     resp = await http_client.get(
         "/api/v1/costs/regional-adjust/",
-        params={"region": "TEST_MUNICH", "category": "concrete", "base_rate": 100.0},
+        params={"region": "TEST_MUNICH", "category": "concrete", "base_rate": "100.00"},
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["region"] == "TEST_MUNICH"
     assert body["category"] == "concrete"
-    assert body["factor_applied"] == pytest.approx(1.12, rel=1e-3)
-    assert body["adjusted_rate"] == pytest.approx(112.0, rel=1e-3)
+    assert Decimal(body["factor_applied"]) == Decimal("1.12")
+    assert Decimal(body["adjusted_rate"]) == Decimal("112.0000")
     assert body["source"] == "OE_v3.12_test"
     assert body["effective_date"] == "2026-05-01"
 
 
 @pytest.mark.asyncio
 async def test_regional_adjust_unknown_region_passthrough(http_client):
-    """Unknown region → factor 1.0, source ``baseline``, no effective_date."""
+    """Unknown region → factor 1, source ``baseline``, no effective_date.
+
+    Round-7 contract: factor/base_rate/adjusted_rate are Decimal
+    strings.
+    """
     resp = await http_client.get(
         "/api/v1/costs/regional-adjust/",
-        params={"region": "ZZ_NOWHERE", "category": "concrete", "base_rate": 250.0},
+        params={"region": "ZZ_NOWHERE", "category": "concrete", "base_rate": "250.00"},
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["factor_applied"] == 1.0
-    assert body["adjusted_rate"] == pytest.approx(250.0)
+    assert Decimal(body["factor_applied"]) == Decimal("1")
+    assert Decimal(body["adjusted_rate"]) == Decimal("250.00")
     assert body["source"] == "baseline"
     assert body["effective_date"] is None
 

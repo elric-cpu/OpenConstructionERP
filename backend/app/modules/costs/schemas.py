@@ -5,10 +5,23 @@ from __future__ import annotations
 import logging
 import re
 from datetime import date, datetime
-from typing import Any, Literal
+from decimal import Decimal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, model_validator
+
+# Round-7 audit (2026-05-24): money / rate / factor fields are exchanged as
+# strings on the wire so JSON's float bridge never silently rounds a
+# precision-critical value (see the architecture guide "Money is Decimal not Float
+# (v3 §10 ban)"). Inputs accept any JSON number or numeric string;
+# Pydantic v2 promotes them to ``Decimal`` automatically. Outputs are
+# emitted as strings so a 199.99 rate doesn't become 199.98999999...
+# downstream in a JS client.
+DecimalMoney = Annotated[
+    Decimal,
+    PlainSerializer(lambda v: str(v) if v is not None else None, return_type=str),
+]
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +94,7 @@ class CostItemCreate(BaseModel):
         max_length=20,
         description="Unit of measurement (m, m2, m3, kg, pcs, hr, etc.)",
     )
-    rate: float = Field(..., ge=0, description="Unit rate (must be >= 0)")
+    rate: DecimalMoney = Field(..., ge=0, description="Unit rate (must be >= 0)")
     currency: str = Field(
         default="", max_length=10, description="ISO 4217 currency code (empty when unknown)"
     )
@@ -109,7 +122,7 @@ class CostItemUpdate(BaseModel):
     description: str | None = Field(default=None)
     descriptions: dict[str, str] | None = None
     unit: str | None = Field(default=None, min_length=1, max_length=20)
-    rate: float | None = Field(default=None, ge=0)
+    rate: DecimalMoney | None = Field(default=None, ge=0)
     currency: str | None = Field(default=None, max_length=10)
     source: str | None = Field(default=None, max_length=50)
     classification: dict[str, str] | None = None
@@ -133,7 +146,12 @@ class CostItemResponse(BaseModel):
     description: str
     descriptions: dict[str, str]
     unit: str
-    rate: float
+    # Round-7: money serialised as string. CostItem.rate is stored as
+    # String(50) in the model (SQLite Decimal compat), so we accept any
+    # numeric-coercible value at validate time and emit a string in
+    # responses — JSON clients then parse with their own BigDecimal /
+    # Decimal libraries without going through float.
+    rate: DecimalMoney
     currency: str
     source: str
     classification: dict[str, str]
@@ -201,7 +219,7 @@ class CostAutocompleteItem(BaseModel):
     code: str
     description: str
     unit: str
-    rate: float
+    rate: DecimalMoney
     # ISO 4217 currency. Non-optional for the frontend's apply path —
     # callers stamp it onto the BOQ resource entry so each rate keeps its
     # native currency instead of silently coercing to the BOQ base.
@@ -212,7 +230,7 @@ class CostAutocompleteItem(BaseModel):
     )
     classification: dict[str, str]
     components: list[dict[str, Any]] = Field(default_factory=list)
-    cost_breakdown: dict[str, float] | None = Field(
+    cost_breakdown: dict[str, DecimalMoney] | None = Field(
         default=None,
         description=(
             "Optional labor / material / equipment split (in the catalog's "
@@ -270,8 +288,8 @@ class CostSearchQuery(BaseModel):
             "segments in the middle act as wildcards."
         ),
     )
-    min_rate: float | None = Field(default=None, ge=0)
-    max_rate: float | None = Field(default=None, ge=0)
+    min_rate: Decimal | None = Field(default=None, ge=0)
+    max_rate: Decimal | None = Field(default=None, ge=0)
     limit: int = Field(default=50, ge=1, le=500)
     offset: int = Field(default=0, ge=0)
     cursor: str | None = Field(
@@ -380,7 +398,9 @@ class CostSuggestion(BaseModel):
     code: str = Field(..., description="CWICR rate code / cost item code")
     description: str = Field(..., description="Human-readable description")
     unit: str = Field(..., description="Unit of measurement")
-    unit_rate: float | str = Field(..., description="Unit rate (numeric if parseable)")
+    unit_rate: DecimalMoney | str = Field(
+        ..., description="Unit rate (Decimal-string if parseable, else raw string)"
+    )
     classification: dict[str, str] = Field(
         default_factory=dict,
         description="Classification codes forwarded from the CostItem",
@@ -476,7 +496,7 @@ class RegionalIndexResponse(BaseModel):
     region_code: str
     category: str
     subcategory: str | None
-    factor: float
+    factor: DecimalMoney
     source: str
     effective_date: date
     created_at: datetime
@@ -496,9 +516,9 @@ class RegionalAdjustResponse(BaseModel):
 
     region: str = Field(..., description="Echoed region code (uppercased)")
     category: str = Field(..., description="Echoed category key")
-    base_rate: float = Field(..., ge=0)
-    factor_applied: float = Field(..., gt=0)
-    adjusted_rate: float = Field(..., ge=0)
+    base_rate: DecimalMoney = Field(..., ge=0)
+    factor_applied: DecimalMoney = Field(..., gt=0)
+    adjusted_rate: DecimalMoney = Field(..., ge=0)
     source: str
     effective_date: date | None = Field(
         default=None,
@@ -553,6 +573,6 @@ class RecordUsageRequest(BaseModel):
 
     project_id: UUID
     context: Literal["boq", "assembly", "tender"] = "boq"
-    unit_rate_at_use: float = Field(
+    unit_rate_at_use: DecimalMoney = Field(
         ..., ge=0, description="Rate as it was at the moment of apply."
     )

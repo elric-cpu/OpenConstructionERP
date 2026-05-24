@@ -237,12 +237,14 @@ async def test_autocomplete_payload_size_bounded(session: AsyncSession) -> None:
         accept_language=None,
     )
     rich = next(i for i in out if i.code == "CW-CONC-30")
+    # Round-7: cost_breakdown values are now Decimal (serialised as
+    # strings via Pydantic v2 PlainSerializer). Dump through Pydantic's
+    # JSON-mode so the wire-shape matches what the FE actually receives.
     new_blob = json.dumps(
-        {
-            "region": rich.region,
-            "cost_breakdown": rich.cost_breakdown,
-            "metadata_": rich.metadata_,
-        }
+        rich.model_dump(
+            mode="json",
+            include={"region", "cost_breakdown", "metadata_"},
+        )
     )
     # Even with three breakdown numbers + variant_stats + count, the
     # added fields must stay well under 400 B per item — the spec calls
