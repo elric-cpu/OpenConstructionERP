@@ -233,6 +233,14 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+    // Without dedupe, recharts can pull a second copy of react/react-dom through
+    // its peer-dep optimize-deps pre-bundle in vite dev mode. The duplicate
+    // instances make useContext return null inside ResponsiveContainer the moment
+    // the Simulator tab mounts after a cold optimize flush — the page hits the
+    // ErrorBoundary with "Cannot read properties of null (reading 'useContext')"
+    // and the production bundle is unaffected (single chunk = single React).
+    // Reported by qa/V3-propdev-pricing-engine.
+    dedupe: ['react', 'react-dom'],
   },
   server: {
     host: '127.0.0.1',
