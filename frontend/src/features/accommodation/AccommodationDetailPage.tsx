@@ -25,6 +25,7 @@ import clsx from 'clsx';
 import {
   BedDouble,
   CalendarClock,
+  CalendarRange,
   Receipt,
   Settings as SettingsIcon,
   Globe2,
@@ -72,6 +73,7 @@ import {
   type ChargeKind,
 } from './api';
 import { BulkRoomAddModal } from './BulkRoomAddModal';
+import { AccommodationCalendar } from './AccommodationCalendar';
 
 /** Visual badge palette for the per-row booking-status pill. */
 const BOOKING_STATUS_BADGE: Record<BookingStatus, string> = {
@@ -90,7 +92,7 @@ const FILTER_PILLS: Array<'all' | BookingStatus> = [
   'cancelled',
 ];
 
-type DetailTab = 'rooms' | 'bookings' | 'charges' | 'settings';
+type DetailTab = 'rooms' | 'bookings' | 'calendar' | 'charges' | 'settings';
 
 const ROOM_STATUS_STYLES: Record<RoomStatus, string> = {
   available: 'bg-emerald-100 text-emerald-800 border-emerald-300',
@@ -228,6 +230,15 @@ export function AccommodationDetailPage() {
 
       {tab === 'rooms' && <RoomsTab data={data} />}
       {tab === 'bookings' && <BookingsTab data={data} />}
+      {tab === 'calendar' && (
+        <div
+          role="tabpanel"
+          data-testid="accommodation-tab-panel-calendar"
+          className="space-y-4"
+        >
+          <AccommodationCalendar embedded scopedAccommodationId={data.id} />
+        </div>
+      )}
       {tab === 'charges' && <ChargesTab data={data} />}
       {tab === 'settings' && (
         <SettingsTab
@@ -268,6 +279,11 @@ function DetailTabs({
       id: 'bookings',
       label: t('accommodation.tabs.bookings', { defaultValue: 'Bookings' }),
       icon: CalendarClock,
+    },
+    {
+      id: 'calendar',
+      label: t('accommodation.tabs.calendar', { defaultValue: 'Calendar' }),
+      icon: CalendarRange,
     },
     {
       id: 'charges',
