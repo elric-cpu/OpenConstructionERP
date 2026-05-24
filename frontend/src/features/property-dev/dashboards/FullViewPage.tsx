@@ -17,6 +17,11 @@ import { SalesVelocity } from './SalesVelocity';
 import { CashFlowWaterfall } from './CashFlowWaterfall';
 import { InventoryAgeing } from './InventoryAgeing';
 import { FunnelConversion } from './FunnelConversion';
+import { CohortRetentionWidget } from './CohortRetentionWidget';
+import { TimeToCloseWidget } from './TimeToCloseWidget';
+import { LeadSourceAttributionWidget } from './LeadSourceAttributionWidget';
+import { ConversionFunnelWidget } from './ConversionFunnelWidget';
+import { BrokerPerformanceWidget } from './BrokerPerformanceWidget';
 import { DashboardEmpty, DashboardLoading } from './_shared';
 
 const VALID_KEYS = new Set([
@@ -25,7 +30,9 @@ const VALID_KEYS = new Set([
   'cashflow-waterfall',
   'inventory-ageing',
   'funnel-conversion',
+  'insights',
 ]);
+
 
 export function FullViewPage() {
   const { t } = useTranslation();
@@ -84,6 +91,8 @@ export function FullViewPage() {
         return <InventoryAgeing developmentId={developmentId} />;
       case 'funnel-conversion':
         return <FunnelConversion developmentId={developmentId} />;
+      case 'insights':
+        return <InsightsGrid developmentId={developmentId} />;
       default:
         return null;
     }
@@ -146,6 +155,40 @@ export function FullViewPage() {
         </label>
       </header>
       <div>{renderActive()}</div>
+    </div>
+  );
+}
+
+/**
+ * Insights tab — the 5 v3124 sales-analytics widgets in a 2-col grid
+ * (1-col on mobile). Each widget is independently cached (React Query
+ * staleTime 60s) so swapping tabs or window-filter changes only
+ * re-fetches the widgets the user actually scrolls to.
+ *
+ * The Insights grid intentionally drops the development_id scope —
+ * these analytics are tenant-wide (cohort retention, lead-source CPA,
+ * broker leaderboard all make more sense across the full portfolio).
+ * The Conversion-funnel widget takes ``devId`` to keep the per-dev
+ * drilldown available without adding a second selector.
+ */
+function InsightsGrid({ developmentId }: { developmentId: string }) {
+  return (
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <div className="rounded-lg border border-divider bg-surface-primary p-3">
+        <CohortRetentionWidget />
+      </div>
+      <div className="rounded-lg border border-divider bg-surface-primary p-3">
+        <TimeToCloseWidget />
+      </div>
+      <div className="rounded-lg border border-divider bg-surface-primary p-3 md:col-span-2">
+        <LeadSourceAttributionWidget />
+      </div>
+      <div className="rounded-lg border border-divider bg-surface-primary p-3">
+        <ConversionFunnelWidget devId={developmentId} />
+      </div>
+      <div className="rounded-lg border border-divider bg-surface-primary p-3">
+        <BrokerPerformanceWidget />
+      </div>
     </div>
   );
 }

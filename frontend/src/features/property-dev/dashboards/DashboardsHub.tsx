@@ -17,6 +17,7 @@ import {
   Clock,
   Filter,
   Compass,
+  Sparkles,
 } from 'lucide-react';
 import { Breadcrumb, Card } from '@/shared/ui';
 import { listDevelopments, type Development } from '../api';
@@ -196,6 +197,30 @@ export function DashboardsHub() {
             {t('propdev.dashboards.journey.card_desc', {
               defaultValue:
                 'Open any buyer from the Buyers tab to view their journey timeline.',
+            })}
+          </p>
+        </Card>
+        <Card className="flex min-h-[260px] flex-col p-3 md:col-span-2">
+          <header className="mb-2 flex items-center justify-between">
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-content-primary">
+              <Sparkles size={14} className="text-content-tertiary" />
+              {t('propdev.dashboards.insights.card_title', {
+                defaultValue: 'Sales insights (v3124)',
+              })}
+            </h3>
+            <Link
+              to="/property-dev/dashboards/insights"
+              className="text-2xs text-oe-blue hover:underline"
+            >
+              {t('propdev.dashboards.hub.open_full_view', {
+                defaultValue: 'Open full view →',
+              })}
+            </Link>
+          </header>
+          <p className="text-xs text-content-tertiary">
+            {t('propdev.dashboards.insights.card_desc', {
+              defaultValue:
+                'Cohort retention, time-to-close, lead-source CPA, conversion funnel and broker leaderboard — director-grade rollups across the full portfolio.',
             })}
           </p>
         </Card>

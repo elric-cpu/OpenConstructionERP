@@ -830,6 +830,23 @@ class Lead(Base):
         ForeignKey("oe_property_dev_buyer.id", ondelete="SET NULL"),
         nullable=True,
     )
+    # ── Sales analytics (v3124) ────────────────────────────────────
+    # Optional acquisition cost for this lead (campaign spend / pay-per-
+    # click invoice). Drives the CPA column in the lead-source attribution
+    # widget. Decimal so rollups stay exact.
+    source_cost: Mapped[Decimal | None] = mapped_column(
+        Numeric(15, 2), nullable=True
+    )
+    # Optional assigned broker / agency that owns the lead end-to-end.
+    # NULL means in-house / portal-driven. Used by the broker-performance
+    # leaderboard widget and by the lead-source attribution rollup when
+    # ``source == "broker"``.
+    broker_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(),
+        ForeignKey("oe_property_dev_broker.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         "metadata", JSON, nullable=False, default=dict, server_default="{}"
     )

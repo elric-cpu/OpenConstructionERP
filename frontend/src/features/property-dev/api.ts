@@ -2472,6 +2472,172 @@ export function getBuyerJourney(buyerId: string): Promise<BuyerJourneyResponse> 
   );
 }
 
+/* ── Sales-analytics dashboards (v3124) ─────────────────────────── */
+
+export interface CohortRetentionRow {
+  cohort_month: string;
+  total: number;
+  still_active: number;
+  retention_pct_d30: number | string;
+  retention_pct_d60: number | string;
+  retention_pct_d90: number | string;
+  retention_pct_d180: number | string;
+}
+
+export interface CohortRetentionResponse {
+  cohort_period: string;
+  since: string | null;
+  until: string | null;
+  cohorts: CohortRetentionRow[];
+  total_cohorts: number;
+}
+
+export interface StageHistogramBucket {
+  label: string;
+  lo_days: number;
+  hi_days: number;
+  count: number;
+}
+
+export interface StageDistribution {
+  stage: string;
+  sample_size: number;
+  mean_days: number | string;
+  p50_days: number | string;
+  p90_days: number | string;
+  buckets: StageHistogramBucket[];
+}
+
+export interface TimeToCloseResponse {
+  since: string | null;
+  until: string | null;
+  closed_sales: number;
+  stages: StageDistribution[];
+}
+
+export interface LeadSourceRow {
+  source: string;
+  leads: number;
+  reservations: number;
+  sales: number;
+  conversion_to_reservation_pct: number | string;
+  conversion_to_sale_pct: number | string;
+  revenue: CurrencyAmount[];
+  total_source_cost: number | string;
+  cpa: number | string | null;
+  cpa_currency: string;
+}
+
+export interface LeadSourceAttributionResponse {
+  since: string | null;
+  until: string | null;
+  rows: LeadSourceRow[];
+  total_leads: number;
+}
+
+export interface ConversionFunnelStep {
+  code: 'leads' | 'qualified' | 'reservation' | 'sale' | 'handover';
+  label: string;
+  count: number;
+  drop_pct: number | string;
+  conversion_from_top_pct: number | string;
+}
+
+export interface ConversionFunnelResponse {
+  since: string | null;
+  until: string | null;
+  dev_id: string | null;
+  plot_type: string | null;
+  steps: ConversionFunnelStep[];
+  overall_conversion_pct: number | string;
+}
+
+export interface BrokerLeaderboardRow {
+  broker_id: string;
+  broker_name: string;
+  leads_assigned: number;
+  reservations_closed: number;
+  sales_closed: number;
+  conversion_rate_pct: number | string;
+  gmv: CurrencyAmount[];
+  commission_earned: CurrencyAmount[];
+}
+
+export interface BrokerPerformanceResponse {
+  since: string | null;
+  until: string | null;
+  rows: BrokerLeaderboardRow[];
+  total_brokers: number;
+}
+
+interface WindowParams {
+  since?: string | null;
+  until?: string | null;
+}
+
+function _windowQs(params: WindowParams): URLSearchParams {
+  const qs = new URLSearchParams();
+  if (params.since) qs.set('since', params.since);
+  if (params.until) qs.set('until', params.until);
+  return qs;
+}
+
+export function getCohortRetention(
+  params: WindowParams & { cohort_period?: 'month' } = {},
+): Promise<CohortRetentionResponse> {
+  const qs = _windowQs(params);
+  if (params.cohort_period) qs.set('cohort_period', params.cohort_period);
+  const tail = qs.toString();
+  return apiGet<CohortRetentionResponse>(
+    `${BASE}/dashboards/cohort-retention/${tail ? `?${tail}` : ''}`,
+  );
+}
+
+export function getTimeToClose(
+  params: WindowParams = {},
+): Promise<TimeToCloseResponse> {
+  const qs = _windowQs(params);
+  const tail = qs.toString();
+  return apiGet<TimeToCloseResponse>(
+    `${BASE}/dashboards/time-to-close/${tail ? `?${tail}` : ''}`,
+  );
+}
+
+export function getLeadSourceAttribution(
+  params: WindowParams = {},
+): Promise<LeadSourceAttributionResponse> {
+  const qs = _windowQs(params);
+  const tail = qs.toString();
+  return apiGet<LeadSourceAttributionResponse>(
+    `${BASE}/dashboards/lead-source-attribution/${tail ? `?${tail}` : ''}`,
+  );
+}
+
+export function getConversionFunnel(
+  params: WindowParams & {
+    dev_id?: string | null;
+    plot_type?: string | null;
+  } = {},
+): Promise<ConversionFunnelResponse> {
+  const qs = _windowQs(params);
+  if (params.dev_id) qs.set('dev_id', params.dev_id);
+  if (params.plot_type) qs.set('plot_type', params.plot_type);
+  const tail = qs.toString();
+  return apiGet<ConversionFunnelResponse>(
+    `${BASE}/dashboards/conversion-funnel/${tail ? `?${tail}` : ''}`,
+  );
+}
+
+export function getBrokerPerformance(
+  params: WindowParams = {},
+): Promise<BrokerPerformanceResponse> {
+  const qs = _windowQs(params);
+  const tail = qs.toString();
+  return apiGet<BrokerPerformanceResponse>(
+    `${BASE}/dashboards/broker-performance/${tail ? `?${tail}` : ''}`,
+  );
+}
+
 /* ── Document Templates ─────────────────────────────────────────── */
 
 export type PropDevDocType =

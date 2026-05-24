@@ -2984,12 +2984,212 @@ class BuyerJourneyResponse(BaseModel):
     event_count: int = 0
 
 
+# ── Sales-analytics dashboards (v3124) ──────────────────────────────────
+#
+# Five new dashboards aimed at a real-estate sales director:
+#   1. cohort-retention      — bookings grouped by reservation-month
+#   2. time-to-close         — days Lead → Reservation → Sale → Handover
+#   3. lead-source-attribution — conversion + revenue + CPA per source
+#   4. conversion-funnel     — Leads → Qualified → Reservation → Sale → Handover
+#   5. broker-performance    — per-broker leaderboard
+#
+# Every money field is a plain-decimal string (R8 convention). Every
+# percent field is a plain-decimal string (consistent with FunnelStage).
+
+
+class CohortRetentionRow(BaseModel):
+    """One cohort row on the retention heatmap.
+
+    ``cohort_month`` is the YYYY-MM the reservation was created in.
+    Retention percentages are share of the cohort still in a non-terminal
+    state (``active`` or ``converted``) at +30/60/90/180 days from
+    creation, expressed as 0.0–100.0.
+    """
+
+    cohort_month: str = ""
+    total: int = 0
+    still_active: int = 0
+    retention_pct_d30: Decimal = Decimal("0")
+    retention_pct_d60: Decimal = Decimal("0")
+    retention_pct_d90: Decimal = Decimal("0")
+    retention_pct_d180: Decimal = Decimal("0")
+
+    @field_serializer(
+        "retention_pct_d30",
+        "retention_pct_d60",
+        "retention_pct_d90",
+        "retention_pct_d180",
+        when_used="json",
+    )
+    @classmethod
+    def _ser_pct(cls, v: Decimal) -> str:
+        return _serialize_money_string(v) or "0"
+
+
+class CohortRetentionResponse(BaseModel):
+    """Retention curves per reservation-month cohort."""
+
+    cohort_period: str = "month"
+    since: str | None = None
+    until: str | None = None
+    cohorts: list[CohortRetentionRow] = Field(default_factory=list)
+    total_cohorts: int = 0
+
+
+class StageHistogramBucket(BaseModel):
+    """One bucket on the time-to-close histogram for a given stage."""
+
+    label: str = ""
+    lo_days: int = 0
+    hi_days: int = 0  # inclusive upper bound; -1 marks the open-ended tail
+    count: int = 0
+
+
+class StageDistribution(BaseModel):
+    """Days-in-stage distribution + summary stats for one funnel stage."""
+
+    stage: str = ""
+    sample_size: int = 0
+    mean_days: Decimal = Decimal("0")
+    p50_days: Decimal = Decimal("0")
+    p90_days: Decimal = Decimal("0")
+    buckets: list[StageHistogramBucket] = Field(default_factory=list)
+
+    @field_serializer(
+        "mean_days", "p50_days", "p90_days", when_used="json",
+    )
+    @classmethod
+    def _ser_days(cls, v: Decimal) -> str:
+        return _serialize_money_string(v) or "0"
+
+
+class TimeToCloseResponse(BaseModel):
+    """Lead → Reservation → Sale → Handover stage timings."""
+
+    since: str | None = None
+    until: str | None = None
+    closed_sales: int = 0
+    stages: list[StageDistribution] = Field(default_factory=list)
+
+
+class LeadSourceRow(BaseModel):
+    """One row on the lead-source attribution table."""
+
+    source: str = ""
+    leads: int = 0
+    reservations: int = 0
+    sales: int = 0
+    conversion_to_reservation_pct: Decimal = Decimal("0")
+    conversion_to_sale_pct: Decimal = Decimal("0")
+    revenue: list["CurrencyAmount"] = Field(default_factory=list)
+    total_source_cost: Decimal = Decimal("0")
+    cpa: Decimal | None = None
+    cpa_currency: str = ""
+
+    @field_serializer(
+        "conversion_to_reservation_pct",
+        "conversion_to_sale_pct",
+        "total_source_cost",
+        when_used="json",
+    )
+    @classmethod
+    def _ser_pct(cls, v: Decimal) -> str:
+        return _serialize_money_string(v) or "0"
+
+    @field_serializer("cpa", when_used="json")
+    @classmethod
+    def _ser_cpa(cls, v: Decimal | None) -> str | None:
+        if v is None:
+            return None
+        return _serialize_money_string(v)
+
+
+class LeadSourceAttributionResponse(BaseModel):
+    """Per-source funnel + revenue + CPA rollup."""
+
+    since: str | None = None
+    until: str | None = None
+    rows: list[LeadSourceRow] = Field(default_factory=list)
+    total_leads: int = 0
+
+
+class ConversionFunnelStep(BaseModel):
+    """One step on the sales-director conversion funnel.
+
+    Stages: ``leads`` → ``qualified`` → ``reservation`` → ``sale`` →
+    ``handover``. ``drop_pct`` is share of the previous step that did
+    NOT proceed (0.0–100.0). The first step's drop_pct is always 0.
+    """
+
+    code: str = ""
+    label: str = ""
+    count: int = 0
+    drop_pct: Decimal = Decimal("0")
+    conversion_from_top_pct: Decimal = Decimal("0")
+
+    @field_serializer(
+        "drop_pct", "conversion_from_top_pct", when_used="json",
+    )
+    @classmethod
+    def _ser_pct(cls, v: Decimal) -> str:
+        return _serialize_money_string(v) or "0"
+
+
+class ConversionFunnelResponse(BaseModel):
+    """5-step funnel scoped by date window and (optionally) development."""
+
+    since: str | None = None
+    until: str | None = None
+    dev_id: UUID | None = None
+    plot_type: str | None = None
+    steps: list[ConversionFunnelStep] = Field(default_factory=list)
+    overall_conversion_pct: Decimal = Decimal("0")
+
+    @field_serializer("overall_conversion_pct", when_used="json")
+    @classmethod
+    def _ser_pct(cls, v: Decimal) -> str:
+        return _serialize_money_string(v) or "0"
+
+
+class BrokerLeaderboardRow(BaseModel):
+    """One broker on the performance leaderboard."""
+
+    broker_id: UUID
+    broker_name: str = ""
+    leads_assigned: int = 0
+    reservations_closed: int = 0
+    sales_closed: int = 0
+    conversion_rate_pct: Decimal = Decimal("0")
+    gmv: list["CurrencyAmount"] = Field(default_factory=list)
+    commission_earned: list["CurrencyAmount"] = Field(default_factory=list)
+
+    @field_serializer("conversion_rate_pct", when_used="json")
+    @classmethod
+    def _ser_pct(cls, v: Decimal) -> str:
+        return _serialize_money_string(v) or "0"
+
+
+class BrokerPerformanceResponse(BaseModel):
+    """Per-broker leaderboard for the requested window."""
+
+    since: str | None = None
+    until: str | None = None
+    rows: list[BrokerLeaderboardRow] = Field(default_factory=list)
+    total_brokers: int = 0
+
+
 __all_task_140__ = (
+    "BrokerLeaderboardRow",
+    "BrokerPerformanceResponse",
     "BuyerJourneyEvent",
     "BuyerJourneyResponse",
     "CashflowMonthBucket",
     "CashflowTotals",
     "CashflowWaterfallResponse",
+    "CohortRetentionResponse",
+    "CohortRetentionRow",
+    "ConversionFunnelResponse",
+    "ConversionFunnelStep",
     "CurrencyAmount",
     "FunnelConversionResponse",
     "FunnelStage",
@@ -3001,12 +3201,17 @@ __all_task_140__ = (
     "InventoryAgeingPlot",
     "InventoryAgeingResponse",
     "InventoryHeatmapResponse",
+    "LeadSourceAttributionResponse",
+    "LeadSourceRow",
     "PropertyDevHouseTypeCreate",
     "PropertyDevHouseTypeResponse",
     "PropertyDevHouseTypeUpdate",
     "SalesVelocityBucket",
     "SalesVelocityResponse",
     "SalesVelocityTotals",
+    "StageDistribution",
+    "StageHistogramBucket",
+    "TimeToCloseResponse",
 )
 
 
