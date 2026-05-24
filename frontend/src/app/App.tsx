@@ -211,6 +211,14 @@ const BuyerPortalPage = lazy(() =>
     default: m.BuyerPortalPage,
   }))
 );
+// Field-worker mobile shell — DESIGN-STAGE SKELETON. See
+// docs/architecture/FIELD_WORKER_MOBILE_DESIGN.md. Lazy-loaded in its
+// own chunk so the desktop bundle is unaffected.
+const FieldShellPage = lazy(() =>
+  import('@/features/field/FieldShellPage').then((m) => ({
+    default: m.FieldShellPage,
+  }))
+);
 const SnapshotsPage = lazy(() =>
   import('@/features/dashboards').then((m) => ({ default: m.SnapshotsPage }))
 );
@@ -655,6 +663,18 @@ export default function App() {
 
         {/* Public buyer-portal landing page — magic-link auth only, no app shell */}
         <Route path="/buyer-portal/:token" element={<BuyerPortalPage />} />
+
+        {/* Field-worker mobile shell — bottom-nav layout, no desktop sidebar.
+            Skeleton route; pilot will add `/field/{token}` PIN entry and the
+            four tab bodies. See docs/architecture/FIELD_WORKER_MOBILE_DESIGN.md */}
+        <Route
+          path="/field"
+          element={
+            <Suspense fallback={<LoadingScreen />}>
+              <FieldShellPage />
+            </Suspense>
+          }
+        />
 
         {/* Auth — public */}
         <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />} />

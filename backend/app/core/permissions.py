@@ -33,10 +33,28 @@ class Role(StrEnum):
     MANAGER = "manager"  # Project management, team management
     EDITOR = "editor"  # Create and modify content
     VIEWER = "viewer"  # Read-only access
+    # ── Field-worker surface (mobile/tablet, see
+    # docs/architecture/FIELD_WORKER_MOBILE_DESIGN.md). DESIGN-STAGE
+    # placeholders — the permission set is intentionally empty until
+    # the pilot router lands so adding the enum value does not
+    # accidentally widen any existing endpoint's scope.
+    SITE_INSPECTOR = "site_inspector"  # QA/HSE inspector, read-broad write-narrow
+    SITE_FOREMAN = "site_foreman"  # crew foreman, signs off worker entries
+    FIELD_WORKER = "field_worker"  # site labourer, lowest-trust persona
 
 
-# Role hierarchy: higher roles inherit all permissions of lower roles
+# Role hierarchy: higher roles inherit all permissions of lower roles.
+#
+# Field-role ranks are NEGATIVE (below VIEWER=0) to ensure that a
+# default-`-1` lookup (the legacy fallback shape used by
+# `role_has_permission`) cannot accidentally promote a field worker
+# above a viewer. Anywhere the legacy `-1` floor is read, it must be
+# audited as part of the field-pilot landing PR — see the design doc
+# §11 Risk #3.
 ROLE_HIERARCHY: dict[Role, int] = {
+    Role.FIELD_WORKER: -2,
+    Role.SITE_FOREMAN: -1,
+    Role.SITE_INSPECTOR: 0,
     Role.VIEWER: 0,
     Role.EDITOR: 1,
     Role.MANAGER: 2,
@@ -258,6 +276,41 @@ PRESETS: dict[str, "callable"] = {
     "editor-default": _editor_default,
     "manager-default": _manager_default,
 }
+
+
+def register_field_role_permissions() -> None:
+    """Register the field-worker surface permission set.
+
+    DESIGN-STAGE STUB — intentionally empty until the pilot
+    ``/api/v1/field/*`` router lands. See
+    ``docs/architecture/FIELD_WORKER_MOBILE_DESIGN.md`` §4 for the
+    full permission matrix the pilot will fill in.
+
+    TODO (pilot, Daily Diary surface):
+      * ``daily_diary.read``           → FIELD_WORKER (own day only,
+        scope enforced at service layer via
+        ``oe_field_module_grant``)
+      * ``daily_diary.create``         → FIELD_WORKER
+      * ``daily_diary.update``         → FIELD_WORKER (own entries
+        <24 h; foreman-and-above for others)
+      * ``daily_diary.upload_photo``   → FIELD_WORKER
+      * ``daily_diary.fetch_weather``  → FIELD_WORKER
+      * ``daily_diary.close``          → SITE_FOREMAN (sign-off)
+      * ``daily_diary.sign``           → MANAGER (unchanged)
+
+    TODO (phase 2 — design-doc §4.2):
+      * ``hse_advanced.report_incident`` → FIELD_WORKER
+      * ``ncr.flag``                     → FIELD_WORKER
+      * ``inspections.create``           → SITE_INSPECTOR
+      * ``punchlist.update_own``         → FIELD_WORKER
+      * ``equipment.log_usage``          → FIELD_WORKER
+
+    Until those permissions are registered here, the three field
+    roles can sign in (the ``Role`` enum members exist) but every
+    permission check returns False — by design.
+    """
+    # Intentionally empty. See module docstring above.
+    return None
 
 
 def register_core_permissions() -> None:
