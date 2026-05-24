@@ -14,6 +14,10 @@ def register_daily_diary_permissions() -> None:
             "daily_diary.delete": Role.MANAGER,
             "daily_diary.close": Role.EDITOR,
             "daily_diary.sign": Role.MANAGER,
+            # R7: unlock breaks the signed-immutable invariant; it MUST
+            # require manager-or-above. The unlock writes an audit row
+            # (revision_history) so the broken signature stays traceable.
+            "daily_diary.unlock": Role.MANAGER,
             "daily_diary.archive": Role.MANAGER,
             "daily_diary.upload_photo": Role.EDITOR,
             "daily_diary.attach_drone": Role.EDITOR,

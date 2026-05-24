@@ -22,6 +22,12 @@ def register_qms_permissions() -> None:
             "qms.audit.write": Role.MANAGER,
             "qms.calibration.read": Role.VIEWER,
             "qms.calibration.write": Role.EDITOR,
+            # R7: tenant-wide (project_id=None) calibrations bypass per-project
+            # ownership gates and are visible to every reader in the tenant.
+            # An editor must not be able to create one — promoting them is a
+            # manager-level call (matches `qms.template.write`, which is also
+            # tenant-scoped and gated to MANAGER+).
+            "qms.calibration.tenant_write": Role.MANAGER,
             "qms.calibration.delete": Role.MANAGER,
             "qms.template.read": Role.VIEWER,
             "qms.template.write": Role.MANAGER,

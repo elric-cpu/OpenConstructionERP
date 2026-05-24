@@ -211,6 +211,30 @@ async def sign_diary(
     return DiaryArchiveSignatureResponse.model_validate(signature)
 
 
+@router.post("/diaries/{diary_id}/unlock", response_model=DailyDiaryResponse)
+async def unlock_diary(
+    diary_id: uuid.UUID,
+    session: SessionDep,
+    reason: str | None = Query(default=None, max_length=2000),
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("daily_diary.unlock")),
+    service: DailyDiaryService = Depends(_get_service),
+) -> DailyDiaryResponse:
+    """‌⁠‍Re-open a signed diary so a manager can amend it.
+
+    The original archive signature is preserved (its hash continues to
+    point at the pre-edit snapshot) so the integrity break is forensic
+    and traceable. An archived diary cannot be unlocked — see the 409
+    body ``code=diary_archived_cannot_unlock`` for that case.
+    """
+    existing = await service.get_diary(diary_id)
+    await verify_project_access(existing.project_id, user_id, session)
+    diary = await service.unlock_diary(
+        diary_id, user_id=user_id, reason=reason,
+    )
+    return DailyDiaryResponse.model_validate(diary)
+
+
 @router.post("/diaries/{diary_id}/archive", response_model=DailyDiaryResponse)
 async def archive_diary(
     diary_id: uuid.UUID,

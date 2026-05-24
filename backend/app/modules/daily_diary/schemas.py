@@ -7,7 +7,32 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+def _validate_storage_url(value: str | None) -> str | None:
+    """‌⁠‍Reject non-http(s) URLs for stored asset references.
+
+    Photo / video / drone-ortho / point-cloud URLs are rendered by the
+    diary UI as ``<img>`` / ``<a href>`` links. Allowing
+    ``javascript:`` or ``data:`` schemes would let an uploader stash
+    XSS payloads under a benign-looking asset id. Restrict to http(s)
+    or relative paths (``/files/...``) at the schema boundary.
+    """
+    if value is None:
+        return None
+    stripped = value.strip()
+    if not stripped:
+        return None
+    lowered = stripped.lower()
+    if stripped.startswith("/"):
+        return stripped  # relative MinIO / static path is fine
+    if not (lowered.startswith("http://") or lowered.startswith("https://")):
+        raise ValueError(
+            "Asset URL must use http(s) or a relative /path "
+            "(javascript:/data:/file: rejected)",
+        )
+    return stripped
 
 # ── Status enums (encoded as patterns) ───────────────────────────────────
 
@@ -274,6 +299,9 @@ class DiaryPhotoCreate(BaseModel):
     is_360: bool = False
     is_drone: bool = False
 
+    _validate_file_url = field_validator("file_url")(_validate_storage_url)
+    _validate_thumb_url = field_validator("thumbnail_url")(_validate_storage_url)
+
 
 class DiaryPhotoUpdate(BaseModel):
     """Partial update for a diary photo."""
@@ -291,6 +319,8 @@ class DiaryPhotoUpdate(BaseModel):
     is_360: bool | None = None
     is_drone: bool | None = None
     is_archived: bool | None = None
+
+    _validate_thumb_url = field_validator("thumbnail_url")(_validate_storage_url)
 
 
 class DiaryPhotoResponse(BaseModel):
@@ -343,6 +373,9 @@ class DiaryVideoCreate(BaseModel):
     )
     description: str | None = Field(default=None, max_length=20000)
     tags: list[str] = Field(default_factory=list)
+
+    _validate_file_url = field_validator("file_url")(_validate_storage_url)
+    _validate_thumb_url = field_validator("thumbnail_url")(_validate_storage_url)
 
 
 class DiaryVideoUpdate(BaseModel):
@@ -409,6 +442,10 @@ class DroneSurveyCreate(BaseModel):
         default=None, ge=Decimal("-12000"), le=Decimal("10000"),
     )
     notes: str | None = Field(default=None, max_length=20000)
+
+    _validate_ortho = field_validator("ortho_file_url")(_validate_storage_url)
+    _validate_dsm = field_validator("dsm_file_url")(_validate_storage_url)
+    _validate_cloud = field_validator("point_cloud_url")(_validate_storage_url)
 
     @model_validator(mode="after")
     def _check_elevation_ordering(self) -> DroneSurveyCreate:
@@ -500,6 +537,8 @@ class RealityCaptureCreate(BaseModel):
     accuracy_mm: Decimal | None = Field(default=None, ge=0)
     notes: str | None = Field(default=None, max_length=20000)
     linked_bim_model_ref: UUID | None = None
+
+    _validate_file_url = field_validator("file_url")(_validate_storage_url)
 
 
 class RealityCaptureUpdate(BaseModel):

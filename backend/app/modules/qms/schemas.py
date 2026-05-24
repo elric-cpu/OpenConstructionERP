@@ -12,7 +12,29 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+def _validate_https_url(value: str | None) -> str | None:
+    """‌⁠‍Reject URLs that aren't http(s).
+
+    Rationale: ``certificate_url`` is rendered as a clickable link in
+    calibration detail UIs; ``javascript:`` / ``data:`` schemes would
+    trigger script execution on click. Restricting to http(s) closes
+    that XSS vector at the schema boundary.
+    """
+    if value is None:
+        return None
+    stripped = value.strip()
+    if not stripped:
+        return None
+    lowered = stripped.lower()
+    if not (lowered.startswith("http://") or lowered.startswith("https://")):
+        raise ValueError(
+            "URL must use http or https scheme "
+            "(javascript:/data:/file: rejected)",
+        )
+    return stripped
 
 # ── ITP Plan ──────────────────────────────────────────────────────────────
 
@@ -653,6 +675,8 @@ class CalibrationCreate(BaseModel):
     owner_user_id: UUID | None = None
     notes: str | None = Field(default=None, max_length=5000)
 
+    _validate_cert_url = field_validator("certificate_url")(_validate_https_url)
+
 
 class CalibrationUpdate(BaseModel):
     """Partial update of a calibration certificate."""
@@ -673,6 +697,8 @@ class CalibrationUpdate(BaseModel):
         default=None, pattern=r"^(valid|expired|withdrawn)$",
     )
     notes: str | None = Field(default=None, max_length=5000)
+
+    _validate_cert_url = field_validator("certificate_url")(_validate_https_url)
 
 
 class CalibrationRead(BaseModel):

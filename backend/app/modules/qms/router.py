@@ -12,7 +12,14 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.dependencies import CurrentUserId, RequirePermission, SessionDep, verify_project_access
+from app.core.permissions import permission_registry
+from app.dependencies import (
+    CurrentUserId,
+    CurrentUserPayload,
+    RequirePermission,
+    SessionDep,
+    verify_project_access,
+)
 from app.modules.qms.schemas import (
     AuditCreate,
     AuditFindingCreate,
@@ -826,11 +833,44 @@ async def create_calibration(
     data: CalibrationCreate,
     user_id: CurrentUserId,
     session: SessionDep,
+    payload: CurrentUserPayload,
     _perm: None = Depends(RequirePermission("qms.calibration.write")),
     service: QMSService = Depends(_get_service),
 ) -> CalibrationRead:
+    """‌⁠‍Create a calibration certificate.
+
+    Two flavours:
+
+    * **project-scoped** (``data.project_id`` set) — gated by per-project
+      ownership (Round-5 IDOR).
+    * **tenant-wide** (``data.project_id`` is None) — visible to every
+      reader in the tenant and used for shared instruments (e.g. a
+      single torque wrench rotating across projects). A plain EDITOR
+      must NOT be able to mint these because they bypass the per-project
+      access gate; require the dedicated ``qms.calibration.tenant_write``
+      permission, which is MANAGER+ by default. This matches the way
+      ``qms.template.write`` is also a MANAGER-level call.
+    """
     if data.project_id is not None:
         await verify_project_access(data.project_id, user_id, session)
+    else:
+        role = payload.get("role", "")
+        permissions = payload.get("permissions", [])
+        has_perm = (
+            role == "admin"
+            or "qms.calibration.tenant_write" in permissions
+            or permission_registry.role_has_permission(
+                role, "qms.calibration.tenant_write",
+            )
+        )
+        if not has_perm:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "Tenant-wide calibration creation requires "
+                    "qms.calibration.tenant_write (MANAGER+)"
+                ),
+            )
     try:
         cal = await service.create_calibration(data, user_id=user_id)
     except ValueError as exc:

@@ -92,6 +92,39 @@ def _ensure_can_transition(current: str, target: str) -> None:
         )
 
 
+def _diary_signed_immutable_detail(diary_id: uuid.UUID, status_str: str) -> dict[str, Any]:
+    """‌⁠‍Return the structured 409 detail body for signed-immutable rejections.
+
+    The ``code`` field is the i18n key the frontend renders against the
+    user's locale. Inlining the english ``message`` keeps API consumers
+    that don't speak the i18n dict happy.
+    """
+    return {
+        "code": "diary_signed_immutable",
+        "message": (
+            f"Diary {diary_id} is {status_str}; the signed snapshot is "
+            "immutable. Use POST /diaries/{diary_id}/unlock (manager+) "
+            "to re-open before editing."
+        ),
+        "diary_id": str(diary_id),
+        "status": status_str,
+    }
+
+
+def _entry_signed_immutable_detail(diary_id: uuid.UUID, status_str: str) -> dict[str, Any]:
+    """‌⁠‍Structured 409 detail when a child entry/photo's parent diary is sealed."""
+    return {
+        "code": "entry_signed_immutable",
+        "message": (
+            f"Cannot modify entries of a {status_str} diary — the signed "
+            "snapshot would be invalidated. Use POST /diaries/{diary_id}/"
+            "unlock (manager+) first."
+        ),
+        "diary_id": str(diary_id),
+        "status": status_str,
+    }
+
+
 # ── Pure helpers ─────────────────────────────────────────────────────────
 
 
@@ -549,10 +582,7 @@ class DailyDiaryService:
             # Enforce immutability for signed/archived diaries.
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    f"Diary {diary_id} is {diary.status}; edits would invalidate "
-                    "the signature. Create a new diary or amend before signing."
-                ),
+                detail=_diary_signed_immutable_detail(diary_id, diary.status),
             )
         fields: dict[str, Any] = data.model_dump(exclude_unset=True)
         if "metadata" in fields:
@@ -568,9 +598,77 @@ class DailyDiaryService:
         if diary.status in ("signed", "archived"):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"Cannot delete a {diary.status} diary",
+                detail=_diary_signed_immutable_detail(diary_id, diary.status),
             )
         await self.diary_repo.delete(diary_id)
+
+    async def unlock_diary(
+        self,
+        diary_id: uuid.UUID,
+        *,
+        user_id: str | None = None,
+        reason: str | None = None,
+    ) -> DailyDiary:
+        """‌⁠‍Re-open a signed diary so manager-+ can amend it.
+
+        The archive signature is preserved (with its hash) so the
+        original sealed snapshot remains forensically traceable. After
+        editing, a fresh ``sign_diary`` call produces a new revision —
+        the integrity audit thus sees two signatures with two different
+        hashes against the same diary_id.
+
+        Archived diaries cannot be unlocked: an archived diary is the
+        final legal record; re-opening it would invalidate the
+        ``daily_diary.archived`` event already consumed downstream.
+        """
+        diary = await self.get_diary(diary_id)
+        if diary.status == "open":
+            return diary  # idempotent
+        if diary.status == "archived":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "diary_archived_cannot_unlock",
+                    "message": (
+                        "Cannot unlock an archived diary — archive is "
+                        "terminal. Open a new diary instead."
+                    ),
+                    "diary_id": str(diary_id),
+                    "status": "archived",
+                },
+            )
+        # signed → open. Stamp an audit row on the diary metadata.
+        meta = dict(getattr(diary, "metadata_", {}) or {})
+        history = list(meta.get("unlock_history") or [])
+        history.append(
+            {
+                "unlocked_by": user_id,
+                "unlocked_at": datetime.now(UTC).isoformat(),
+                "previous_status": diary.status,
+                "reason": reason,
+            }
+        )
+        meta["unlock_history"] = history
+        await self.diary_repo.update_fields(
+            diary_id, status="open", metadata_=meta,
+        )
+        await self.session.refresh(diary)
+        event_bus.publish_detached(
+            "daily_diary.unlocked",
+            {
+                "diary_id": str(diary_id),
+                "project_id": str(diary.project_id),
+                "unlocked_by": user_id,
+                "reason": reason,
+            },
+            source_module="daily_diary",
+        )
+        logger.warning(
+            "Daily diary unlocked: %s by %s (broke signed snapshot, "
+            "previous signatures retained for audit)",
+            diary_id, user_id,
+        )
+        return diary
 
     # ── State transitions ────────────────────────────────────────────────
 
@@ -830,7 +928,7 @@ class DailyDiaryService:
         if diary.status in ("signed", "archived"):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"Cannot add entries to a {diary.status} diary",
+                detail=_entry_signed_immutable_detail(data.diary_id, diary.status),
             )
         entry = DiaryEntry(
             diary_id=data.diary_id,
@@ -855,7 +953,7 @@ class DailyDiaryService:
         if diary.status in ("signed", "archived"):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"Cannot bulk-add entries to a {diary.status} diary",
+                detail=_entry_signed_immutable_detail(diary_id, diary.status),
             )
         entries: list[DiaryEntry] = []
         for raw in payloads:
@@ -899,10 +997,7 @@ class DailyDiaryService:
         if diary.status in ("signed", "archived"):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    f"Cannot modify entries of a {diary.status} diary — the "
-                    "signed snapshot would be invalidated."
-                ),
+                detail=_entry_signed_immutable_detail(entry.diary_id, diary.status),
             )
         return diary
 
@@ -934,6 +1029,22 @@ class DailyDiaryService:
             )
             if diary is not None:
                 diary_id = diary.id
+        # R7 signed-immutable: a photo linked to a signed/archived diary
+        # changes the immutable payload (photos participate in the hash),
+        # which would break the archival signature. Refuse with the same
+        # structured 409 used for entries.
+        if diary_id is not None:
+            parent = await self.diary_repo.get_by_id(diary_id)
+            if (
+                parent is not None
+                and getattr(parent, "status", "open") in ("signed", "archived")
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=_entry_signed_immutable_detail(
+                        diary_id, parent.status,
+                    ),
+                )
 
         photo = DiaryPhoto(
             diary_id=diary_id,
@@ -971,6 +1082,21 @@ class DailyDiaryService:
         photo = await self.photo_repo.get_by_id(photo_id)
         if photo is None:
             raise HTTPException(status_code=404, detail="Diary photo not found")
+        # R7 signed-immutable: mutating a photo on a sealed diary breaks the
+        # archival hash.
+        parent_diary_id = getattr(photo, "diary_id", None)
+        if parent_diary_id is not None:
+            parent = await self.diary_repo.get_by_id(parent_diary_id)
+            if (
+                parent is not None
+                and getattr(parent, "status", "open") in ("signed", "archived")
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=_entry_signed_immutable_detail(
+                        parent_diary_id, parent.status,
+                    ),
+                )
         fields = data.model_dump(exclude_unset=True)
         if fields:
             await self.photo_repo.update_fields(photo_id, **fields)
@@ -980,6 +1106,22 @@ class DailyDiaryService:
         photo = await self.photo_repo.get_by_id(photo_id)
         if photo is None:
             raise HTTPException(status_code=404, detail="Diary photo not found")
+        # R7 signed-immutable: deleting a photo on a sealed diary is also
+        # a hash-breaking change. Reject with the structured 409 so the
+        # UI can prompt for unlock.
+        parent_diary_id = getattr(photo, "diary_id", None)
+        if parent_diary_id is not None:
+            parent = await self.diary_repo.get_by_id(parent_diary_id)
+            if (
+                parent is not None
+                and getattr(parent, "status", "open") in ("signed", "archived")
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=_entry_signed_immutable_detail(
+                        parent_diary_id, parent.status,
+                    ),
+                )
         await self.photo_repo.delete(photo_id)
 
     # ── Videos ───────────────────────────────────────────────────────────
