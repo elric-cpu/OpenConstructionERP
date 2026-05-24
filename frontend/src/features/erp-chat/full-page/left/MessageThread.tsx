@@ -109,6 +109,8 @@ export default function MessageThread({ messages, isStreaming, aiConfigured }: M
     return (
       <div
         ref={scrollRef}
+        role="status"
+        aria-live="polite"
         style={{
           flex: 1,
           display: 'flex',
@@ -119,13 +121,19 @@ export default function MessageThread({ messages, isStreaming, aiConfigured }: M
           color: 'var(--chat-text-tertiary)',
           fontFamily: 'var(--chat-font-body)',
           fontSize: 14,
-          gap: 8,
+          gap: 10,
           textAlign: 'center',
         }}
       >
-        <span style={{ fontSize: 32, opacity: 0.4 }}>&#9672;</span>
-        <span>{t('chat.empty_title', { defaultValue: 'Start a conversation with the ERP AI Assistant' })}</span>
-        <span style={{ fontSize: 12 }}>{t('chat.empty_subtitle', { defaultValue: 'Ask about projects, BOQs, costs, or validation' })}</span>
+        <span style={{ fontSize: 40, opacity: 0.45 }} aria-hidden="true">&#9672;</span>
+        <span style={{ fontWeight: 600, color: 'var(--chat-text-secondary)' }}>
+          {t('chat.empty_title', { defaultValue: 'Start a conversation with the ERP AI Assistant' })}
+        </span>
+        <span style={{ fontSize: 12, maxWidth: 360 }}>
+          {t('chat.empty_subtitle', {
+            defaultValue: 'Ask about projects, BOQs, costs, validation — try a suggestion below or type your own question.',
+          })}
+        </span>
       </div>
     );
   }

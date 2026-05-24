@@ -579,7 +579,7 @@ function AIConfigurationCard() {
           {/* API Key input */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-sm font-medium text-content-primary">
+              <label htmlFor="ai-api-key" className="text-sm font-medium text-content-primary">
                 {t('settings.ai_api_key', { defaultValue: 'API Key' })}
               </label>
               <a
@@ -594,6 +594,7 @@ function AIConfigurationCard() {
             </div>
             <div className="relative group">
               <input
+                id="ai-api-key"
                 type={showKey && hasUnsavedKey ? 'text' : 'password'}
                 value={hasUnsavedKey ? apiKeyInput : displayValue}
                 onChange={(e) => handleKeyChange(e.target.value)}

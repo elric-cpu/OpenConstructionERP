@@ -124,6 +124,8 @@ export function AgentsPage(): JSX.Element {
       {healthLoaded && !llmConfigured && (
         <div
           role="alert"
+          aria-live="polite"
+          aria-atomic="true"
           className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-900/20"
         >
           <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-300" />
@@ -253,9 +255,13 @@ export function AgentsPage(): JSX.Element {
                           )
                         : undefined
                     }
+                    aria-describedby={
+                      healthLoaded && !llmConfigured ? 'agents-run-disabled-hint' : undefined
+                    }
                     className={clsx(
                       'inline-flex items-center gap-2 rounded-md bg-violet-600 px-4 py-2 text-sm font-medium text-white transition',
                       'hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-zinc-400',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2',
                     )}
                   >
                     {startMutation.isPending ? (
@@ -266,6 +272,14 @@ export function AgentsPage(): JSX.Element {
                     {t('agents.run', 'Run')}
                   </button>
                 </div>
+                {healthLoaded && !llmConfigured && (
+                  <span id="agents-run-disabled-hint" className="sr-only">
+                    {t(
+                      'agents.run_disabled_no_llm',
+                      'Configure an AI provider in Settings → AI first.',
+                    )}
+                  </span>
+                )}
                 {startMutation.isError && (
                   <div className="rounded-md bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:bg-rose-900/20 dark:text-rose-300">
                     {t('agents.start_error', 'Failed to start the run.')}{' '}
@@ -291,7 +305,10 @@ function RunTimeline({ run }: { run: AgentRun }): JSX.Element {
   const steps = useMemo(() => run.steps ?? [], [run.steps]);
 
   // Humanise the few backend failure_reason enum values we know about so
-  // the user sees "AI provider not configured" instead of "no_llm".
+  // the user sees "AI provider not configured" instead of "no_llm". For
+  // unknown enums, prefer the message from the last error step (which the
+  // backend often fills with a user-friendly sentence, e.g. invalid key)
+  // before falling back to the raw enum label.
   const failureLabel = (() => {
     if (!run.failure_reason) return null;
     switch (run.failure_reason) {
@@ -304,8 +321,14 @@ function RunTimeline({ run }: { run: AgentRun }): JSX.Element {
         return t('agents.failure.unknown_agent', 'Unknown agent registered.');
       case 'exception':
         return t('agents.failure.exception', 'Agent crashed during execution.');
-      default:
-        return run.failure_reason;
+      default: {
+        const lastError = [...steps].reverse().find((s) => s.role === 'error');
+        const msg =
+          lastError && typeof lastError.content === 'object' && lastError.content
+            ? (lastError.content as { message?: string }).message
+            : undefined;
+        return msg ?? run.failure_reason;
+      }
     }
   })();
 
