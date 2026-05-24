@@ -269,33 +269,62 @@ interface CriticalTask {
   slack_days?: number | null;
 }
 
+interface ScheduleLite {
+  id: string;
+  name?: string | null;
+  project_id?: string;
+  start_date?: string | null;
+  end_date?: string | null;
+  status?: string | null;
+  is_critical?: boolean | null;
+  slack_days?: number | null;
+}
+
 export function CriticalPathWidget({ projects }: { projects?: ProjectRef[] }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
   const { data, isLoading } = useQuery({
-    queryKey: ['dashboard-critical-path', projects?.map((p) => p.id).join(',')],
-    queryFn: async (): Promise<CriticalTask[]> => {
-      const direct = await safeGet<CriticalTask[]>('/v1/schedules/critical-tasks/');
-      if (direct && Array.isArray(direct)) return direct;
+    queryKey: ['dashboard-critical-path', projects?.map((p) => p.id).join(',') ?? ''],
+    enabled: !!projects && projects.length > 0,
+    queryFn: async (): Promise<ScheduleLite[]> => {
       if (!projects || projects.length === 0) return [];
       const lists = await Promise.all(
         projects.map((p) =>
-          safeGet<CriticalTask[]>(`/v1/schedule/schedules/?project_id=${p.id}`),
+          safeGet<ScheduleLite[]>(`/v1/schedule/schedules/?project_id=${p.id}`),
         ),
       );
-      return lists.flatMap((l) => l ?? []);
+      return lists.flatMap((l) => asArray<ScheduleLite>(l));
     },
     retry: false,
     staleTime: 60_000,
   });
 
-  const top5 = useMemo(() => {
-    const rows = asArray<CriticalTask>(data);
+  const top5 = useMemo<CriticalTask[]>(() => {
+    const rows = asArray<ScheduleLite>(data);
     if (rows.length === 0) return [];
-    return rows
-      .filter((t) => (t.slack_days ?? 99) <= 5 || (t.status && t.status !== 'completed'))
-      .slice(0, 5);
+    // Prefer items explicitly flagged ``is_critical`` (server-computed on
+    // critical-path runs). When no row carries the flag, fall back to the
+    // 5 earliest-starting open schedules so the widget still surfaces
+    // something meaningful on installs that haven't computed a CPM yet.
+    const flagged = rows.filter((r) => r.is_critical === true);
+    const pool = flagged.length > 0 ? flagged : rows;
+    return pool
+      .slice()
+      .sort((a, b) => {
+        const ta = Date.parse(a.start_date ?? '') || Number.POSITIVE_INFINITY;
+        const tb = Date.parse(b.start_date ?? '') || Number.POSITIVE_INFINITY;
+        return ta - tb;
+      })
+      .slice(0, 5)
+      .map((s) => ({
+        id: s.id,
+        name: s.name ?? '—',
+        project_id: s.project_id,
+        end_date: s.end_date ?? null,
+        status: s.status ?? null,
+        slack_days: s.slack_days ?? null,
+      }));
   }, [data]);
 
   const title = t('dashboard.layout.w_schedule', { defaultValue: 'Critical Path' });
@@ -351,13 +380,32 @@ interface RiskRow {
   status?: string | null;
 }
 
-export function TopRisksWidget() {
+export function TopRisksWidget({ projects: projectsProp }: { projects?: ProjectRef[] } = {}) {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
+  // Fall back to the dashboard-wide ``['projects']`` query when the caller
+  // doesn't pass the list explicitly (React Query dedupes the request with
+  // the parent fetch in DashboardPage.tsx).
+  const { data: fetchedProjects } = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => apiGet<ProjectRef[]>('/v1/projects/').catch(() => [] as ProjectRef[]),
+    enabled: !projectsProp,
+    retry: false,
+    staleTime: 5 * 60_000,
+  });
+  const projects = projectsProp ?? fetchedProjects;
+
   const { data, isLoading } = useQuery({
-    queryKey: ['dashboard-top-risks'],
-    queryFn: () => safeGet<RiskRow[]>('/v1/risk-register/'),
+    queryKey: ['dashboard-top-risks', projects?.map((p) => p.id).join(',') ?? ''],
+    enabled: !!projects && projects.length > 0,
+    queryFn: async (): Promise<RiskRow[]> => {
+      if (!projects || projects.length === 0) return [];
+      const lists = await Promise.all(
+        projects.map((p) => safeGet<RiskRow[]>(`/v1/risk/?project_id=${p.id}`)),
+      );
+      return lists.flatMap((l) => asArray<RiskRow>(l));
+    },
     retry: false,
     staleTime: 60_000,
   });
@@ -418,18 +466,36 @@ interface HSEIncident {
   id: string;
   reported_at?: string | null;
   occurred_at?: string | null;
+  incident_date?: string | null;
+  incident_type?: string | null;
   near_miss?: boolean | null;
   osha_recordable?: boolean | null;
   severity?: string | null;
 }
 
-export function HSEScoreCardWidget() {
+export function HSEScoreCardWidget({ projects: projectsProp }: { projects?: ProjectRef[] } = {}) {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
+  const { data: fetchedProjects } = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => apiGet<ProjectRef[]>('/v1/projects/').catch(() => [] as ProjectRef[]),
+    enabled: !projectsProp,
+    retry: false,
+    staleTime: 5 * 60_000,
+  });
+  const projects = projectsProp ?? fetchedProjects;
+
   const { data, isLoading } = useQuery({
-    queryKey: ['dashboard-hse-incidents'],
-    queryFn: () => safeGet<HSEIncident[]>('/v1/hse/incidents/'),
+    queryKey: ['dashboard-hse-incidents', projects?.map((p) => p.id).join(',') ?? ''],
+    enabled: !!projects && projects.length > 0,
+    queryFn: async (): Promise<HSEIncident[]> => {
+      if (!projects || projects.length === 0) return [];
+      const lists = await Promise.all(
+        projects.map((p) => safeGet<HSEIncident[]>(`/v1/safety/incidents/?project_id=${p.id}`)),
+      );
+      return lists.flatMap((l) => asArray<HSEIncident>(l));
+    },
     retry: false,
     staleTime: 60_000,
   });
@@ -444,13 +510,21 @@ export function HSEScoreCardWidget() {
     let nearMiss = 0;
     let recordables = 0;
     for (const i of rows) {
-      const ts = Date.parse(i.reported_at ?? i.occurred_at ?? '');
+      // Safety API uses ``incident_date`` (YYYY-MM-DD); accept the older
+      // ``reported_at`` / ``occurred_at`` shapes too for forward compat.
+      const ts = Date.parse(i.reported_at ?? i.occurred_at ?? i.incident_date ?? '');
       if (Number.isFinite(ts)) {
         if (ts > last) last = ts;
         if (now - ts <= day30) last30 += 1;
       }
-      if (i.near_miss) nearMiss += 1;
-      if (i.osha_recordable) recordables += 1;
+      // ``incident_type === 'near_miss'`` is the safety-module convention.
+      if (i.near_miss || i.incident_type === 'near_miss') nearMiss += 1;
+      // OSHA recordable proxy: any non-near-miss with severity >= moderate.
+      if (
+        i.osha_recordable ||
+        (i.severity && ['moderate', 'major', 'critical', 'fatal'].includes(i.severity))
+      )
+        recordables += 1;
     }
     return { count: rows.length, last30, nearMiss, recordables, lastTs: last };
   }, [data]);
@@ -513,24 +587,49 @@ interface ProcurementRollup {
   pos_received?: number | null;
 }
 
-export function ProcurementPipelineWidget() {
+export function ProcurementPipelineWidget({
+  projects: projectsProp,
+}: { projects?: ProjectRef[] } = {}) {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
+  const { data: fetchedProjects } = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => apiGet<ProjectRef[]>('/v1/projects/').catch(() => [] as ProjectRef[]),
+    enabled: !projectsProp,
+    retry: false,
+    staleTime: 5 * 60_000,
+  });
+  const projects = projectsProp ?? fetchedProjects;
+
   const { data, isLoading } = useQuery({
-    queryKey: ['dashboard-procurement-rollup'],
-    queryFn: async () => {
-      const rollup = await safeGet<ProcurementRollup>('/v1/procurement/rollup/');
-      if (rollup) return rollup;
-      // Fallback: try aggregating from raw lists.
-      const [rfqs, pos] = await Promise.all([
-        safeGet<{ status?: string }[]>('/v1/procurement/rfqs/'),
-        safeGet<{ status?: string }[]>('/v1/procurement/pos/'),
-      ]);
-      const pending = (rfqs ?? []).filter((r) => r.status === 'pending' || r.status === 'open').length;
-      const issued = (pos ?? []).filter((p) => p.status === 'issued' || p.status === 'sent').length;
-      const received = (pos ?? []).filter((p) => p.status === 'received' || p.status === 'closed').length;
-      if ((rfqs ?? []).length === 0 && (pos ?? []).length === 0) return null;
+    queryKey: ['dashboard-procurement-rollup', projects?.map((p) => p.id).join(',') ?? ''],
+    enabled: !!projects && projects.length > 0,
+    queryFn: async (): Promise<ProcurementRollup | null> => {
+      if (!projects || projects.length === 0) return null;
+      // The procurement module returns POs only — list is at the module
+      // root with ``project_id`` required. The legacy ``/rollup``,
+      // ``/procurement/rfqs/`` and ``/procurement/pos/`` URLs returned
+      // 404 — they never existed.
+      //
+      // The sibling ``rfq_bidding`` module is optional (disabled on
+      // fresh installs), so we don't hit ``/v1/rfq-bidding/`` from this
+      // widget — its 404 would noise up the dashboard. Surface PO
+      // counts only; the dedicated Procurement page covers RFQs.
+      const lists = await Promise.all(
+        projects.map((p) => safeGet<unknown>(`/v1/procurement/?project_id=${p.id}`)),
+      );
+      const pos = lists.flatMap((l) => asArray<{ status?: string }>(l));
+      if (pos.length === 0) return null;
+      const pending = pos.filter(
+        (p) => p.status === 'draft' || p.status === 'pending' || p.status === 'open',
+      ).length;
+      const issued = pos.filter(
+        (p) => p.status === 'issued' || p.status === 'sent' || p.status === 'approved',
+      ).length;
+      const received = pos.filter(
+        (p) => p.status === 'received' || p.status === 'closed' || p.status === 'completed',
+      ).length;
       return { rfqs_pending: pending, pos_issued: issued, pos_received: received };
     },
     retry: false,
@@ -586,9 +685,16 @@ interface BudgetRow {
   id: string;
   project_id: string;
   project_name?: string;
+  /** Pre-v4.5 field — kept for forward compat. */
   planned_amount?: number | string | null;
   actual_amount?: number | string | null;
+  /** Real backend shape — see ``finance/schemas.py::BudgetResponse``. */
+  original_budget?: number | string | null;
+  revised_budget?: number | string | null;
+  actual?: number | string | null;
+  variance?: number | string | null;
   currency?: string | null;
+  currency_code?: string | null;
 }
 
 export function BudgetVarianceWidget({ projects }: { projects?: ProjectRef[] }) {
@@ -596,8 +702,20 @@ export function BudgetVarianceWidget({ projects }: { projects?: ProjectRef[] }) 
   const navigate = useNavigate();
 
   const { data, isLoading } = useQuery({
-    queryKey: ['dashboard-budget-variance'],
-    queryFn: () => safeGet<BudgetRow[]>('/v1/finance/budgets/'),
+    queryKey: ['dashboard-budget-variance', projects?.map((p) => p.id).join(',') ?? ''],
+    enabled: !!projects && projects.length > 0,
+    queryFn: async (): Promise<BudgetRow[]> => {
+      if (!projects || projects.length === 0) return [];
+      // Finance ``/budgets/`` returns ``BudgetListResponse`` ({items, total});
+      // ``asArray`` already coerces the envelope. Fan out per project so the
+      // ``project_id`` filter is applied — the endpoint accepts an optional
+      // ``project_id`` but ``_require_project_access`` 422s when it's missing
+      // on tenants without admin rights.
+      const lists = await Promise.all(
+        projects.map((p) => safeGet<unknown>(`/v1/finance/budgets/?project_id=${p.id}`)),
+      );
+      return lists.flatMap((l) => asArray<BudgetRow>(l));
+    },
     retry: false,
     staleTime: 60_000,
   });
@@ -607,8 +725,12 @@ export function BudgetVarianceWidget({ projects }: { projects?: ProjectRef[] }) 
     if (rows.length === 0) return [];
     return rows
       .map((b) => {
-        const planned = Number(b.planned_amount ?? 0);
-        const actual = Number(b.actual_amount ?? 0);
+        // Backend ships ``revised_budget`` / ``actual`` as Decimal-safe
+        // strings. Fall back to the older ``planned_amount`` /
+        // ``actual_amount`` field names so any module that still emits
+        // them keeps rendering.
+        const planned = Number(b.revised_budget ?? b.original_budget ?? b.planned_amount ?? 0);
+        const actual = Number(b.actual ?? b.actual_amount ?? 0);
         const variance = actual - planned;
         const pct = planned > 0 ? Math.round((variance / planned) * 100) : 0;
         const project = projects?.find((p) => p.id === b.project_id);
@@ -619,7 +741,7 @@ export function BudgetVarianceWidget({ projects }: { projects?: ProjectRef[] }) 
           variance,
           pct,
           projectName: project?.name ?? b.project_name ?? '—',
-          currency: b.currency ?? project?.currency ?? 'EUR',
+          currency: b.currency_code ?? b.currency ?? project?.currency ?? 'EUR',
         };
       })
       .filter((b) => b.variance > 0)
@@ -683,8 +805,17 @@ export function ChangeOrdersWidget({ projects }: { projects?: ProjectRef[] }) {
   const navigate = useNavigate();
 
   const { data, isLoading } = useQuery({
-    queryKey: ['dashboard-change-orders'],
-    queryFn: () => safeGet<ChangeOrder[]>('/v1/change-orders/'),
+    queryKey: ['dashboard-change-orders', projects?.map((p) => p.id).join(',') ?? ''],
+    enabled: !!projects && projects.length > 0,
+    queryFn: async (): Promise<ChangeOrder[]> => {
+      if (!projects || projects.length === 0) return [];
+      // Module dir is ``changeorders`` (no hyphen, no underscore) — the
+      // legacy ``/v1/change-orders/`` URL was a 404.
+      const lists = await Promise.all(
+        projects.map((p) => safeGet<unknown>(`/v1/changeorders/?project_id=${p.id}`)),
+      );
+      return lists.flatMap((l) => asArray<ChangeOrder>(l));
+    },
     retry: false,
     staleTime: 60_000,
   });
@@ -760,18 +891,44 @@ export function ChangeOrdersWidget({ projects }: { projects?: ProjectRef[] }) {
 
 interface ClashRow {
   id: string;
+  /** Pre-v4.5 field — kept for forward compat. */
   severity?: string | null;
+  /** Real backend shape — ``ClashIssueRead`` uses ``priority`` for severity. */
+  priority?: string | null;
   status?: string | null;
   ai_triaged?: boolean | null;
+  signature_quality?: string | null;
 }
 
-export function ClashHealthWidget() {
+export function ClashHealthWidget({ projects: projectsProp }: { projects?: ProjectRef[] } = {}) {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
+  const { data: fetchedProjects } = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => apiGet<ProjectRef[]>('/v1/projects/').catch(() => [] as ProjectRef[]),
+    enabled: !projectsProp,
+    retry: false,
+    staleTime: 5 * 60_000,
+  });
+  const projects = projectsProp ?? fetchedProjects;
+
   const { data, isLoading } = useQuery({
-    queryKey: ['dashboard-clash-health'],
-    queryFn: () => safeGet<ClashRow[]>('/v1/clash/'),
+    queryKey: ['dashboard-clash-health', projects?.map((p) => p.id).join(',') ?? ''],
+    enabled: !!projects && projects.length > 0,
+    queryFn: async (): Promise<ClashRow[]> => {
+      if (!projects || projects.length === 0) return [];
+      // Clash has no flat ``/v1/clash/`` list — every list endpoint is
+      // either run-scoped (``/projects/{id}/runs/{run_id}/results``) or
+      // project-scoped via the v41 smart-issues endpoint
+      // ``/v1/clash/issues?project_id=...`` (returns a ``ClashIssuePage``
+      // envelope). The issues view is what the widget actually wants —
+      // one persistent identity per signature across re-runs.
+      const lists = await Promise.all(
+        projects.map((p) => safeGet<unknown>(`/v1/clash/issues?project_id=${p.id}`)),
+      );
+      return lists.flatMap((l) => asArray<ClashRow>(l));
+    },
     retry: false,
     staleTime: 60_000,
   });
@@ -779,10 +936,13 @@ export function ClashHealthWidget() {
   const stats = useMemo(() => {
     const rows = asArray<ClashRow>(data);
     if (rows.length === 0) return null;
-    const open = rows.filter((c) => c.status && !['resolved', 'closed'].includes(c.status));
-    const high = open.filter((c) => c.severity === 'high' || c.severity === 'critical').length;
-    const medium = open.filter((c) => c.severity === 'medium').length;
-    const low = open.filter((c) => c.severity === 'low').length;
+    const open = rows.filter((c) => c.status && !['resolved', 'closed', 'ignored'].includes(c.status));
+    // ``ClashIssueRead.priority`` is the canonical severity field; older
+    // payloads carry ``severity`` directly.
+    const sev = (c: ClashRow) => c.priority ?? c.severity ?? null;
+    const high = open.filter((c) => sev(c) === 'high' || sev(c) === 'critical').length;
+    const medium = open.filter((c) => sev(c) === 'medium').length;
+    const low = open.filter((c) => sev(c) === 'low').length;
     const triaged = rows.filter((c) => c.ai_triaged).length;
     const resolved = rows.length - open.length;
     const pctResolved = rows.length > 0 ? Math.round((resolved / rows.length) * 100) : 0;
@@ -856,13 +1016,33 @@ interface ValidationReport {
   project_id?: string | null;
 }
 
-export function ValidationHealthWidget() {
+export function ValidationHealthWidget({
+  projects: projectsProp,
+}: { projects?: ProjectRef[] } = {}) {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
+  const { data: fetchedProjects } = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => apiGet<ProjectRef[]>('/v1/projects/').catch(() => [] as ProjectRef[]),
+    enabled: !projectsProp,
+    retry: false,
+    staleTime: 5 * 60_000,
+  });
+  const projects = projectsProp ?? fetchedProjects;
+
   const { data, isLoading } = useQuery({
-    queryKey: ['dashboard-validation-reports'],
-    queryFn: () => safeGet<ValidationReport[]>('/v1/validation/reports/'),
+    queryKey: ['dashboard-validation-reports', projects?.map((p) => p.id).join(',') ?? ''],
+    enabled: !!projects && projects.length > 0,
+    queryFn: async (): Promise<ValidationReport[]> => {
+      if (!projects || projects.length === 0) return [];
+      // ``project_id`` is REQUIRED on ``/v1/validation/reports/`` (the
+      // pre-merge call without it 422'd as missing-query-param).
+      const lists = await Promise.all(
+        projects.map((p) => safeGet<unknown>(`/v1/validation/reports/?project_id=${p.id}`)),
+      );
+      return lists.flatMap((l) => asArray<ValidationReport>(l));
+    },
     retry: false,
     staleTime: 60_000,
   });
@@ -952,14 +1132,6 @@ export function ValidationHealthWidget() {
 
 /* ── 10. Weather & Site ───────────────────────────────────────────────── */
 
-interface WeatherResponse {
-  city?: string | null;
-  current_temperature_c?: number | null;
-  current_temperature_2m?: number | null;
-  weathercode?: number | null;
-  description?: string | null;
-}
-
 interface OpenMeteoResponse {
   current_weather?: {
     temperature?: number;
@@ -1008,17 +1180,36 @@ export function WeatherSiteWidget({ projects }: { projects?: ProjectRef[] }) {
       firstWithCoords?.address?.lng ?? null,
     ],
     queryFn: async () => {
-      // 1. Try the project diary endpoint first.
-      const diary = await safeGet<WeatherResponse>(
-        '/v1/daily-diary/weather-summary/',
-      );
-      if (diary && (diary.current_temperature_c != null || diary.current_temperature_2m != null)) {
-        return {
-          city: diary.city,
-          temp: diary.current_temperature_c ?? diary.current_temperature_2m,
-          description: diary.description ?? (diary.weathercode != null ? WEATHER_CODE_DESCRIPTIONS[diary.weathercode] : null),
-          source: 'diary' as const,
-        };
+      // 1. Try the project diary endpoint first. The real backend path
+      //    is ``/v1/daily_diary/weather/today`` (underscore — the legacy
+      //    kebab alias ``/v1/daily-diary/weather/today`` also works).
+      //    Endpoint requires ``project_id`` and returns
+      //    ``list[WeatherRecordResponse]``.
+      if (firstWithCoords?.id) {
+        const diary = await safeGet<unknown>(
+          `/v1/daily_diary/weather/today?project_id=${firstWithCoords.id}`,
+        );
+        const records = asArray<{
+          temperature_c?: number | string | null;
+          conditions_text?: string | null;
+          conditions_code?: string | null;
+          location_lat?: number | null;
+          location_lng?: number | null;
+        }>(diary);
+        const latest = records[records.length - 1];
+        if (latest && latest.temperature_c != null) {
+          const tempNum = Number(latest.temperature_c);
+          return {
+            city: firstWithCoords.address?.city ?? firstWithCoords.name,
+            temp: Number.isFinite(tempNum) ? tempNum : null,
+            description:
+              latest.conditions_text ??
+              (latest.conditions_code
+                ? WEATHER_CODE_DESCRIPTIONS[Number(latest.conditions_code)] ?? null
+                : null),
+            source: 'diary' as const,
+          };
+        }
       }
       // 2. Fall back to open-meteo using first project's geo (no API key needed).
       if (firstWithCoords?.address?.lat != null && firstWithCoords?.address?.lng != null) {
