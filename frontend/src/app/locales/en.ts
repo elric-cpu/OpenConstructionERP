@@ -6859,13 +6859,13 @@ const resource = {
     "chat.panel.sugg_critical_path": "What's the schedule critical path?",
 
     // No-AI onboarding banner (above input on /panel open)
-    "chat.panel.no_ai_banner.title": "Configure AI to start chatting",
-    "chat.panel.no_ai_banner.body": "The chat needs an Anthropic, OpenAI, or other provider key. Set it up in Settings.",
-    "chat.panel.no_ai_banner.cta_configure": "Configure AI",
-    "chat.panel.no_ai_banner.cta_skip": "Skip",
+    "chat.panel.no_ai_banner.title": "AI provider key required",
+    "chat.panel.no_ai_banner.body": "Add your AI provider key in Settings → AI to enable chat.",
+    "chat.panel.no_ai_banner.cta_configure": "Open Settings",
+    "chat.panel.no_ai_banner.cta_skip": "Not now",
 
     // Friendly error card (replaces inline plain-text errors)
-    "chat.panel.error_card.api_key": "AI provider needs a key — configure it in Settings to keep chatting.",
+    "chat.panel.error_card.api_key": "Add your AI provider key in Settings → AI to enable chat.",
     "chat.panel.error_card.retry": "Retry",
     // Server-emitted error keys. The backend sends an ``i18n_key`` field
     // on permission-denied tool results; the chat panel looks it up here

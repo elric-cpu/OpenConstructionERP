@@ -6343,13 +6343,13 @@ const resource = {
     "chat.panel.sugg_critical_path": "Какой критический путь в графике?",
 
     // Баннер онбординга при отсутствии настроенного ИИ
-    "chat.panel.no_ai_banner.title": "Настройте ИИ, чтобы начать общение",
-    "chat.panel.no_ai_banner.body": "Чату нужен ключ Anthropic, OpenAI или другого провайдера. Настройте его в разделе «Настройки».",
-    "chat.panel.no_ai_banner.cta_configure": "Настроить ИИ",
-    "chat.panel.no_ai_banner.cta_skip": "Пропустить",
+    "chat.panel.no_ai_banner.title": "Требуется ключ AI-провайдера",
+    "chat.panel.no_ai_banner.body": "Добавьте ключ AI-провайдера в Настройки → AI, чтобы включить чат.",
+    "chat.panel.no_ai_banner.cta_configure": "Открыть настройки",
+    "chat.panel.no_ai_banner.cta_skip": "Не сейчас",
 
     // Дружелюбная карточка ошибки (вместо обычного текста)
-    "chat.panel.error_card.api_key": "Для провайдера ИИ нужен ключ — настройте его в разделе «Настройки», чтобы продолжить.",
+    "chat.panel.error_card.api_key": "Добавьте ключ AI-провайдера в Настройки → AI, чтобы включить чат.",
     "chat.panel.error_card.retry": "Повторить",
     "chat.error.manager_required": "Это действие требует роль «менеджер» или выше в этом проекте. Попросите менеджера или администратора выполнить его за вас.",
 

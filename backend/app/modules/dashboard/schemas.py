@@ -32,12 +32,37 @@ class BOQByProject(BaseModel):
     positions_zero_price: int
 
 
+class LastBOQRef(BaseModel):
+    """Most-recently-edited BOQ across the caller's projects.
+
+    Powers the "Continue your work" tile + KpiRibbon active-estimates count
+    without per-project ``/v1/boq/boqs/`` fan-out.
+    """
+
+    id: str
+    name: str
+    project_id: str
+    project_name: str
+    currency: str
+    status: str | None
+    updated_at: str
+    position_count: int
+    grand_total: str  # Decimal-as-string
+
+
 class BOQSummaryPayload(_Widget):
     total_boqs: int
+    active_boqs: int = Field(
+        default=0,
+        description=(
+            "BOQs whose status is NOT in archived/closed/cancelled/rejected."
+        ),
+    )
     total_value_eur: str = Field(description="Sum across all projects, **EUR equivalent** as Decimal string.")
     position_count: int
     positions_missing_quantity: int
     positions_zero_price: int
+    last_boq: LastBOQRef | None = None
     by_project: list[BOQByProject]
 
 
@@ -91,6 +116,10 @@ class CriticalTaskItem(BaseModel):
 
 
 class ScheduleCriticalPayload(_Widget):
+    total_schedules: int = Field(
+        default=0,
+        description="Total schedule rows across the caller's accessible projects.",
+    )
     top: list[CriticalTaskItem]
 
 
@@ -221,6 +250,7 @@ __all__ = [
     "CriticalTaskItem",
     "HSEByProject",
     "HSEScorecardPayload",
+    "LastBOQRef",
     "ProcurementPipelinePayload",
     "RiskItem",
     "RiskTopPayload",

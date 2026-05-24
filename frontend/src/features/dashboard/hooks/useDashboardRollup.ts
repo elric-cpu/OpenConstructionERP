@@ -42,12 +42,27 @@ export interface BOQByProject {
   positions_zero_price: number;
 }
 
+export interface LastBOQRef {
+  id: string;
+  name: string;
+  project_id: string;
+  project_name: string;
+  currency: string;
+  status: string | null;
+  updated_at: string;
+  position_count: number;
+  grand_total: string;
+}
+
 export interface BOQSummaryPayload {
   total_boqs: number;
+  /** BOQs whose status is NOT archived / closed / cancelled / rejected. */
+  active_boqs: number;
   total_value_eur: string;
   position_count: number;
   positions_missing_quantity: number;
   positions_zero_price: number;
+  last_boq: LastBOQRef | null;
   by_project: BOQByProject[];
 }
 
@@ -101,6 +116,8 @@ export interface CriticalTaskItem {
 }
 
 export interface ScheduleCriticalPayload {
+  /** Count of schedule rows across all of the caller's projects. */
+  total_schedules: number;
   top: CriticalTaskItem[];
 }
 

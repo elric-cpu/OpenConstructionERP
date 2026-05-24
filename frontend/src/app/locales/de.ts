@@ -6348,13 +6348,13 @@ const resource = {
     "chat.panel.sugg_critical_path": "Wie ist der kritische Pfad im Terminplan?",
 
     // No-AI onboarding banner (above input on /panel open)
-    "chat.panel.no_ai_banner.title": "KI einrichten, um zu starten",
-    "chat.panel.no_ai_banner.body": "Der Chat benötigt einen API-Schlüssel von Anthropic, OpenAI oder einem anderen Anbieter. Richte ihn in den Einstellungen ein.",
-    "chat.panel.no_ai_banner.cta_configure": "KI einrichten",
-    "chat.panel.no_ai_banner.cta_skip": "Überspringen",
+    "chat.panel.no_ai_banner.title": "KI-Schlüssel erforderlich",
+    "chat.panel.no_ai_banner.body": "Fügen Sie Ihren AI-Schlüssel in Einstellungen → KI hinzu, um den Chat zu aktivieren.",
+    "chat.panel.no_ai_banner.cta_configure": "Einstellungen öffnen",
+    "chat.panel.no_ai_banner.cta_skip": "Nicht jetzt",
 
     // Friendly error card (replaces inline plain-text errors)
-    "chat.panel.error_card.api_key": "Der KI-Anbieter benötigt einen Schlüssel — richte ihn in den Einstellungen ein, um weiter zu chatten.",
+    "chat.panel.error_card.api_key": "Fügen Sie Ihren AI-Schlüssel in Einstellungen → KI hinzu, um den Chat zu aktivieren.",
     "chat.panel.error_card.retry": "Erneut versuchen",
     "chat.error.manager_required": "Diese Aktion erfordert Manager-Berechtigung (oder höher) für dieses Projekt. Bitte einen Projektmanager oder Admin, sie für dich auszuführen.",
 

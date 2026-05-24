@@ -114,33 +114,88 @@ async def compute_boq_summary(
     session: AsyncSession,
     projects: list[Project],
 ) -> dict[str, Any]:
-    """Sum BOQ totals + position health counts grouped by project."""
+    """Sum BOQ totals + position health counts grouped by project.
+
+    Includes ``active_boqs`` (status not in ``archived/closed/cancelled/
+    rejected``) and a ``last_boq`` pointer so the KpiRibbon + lastBoq logic
+    in DashboardPage can stop fanning out ``/v1/boq/boqs/?project_id=…``
+    per project (v4.6.2 N+1 nuke 2026-05-24).
+    """
     from app.modules.boq.models import BOQ, Position  # noqa: PLC0415
 
     project_ids = [p.id for p in projects]
     if not project_ids:
         return {
             "total_boqs": 0,
+            "active_boqs": 0,
             "total_value_eur": "0.00",
             "position_count": 0,
             "positions_missing_quantity": 0,
             "positions_zero_price": 0,
+            "last_boq": None,
             "by_project": [],
         }
 
-    # Per-project BOQ count
-    boq_count_stmt = (
-        select(BOQ.project_id, func.count(BOQ.id))
-        .where(BOQ.project_id.in_(project_ids))
-        .group_by(BOQ.project_id)
-    )
-    boq_count_rows = (await session.execute(boq_count_stmt)).all()
-    boq_count_by_project: dict[uuid.UUID, int] = {r[0]: r[1] for r in boq_count_rows}
+    # Per-project BOQ count + status + updated_at so we can pick the most-
+    # recently-edited BOQ and count active vs inactive in one query.
+    boq_meta_stmt = select(
+        BOQ.id,
+        BOQ.project_id,
+        BOQ.name,
+        BOQ.status,
+        BOQ.updated_at,
+    ).where(BOQ.project_id.in_(project_ids))
+    boq_meta_rows = (await session.execute(boq_meta_stmt)).all()
+
+    boq_count_by_project: dict[uuid.UUID, int] = defaultdict(int)
+    inactive_statuses = {"archived", "closed", "cancelled", "rejected"}
+    active_count = 0
+    latest_boq: dict[str, Any] | None = None
+    latest_ts: float = float("-inf")
+    project_currency_by_id = {
+        p.id: getattr(p, "currency", "EUR") or "EUR" for p in projects
+    }
+    project_name_by_id = {p.id: p.name for p in projects}
+
+    for boq_id, project_id, boq_name, status_, updated_at in boq_meta_rows:
+        boq_count_by_project[project_id] += 1
+        if (status_ or "").lower() not in inactive_statuses:
+            active_count += 1
+        # ``updated_at`` may be a datetime (PG) or an ISO string (SQLite shim).
+        ts: float | None = None
+        if updated_at is None:
+            ts = None
+        elif isinstance(updated_at, datetime):
+            ts = updated_at.replace(tzinfo=UTC if updated_at.tzinfo is None else updated_at.tzinfo).timestamp()
+        else:
+            try:
+                ts = datetime.fromisoformat(str(updated_at)).timestamp()
+            except ValueError:
+                ts = None
+        if ts is not None and ts > latest_ts:
+            latest_ts = ts
+            iso = (
+                updated_at.isoformat() if isinstance(updated_at, datetime) else str(updated_at)
+            )
+            latest_boq = {
+                "id": str(boq_id),
+                "name": boq_name or "—",
+                "project_id": str(project_id),
+                "project_name": project_name_by_id.get(project_id, "—"),
+                "currency": project_currency_by_id.get(project_id, "EUR"),
+                "status": status_,
+                "updated_at": iso,
+                # Position counts + totals filled in below from the position pass.
+                "position_count": 0,
+                "grand_total": "0.00",
+            }
 
     # Per-project position aggregates — quantity/unit_rate/total stored
-    # as String in SQLite, so we sum in Python.
+    # as String in SQLite, so we sum in Python. Also collect per-BOQ totals
+    # so we can attach the latest BOQ's own total/position_count.
     pos_stmt = (
         select(
+            BOQ.id,
             BOQ.project_id,
             Position.quantity,
             Position.unit_rate,
@@ -159,7 +214,10 @@ async def compute_boq_summary(
             "zero_price": 0,
         },
     )
-    for project_id, qty_s, rate_s, total_s in pos_rows:
+    per_boq: dict[uuid.UUID, dict[str, Any]] = defaultdict(
+        lambda: {"total": Decimal("0"), "positions": 0},
+    )
+    for boq_id, project_id, qty_s, rate_s, total_s in pos_rows:
         bucket = per_project[project_id]
         bucket["positions"] += 1
         qty = _to_decimal(qty_s)
@@ -171,6 +229,9 @@ async def compute_boq_summary(
             bucket["missing_qty"] += 1
         if rate == 0:
             bucket["zero_price"] += 1
+        boq_bucket = per_boq[boq_id]
+        boq_bucket["positions"] += 1
+        boq_bucket["total"] += total
 
     by_project: list[dict[str, Any]] = []
     overall_total = Decimal("0")
@@ -202,12 +263,24 @@ async def compute_boq_summary(
         overall_missing += bucket["missing_qty"]
         overall_zero_price += bucket["zero_price"]
 
+    if latest_boq is not None:
+        try:
+            latest_id = uuid.UUID(latest_boq["id"])
+            stats = per_boq.get(latest_id)
+            if stats is not None:
+                latest_boq["position_count"] = stats["positions"]
+                latest_boq["grand_total"] = _money(stats["total"])
+        except (ValueError, KeyError):
+            pass
+
     return {
         "total_boqs": sum(boq_count_by_project.values()),
+        "active_boqs": active_count,
         "total_value_eur": _money(overall_total),
         "position_count": overall_positions,
         "positions_missing_quantity": overall_missing,
         "positions_zero_price": overall_zero_price,
+        "last_boq": latest_boq,
         "by_project": by_project,
     }
 
@@ -381,14 +454,26 @@ async def compute_schedule_critical(
     session: AsyncSession,
     projects: list[Project],
 ) -> dict[str, Any]:
-    """Top-5 critical-path activities across the caller's schedules."""
+    """Top-5 critical-path activities across the caller's schedules.
+
+    Also returns ``total_schedules`` so the KpiRibbon's "Schedule Status"
+    tile can stop fanning out ``/v1/schedule/schedules/?project_id=…`` per
+    project (v4.6.2 N+1 nuke 2026-05-24).
+    """
     from app.modules.schedule.models import Activity, Schedule  # noqa: PLC0415
 
     project_ids = [p.id for p in projects]
     if not project_ids:
-        return {"top": []}
+        return {"top": [], "total_schedules": 0}
 
     project_name_by_id = {p.id: p.name for p in projects}
+
+    # Total schedules across the caller's projects — one COUNT query, NOT a
+    # per-project fan-out.
+    sched_count_stmt = select(func.count(Schedule.id)).where(
+        Schedule.project_id.in_(project_ids),
+    )
+    total_schedules = int((await session.execute(sched_count_stmt)).scalar() or 0)
 
     stmt = (
         select(
@@ -407,7 +492,7 @@ async def compute_schedule_critical(
     rows = (await session.execute(stmt)).all()
 
     if not rows:
-        return {"top": []}
+        return {"top": [], "total_schedules": total_schedules}
 
     flagged = [r for r in rows if r[6] is True]
     pool = flagged if flagged else rows
@@ -421,6 +506,7 @@ async def compute_schedule_critical(
     top = sorted(pool, key=_sort_key)[:5]
 
     return {
+        "total_schedules": total_schedules,
         "top": [
             {
                 "id": str(r[0]),

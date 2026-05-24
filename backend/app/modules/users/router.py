@@ -20,6 +20,8 @@ Endpoints:
     PUT  /me/sidebar-preferences — Save sidebar visibility preferences
     GET  /me/dashboard-layout    — Get dashboard widget layout
     PUT  /me/dashboard-layout    — Save dashboard widget layout
+    GET  /me/tour-state          — Get per-tour dismiss / completion state
+    PUT  /me/tour-state          — Save per-tour dismiss / completion state
     GET  /                      — List users (admin/manager)
     GET  /{id}                  — Get user by ID (admin/manager)
     PATCH /{id}                 — Update user (admin only)
@@ -108,6 +110,32 @@ class DashboardLayoutPayload(BaseModel):
 
     order: list[str]
     hidden: list[str]
+
+
+class TourStateEntry(BaseModel):
+    """Per-tour persistence record — when a user dismissed / completed a tour.
+
+    Both timestamps are ISO-8601 strings (``datetime.now(UTC).isoformat()``).
+    Either may be ``None`` — Skip writes only ``dismissed_at``; Finish writes
+    both. ProductTour reads the bucket on mount and skips auto-open when
+    either timestamp is set.
+    """
+
+    dismissed_at: str | None = None
+    completed_at: str | None = None
+
+
+class TourStatePayload(BaseModel):
+    """Request/response body for the user's per-tour completion state.
+
+    ``tours`` maps a TourId (``global``, ``boq``, ``bim``, ``geo``,
+    ``propdev``, ``dashboard``, ``accommodation``) to a small persistence
+    record. Mirrors localStorage keys ``oe.tour_completed`` and
+    ``oe.tour_completed.<tourId>`` so the dismissed/completed state follows
+    the user across browsers and devices.
+    """
+
+    tours: dict[str, TourStateEntry]
 
 
 router = APIRouter()
@@ -563,6 +591,111 @@ async def save_dashboard_layout(
     }
     await service.update_profile(uuid.UUID(user_id), metadata_=metadata)
     return DashboardLayoutPayload(order=cleaned_order, hidden=cleaned_hidden)
+
+
+# ── Tour State ────────────────────────────────────────────────────────────
+
+
+# Mirror of ``TourId`` from frontend/src/shared/ui/ProductTour.tsx. Tours
+# outside this whitelist are silently dropped on PUT so a typo / a
+# malicious client can't pollute the JSON column with arbitrary keys.
+_KNOWN_TOUR_IDS: frozenset[str] = frozenset(
+    {
+        "global",
+        "boq",
+        "accommodation",
+        "bim",
+        "geo",
+        "propdev",
+        "dashboard",
+    },
+)
+
+
+def _sanitise_tour_state(raw: object) -> dict[str, dict[str, str | None]]:
+    """Clean the inbound tour-state map.
+
+    Drops unknown tour ids; trims/caps ISO-8601 strings at 40 chars; coerces
+    bad shapes to ``None``. Returns a plain dict so it can be JSON-serialised
+    directly into ``metadata_``.
+    """
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, dict[str, str | None]] = {}
+    for key, value in raw.items():
+        if not isinstance(key, str):
+            continue
+        tour_id = key.strip()[:64]
+        if tour_id not in _KNOWN_TOUR_IDS:
+            continue
+        if not isinstance(value, dict):
+            continue
+        dismissed = value.get("dismissed_at")
+        completed = value.get("completed_at")
+        out[tour_id] = {
+            "dismissed_at": (
+                str(dismissed)[:40] if isinstance(dismissed, str) and dismissed.strip() else None
+            ),
+            "completed_at": (
+                str(completed)[:40] if isinstance(completed, str) and completed.strip() else None
+            ),
+        }
+    return out
+
+
+@router.get("/me/tour-state/", response_model=TourStatePayload)
+async def get_tour_state(
+    user_id: CurrentUserId,
+    service: UserService = Depends(_get_service),
+) -> TourStatePayload:
+    """Get the current user's per-tour dismiss / completion state.
+
+    Returns ``{"tours": {}}`` (defaults) when the user has never run a tour —
+    ProductTour then falls back to the localStorage flag for first-login auto-
+    open. Tours outside the canonical id set are filtered out on read so an
+    obsolete tour id never leaks back to the client.
+    """
+    user = await service.get_user(uuid.UUID(user_id))
+    metadata: dict[str, Any] = user.metadata_ or {}
+    stored = _sanitise_tour_state(metadata.get("tour_state"))
+    return TourStatePayload(
+        tours={tid: TourStateEntry(**entry) for tid, entry in stored.items()},
+    )
+
+
+@router.put("/me/tour-state/", response_model=TourStatePayload)
+async def save_tour_state(
+    data: TourStatePayload,
+    user_id: CurrentUserId,
+    service: UserService = Depends(_get_service),
+) -> TourStatePayload:
+    """Upsert tour-state for the current user.
+
+    Stores ``{tour_id: {dismissed_at, completed_at}}`` in the user's
+    ``metadata_`` JSON column under key ``tour_state``. Sanitises the
+    payload: drops unknown tour ids, caps each timestamp at 40 chars so a
+    runaway client can't bloat the JSON column.
+
+    IDOR posture: writes the row keyed by ``CurrentUserId`` only — the body
+    has no ``user_id`` field, so a caller can never write to another user's
+    tour state via this endpoint.
+    """
+    raw_tours = {
+        tid: {
+            "dismissed_at": entry.dismissed_at,
+            "completed_at": entry.completed_at,
+        }
+        for tid, entry in data.tours.items()
+    }
+    cleaned = _sanitise_tour_state(raw_tours)
+
+    user = await service.get_user(uuid.UUID(user_id))
+    metadata: dict[str, Any] = dict(user.metadata_ or {})
+    metadata["tour_state"] = cleaned
+    await service.update_profile(uuid.UUID(user_id), metadata_=metadata)
+    return TourStatePayload(
+        tours={tid: TourStateEntry(**entry) for tid, entry in cleaned.items()},
+    )
 
 
 # ── Custom Units ──────────────────────────────────────────────────────────

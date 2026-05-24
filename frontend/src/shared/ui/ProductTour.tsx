@@ -40,6 +40,7 @@ import { X, ArrowLeft, ArrowRight, MapPin, Check } from 'lucide-react';
 import clsx from 'clsx';
 
 import { ConfirmDialog } from './ConfirmDialog';
+import { apiGet, apiPut } from '@/shared/lib/api';
 
 /* ── Constants ──────────────────────────────────────────────────────────── */
 
@@ -72,6 +73,46 @@ export type TourId =
  *  compatibility with installs upgraded from before this refactor. */
 function storageKeyFor(tourId: TourId): string {
   return tourId === 'global' ? TOUR_COMPLETED_KEY : `${TOUR_COMPLETED_KEY}.${tourId}`;
+}
+
+/** Per-tour persistence record returned by the backend. */
+interface TourStateEntry {
+  dismissed_at: string | null;
+  completed_at: string | null;
+}
+
+/** Top-level shape of ``GET /api/v1/users/me/tour-state/``. */
+interface TourStatePayload {
+  tours: Record<string, TourStateEntry>;
+}
+
+/**
+ * Persist the dismissed / completed timestamps for the supplied tour id
+ * to the server. Idempotent — fire-and-forget; localStorage is the
+ * authoritative cache so a network blip never re-pops the tour on the
+ * next page-load.
+ *
+ * Re-fetches the current bucket first so we don't clobber sibling tours'
+ * completion state. Silently swallows network errors — the user already
+ * dismissed the tour, and a 4xx/5xx on the persistence write must not
+ * re-open it.
+ */
+async function persistTourState(
+  tourId: TourId,
+  patch: TourStateEntry,
+): Promise<void> {
+  try {
+    const current = await apiGet<TourStatePayload>('/v1/users/me/tour-state/');
+    const merged: TourStatePayload = {
+      tours: { ...(current?.tours ?? {}), [tourId]: patch },
+    };
+    await apiPut<TourStatePayload, TourStatePayload>(
+      '/v1/users/me/tour-state/',
+      merged,
+    );
+  } catch {
+    /* Network / auth failure — localStorage still suppresses the tour. */
+  }
 }
 
 /** Routes where the *auto-start* must NOT mount on top of the page (the
@@ -803,17 +844,37 @@ export function ProductTour({ steps, defaultTourId = 'global' }: ProductTourProp
   const isLast = currentStep === totalSteps - 1;
 
   /* ── Persist completion + close ──────────────────────────────────────── */
-  const completeTour = useCallback(() => {
-    try {
-      // Per-tour completion key — finishing the BOQ tour doesn't suppress
-      // the global tour and vice-versa.
-      localStorage.setItem(storageKeyFor(activeTourId), 'true');
-    } catch {
-      /* localStorage unavailable — non-fatal */
-    }
-    setActive(false);
-    setCurrentStep(0);
-  }, [activeTourId]);
+  /**
+   * ``kind`` distinguishes the two exit paths so we can store both a
+   * ``dismissed_at`` (Skip / Esc) and a ``completed_at`` (Finish) on the
+   * server bucket — the UI doesn't need to differentiate but downstream
+   * analytics (and the auto-start check) treats them the same: either
+   * marker suppresses subsequent auto-opens. */
+  const completeTour = useCallback(
+    (kind: 'completed' | 'dismissed' = 'completed') => {
+      try {
+        // Per-tour completion key — finishing the BOQ tour doesn't suppress
+        // the global tour and vice-versa. Kept as the local cache so the
+        // tour never re-pops on a network blip.
+        localStorage.setItem(storageKeyFor(activeTourId), 'true');
+      } catch {
+        /* localStorage unavailable — non-fatal */
+      }
+      // Fire-and-forget server persistence so the dismiss / completion
+      // follows the user across browsers and devices. The local flag above
+      // is the source of truth on this device; the server bucket primes the
+      // local flag on the next first-login on a new browser (effect below).
+      const now = new Date().toISOString();
+      const patch: TourStateEntry = {
+        dismissed_at: kind === 'dismissed' ? now : null,
+        completed_at: kind === 'completed' ? now : null,
+      };
+      void persistTourState(activeTourId, patch);
+      setActive(false);
+      setCurrentStep(0);
+    },
+    [activeTourId],
+  );
 
   /* ── Scroll target into view + measure ───────────────────────────────── */
   const positionForStep = useCallback(
@@ -932,10 +993,52 @@ export function ProductTour({ steps, defaultTourId = 'global' }: ProductTourProp
     return () => window.removeEventListener(TOUR_START_EVENT, start);
   }, []);
 
+  /* ── Server tour-state hydration ─────────────────────────────────────── */
+  /**
+   * Pull the user's saved tour-state ONCE on mount and prime the local
+   * cache for any tours the server flags as dismissed / completed. This
+   * is how the tour stops re-popping on a fresh browser after the user
+   * dismissed it elsewhere.
+   *
+   * Failure modes (network / 401 / 5xx) are non-fatal — the tour just
+   * falls back to localStorage-only semantics. */
+  const [serverHydrated, setServerHydrated] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await apiGet<TourStatePayload>('/v1/users/me/tour-state/');
+        if (cancelled) return;
+        const tours = data?.tours ?? {};
+        for (const [tid, entry] of Object.entries(tours)) {
+          if (!entry) continue;
+          const stamped = Boolean(entry.dismissed_at) || Boolean(entry.completed_at);
+          if (!stamped) continue;
+          try {
+            localStorage.setItem(storageKeyFor(tid as TourId), 'true');
+          } catch {
+            /* localStorage unavailable */
+          }
+        }
+      } catch {
+        /* Anonymous / offline / 5xx — fall back to localStorage only. */
+      } finally {
+        if (!cancelled) setServerHydrated(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   /* ── First-login auto-start ──────────────────────────────────────────── */
   useEffect(() => {
     if (active) return;
     if (typeof window === 'undefined') return;
+    // Don't auto-open until the server bucket has been merged into
+    // localStorage — otherwise a fresh browser would briefly auto-pop
+    // the tour even when the user dismissed it on another machine.
+    if (!serverHydrated) return;
 
     let completed = 'false';
     try {
@@ -961,7 +1064,7 @@ export function ProductTour({ steps, defaultTourId = 'global' }: ProductTourProp
       setActive(true);
     }, 600);
     return () => window.clearTimeout(id);
-  }, [active, location.pathname, defaultTourId]);
+  }, [active, location.pathname, defaultTourId, serverHydrated]);
 
   /* ── Navigation handlers ─────────────────────────────────────────────── */
   const handleNext = useCallback(() => {
@@ -978,7 +1081,7 @@ export function ProductTour({ steps, defaultTourId = 'global' }: ProductTourProp
   }, [isFirst]);
 
   const handleSkip = useCallback(() => {
-    completeTour();
+    completeTour('dismissed');
   }, [completeTour]);
 
   /* ── Memoised resolved strings ───────────────────────────────────────── */
@@ -1158,7 +1261,7 @@ export function ProductTour({ steps, defaultTourId = 'global' }: ProductTourProp
         onCancel={() => setConfirmExitOpen(false)}
         onConfirm={() => {
           setConfirmExitOpen(false);
-          completeTour();
+          completeTour('dismissed');
         }}
         variant="warning"
         title={t('tour.confirm_skip_title', { defaultValue: 'Exit tour?' })}
