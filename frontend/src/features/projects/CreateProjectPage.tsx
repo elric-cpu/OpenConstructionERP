@@ -13,6 +13,8 @@ import {
 import { Button, Input, InfoHint } from '@/shared/ui';
 import { useToastStore } from '@/stores/useToastStore';
 import { useWidgetSettingsStore } from '@/stores/useWidgetSettingsStore';
+import { AddressAutocomplete } from '@/features/geo-hub/AddressAutocomplete';
+import type { AddressAutocompleteSelection } from '@/features/geo-hub/AddressAutocomplete';
 import {
   projectsApi,
   type CreateProjectData,
@@ -386,6 +388,27 @@ export function CreateProjectModal({
   const [addressCity, setAddressCity] = useState('');
   const [addressCountry, setAddressCountry] = useState('');
   const [addressPostal, setAddressPostal] = useState('');
+  // Free-text query for the Nominatim autocomplete row that sits above
+  // the 4 structured inputs. Selecting a result fills the parts below.
+  const [addressSearchQuery, setAddressSearchQuery] = useState('');
+
+  function applyAutocompleteSelection(sel: AddressAutocompleteSelection) {
+    const parts = sel.address_parts ?? {};
+    // Nominatim returns ``road`` for street name and ``house_number``
+    // separately — we concatenate for the single-line "street" field.
+    const street = [parts.house_number, parts.road ?? parts.street]
+      .filter((v): v is string => typeof v === 'string' && v.trim() !== '')
+      .join(' ')
+      .trim();
+    if (street) setAddressStreet(street);
+    const city = parts.city || parts.town || parts.village;
+    if (city) setAddressCity(city);
+    if (parts.country) setAddressCountry(parts.country);
+    if (parts.postcode) setAddressPostal(parts.postcode);
+    // Keep the search field in sync with the picked display name so the
+    // dropdown closes cleanly and the user sees what they accepted.
+    setAddressSearchQuery(sel.display_name);
+  }
 
   // Quick-create extras — all optional Phase-12 expansion fields the
   // backend `ProjectCreate` schema already accepts. Empty string means
@@ -1365,6 +1388,15 @@ export function CreateProjectModal({
                       </p>
                     </div>
                   </div>
+                  {/* Address autocomplete — picks Nominatim suggestions
+                      and fills the 4 structured inputs below. The user
+                      can still type/edit each part manually. */}
+                  <AddressAutocomplete
+                    value={addressSearchQuery}
+                    onChange={setAddressSearchQuery}
+                    onSelect={applyAutocompleteSelection}
+                    ariaLabel={t('projects.address_search', { defaultValue: 'Search address' })}
+                  />
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <input type="text" value={addressStreet} onChange={(e) => setAddressStreet(e.target.value)} aria-label={t('projects.address_street', { defaultValue: 'Street & number' })} placeholder={t('projects.address_street', { defaultValue: 'Street & number' })} className="h-10 w-full rounded-lg border border-border bg-surface-primary px-3 text-sm text-content-primary placeholder:text-content-tertiary focus:outline-none focus:ring-2 focus:ring-oe-blue focus:border-transparent" />
                     <input type="text" value={addressCity} onChange={(e) => setAddressCity(e.target.value)} aria-label={t('projects.address_city', { defaultValue: 'City' })} placeholder={t('projects.address_city', { defaultValue: 'City' })} className="h-10 w-full rounded-lg border border-border bg-surface-primary px-3 text-sm text-content-primary placeholder:text-content-tertiary focus:outline-none focus:ring-2 focus:ring-oe-blue focus:border-transparent" />
@@ -1807,6 +1839,14 @@ export function CreateProjectModal({
                     {t('projects.address_hint', { defaultValue: 'Optional — enables the location map and weather forecast' })}
                   </span>
                 </div>
+                {/* Address autocomplete (all-on-one variant) — same
+                    handler fills the structured inputs on pick. */}
+                <AddressAutocomplete
+                  value={addressSearchQuery}
+                  onChange={setAddressSearchQuery}
+                  onSelect={applyAutocompleteSelection}
+                  ariaLabel={t('projects.address_search', { defaultValue: 'Search address' })}
+                />
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <input type="text" value={addressStreet} onChange={(e) => setAddressStreet(e.target.value)} placeholder={t('projects.address_street', { defaultValue: 'Street & number' })} className="h-10 w-full rounded-lg border border-border bg-surface-primary px-3 text-sm text-content-primary placeholder:text-content-tertiary focus:outline-none focus:ring-2 focus:ring-oe-blue focus:border-transparent" />
                   <input type="text" value={addressCity} onChange={(e) => setAddressCity(e.target.value)} placeholder={t('projects.address_city', { defaultValue: 'City' })} className="h-10 w-full rounded-lg border border-border bg-surface-primary px-3 text-sm text-content-primary placeholder:text-content-tertiary focus:outline-none focus:ring-2 focus:ring-oe-blue focus:border-transparent" />

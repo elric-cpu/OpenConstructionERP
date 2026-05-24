@@ -23,6 +23,14 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Globe2, Download } from 'lucide-react';
 
+import {
+  clusterProjects,
+  clusterThresholdForAltitude,
+  colorForProjectStatus,
+  iconFamilyForProjectType,
+  pinTooltipLabel,
+  type PinCluster,
+} from './projectPinUtils';
 import type { AnchoredProject, GeoPinBundle, MapConfig } from './types';
 
 type ViewerMode = 'global' | 'project' | 'development';
@@ -694,19 +702,143 @@ export function CesiumViewer({
         `diary:${p.photo_id}`,
       );
     }
-    // Global Geo Hub project pins — one per anchored project.
-    const projectColor =
-      cesium.Color.LIMEGREEN
-      ?? cesium.Color.fromCssColorString?.('#22c55e')
-      ?? cesium.Color.WHITE;
-    for (const p of pins.projects ?? []) {
-      addPin(
-        Number(p.lon),
-        Number(p.lat),
-        projectColor,
-        p.project_name || 'Project',
-        `project:${p.project_id}`,
-      );
+    // Global Geo Hub project pins — clustered + per-project-type
+    // iconography. We bucket nearby pins into clusters whose tightness
+    // depends on the camera altitude; clusters with size > 1 render as
+    // a single labelled circle ("5 projects") and individual pins use
+    // the project_type/status palette.
+    const projects = pins.projects ?? [];
+    if (projects.length > 0) {
+      // Approximate the camera altitude to size the cluster threshold.
+      // Falls back to a permissive threshold if camera state is unread.
+      let altitudeM = 1_000_000;
+      try {
+        const carto = v.camera?.positionCartographic;
+        if (carto && Number.isFinite(carto.height)) {
+          altitudeM = carto.height;
+        }
+      } catch {
+        /* camera not yet ready */
+      }
+      const threshold = clusterThresholdForAltitude(altitudeM);
+      const clusters: PinCluster[] =
+        threshold > 0
+          ? clusterProjects(projects, threshold)
+          : projects.map((p) => ({
+              lat: Number(p.lat),
+              lon: Number(p.lon),
+              projects: [p],
+            }));
+
+      const addCluster = (cluster: PinCluster): void => {
+        const { lat, lon, projects: members } = cluster;
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+        if (members.length > 1) {
+          // Cluster pin — circle with a count badge in the label.
+          try {
+            const ent = v.entities.add({
+              position: cesium.Cartesian3.fromDegrees(lon, lat, 0),
+              point: {
+                pixelSize: 18,
+                color:
+                  cesium.Color.fromCssColorString?.('rgba(37,99,235,0.85)') ??
+                  cesium.Color.DODGERBLUE,
+                outlineColor: cesium.Color.WHITE,
+                outlineWidth: 3,
+                heightReference: 1,
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+              },
+              label: {
+                text: String(members.length),
+                font: 'bold 12px sans-serif',
+                pixelOffset: { x: 0, y: 0 },
+                fillColor: cesium.Color.WHITE,
+                outlineColor:
+                  cesium.Color.fromCssColorString?.('rgba(0,0,0,0.65)') ??
+                  cesium.Color.WHITE,
+                outlineWidth: 1,
+                style: 2, // FILL_AND_OUTLINE
+                showBackground: false,
+                scale: 0.9,
+                disableDepthTestDistance: Number.POSITIVE_INFINITY,
+              },
+              properties: {
+                _oeGeoHubPinTag: `cluster:${members.length}:${lat.toFixed(3)},${lon.toFixed(3)}`,
+                _oeGeoHubClusterSize: members.length,
+                _oeGeoHubClusterProjects: members.map((m) => m.project_id),
+              },
+            });
+            pinEntitiesRef.current.push(ent);
+          } catch (err) {
+            // eslint-disable-next-line no-console
+            console.warn('[geo_hub] cluster add failed', err);
+          }
+          return;
+        }
+        // Single-project cluster → render as a typed project pin.
+        const p = members[0];
+        if (!p) return;
+        const family = iconFamilyForProjectType(p.project_type ?? null);
+        const css = colorForProjectStatus(p.status ?? null);
+        const color =
+          cesium.Color.fromCssColorString?.(css) ??
+          cesium.Color.LIMEGREEN ??
+          cesium.Color.WHITE;
+        // Icon-family hint encoded in the entity properties so click
+        // handlers (future) can render the appropriate sidebar card.
+        // Cesium ``point`` doesn't natively render a glyph; we encode
+        // family via the outline width + colour so residential is
+        // visually distinct from commercial / civil at a glance.
+        const familyOutlineWidth =
+          family === 'residential'
+            ? 2
+            : family === 'commercial'
+              ? 3
+              : family === 'civil'
+                ? 4
+                : 2;
+        try {
+          const ent = v.entities.add({
+            position: cesium.Cartesian3.fromDegrees(lon, lat, 0),
+            point: {
+              pixelSize: 12,
+              color,
+              outlineColor: cesium.Color.WHITE,
+              outlineWidth: familyOutlineWidth,
+              heightReference: 1,
+              disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            },
+            label: {
+              text: pinTooltipLabel(p),
+              font: '11px sans-serif',
+              pixelOffset: { x: 0, y: -20 },
+              fillColor: cesium.Color.WHITE,
+              outlineColor:
+                cesium.Color.fromCssColorString?.('#000') ?? cesium.Color.WHITE,
+              outlineWidth: 2,
+              style: 2,
+              showBackground: true,
+              backgroundColor: cesium.Color.fromCssColorString?.(
+                'rgba(15,23,42,0.75)',
+              ),
+              scale: 0.85,
+              disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            },
+            properties: {
+              _oeGeoHubPinTag: `project:${p.project_id}`,
+              _oeGeoHubProjectType: p.project_type ?? 'unknown',
+              _oeGeoHubIconFamily: family,
+              _oeGeoHubStatus: p.status ?? 'unknown',
+            },
+          });
+          pinEntitiesRef.current.push(ent);
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn('[geo_hub] project pin add failed', err);
+        }
+      };
+
+      for (const cluster of clusters) addCluster(cluster);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pinSignature, cesiumStatus]);

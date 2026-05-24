@@ -238,6 +238,11 @@ export interface GeoPinBundle {
 /**
  * Mirrors backend ``AnchoredProjectResponse`` — one row per project
  * shown as a pin on the global Geo Hub map.
+ *
+ * ``project_type`` and ``status`` drive the pin icon family +
+ * status tint. ``project_address_text`` is the source-of-truth address
+ * text on the project — used by the drift indicator to flag pins whose
+ * address was edited after the first geocode.
  */
 export interface AnchoredProject {
   project_id: string;
@@ -248,6 +253,48 @@ export interface AnchoredProject {
   alt: string;
   region_code: string | null;
   address: string | null;
+  project_type?: string | null;
+  status?: string | null;
+  project_address_text?: string | null;
+}
+
+/* ── Geocode suggest (autocomplete) ──────────────────────────────────── */
+
+export interface GeocodeSuggestion {
+  display_name: string;
+  lat: string;
+  lon: string;
+  country_code: string | null;
+  addresstype: string | null;
+  osm_type: string | null;
+  bbox: string[] | null;
+  /** Structured address parts (road, city, country, postcode, ...) so
+   *  consumers can autofill structured form inputs without parsing
+   *  the free-text ``display_name``. */
+  address_parts?: Record<string, string> | null;
+}
+
+export interface GeocodeSuggestResponse {
+  query: string;
+  suggestions: GeocodeSuggestion[];
+  geocoder_disabled: boolean;
+}
+
+/* ── Geocode cache admin ────────────────────────────────────────────── */
+
+export interface GeocodeCacheStats {
+  total: number;
+  fresh: number;
+  stale: number;
+  hit_sum: number;
+  ttl_days: number;
+  oldest_cached_at: string | null;
+  newest_cached_at: string | null;
+}
+
+export interface GeocodeCachePurgeResult {
+  deleted: number;
+  older_than_days: number | null;
 }
 
 /* ── Raster overlays (PDF / DWG / image pinned on the globe) ─────────── */

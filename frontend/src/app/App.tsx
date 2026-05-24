@@ -301,6 +301,9 @@ const PropertyDevBulkOperationsPage = lazy(() =>
 );
 // ── Geo Hub — Cesium 3D Tiles + cross-module geo. Lazy-loaded because
 // CesiumJS is ~3 MB; this keeps the main bundle untouched.
+const GeoHubAdminPage = lazy(() =>
+  import('@/features/geo-hub/GeoHubAdminPage').then((m) => ({ default: m.GeoHubAdminPage }))
+);
 const GeoHubPage = lazy(() =>
   import('@/features/geo-hub').then((m) => ({ default: m.GeoHubPage }))
 );
@@ -896,7 +899,9 @@ export default function App() {
 
         {/* Geo Hub — Cesium 3D Tiles + cross-module geo. */}
         <Route path="/geo" element={<P title="Geo Hub"><GeoHubPage /></P>} />
+        <Route path="/geo/admin" element={<P title="Geo Hub Admin"><GeoHubAdminPage /></P>} />
         <Route path="/geo-hub" element={<Navigate to="/geo" replace />} />
+        <Route path="/geo-hub/admin" element={<Navigate to="/geo/admin" replace />} />
         <Route path="/projects/:projectId/geo" element={<P title="Project map"><ProjectGeoPage /></P>} />
         <Route path="/projects/:projectId/geo-hub" element={<Navigate to="/geo" replace />} />
 

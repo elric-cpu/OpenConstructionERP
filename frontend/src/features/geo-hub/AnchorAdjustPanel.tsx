@@ -28,6 +28,7 @@ import {
 import { ApiError } from '@/shared/lib/api';
 import { useToastStore } from '@/stores/useToastStore';
 
+import { AnchorDriftIndicator } from './AnchorDriftIndicator';
 import { autoAnchorFromAddress } from './api';
 import type { GeoAnchor } from './types';
 
@@ -36,6 +37,13 @@ interface AnchorAdjustPanelProps {
   anchor: GeoAnchor;
   dragMode: boolean;
   onToggleDragMode: () => void;
+  /**
+   * Free-text address typed on the project (NOT the geocoded
+   * ``anchor.address`` — that one is the cached Nominatim display
+   * name). When present and divergent from ``anchor.address`` the
+   * drift indicator surfaces the "Re-anchor" CTA.
+   */
+  projectAddressText?: string | null;
 }
 
 type Precision = 'address' | 'street' | 'city' | 'region' | 'country';
@@ -61,6 +69,7 @@ export function AnchorAdjustPanel({
   anchor,
   dragMode,
   onToggleDragMode,
+  projectAddressText,
 }: AnchorAdjustPanelProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -240,6 +249,21 @@ export function AnchorAdjustPanel({
         {t('geo_hub.adjust.source_prefix', { defaultValue: 'Source:' })}{' '}
         <span className="text-slate-300">{sourceLabel}</span>
       </div>
+
+      {/* Drift indicator — only renders when the typed project address
+          diverges from the cached anchor display name, so the panel
+          stays compact for in-sync projects. */}
+      {projectAddressText && (
+        <div className="mt-1">
+          <AnchorDriftIndicator
+            projectAddressText={projectAddressText}
+            anchoredAddress={anchor.address}
+            onReanchor={reGeocode}
+            isReanchoring={isRegeocoding}
+            compact
+          />
+        </div>
+      )}
     </aside>
   );
 }

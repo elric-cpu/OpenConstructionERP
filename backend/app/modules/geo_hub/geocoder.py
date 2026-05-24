@@ -578,6 +578,238 @@ async def geocode_address(
                 pass
 
 
+async def cache_stats(session: AsyncSession) -> dict[str, Any]:
+    """Return aggregate counters for the admin cache panel.
+
+    Reports total row count, fresh vs stale split (against ``CACHE_TTL``),
+    sum of ``hit_count`` and the oldest / newest cached_at timestamps.
+    Cheap — a single grouped query against the SQL backend.
+    """
+    from sqlalchemy import func as sql_func
+    from sqlalchemy import select as sql_select
+
+    cutoff = datetime.now(UTC) - CACHE_TTL
+    total = (
+        await session.execute(
+            sql_select(sql_func.count()).select_from(GeocodeCache)
+        )
+    ).scalar() or 0
+    stale = (
+        await session.execute(
+            sql_select(sql_func.count())
+            .select_from(GeocodeCache)
+            .where(GeocodeCache.cached_at < cutoff)
+        )
+    ).scalar() or 0
+    hits = (
+        await session.execute(
+            sql_select(sql_func.coalesce(sql_func.sum(GeocodeCache.hit_count), 0))
+        )
+    ).scalar() or 0
+    oldest = (
+        await session.execute(
+            sql_select(sql_func.min(GeocodeCache.cached_at))
+        )
+    ).scalar()
+    newest = (
+        await session.execute(
+            sql_select(sql_func.max(GeocodeCache.cached_at))
+        )
+    ).scalar()
+    return {
+        "total": int(total),
+        "fresh": int(total) - int(stale),
+        "stale": int(stale),
+        "hit_sum": int(hits),
+        "ttl_days": CACHE_TTL.days,
+        "oldest_cached_at": oldest,
+        "newest_cached_at": newest,
+    }
+
+
+async def purge_cache(
+    session: AsyncSession,
+    *,
+    older_than_days: int | None = None,
+) -> int:
+    """Delete rows older than ``older_than_days`` (or all when ``None``).
+
+    Returns the number of deleted rows. Defaults to a no-op (returns 0)
+    when ``older_than_days`` is negative — we never want a stray param
+    to silently flush the entire cache without an explicit ``None`` from
+    the caller.
+    """
+    from sqlalchemy import delete as sql_delete
+
+    stmt = sql_delete(GeocodeCache)
+    if older_than_days is not None:
+        if older_than_days < 0:
+            return 0
+        cutoff = datetime.now(UTC) - timedelta(days=int(older_than_days))
+        stmt = stmt.where(GeocodeCache.cached_at < cutoff)
+    res = await session.execute(stmt)
+    await session.commit()
+    return int(res.rowcount or 0)
+
+
+@dataclass(frozen=True)
+class SuggestionResult:
+    """Single Nominatim search result returned by the suggest endpoint.
+
+    Lightweight projection — keeps just what the autocomplete dropdown
+    needs (display name + lat/lon + country flag + bbox + addresstype).
+    Returned in the response order from Nominatim so the upstream
+    relevance ranking is preserved.
+
+    ``address_parts`` carries the structured Nominatim ``address``
+    dict (street, city, country, postcode, ...) so the frontend can
+    fill the existing 4-field address inputs without trying to parse
+    the free-text ``display_name``.
+    """
+
+    display_name: str
+    lat: Decimal
+    lon: Decimal
+    country_code: str | None
+    bbox: tuple[Decimal, Decimal, Decimal, Decimal] | None
+    addresstype: str | None
+    osm_type: str | None
+    address_parts: dict[str, str] | None = None
+
+
+def _suggestion_from_payload(item: dict[str, Any]) -> SuggestionResult | None:
+    """Build a ``SuggestionResult`` from a single raw Nominatim entry."""
+    try:
+        lat = Decimal(str(item.get("lat")))
+        lon = Decimal(str(item.get("lon")))
+    except (TypeError, ValueError, ArithmeticError):
+        return None
+    if not (Decimal("-90") <= lat <= Decimal("90")):
+        return None
+    if not (Decimal("-180") <= lon <= Decimal("180")):
+        return None
+    addr = item.get("address") if isinstance(item.get("address"), dict) else None
+    cc_raw = (addr or {}).get("country_code") if addr else None
+    country_code: str | None = None
+    if isinstance(cc_raw, str) and len(cc_raw) == 2 and cc_raw.isalpha():
+        country_code = cc_raw.lower()
+    # Whitelist of address-part keys we forward to the client. The full
+    # Nominatim object can include county, suburb, ISO codes etc. that
+    # the project form doesn't use — trimming keeps the response slim.
+    address_parts: dict[str, str] | None = None
+    if isinstance(addr, dict):
+        wanted = {
+            "house_number",
+            "road",
+            "street",
+            "postcode",
+            "city",
+            "town",
+            "village",
+            "state",
+            "country",
+            "country_code",
+        }
+        address_parts = {
+            k: str(v)
+            for k, v in addr.items()
+            if k in wanted and isinstance(v, str) and v.strip()
+        }
+    return SuggestionResult(
+        display_name=str(item.get("display_name") or "")[:500],
+        lat=lat,
+        lon=lon,
+        country_code=country_code,
+        bbox=_bbox_from_nominatim(item),
+        addresstype=(
+            str(item.get("addresstype")) if item.get("addresstype") else None
+        ),
+        osm_type=str(item.get("osm_type")) if item.get("osm_type") else None,
+        address_parts=address_parts or None,
+    )
+
+
+async def suggest_addresses(
+    query: str,
+    *,
+    limit: int = 5,
+    http_client: httpx.AsyncClient | None = None,
+) -> list[SuggestionResult]:
+    """Search Nominatim for up to ``limit`` matches for the free-text query.
+
+    Used by the autocomplete dropdown — *not* the auto-anchor flow (which
+    keeps the structured ``geocode_address`` for cache-keying by parts).
+
+    Returns an empty list on any failure (network, parse, disabled env,
+    short query) so callers can render "no matches" without exception
+    handling. Respects the same 1 req/s rate limit + User-Agent as the
+    single-result fetch so we never violate Nominatim's policy.
+    """
+    if _disabled():
+        return []
+    query_clean = (query or "").strip()
+    if len(query_clean) < 3:
+        # Nominatim returns garbage for 1-2 char queries; short-circuit
+        # so we don't burn rate-limit budget on noise.
+        return []
+    capped = max(1, min(int(limit or 5), 10))
+
+    global _last_request_monotonic
+    base = _base_url()
+    url = f"{base}/search"
+    params = {
+        "q": query_clean,
+        "format": "json",
+        "addressdetails": "1",
+        "limit": str(capped),
+    }
+    headers = {
+        "User-Agent": _user_agent(),
+        "Accept": "application/json",
+    }
+
+    async with _RATE_SEMAPHORE:
+        now = time.monotonic()
+        wait = _MIN_INTERVAL_SECONDS - (now - _last_request_monotonic)
+        if wait > 0:
+            await asyncio.sleep(wait)
+        _last_request_monotonic = time.monotonic()
+
+        own_client = http_client is None
+        client = http_client or httpx.AsyncClient(
+            timeout=_HTTP_TIMEOUT_SECONDS,
+        )
+        try:
+            res = await client.get(url, params=params, headers=headers)
+        except (httpx.HTTPError, OSError) as exc:
+            logger.info("nominatim suggest transport error: %s", exc)
+            return []
+        finally:
+            if own_client:
+                await client.aclose()
+
+    if res.status_code != 200:
+        logger.info(
+            "nominatim suggest non-200 (%s) for query: %s",
+            res.status_code, query_clean[:80],
+        )
+        return []
+    try:
+        payload = res.json()
+    except ValueError:
+        return []
+    if not isinstance(payload, list):
+        return []
+    out: list[SuggestionResult] = []
+    for item in payload[:capped]:
+        if not isinstance(item, dict):
+            continue
+        sug = _suggestion_from_payload(item)
+        if sug is not None:
+            out.append(sug)
+    return out
+
+
 def project_address_from_jsonb(
     address_jsonb: dict[str, Any] | None,
 ) -> ProjectAddress | None:
@@ -615,6 +847,10 @@ __all__ = [
     "CACHE_TTL",
     "GeocodeResult",
     "ProjectAddress",
+    "SuggestionResult",
+    "cache_stats",
     "geocode_address",
     "project_address_from_jsonb",
+    "purge_cache",
+    "suggest_addresses",
 ]

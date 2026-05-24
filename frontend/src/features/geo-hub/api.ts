@@ -15,6 +15,9 @@ import type {
   GeoOverlay,
   GeoRasterOverlay,
   GeoRasterOverlayPatch,
+  GeocodeCachePurgeResult,
+  GeocodeCacheStats,
+  GeocodeSuggestResponse,
   HSEPin,
   ImageryLayer,
   MapConfig,
@@ -420,4 +423,107 @@ export function rasterOverlayFromDwg(
 /** Resolve the public URL used by Cesium's SingleTileImageryProvider. */
 export function rasterOverlayImageUrl(id: string): string {
   return `/api${RASTER_BASE}/${id}/raster.png`;
+}
+
+/* ── Geocode autocomplete + cache admin (Wave 7 depth) ──────────────── */
+
+/**
+ * In-memory client cache for the autocomplete dropdown. Keyed by the
+ * exact query string sent to the backend (already trimmed + lowercased
+ * by the consumer). 5-minute TTL — short enough to avoid stale results
+ * after the user fixes a typo, long enough to absorb the common
+ * "back-up-and-retype" pattern without burning Nominatim budget.
+ *
+ * Map iteration order = insertion order, so a manual `keys().next()`
+ * eviction acts as approximate LRU when the cache grows past ``CAP``.
+ */
+const SUGGEST_CACHE_TTL_MS = 5 * 60 * 1000;
+const SUGGEST_CACHE_CAP = 100;
+const _suggestCache = new Map<
+  string,
+  { at: number; data: GeocodeSuggestResponse }
+>();
+
+function _suggestCacheGet(key: string): GeocodeSuggestResponse | null {
+  const hit = _suggestCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.at > SUGGEST_CACHE_TTL_MS) {
+    _suggestCache.delete(key);
+    return null;
+  }
+  return hit.data;
+}
+
+function _suggestCacheSet(key: string, data: GeocodeSuggestResponse): void {
+  if (_suggestCache.size >= SUGGEST_CACHE_CAP) {
+    const oldest = _suggestCache.keys().next().value;
+    if (oldest !== undefined) _suggestCache.delete(oldest);
+  }
+  _suggestCache.set(key, { at: Date.now(), data });
+}
+
+/** Test-only — clear the client-side suggest cache. */
+export function _clearSuggestCacheForTests(): void {
+  _suggestCache.clear();
+}
+
+/**
+ * Autocomplete address suggestions from Nominatim (via backend proxy).
+ *
+ * Performs no client-side debouncing — the caller is expected to debounce
+ * keystrokes (300 ms is the recommended setting per Wave 7 plan). Uses
+ * a 5-minute in-memory cache keyed on the exact query so back-and-forth
+ * typing doesn't re-hit the backend.
+ */
+export async function geocodeSuggest(
+  q: string,
+  options?: { limit?: number; signal?: AbortSignal },
+): Promise<GeocodeSuggestResponse> {
+  const trimmed = q.trim();
+  const limit = options?.limit ?? 5;
+  const cacheKey = `${limit}:${trimmed.toLowerCase()}`;
+  const cached = _suggestCacheGet(cacheKey);
+  if (cached) return cached;
+  const qs = new URLSearchParams({ q: trimmed, limit: String(limit) });
+  const url = `${BASE}/geocode/suggest?${qs.toString()}`;
+  // ``apiGet`` doesn't accept AbortSignal, so for cancellation support
+  // we hand-roll the fetch with the shared headers. Imports the auth
+  // store at call time to avoid a circular dependency at module load.
+  const token = useAuthStore.getState().accessToken;
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    'X-DDC-Client': 'OE/1.0',
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(`/api${url}`, {
+    method: 'GET',
+    headers,
+    signal: options?.signal,
+  });
+  if (!res.ok) {
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      body = await res.text();
+    }
+    throw new ApiError(res.status, res.statusText, body);
+  }
+  const data = (await res.json()) as GeocodeSuggestResponse;
+  _suggestCacheSet(cacheKey, data);
+  return data;
+}
+
+/** Admin — geocode cache statistics for the Geo Hub admin panel. */
+export function getGeocodeCacheStats(): Promise<GeocodeCacheStats> {
+  return apiGet<GeocodeCacheStats>(`${BASE}/geocode/cache/stats`);
+}
+
+/** Admin — purge cache rows older than ``olderThanDays`` (default 30). */
+export function purgeGeocodeCache(
+  olderThanDays = 30,
+): Promise<GeocodeCachePurgeResult> {
+  return apiDelete<GeocodeCachePurgeResult>(
+    `${BASE}/geocode/cache?older_than_days=${olderThanDays}`,
+  );
 }

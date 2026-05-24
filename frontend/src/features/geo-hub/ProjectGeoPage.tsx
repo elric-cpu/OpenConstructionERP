@@ -28,6 +28,7 @@ import { useQuery } from '@tanstack/react-query';
 import { MapPinned, AlertTriangle, ServerCrash } from 'lucide-react';
 
 import { ApiError } from '@/shared/lib/api';
+import { projectsApi } from '@/features/projects/api';
 
 import { AnchorAdjustPanel } from './AnchorAdjustPanel';
 import {
@@ -121,6 +122,31 @@ export function ProjectGeoPage() {
     enabled: Boolean(projectId),
     staleTime: 30_000,
   });
+  // Project record for the drift indicator — we need the typed
+  // address text to compare against the cached anchor.address. Stale
+  // for 5 minutes (project addresses don't change every render and
+  // re-fetching here would race the anchor refetch on edits).
+  const projectQuery = useQuery({
+    queryKey: ['projects', 'detail', projectId],
+    queryFn: () => projectsApi.get(projectId!),
+    enabled: Boolean(projectId),
+    staleTime: 5 * 60_000,
+  });
+  const projectAddressText = useMemo<string | null>(() => {
+    const addr = projectQuery.data?.address;
+    if (!addr) return null;
+    const parts = [
+      addr.street,
+      addr.city,
+      addr.state,
+      addr.postal_code,
+      addr.country,
+    ];
+    const line = parts
+      .filter((p): p is string => typeof p === 'string' && p.trim() !== '')
+      .join(', ');
+    return line || null;
+  }, [projectQuery.data?.address]);
 
   const pins = useMemo<GeoPinBundle>(
     () => ({
@@ -413,6 +439,7 @@ export function ProjectGeoPage() {
                       anchor={data.anchor}
                       dragMode={anchorDragMode}
                       onToggleDragMode={() => setAnchorDragMode((v) => !v)}
+                      projectAddressText={projectAddressText}
                     />
                   )}
                 </>

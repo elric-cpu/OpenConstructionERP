@@ -1661,6 +1661,28 @@ class GeoHubService:
 
         result = await self.session.execute(stmt)
         rows = result.all()
+
+        def _project_address_text(addr: Any) -> str | None:
+            """Render the project's JSONB address as a single line.
+
+            Used by the frontend to detect drift between the typed
+            address and the geocoded ``anchor.address`` — when the user
+            edits the project address after the first geocode the two
+            strings diverge and we surface a "Re-anchor" chip.
+            """
+            if not isinstance(addr, dict):
+                return None
+            parts = [
+                addr.get("street"),
+                addr.get("house_number") or addr.get("houseNumber"),
+                addr.get("postal_code") or addr.get("postcode"),
+                addr.get("city"),
+                addr.get("state"),
+                addr.get("country"),
+            ]
+            line = ", ".join(p for p in parts if isinstance(p, str) and p.strip())
+            return line or None
+
         return [
             {
                 "project_id": project.id,
@@ -1671,6 +1693,9 @@ class GeoHubService:
                 "alt": anchor.alt,
                 "region_code": anchor.region_code,
                 "address": anchor.address,
+                "project_type": project.project_type,
+                "status": project.status,
+                "project_address_text": _project_address_text(project.address),
             }
             for (anchor, project) in rows
         ]

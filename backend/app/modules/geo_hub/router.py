@@ -32,6 +32,10 @@ from app.modules.geo_hub.schemas import (
     GeoOverlayUpdate,
     GeoRasterOverlayResponse,
     GeoRasterOverlayUpdate,
+    GeocodeCachePurgeResponse,
+    GeocodeCacheStatsResponse,
+    GeocodeSuggestionResponse,
+    GeocodeSuggestResponse,
     HSEPinResponse,
     ImageryLayerCreate,
     ImageryLayerResponse,
@@ -173,6 +177,103 @@ async def bulk_anchor_from_address(
     """
     summary = await service.bulk_anchor_from_address(payload=payload)
     return BulkAnchorFromAddressResponse.model_validate(summary)
+
+
+# ── Geocode (Nominatim) — suggest + admin cache ────────────────────────
+
+
+@router.get("/geocode/suggest", response_model=GeocodeSuggestResponse)
+async def geocode_suggest(
+    q: str = Query(..., min_length=1, max_length=200),
+    limit: int = Query(default=5, ge=1, le=10),
+    payload: CurrentUserPayload = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("geo_hub.read")),
+) -> GeocodeSuggestResponse:
+    """Free-text Nominatim search for the address autocomplete dropdown.
+
+    Returns up to ``limit`` results (capped at 10). The endpoint never
+    raises on geocoder failure — it returns an empty ``suggestions``
+    array so the frontend can render "no matches" without exception
+    handling. Authentication is required (``geo_hub.read``) so an
+    unauthenticated caller can't pin Nominatim through our IP.
+
+    Rate-limit: every call serialises through the same process-global
+    1 req/s semaphore as the structured ``geocode_address`` so the
+    autocomplete dropdown can't accidentally violate Nominatim's ToS
+    even under heavy keystroke pressure (client-side debounce + cache
+    cooperate to keep this well below the budget in practice).
+    """
+    # ``payload`` is unused beyond the RBAC gate — kept on the signature
+    # to match the convention used by every other read endpoint in this
+    # module so security audits can grep for it uniformly.
+    _ = payload
+    from app.modules.geo_hub.geocoder import _disabled, suggest_addresses
+
+    disabled = _disabled()
+    results = [] if disabled else await suggest_addresses(q, limit=limit)
+    return GeocodeSuggestResponse(
+        query=q,
+        geocoder_disabled=disabled,
+        suggestions=[
+            GeocodeSuggestionResponse(
+                display_name=r.display_name,
+                lat=r.lat,
+                lon=r.lon,
+                country_code=r.country_code,
+                addresstype=r.addresstype,
+                osm_type=r.osm_type,
+                bbox=list(r.bbox) if r.bbox else None,
+                address_parts=dict(r.address_parts) if r.address_parts else None,
+            )
+            for r in results
+        ],
+    )
+
+
+@router.get(
+    "/geocode/cache/stats",
+    response_model=GeocodeCacheStatsResponse,
+)
+async def geocode_cache_stats(
+    session: SessionDep,
+    _perm: None = Depends(RequirePermission("geo_hub.admin")),
+) -> GeocodeCacheStatsResponse:
+    """Cache counters for the admin panel.
+
+    Admin-only (``geo_hub.admin``). Exposes total / fresh / stale row
+    counts, the running ``hit_count`` sum and the oldest/newest
+    cached_at timestamps so an operator can decide whether a purge is
+    warranted.
+    """
+    from app.modules.geo_hub.geocoder import cache_stats
+
+    stats = await cache_stats(session)
+    return GeocodeCacheStatsResponse(**stats)
+
+
+@router.delete(
+    "/geocode/cache",
+    response_model=GeocodeCachePurgeResponse,
+)
+async def geocode_cache_purge(
+    session: SessionDep,
+    older_than_days: int | None = Query(default=30, ge=0, le=3650),
+    _perm: None = Depends(RequirePermission("geo_hub.admin")),
+) -> GeocodeCachePurgeResponse:
+    """Manually invalidate cache rows older than ``older_than_days``.
+
+    Defaults to 30 days (matches ``CACHE_TTL``) so a default call only
+    sweeps already-expired rows — a no-op for healthy caches and a
+    sanity-restore for caches that were never read often enough to age
+    out via the normal TTL miss path. Pass ``older_than_days=0`` to
+    flush everything.
+    """
+    from app.modules.geo_hub.geocoder import purge_cache
+
+    deleted = await purge_cache(session, older_than_days=older_than_days)
+    return GeocodeCachePurgeResponse(
+        deleted=deleted, older_than_days=older_than_days,
+    )
 
 
 @router.delete("/anchors/{anchor_id}", status_code=204)

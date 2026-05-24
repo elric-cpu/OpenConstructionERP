@@ -627,6 +627,10 @@ class AnchoredProjectResponse(BaseModel):
     caller can access AND that have a registered ``GeoAnchor`` are
     included. Used by the global Geo Hub to drop a pin per project on
     the earth-scale view (no tilesets at this LOD).
+
+    ``project_type`` and ``status`` let the viewer pick the right pin
+    icon (residential / commercial / civil) and tint by lifecycle
+    (active / planning / completed).
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -639,6 +643,13 @@ class AnchoredProjectResponse(BaseModel):
     alt: Decimal
     region_code: str | None = None
     address: str | None = None
+    project_type: str | None = None
+    status: str | None = None
+    # Free-text project address as captured on the project (NOT the
+    # geocoded display name on the anchor) — the frontend compares this
+    # against ``address`` to surface a drift indicator when the user
+    # edited the address after the first geocode.
+    project_address_text: str | None = None
 
 
 # ── Auto-anchor (from project address) ──────────────────────────────────
@@ -691,6 +702,66 @@ class BulkAnchorFromAddressResponse(BaseModel):
     results: list[BulkAnchorOutcome] = Field(default_factory=list)
 
 
+class GeocodeSuggestionResponse(BaseModel):
+    """A single Nominatim search hit for the autocomplete dropdown.
+
+    Returned by ``GET /api/v1/geo-hub/geocode/suggest`` — projected from
+    the upstream Nominatim payload so the frontend can render a country
+    flag + display name + lat/lon preview without parsing the raw OSM
+    response.
+    """
+
+    model_config = ConfigDict()
+
+    display_name: str
+    lat: Decimal
+    lon: Decimal
+    country_code: str | None = None
+    addresstype: str | None = None
+    osm_type: str | None = None
+    bbox: list[Decimal] | None = None  # [min_lat, min_lon, max_lat, max_lon]
+    # Structured address parts (street / city / country / postcode etc.)
+    # so the project form can autofill its dedicated inputs without
+    # re-parsing ``display_name``.
+    address_parts: dict[str, str] | None = None
+
+
+class GeocodeSuggestResponse(BaseModel):
+    """Response wrapper for the autocomplete suggest endpoint."""
+
+    model_config = ConfigDict()
+
+    query: str
+    suggestions: list[GeocodeSuggestionResponse] = Field(default_factory=list)
+    # ``true`` when the geocoder is disabled via env (operator opt-out
+    # or sanctioned region) — the frontend uses this to switch from
+    # "no matches" to "service disabled" copy.
+    geocoder_disabled: bool = False
+
+
+class GeocodeCacheStatsResponse(BaseModel):
+    """Aggregate counters for the Geo Hub admin cache panel."""
+
+    model_config = ConfigDict()
+
+    total: int = 0
+    fresh: int = 0
+    stale: int = 0
+    hit_sum: int = 0
+    ttl_days: int = 30
+    oldest_cached_at: datetime | None = None
+    newest_cached_at: datetime | None = None
+
+
+class GeocodeCachePurgeResponse(BaseModel):
+    """Result of a manual cache invalidation sweep."""
+
+    model_config = ConfigDict()
+
+    deleted: int = 0
+    older_than_days: int | None = None
+
+
 class DiaryPhotoPinResponse(BaseModel):
     """A single geo-tagged Daily Diary photo on the project map."""
 
@@ -725,6 +796,10 @@ __all__ = [
     "GeoRasterOverlayCreate",
     "GeoRasterOverlayResponse",
     "GeoRasterOverlayUpdate",
+    "GeocodeCachePurgeResponse",
+    "GeocodeCacheStatsResponse",
+    "GeocodeSuggestResponse",
+    "GeocodeSuggestionResponse",
     "RasterOverlayUploadResponse",
     "HSEPinResponse",
     "ImageryLayerCreate",
