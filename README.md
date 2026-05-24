@@ -26,7 +26,7 @@ Professional BOQ, 4D/5D planning, AI-powered estimation, CAD/BIM takeoff — all
 
 <sub>🎬 <b>1-minute teaser above</b> · for the full 12-minute walkthrough → <a href="https://www.youtube.com/watch?v=X06cIaroAeI"><b>watch on YouTube</b></a> · onboarding → BoQ → BIM → DWG → PDF → AI → dashboard</sub>
 
-*100% open source · 55,000+ cost items · AI estimation · 27 languages · 110 modules · Self-hosted*
+*100% open source · 55,000+ cost items · AI estimation · 27 languages · 111 modules · Self-hosted*
 
 </div>
 
@@ -137,47 +137,51 @@ Star OpenConstructionERP on GitHub and be instantly notified of new releases.
 
 ---
 
-## ✨ What's New in v4.5.0 — PropDev complete + Geo Hub + WhatsNew tour
+## ✨ What's New in v4.6.0 — Floating chat + Accommodation + Geo overlay + 10 dashboard widgets
 
-The **v4.5.0** wave deepens the property-development lifecycle end-to-end, introduces a 3D-globe **Geo Hub** built on Cesium 3D Tiles, and adds in-app onboarding via WhatsNewCard + ProductTour. **110 modules** ship in the box; the `/api/v1/*` surface remains the public contract.
+The **v4.6.0** wave adds a floating ERP-aware chat on every page, a new **Accommodation** module that unifies worker camps / rentals / hotels, **10 new dashboard widgets** with server-synced layout, **DWG/PDF raster overlay** in the Geo Hub globe, and **6 per-module guided tours**. **111 modules** ship in the box; the `/api/v1/*` surface remains the public contract.
 
 <table>
 <tr>
 <td width="50%" valign="top">
 
-**🏢 PropDev complete — Lead → Reservation → SPA → Handover → Warranty**
-- Full clickflow with auto-creation of ContractParty on SPA conversion, Payment Schedule FSM, SnagsBlock per handover with photo upload + promote-to-warranty.
-- **House Type catalogue** with ISO 3166-1 picker (180+ countries) + Custom region — new CountryCombobox + HouseTypeEditModal.
-- **Sub-entity tabs**: Phases · Blocks · Brokers · Price Matrix · Escrow — one screen for every dev operation.
-- **Contacts↔PropDev bridge** — leads/buyers idempotently tagged as Contacts via `Contact.module_tags`.
+**💬 Floating chat — every page, talks to your ERP DB**
+Bottom-right FAB on every screen opens a panel backed by 17 database tools (projects, BOQ, schedule, validation, risks, CWICR search, BIM elements, semantic search across all modules). Streamed responses with tool-call cards rendered inline.
 
-**🌍 Geo Hub (Cesium 3D Tiles 1.1)**
-- Three-mode picker: Global / Project / Development with live HUD (cursor lat/lon, altitude, scale bar).
-- Anchored Projects rail (now a floating overlay panel, collapsible).
-- Deeplinks: `?model=`, `?plot=`, `?dev_id=`, `?phase=`, `?block=`.
-- Pin layers for HSE incidents, Punchlist, Daily Diary. "View on map" CTAs throughout BIM/PropDev/Daily Diary/Projects.
+**🏨 Accommodation module — worker camps + rentals + hotels**
+- One module for three lodging kinds (`worker_camp` / `rental` / `hotel`) with kind-filter tabs and per-card capacity.
+- **Rooms** with status (available · occupied · maintenance · blocked) and BIM element id linkage.
+- **Bookings** state machine: `reserved → checked_in → checked_out` (or `cancelled` from any non-final state), 409 on bookings into maintenance/blocked rooms.
+- **Charges** (base rent, extras, deposits, refunds) with Decimal precision and per-room currency inheritance.
+- **PropDev bootstrap** — one-click iterate a development block's plots → 1:1 rooms, idempotent.
+- **HR autobook** — suggest lowest-labelled available `worker_camp` room for an employee contact, human-confirmed.
+- BIM `bim_element_id` + Geo `lat/lon` integration; cards show a "Geo" deeplink when coords are set.
 
-**🐛 BIM Walk capture-phase keyboard fix**
-WASD/Arrows/Space/PageUp/PageDown/Ctrl/Shift are caught at the `window` capture phase with preventDefault — no more accidental page scroll or sidebar move while walking the model.
+**📊 10 new dashboard widgets + server-synced customizer**
+BOQ Summary · Critical Path · Top Risks · HSE Scorecard · Procurement Pipeline · Budget Variance · Change Orders · Clash Health · Validation Score · Weather Site. Layout persists server-side via `UserPreference` (no more device-local drift).
 
 </td>
 <td width="50%" valign="top">
 
-**📥 Converter install progress bar**
-Live progress polling on `/bim` and `/dwg-takeoff` while DDC cad2data converter installs — no more guessing whether it hung.
+**🌍 Geo Hub raster overlay (DWG/PDF on the globe)**
+- Upload a PDF or image, drag four corners onto the globe → raster appears as a draped overlay.
+- **Polygon crop** with vertex drag; degenerate-bbox guard + "Needs corners" CTA when pixel→geo math under-determines the placement.
+- Infinite-loop guard removed (component now stable under repeated re-mounts).
 
-**🎓 In-app onboarding**
-- **WhatsNewCard** — compact single-row carousel with 6 chip popovers, dismiss-to-pill.
-- **ProductTour** — 8-step spotlight overlay (auto-pauses when other dialogs open).
-- **Sidebar Menu Editor** — per-user hidden-modules (server-synced via UserPreference).
-- **Subscribe button** in header with own-SMTP routing.
+**🎓 6 per-module guided tours**
+BOQ · BIM · Geo · PropDev · Dashboard · Accommodation each ship a hand-written tour wired through `ModuleHelpButton tourId="…"`. 192 i18n strings translated EN/DE/RU at native quality.
+
+**🐛 Reliability fixes**
+- Dashboard widget endpoints: **12 4xx → 0** (URL paths were drifting from router prefixes).
+- Marketing-site SMTP: port 465 now correctly uses `SMTP_SSL` (port 587 stays STARTTLS).
+- Geo overlay: fix infinite re-render loop on initial open; degenerate bbox now shows actionable CTA instead of a blank globe.
 
 **🔒 Cumulative since v4.0.0**
-- v4.1–v4.3 Round 4 + Round 5 security: ~73 IDOR closures across 11 modules (carbon, crm, eac, hse_advanced, projects, qms, rfi, service, subcontractors, submittals, variations).
+- v4.1–v4.3 Round 4 + Round 5 security: ~73 IDOR closures across 11 modules.
 - BIM Requirements (IDS/COBie), Coordination Hub, Smart Views, Clash AI Triage, BCF 3.0/OpenCDE.
-- DocumentTemplates with backend magic-byte upload validation (defence-in-depth).
+- PropDev complete Lead → SPA → Handover → Warranty clickflow + Geo Hub Cesium 3D Tiles.
 
-**📡 Latest alembic head**: `v3119` · single-head invariant maintained across every wave.
+**📡 Latest alembic head**: `v3121` (Accommodation + Geo raster overlay) · single-head invariant maintained across every wave.
 
 </td>
 </tr>
@@ -429,6 +433,7 @@ Anchor every project on a real spherical earth — Cesium 3D Tiles 1.1 with live
 - **Deeplinks** — `?model=`, `?plot=`, `?dev_id=`, `?phase=`, `?block=` survive page reloads and shareable URLs
 - **Pin layers** — HSE incidents, Punchlist items, Daily Diary entries plotted on the globe with category icons
 - **"View on map" CTAs** — One click from BIM viewer, PropDev plot, Daily Diary entry, Project card → globe with that asset selected
+- **DWG / PDF raster overlay** — Upload a site plan or floorplan, drag four corner pins onto the globe → the raster drapes over real terrain; polygon crop with vertex drag for cookie-cutter trimming
 - **Canonical pipeline** — `POST /api/v1/geo-hub/from-canonical/{cad_import_id}` turns any DDC cad2data conversion into glTF 3D Tiles via pure-Python pygltflib (no commercial toolkit needed)
 
 *Example: open a Berlin masterplan in Geo Hub, switch to Development mode, see all 12 plots colored by sale status, click one → reservation pipeline opens with that buyer pre-filtered.*
@@ -463,8 +468,62 @@ End-to-end real-estate developer workflow — from first lead to handover snags 
 - **Contacts ↔ PropDev bridge** — Every Lead and Buyer is idempotently tagged as a Contact via `Contact.module_tags`, so CRM and PropDev stay in sync without duplicates
 - **Price Matrix** — Per-phase × house-type × view-premium grid with currency-aware totals and bulk apply
 - **Escrow** — Per-buyer payment schedule with milestone receipts and outstanding balance roll-up
+- **Bootstrap to Accommodation** — One click on a development block creates a worker-camp / rental inventory in the [Accommodation](#-accommodation) module (1:1 plots → rooms, idempotent)
 
 *Example: import a 240-unit residential masterplan, generate price matrix from house-type × view, push to globe, accept 18 reservations across 3 brokers, convert 11 to SPA, hand over 4, track 7 open snags in the warranty period — all in one app.*
+
+### 🏨 Accommodation
+
+<img src="docs/screenshots/feature-accommodation.jpg" alt="Accommodation module — worker camps, rentals and hotels in one place" width="800" />
+
+One module for three lodging kinds — worker camps for site crews, rentals for staff, hotels for visiting consultants — with rooms, bookings and charges in a unified data model:
+
+```
+   PropDev block         Accommodation         Rooms              Bookings           Charges
+ ┌──────────────┐      ┌──────────────┐    ┌────────────┐    ┌────────────┐    ┌────────────┐
+ │ Plots #1..N  │──1▶──│ Worker camp  │───▶│ available  │───▶│ reserved   │───▶│ base rent  │
+ │ (PropDev)    │ click│ Rental       │    │ occupied   │    │ checked_in │    │ extras     │
+ │              │      │ Hotel        │    │ maintenance│    │ checked_out│    │ deposits   │
+ └──────────────┘      └──────────────┘    │ blocked    │    │ cancelled  │    │ refunds    │
+       ▲                     │             └────────────┘    └────────────┘    └────────────┘
+       │                     ▼                                    ▲
+       │              ┌──────────────┐                            │
+       │              │ HR autobook  │ ◀──── lowest-labelled ─────┘
+       │              │ (suggest+    │       available worker_camp room
+       │              │  confirm)    │
+       │              └──────────────┘
+       │
+   "Bootstrap to Accommodation" CTA
+```
+
+- **Three kinds, one module** — `worker_camp` · `rental` · `hotel`, with tab filter and per-kind capacity counters on every card
+- **Rooms with status** — `available` · `occupied` · `maintenance` · `blocked`; 409 prevents booking into a blocked or maintenance room
+- **Booking state machine** — `reserved → checked_in → checked_out` with `cancelled` from any non-final state; idempotent same-state updates; final states locked
+- **Charges with Decimal precision** — Base rent, extras, deposits, refunds, all in the room's inherited currency (no hardcoded EUR)
+- **PropDev bootstrap** — One click on a development block iterates its plots and creates rooms 1:1, idempotent (running twice creates nothing extra)
+- **HR autobook (suggest-confirm)** — Pick an employee Contact → suggest the lowest-labelled available `worker_camp` room → human confirms with a real booking POST
+- **BIM + Geo aware** — `bim_element_id` carries through from PropDev plots; cards with `geo_lat/geo_lon` get a "Geo" deeplink to the globe
+- **IDOR-hardened** — Every helper returns 404 (never 403) on cross-tenant access; tested in `backend/tests/modules/accommodation/`
+
+*Example: 240-plot worker camp on a remote site — bootstrap from the PropDev block, HR autobooks 187 crew members from the Contacts directory over three weeks, base-rent charges roll up to the project P&L automatically.*
+
+### 💬 Floating Chat with the ERP Database
+
+Bottom-right floating chat on every page — talks to the entire ERP database through 17 typed tools (projects, BOQ items, schedule, validation, risks, CWICR search, BIM elements, full semantic search):
+
+```
+  Any page          Floating button       Panel + 17 tools     Streamed
+ ┌────────┐        ┌──────────────┐     ┌──────────────┐     ┌──────────┐
+ │/projects│       │  bottom-right │     │ get_projects │     │ tool card│
+ │/boq    │──FAB──▶│   ◯ Message  │────▶│ search_cwicr │────▶│ rendered │
+ │/geo    │        │   (badge: 3) │     │ create_boq   │     │ in chat  │
+ └────────┘        └──────────────┘     └──────────────┘     └──────────┘
+```
+
+- **Always-on** — Mounted in `AppLayout`, available on every route (Dashboard, BOQ, BIM, Geo, PropDev, Accommodation, all 111 modules)
+- **Real ERP access** — Reads/writes through tools, not LLM guesswork: `get_all_projects`, `get_project_summary`, `get_boq_items`, `get_schedule`, `get_validation_results`, `get_risk_register`, `search_cwicr_database`, `get_cost_model`, `compare_projects`, `run_validation`, `create_boq_item`, `search_boq_positions`, `search_documents`, `search_tasks`, `search_risks`, `search_bim_elements`, `search_anything`
+- **Streamed responses** — Tool-call cards (risk register table, BOQ summary, etc.) render inline as the model produces them
+- **Provider-agnostic** — Anthropic / OpenAI / Gemini / Mistral / Groq / DeepSeek behind the same tool interface
 
 ### 🤝 Coordination Hub & Clash AI
 
@@ -746,7 +805,7 @@ This pipeline is the reason OpenConstructionERP can replace several commercial p
 flowchart TB
     UI["Frontend SPA<br>React 18, TypeScript, Vite<br>AG Grid, Tailwind, PDF.js"]
 
-    subgraph Backend ["FastAPI Backend, 110 modules"]
+    subgraph Backend ["FastAPI Backend, 111 modules"]
         CORE["Core<br>Module loader, Event bus, Hooks, RBAC<br>Validation, FSM + audit log"]
         ESTIM["Estimating<br>BOQ, Costs, Catalog, Assemblies<br>Takeoff, BIM Hub, Match-Elements, 5D"]
         FIELD["Field Operations<br>Service, Equipment, Daily Diary<br>Portal, Resources & Crew"]
@@ -799,12 +858,13 @@ flowchart TB
                    │ REST + SSE
 ┌──────────────────┴───────────────────────────────┐
 │  Backend (FastAPI)                               │
-│  110 auto-discovered modules · Plugin system     │
+│  111 auto-discovered modules · Plugin system     │
 ├──────────────────────────────────────────────────┤
 │  BOQ · Costs · Schedule · 5D · Validation · AI   │
 │  Takeoff · Tendering · Risk · Reports · Catalog  │
 │  Requirements · Markups · Punch List · BIM Hub   │
 │  PropDev · Geo Hub · Coordination · Clash AI     │
+│  Accommodation · Floating Chat · 10 widgets      │
 ├──────────────────────────────────────────────────┤
 │  Database (PostgreSQL / SQLite)                  │
 │  Vector DB (LanceDB / Qdrant)                    │
