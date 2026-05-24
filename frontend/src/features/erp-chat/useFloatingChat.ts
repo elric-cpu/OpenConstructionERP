@@ -28,12 +28,22 @@ interface FloatingChatState {
   activeSessionId: string | null;
   lastReadAt: string;
   unreadCount: number;
+  /**
+   * Session-only flag: when the user clicks "Skip" on the "Configure AI"
+   * onboarding banner we hide the banner for the rest of this browser
+   * session. We intentionally DO NOT persist this to localStorage — the
+   * onboarding nudge should reappear next visit so the user is reminded
+   * they still need to configure their key.
+   */
+  onboardingBannerDismissed: boolean;
   open: () => void;
   close: () => void;
   toggle: () => void;
   setActiveSession: (id: string | null) => void;
   markRead: () => void;
   bumpUnread: () => void;
+  dismissOnboardingBanner: () => void;
+  resetOnboardingBanner: () => void;
 }
 
 function readPersisted(): PersistedState {
@@ -70,6 +80,7 @@ export const useFloatingChatStore = create<FloatingChatState>((set, get) => ({
   activeSessionId: initial.activeSessionId,
   lastReadAt: initial.lastReadAt,
   unreadCount: 0,
+  onboardingBannerDismissed: false,
 
   open: () => {
     const now = new Date().toISOString();
@@ -108,6 +119,14 @@ export const useFloatingChatStore = create<FloatingChatState>((set, get) => ({
     // for the open check too, but defending here keeps the store honest.
     if (get().isOpen) return;
     set((s) => ({ unreadCount: s.unreadCount + 1 }));
+  },
+
+  dismissOnboardingBanner: () => {
+    set({ onboardingBannerDismissed: true });
+  },
+
+  resetOnboardingBanner: () => {
+    set({ onboardingBannerDismissed: false });
   },
 }));
 

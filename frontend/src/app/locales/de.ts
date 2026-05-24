@@ -6342,6 +6342,33 @@ const resource = {
     "chat.panel.sugg_validate_boq": "LV des aktuellen Projekts validieren",
     "chat.panel.sugg_draft_rfi": "RFI-Entwurf aus der neuesten Kollision erstellen",
     "chat.panel.sugg_critical_path": "Wie ist der kritische Pfad im Terminplan?",
+
+    // No-AI onboarding banner (above input on /panel open)
+    "chat.panel.no_ai_banner.title": "KI einrichten, um zu starten",
+    "chat.panel.no_ai_banner.body": "Der Chat benötigt einen API-Schlüssel von Anthropic, OpenAI oder einem anderen Anbieter. Richte ihn in den Einstellungen ein.",
+    "chat.panel.no_ai_banner.cta_configure": "KI einrichten",
+    "chat.panel.no_ai_banner.cta_skip": "Überspringen",
+
+    // Friendly error card (replaces inline plain-text errors)
+    "chat.panel.error_card.api_key": "Der KI-Anbieter benötigt einen Schlüssel — richte ihn in den Einstellungen ein, um weiter zu chatten.",
+    "chat.panel.error_card.retry": "Erneut versuchen",
+
+    // Page-contextual chip groups
+    "chat.panel.contextual_label": "Für diese Seite",
+    "chat.panel.generic_label": "Überall",
+    "chat.panel.ctx_boq.validate": "Dieses LV validieren",
+    "chat.panel.ctx_boq.suggest_missing": "Kostenpositionen für fehlende Einträge vorschlagen",
+    "chat.panel.ctx_boq.compare": "Dieses LV mit meinen anderen Projekten vergleichen",
+    "chat.panel.ctx_project.summary": "Status dieses Projekts zusammenfassen",
+    "chat.panel.ctx_project.open_risks": "Offene Risiken dieses Projekts anzeigen",
+    "chat.panel.ctx_project.over_budget": "Welche Bereiche sind über Budget?",
+    "chat.panel.ctx_accommodation.occupancy": "Belegungstrend anzeigen",
+    "chat.panel.ctx_accommodation.suggest_room": "Ein Zimmer für den nächsten ankommenden Mitarbeiter vorschlagen",
+    "chat.panel.ctx_accommodation.bookings_ending": "Diese Woche endende Buchungen auflisten",
+    "chat.panel.ctx_geo.nearby": "Projekte im Umkreis von 50 km der aktuellen Ansicht finden",
+    "chat.panel.ctx_geo.clashes": "Kollisionen im aktiven Projekt anzeigen",
+    "chat.panel.ctx_bim.unlinked": "Nicht verknüpfte Elemente in diesem Modell auflisten",
+    "chat.panel.ctx_bim.compare_revisions": "Mengen zwischen Revisionen vergleichen",
     // --- /Floating chat widget ---
 
     // --- Per-module tour: BOQ Editor (8 steps) ---

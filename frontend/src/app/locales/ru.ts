@@ -6337,6 +6337,33 @@ const resource = {
     "chat.panel.sugg_validate_boq": "Запусти валидацию ВОР текущего проекта",
     "chat.panel.sugg_draft_rfi": "Сделай черновик RFI по последней коллизии",
     "chat.panel.sugg_critical_path": "Какой критический путь в графике?",
+
+    // Баннер онбординга при отсутствии настроенного ИИ
+    "chat.panel.no_ai_banner.title": "Настройте ИИ, чтобы начать общение",
+    "chat.panel.no_ai_banner.body": "Чату нужен ключ Anthropic, OpenAI или другого провайдера. Настройте его в разделе «Настройки».",
+    "chat.panel.no_ai_banner.cta_configure": "Настроить ИИ",
+    "chat.panel.no_ai_banner.cta_skip": "Пропустить",
+
+    // Дружелюбная карточка ошибки (вместо обычного текста)
+    "chat.panel.error_card.api_key": "Для провайдера ИИ нужен ключ — настройте его в разделе «Настройки», чтобы продолжить.",
+    "chat.panel.error_card.retry": "Повторить",
+
+    // Контекстные подсказки по страницам
+    "chat.panel.contextual_label": "Для этой страницы",
+    "chat.panel.generic_label": "Везде",
+    "chat.panel.ctx_boq.validate": "Запустить валидацию этой ВОР",
+    "chat.panel.ctx_boq.suggest_missing": "Предложи расценки для пропущенных позиций",
+    "chat.panel.ctx_boq.compare": "Сравни эту ВОР с моими другими проектами",
+    "chat.panel.ctx_project.summary": "Подведи итог по статусу этого проекта",
+    "chat.panel.ctx_project.open_risks": "Покажи открытые риски этого проекта",
+    "chat.panel.ctx_project.over_budget": "В каких разделах превышен бюджет?",
+    "chat.panel.ctx_accommodation.occupancy": "Покажи динамику заселения",
+    "chat.panel.ctx_accommodation.suggest_room": "Предложи комнату для следующего прибывающего сотрудника",
+    "chat.panel.ctx_accommodation.bookings_ending": "Перечисли брони, заканчивающиеся на этой неделе",
+    "chat.panel.ctx_geo.nearby": "Найди проекты в радиусе 50 км от текущей области карты",
+    "chat.panel.ctx_geo.clashes": "Покажи коллизии в активном проекте",
+    "chat.panel.ctx_bim.unlinked": "Перечисли несвязанные элементы в этой модели",
+    "chat.panel.ctx_bim.compare_revisions": "Сравни количества между ревизиями",
     // --- /Floating chat widget ---
 
     // --- Per-module tour: BOQ Editor (8 steps) ---

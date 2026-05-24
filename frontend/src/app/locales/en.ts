@@ -6853,6 +6853,33 @@ const resource = {
     "chat.panel.sugg_validate_boq": "Validate the current BOQ",
     "chat.panel.sugg_draft_rfi": "Create a draft RFI from the latest clash",
     "chat.panel.sugg_critical_path": "What's the schedule critical path?",
+
+    // No-AI onboarding banner (above input on /panel open)
+    "chat.panel.no_ai_banner.title": "Configure AI to start chatting",
+    "chat.panel.no_ai_banner.body": "The chat needs an Anthropic, OpenAI, or other provider key. Set it up in Settings.",
+    "chat.panel.no_ai_banner.cta_configure": "Configure AI",
+    "chat.panel.no_ai_banner.cta_skip": "Skip",
+
+    // Friendly error card (replaces inline plain-text errors)
+    "chat.panel.error_card.api_key": "AI provider needs a key — configure it in Settings to keep chatting.",
+    "chat.panel.error_card.retry": "Retry",
+
+    // Page-contextual chip groups
+    "chat.panel.contextual_label": "For this page",
+    "chat.panel.generic_label": "Anywhere",
+    "chat.panel.ctx_boq.validate": "Validate this BOQ",
+    "chat.panel.ctx_boq.suggest_missing": "Suggest cost items for missing positions",
+    "chat.panel.ctx_boq.compare": "Compare this BOQ against my other projects",
+    "chat.panel.ctx_project.summary": "Summarize this project's status",
+    "chat.panel.ctx_project.open_risks": "Show me this project's open risks",
+    "chat.panel.ctx_project.over_budget": "What are the over-budget areas?",
+    "chat.panel.ctx_accommodation.occupancy": "Show me occupancy trend",
+    "chat.panel.ctx_accommodation.suggest_room": "Suggest a room for the next arriving employee",
+    "chat.panel.ctx_accommodation.bookings_ending": "List bookings ending this week",
+    "chat.panel.ctx_geo.nearby": "Find projects within 50 km of my current view",
+    "chat.panel.ctx_geo.clashes": "Show me clashes on the active project",
+    "chat.panel.ctx_bim.unlinked": "List unlinked elements in this model",
+    "chat.panel.ctx_bim.compare_revisions": "Compare quantities between revisions",
     // --- /Floating chat widget ---
 
     // --- Accommodation module (v3120) ---

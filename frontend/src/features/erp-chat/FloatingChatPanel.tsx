@@ -21,7 +21,7 @@ import {
   type KeyboardEvent,
   type FC,
 } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   X,
@@ -29,6 +29,9 @@ import {
   History,
   MessageSquarePlus,
   Loader2,
+  KeyRound,
+  AlertTriangle,
+  RotateCw,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
@@ -90,6 +93,103 @@ function useDefaultSuggestions(): string[] {
     }),
     t('chat.panel.sugg_critical_path', { defaultValue: "What's the schedule critical path?" }),
   ];
+}
+
+/**
+ * Page-contextual suggestion chips.
+ *
+ * Inspects the current pathname and returns 3-4 chips tuned to whatever the
+ * user is currently looking at. Returns an empty array on routes we don't
+ * have a context bundle for — the panel then shows just the 6 generic chips.
+ *
+ * NOTE: we match on the URL prefix only (no params) so the chips work for
+ * both /boq/abc-123 and any future /boq/abc-123/edit-style routes.
+ */
+function useContextualSuggestions(pathname: string): string[] {
+  const { t } = useTranslation();
+  return useMemo(() => {
+    if (/^\/boq\/[^/]+/.test(pathname)) {
+      return [
+        t('chat.panel.ctx_boq.validate', { defaultValue: 'Validate this BOQ' }),
+        t('chat.panel.ctx_boq.suggest_missing', {
+          defaultValue: 'Suggest cost items for missing positions',
+        }),
+        t('chat.panel.ctx_boq.compare', {
+          defaultValue: 'Compare this BOQ against my other projects',
+        }),
+      ];
+    }
+    if (/^\/projects\/[^/]+/.test(pathname)) {
+      return [
+        t('chat.panel.ctx_project.summary', {
+          defaultValue: "Summarize this project's status",
+        }),
+        t('chat.panel.ctx_project.open_risks', {
+          defaultValue: "Show me this project's open risks",
+        }),
+        t('chat.panel.ctx_project.over_budget', {
+          defaultValue: 'What are the over-budget areas?',
+        }),
+      ];
+    }
+    if (/^\/accommodation\/[^/]+/.test(pathname)) {
+      return [
+        t('chat.panel.ctx_accommodation.occupancy', {
+          defaultValue: 'Show me occupancy trend',
+        }),
+        t('chat.panel.ctx_accommodation.suggest_room', {
+          defaultValue: 'Suggest a room for the next arriving employee',
+        }),
+        t('chat.panel.ctx_accommodation.bookings_ending', {
+          defaultValue: 'List bookings ending this week',
+        }),
+      ];
+    }
+    if (/^\/geo(\/|$)/.test(pathname)) {
+      return [
+        t('chat.panel.ctx_geo.nearby', {
+          defaultValue: 'Find projects within 50 km of my current view',
+        }),
+        t('chat.panel.ctx_geo.clashes', {
+          defaultValue: 'Show me clashes on the active project',
+        }),
+      ];
+    }
+    if (/^\/bim(\/|$)/.test(pathname)) {
+      return [
+        t('chat.panel.ctx_bim.unlinked', {
+          defaultValue: 'List unlinked elements in this model',
+        }),
+        t('chat.panel.ctx_bim.compare_revisions', {
+          defaultValue: 'Compare quantities between revisions',
+        }),
+      ];
+    }
+    return [];
+    // We intentionally re-derive whenever pathname or t change. `t` keeps a
+    // stable identity per language so this only fires on route change or
+    // locale switch.
+  }, [pathname, t]);
+}
+
+/**
+ * Heuristic — does this error message look like an "AI key missing /
+ * invalid" problem? If so we surface the "Configure AI" CTA in the error
+ * card instead of the plain "Retry" button.
+ */
+function isApiKeyError(message: string): boolean {
+  if (!message) return false;
+  const lc = message.toLowerCase();
+  return (
+    lc.includes('api key') ||
+    lc.includes('api_key') ||
+    lc.includes('not configured') ||
+    lc.includes('no provider') ||
+    lc.includes('unauthorized') ||
+    lc.includes('401') ||
+    lc.includes('invalid key') ||
+    lc.includes('missing key')
+  );
 }
 
 // ── Lightweight markdown (shared subset of MessageBubble) ──────────────────
@@ -215,54 +315,57 @@ function ToolCallEntry({ tool }: { tool: ToolCallInfo }) {
 }
 
 // ── Empty-state suggestion chips ───────────────────────────────────────────
+function SuggestionChip({
+  text,
+  onPick,
+  testIdSuffix,
+}: {
+  text: string;
+  onPick: (text: string) => void;
+  testIdSuffix: string;
+}) {
+  return (
+    <button
+      key={text}
+      type="button"
+      onClick={() => onPick(text)}
+      data-testid={`floating-chat-suggestion-${testIdSuffix}`}
+      style={{
+        textAlign: 'left',
+        padding: '8px 12px',
+        fontSize: 13,
+        fontFamily: 'var(--chat-font-body)',
+        background: 'var(--chat-surface-2)',
+        border: '1px solid var(--chat-border-subtle)',
+        borderRadius: 8,
+        color: 'var(--chat-text-primary)',
+        cursor: 'pointer',
+        transition: 'border-color 0.15s, background 0.15s',
+      }}
+      onMouseEnter={(e) => {
+        (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--chat-accent)';
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLButtonElement).style.borderColor =
+          'var(--chat-border-subtle)';
+      }}
+    >
+      {text}
+    </button>
+  );
+}
+
 function EmptyState({
   onPick,
-  aiConfigured,
+  pathname,
 }: {
   onPick: (text: string) => void;
-  aiConfigured: boolean | null;
+  pathname: string;
 }) {
   const { t } = useTranslation();
   const suggestions = useDefaultSuggestions();
-
-  if (aiConfigured === false) {
-    return (
-      <div
-        style={{
-          padding: 20,
-          textAlign: 'center',
-          color: 'var(--chat-text-secondary)',
-          fontSize: 13,
-          lineHeight: 1.55,
-        }}
-      >
-        <div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--chat-text-primary)' }}>
-          {t('chat.onboarding_title', { defaultValue: 'AI assistant is not configured yet' })}
-        </div>
-        <div style={{ marginBottom: 12 }}>
-          {t('chat.onboarding_desc', {
-            defaultValue:
-              'Connect your AI provider (Anthropic, OpenAI, or Google) in Settings to enable the chat assistant.',
-          })}
-        </div>
-        <a
-          href="/settings"
-          style={{
-            display: 'inline-block',
-            padding: '8px 16px',
-            background: 'var(--chat-accent)',
-            color: '#fff',
-            borderRadius: 6,
-            textDecoration: 'none',
-            fontSize: 12,
-            fontWeight: 600,
-          }}
-        >
-          {t('chat.go_to_settings', { defaultValue: 'Go to Settings' })}
-        </a>
-      </div>
-    );
-  }
+  const contextualSuggestions = useContextualSuggestions(pathname);
+  const hasContextual = contextualSuggestions.length > 0;
 
   return (
     <div style={{ padding: '16px 14px' }}>
@@ -279,36 +382,306 @@ function EmptyState({
             'Ask about a project, BOQ, validation, clashes, costs, or run an action like "create RFI for clash 32".',
         })}
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {suggestions.map((s) => (
-          <button
-            key={s}
-            type="button"
-            onClick={() => onPick(s)}
-            data-testid="floating-chat-suggestion"
+
+      {hasContextual && (
+        <>
+          <div
             style={{
-              textAlign: 'left',
-              padding: '8px 12px',
-              fontSize: 13,
-              fontFamily: 'var(--chat-font-body)',
-              background: 'var(--chat-surface-2)',
-              border: '1px solid var(--chat-border-subtle)',
-              borderRadius: 8,
-              color: 'var(--chat-text-primary)',
-              cursor: 'pointer',
-              transition: 'border-color 0.15s, background 0.15s',
+              fontSize: 11,
+              fontWeight: 600,
+              color: 'var(--chat-text-tertiary)',
+              textTransform: 'uppercase',
+              letterSpacing: 0.5,
+              marginBottom: 6,
             }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--chat-accent)';
+            data-testid="floating-chat-contextual-label"
+          >
+            {t('chat.panel.contextual_label', {
+              defaultValue: 'For this page',
+            })}
+          </div>
+          <div
+            style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}
+            data-testid="floating-chat-contextual-chips"
+          >
+            {contextualSuggestions.map((s, i) => (
+              <SuggestionChip
+                key={s}
+                text={s}
+                onPick={onPick}
+                testIdSuffix={`ctx-${i}`}
+              />
+            ))}
+          </div>
+          <div
+            style={{
+              height: 1,
+              background: 'var(--chat-border-subtle)',
+              margin: '0 0 12px',
             }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.borderColor =
-                'var(--chat-border-subtle)';
+            aria-hidden
+          />
+          <div
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: 'var(--chat-text-tertiary)',
+              textTransform: 'uppercase',
+              letterSpacing: 0.5,
+              marginBottom: 6,
             }}
           >
-            {s}
-          </button>
+            {t('chat.panel.generic_label', { defaultValue: 'Anywhere' })}
+          </div>
+        </>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {suggestions.map((s, i) => (
+          <SuggestionChip
+            key={s}
+            text={s}
+            onPick={onPick}
+            testIdSuffix={`generic-${i}`}
+          />
         ))}
+      </div>
+    </div>
+  );
+}
+
+// ── No-AI-configured onboarding banner ─────────────────────────────────────
+function NoAIBanner({
+  onConfigure,
+  onSkip,
+}: {
+  onConfigure: () => void;
+  onSkip: () => void;
+}) {
+  const { t } = useTranslation();
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Focus the banner when it appears so screen readers announce it and so
+  // keyboard users can tab directly into the CTAs.
+  useEffect(() => {
+    containerRef.current?.focus();
+  }, []);
+
+  return (
+    <div
+      ref={containerRef}
+      role="alert"
+      aria-live="polite"
+      tabIndex={-1}
+      data-testid="floating-chat-no-ai-banner"
+      style={{
+        margin: '10px 12px 0',
+        padding: 12,
+        background: 'var(--chat-surface-2)',
+        border: '1px solid var(--chat-border)',
+        borderRadius: 'var(--chat-radius)',
+        outline: 'none',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+        <div
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: 6,
+            background: 'var(--chat-accent)',
+            color: '#fff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}
+          aria-hidden
+        >
+          <KeyRound size={15} strokeWidth={1.85} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              fontWeight: 600,
+              fontSize: 13,
+              color: 'var(--chat-text-primary)',
+              marginBottom: 2,
+            }}
+          >
+            {t('chat.panel.no_ai_banner.title', {
+              defaultValue: 'Configure AI to start chatting',
+            })}
+          </div>
+          <div
+            style={{
+              fontSize: 12,
+              color: 'var(--chat-text-secondary)',
+              lineHeight: 1.5,
+            }}
+          >
+            {t('chat.panel.no_ai_banner.body', {
+              defaultValue:
+                'The chat needs an Anthropic, OpenAI, or other provider key. Set it up in Settings.',
+            })}
+          </div>
+        </div>
+      </div>
+      <div
+        style={{
+          display: 'flex',
+          gap: 8,
+          marginTop: 10,
+          flexWrap: 'wrap',
+          justifyContent: 'flex-end',
+        }}
+      >
+        <button
+          type="button"
+          onClick={onSkip}
+          data-testid="floating-chat-no-ai-skip"
+          style={{
+            padding: '6px 12px',
+            fontSize: 12,
+            fontWeight: 500,
+            background: 'transparent',
+            color: 'var(--chat-text-secondary)',
+            border: '1px solid var(--chat-border)',
+            borderRadius: 'var(--chat-radius)',
+            cursor: 'pointer',
+          }}
+        >
+          {t('chat.panel.no_ai_banner.cta_skip', { defaultValue: 'Skip' })}
+        </button>
+        <button
+          type="button"
+          onClick={onConfigure}
+          data-testid="floating-chat-no-ai-configure"
+          style={{
+            padding: '6px 14px',
+            fontSize: 12,
+            fontWeight: 600,
+            background: 'var(--chat-accent)',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 'var(--chat-radius)',
+            cursor: 'pointer',
+          }}
+        >
+          {t('chat.panel.no_ai_banner.cta_configure', { defaultValue: 'Configure AI' })}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Friendly error card (replaces inline error plain-text) ─────────────────
+function ErrorCard({
+  message,
+  onConfigure,
+  onRetry,
+}: {
+  message: string;
+  onConfigure: () => void;
+  onRetry: () => void;
+}) {
+  const { t } = useTranslation();
+  const apiKey = isApiKeyError(message);
+  const humanized = apiKey
+    ? t('chat.panel.error_card.api_key', {
+        defaultValue:
+          'AI provider needs a key — configure it in Settings to keep chatting.',
+      })
+    : message;
+
+  return (
+    <div
+      role="alert"
+      data-testid="floating-chat-error-card"
+      style={{
+        margin: '4px 0',
+        padding: 12,
+        background: 'var(--chat-surface-2)',
+        border: '1px solid var(--chat-tool-error, #ef4444)',
+        borderRadius: 'var(--chat-radius)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+      }}
+    >
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+        <AlertTriangle
+          size={16}
+          strokeWidth={1.85}
+          style={{ color: 'var(--chat-tool-error, #ef4444)', flexShrink: 0, marginTop: 1 }}
+          aria-hidden
+        />
+        <div
+          style={{
+            fontSize: 13,
+            color: 'var(--chat-text-primary)',
+            lineHeight: 1.5,
+            wordBreak: 'break-word',
+            flex: 1,
+            minWidth: 0,
+          }}
+        >
+          {humanized}
+        </div>
+      </div>
+      <div
+        style={{
+          display: 'flex',
+          gap: 6,
+          justifyContent: 'flex-end',
+          flexWrap: 'wrap',
+        }}
+      >
+        {apiKey ? (
+          <button
+            type="button"
+            onClick={onConfigure}
+            data-testid="floating-chat-error-configure"
+            style={{
+              padding: '5px 12px',
+              fontSize: 12,
+              fontWeight: 600,
+              background: 'var(--chat-accent)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 'var(--chat-radius)',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+            }}
+          >
+            <KeyRound size={12} />
+            {t('chat.panel.no_ai_banner.cta_configure', { defaultValue: 'Configure AI' })}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onRetry}
+            data-testid="floating-chat-error-retry"
+            style={{
+              padding: '5px 12px',
+              fontSize: 12,
+              fontWeight: 600,
+              background: 'var(--chat-accent)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 'var(--chat-radius)',
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+            }}
+          >
+            <RotateCw size={12} />
+            {t('chat.panel.error_card.retry', { defaultValue: 'Retry' })}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -458,11 +831,18 @@ function SessionsMenu({
 export function FloatingChatPanel() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const isOpen = useFloatingChatStore((s) => s.isOpen);
   const close = useFloatingChatStore((s) => s.close);
   const activeSessionId = useFloatingChatStore((s) => s.activeSessionId);
   const setActiveSession = useFloatingChatStore((s) => s.setActiveSession);
   const bumpUnread = useFloatingChatStore((s) => s.bumpUnread);
+  const onboardingBannerDismissed = useFloatingChatStore(
+    (s) => s.onboardingBannerDismissed,
+  );
+  const dismissOnboardingBanner = useFloatingChatStore(
+    (s) => s.dismissOnboardingBanner,
+  );
   const isMobile = useIsMobileViewport(640);
   const resolvedTheme = useThemeStore((s) => s.resolved);
   const activeProjectId = useProjectContextStore((s) => s.activeProjectId);
@@ -513,9 +893,11 @@ export function FloatingChatPanel() {
 
   // Probe AI configuration (so we can show the onboarding card instead of
   // hitting the API with a 500).
-  useEffect(() => {
-    if (!isOpen) return;
-    if (aiConfigured !== null) return;
+  //
+  // Re-fetches on every panel open AND on the `oe:ai-settings-updated`
+  // window event so that the banner disappears immediately after the user
+  // saves a key — no panel-close-and-reopen dance needed.
+  const refreshAiConfigured = useCallback(() => {
     let cancelled = false;
     aiApi
       .getSettings()
@@ -538,7 +920,21 @@ export function FloatingChatPanel() {
     return () => {
       cancelled = true;
     };
-  }, [isOpen, aiConfigured]);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const cleanup = refreshAiConfigured();
+    return cleanup;
+  }, [isOpen, refreshAiConfigured]);
+
+  useEffect(() => {
+    const handler = (): void => {
+      refreshAiConfigured();
+    };
+    window.addEventListener('oe:ai-settings-updated', handler);
+    return () => window.removeEventListener('oe:ai-settings-updated', handler);
+  }, [refreshAiConfigured]);
 
   const sendMessage = useCallback(
     (text: string) => {
@@ -556,9 +952,13 @@ export function FloatingChatPanel() {
         const onboardingMsg: ChatMessage = {
           id: uid(),
           role: 'assistant',
-          content:
-            '**AI assistant is not configured yet**\n\nGo to [Settings](/settings) to add your API key.',
+          content: '',
           ts: new Date(),
+          errorText: t('chat.panel.error_card.api_key', {
+            defaultValue:
+              'AI provider needs a key — configure it in Settings to keep chatting.',
+          }),
+          lastUserPrompt: trimmed,
         };
         setMessages((prev) => [...prev, userMsg, onboardingMsg]);
         setValue('');
@@ -577,6 +977,7 @@ export function FloatingChatPanel() {
         content: '',
         toolCalls: [],
         ts: new Date(),
+        lastUserPrompt: trimmed,
       };
 
       setMessages((prev) => [...prev, userMsg, aiMsg]);
@@ -606,13 +1007,29 @@ export function FloatingChatPanel() {
 
           if (!response.ok) {
             const errText = await response.text().catch(() => 'Unknown error');
+            // Try to surface a useful message — JSON {detail} from FastAPI,
+            // else raw body. If the body contains "api key" the ErrorCard
+            // automatically swaps to the "Configure AI" CTA.
+            let humanized = errText;
+            try {
+              const parsed = JSON.parse(errText);
+              if (parsed && typeof parsed === 'object' && parsed.detail) {
+                humanized = String(parsed.detail);
+              }
+            } catch {
+              // Plain-text body — keep as-is.
+            }
+            const finalMsg = `${response.status} — ${humanized}`;
             setMessages((prev) =>
               prev.map((m) =>
-                m.id === aiMsgId
-                  ? { ...m, content: `Error: ${response.status} - ${errText}` }
-                  : m,
+                m.id === aiMsgId ? { ...m, errorText: finalMsg } : m,
               ),
             );
+            // If a 401/403 surfaced, the user's key is likely stale or
+            // missing — re-probe so the next interaction shows the banner.
+            if (response.status === 401 || response.status === 403) {
+              refreshAiConfigured();
+            }
             if (!useFloatingChatStore.getState().isOpen) bumpUnread();
             setIsStreaming(false);
             return;
@@ -695,6 +1112,7 @@ export function FloatingChatPanel() {
                 }
                 case 'tool_result': {
                   const result = payload.result as ToolCallInfo['result'] | undefined;
+                  const isErrorResult = result?.renderer === 'error';
                   setMessages((prev) =>
                     prev.map((m) => {
                       if (m.id !== aiMsgId) return m;
@@ -707,7 +1125,9 @@ export function FloatingChatPanel() {
                             matched = true;
                             return {
                               ...tc,
-                              status: 'done' as const,
+                              status: (isErrorResult ? 'error' : 'done') as
+                                | 'error'
+                                | 'done',
                               result,
                               durationMs: Date.now() - tc.startedAt,
                             };
@@ -715,7 +1135,18 @@ export function FloatingChatPanel() {
                           return tc;
                         })
                         .reverse();
-                      return { ...m, toolCalls };
+                      const next: typeof m = { ...m, toolCalls };
+                      if (isErrorResult && !m.errorText) {
+                        // Promote the error renderer's summary or data
+                        // string into a friendly card.
+                        const errMsg =
+                          (result?.summary as string | undefined) ??
+                          (typeof result?.data === 'string'
+                            ? (result.data as string)
+                            : 'Tool returned an error');
+                        next.errorText = errMsg;
+                      }
+                      return next;
                     }),
                   );
                   break;
@@ -727,7 +1158,7 @@ export function FloatingChatPanel() {
                       m.id === aiMsgId
                         ? {
                             ...m,
-                            content: m.content + `\n\n**Error:** ${errMsg}`,
+                            errorText: errMsg,
                             toolCalls: (m.toolCalls ?? []).map((tc) =>
                               tc.status === 'running'
                                 ? {
@@ -741,6 +1172,7 @@ export function FloatingChatPanel() {
                         : m,
                     ),
                   );
+                  if (isApiKeyError(errMsg)) refreshAiConfigured();
                   break;
                 }
                 case 'done': {
@@ -756,7 +1188,7 @@ export function FloatingChatPanel() {
             const errorMsg = err instanceof Error ? err.message : 'Connection failed';
             setMessages((prev) =>
               prev.map((m) =>
-                m.id === aiMsgId ? { ...m, content: m.content || `Error: ${errorMsg}` } : m,
+                m.id === aiMsgId ? { ...m, errorText: errorMsg } : m,
               ),
             );
           }
@@ -767,7 +1199,40 @@ export function FloatingChatPanel() {
         }
       })();
     },
-    [isStreaming, activeSessionId, activeProjectId, aiConfigured, bumpUnread, setActiveSession],
+    [
+      isStreaming,
+      activeSessionId,
+      activeProjectId,
+      aiConfigured,
+      bumpUnread,
+      setActiveSession,
+      refreshAiConfigured,
+      t,
+    ],
+  );
+
+  const handleConfigureAI = useCallback(() => {
+    close();
+    navigate('/settings?tab=ai');
+  }, [close, navigate]);
+
+  const handleRetryFromError = useCallback(
+    (failedMessageId: string, prompt: string) => {
+      // Drop the failed assistant message (and its preceding user echo if it
+      // matches the prompt) so the retry doesn't pile up duplicates.
+      setMessages((prev) => {
+        const failedIdx = prev.findIndex((m) => m.id === failedMessageId);
+        if (failedIdx === -1) return prev;
+        const prior = failedIdx > 0 ? prev[failedIdx - 1] : undefined;
+        const dropFrom =
+          prior && prior.role === 'user' && prior.content === prompt
+            ? failedIdx - 1
+            : failedIdx;
+        return prev.slice(0, dropFrom);
+      });
+      sendMessage(prompt);
+    },
+    [sendMessage],
   );
 
   const handleChange = useCallback((e: ChangeEvent<HTMLTextAreaElement>) => {
@@ -954,11 +1419,16 @@ export function FloatingChatPanel() {
           }}
         >
           {messages.length === 0 ? (
-            <EmptyState onPick={sendMessage} aiConfigured={aiConfigured} />
+            <EmptyState onPick={sendMessage} pathname={location.pathname} />
           ) : (
             <>
               {messages.map((msg) => (
-                <MessageRow key={msg.id} msg={msg} />
+                <MessageRow
+                  key={msg.id}
+                  msg={msg}
+                  onConfigureAI={handleConfigureAI}
+                  onRetry={handleRetryFromError}
+                />
               ))}
               {isStreaming && (
                 <div
@@ -983,6 +1453,16 @@ export function FloatingChatPanel() {
             </>
           )}
         </div>
+
+        {/* Proactive "no AI configured" onboarding banner — visible above the
+            input until the user either configures a key (event-driven re-fetch
+            clears it) or hits Skip for this browser session. */}
+        {aiConfigured === false && !onboardingBannerDismissed && (
+          <NoAIBanner
+            onConfigure={handleConfigureAI}
+            onSkip={dismissOnboardingBanner}
+          />
+        )}
 
         {/* Input */}
         <div
@@ -1115,7 +1595,15 @@ export function FloatingChatPanel() {
 }
 
 // ── Individual message row ─────────────────────────────────────────────────
-function MessageRow({ msg }: { msg: ChatMessage }) {
+function MessageRow({
+  msg,
+  onConfigureAI,
+  onRetry,
+}: {
+  msg: ChatMessage;
+  onConfigureAI: () => void;
+  onRetry: (msgId: string, prompt: string) => void;
+}) {
   const html = useMemo(() => (msg.content ? renderMarkdown(msg.content) : ''), [msg.content]);
 
   if (msg.role === 'user') {
@@ -1180,6 +1668,15 @@ function MessageRow({ msg }: { msg: ChatMessage }) {
             wordBreak: 'break-word',
           }}
           dangerouslySetInnerHTML={{ __html: html }}
+        />
+      )}
+      {msg.errorText && (
+        <ErrorCard
+          message={msg.errorText}
+          onConfigure={onConfigureAI}
+          onRetry={() => {
+            if (msg.lastUserPrompt) onRetry(msg.id, msg.lastUserPrompt);
+          }}
         />
       )}
     </div>

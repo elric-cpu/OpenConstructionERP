@@ -383,6 +383,12 @@ function AIConfigurationCard() {
         setShowKey(false);
       }
       setModelTouched(false);
+      // Same broadcast as the Save handler — the test path can also save.
+      try {
+        window.dispatchEvent(new CustomEvent('oe:ai-settings-updated'));
+      } catch {
+        /* non-fatal */
+      }
       if (result.success) {
         const parts: string[] = [];
         if (result.model) {
@@ -451,6 +457,14 @@ function AIConfigurationCard() {
         type: 'success',
         title: t('settings.ai_saved', { defaultValue: 'AI settings saved' }),
       });
+      // Let the floating chat (and any other panels probing AI status)
+      // refresh themselves immediately instead of waiting for the next
+      // re-mount.
+      try {
+        window.dispatchEvent(new CustomEvent('oe:ai-settings-updated'));
+      } catch {
+        /* CustomEvent unavailable in IE — non-fatal. */
+      }
     },
     onError: (err: Error) => {
       addToast({

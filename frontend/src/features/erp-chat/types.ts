@@ -4,6 +4,17 @@ export interface ChatMessage {
   content: string;
   toolCalls?: ToolCallInfo[];
   ts: Date;
+  /**
+   * Friendly error description attached to an assistant message when the
+   * SSE stream returned an error or a 4xx/5xx response. When present, the
+   * UI renders the {@link ErrorCard} INSTEAD of letting the raw text bubble
+   * up as plain content.
+   *
+   * `lastUserPrompt` is captured so the Retry button can resend exactly
+   * what the user typed without making them re-enter it.
+   */
+  errorText?: string;
+  lastUserPrompt?: string;
 }
 
 export interface ToolCallInfo {
