@@ -7026,6 +7026,14 @@ async def _svc_activate_price_list(
             detail="A superseded price list cannot be re-activated; clone it.",
         )
 
+    # Cache the primary keys NOW. After ``update_fields`` flushes the
+    # write the ORM expires the loaded attributes; accessing
+    # ``pl.id`` / ``pl.development_id`` later would trigger an
+    # implicit lazy refresh that crashes under aiosqlite
+    # (MissingGreenlet — async I/O inside a sync attribute getter).
+    pl_id = pl.id
+    pl_development_id = pl.development_id
+
     # Atomicity model:
     # * On Postgres we wrap the supersede+activate pair in a SAVEPOINT
     #   (``begin_nested``) so a concurrent activation against the same
@@ -7039,24 +7047,24 @@ async def _svc_activate_price_list(
     if dialect == "postgresql" and svc.session.in_transaction():
         async with svc.session.begin_nested():
             await svc.price_lists.supersede_other_active(
-                pl.development_id, keep_id=pl.id,
+                pl_development_id, keep_id=pl_id,
             )
-            await svc.price_lists.update_fields(pl.id, status="active")
+            await svc.price_lists.update_fields(pl_id, status="active")
     else:
         await svc.price_lists.supersede_other_active(
-            pl.development_id, keep_id=pl.id,
+            pl_development_id, keep_id=pl_id,
         )
-        await svc.price_lists.update_fields(pl.id, status="active")
+        await svc.price_lists.update_fields(pl_id, status="active")
 
     event_bus.publish_detached(
         "property_dev.price_list.activated",
         data={
-            "price_list_id": str(pl.id),
-            "development_id": str(pl.development_id),
+            "price_list_id": str(pl_id),
+            "development_id": str(pl_development_id),
         },
         source_module="property_dev",
     )
-    return await svc.price_lists.get_by_id(pl.id)
+    return await svc.price_lists.get_by_id(pl_id)
 
 
 async def _svc_compute_price_quote(
