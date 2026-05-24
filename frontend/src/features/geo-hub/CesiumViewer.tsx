@@ -325,6 +325,12 @@ export function CesiumViewer({
         // token via the Terrain admin page; we surface it through
         // the map-config bundle for them.
         //
+        // Base imagery: OpenStreetMap via UrlTemplateImageryProvider.
+        // Cesium >= 1.107 falls back to Ion-backed Bing Maps when
+        // ``imageryProvider`` is unset, which silently 401s without an
+        // ion token. Explicit OSM keeps /geo-hub working out of the box
+        // with no third-party key per the architecture guide "no vendor lock-in".
+        //
         // ``homeButton`` and ``navigationHelpButton`` are disabled here
         // because we don't ship Cesium's ``widgets.css`` in the bundle,
         // which would leave them as unstyled (invisible) toolbar pills.
@@ -332,6 +338,13 @@ export function CesiumViewer({
         // every interaction the home button traditionally provides.
         const v = new cesium.Viewer(container, {
           terrainProvider: new cesium.EllipsoidTerrainProvider(),
+          baseLayer: new cesium.ImageryLayer(
+            new cesium.UrlTemplateImageryProvider({
+              url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              credit: '© OpenStreetMap contributors',
+              maximumLevel: 19,
+            }),
+          ),
           baseLayerPicker: false,
           timeline: mode === 'project' || mode === 'development',
           animation: mode === 'project' || mode === 'development',

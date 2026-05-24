@@ -22,6 +22,8 @@ type CesiumLike = {
     options?: Record<string, unknown>,
   ) => ViewerHandle;
   EllipsoidTerrainProvider: new () => unknown;
+  UrlTemplateImageryProvider: new (options: Record<string, unknown>) => unknown;
+  ImageryLayer: new (provider: unknown) => unknown;
 };
 
 /**
@@ -57,6 +59,17 @@ export function useCesiumViewer(_mapConfig?: MapConfig) {
       try {
         viewer = new cesium.Viewer(ref.current, {
           terrainProvider: new cesium.EllipsoidTerrainProvider(),
+          // OSM base imagery — Cesium >= 1.107 falls back to Ion-backed
+          // Bing Maps when baseLayer is unset, which silently 401s
+          // without an ion token. Explicit OSM keeps the viewer working
+          // out of the box per the architecture guide "no vendor lock-in".
+          baseLayer: new cesium.ImageryLayer(
+            new cesium.UrlTemplateImageryProvider({
+              url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              credit: '© OpenStreetMap contributors',
+              maximumLevel: 19,
+            }),
+          ),
           baseLayerPicker: false,
         });
         setStatus('loaded');
