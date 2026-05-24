@@ -5,6 +5,10 @@
  * Rentals / Hotels). Each card shows name, kind badge, project, capacity
  * with occupied/total, top-right "Open" + "Geo" overlay buttons. Includes
  * the create-accommodation WideModal and the HR-autobook trigger.
+ *
+ * Polish wave: summary KPI strip, RecoveryCard for fetch errors, warm
+ * EmptyState pattern, hoverable Cards via the shared Card variant, mobile
+ * bottom-anchored "New accommodation" FAB.
  */
 
 import { useState, useMemo } from 'react';
@@ -21,6 +25,9 @@ import {
   Globe2,
   ArrowRight,
   Sparkles,
+  Users,
+  CalendarCheck2,
+  BedDouble,
 } from 'lucide-react';
 
 import {
@@ -28,6 +35,7 @@ import {
   Badge,
   Button,
   EmptyState,
+  RecoveryCard,
   Breadcrumb,
   ModuleHelpButton,
   SkeletonGrid,
@@ -84,10 +92,12 @@ export function AccommodationListPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [hrAutobookOpen, setHrAutobookOpen] = useState(false);
 
-  const { data: accommodations = [], isLoading } = useQuery({
+  const accommodationsQuery = useQuery({
     queryKey: ['accommodation', 'list'],
     queryFn: () => listAccommodations({ limit: 200 }),
   });
+  const accommodations = accommodationsQuery.data ?? [];
+  const isLoading = accommodationsQuery.isLoading;
 
   const { data: projects = [] } = useQuery({
     queryKey: ['projects', 'list'],
@@ -124,8 +134,22 @@ export function AccommodationListPage() {
     return c;
   }, [accommodations]);
 
+  // Header-level KPIs — derived once per data refresh. Keeps the
+  // operator oriented without forcing them into the calendar.
+  const summary = useMemo(() => {
+    let capacity = 0;
+    for (const a of accommodations) capacity += a.capacity_total;
+    return {
+      properties: accommodations.length,
+      capacity,
+      worker_camps: counts.worker_camp,
+      rentals: counts.rental,
+      hotels: counts.hotel,
+    };
+  }, [accommodations, counts]);
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 pb-20 sm:pb-0">
       <Breadcrumb items={[{ label: t('accommodation.title', { defaultValue: 'Accommodation' }) }]} />
 
       {/* Header */}
@@ -151,22 +175,69 @@ export function AccommodationListPage() {
             onClick={() => setHrAutobookOpen(true)}
             data-testid="accommodation-hr-autobook-button"
           >
-            <Sparkles size={14} className="mr-1.5" />
+            <Sparkles size={14} className="mr-1.5" aria-hidden="true" />
             {t('accommodation.hr_autobook.suggest_button', {
               defaultValue: 'Suggest room for employee',
             })}
           </Button>
+          <Link
+            to="/accommodation/calendar"
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-primary px-3 py-1.5 text-xs font-medium text-content-secondary hover:text-content-primary hover:bg-surface-secondary transition-colors"
+            data-testid="accommodation-calendar-link"
+          >
+            <CalendarCheck2 size={14} aria-hidden="true" />
+            {t('accommodation.calendar.title', { defaultValue: 'Calendar' })}
+          </Link>
           <Button
             variant="primary"
             size="sm"
             onClick={() => setCreateOpen(true)}
             data-testid="accommodation-new-button"
+            className="hidden sm:inline-flex"
           >
-            <Plus size={14} className="mr-1.5" />
+            <Plus size={14} className="mr-1.5" aria-hidden="true" />
             {t('accommodation.new', { defaultValue: 'New accommodation' })}
           </Button>
         </div>
       </div>
+
+      {/* Summary KPI strip — collapses to a 2-col grid on phones,
+          stretches to 4-col on desktop. Mute when nothing exists yet. */}
+      {accommodations.length > 0 && (
+        <div
+          data-testid="accommodation-summary-strip"
+          className="grid grid-cols-2 sm:grid-cols-4 gap-2"
+        >
+          <SummaryTile
+            icon={<Building2 size={16} aria-hidden="true" />}
+            label={t('accommodation.summary.properties', {
+              defaultValue: 'Properties',
+            })}
+            value={summary.properties}
+          />
+          <SummaryTile
+            icon={<Users size={16} aria-hidden="true" />}
+            label={t('accommodation.summary.capacity', {
+              defaultValue: 'Total capacity',
+            })}
+            value={summary.capacity}
+          />
+          <SummaryTile
+            icon={<Tent size={16} aria-hidden="true" />}
+            label={t('accommodation.kind.worker_camps', {
+              defaultValue: 'Worker camps',
+            })}
+            value={summary.worker_camps}
+          />
+          <SummaryTile
+            icon={<Hotel size={16} aria-hidden="true" />}
+            label={t('accommodation.summary.rentals_hotels', {
+              defaultValue: 'Rentals + Hotels',
+            })}
+            value={summary.rentals + summary.hotels}
+          />
+        </div>
+      )}
 
       {/* Tabs */}
       <div
@@ -202,7 +273,7 @@ export function AccommodationListPage() {
               onClick={() => setFilter(k)}
               data-testid={`accommodation-tab-${k}`}
               className={clsx(
-                'flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors -mb-px',
+                'flex min-h-[44px] items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors -mb-px',
                 isActive
                   ? 'border-oe-blue text-content-primary'
                   : 'border-transparent text-content-tertiary hover:text-content-primary hover:border-border',
@@ -232,16 +303,34 @@ export function AccommodationListPage() {
       >
       {isLoading ? (
         <SkeletonGrid items={6} />
+      ) : accommodationsQuery.isError ? (
+        <RecoveryCard
+          error={accommodationsQuery.error}
+          onRetry={() => accommodationsQuery.refetch()}
+        />
       ) : filtered.length === 0 ? (
         <EmptyState
-          icon={<Building2 size={22} />}
-          title={t('accommodation.empty_state.title', {
-            defaultValue: 'No accommodations yet',
-          })}
-          description={t('accommodation.empty_state.description', {
-            defaultValue:
-              'Track three kinds of stays: worker camps for site crews, rentals for staff, and hotels for visiting consultants — each with rooms, bookings and charges.',
-          })}
+          icon={<Building2 size={22} aria-hidden="true" />}
+          title={
+            accommodations.length === 0
+              ? t('accommodation.empty_state.title', {
+                  defaultValue: 'No accommodations yet',
+                })
+              : t('accommodation.empty_filtered.title', {
+                  defaultValue: 'No properties match this filter',
+                })
+          }
+          description={
+            accommodations.length === 0
+              ? t('accommodation.empty_state.description', {
+                  defaultValue:
+                    'Track three kinds of stays: worker camps for site crews, rentals for staff, and hotels for visiting consultants — each with rooms, bookings and charges.',
+                })
+              : t('accommodation.empty_filtered.description', {
+                  defaultValue:
+                    'Try a different kind, or create a new property of this kind.',
+                })
+          }
           action={{
             label: t('accommodation.new', { defaultValue: 'New accommodation' }),
             onClick: () => setCreateOpen(true),
@@ -263,6 +352,20 @@ export function AccommodationListPage() {
         </div>
       )}
       </div>
+
+      {/* Mobile floating action button — keeps "New accommodation" within
+          thumb reach on small screens where the header button is hidden. */}
+      <button
+        type="button"
+        onClick={() => setCreateOpen(true)}
+        data-testid="accommodation-new-fab"
+        aria-label={t('accommodation.new', {
+          defaultValue: 'New accommodation',
+        })}
+        className="sm:hidden fixed bottom-4 right-4 z-40 inline-flex h-14 w-14 items-center justify-center rounded-full bg-oe-blue text-white shadow-lg hover:bg-oe-blue/90 active:scale-95 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue focus-visible:ring-offset-2"
+      >
+        <Plus size={22} aria-hidden="true" />
+      </button>
 
       {/* Create modal */}
       {createOpen && (
@@ -292,6 +395,35 @@ export function AccommodationListPage() {
   );
 }
 
+/* ── Summary tile ────────────────────────────────────────────────────── */
+
+interface SummaryTileProps {
+  icon: React.ReactNode;
+  label: string;
+  value: number | string;
+}
+
+function SummaryTile({ icon, label, value }: SummaryTileProps) {
+  return (
+    <div
+      className="flex items-center gap-3 rounded-xl border border-border-light bg-surface-elevated px-3 py-2.5"
+      data-testid="accommodation-summary-tile"
+    >
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-secondary text-content-secondary">
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <div className="text-2xs uppercase tracking-wide text-content-tertiary truncate">
+          {label}
+        </div>
+        <div className="text-base font-semibold text-content-primary tabular-nums">
+          {value}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Card ────────────────────────────────────────────────────────────── */
 
 function AccommodationCard({
@@ -309,7 +441,9 @@ function AccommodationCard({
 
   return (
     <Card
-      className="relative cursor-pointer transition hover:shadow-md focus-within:ring-2 focus-within:ring-oe-blue/40"
+      hoverable
+      padding="none"
+      className="relative cursor-pointer focus-within:ring-2 focus-within:ring-oe-blue/40"
       onClick={onOpen}
       data-testid={`accommodation-card-${a.id}`}
     >
@@ -319,13 +453,16 @@ function AccommodationCard({
           <Link
             to={`/geo?lat=${a.geo_lat}&lon=${a.geo_lon}`}
             onClick={(e) => e.stopPropagation()}
-            title={t('accommodation.geo.view_on_map', {
-              defaultValue: 'View on Geo Hub',
+            aria-label={t('accommodation.geo.view_on_map', {
+              defaultValue: 'View on map',
             })}
-            className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-elevated px-2 py-1 text-2xs font-medium text-oe-blue shadow-sm hover:bg-oe-blue/5"
+            title={t('accommodation.geo.view_on_map', {
+              defaultValue: 'View on map',
+            })}
+            className="inline-flex min-h-[28px] items-center gap-1 rounded-full border border-border bg-surface-elevated px-2 py-1 text-2xs font-medium text-oe-blue shadow-sm hover:bg-oe-blue/5"
             data-testid="accommodation-card-geo-link"
           >
-            <Globe2 size={11} />
+            <Globe2 size={11} aria-hidden="true" />
             {t('accommodation.geo.short', { defaultValue: 'Geo' })}
           </Link>
         )}
@@ -335,17 +472,18 @@ function AccommodationCard({
             e.stopPropagation();
             onOpen();
           }}
-          className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-elevated px-2 py-1 text-2xs font-medium text-content-primary shadow-sm hover:bg-surface-secondary"
+          aria-label={t('common.open', { defaultValue: 'Open' })}
+          className="inline-flex min-h-[28px] items-center gap-1 rounded-full border border-border bg-surface-elevated px-2 py-1 text-2xs font-medium text-content-primary shadow-sm hover:bg-surface-secondary"
         >
           {t('common.open', { defaultValue: 'Open' })}
-          <ArrowRight size={11} />
+          <ArrowRight size={11} aria-hidden="true" />
         </button>
       </div>
 
       <div className="p-5">
         <div className="flex items-start gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-oe-blue/10 text-oe-blue">
-            <Icon size={18} />
+            <Icon size={18} aria-hidden="true" />
           </div>
           <div className="min-w-0 flex-1 pr-20">
             <h3 className="truncate text-base font-semibold text-content-primary">
@@ -369,7 +507,7 @@ function AccommodationCard({
             })}
           </Badge>
           <span className="inline-flex items-center gap-1 text-content-secondary">
-            <Building2 size={12} />
+            <BedDouble size={12} aria-hidden="true" />
             {t('accommodation.capacity.label', {
               defaultValue: '{{count}} cap.',
               count: a.capacity_total,
