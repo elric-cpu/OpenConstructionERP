@@ -34,7 +34,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import clsx from 'clsx';
-import { Button, Breadcrumb, EmptyState, DateDisplay } from '@/shared/ui';
+import { Button, Breadcrumb, EmptyState, DateDisplay, SkeletonTable } from '@/shared/ui';
 import { apiGet, apiPost, apiDelete } from '@/shared/lib/api';
 import { PreferencesTab } from './PreferencesTab';
 
@@ -293,10 +293,7 @@ export function NotificationsPage() {
       {/* List */}
       <div className="rounded-xl border border-border-light bg-surface-elevated overflow-hidden">
         {isLoading ? (
-          <div className="p-8 flex items-center justify-center text-content-tertiary">
-            <Loader2 className="animate-spin me-2" size={16} />
-            {t('common.loading', { defaultValue: 'Loading...' })}
-          </div>
+          <SkeletonTable rows={6} columns={3} className="border-0 rounded-none" />
         ) : isError ? (
           <div className="p-8 text-center">
             <XCircle size={24} className="mx-auto mb-2 text-semantic-error" />

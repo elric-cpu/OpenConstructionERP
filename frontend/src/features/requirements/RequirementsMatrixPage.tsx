@@ -21,7 +21,6 @@ import clsx from 'clsx';
 import {
   ClipboardList,
   Filter as FilterIcon,
-  Loader2,
   Plus,
   RefreshCw,
 } from 'lucide-react';
@@ -30,6 +29,7 @@ import { Button } from '@/shared/ui/Button';
 import { Card } from '@/shared/ui/Card';
 import { EmptyState } from '@/shared/ui/EmptyState';
 import { WideModal, WideModalSection } from '@/shared/ui/WideModal';
+import { SkeletonTable } from '@/shared/ui/SkeletonLoader';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useToastStore } from '@/stores/useToastStore';
 import {
@@ -476,9 +476,7 @@ export function RequirementsMatrixPage() {
       {/* Matrix */}
       <Card padding="none" className="overflow-hidden">
         {matrixQuery.isLoading ? (
-          <div className="flex items-center justify-center p-12 text-content-secondary">
-            <Loader2 className="mr-2 animate-spin" size={18} /> Loading matrix…
-          </div>
+          <SkeletonTable rows={6} columns={5} className="border-0 rounded-none" />
         ) : matrixQuery.isError ? (
           <div className="p-6 text-sm text-red-600">
             Failed to load the EIR matrix:{' '}

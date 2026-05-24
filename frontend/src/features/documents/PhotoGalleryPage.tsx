@@ -28,7 +28,7 @@ import {
   Image as ImageIcon,
   CheckSquare,
 } from 'lucide-react';
-import { Card, Button, Badge, ConfirmDialog, EmptyState, Breadcrumb, AuthImage } from '@/shared/ui';
+import { Card, Button, Badge, ConfirmDialog, EmptyState, Breadcrumb, AuthImage, SkeletonGrid } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { apiGet } from '@/shared/lib/api';
 import { useConfirm } from '@/shared/hooks/useConfirm';
@@ -1307,9 +1307,7 @@ export function PhotoGalleryPage() {
 
       {/* Content */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 size={32} className="text-oe-blue animate-spin" />
-        </div>
+        <SkeletonGrid items={8} gridCols="grid-cols-2 sm:grid-cols-3 lg:grid-cols-4" />
       ) : photoList.length === 0 && viewMode === 'grid' ? (
         <EmptyState
           icon={<ImageIcon size={28} strokeWidth={1.5} />}

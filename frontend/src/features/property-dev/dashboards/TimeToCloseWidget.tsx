@@ -13,7 +13,7 @@ import {
   type StageDistribution,
   type TimeToCloseResponse,
 } from '../api';
-import { DashboardEmpty, DashboardLoading, num } from './_shared';
+import { DashboardEmpty, DashboardSkeleton, num } from './_shared';
 
 interface TimeToCloseWidgetProps {
   since?: string;
@@ -42,7 +42,7 @@ export function TimeToCloseWidget({ since, until }: TimeToCloseWidgetProps) {
     staleTime: 60_000,
   });
 
-  if (isLoading) return <DashboardLoading />;
+  if (isLoading) return <DashboardSkeleton variant="bars" rows={4} />;
   if (error) {
     return (
       <DashboardEmpty

@@ -30,7 +30,7 @@ import {
   FileText,
   TriangleRight,
 } from 'lucide-react';
-import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog } from '@/shared/ui';
+import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, SkeletonTable } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { apiGet } from '@/shared/lib/api';
 import { useToastStore } from '@/stores/useToastStore';
@@ -1372,9 +1372,7 @@ export function MarkupsPage() {
           {/* ── Main Content ───────────────────────────────────────────────── */}
           <div className="mt-3">
             {isLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-oe-blue border-t-transparent" />
-              </div>
+              <SkeletonTable rows={6} columns={4} />
             ) : filteredMarkups.length === 0 ? (
               <EmptyState
                 icon={<PenTool size={28} strokeWidth={1.5} />}

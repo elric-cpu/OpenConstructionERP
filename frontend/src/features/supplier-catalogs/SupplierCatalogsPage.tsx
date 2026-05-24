@@ -684,10 +684,7 @@ function PriceComparisonModal({
     >
       <div>
         {q.isLoading ? (
-          <div className="py-8 text-center text-sm text-content-tertiary">
-            <Loader2 className="inline animate-spin mr-2" size={14} />
-            {t('common.loading', { defaultValue: 'Loading…' })}
-          </div>
+          <SkeletonTable rows={5} columns={4} />
         ) : q.isError ? (
           <EmptyState
             icon={<AlertOctagon size={20} />}

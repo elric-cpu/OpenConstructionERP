@@ -16,7 +16,7 @@ import {
   Trash2,
   Download,
 } from 'lucide-react';
-import { Button, Card, Badge, EmptyState, Breadcrumb, InfoHint, ConfirmDialog } from '@/shared/ui';
+import { Button, Card, Badge, EmptyState, Breadcrumb, InfoHint, ConfirmDialog, SkeletonTable, SkeletonCard } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import {
   WideModal,
@@ -801,11 +801,7 @@ function DetailView({
   });
 
   if (isLoading || (!order && !isError)) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-oe-blue border-t-transparent" />
-      </div>
-    );
+    return <SkeletonCard className="my-6" />;
   }
 
   if (isError || !order) {
@@ -1397,9 +1393,7 @@ export function ChangeOrdersPage() {
             emptyHint={t('changeorders.no_project_desc', { defaultValue: 'Open a project first to view and manage change orders.' })}
           >{null}</RequiresProject>
         ) : isLoading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="h-6 w-6 animate-spin rounded-full border-2 border-oe-blue border-t-transparent" />
-          </div>
+          <SkeletonTable rows={6} columns={5} />
         ) : isError ? (
           <Card className="py-12">
             <EmptyState

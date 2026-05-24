@@ -8,7 +8,7 @@ import {
   Building2, DollarSign, Euro, PoundSterling, Globe2, MapPin, Layers, AlertTriangle,
 } from 'lucide-react';
 import { formatDistanceToNowStrict, isValid as isValidDate, parseISO } from 'date-fns';
-import { Button, Card, Badge, EmptyState, SkeletonGrid, Breadcrumb, ProjectMap, ProjectWeather, FileTypeChips, type LatLng } from '@/shared/ui';
+import { Button, Card, Badge, EmptyState, Skeleton, SkeletonGrid, Breadcrumb, ProjectMap, ProjectWeather, FileTypeChips, type LatLng } from '@/shared/ui';
 import { useWidgetSettingsStore } from '@/stores/useWidgetSettingsStore';
 import { getIntlLocale } from '@/shared/lib/formatters';
 import { projectsApi, type Project } from './api';
@@ -368,7 +368,7 @@ export function ProjectsPage() {
               </div>
               <div className="mt-1 text-xl font-bold text-content-primary tabular-nums leading-none">
                 {boqStats ? stats.totalBoqs.toLocaleString() : (
-                  <span className="inline-block h-5 w-10 animate-pulse rounded bg-surface-tertiary" />
+                  <Skeleton width={40} height={20} className="inline-block align-middle" />
                 )}
               </div>
               <div className="mt-2 text-2xs text-content-tertiary">
@@ -388,7 +388,7 @@ export function ProjectsPage() {
               </div>
               <div className="mt-1 text-xl font-bold text-content-primary tabular-nums leading-none">
                 {boqStats ? formatBigValue(stats.totalValue) : (
-                  <span className="inline-block h-5 w-16 animate-pulse rounded bg-surface-tertiary" />
+                  <Skeleton width={64} height={20} className="inline-block align-middle" />
                 )}
               </div>
               <div className="mt-2 text-2xs text-content-tertiary">
@@ -410,7 +410,7 @@ export function ProjectsPage() {
               </div>
               <div className="mt-1 text-xl font-bold text-content-primary tabular-nums leading-none">
                 {boqStats ? formatBigValue(stats.avgValue) : (
-                  <span className="inline-block h-5 w-16 animate-pulse rounded bg-surface-tertiary" />
+                  <Skeleton width={64} height={20} className="inline-block align-middle" />
                 )}
               </div>
               <div className="mt-2 text-2xs text-content-tertiary">

@@ -55,7 +55,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 
-import { Badge, ConfirmDialog, EmptyState } from '@/shared/ui';
+import { Badge, ConfirmDialog, EmptyState, SkeletonTable } from '@/shared/ui';
 import { apiGet } from '@/shared/lib/api';
 import { FolderOpen } from 'lucide-react';
 import BIMRequirementsImport from './BIMRequirementsImport';
@@ -2273,10 +2273,7 @@ function RequirementsTabContent({
 
       {/* Content */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-12 text-sm text-content-secondary">
-          <Loader2 size={18} className="mr-2 animate-spin" />
-          {t('common.loading')}
-        </div>
+        <SkeletonTable rows={6} columns={4} />
       ) : !currentSetId || filteredReqs.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border-light bg-surface-secondary/30 px-6 py-8">
           <div className="text-center">
@@ -3090,10 +3087,7 @@ export function BIMQuantityRulesPage() {
         ) : activeTab === 'requirements' ? (
           <RequirementsTabContent projectId={activeProjectId} elements={requirementsElements} />
         ) : rulesQuery.isLoading ? (
-          <div className="flex items-center justify-center py-16 text-sm text-content-secondary">
-            <Loader2 size={18} className="mr-2 animate-spin" />
-            {t('bim_rules.loading', { defaultValue: 'Loading rules…' })}
-          </div>
+          <SkeletonTable rows={6} columns={4} />
         ) : rulesQuery.error ? (
           <div className="flex items-center justify-center gap-2 py-16 text-sm text-red-600">
             <AlertCircle size={18} />

@@ -21,7 +21,6 @@ import {
   Globe2,
   ArrowRight,
   Sparkles,
-  Loader2,
 } from 'lucide-react';
 
 import {
@@ -31,6 +30,7 @@ import {
   EmptyState,
   Breadcrumb,
   ModuleHelpButton,
+  SkeletonGrid,
 } from '@/shared/ui';
 import {
   WideModal,
@@ -231,9 +231,7 @@ export function AccommodationListPage() {
         aria-labelledby={`accommodation-tab-${filter}`}
       >
       {isLoading ? (
-        <div className="flex items-center justify-center py-16 text-content-tertiary">
-          <Loader2 className="h-5 w-5 animate-spin" />
-        </div>
+        <SkeletonGrid items={6} />
       ) : filtered.length === 0 ? (
         <EmptyState
           icon={<Building2 size={22} />}

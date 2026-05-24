@@ -33,7 +33,7 @@ import {
   Minus,
   TriangleRight,
 } from 'lucide-react';
-import { Badge, Card, EmptyState } from '@/shared/ui';
+import { Badge, Card, EmptyState, SkeletonTable } from '@/shared/ui';
 import { useUnifiedMarkups } from './useUnifiedMarkups';
 import {
   applyFilters,
@@ -312,9 +312,7 @@ export function UnifiedMarkupsList({ projectId }: UnifiedMarkupsListProps) {
 
       {/* Table */}
       {isLoading && items.length === 0 ? (
-        <div className="flex items-center justify-center py-10">
-          <div className="h-5 w-5 animate-spin rounded-full border-2 border-oe-blue border-t-transparent" />
-        </div>
+        <SkeletonTable rows={5} columns={4} />
       ) : filtered.length === 0 ? (
         <EmptyState
           icon={<PenTool size={24} strokeWidth={1.5} />}

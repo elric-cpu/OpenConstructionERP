@@ -14,7 +14,7 @@ import {
   type CohortRetentionResponse,
   type CohortRetentionRow,
 } from '../api';
-import { DashboardEmpty, DashboardLoading, num } from './_shared';
+import { DashboardEmpty, DashboardSkeleton, num } from './_shared';
 
 interface CohortRetentionWidgetProps {
   since?: string;
@@ -67,7 +67,7 @@ export function CohortRetentionWidget({
     staleTime: 60_000,
   });
 
-  if (isLoading) return <DashboardLoading />;
+  if (isLoading) return <DashboardSkeleton variant="timeline" rows={6} />;
   if (error) {
     return (
       <DashboardEmpty

@@ -8,7 +8,7 @@ import {
   AlertTriangle, Shield, Trash2, X, Search, Filter, CalendarDays, TrendingUp,
   LayoutGrid, Activity,
 } from 'lucide-react';
-import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, InfoHint } from '@/shared/ui';
+import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, InfoHint, SkeletonTable, SkeletonCard } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { PlanningCrossLinks } from '@/features/schedule/PlanningCrossLinks';
 import SimilarItemsPanel from '@/shared/ui/SimilarItemsPanel';
@@ -355,7 +355,7 @@ function DetailView({ riskId, onBack }: { riskId: string; onBack: () => void }) 
     onError: (e: Error) => addToast({ type: 'error', title: t('common.error', { defaultValue: 'Error' }), message: e.message }),
   });
 
-  if (isLoading || !risk) return <div className="flex items-center justify-center py-20"><div className="h-6 w-6 animate-spin rounded-full border-2 border-oe-blue border-t-transparent" /></div>;
+  if (isLoading || !risk) return <SkeletonCard className="my-6" />;
 
   return (
     <div>
@@ -732,7 +732,7 @@ export function RiskRegisterPage() {
             emptyHint={t('risk.no_project_desc', { defaultValue: 'Open a project first to view and manage risks.' })}
           >{null}</RequiresProject></Card>
         ) : isLoading ? (
-          <div className="flex items-center justify-center py-20"><div className="h-6 w-6 animate-spin rounded-full border-2 border-oe-blue border-t-transparent" /></div>
+          <SkeletonTable rows={6} columns={5} />
         ) : filteredRisks.length === 0 ? (
           <Card><EmptyState
             icon={<ShieldAlert size={28} strokeWidth={1.5} />}

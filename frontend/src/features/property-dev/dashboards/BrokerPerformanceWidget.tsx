@@ -18,7 +18,7 @@ import {
 } from '../api';
 import {
   DashboardEmpty,
-  DashboardLoading,
+  DashboardSkeleton,
   fmtCompactNumber,
   num,
 } from './_shared';
@@ -79,7 +79,7 @@ export function BrokerPerformanceWidget({
     return arr;
   }, [data, sortKey, sortDir]);
 
-  if (isLoading) return <DashboardLoading />;
+  if (isLoading) return <DashboardSkeleton variant="bars" rows={5} />;
   if (error) {
     return (
       <DashboardEmpty

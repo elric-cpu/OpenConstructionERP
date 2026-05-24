@@ -37,6 +37,7 @@ import {
   WideModal,
   WideModalSection,
   WideModalField,
+  SkeletonGrid,
 } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { useConfirm } from '@/shared/hooks/useConfirm';
@@ -566,12 +567,7 @@ export function FieldReportsPage() {
 
             {/* Calendar loading state */}
             {isCalendarLoading && (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 size={24} className="animate-spin text-oe-blue" />
-                <span className="ml-2 text-sm text-content-tertiary">
-                  {t('common.loading', { defaultValue: 'Loading...' })}
-                </span>
-              </div>
+              <SkeletonGrid items={14} gridCols="grid-cols-7" className="rounded-lg" />
             )}
 
             {/* Calendar grid */}

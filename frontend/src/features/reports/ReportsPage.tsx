@@ -24,7 +24,7 @@ import {
   LineChart,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { Breadcrumb, InfoHint } from '@/shared/ui';
+import { Breadcrumb, InfoHint, SkeletonGrid } from '@/shared/ui';
 import { useToastStore } from '@/stores/useToastStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
@@ -953,9 +953,7 @@ export function ReportsPage() {
           ]}
           className="mb-4"
         />
-        <div className="flex items-center justify-center py-20">
-          <Loader2 size={24} className="animate-spin text-oe-blue" />
-        </div>
+        <SkeletonGrid items={6} />
       </div>
     );
   }

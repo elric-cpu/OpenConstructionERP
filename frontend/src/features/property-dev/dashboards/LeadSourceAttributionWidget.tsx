@@ -23,7 +23,7 @@ import {
 } from '../api';
 import {
   DashboardEmpty,
-  DashboardLoading,
+  DashboardSkeleton,
   fmtCompactNumber,
   num,
 } from './_shared';
@@ -62,7 +62,7 @@ export function LeadSourceAttributionWidget({
     staleTime: 60_000,
   });
 
-  if (isLoading) return <DashboardLoading />;
+  if (isLoading) return <DashboardSkeleton variant="bars" rows={5} />;
   if (error) {
     return (
       <DashboardEmpty

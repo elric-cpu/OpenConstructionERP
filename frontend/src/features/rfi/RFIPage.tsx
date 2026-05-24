@@ -281,9 +281,7 @@ function DocumentPickerModal({
 
         <div className="flex-1 overflow-y-auto px-2 py-2">
           {isLoading ? (
-            <div className="flex items-center justify-center py-10">
-              <Loader2 className="h-5 w-5 animate-spin text-oe-blue" />
-            </div>
+            <SkeletonTable rows={6} columns={3} className="border-0 rounded-none" />
           ) : filtered.length === 0 ? (
             <p className="px-3 py-6 text-center text-sm text-content-tertiary">
               {documents.length === 0

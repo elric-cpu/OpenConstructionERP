@@ -31,7 +31,6 @@ import {
   Globe2,
   Box,
   Plus,
-  Loader2,
   AlertTriangle,
   Trash2,
   MoreHorizontal,
@@ -44,6 +43,8 @@ import {
   Breadcrumb,
   ConfirmDialog,
   ModuleHelpButton,
+  SkeletonCard,
+  SkeletonTable,
 } from '@/shared/ui';
 import {
   WideModal,
@@ -126,11 +127,7 @@ export function AccommodationDetailPage() {
   if (!id) return null;
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-16 text-content-tertiary">
-        <Loader2 className="h-5 w-5 animate-spin" />
-      </div>
-    );
+    return <SkeletonCard className="my-6" />;
   }
 
   if (isError || !data) {
@@ -700,9 +697,7 @@ function BookingsTab({ data }: { data: AccommodationDetail }) {
       </div>
 
       {bookingsQuery.isLoading && (
-        <div className="flex items-center justify-center py-10 text-content-tertiary">
-          <Loader2 className="h-5 w-5 animate-spin" />
-        </div>
+        <SkeletonTable rows={4} columns={4} />
       )}
 
       {bookingsQuery.isError && (

@@ -16,6 +16,7 @@ import {
 import clsx from 'clsx';
 
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
+import { SkeletonCard } from '@/shared/ui';
 import {
   aiAgentsApi,
   type AgentDescriptor,
@@ -112,9 +113,9 @@ export function AgentsPage(): JSX.Element {
             {t('agents.catalogue', 'Available agents')}
           </h2>
           {agentsQuery.isLoading && (
-            <div className="rounded-lg border border-dashed border-zinc-300 p-6 text-center text-sm text-zinc-500">
-              <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />
-              {t('agents.loading', 'Loading agents…')}
+            <div className="space-y-2">
+              <SkeletonCard />
+              <SkeletonCard />
             </div>
           )}
           {!agentsQuery.isLoading && agents.length === 0 && (

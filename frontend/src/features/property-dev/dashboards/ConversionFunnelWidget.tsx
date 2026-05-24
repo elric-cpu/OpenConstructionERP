@@ -15,7 +15,7 @@ import {
   type ConversionFunnelResponse,
   type ConversionFunnelStep,
 } from '../api';
-import { DashboardEmpty, DashboardLoading, num } from './_shared';
+import { DashboardEmpty, DashboardSkeleton, num } from './_shared';
 
 interface ConversionFunnelWidgetProps {
   since?: string;
@@ -65,7 +65,7 @@ export function ConversionFunnelWidget({
     staleTime: 60_000,
   });
 
-  if (isLoading) return <DashboardLoading />;
+  if (isLoading) return <DashboardSkeleton variant="bars" rows={5} />;
   if (error) {
     return (
       <DashboardEmpty

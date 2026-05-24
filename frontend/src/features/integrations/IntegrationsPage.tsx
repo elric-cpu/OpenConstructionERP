@@ -29,7 +29,7 @@ import {
   ExternalLink,
   type LucideIcon,
 } from 'lucide-react';
-import { Badge, Button, Input, Breadcrumb, ConfirmDialog } from '@/shared/ui';
+import { Badge, Button, Input, Breadcrumb, ConfirmDialog, SkeletonGrid } from '@/shared/ui';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { apiGet, apiPost, apiDelete } from '@/shared/lib/api';
 import { useToastStore } from '@/stores/useToastStore';
@@ -1100,12 +1100,7 @@ export function IntegrationsPage() {
         );
       })}
 
-      {isLoading && (
-        <div className="flex items-center justify-center py-8 text-content-secondary">
-          <Loader2 size={20} className="animate-spin" />
-          <span className="ml-2">{t('common.loading', 'Loading...')}</span>
-        </div>
-      )}
+      {isLoading && <SkeletonGrid items={6} />}
 
       {/* Connect modal */}
       {connectingType && (
