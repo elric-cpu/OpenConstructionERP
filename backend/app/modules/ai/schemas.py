@@ -161,6 +161,7 @@ class EstimateJobResponse(BaseModel):
     model_used: str | None = None
     tokens_used: int = 0
     duration_ms: int = 0
+    cost_usd_estimate: float = 0.0
     grand_total: float = 0.0
     created_at: datetime
     updated_at: datetime

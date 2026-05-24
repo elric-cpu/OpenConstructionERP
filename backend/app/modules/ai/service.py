@@ -17,6 +17,7 @@ from typing import Any
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.ai.pricing import estimate_cost_usd
 from app.core.events import event_bus
 from app.core.i18n import get_locale
 from app.core.validation.messages import translate
@@ -243,6 +244,7 @@ def _build_job_response(job: AIEstimateJob) -> EstimateJobResponse:
         model_used=job.model_used,
         tokens_used=job.tokens_used,
         duration_ms=job.duration_ms,
+        cost_usd_estimate=float(getattr(job, "cost_usd_estimate", 0.0) or 0.0),
         grand_total=round(grand_total, 2),
         created_at=job.created_at,
         updated_at=job.updated_at,
@@ -476,6 +478,7 @@ class AIService:
                     error_message="AI returned no valid work items. Please try a more detailed description.",
                     model_used=provider,
                     tokens_used=tokens,
+                    cost_usd_estimate=float(estimate_cost_usd(provider, int(tokens or 0))),
                     duration_ms=duration_ms,
                 )
                 self.session.expunge(job)
@@ -495,6 +498,7 @@ class AIService:
                 result=items,
                 model_used=provider,
                 tokens_used=tokens,
+                cost_usd_estimate=float(estimate_cost_usd(provider, int(tokens or 0))),
                 duration_ms=duration_ms,
             )
 
@@ -657,6 +661,7 @@ class AIService:
                     error_message="AI could not extract work items from this photo. Please try a clearer image.",
                     model_used=provider,
                     tokens_used=tokens,
+                    cost_usd_estimate=float(estimate_cost_usd(provider, int(tokens or 0))),
                     duration_ms=duration_ms,
                 )
                 self.session.expunge(job)
@@ -675,6 +680,7 @@ class AIService:
                 result=items,
                 model_used=provider,
                 tokens_used=tokens,
+                cost_usd_estimate=float(estimate_cost_usd(provider, int(tokens or 0))),
                 duration_ms=duration_ms,
             )
 
@@ -972,6 +978,7 @@ class AIService:
                     error_message="AI returned no valid work items from this file. Try a different file or add more detail.",
                     model_used=provider,
                     tokens_used=tokens,
+                    cost_usd_estimate=float(estimate_cost_usd(provider, int(tokens or 0))),
                     duration_ms=duration_ms,
                 )
                 self.session.expunge(job)
@@ -993,6 +1000,7 @@ class AIService:
                 result=items,
                 model_used=provider,
                 tokens_used=tokens,
+                cost_usd_estimate=float(estimate_cost_usd(provider, int(tokens or 0))),
                 duration_ms=duration_ms,
             )
 

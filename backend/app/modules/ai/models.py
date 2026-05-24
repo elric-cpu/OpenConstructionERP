@@ -7,7 +7,7 @@ Tables:
 
 import uuid
 
-from sqlalchemy import JSON, Integer, String, Text
+from sqlalchemy import JSON, Float, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import GUID, Base
@@ -80,6 +80,16 @@ class AIEstimateJob(Base):
     model_used: Mapped[str | None] = mapped_column(String(100), nullable=True)
     tokens_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     duration_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Estimated USD spend for this job — computed at persist time from
+    # ``tokens_used`` and the shared rate table in
+    # :mod:`app.core.ai.pricing`. Float (not Numeric) for symmetry with
+    # ``clash_ai_triage`` and so SQLite happily stores it as REAL.
+    cost_usd_estimate: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        default=0.0,
+        server_default="0.0",
+    )
 
     def __repr__(self) -> str:
         return f"<AIEstimateJob {self.id} ({self.status})>"

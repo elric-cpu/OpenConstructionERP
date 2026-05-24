@@ -50,6 +50,11 @@ from sqlalchemy import select
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.ai.pricing import (
+    DEFAULT_COST_PER_1K,
+    MODEL_COSTS,
+    estimate_cost_usd as _shared_estimate_cost_usd,
+)
 from app.modules.ai.ai_client import call_ai, extract_json, resolve_provider_key_model
 from app.modules.ai.models import AISettings
 from app.modules.clash.models import ClashResult
@@ -70,37 +75,12 @@ from app.modules.clash_ai_triage.schemas import (
 logger = logging.getLogger(__name__)
 
 
-# ── Per-model cost table (USD per 1k tokens) ────────────────────────────────
-# Rates are the public list prices as of the v1 release; refresh them
-# when a provider repricing happens. We track a single blended rate per
-# model (input + output averaged) so the persisted cost stays a single
-# Numeric column instead of a JSON blob — coordinators want one number
-# they can put in a report, not a breakdown.
-#
-# Sources (Jan 2026): Anthropic + OpenAI + Google public pricing pages.
-# Rounded to 4 decimals to match the model column's precision.
-MODEL_COSTS: dict[str, Decimal] = {
-    # Anthropic — Haiku 4.5 is the right "cheap, fast, JSON-good" pick
-    # for triage. ~$0.80/M in, $4/M out → blended ~$0.0024/k.
-    "claude-haiku-4-5-20251001": Decimal("0.0024"),
-    "claude-haiku-4-5": Decimal("0.0024"),
-    # Sonnet is roughly 5x. Listed for completeness — coordinators can
-    # opt into it for sensitive projects where verdict quality matters
-    # more than per-call cost.
-    "claude-sonnet-4-20250514": Decimal("0.0090"),
-    "claude-sonnet-4": Decimal("0.0090"),
-    # OpenAI gpt-4.1-mini — comparable cost tier to Haiku.
-    "gpt-4.1-mini": Decimal("0.0008"),
-    "gpt-4.1": Decimal("0.0040"),
-    "gpt-4o-mini": Decimal("0.0006"),
-    # Google Gemini 2.5 Flash — cheapest of the three big providers.
-    "gemini-2.5-flash": Decimal("0.0005"),
-    "gemini-2.5-pro": Decimal("0.0050"),
-}
-#: Conservative fallback rate when the model name is unknown. Picks the
-#: lowest published mid-tier rate so unknown models don't drastically
-#: under-report cost.
-DEFAULT_COST_PER_1K = Decimal("0.0020")
+# ── Per-model cost table — now sourced from app.core.ai.pricing ─────────────
+# Kept as local re-exports for backward compatibility with any caller that
+# imported MODEL_COSTS / DEFAULT_COST_PER_1K from this module. Both modules
+# (clash_ai_triage and ai) now share the same rate table so per-tenant
+# cost rollups stay comparable.
+# (MODEL_COSTS and DEFAULT_COST_PER_1K are imported above.)
 
 #: Hard wall-clock cap for an end-to-end triage LLM call (initial + JSON
 #: retry). The provider HTTP client already enforces ``AI_TIMEOUT`` (120 s
@@ -152,12 +132,14 @@ _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 
 
 def _estimate_cost_usd(model_name: str, tokens: int) -> Decimal:
-    """Estimate USD cost for ``tokens`` against the per-1k rate table."""
-    if tokens <= 0:
-        return Decimal("0.0")
-    rate = MODEL_COSTS.get(model_name or "", DEFAULT_COST_PER_1K)
-    # tokens / 1000 * rate — keep arithmetic in Decimal until persist time.
-    return (Decimal(tokens) / Decimal(1000)) * rate
+    """Estimate USD cost for ``tokens`` against the per-1k rate table.
+
+    Thin compatibility wrapper around
+    :func:`app.core.ai.pricing.estimate_cost_usd` — kept so existing
+    callers (and the public ``__all__`` re-export) keep working without
+    a churn-y rename. New code should import from ``app.core.ai`` direct.
+    """
+    return _shared_estimate_cost_usd(model_name, tokens)
 
 
 def _coerce_verdict(parsed: Any) -> TriageVerdict | None:
