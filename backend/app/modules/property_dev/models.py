@@ -1774,6 +1774,85 @@ class PropertyDevCustomTemplate(Base):
         )
 
 
+# ── Buyer Self-Service Portal magic-link tokens (v3124) ─────────────────
+
+
+class PortalToken(Base):
+    """Audit + revocation registry for buyer-portal magic-link JWTs.
+
+    Each row is the persisted counterpart of a ``scope='portal'`` JWT
+    issued at SPA / Reservation creation. The JWT itself stays stateless
+    (verifiable from ``JWT_SECRET`` alone) but we keep the ``jti`` on
+    this row so an operator can REVOKE a leaked link — the verify path
+    rejects any matching ``jti`` whose ``revoked_at`` is set, regardless
+    of the JWT's in-flight ``exp`` claim.
+
+    The buyer / reservation / SPA scope columns drive the per-endpoint
+    IDOR guard so a buyer cannot swap UUIDs in the URL to read another
+    buyer's payment schedule or signed documents — the guard re-checks
+    that ``doc.buyer_id == token.buyer_id`` on every read.
+
+    Per the v3119 fresh-install lock-cascade memory: every NOT NULL
+    column has a ``server_default``. SQLAlchemy ``create_all`` ignores
+    Python ``default=`` so the DB-level default is the only safe path
+    for greenfield installs.
+    """
+
+    __tablename__ = "oe_propdev_portal_token"
+
+    buyer_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_property_dev_buyer.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    reservation_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(),
+        ForeignKey("oe_property_dev_reservation.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    sales_contract_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(),
+        ForeignKey("oe_property_dev_sales_contract.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    # ``jti`` claim of the JWT. Unique-indexed so a single SQL lookup
+    # answers "is this token revoked?" without scanning. 64 chars covers
+    # any uuid4-hex / urlsafe-token shape we might use.
+    jwt_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="", server_default="",
+        unique=True, index=True,
+    )
+    issued_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False,
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False,
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
+    last_used_ip: Mapped[str | None] = mapped_column(
+        String(64), nullable=True,
+    )
+    # Plain UUID (no FK) — matches the cross-module convention used
+    # elsewhere in property_dev to dodge a hard dep on oe_users_user.
+    issued_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(), nullable=True,
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover — debug only
+        return (
+            f"<PortalToken buyer={self.buyer_id} "
+            f"revoked={self.revoked_at is not None}>"
+        )
+
+
 __all__ = [
     "Block",
     "Broker",
@@ -1797,6 +1876,7 @@ __all__ = [
     "PaymentSchedule",
     "Phase",
     "Plot",
+    "PortalToken",
     "PriceMatrix",
     "PropertyDevCustomTemplate",
     "PropertyDevHouseType",

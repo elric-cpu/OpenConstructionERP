@@ -5662,3 +5662,15 @@ async def portal_list_my_warranty_claims(
     stmt = stmt.order_by(_WC.created_at.desc()).limit(500)
     rows = (await session.execute(stmt)).scalars().all()
     return [WarrantyClaimResponse.model_validate(r) for r in rows]
+
+
+# ── Buyer self-service portal (magic-link auth, v3124) ──────────────────
+#
+# The portal endpoints live in a separate file so the public surface
+# area (no JWT auth on most routes) is easy to audit in isolation.
+# Mounting via ``include_router`` keeps them under
+# ``/api/v1/property-dev/portal/*`` alongside the existing
+# ``/portal/me/*`` portal-user endpoints above.
+from app.modules.property_dev.portal_router import portal_router  # noqa: E402
+
+router.include_router(portal_router)

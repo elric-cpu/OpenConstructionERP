@@ -205,6 +205,11 @@ const TransmittalLogPage = lazy(() =>
 const SharePage = lazy(() =>
   import('@/features/file-manager/SharePage').then((m) => ({ default: m.SharePage }))
 );
+const BuyerPortalPage = lazy(() =>
+  import('@/features/buyer-portal/BuyerPortalPage').then((m) => ({
+    default: m.BuyerPortalPage,
+  }))
+);
 const SnapshotsPage = lazy(() =>
   import('@/features/dashboards').then((m) => ({ default: m.SnapshotsPage }))
 );
@@ -604,6 +609,9 @@ export default function App() {
       <Routes>
         {/* Public share-link landing page — no auth required, no app shell */}
         <Route path="/share/:token" element={<SharePage />} />
+
+        {/* Public buyer-portal landing page — magic-link auth only, no app shell */}
+        <Route path="/buyer-portal/:token" element={<BuyerPortalPage />} />
 
         {/* Auth — public */}
         <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />} />

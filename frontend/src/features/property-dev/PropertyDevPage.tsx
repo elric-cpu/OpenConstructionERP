@@ -74,6 +74,7 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { getErrorMessage } from '@/shared/lib/api';
 import { EditBuyerModal } from './EditBuyerModal';
+import { BuyerAccessLinkPanel } from '@/features/buyer-portal/BuyerAccessLinkPanel';
 import { DocumentPreviewModal } from './DocumentPreviewModal';
 import { SnagsBlock } from './SnagsBlock';
 import type { PropDevDocType } from './api';
@@ -6793,6 +6794,9 @@ function BuyerDetailDrawer({
           {buyer.status === 'reserved' && (
             <ContractBuyerBlock buyer={buyer} />
           )}
+
+          {/* Buyer self-service portal magic-link panel (manager+ only) */}
+          <BuyerAccessLinkPanel buyerId={buyer.id} />
 
           <LinkedContactCard
             contactId={buyer.contact_id ?? null}
