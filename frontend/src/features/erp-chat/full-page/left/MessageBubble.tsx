@@ -1,9 +1,56 @@
 import { useMemo, useState } from 'react';
 import { ThumbsUp, ThumbsDown } from 'lucide-react';
+import DOMPurify from 'isomorphic-dompurify';
 import type { ChatMessage } from '../../types';
 import { submitFeedback } from '../../api';
 import ToolCallCard from './ToolCallCard';
 import StreamingCursor from './StreamingCursor';
+
+// DOMPurify allow-list for chat markdown output. The hand-rolled
+// ``renderMarkdown`` already escapes raw user input and only re-introduces
+// a narrow set of tags / attributes (bold, italic, inline + block code,
+// anchors, lists, headings, line breaks, horizontal rules). Sanitising
+// the final HTML right before ``dangerouslySetInnerHTML`` is a
+// defence-in-depth wrapper that closes the XSS-by-edge-case class
+// (audit 2026-05-24 #1): even if a future markdown edit accidentally
+// passes a ``<script>``, ``onerror`` attribute, or ``javascript:`` URL
+// through the regex pipeline, the sanitiser strips it before the DOM
+// ever sees it.
+// Exported for the chat-xss test suite — keeps the suite in lockstep
+// with the actual config used at render time.
+export const SAFE_TAGS = [
+  'strong',
+  'em',
+  'code',
+  'pre',
+  'a',
+  'br',
+  'p',
+  'ul',
+  'ol',
+  'li',
+  'div',
+  'span',
+  'hr',
+] as const;
+export const SAFE_ATTRS = ['href', 'target', 'rel', 'style'] as const;
+export const SANITIZE_CONFIG = {
+  ALLOWED_TAGS: [...SAFE_TAGS],
+  ALLOWED_ATTR: [...SAFE_ATTRS],
+  // DOMPurify strips ``target`` and ``rel`` by default even when they
+  // appear in ALLOWED_ATTR, because the upstream HTML5 attribute
+  // registry treats them as "additional" attributes. ADD_ATTR forces
+  // them back onto the safelist so external links keep their
+  // ``target="_blank" rel="noopener noreferrer"`` hardening.
+  ADD_ATTR: ['target', 'rel'],
+  // NOTE: we deliberately do NOT set ``ALLOWED_URI_REGEXP``. DOMPurify's
+  // built-in default already filters ``javascript:`` / ``data:`` /
+  // ``vbscript:`` / etc. on every URI-bearing attribute, and a custom
+  // regex here was observed to silently strip ``target`` / ``rel`` in
+  // jsdom (an interaction quirk with the attribute classifier). The
+  // scheme allow-list in renderMarkdown is the primary gate; DOMPurify
+  // default URI handling is the secondary gate.
+};
 
 function formatTime(d: Date): string {
   const h = d.getHours().toString().padStart(2, '0');
@@ -18,7 +65,7 @@ function formatTime(d: Date): string {
  * headings, horizontal rules, and line breaks without pulling in a full
  * markdown library.
  */
-function renderMarkdown(text: string): string {
+export function renderMarkdown(text: string): string {
   // Escape ALL HTML entities first to prevent XSS injection
   let html = text
     .replace(/&/g, '&amp;')
@@ -199,7 +246,10 @@ function FeedbackBar({ messageId }: { messageId: string }) {
 
 export default function MessageBubble({ message, isStreaming }: MessageBubbleProps) {
   const { id, role, content, toolCalls, ts } = message;
-  const renderedHtml = useMemo(() => (content ? renderMarkdown(content) : ''), [content]);
+  const renderedHtml = useMemo(
+    () => (content ? DOMPurify.sanitize(renderMarkdown(content), SANITIZE_CONFIG) : ''),
+    [content],
+  );
 
   if (role === 'system') {
     return (

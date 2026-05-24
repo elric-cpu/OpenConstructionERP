@@ -4,6 +4,7 @@ Loads from environment variables with .env file fallback.
 All settings are typed and validated via Pydantic.
 """
 
+import logging
 import re
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError
@@ -13,6 +14,47 @@ from typing import Literal
 
 from pydantic import Field, computed_field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_logger = logging.getLogger("openestimate.config")
+
+# Minimum acceptable JWT secret length, enforced in non-development
+# environments. 32 bytes = 256 bits of entropy when generated via
+# ``secrets.token_urlsafe(32)`` — strong enough that HS256 token
+# forgery via brute-force is computationally infeasible.
+_JWT_SECRET_MIN_LENGTH = 32
+
+# Known-weak default values the validator MUST reject in non-development
+# environments. The bundled dev default is here too because anyone reading
+# the open-source repo can forge admin tokens against any deployment that
+# forgot to override it; the other strings are common copy-paste leftovers
+# from boilerplate / tutorials that have been seen in real audit reports.
+_JWT_KNOWN_WEAK_SECRETS = frozenset(
+    {
+        "openestimate-local-dev-key",
+        "change-me",
+        "change-me-in-production",
+        "secret",
+        "jwt-secret",
+    }
+)
+
+# Track whether we've already logged the dev-default warning so a unit
+# test that instantiates Settings() repeatedly (or an app that hot-reloads
+# the config) doesn't spam the log. Reset by the test suite via the
+# ``reset_jwt_dev_warning`` helper below.
+_DEV_JWT_WARNING_EMITTED = False
+
+
+def reset_jwt_dev_warning() -> None:
+    """Reset the once-per-process dev-default JWT warning latch.
+
+    Test-only helper. The production path emits the warning exactly
+    once on first ``Settings()`` instantiation; tests that exercise
+    that path multiple times call this between cases to re-arm the
+    latch.
+    """
+    global _DEV_JWT_WARNING_EMITTED
+    _DEV_JWT_WARNING_EMITTED = False
 
 
 def _read_pyproject_version() -> str | None:
@@ -414,27 +456,74 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _refuse_default_jwt_in_non_dev(self) -> "Settings":
-        """Refuse to start in staging/production with the bundled dev JWT secret.
+        """Refuse to start in staging/production with a weak JWT secret.
 
-        The repo ships ``jwt_secret = "openestimate-local-dev-key"`` so a fresh
-        ``docker compose up`` works without any .env. That same default has been
-        republished publicly many times in tests / docs / QA reports — anyone
-        who reads the open-source repo can forge admin tokens against any
-        deployment that forgot to override it. This guard ensures any non-dev
-        environment fails fast at boot with a clear message instead of silently
-        running with a compromised secret.
+        Rejects three failure modes when ``APP_ENV != "development"``:
+
+        1. ``jwt_secret`` is the bundled dev default — published in the
+           public repo, admin-forgeable by anyone who can `git clone`.
+        2. ``jwt_secret`` matches any other known weak / boilerplate
+           value (``change-me``, ``secret``, ``jwt-secret``, etc.) — these
+           leak into production all the time via copy-paste.
+        3. ``jwt_secret`` is shorter than 32 characters — HS256 token
+           forgery becomes computationally tractable below that length.
+
+        In ``development`` the guard is a no-op so a fresh ``docker compose up``
+        works without any .env. We still log a one-shot WARNING on the dev
+        default with the secret length and a reminder so the operator sees
+        an unmistakable nudge to set ``OE_JWT_SECRET`` before shipping.
 
         To override for self-hosters: set ``OE_JWT_SECRET`` (or ``JWT_SECRET``)
-        to a fresh value, e.g. ``python -c "import secrets;print(secrets.token_urlsafe(32))"``.
+        to a fresh value, e.g.
+        ``python -c "import secrets;print(secrets.token_urlsafe(32))"``
+        or ``openssl rand -hex 32``.
         """
-        if self.app_env != "development" and self.jwt_secret == "openestimate-local-dev-key":
-            raise RuntimeError(
-                "Refusing to start: JWT_SECRET is still the bundled development default "
-                "but APP_ENV is %r. The default secret is published in the public "
-                "repository — using it in non-development environments is admin-forgeable "
-                "by anyone. Set OE_JWT_SECRET to a fresh random value, e.g.\n"
-                '  python -c "import secrets;print(secrets.token_urlsafe(32))"' % self.app_env
-            )
+        secret = self.jwt_secret or ""
+        is_weak_default = secret in _JWT_KNOWN_WEAK_SECRETS
+        is_too_short = len(secret) < _JWT_SECRET_MIN_LENGTH
+
+        if self.app_env != "development":
+            if is_weak_default:
+                raise RuntimeError(
+                    f"Refusing to start: JWT_SECRET is a well-known weak default "
+                    f"({secret!r}) but APP_ENV is {self.app_env!r}. Known-weak "
+                    f"secrets are admin-forgeable by anyone who reads the public "
+                    f"OpenConstructionERP source. Set OE_JWT_SECRET to a fresh "
+                    f"random value of at least {_JWT_SECRET_MIN_LENGTH} "
+                    f"characters, e.g.\n"
+                    f'  python -c "import secrets;print(secrets.token_urlsafe(32))"\n'
+                    f"  openssl rand -hex 32"
+                )
+            if is_too_short:
+                raise RuntimeError(
+                    f"Refusing to start: JWT_SECRET is only {len(secret)} "
+                    f"characters but APP_ENV is {self.app_env!r}. HS256 token "
+                    f"forgery is computationally tractable below "
+                    f"{_JWT_SECRET_MIN_LENGTH} characters. Set OE_JWT_SECRET to "
+                    f"a fresh random value of at least "
+                    f"{_JWT_SECRET_MIN_LENGTH} characters, e.g.\n"
+                    f'  python -c "import secrets;print(secrets.token_urlsafe(32))"\n'
+                    f"  openssl rand -hex 32"
+                )
+
+        # Development with the bundled default — log a one-shot WARNING so
+        # the operator is reminded to override before promoting the
+        # environment. We deliberately log the length (not the value) so
+        # the warning is informative without leaking the secret if log
+        # files end up shipped off-host.
+        if self.app_env == "development" and is_weak_default:
+            global _DEV_JWT_WARNING_EMITTED
+            if not _DEV_JWT_WARNING_EMITTED:
+                _logger.warning(
+                    "JWT_SECRET is the bundled development default "
+                    "(length=%d). This is fine for local dev but MUST be "
+                    "overridden in staging/production via OE_JWT_SECRET. "
+                    "Generate a fresh secret with: "
+                    'python -c "import secrets;print(secrets.token_urlsafe(32))"',
+                    len(secret),
+                )
+                _DEV_JWT_WARNING_EMITTED = True
+
         return self
 
     @computed_field  # type: ignore[prop-decorator]

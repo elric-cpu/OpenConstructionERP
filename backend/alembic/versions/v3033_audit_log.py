@@ -46,12 +46,44 @@ Created: 2026-05-13
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from datetime import UTC, datetime
 from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+
+# Hardened identifier allow-list (security audit 2026-05-24 #3).
+#
+# All table/column names in this migration come from the two module-level
+# constants below (``_LEGACY_REMAPS`` + ``_BACKFILL_ENTITIES``). We pass them
+# through ``_safe_ident`` before every f-string interpolation so a future
+# refactor that accidentally widens the source from a hardcoded constant
+# to a user-supplied string cannot become a SQL-injection vector. Values
+# are *always* bind-parameterised; only identifiers are interpolated, and
+# only after passing this regex.
+_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+# Constant table name referenced in raw SQL below. Pulled out so any
+# future column rename triggers a single-point edit and the audit
+# linter (``rg "INSERT INTO oe_activity_log"``) has one occurrence to
+# track.
+_AUDIT_TABLE = "oe_activity_log"
+
+
+def _safe_ident(name: str) -> str:
+    """Return ``name`` unchanged if it's a valid SQL identifier, else raise.
+
+    Identifiers must match ``[A-Za-z_][A-Za-z0-9_]*`` — the conservative
+    subset that's safe to interpolate into raw SQL on every backend we
+    target (SQLite, Postgres). Anything else (whitespace, quotes,
+    semicolons, schema-qualified ``a.b`` names) is rejected at migration
+    time, not at query time.
+    """
+    if not isinstance(name, str) or not _IDENT_RE.match(name):
+        raise ValueError(f"unsafe SQL identifier: {name!r}")
+    return name
 
 # revision identifiers, used by Alembic.
 revision: str = "v3033_audit_log"
@@ -186,20 +218,27 @@ def upgrade() -> None:
     inspector = sa.inspect(bind)
 
     # ── 2. Legacy status remaps ───────────────────────────────────────
+    # ``table`` + ``column`` come from the module-level ``_LEGACY_REMAPS``
+    # tuple — never from user input — but ``_safe_ident`` is the
+    # defence-in-depth gate: a future copy-paste that swaps a constant
+    # for a function arg will fail at validation, not at SQL parse.
     for table, column, mapping in _LEGACY_REMAPS:
         if not _has_column(inspector, table, column):
             continue
+        safe_table = _safe_ident(table)
+        safe_column = _safe_ident(column)
         for old_value, new_value in mapping.items():
             op.execute(
                 sa.text(
-                    f"UPDATE {table} SET {column} = :new WHERE {column} = :old",
+                    f"UPDATE {safe_table} SET {safe_column} = :new "
+                    f"WHERE {safe_column} = :old",
                 ).bindparams(new=new_value, old=old_value)
             )
 
     # ── 3. Synthetic "imported" audit rows ────────────────────────────
     # Idempotent: skip entities that already have an "imported" row in
     # the activity log.
-    if not _has_table(inspector, "oe_activity_log"):
+    if not _has_table(inspector, _AUDIT_TABLE):
         # Table create failed somehow — skip backfill.
         return
 
@@ -208,11 +247,12 @@ def upgrade() -> None:
             continue
         if not _has_column(inspector, table, "status"):
             continue
+        safe_table = _safe_ident(table)
         # Bulk insert via SELECT … NOT EXISTS so re-runs are no-ops.
         # We use NEWID()-style UUIDs by binding via Python so this works
         # the same way on SQLite + Postgres.
         rows = bind.execute(
-            sa.text(f"SELECT id, status FROM {table}")
+            sa.text(f"SELECT id, status FROM {safe_table}")
         ).fetchall()
         now = datetime.now(UTC)
         empty_meta = json.dumps({"source": "v3033_audit_log_backfill"})
@@ -220,9 +260,12 @@ def upgrade() -> None:
             ent_id = str(row[0])
             cur_status = row[1]
             # Check for existing "imported" row — idempotency guard.
+            # ``_AUDIT_TABLE`` is the module-level constant; no
+            # interpolation needed here since it's literal in the SQL
+            # string template.
             existing = bind.execute(
                 sa.text(
-                    "SELECT id FROM oe_activity_log "
+                    f"SELECT id FROM {_AUDIT_TABLE} "  # noqa: S608 — constant
                     "WHERE entity_type = :et "
                     "AND entity_id = :eid "
                     "AND action = 'imported' LIMIT 1"
@@ -232,7 +275,7 @@ def upgrade() -> None:
                 continue
             bind.execute(
                 sa.text(
-                    "INSERT INTO oe_activity_log "
+                    f"INSERT INTO {_AUDIT_TABLE} "  # noqa: S608 — constant
                     "(id, created_at, updated_at, tenant_id, actor_id, "
                     "entity_type, entity_id, action, from_status, "
                     "to_status, reason, metadata) "
@@ -260,7 +303,7 @@ def downgrade() -> None:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
 
-    if _has_table(inspector, "oe_activity_log"):
+    if _has_table(inspector, _AUDIT_TABLE):
         for idx in (
             "ix_activity_log_entity",
             "ix_activity_log_tenant_created",
@@ -268,7 +311,7 @@ def downgrade() -> None:
             "ix_oe_activity_log_action",
         ):
             try:
-                op.drop_index(idx, table_name="oe_activity_log")
+                op.drop_index(idx, table_name=_AUDIT_TABLE)
             except Exception:  # noqa: BLE001 — idempotent drop
                 pass
-        op.drop_table("oe_activity_log")
+        op.drop_table(_AUDIT_TABLE)

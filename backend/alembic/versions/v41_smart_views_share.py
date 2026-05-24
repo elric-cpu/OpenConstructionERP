@@ -21,6 +21,7 @@ Create Date: 2026-05-21
 
 from __future__ import annotations
 
+import re
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -33,9 +34,29 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-_TABLE = "oe_smart_view"
-_COLUMN = "share_token"
-_INDEX = "ix_smart_view_share_token"
+# Hardened identifier allow-list (security audit 2026-05-24 #3).
+# Every identifier interpolated into a raw-SQL string in this migration
+# must pass ``_safe_ident`` — a conservative regex match for the SQL
+# identifier grammar. A future copy-paste that swaps the module-level
+# constants below for a function arg will fail at module import time, not
+# at SQL parse, so the "fragile f-string" pattern can't silently grow
+# into an injection vector.
+_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _safe_ident(name: str) -> str:
+    """Return ``name`` unchanged if it's a valid SQL identifier, else raise."""
+    if not isinstance(name, str) or not _IDENT_RE.match(name):
+        raise ValueError(f"unsafe SQL identifier: {name!r}")
+    return name
+
+
+# Module-level identifiers — never derived from a function argument or
+# inspector lookup; guard pre-validated below so the f-strings below are
+# proven safe at import time, not just at the next CI run.
+_TABLE = _safe_ident("oe_smart_view")
+_COLUMN = _safe_ident("share_token")
+_INDEX = _safe_ident("ix_smart_view_share_token")
 
 
 def _has_table(inspector: sa.engine.reflection.Inspector, name: str) -> bool:

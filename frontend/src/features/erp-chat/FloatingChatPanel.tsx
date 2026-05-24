@@ -35,6 +35,7 @@ import {
   Lock,
   ShieldAlert,
 } from 'lucide-react';
+import DOMPurify from 'isomorphic-dompurify';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useThemeStore } from '@/stores/useThemeStore';
@@ -60,6 +61,37 @@ import {
 } from './full-page/right/renderers';
 
 import './full-page/chat-tokens.css';
+
+// DOMPurify allow-list mirrors the one in
+// ``full-page/left/MessageBubble.tsx`` — see the security audit note
+// there. Keeping the config inline (rather than centralising) means a
+// future tweak to one chat surface can't silently weaken the other.
+const SANITIZE_CONFIG = {
+  ALLOWED_TAGS: [
+    'strong',
+    'em',
+    'code',
+    'pre',
+    'a',
+    'br',
+    'p',
+    'ul',
+    'ol',
+    'li',
+    'div',
+    'span',
+    'hr',
+  ],
+  ALLOWED_ATTR: ['href', 'target', 'rel', 'style'],
+  // DOMPurify treats ``target`` / ``rel`` as "additional" attributes that
+  // need to be explicitly re-added even when listed in ALLOWED_ATTR;
+  // without this the renderer would strip the safe-window hardening
+  // from external links.  See full-page/left/MessageBubble.tsx for why
+  // ``ALLOWED_URI_REGEXP`` is deliberately omitted (it silently strips
+  // ``target`` / ``rel`` under jsdom).  DOMPurify's default URI
+  // sanitiser already blocks ``javascript:`` / ``data:`` / ``vbscript:``.
+  ADD_ATTR: ['target', 'rel'],
+};
 
 const RENDERERS: Record<string, FC<{ data: unknown }>> = {
   projects_grid: ProjectsGridRenderer,
@@ -1753,7 +1785,11 @@ function MessageRow({
   onConfigureAI: () => void;
   onRetry: (msgId: string, prompt: string) => void;
 }) {
-  const html = useMemo(() => (msg.content ? renderMarkdown(msg.content) : ''), [msg.content]);
+  const html = useMemo(
+    () =>
+      msg.content ? DOMPurify.sanitize(renderMarkdown(msg.content), SANITIZE_CONFIG) : '',
+    [msg.content],
+  );
 
   if (msg.role === 'user') {
     return (
