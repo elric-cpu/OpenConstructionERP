@@ -4,11 +4,37 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
+
+# ── R7 money serialization helper ───────────────────────────────────────
+#
+# Pydantic v2 serializes ``Decimal`` to a JSON *number* by default, which
+# JS rounds to a float (precision loss past ~15 digits). The platform-wide
+# convention (mirrors boq/schemas.py BUG-B-011) is to emit money fields as
+# plain-decimal *strings* so the wire format is locale-neutral and exact.
+# This helper formats a Decimal as a fixed-point string ("12345.67" — not
+# "1.234567E+4"), defends against NaN/Inf (collapses to "0"), and tolerates
+# values that arrive as int/float when callers bypass the Pydantic input
+# coercion. Applied via ``@field_serializer(..., when_used="json")`` on
+# every response model that carries money.
+
+
+def _serialize_money_string(value: Any) -> str | None:
+    """Render a Decimal-ish value as a plain-decimal string, or None."""
+    if value is None:
+        return None
+    if not isinstance(value, Decimal):
+        try:
+            value = Decimal(str(value))
+        except (InvalidOperation, ValueError, TypeError):
+            return "0"
+    if not value.is_finite():
+        return "0"
+    return format(value, "f")
 
 # Regex for an ISO-4217 3-letter currency code (uppercase).
 _CURRENCY_PATTERN = r"^[A-Z]{3}$"
@@ -160,6 +186,12 @@ class DevelopmentResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    # R7: money fields as plain-decimal strings (mirrors boq BUG-B-011).
+    @field_serializer("total_area_m2", "sales_target_amount", when_used="json")
+    @classmethod
+    def _ser_money(cls, v: Decimal) -> str:
+        return _serialize_money_string(v) or "0"
+
 
 # ── House Type ──────────────────────────────────────────────────────────
 
@@ -226,6 +258,12 @@ class HouseTypeResponse(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
     created_at: datetime
     updated_at: datetime
+
+    # R7: money fields as plain-decimal strings.
+    @field_serializer("total_area_m2", "footprint_m2", "base_price", when_used="json")
+    @classmethod
+    def _ser_money(cls, v: Decimal) -> str:
+        return _serialize_money_string(v) or "0"
 
 
 # ── House Type Variant ──────────────────────────────────────────────────
@@ -381,6 +419,24 @@ class PlotResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    # R7: money + numeric area fields as plain-decimal strings.
+    @field_serializer(
+        "area_m2", "price_base", "construction_status_percent",
+        when_used="json",
+    )
+    @classmethod
+    def _ser_money_required(cls, v: Decimal) -> str:
+        return _serialize_money_string(v) or "0"
+
+    @field_serializer(
+        "garden_area_m2", "balcony_area_m2", "storage_area_m2",
+        "sun_exposure_hours", "computed_price",
+        when_used="json",
+    )
+    @classmethod
+    def _ser_money_opt(cls, v: Decimal | None) -> str | None:
+        return _serialize_money_string(v)
+
 
 class PlotReserveRequest(BaseModel):
     """Payload for /plots/{id}/reserve."""
@@ -516,6 +572,12 @@ class BuyerOptionResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    # R7: money fields as plain-decimal strings.
+    @field_serializer("price_delta", when_used="json")
+    @classmethod
+    def _ser_money(cls, v: Decimal) -> str:
+        return _serialize_money_string(v) or "0"
+
 
 # ── Buyer ───────────────────────────────────────────────────────────────
 
@@ -606,6 +668,16 @@ class BuyerResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    # R7: money fields as plain-decimal strings.
+    @field_serializer(
+        "contract_value", "deposit_amount", "deposit_forfeited",
+        "deposit_refunded",
+        when_used="json",
+    )
+    @classmethod
+    def _ser_money(cls, v: Decimal) -> str:
+        return _serialize_money_string(v) or "0"
+
 
 class BuyerContractRequest(BaseModel):
     """Payload for /buyers/{id}/contract."""
@@ -642,6 +714,15 @@ class DepositForfeitureResponse(BaseModel):
     refundable_amount: Decimal = Decimal("0")
     rule_citation: str = ""
     rule_summary: str = ""
+
+    # R7: money fields as plain-decimal strings.
+    @field_serializer(
+        "deposit_amount", "forfeited_amount", "refundable_amount",
+        when_used="json",
+    )
+    @classmethod
+    def _ser_money(cls, v: Decimal) -> str:
+        return _serialize_money_string(v) or "0"
 
 
 # ── Buyer Selection ─────────────────────────────────────────────────────
@@ -715,6 +796,12 @@ class BuyerSelectionItemResponse(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
     created_at: datetime
     updated_at: datetime
+
+    # R7: money fields as plain-decimal strings.
+    @field_serializer("unit_price_snapshot", "total_price", when_used="json")
+    @classmethod
+    def _ser_money(cls, v: Decimal) -> str:
+        return _serialize_money_string(v) or "0"
 
 
 # ── Handover & Snag ─────────────────────────────────────────────────────
@@ -2113,6 +2200,16 @@ class CommissionAccrualResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    # R7: money fields as plain-decimal strings.
+    @field_serializer(
+        "base_amount", "commission_amount", "withholding_amount",
+        "net_payable",
+        when_used="json",
+    )
+    @classmethod
+    def _ser_money(cls, v: Decimal) -> str:
+        return _serialize_money_string(v) or "0"
+
 
 class CommissionAccrualPayRequest(BaseModel):
     """Payload for /commission-accruals/{id}/pay."""
@@ -2203,6 +2300,14 @@ class EscrowBalanceResponse(BaseModel):
     transaction_count: int = 0
     unreconciled_count: int = 0
 
+    # R7: money fields as plain-decimal strings.
+    @field_serializer(
+        "credit_total", "debit_total", "balance", when_used="json",
+    )
+    @classmethod
+    def _ser_money(cls, v: Decimal) -> str:
+        return _serialize_money_string(v) or "0"
+
 
 # ── EscrowTransaction ───────────────────────────────────────────────────
 
@@ -2279,6 +2384,12 @@ class EscrowTransactionResponse(BaseModel):
     )
     created_at: datetime
     updated_at: datetime
+
+    # R7: money fields as plain-decimal strings.
+    @field_serializer("amount", when_used="json")
+    @classmethod
+    def _ser_money(cls, v: Decimal) -> str:
+        return _serialize_money_string(v) or "0"
 
 
 class EscrowTransactionReconcileRequest(BaseModel):
@@ -2380,6 +2491,12 @@ class PriceMatrixResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    # R7: money fields as plain-decimal strings.
+    @field_serializer("base_price_per_m2", when_used="json")
+    @classmethod
+    def _ser_money(cls, v: Decimal) -> str:
+        return _serialize_money_string(v) or "0"
+
 
 class PriceMatrixPreviewResponse(BaseModel):
     """Pricing breakdown produced by ``service.compute_plot_price``."""
@@ -2393,6 +2510,16 @@ class PriceMatrixPreviewResponse(BaseModel):
     applied_rules: list[dict[str, Any]] = Field(default_factory=list)
     combined_multiplier: Decimal = Decimal("1")
     final_price: Decimal = Decimal("0")
+
+    # R7: money fields as plain-decimal strings.
+    @field_serializer(
+        "base_price_per_m2", "area_m2", "base_price",
+        "combined_multiplier", "final_price",
+        when_used="json",
+    )
+    @classmethod
+    def _ser_money(cls, v: Decimal) -> str:
+        return _serialize_money_string(v) or "0"
 
 
 class PriceMatrixBulkRecomputeResponse(BaseModel):

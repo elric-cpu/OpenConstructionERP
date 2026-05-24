@@ -252,9 +252,12 @@ async def create_development(
 @router.get("/developments/{dev_id}", response_model=DevelopmentResponse)
 async def get_development(
     dev_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> DevelopmentResponse:
+    await _verify_owner_via_development(session, dev_id, user_payload)
     obj = await service.get_development(dev_id)
     return DevelopmentResponse.model_validate(obj)
 
@@ -263,9 +266,12 @@ async def get_development(
 async def update_development(
     dev_id: uuid.UUID,
     data: DevelopmentUpdate,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.update")),
 ) -> DevelopmentResponse:
+    await _verify_owner_via_development(session, dev_id, user_payload)
     obj = await service.update_development(dev_id, data)
     return DevelopmentResponse.model_validate(obj)
 
@@ -273,9 +279,12 @@ async def update_development(
 @router.delete("/developments/{dev_id}", status_code=204)
 async def delete_development(
     dev_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.delete")),
 ) -> None:
+    await _verify_owner_via_development(session, dev_id, user_payload)
     await service.delete_development(dev_id)
 
 
@@ -285,9 +294,12 @@ async def delete_development(
 )
 async def development_dashboard(
     dev_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> DevelopmentDashboard:
+    await _verify_owner_via_development(session, dev_id, user_payload)
     payload = await service.development_sales_dashboard(dev_id)
     return DevelopmentDashboard.model_validate(payload)
 
@@ -298,9 +310,12 @@ async def development_dashboard(
 )
 async def development_sales_dashboard(
     dev_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> DevelopmentDashboard:
+    await _verify_owner_via_development(session, dev_id, user_payload)
     payload = await service.development_sales_dashboard(dev_id)
     return DevelopmentDashboard.model_validate(payload)
 
@@ -310,6 +325,8 @@ async def development_sales_dashboard(
 
 @router.get("/plots/", response_model=list[PlotResponse])
 async def list_plots(
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     development_id: uuid.UUID = Query(...),
     status: str | None = Query(default=None),
     offset: int = Query(default=0, ge=0),
@@ -317,6 +334,9 @@ async def list_plots(
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> list[PlotResponse]:
+    # R7 IDOR — gate the parent dev so we can't enumerate other tenants'
+    # plots by guessing development UUIDs (the dev_id is a query param).
+    await _verify_owner_via_development(session, development_id, user_payload)
     rows, _ = await service.plots.list_for_development(
         development_id, offset=offset, limit=limit, status=status
     )
@@ -326,9 +346,13 @@ async def list_plots(
 @router.post("/plots/", response_model=PlotResponse, status_code=201)
 async def create_plot(
     data: PlotCreate,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.create")),
 ) -> PlotResponse:
+    # R7 IDOR — prevent creating a plot under someone else's development.
+    await _verify_owner_via_development(session, data.development_id, user_payload)
     obj = await service.create_plot(data)
     return PlotResponse.model_validate(obj)
 
@@ -336,9 +360,12 @@ async def create_plot(
 @router.get("/plots/{plot_id}", response_model=PlotResponse)
 async def get_plot(
     plot_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> PlotResponse:
+    await _verify_owner_via_plot(session, plot_id, user_payload)
     obj = await service.get_plot(plot_id)
     return PlotResponse.model_validate(obj)
 
@@ -347,9 +374,12 @@ async def get_plot(
 async def update_plot(
     plot_id: uuid.UUID,
     data: PlotUpdate,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.update")),
 ) -> PlotResponse:
+    await _verify_owner_via_plot(session, plot_id, user_payload)
     obj = await service.update_plot(plot_id, data)
     return PlotResponse.model_validate(obj)
 
@@ -357,9 +387,12 @@ async def update_plot(
 @router.delete("/plots/{plot_id}", status_code=204)
 async def delete_plot(
     plot_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.delete")),
 ) -> None:
+    await _verify_owner_via_plot(session, plot_id, user_payload)
     await service.delete_plot(plot_id)
 
 
@@ -367,9 +400,12 @@ async def delete_plot(
 async def reserve_plot(
     plot_id: uuid.UUID,
     data: PlotReserveRequest,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.reserve_plot")),
 ) -> PlotResponse:
+    await _verify_owner_via_plot(session, plot_id, user_payload)
     plot, _ = await service.reserve_plot(plot_id, data)
     return PlotResponse.model_validate(plot)
 
@@ -453,10 +489,13 @@ async def plot_configurator(
 
 @router.get("/house-types/", response_model=list[HouseTypeResponse])
 async def list_house_types(
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     development_id: uuid.UUID = Query(...),
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> list[HouseTypeResponse]:
+    await _verify_owner_via_development(session, development_id, user_payload)
     rows = await service.house_types.list_for_development(development_id)
     return [HouseTypeResponse.model_validate(r) for r in rows]
 
@@ -466,9 +505,12 @@ async def list_house_types(
 )
 async def create_house_type(
     data: HouseTypeCreate,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.create")),
 ) -> HouseTypeResponse:
+    await _verify_owner_via_development(session, data.development_id, user_payload)
     obj = await service.create_house_type(data)
     return HouseTypeResponse.model_validate(obj)
 
@@ -476,9 +518,12 @@ async def create_house_type(
 @router.get("/house-types/{ht_id}", response_model=HouseTypeResponse)
 async def get_house_type(
     ht_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> HouseTypeResponse:
+    await _verify_owner_via_house_type(session, ht_id, user_payload)
     return HouseTypeResponse.model_validate(await service.get_house_type(ht_id))
 
 
@@ -486,9 +531,12 @@ async def get_house_type(
 async def update_house_type(
     ht_id: uuid.UUID,
     data: HouseTypeUpdate,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.update")),
 ) -> HouseTypeResponse:
+    await _verify_owner_via_house_type(session, ht_id, user_payload)
     obj = await service.update_house_type(ht_id, data)
     return HouseTypeResponse.model_validate(obj)
 
@@ -496,9 +544,12 @@ async def update_house_type(
 @router.delete("/house-types/{ht_id}", status_code=204)
 async def delete_house_type(
     ht_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.delete")),
 ) -> None:
+    await _verify_owner_via_house_type(session, ht_id, user_payload)
     await service.delete_house_type(ht_id)
 
 
@@ -590,10 +641,13 @@ async def delete_house_type_catalogue_entry(
     "/house-type-variants/", response_model=list[HouseTypeVariantResponse],
 )
 async def list_variants(
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     house_type_id: uuid.UUID = Query(...),
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> list[HouseTypeVariantResponse]:
+    await _verify_owner_via_house_type(session, house_type_id, user_payload)
     rows = await service.variants.list_for_house_type(house_type_id)
     return [HouseTypeVariantResponse.model_validate(r) for r in rows]
 
@@ -605,9 +659,12 @@ async def list_variants(
 )
 async def create_variant(
     data: HouseTypeVariantCreate,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.create")),
 ) -> HouseTypeVariantResponse:
+    await _verify_owner_via_house_type(session, data.house_type_id, user_payload)
     return HouseTypeVariantResponse.model_validate(
         await service.create_variant(data)
     )
@@ -618,9 +675,12 @@ async def create_variant(
 )
 async def get_variant(
     v_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> HouseTypeVariantResponse:
+    await _verify_owner_via_variant(session, v_id, user_payload)
     return HouseTypeVariantResponse.model_validate(await service.get_variant(v_id))
 
 
@@ -630,9 +690,12 @@ async def get_variant(
 async def update_variant(
     v_id: uuid.UUID,
     data: HouseTypeVariantUpdate,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.update")),
 ) -> HouseTypeVariantResponse:
+    await _verify_owner_via_variant(session, v_id, user_payload)
     return HouseTypeVariantResponse.model_validate(
         await service.update_variant(v_id, data)
     )
@@ -641,9 +704,12 @@ async def update_variant(
 @router.delete("/house-type-variants/{v_id}", status_code=204)
 async def delete_variant(
     v_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.delete")),
 ) -> None:
+    await _verify_owner_via_variant(session, v_id, user_payload)
     await service.delete_variant(v_id)
 
 
@@ -652,10 +718,13 @@ async def delete_variant(
 
 @router.get("/option-groups/", response_model=list[BuyerOptionGroupResponse])
 async def list_option_groups(
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     development_id: uuid.UUID = Query(...),
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> list[BuyerOptionGroupResponse]:
+    await _verify_owner_via_development(session, development_id, user_payload)
     rows = await service.option_groups.list_for_development(development_id)
     return [BuyerOptionGroupResponse.model_validate(r) for r in rows]
 
@@ -665,9 +734,12 @@ async def list_option_groups(
 )
 async def create_option_group(
     data: BuyerOptionGroupCreate,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.create")),
 ) -> BuyerOptionGroupResponse:
+    await _verify_owner_via_development(session, data.development_id, user_payload)
     return BuyerOptionGroupResponse.model_validate(
         await service.create_option_group(data)
     )
@@ -676,9 +748,12 @@ async def create_option_group(
 @router.get("/option-groups/{g_id}", response_model=BuyerOptionGroupResponse)
 async def get_option_group(
     g_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> BuyerOptionGroupResponse:
+    await _verify_owner_via_option_group(session, g_id, user_payload)
     return BuyerOptionGroupResponse.model_validate(
         await service.get_option_group(g_id)
     )
@@ -688,9 +763,12 @@ async def get_option_group(
 async def update_option_group(
     g_id: uuid.UUID,
     data: BuyerOptionGroupUpdate,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.update")),
 ) -> BuyerOptionGroupResponse:
+    await _verify_owner_via_option_group(session, g_id, user_payload)
     return BuyerOptionGroupResponse.model_validate(
         await service.update_option_group(g_id, data)
     )
@@ -699,9 +777,12 @@ async def update_option_group(
 @router.delete("/option-groups/{g_id}", status_code=204)
 async def delete_option_group(
     g_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.delete")),
 ) -> None:
+    await _verify_owner_via_option_group(session, g_id, user_payload)
     await service.delete_option_group(g_id)
 
 
@@ -710,11 +791,14 @@ async def delete_option_group(
 
 @router.get("/options/", response_model=list[BuyerOptionResponse])
 async def list_options(
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     group_id: uuid.UUID = Query(...),
     active_only: bool = Query(default=True),
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> list[BuyerOptionResponse]:
+    await _verify_owner_via_option_group(session, group_id, user_payload)
     rows = await service.options.list_for_group(group_id, active_only=active_only)
     return [BuyerOptionResponse.model_validate(r) for r in rows]
 
@@ -722,18 +806,24 @@ async def list_options(
 @router.post("/options/", response_model=BuyerOptionResponse, status_code=201)
 async def create_option(
     data: BuyerOptionCreate,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.create")),
 ) -> BuyerOptionResponse:
+    await _verify_owner_via_option_group(session, data.group_id, user_payload)
     return BuyerOptionResponse.model_validate(await service.create_option(data))
 
 
 @router.get("/options/{o_id}", response_model=BuyerOptionResponse)
 async def get_option(
     o_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> BuyerOptionResponse:
+    await _verify_owner_via_option(session, o_id, user_payload)
     return BuyerOptionResponse.model_validate(await service.get_option(o_id))
 
 
@@ -741,9 +831,12 @@ async def get_option(
 async def update_option(
     o_id: uuid.UUID,
     data: BuyerOptionUpdate,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.update")),
 ) -> BuyerOptionResponse:
+    await _verify_owner_via_option(session, o_id, user_payload)
     return BuyerOptionResponse.model_validate(
         await service.update_option(o_id, data)
     )
@@ -752,9 +845,12 @@ async def update_option(
 @router.delete("/options/{o_id}", status_code=204)
 async def delete_option(
     o_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.delete")),
 ) -> None:
+    await _verify_owner_via_option(session, o_id, user_payload)
     await service.delete_option(o_id)
 
 
@@ -763,6 +859,8 @@ async def delete_option(
 
 @router.get("/buyers/", response_model=list[BuyerResponse])
 async def list_buyers(
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     development_id: uuid.UUID = Query(...),
     status: str | None = Query(default=None),
     offset: int = Query(default=0, ge=0),
@@ -770,6 +868,7 @@ async def list_buyers(
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> list[BuyerResponse]:
+    await _verify_owner_via_development(session, development_id, user_payload)
     rows, _ = await service.buyers.list_for_development(
         development_id, offset=offset, limit=limit, status=status
     )
@@ -805,9 +904,12 @@ async def create_buyer(
 @router.get("/buyers/{b_id}", response_model=BuyerResponse)
 async def get_buyer(
     b_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> BuyerResponse:
+    await _verify_owner_via_buyer(session, b_id, user_payload)
     return BuyerResponse.model_validate(await service.get_buyer(b_id))
 
 
@@ -831,9 +933,12 @@ async def update_buyer(
 @router.delete("/buyers/{b_id}", status_code=204)
 async def delete_buyer(
     b_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.delete")),
 ) -> None:
+    await _verify_owner_via_buyer(session, b_id, user_payload)
     await service.delete_buyer(b_id)
 
 
@@ -841,9 +946,12 @@ async def delete_buyer(
 async def contract_buyer(
     b_id: uuid.UUID,
     data: BuyerContractRequest,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.contract_buyer")),
 ) -> BuyerResponse:
+    await _verify_owner_via_buyer(session, b_id, user_payload)
     return BuyerResponse.model_validate(
         await service.convert_buyer_to_contracted(b_id, data)
     )
@@ -867,9 +975,12 @@ async def list_selections(
 )
 async def create_selection(
     data: BuyerSelectionCreate,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.create")),
 ) -> BuyerSelectionResponse:
+    await _verify_owner_via_buyer(session, data.buyer_id, user_payload)
     return BuyerSelectionResponse.model_validate(
         await service.create_selection(data)
     )
@@ -878,9 +989,12 @@ async def create_selection(
 @router.get("/selections/{s_id}", response_model=BuyerSelectionResponse)
 async def get_selection(
     s_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> BuyerSelectionResponse:
+    await _verify_owner_via_selection(session, s_id, user_payload)
     return BuyerSelectionResponse.model_validate(await service.get_selection(s_id))
 
 
@@ -888,9 +1002,12 @@ async def get_selection(
 async def update_selection(
     s_id: uuid.UUID,
     data: BuyerSelectionUpdate,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.update")),
 ) -> BuyerSelectionResponse:
+    await _verify_owner_via_selection(session, s_id, user_payload)
     return BuyerSelectionResponse.model_validate(
         await service.update_selection(s_id, data)
     )
@@ -899,9 +1016,12 @@ async def update_selection(
 @router.delete("/selections/{s_id}", status_code=204)
 async def delete_selection(
     s_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.delete")),
 ) -> None:
+    await _verify_owner_via_selection(session, s_id, user_payload)
     await service.delete_selection(s_id)
 
 
@@ -910,9 +1030,12 @@ async def delete_selection(
 )
 async def submit_selection(
     s_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.update")),
 ) -> BuyerSelectionResponse:
+    await _verify_owner_via_selection(session, s_id, user_payload)
     return BuyerSelectionResponse.model_validate(
         await service.submit_selection(s_id)
     )
@@ -923,9 +1046,12 @@ async def submit_selection(
 )
 async def lock_selection(
     s_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.lock_selection")),
 ) -> BuyerSelectionResponse:
+    await _verify_owner_via_selection(session, s_id, user_payload)
     return BuyerSelectionResponse.model_validate(
         await service.lock_selection(s_id)
     )
@@ -939,9 +1065,12 @@ async def lock_selection(
 async def add_selection_item(
     s_id: uuid.UUID,
     data: BuyerSelectionItemCreate,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.update")),
 ) -> BuyerSelectionItemResponse:
+    await _verify_owner_via_selection(session, s_id, user_payload)
     return BuyerSelectionItemResponse.model_validate(
         await service.add_selection_item(s_id, data)
     )
@@ -953,10 +1082,13 @@ async def add_selection_item(
 async def remove_selection_item(
     s_id: uuid.UUID,
     item_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.update")),
 ) -> None:
     # ``s_id`` kept for URL clarity; we look up via item itself.
+    await _verify_owner_via_selection(session, s_id, user_payload)
     _ = s_id
     await service.remove_selection_item(item_id)
 
@@ -967,9 +1099,12 @@ async def remove_selection_item(
 )
 async def selection_submit_for_production(
     s_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.lock_selection")),
 ) -> BuyerSelectionResponse:
+    await _verify_owner_via_selection(session, s_id, user_payload)
     sel = await service.get_selection(s_id)
     result = await service.submit_for_production(sel.buyer_id)
     return BuyerSelectionResponse.model_validate(result)
@@ -1563,10 +1698,13 @@ async def create_warranty_claim_from_snag(
 async def cancel_buyer(
     b_id: uuid.UUID,
     data: BuyerCancelRequest,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.update")),
 ) -> DepositForfeitureResponse:
     """‌⁠‍Cancel a buyer + compute jurisdiction-specific deposit forfeiture."""
+    await _verify_owner_via_buyer(session, b_id, user_payload)
     _buyer, forfeiture = await service.cancel_buyer(b_id, data)
     return DepositForfeitureResponse(
         buyer_id=b_id,
@@ -1631,9 +1769,12 @@ async def create_handover_doc(
 async def update_handover_doc(
     doc_id: uuid.UUID,
     data: HandoverDocUpdate,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.handover")),
 ) -> HandoverDocResponse:
+    await _verify_owner_via_handover_doc(session, doc_id, user_payload)
     return HandoverDocResponse.model_validate(
         await service.update_handover_doc(doc_id, data)
     )
@@ -1642,9 +1783,12 @@ async def update_handover_doc(
 @router.delete("/handover-docs/{doc_id}", status_code=204)
 async def delete_handover_doc(
     doc_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.delete")),
 ) -> None:
+    await _verify_owner_via_handover_doc(session, doc_id, user_payload)
     await service.delete_handover_doc(doc_id)
 
 
@@ -1911,6 +2055,230 @@ async def _verify_owner_via_buyer(
     if buyer is None:
         raise HTTPException(status_code=404, detail="Resource not found")
     await _verify_owner_via_development(session, buyer.development_id, payload)
+
+
+# ── R7 IDOR helpers (Round-7 audit) ─────────────────────────────────────
+#
+# These helpers extend the existing _verify_owner_via_* chain to the
+# remaining project-scoped entities (house-type, variant, option-group,
+# option, selection, handover-doc, phase, block, broker, commission,
+# escrow, price-matrix). Each collapses "exists but not yours" to 404
+# (never 403) to avoid turning the endpoint into an existence oracle.
+# Admins always bypass. Pattern mirrors _verify_owner_via_plot.
+
+
+async def _verify_owner_via_house_type(
+    session: SessionDep,
+    ht_id: uuid.UUID,
+    payload: dict[str, Any],
+) -> None:
+    """IDOR closure for HouseType (ht → development → project owner)."""
+    from app.modules.property_dev.repository import HouseTypeRepository
+
+    ht = await HouseTypeRepository(session).get_by_id(ht_id)
+    if ht is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    await _verify_owner_via_development(session, ht.development_id, payload)
+
+
+async def _verify_owner_via_variant(
+    session: SessionDep,
+    v_id: uuid.UUID,
+    payload: dict[str, Any],
+) -> None:
+    """IDOR closure for HouseTypeVariant (variant → house_type → dev → project)."""
+    from app.modules.property_dev.repository import HouseTypeVariantRepository
+
+    variant = await HouseTypeVariantRepository(session).get_by_id(v_id)
+    if variant is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    await _verify_owner_via_house_type(session, variant.house_type_id, payload)
+
+
+async def _verify_owner_via_option_group(
+    session: SessionDep,
+    g_id: uuid.UUID,
+    payload: dict[str, Any],
+) -> None:
+    """IDOR closure for BuyerOptionGroup (group → development → project)."""
+    from app.modules.property_dev.repository import BuyerOptionGroupRepository
+
+    group = await BuyerOptionGroupRepository(session).get_by_id(g_id)
+    if group is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    await _verify_owner_via_development(session, group.development_id, payload)
+
+
+async def _verify_owner_via_option(
+    session: SessionDep,
+    o_id: uuid.UUID,
+    payload: dict[str, Any],
+) -> None:
+    """IDOR closure for BuyerOption (option → group → development → project)."""
+    from app.modules.property_dev.repository import BuyerOptionRepository
+
+    option = await BuyerOptionRepository(session).get_by_id(o_id)
+    if option is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    await _verify_owner_via_option_group(session, option.group_id, payload)
+
+
+async def _verify_owner_via_selection(
+    session: SessionDep,
+    s_id: uuid.UUID,
+    payload: dict[str, Any],
+) -> None:
+    """IDOR closure for BuyerSelection (selection → buyer → development → project)."""
+    from app.modules.property_dev.repository import BuyerSelectionRepository
+
+    selection = await BuyerSelectionRepository(session).get_by_id(s_id)
+    if selection is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    await _verify_owner_via_buyer(session, selection.buyer_id, payload)
+
+
+async def _verify_owner_via_handover_doc(
+    session: SessionDep,
+    doc_id: uuid.UUID,
+    payload: dict[str, Any],
+) -> None:
+    """IDOR closure for HandoverDoc (doc → handover → plot → dev → project)."""
+    from app.modules.property_dev.repository import HandoverDocRepository
+
+    doc = await HandoverDocRepository(session).get_by_id(doc_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    await _verify_owner_via_handover(session, doc.handover_id, payload)
+
+
+async def _verify_owner_via_phase(
+    session: SessionDep,
+    phase_id: uuid.UUID,
+    payload: dict[str, Any],
+) -> None:
+    """IDOR closure for Phase (phase → development → project)."""
+    from app.modules.property_dev.repository import PhaseRepository
+
+    phase = await PhaseRepository(session).get_by_id(phase_id)
+    if phase is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    await _verify_owner_via_development(session, phase.development_id, payload)
+
+
+async def _verify_owner_via_block(
+    session: SessionDep,
+    block_id: uuid.UUID,
+    payload: dict[str, Any],
+) -> None:
+    """IDOR closure for Block (block → phase → development → project)."""
+    from app.modules.property_dev.repository import BlockRepository
+
+    block = await BlockRepository(session).get_by_id(block_id)
+    if block is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    await _verify_owner_via_phase(session, block.phase_id, payload)
+
+
+async def _verify_owner_via_broker(
+    session: SessionDep,
+    broker_id: uuid.UUID,
+    payload: dict[str, Any],
+) -> None:
+    """IDOR closure for Broker via tenant_id (broker.tenant_id == caller).
+
+    Brokers carry a tenant_id (no project FK); they belong to the user
+    who created them. Admins bypass.
+    """
+    is_admin = payload.get("role") == "admin"
+    user_id = payload.get("sub") or payload.get("user_id")
+    if user_id is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+
+    from app.modules.property_dev.repository import BrokerRepository
+
+    broker = await BrokerRepository(session).get_by_id(broker_id)
+    if broker is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    if is_admin:
+        return
+    if broker.tenant_id is None or str(broker.tenant_id) != str(user_id):
+        raise HTTPException(status_code=404, detail="Resource not found")
+
+
+async def _verify_owner_via_commission_agreement(
+    session: SessionDep,
+    agreement_id: uuid.UUID,
+    payload: dict[str, Any],
+) -> None:
+    """IDOR closure for CommissionAgreement (agreement → broker.tenant_id)."""
+    from app.modules.property_dev.repository import (
+        CommissionAgreementRepository,
+    )
+
+    agreement = await CommissionAgreementRepository(session).get_by_id(
+        agreement_id,
+    )
+    if agreement is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    await _verify_owner_via_broker(session, agreement.broker_id, payload)
+
+
+async def _verify_owner_via_commission_accrual(
+    session: SessionDep,
+    accrual_id: uuid.UUID,
+    payload: dict[str, Any],
+) -> None:
+    """IDOR closure for CommissionAccrual (accrual → broker.tenant_id)."""
+    from app.modules.property_dev.repository import (
+        CommissionAccrualRepository,
+    )
+
+    accrual = await CommissionAccrualRepository(session).get_by_id(accrual_id)
+    if accrual is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    await _verify_owner_via_broker(session, accrual.broker_id, payload)
+
+
+async def _verify_owner_via_escrow_account(
+    session: SessionDep,
+    account_id: uuid.UUID,
+    payload: dict[str, Any],
+) -> None:
+    """IDOR closure for EscrowAccount (account → development → project)."""
+    from app.modules.property_dev.repository import EscrowAccountRepository
+
+    account = await EscrowAccountRepository(session).get_by_id(account_id)
+    if account is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    await _verify_owner_via_development(session, account.development_id, payload)
+
+
+async def _verify_owner_via_escrow_transaction(
+    session: SessionDep,
+    tx_id: uuid.UUID,
+    payload: dict[str, Any],
+) -> None:
+    """IDOR closure for EscrowTransaction (tx → account → development → project)."""
+    from app.modules.property_dev.repository import EscrowTransactionRepository
+
+    tx = await EscrowTransactionRepository(session).get_by_id(tx_id)
+    if tx is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    await _verify_owner_via_escrow_account(session, tx.escrow_account_id, payload)
+
+
+async def _verify_owner_via_price_matrix(
+    session: SessionDep,
+    matrix_id: uuid.UUID,
+    payload: dict[str, Any],
+) -> None:
+    """IDOR closure for PriceMatrix (matrix → development → project)."""
+    from app.modules.property_dev.repository import PriceMatrixRepository
+
+    matrix = await PriceMatrixRepository(session).get_by_id(matrix_id)
+    if matrix is None:
+        raise HTTPException(status_code=404, detail="Resource not found")
+    await _verify_owner_via_development(session, matrix.development_id, payload)
 
 
 # ── Leads ───────────────────────────────────────────────────────────────
@@ -2929,10 +3297,13 @@ def _payload_tenant_id(payload: dict[str, Any]) -> uuid.UUID | None:
 
 @router.get("/phases/", response_model=list[PhaseResponse])
 async def list_phases(
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     development_id: uuid.UUID = Query(...),
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> list[PhaseResponse]:
+    await _verify_owner_via_development(session, development_id, user_payload)
     rows = await service.phases.list_for_dev_ordered(development_id)
     return [PhaseResponse.model_validate(r) for r in rows]
 
@@ -2940,18 +3311,24 @@ async def list_phases(
 @router.post("/phases/", response_model=PhaseResponse, status_code=201)
 async def create_phase(
     data: PhaseCreate,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.create")),
 ) -> PhaseResponse:
+    await _verify_owner_via_development(session, data.development_id, user_payload)
     return PhaseResponse.model_validate(await service.create_phase(data))
 
 
 @router.get("/phases/{phase_id}", response_model=PhaseResponse)
 async def get_phase(
     phase_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> PhaseResponse:
+    await _verify_owner_via_phase(session, phase_id, user_payload)
     return PhaseResponse.model_validate(await service.get_phase(phase_id))
 
 
@@ -2959,9 +3336,12 @@ async def get_phase(
 async def update_phase(
     phase_id: uuid.UUID,
     data: PhaseUpdate,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.update")),
 ) -> PhaseResponse:
+    await _verify_owner_via_phase(session, phase_id, user_payload)
     return PhaseResponse.model_validate(
         await service.update_phase(phase_id, data)
     )
@@ -2970,9 +3350,12 @@ async def update_phase(
 @router.delete("/phases/{phase_id}", status_code=204)
 async def delete_phase(
     phase_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.delete")),
 ) -> None:
+    await _verify_owner_via_phase(session, phase_id, user_payload)
     await service.get_phase(phase_id)
     await service.phases.delete(phase_id)
 
@@ -2982,10 +3365,13 @@ async def delete_phase(
 
 @router.get("/blocks/", response_model=list[BlockResponse])
 async def list_blocks(
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     phase_id: uuid.UUID = Query(...),
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> list[BlockResponse]:
+    await _verify_owner_via_phase(session, phase_id, user_payload)
     rows = await service.blocks.list_for_phase_ordered(phase_id)
     return [BlockResponse.model_validate(r) for r in rows]
 
@@ -2993,18 +3379,24 @@ async def list_blocks(
 @router.post("/blocks/", response_model=BlockResponse, status_code=201)
 async def create_block(
     data: BlockCreate,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.create")),
 ) -> BlockResponse:
+    await _verify_owner_via_phase(session, data.phase_id, user_payload)
     return BlockResponse.model_validate(await service.create_block(data))
 
 
 @router.get("/blocks/{block_id}", response_model=BlockResponse)
 async def get_block(
     block_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> BlockResponse:
+    await _verify_owner_via_block(session, block_id, user_payload)
     return BlockResponse.model_validate(await service.get_block(block_id))
 
 
@@ -3012,9 +3404,12 @@ async def get_block(
 async def update_block(
     block_id: uuid.UUID,
     data: BlockUpdate,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.update")),
 ) -> BlockResponse:
+    await _verify_owner_via_block(session, block_id, user_payload)
     return BlockResponse.model_validate(
         await service.update_block(block_id, data)
     )
@@ -3023,9 +3418,12 @@ async def update_block(
 @router.delete("/blocks/{block_id}", status_code=204)
 async def delete_block(
     block_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.delete")),
 ) -> None:
+    await _verify_owner_via_block(session, block_id, user_payload)
     await service.get_block(block_id)
     await service.blocks.delete(block_id)
 
@@ -3325,10 +3723,13 @@ async def pay_commission_accrual(
     "/escrow-accounts/", response_model=list[EscrowAccountResponse],
 )
 async def list_escrow_accounts(
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     development_id: uuid.UUID = Query(...),
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> list[EscrowAccountResponse]:
+    await _verify_owner_via_development(session, development_id, user_payload)
     await service.get_development(development_id)
     rows = await service.escrow_accounts.list_for_development(development_id)
     return [EscrowAccountResponse.model_validate(r) for r in rows]
@@ -3339,9 +3740,12 @@ async def list_escrow_accounts(
 )
 async def create_escrow_account(
     data: EscrowAccountCreate,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.create")),
 ) -> EscrowAccountResponse:
+    await _verify_owner_via_development(session, data.development_id, user_payload)
     return EscrowAccountResponse.model_validate(
         await service.create_escrow_account(data)
     )
@@ -3352,9 +3756,12 @@ async def create_escrow_account(
 )
 async def get_escrow_account(
     account_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> EscrowAccountResponse:
+    await _verify_owner_via_escrow_account(session, account_id, user_payload)
     return EscrowAccountResponse.model_validate(
         await service.get_escrow_account(account_id)
     )
@@ -3366,9 +3773,12 @@ async def get_escrow_account(
 async def update_escrow_account(
     account_id: uuid.UUID,
     data: EscrowAccountUpdate,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.update")),
 ) -> EscrowAccountResponse:
+    await _verify_owner_via_escrow_account(session, account_id, user_payload)
     return EscrowAccountResponse.model_validate(
         await service.update_escrow_account(account_id, data)
     )
@@ -3377,9 +3787,12 @@ async def update_escrow_account(
 @router.delete("/escrow-accounts/{account_id}", status_code=204)
 async def delete_escrow_account(
     account_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.delete")),
 ) -> None:
+    await _verify_owner_via_escrow_account(session, account_id, user_payload)
     await service.get_escrow_account(account_id)
     await service.escrow_accounts.delete(account_id)
 
@@ -3390,12 +3803,15 @@ async def delete_escrow_account(
 )
 async def escrow_account_balance(
     account_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     as_of_date: str | None = Query(
         default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"
     ),
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> EscrowBalanceResponse:
+    await _verify_owner_via_escrow_account(session, account_id, user_payload)
     payload = await service.compute_escrow_balance(
         account_id, as_of_date=as_of_date,
     )
@@ -3418,6 +3834,8 @@ async def escrow_account_balance(
     "/escrow-transactions/", response_model=list[EscrowTransactionResponse],
 )
 async def list_escrow_transactions(
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     escrow_account_id: uuid.UUID = Query(...),
     unreconciled_only: bool = Query(default=False),
     offset: int = Query(default=0, ge=0),
@@ -3425,6 +3843,9 @@ async def list_escrow_transactions(
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> list[EscrowTransactionResponse]:
+    await _verify_owner_via_escrow_account(
+        session, escrow_account_id, user_payload,
+    )
     await service.get_escrow_account(escrow_account_id)
     if unreconciled_only:
         rows = await service.escrow_transactions.list_unreconciled(
@@ -3444,9 +3865,14 @@ async def list_escrow_transactions(
 )
 async def create_escrow_transaction(
     data: EscrowTransactionCreate,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.create")),
 ) -> EscrowTransactionResponse:
+    await _verify_owner_via_escrow_account(
+        session, data.escrow_account_id, user_payload,
+    )
     return EscrowTransactionResponse.model_validate(
         await service.create_escrow_transaction(data)
     )
@@ -3457,9 +3883,12 @@ async def create_escrow_transaction(
 )
 async def get_escrow_transaction(
     tx_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> EscrowTransactionResponse:
+    await _verify_owner_via_escrow_transaction(session, tx_id, user_payload)
     obj = await service.escrow_transactions.get_by_id(tx_id)
     if obj is None:
         raise HTTPException(status_code=404, detail="EscrowTransaction not found")
@@ -3472,9 +3901,12 @@ async def get_escrow_transaction(
 async def update_escrow_transaction(
     tx_id: uuid.UUID,
     data: EscrowTransactionUpdate,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.update")),
 ) -> EscrowTransactionResponse:
+    await _verify_owner_via_escrow_transaction(session, tx_id, user_payload)
     obj = await service.escrow_transactions.get_by_id(tx_id)
     if obj is None:
         raise HTTPException(status_code=404, detail="EscrowTransaction not found")
@@ -3489,9 +3921,12 @@ async def update_escrow_transaction(
 @router.delete("/escrow-transactions/{tx_id}", status_code=204)
 async def delete_escrow_transaction(
     tx_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.delete")),
 ) -> None:
+    await _verify_owner_via_escrow_transaction(session, tx_id, user_payload)
     obj = await service.escrow_transactions.get_by_id(tx_id)
     if obj is None:
         raise HTTPException(status_code=404, detail="EscrowTransaction not found")
@@ -3506,11 +3941,13 @@ async def reconcile_escrow_transaction(
     tx_id: uuid.UUID,
     data: EscrowTransactionReconcileRequest,
     payload: CurrentUserPayload,
+    session: SessionDep,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(
         RequirePermission("property_dev.escrow.reconcile")
     ),
 ) -> EscrowTransactionResponse:
+    await _verify_owner_via_escrow_transaction(session, tx_id, payload)
     return EscrowTransactionResponse.model_validate(
         await service.reconcile_escrow_transaction(
             tx_id, data.bank_reference, _payload_user_id(payload),
@@ -3525,10 +3962,13 @@ async def reconcile_escrow_transaction(
     "/price-matrices/", response_model=list[PriceMatrixResponse],
 )
 async def list_price_matrices(
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     development_id: uuid.UUID = Query(...),
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> list[PriceMatrixResponse]:
+    await _verify_owner_via_development(session, development_id, user_payload)
     await service.get_development(development_id)
     rows = await service.price_matrices.list_for_development(development_id)
     return [PriceMatrixResponse.model_validate(r) for r in rows]
@@ -3539,9 +3979,12 @@ async def list_price_matrices(
 )
 async def create_price_matrix(
     data: PriceMatrixCreate,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.create")),
 ) -> PriceMatrixResponse:
+    await _verify_owner_via_development(session, data.development_id, user_payload)
     return PriceMatrixResponse.model_validate(
         await service.create_price_matrix(data)
     )
@@ -3552,9 +3995,12 @@ async def create_price_matrix(
 )
 async def get_price_matrix(
     matrix_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> PriceMatrixResponse:
+    await _verify_owner_via_price_matrix(session, matrix_id, user_payload)
     return PriceMatrixResponse.model_validate(
         await service.get_price_matrix(matrix_id)
     )
@@ -3566,9 +4012,12 @@ async def get_price_matrix(
 async def update_price_matrix(
     matrix_id: uuid.UUID,
     data: PriceMatrixUpdate,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.update")),
 ) -> PriceMatrixResponse:
+    await _verify_owner_via_price_matrix(session, matrix_id, user_payload)
     return PriceMatrixResponse.model_validate(
         await service.update_price_matrix(matrix_id, data)
     )
@@ -3577,9 +4026,12 @@ async def update_price_matrix(
 @router.delete("/price-matrices/{matrix_id}", status_code=204)
 async def delete_price_matrix(
     matrix_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.delete")),
 ) -> None:
+    await _verify_owner_via_price_matrix(session, matrix_id, user_payload)
     await service.get_price_matrix(matrix_id)
     await service.price_matrices.delete(matrix_id)
 
@@ -3590,11 +4042,14 @@ async def delete_price_matrix(
 )
 async def activate_price_matrix(
     matrix_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(
         RequirePermission("property_dev.price_matrix.activate")
     ),
 ) -> PriceMatrixResponse:
+    await _verify_owner_via_price_matrix(session, matrix_id, user_payload)
     return PriceMatrixResponse.model_validate(
         await service.activate_price_matrix(matrix_id)
     )
@@ -3607,12 +4062,16 @@ async def activate_price_matrix(
 async def preview_price_on_plot(
     matrix_id: uuid.UUID,
     plot_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     on_date: str | None = Query(
         default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"
     ),
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> PriceMatrixPreviewResponse:
+    await _verify_owner_via_price_matrix(session, matrix_id, user_payload)
+    await _verify_owner_via_plot(session, plot_id, user_payload)
     payload = await service.compute_plot_price(
         plot_id, on_date=on_date, matrix_id=matrix_id,
     )
@@ -3625,11 +4084,14 @@ async def preview_price_on_plot(
 )
 async def bulk_recompute_prices(
     matrix_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(
         RequirePermission("property_dev.price_matrix.bulk_recompute")
     ),
 ) -> PriceMatrixBulkRecomputeResponse:
+    await _verify_owner_via_price_matrix(session, matrix_id, user_payload)
     matrix = await service.get_price_matrix(matrix_id)
     result = await service.bulk_recompute_dev_prices(matrix.development_id)
     return PriceMatrixBulkRecomputeResponse(**result)
