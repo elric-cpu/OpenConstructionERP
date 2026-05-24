@@ -35,6 +35,11 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.file_signature import (
+    FileSignatureMismatch,
+    SIGNATURE_BYTES_REQUIRED,
+    require as require_signature,
+)
 from app.core.rate_limiter import approval_limiter
 from app.core.upload_guards import reject_if_xlsx_bomb
 from app.dependencies import CurrentUserId, RequirePermission, SessionDep
@@ -110,12 +115,19 @@ async def _require_project_access(
     Central choke-point for project-scoped finance endpoints — must be called
     before reading or writing invoices/budgets/payments/EVM snapshots that
     belong to a specific project. Mirrors the pattern used by
-    ``erp_chat.tools._require_project_access``.
+    ``erp_chat.tools._require_project_access`` and the shared
+    :func:`app.dependencies.verify_project_access`.
 
-    Raises HTTP 403 if the user has no access to the project. A ``None``
-    ``project_id`` is treated as a no-op (dashboard/list fall-throughs that
-    legitimately aggregate across the user's own projects should handle
-    scoping in their own service layer).
+    R7 hardening (2026-05-24): cross-tenant fetches now answer **404**
+    rather than 403. A 403 leaks the existence of project UUIDs the
+    caller is not allowed to see — the global R7 standard (and the
+    shared ``verify_project_access`` helper) returns 404 on both
+    "missing" and "access denied". Bringing finance in line closes the
+    enumeration sidechannel for project IDs.
+
+    A ``None`` ``project_id`` is treated as a no-op (dashboard/list
+    fall-throughs that legitimately aggregate across the user's own
+    projects scope it themselves in the service layer).
     """
     if project_id is None:
         return
@@ -134,7 +146,7 @@ async def _require_project_access(
         if project is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Project {project_id} not found",
+                detail="Project not found",
             )
 
         # Admin bypass
@@ -147,17 +159,23 @@ async def _require_project_access(
             pass
 
         if str(getattr(project, "owner_id", "")) != str(user_id):
+            # R7: 404 not 403 — never confirm a project UUID exists
+            # for callers that don't own it. Mirrors the response shape
+            # of the "project missing" branch above.
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied: you do not own this project",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project not found",
             )
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001
         logger.warning("Finance project access check failed for %s: %s", project_id, exc)
+        # Generic auth failure stays as 404 too — anything else would
+        # again let the caller distinguish "exists but I lack access"
+        # from "doesn't exist".
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Authorization check failed",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found",
         )
 
 
@@ -461,18 +479,25 @@ async def list_payments(
     response_model=PaymentResponse,
     status_code=201,
     summary="Create payment",
-    description="Record a payment against an invoice. Updates the invoice's paid amount.",
+    description="Record a payment against an invoice. Updates the invoice's paid amount. "
+    "MANAGER-only — recording a payment is a binding ledger entry, not a CRUD edit.",
 )
 async def create_payment(
     data: PaymentCreate,
     user_id: CurrentUserId,
     session: SessionDep,
-    _perm: None = Depends(RequirePermission("finance.create")),
+    _perm: None = Depends(RequirePermission("finance.record_payment")),
     service: FinanceService = Depends(_get_service),
 ) -> PaymentResponse:
-    """Record a payment against an invoice."""
+    """Record a payment against an invoice.
+
+    R7 (2026-05-24): pinned to ``finance.record_payment`` (MANAGER+).
+    Recording a payment row is a financial commitment that affects the
+    invoice's paid/outstanding state and downstream budget actuals — it
+    cannot remain an EDITOR-level action.
+    """
     await _require_invoice_access(session, data.invoice_id, user_id)
-    payment = await service.create_payment(data)
+    payment = await service.create_payment(data, actor_id=str(user_id) if user_id else None)
     return PaymentResponse.model_validate(payment)
 
 
@@ -718,6 +743,32 @@ async def import_budgets_file(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Uploaded file is empty.",
         )
+
+    # R7 (2026-05-24): magic-byte gate. The filename-extension check above
+    # is necessary but trivially bypassable — an attacker who renames a
+    # PE/ELF/script to ``payload.xlsx`` would pass the extension test and
+    # land in the parser. ``require_signature`` rejects anything that
+    # isn't a ZIP-container (xlsx/xls OLE) or plain-text/CSV (which has
+    # no signature and surfaces as ``None``).
+    #
+    # CSV genuinely has no magic bytes so it returns ``None`` from
+    # ``detect`` — only require the signature check for the spreadsheet
+    # branches; plain CSV falls through to the parser as-is.
+    fname_low = filename
+    if fname_low.endswith((".xlsx", ".xls")):
+        head = content[:SIGNATURE_BYTES_REQUIRED]
+        try:
+            require_signature(
+                head,
+                # xlsx → ZIP container; legacy .xls → OLE compound document.
+                frozenset({"zip", "ole"}),
+                filename=file.filename,
+            )
+        except FileSignatureMismatch as exc:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail=str(exc),
+            )
 
     # Zip-bomb guard: reject .xlsx whose uncompressed sheets exceed 50 MB.
     reject_if_xlsx_bomb(content)
@@ -1050,22 +1101,30 @@ async def update_invoice(
     "/{invoice_id}/approve/",
     response_model=InvoiceResponse,
     summary="Approve invoice",
-    description="Transition an invoice to 'approved' status. "
-    "Only invoices in 'draft' or 'submitted' status can be approved.",
+    description="Transition an invoice to 'sent' (legacy alias 'approved') status. "
+    "Only invoices in 'draft' or 'pending' status can be approved. "
+    "MANAGER-only — invoice approval is the financial-commitment gate.",
 )
 async def approve_invoice(
     invoice_id: uuid.UUID,
     user_id: CurrentUserId,
     session: SessionDep,
-    _perm: None = Depends(RequirePermission("finance.update")),
+    _perm: None = Depends(RequirePermission("finance.approve")),
     service: FinanceService = Depends(_get_service),
 ) -> InvoiceResponse:
-    """Approve an invoice."""
+    """Approve an invoice.
+
+    R7 (2026-05-24): pinned to ``finance.approve`` (MANAGER+).
+    Previously this route used ``finance.update`` (EDITOR), which let
+    any estimator commit a payable to the project.
+    """
     allowed, _ = approval_limiter.is_allowed(str(user_id))
     if not allowed:
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Rate limit exceeded. Try again later.")
     await _require_invoice_access(session, invoice_id, user_id)
-    invoice = await service.approve_invoice(invoice_id)
+    invoice = await service.approve_invoice(
+        invoice_id, actor_id=str(user_id) if user_id else None,
+    )
     names = await _fetch_counterparty_names(session, [invoice.contact_id])
     return _invoice_to_response(invoice, names)
 
@@ -1074,20 +1133,32 @@ async def approve_invoice(
     "/{invoice_id}/pay/",
     response_model=InvoiceResponse,
     summary="Mark invoice as paid",
-    description="Transition an invoice to 'paid' status. Records the payment date.",
+    description="Transition an invoice to 'paid' status. Records the payment date. "
+    "MANAGER-only — marking an invoice paid is a binding ledger action. "
+    "Idempotent: a second call against an already-paid invoice returns 400, "
+    "not a duplicate ledger write.",
 )
 async def pay_invoice(
     invoice_id: uuid.UUID,
     user_id: CurrentUserId,
     session: SessionDep,
-    _perm: None = Depends(RequirePermission("finance.update")),
+    _perm: None = Depends(RequirePermission("finance.pay")),
     service: FinanceService = Depends(_get_service),
 ) -> InvoiceResponse:
-    """Mark invoice as paid."""
+    """Mark invoice as paid.
+
+    R7 (2026-05-24): pinned to ``finance.pay`` (MANAGER+). The FSM
+    allowlist (``_INVOICE_STATUS_TRANSITIONS``) ensures a second click
+    against an already-paid invoice cannot re-trigger budget-actual
+    recompute — it 400s on the disallowed ``paid -> paid`` transition
+    (idempotency by allowlist).
+    """
     allowed, _ = approval_limiter.is_allowed(str(user_id))
     if not allowed:
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Rate limit exceeded. Try again later.")
     await _require_invoice_access(session, invoice_id, user_id)
-    invoice = await service.pay_invoice(invoice_id)
+    invoice = await service.pay_invoice(
+        invoice_id, actor_id=str(user_id) if user_id else None,
+    )
     names = await _fetch_counterparty_names(session, [invoice.contact_id])
     return _invoice_to_response(invoice, names)

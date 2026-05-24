@@ -544,8 +544,22 @@ class FinanceService:
 
     # ── Payments ─────────────────────────────────────────────────────────────
 
-    async def create_payment(self, data: PaymentCreate) -> Payment:
-        """Record a payment against an invoice."""
+    async def create_payment(
+        self,
+        data: PaymentCreate,
+        *,
+        actor_id: str | None = None,
+    ) -> Payment:
+        """Record a payment against an invoice.
+
+        R7 (2026-05-24): emits an ``ActivityLog`` row tagged with the
+        actor — payments are real money entering or leaving the ledger,
+        and the audit trail is required for SOX-style compliance.
+
+        ``actor_id`` is optional so the legacy in-process callers
+        (event-bus consumers, importers) don't break, but the router
+        always supplies it.
+        """
         await self.get_invoice(data.invoice_id)  # 404 check
 
         payment = Payment(
@@ -558,6 +572,35 @@ class FinanceService:
             metadata_=data.metadata,
         )
         payment = await self.payments_repo.create(payment)
+
+        # R7 audit-trail row. Best-effort but logged at warning level
+        # so an audit-table outage surfaces in production logs.
+        try:
+            from app.core.audit_log import log_activity
+
+            await log_activity(
+                self.session,
+                actor_id=actor_id,
+                entity_type="payment",
+                entity_id=str(payment.id),
+                action="created",
+                reason="Payment recorded via create_payment()",
+                metadata={
+                    "invoice_id": str(data.invoice_id),
+                    "amount": str(data.amount),
+                    "currency_code": data.currency_code or "",
+                    "payment_date": data.payment_date,
+                    "reference": data.reference or "",
+                },
+            )
+        except Exception as exc:
+            logger.warning(
+                "Audit log FAILED for payment create "
+                "(actor_id=%s, invoice_id=%s): %s",
+                actor_id, data.invoice_id, exc,
+                exc_info=True,
+            )
+
         logger.info("Payment recorded: %s for invoice %s", data.amount, data.invoice_id)
         return payment
 
