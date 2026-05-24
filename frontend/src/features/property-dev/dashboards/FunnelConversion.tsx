@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 import type { FunnelConversionResponse } from '../api';
 import { getFunnelConversion } from '../api';
 import {
@@ -37,6 +38,13 @@ export function FunnelConversion({ developmentId }: FunnelConversionProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [periodDays, setPeriodDays] = useState<number>(90);
+  const periodIds = useMemo(() => PERIOD_OPTIONS.map((d) => String(d)), []);
+  const onPeriodKeyDown = useTabKeyboardNav<string>({
+    ids: periodIds,
+    activeId: String(periodDays),
+    onChange: (next) => setPeriodDays(Number(next)),
+    orientation: 'horizontal',
+  });
 
   const [reloadKey, setReloadKey] = useState(0);
   const refetch = useCallback(() => setReloadKey((k) => k + 1), []);
@@ -111,6 +119,7 @@ export function FunnelConversion({ developmentId }: FunnelConversionProps) {
           aria-label={t('propdev.dashboards.funnel.window', {
             defaultValue: 'Window',
           })}
+          onKeyDown={onPeriodKeyDown}
           className="flex rounded-lg border border-divider bg-surface-secondary p-0.5 text-xs"
         >
           {PERIOD_OPTIONS.map((d) => (
@@ -118,7 +127,10 @@ export function FunnelConversion({ developmentId }: FunnelConversionProps) {
               key={d}
               type="button"
               role="tab"
+              id={`funnel-window-tab-${d}`}
               aria-selected={periodDays === d}
+              aria-controls={`funnel-window-panel-${d}`}
+              tabIndex={periodDays === d ? 0 : -1}
               onClick={() => setPeriodDays(d)}
               className={
                 periodDays === d

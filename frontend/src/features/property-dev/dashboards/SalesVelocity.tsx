@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 import type {
   CurrencyAmount,
   SalesVelocityResponse,
@@ -21,6 +22,8 @@ import {
   num,
 } from './_shared';
 
+const VELOCITY_GRANULARITY_IDS = ['week', 'month', 'quarter'] as const;
+
 interface SalesVelocityProps {
   developmentId: string;
 }
@@ -33,6 +36,12 @@ export function SalesVelocity({ developmentId }: SalesVelocityProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [granularity, setGranularity] = useState<Granularity>('month');
+  const onGranularityKeyDown = useTabKeyboardNav<Granularity>({
+    ids: VELOCITY_GRANULARITY_IDS,
+    activeId: granularity,
+    onChange: setGranularity,
+    orientation: 'horizontal',
+  });
 
   const [reloadKey, setReloadKey] = useState(0);
   const refetch = useCallback(() => setReloadKey((k) => k + 1), []);
@@ -118,14 +127,18 @@ export function SalesVelocity({ developmentId }: SalesVelocityProps) {
           aria-label={t('propdev.dashboards.velocity.granularity', {
             defaultValue: 'Granularity',
           })}
+          onKeyDown={onGranularityKeyDown}
           className="flex rounded-lg border border-divider bg-surface-secondary p-0.5 text-xs"
         >
-          {(['week', 'month', 'quarter'] as Granularity[]).map((g) => (
+          {VELOCITY_GRANULARITY_IDS.map((g) => (
             <button
               key={g}
               type="button"
               role="tab"
+              id={`velocity-granularity-tab-${g}`}
               aria-selected={granularity === g}
+              aria-controls={`velocity-granularity-panel-${g}`}
+              tabIndex={granularity === g ? 0 : -1}
               onClick={() => setGranularity(g)}
               className={
                 granularity === g

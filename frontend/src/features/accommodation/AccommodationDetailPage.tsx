@@ -53,6 +53,7 @@ import {
 import { ContactSearchInput } from '@/shared/ui/ContactSearchInput';
 import { useToastStore } from '@/stores/useToastStore';
 import { getErrorMessage } from '@/shared/lib/api';
+import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 
 import {
   getAccommodation,
@@ -93,6 +94,13 @@ const FILTER_PILLS: Array<'all' | BookingStatus> = [
 ];
 
 type DetailTab = 'rooms' | 'bookings' | 'calendar' | 'charges' | 'settings';
+const DETAIL_TAB_IDS: readonly DetailTab[] = [
+  'rooms',
+  'bookings',
+  'calendar',
+  'charges',
+  'settings',
+];
 
 const ROOM_STATUS_STYLES: Record<RoomStatus, string> = {
   available: 'bg-emerald-100 text-emerald-800 border-emerald-300',
@@ -269,6 +277,12 @@ function DetailTabs({
   setTab: (t: DetailTab) => void;
 }) {
   const { t } = useTranslation();
+  const onTabKeyDown = useTabKeyboardNav<DetailTab>({
+    ids: DETAIL_TAB_IDS,
+    activeId: tab,
+    onChange: setTab,
+    orientation: 'horizontal',
+  });
   const items: { id: DetailTab; label: string; icon: typeof BedDouble }[] = [
     {
       id: 'rooms',
@@ -299,6 +313,10 @@ function DetailTabs({
   return (
     <div
       role="tablist"
+      aria-label={t('accommodation.tabs.aria', {
+        defaultValue: 'Accommodation sections',
+      })}
+      onKeyDown={onTabKeyDown}
       data-testid="accommodation-detail-tabs"
       // Horizontal scroll on small viewports so all tabs remain reachable
       // with a touch-swipe (mobile a11y requirement).
@@ -311,7 +329,10 @@ function DetailTabs({
           <button
             key={it.id}
             role="tab"
+            id={`accommodation-detail-tab-${it.id}`}
             aria-selected={isActive}
+            aria-controls={`accommodation-tab-panel-${it.id}`}
+            tabIndex={isActive ? 0 : -1}
             type="button"
             onClick={() => setTab(it.id)}
             data-testid={`accommodation-detail-tab-${it.id}`}
@@ -610,6 +631,12 @@ function BookingsTab({ data }: { data: AccommodationDetail }) {
 
   const [filter, setFilter] = useState<'all' | BookingStatus>('all');
   const [pickerRoom, setPickerRoom] = useState<Room | null>(null);
+  const onFilterKeyDown = useTabKeyboardNav<'all' | BookingStatus>({
+    ids: FILTER_PILLS,
+    activeId: filter,
+    onChange: setFilter,
+    orientation: 'horizontal',
+  });
 
   const statusFilter = filter === 'all' ? undefined : [filter];
 
@@ -655,6 +682,7 @@ function BookingsTab({ data }: { data: AccommodationDetail }) {
           aria-label={t('accommodation.bookings.filter_aria', {
             defaultValue: 'Filter bookings by status',
           })}
+          onKeyDown={onFilterKeyDown}
           className="flex flex-wrap gap-1.5"
         >
           {FILTER_PILLS.map((pill) => {
@@ -670,7 +698,10 @@ function BookingsTab({ data }: { data: AccommodationDetail }) {
                 key={pill}
                 type="button"
                 role="tab"
+                id={`bookings-filter-tab-${pill}`}
                 aria-selected={active}
+                aria-controls={`bookings-filter-panel-${pill}`}
+                tabIndex={active ? 0 : -1}
                 onClick={() => setFilter(pill)}
                 data-testid={`bookings-filter-${pill}`}
                 className={clsx(

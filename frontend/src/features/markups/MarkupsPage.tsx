@@ -31,6 +31,7 @@ import {
   TriangleRight,
 } from 'lucide-react';
 import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog } from '@/shared/ui';
+import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { apiGet } from '@/shared/lib/api';
 import { useToastStore } from '@/stores/useToastStore';
@@ -887,6 +888,12 @@ export function MarkupsPage() {
   // primary complaint was that the three modules were disconnected —
   // opening this page and seeing only hub markups reinforced that.
   const [scopeTab, setScopeTab] = useState<'unified' | 'hub'>('unified');
+  const onScopeTabKeyDown = useTabKeyboardNav<'unified' | 'hub'>({
+    ids: ['unified', 'hub'] as const,
+    activeId: scopeTab,
+    onChange: setScopeTab,
+    orientation: 'horizontal',
+  });
 
   // Data queries
   const { data: projects = [] } = useQuery({
@@ -1206,11 +1213,15 @@ export function MarkupsPage() {
             className="mt-3 inline-flex items-center rounded-lg border border-border-light bg-surface-primary p-0.5"
             role="tablist"
             aria-label={t('markups.scope_tabs', { defaultValue: 'Annotation scope' })}
+            onKeyDown={onScopeTabKeyDown}
           >
             <button
               type="button"
               role="tab"
+              id="markups-scope-tab-unified"
               aria-selected={scopeTab === 'unified'}
+              aria-controls="markups-scope-panel-unified"
+              tabIndex={scopeTab === 'unified' ? 0 : -1}
               onClick={() => setScopeTab('unified')}
               data-testid="markups-tab-unified"
               className={clsx(
@@ -1225,7 +1236,10 @@ export function MarkupsPage() {
             <button
               type="button"
               role="tab"
+              id="markups-scope-tab-hub"
               aria-selected={scopeTab === 'hub'}
+              aria-controls="markups-scope-panel-hub"
+              tabIndex={scopeTab === 'hub' ? 0 : -1}
               onClick={() => setScopeTab('hub')}
               data-testid="markups-tab-hub"
               className={clsx(

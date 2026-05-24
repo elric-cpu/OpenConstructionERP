@@ -72,6 +72,7 @@ import { ContactSearchInput } from '@/shared/ui/ContactSearchInput';
 import { useToastStore } from '@/stores/useToastStore';
 import { getErrorMessage } from '@/shared/lib/api';
 import { useFocusTrap } from '@/shared/hooks/useFocusTrap';
+import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 
 import {
   listAccommodations,
@@ -91,6 +92,7 @@ import {
 } from './api';
 
 type CalendarView = 'week' | 'month';
+const CALENDAR_VIEW_IDS: readonly CalendarView[] = ['week', 'month'];
 
 /** Pixel width of one day-column. Kept generous for hover targets. */
 const DAY_WIDTH_PX = 56;
@@ -267,6 +269,12 @@ export function AccommodationCalendar({
   const { t } = useTranslation();
 
   const [view, setView] = useState<CalendarView>('week');
+  const onViewKeyDown = useTabKeyboardNav<CalendarView>({
+    ids: CALENDAR_VIEW_IDS,
+    activeId: view,
+    onChange: setView,
+    orientation: 'horizontal',
+  });
   const [anchor, setAnchor] = useState<Date>(() => new Date());
   const [filterId, setFilterId] = useState<string>(scopedAccommodationId ?? '');
 
@@ -521,11 +529,15 @@ export function AccommodationCalendar({
             aria-label={t('accommodation.calendar.view_aria', {
               defaultValue: 'Calendar view',
             })}
+            onKeyDown={onViewKeyDown}
           >
             <button
               type="button"
               role="tab"
+              id="accommodation-calendar-view-tab-week"
               aria-selected={view === 'week'}
+              aria-controls="accommodation-calendar-view-panel-week"
+              tabIndex={view === 'week' ? 0 : -1}
               onClick={() => setView('week')}
               data-testid="accommodation-calendar-view-week"
               className={clsx(
@@ -541,7 +553,10 @@ export function AccommodationCalendar({
             <button
               type="button"
               role="tab"
+              id="accommodation-calendar-view-tab-month"
               aria-selected={view === 'month'}
+              aria-controls="accommodation-calendar-view-panel-month"
+              tabIndex={view === 'month' ? 0 : -1}
               onClick={() => setView('month')}
               data-testid="accommodation-calendar-view-month"
               className={clsx(

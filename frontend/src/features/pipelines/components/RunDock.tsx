@@ -13,9 +13,13 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { DateDisplay, EmptyState, StatusDot } from '@/shared/ui';
+import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 
 import { usePipelineStore } from '../usePipelineStore';
 import type { PipelineRunSummary, RunStatus } from '../api';
+
+type RunDockTab = 'run' | 'history';
+const RUN_DOCK_TAB_IDS: readonly RunDockTab[] = ['run', 'history'];
 
 export interface RunDockProps {
   runs: PipelineRunSummary[];
@@ -52,7 +56,13 @@ export function RunDock({
   testId,
 }: RunDockProps) {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<'run' | 'history'>('run');
+  const [tab, setTab] = useState<RunDockTab>('run');
+  const onTabKeyDown = useTabKeyboardNav<RunDockTab>({
+    ids: RUN_DOCK_TAB_IDS,
+    activeId: tab,
+    onChange: setTab,
+    orientation: 'horizontal',
+  });
   const run = usePipelineStore((s) => s.run);
   const nodes = usePipelineStore((s) => s.nodes);
 
@@ -123,13 +133,21 @@ export function RunDock({
         <div className="flex min-h-0 flex-1 flex-col">
           <div
             role="tablist"
+            aria-label={t('pipeline.dock.tabs_aria', {
+              defaultValue: 'Run dock sections',
+            })}
+            onKeyDown={onTabKeyDown}
             className="flex shrink-0 gap-1 border-b border-border px-3 py-1.5"
           >
-            {(['run', 'history'] as const).map((k) => (
+            {RUN_DOCK_TAB_IDS.map((k) => (
               <button
                 key={k}
+                type="button"
                 role="tab"
+                id={`pipeline-rundock-tab-${k}`}
                 aria-selected={tab === k}
+                aria-controls={`pipeline-rundock-panel-${k}`}
+                tabIndex={tab === k ? 0 : -1}
                 onClick={() => setTab(k)}
                 className={clsx(
                   'rounded px-2 py-1 text-xs font-medium',

@@ -17,6 +17,7 @@ import { Loader2 } from 'lucide-react';
 
 import { WideModal, WideModalSection, WideModalField } from '@/shared/ui/WideModal';
 import { Button } from '@/shared/ui';
+import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 import { useToastStore } from '@/stores/useToastStore';
 import { getErrorMessage } from '@/shared/lib/api';
 
@@ -34,6 +35,7 @@ export interface BulkRoomAddModalProps {
 }
 
 type Mode = 'generator' | 'paste';
+const BULK_MODE_IDS: readonly Mode[] = ['generator', 'paste'];
 
 export function BulkRoomAddModal({
   accommodationId,
@@ -46,6 +48,12 @@ export function BulkRoomAddModal({
   const queryClient = useQueryClient();
 
   const [mode, setMode] = useState<Mode>('generator');
+  const onModeKeyDown = useTabKeyboardNav<Mode>({
+    ids: BULK_MODE_IDS,
+    activeId: mode,
+    onChange: setMode,
+    orientation: 'horizontal',
+  });
   const [prefix, setPrefix] = useState('B-');
   const [start, setStart] = useState('201');
   const [count, setCount] = useState('12');
@@ -164,12 +172,22 @@ export function BulkRoomAddModal({
       }
     >
       {/* Mode tabs */}
-      <div role="tablist" className="mb-4 inline-flex rounded-lg border border-border p-0.5">
-        {(['generator', 'paste'] as const).map((m) => (
+      <div
+        role="tablist"
+        aria-label={t('accommodation.bulk_add.mode_aria', {
+          defaultValue: 'Bulk add mode',
+        })}
+        onKeyDown={onModeKeyDown}
+        className="mb-4 inline-flex rounded-lg border border-border p-0.5"
+      >
+        {BULK_MODE_IDS.map((m) => (
           <button
             key={m}
             role="tab"
+            id={`bulk-room-add-tab-${m}`}
             aria-selected={mode === m}
+            aria-controls={`bulk-room-add-panel-${m}`}
+            tabIndex={mode === m ? 0 : -1}
             type="button"
             onClick={() => setMode(m)}
             className={clsx(

@@ -55,6 +55,7 @@ import {
   EmptyState,
   SkeletonTable,
 } from '@/shared/ui';
+import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 import { useToastStore } from '@/stores/useToastStore';
 import { getErrorMessage } from '@/shared/lib/api';
 import {
@@ -90,6 +91,7 @@ const RULE_TYPES: PricingRuleType[] = [
 ];
 
 type Tab = 'lists' | 'rules' | 'sim' | 'history';
+const PRICING_TAB_IDS: readonly Tab[] = ['lists', 'rules', 'sim', 'history'];
 
 const inputCls =
   'h-9 w-full rounded-lg border border-border bg-surface-primary px-3 text-sm focus:outline-none focus:ring-2 focus:ring-oe-blue/30 focus:border-oe-blue';
@@ -129,6 +131,12 @@ interface TabsProps {
 
 function Tabs({ tab, setTab }: TabsProps): JSX.Element {
   const { t } = useTranslation();
+  const onTabKeyDown = useTabKeyboardNav<Tab>({
+    ids: PRICING_TAB_IDS,
+    activeId: tab,
+    onChange: setTab,
+    orientation: 'horizontal',
+  });
   const items: Array<{ key: Tab; icon: JSX.Element; label: string }> = [
     {
       key: 'lists',
@@ -156,7 +164,9 @@ function Tabs({ tab, setTab }: TabsProps): JSX.Element {
       {/* Mobile dropdown */}
       <div className="md:hidden">
         <select
-          aria-label="tab"
+          aria-label={t('propdev.pricing.tabs_aria', {
+            defaultValue: 'Pricing engine sections',
+          })}
           className={inputCls}
           value={tab}
           onChange={(e) => setTab(e.target.value as Tab)}
@@ -171,13 +181,21 @@ function Tabs({ tab, setTab }: TabsProps): JSX.Element {
       {/* Desktop tab bar */}
       <div
         role="tablist"
+        aria-label={t('propdev.pricing.tabs_aria', {
+          defaultValue: 'Pricing engine sections',
+        })}
+        onKeyDown={onTabKeyDown}
         className="hidden md:flex items-center gap-1 border-b border-border"
       >
         {items.map((it) => (
           <button
             key={it.key}
+            type="button"
             role="tab"
+            id={`pricing-tab-${it.key}`}
             aria-selected={tab === it.key}
+            aria-controls={`pricing-panel-${it.key}`}
+            tabIndex={tab === it.key ? 0 : -1}
             onClick={() => setTab(it.key)}
             className={clsx(
               'flex items-center gap-2 px-3 py-2 -mb-px text-sm',

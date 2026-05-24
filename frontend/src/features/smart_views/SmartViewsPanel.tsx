@@ -29,6 +29,7 @@ import {
   Skeleton,
   ConfirmDialog,
 } from '@/shared/ui';
+import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 import { useToastStore } from '@/stores/useToastStore';
 import {
   deleteSmartView,
@@ -77,6 +78,20 @@ export function SmartViewsPanel({
   const [editingView, setEditingView] = useState<SmartViewResponse | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [sharingView, setSharingView] = useState<SmartViewResponse | null>(null);
+
+  // The project tab is conditionally rendered, so its id is only
+  // included in the keyboard nav set when projectId is present —
+  // otherwise ArrowRight on "user" would skip to a non-existent tab.
+  const enabledTabIds = useMemo<readonly Tab[]>(
+    () => (projectId ? ['user', 'project', 'presets'] : ['user', 'presets']),
+    [projectId],
+  );
+  const onTabKeyDown = useTabKeyboardNav<Tab>({
+    ids: enabledTabIds,
+    activeId: tab,
+    onChange: setTab,
+    orientation: 'horizontal',
+  });
 
   // The "presets" tab is a UX layer over the active list scope — installs
   // land in whichever scope was last active. We default to ``user`` so a
@@ -213,8 +228,10 @@ export function SmartViewsPanel({
         className="flex items-center border-b border-border-light px-2"
         role="tablist"
         aria-label={t('smartViews.title', { defaultValue: 'Smart Views' })}
+        onKeyDown={onTabKeyDown}
       >
         <TabButton
+          id="user"
           active={tab === 'user'}
           onClick={() => setTab('user')}
           label={t('smartViews.scope_user', { defaultValue: 'My views' })}
@@ -222,6 +239,7 @@ export function SmartViewsPanel({
         />
         {projectId && (
           <TabButton
+            id="project"
             active={tab === 'project'}
             onClick={() => setTab('project')}
             label={t('smartViews.scope_project', { defaultValue: 'Project views' })}
@@ -229,6 +247,7 @@ export function SmartViewsPanel({
           />
         )}
         <TabButton
+          id="presets"
           active={tab === 'presets'}
           onClick={() => setTab('presets')}
           label={t('smartViews.presets_tab', { defaultValue: 'Presets' })}
@@ -396,18 +415,22 @@ export function SmartViewsPanel({
 }
 
 interface TabButtonProps {
+  id: Tab;
   active: boolean;
   onClick: () => void;
   label: string;
   testId: string;
 }
 
-function TabButton({ active, onClick, label, testId }: TabButtonProps) {
+function TabButton({ id, active, onClick, label, testId }: TabButtonProps) {
   return (
     <button
       type="button"
       role="tab"
+      id={`smart-views-tab-${id}`}
       aria-selected={active}
+      aria-controls={`smart-views-panel-${id}`}
+      tabIndex={active ? 0 : -1}
       onClick={onClick}
       className={clsx(
         'px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors',

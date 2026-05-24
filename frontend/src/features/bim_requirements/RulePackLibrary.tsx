@@ -17,6 +17,7 @@ import { ClipboardEdit, Search, BookOpenCheck } from 'lucide-react';
 import clsx from 'clsx';
 
 import { EmptyState } from '@/shared/ui';
+import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 import { RulePackCard } from './RulePackCard';
 import { RulePackPreviewModal } from './RulePackPreviewModal';
 import { SEED_PACKS, type SeedPack, type SeedPackCategory } from './SEED_PACKS';
@@ -61,6 +62,17 @@ export function RulePackLibrary({ projectId, testId = 'rule-pack-library' }: Rul
   const [category, setCategory] = useState<CategoryFilter>('all');
   const [query, setQuery] = useState('');
   const [modal, setModal] = useState<ModalState>({ kind: 'closed' });
+
+  const categoryIds = useMemo<readonly CategoryFilter[]>(
+    () => CATEGORY_FILTERS.map((f) => f.value),
+    [],
+  );
+  const onCategoryKeyDown = useTabKeyboardNav<CategoryFilter>({
+    ids: categoryIds,
+    activeId: category,
+    onChange: setCategory,
+    orientation: 'horizontal',
+  });
 
   const visiblePacks = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -112,19 +124,26 @@ export function RulePackLibrary({ projectId, testId = 'rule-pack-library' }: Rul
         <div
           className="flex flex-wrap items-center gap-1.5"
           role="tablist"
-          aria-label={t('rulePacks.category_all', { defaultValue: 'All' })}
+          aria-label={t('rulePacks.filter_aria', {
+            defaultValue: 'Filter rule packs by category',
+          })}
+          onKeyDown={onCategoryKeyDown}
           data-testid={`${testId}-filters`}
         >
           {CATEGORY_FILTERS.map((f) => {
             const active = category === f.value;
+            const slug = f.value.toLowerCase().replace(/\s+/g, '-');
             return (
               <button
                 key={f.value}
                 type="button"
                 role="tab"
+                id={`rule-pack-category-tab-${slug}`}
                 aria-selected={active}
+                aria-controls={`rule-pack-category-panel-${slug}`}
+                tabIndex={active ? 0 : -1}
                 onClick={() => setCategory(f.value)}
-                data-testid={`${testId}-filter-${f.value.toLowerCase().replace(/\s+/g, '-')}`}
+                data-testid={`${testId}-filter-${slug}`}
                 className={clsx(
                   'rounded-full border px-3 py-1 text-[11px] font-medium transition-colors',
                   active

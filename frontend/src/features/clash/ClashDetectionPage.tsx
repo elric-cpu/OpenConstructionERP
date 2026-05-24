@@ -73,6 +73,7 @@ import { EmptyState } from '@/shared/ui/EmptyState';
 import { MiniGeometryPreview } from '@/shared/ui/MiniGeometryPreview';
 import { ConfirmDialog } from '@/shared/ui/ConfirmDialog';
 import { useConfirm } from '@/shared/hooks/useConfirm';
+import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 import { useToastStore } from '@/stores/useToastStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
@@ -4819,6 +4820,12 @@ function ClashDetailPanel({
   const [due, setDue] = useState(row.due_date ?? '');
   const [draft, setDraft] = useState('');
   const [tab, setTab] = useState<'comments' | 'activity'>('comments');
+  const onCollabTabKeyDown = useTabKeyboardNav<'comments' | 'activity'>({
+    ids: ['comments', 'activity'] as const,
+    activeId: tab,
+    onChange: setTab,
+    orientation: 'horizontal',
+  });
   const [replyTo, setReplyTo] = useState<string | null>(null);
   // @mention autocomplete state. ``mentionOpen`` is the cursor-relative
   // dropdown anchor; ``mentionQuery`` is the substring after the last
@@ -5221,6 +5228,7 @@ function ClashDetailPanel({
           <div>
             <div
               role="tablist"
+              onKeyDown={onCollabTabKeyDown}
               aria-label={t('clash.collaboration_tabs', {
                 defaultValue: 'Collaboration tabsâ€Œâ â€',
               })}
@@ -5229,7 +5237,10 @@ function ClashDetailPanel({
               <button
                 type="button"
                 role="tab"
+                id="clash-collab-tab-comments"
                 aria-selected={tab === 'comments'}
+                aria-controls="clash-collab-panel-comments"
+                tabIndex={tab === 'comments' ? 0 : -1}
                 onClick={() => setTab('comments')}
                 className={clsx(
                   'inline-flex items-center gap-1.5 border-b-2 px-3 py-1.5 text-xs font-medium',
@@ -5247,7 +5258,10 @@ function ClashDetailPanel({
               <button
                 type="button"
                 role="tab"
+                id="clash-collab-tab-activity"
                 aria-selected={tab === 'activity'}
+                aria-controls="clash-collab-panel-activity"
+                tabIndex={tab === 'activity' ? 0 : -1}
                 onClick={() => setTab('activity')}
                 className={clsx(
                   'inline-flex items-center gap-1.5 border-b-2 px-3 py-1.5 text-xs font-medium',

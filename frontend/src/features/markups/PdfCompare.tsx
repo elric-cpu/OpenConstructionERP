@@ -43,6 +43,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/shared/ui';
 import { Slider } from '@/shared/ui/Slider';
+import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { apiGet } from '@/shared/lib/api';
@@ -50,6 +51,7 @@ import { apiGet } from '@/shared/lib/api';
 // ── Types ───────────────────────────────────────────────────────────────────
 
 type CompareMode = 'overlay' | 'diff' | 'sidebyside';
+const COMPARE_MODE_IDS: readonly CompareMode[] = ['overlay', 'diff', 'sidebyside'];
 
 interface DocItem {
   id: string;
@@ -734,6 +736,12 @@ export function PdfComparePage() {
   );
 
   const [mode, setMode] = useState<CompareMode>('overlay');
+  const onCompareModeKeyDown = useTabKeyboardNav<CompareMode>({
+    ids: COMPARE_MODE_IDS,
+    activeId: mode,
+    onChange: setMode,
+    orientation: 'horizontal',
+  });
   const [zoom, setZoom] = useState(1.0);
   const [page, setPage] = useState(1);
   const [overlayOpacity, setOverlayOpacity] = useState(50);
@@ -966,12 +974,17 @@ export function PdfComparePage() {
           className="inline-flex items-center rounded-lg border border-border-light bg-surface-primary p-0.5"
           role="tablist"
           aria-label={t('pdf_compare.compare_mode', { defaultValue: 'Compare mode' })}
+          onKeyDown={onCompareModeKeyDown}
         >
           {MODES.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
+              type="button"
               role="tab"
+              id={`pdf-compare-mode-tab-${id}`}
               aria-selected={mode === id}
+              aria-controls={`pdf-compare-mode-panel-${id}`}
+              tabIndex={mode === id ? 0 : -1}
               onClick={() => setMode(id)}
               className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
                 mode === id

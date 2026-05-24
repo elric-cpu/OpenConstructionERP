@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { X, CheckCircle2, ChevronRight, Loader2, AlertCircle, XCircle } from 'lucide-react';
+import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 import {
   matchElementsApi,
   type ConfidenceBand,
@@ -15,6 +16,9 @@ import {
   type MatchCandidate,
 } from './api';
 import { NoMatchModal } from './NoMatchModal';
+
+type DetailTabKey = 'methods' | 'elements' | 'apply';
+const DETAIL_TAB_IDS: readonly DetailTabKey[] = ['methods', 'elements', 'apply'];
 
 interface Props {
   sessionId: string;
@@ -41,7 +45,13 @@ function ConfidencePill({ band, score }: { band: ConfidenceBand; score: number }
 export function MatchDetailPanel({ sessionId, group, onClose }: Props) {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const [tab, setTab] = useState<'elements' | 'methods' | 'apply'>('methods');
+  const [tab, setTab] = useState<DetailTabKey>('methods');
+  const onTabKeyDown = useTabKeyboardNav<DetailTabKey>({
+    ids: DETAIL_TAB_IDS,
+    activeId: tab,
+    onChange: setTab,
+    orientation: 'horizontal',
+  });
   const [noMatchOpen, setNoMatchOpen] = useState(false);
   const panelRef = useRef<HTMLElement | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
@@ -205,8 +215,9 @@ export function MatchDetailPanel({ sessionId, group, onClose }: Props) {
           className="px-4 border-b border-slate-200 dark:border-slate-700 flex gap-1"
           role="tablist"
           aria-label={t('match_elements.detail.tabs_label', 'Detail panel sections')}
+          onKeyDown={onTabKeyDown}
         >
-          {(['methods', 'elements', 'apply'] as const).map((tabKey) => (
+          {DETAIL_TAB_IDS.map((tabKey) => (
             <button
               key={tabKey}
               type="button"

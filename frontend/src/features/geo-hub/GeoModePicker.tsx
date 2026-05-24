@@ -7,11 +7,16 @@
  * preserves any contextual ids (active project / development). The
  * caller passes a per-page ``current`` so this component does not
  * have to know its mounting route.
+ *
+ * Keeps the bespoke segmented-pill styling so it matches the rest of
+ * the Geo Hub toolbar; uses {@link useTabKeyboardNav} for ArrowLeft /
+ * Right / Home / End nav + roving tabIndex.
  */
 
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Globe2, Building2, Boxes } from 'lucide-react';
+import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 
 export type GeoMode = 'global' | 'project' | 'development';
 
@@ -26,6 +31,8 @@ const ICONS = {
   project: Building2,
   development: Boxes,
 } as const;
+
+const GEO_MODES: readonly GeoMode[] = ['global', 'project', 'development'];
 
 export function GeoModePicker({
   current,
@@ -67,6 +74,19 @@ export function GeoModePicker({
     },
   ];
 
+  const disabledIds = items.filter((it) => !it.href).map((it) => it.key);
+
+  const onTabKeyDown = useTabKeyboardNav<GeoMode>({
+    ids: GEO_MODES,
+    activeId: current,
+    onChange: (next) => {
+      const item = items.find((it) => it.key === next);
+      if (item?.href) navigate(item.href);
+    },
+    orientation: 'horizontal',
+    disabledIds,
+  });
+
   return (
     <div
       className={[
@@ -75,6 +95,7 @@ export function GeoModePicker({
       ].join(' ')}
       role="tablist"
       aria-label={t('geo_hub.mode.tablist_label', { defaultValue: 'Map scope' })}
+      onKeyDown={onTabKeyDown}
       data-testid="geo-tour-mode-picker"
     >
       {items.map((it) => {
@@ -86,7 +107,10 @@ export function GeoModePicker({
             key={it.key}
             type="button"
             role="tab"
+            id={`geo-hub-mode-tab-${it.key}`}
             aria-selected={active}
+            aria-controls={`geo-hub-mode-panel-${it.key}`}
+            tabIndex={active ? 0 : -1}
             disabled={!it.href}
             title={it.description}
             onClick={() => {

@@ -1,12 +1,16 @@
 /**
  * `<InspectorPanel>` — right-side contextual editor (320 px, collapsible).
  *
- * Two context modes via a `role="tablist"` (03_ux_visual §2.4):
+ * Two context modes shown via a labelled status pill (03_ux_visual §2.4):
  *   1. **Node** (a single node selected) — a friendly form generated from the
  *      node-type's `params_schema` (string / number / boolean / enum), each
  *      field with a localized label + helper. Not raw JSON.
  *   2. **Pipeline** (nothing / many selected) — name, description, project
  *      binding, published toggle, plus a plain-language summary stub.
+ *
+ * The mode is driven by the canvas selection, not by clicking here, so an
+ * ARIA `tablist` would be a focus trap. The visible pill below is rendered
+ * as a passive status indicator.
  *
  * All strings via `t(...)`. Logical props for RTL. Footer: Duplicate / Delete.
  */
