@@ -56,6 +56,19 @@ frontend/playwright.video.config.ts
 frontend/e2e/_*.spec.ts
 frontend/e2e/*-diagnostic.spec.ts
 
+# New Playwright E2E harness (tests/e2e/) — generated artefacts only
+frontend/qa-report/
+frontend/qa-screenshots/
+frontend/qa-output/
+frontend/qa-results.json
+frontend/playwright/.auth/
+frontend/test-results/
+qa-report/
+qa-screenshots/
+qa-output/
+playwright/.auth/
+test-results/
+
 # Dev / debug artefacts
 backend/audit_output.txt
 backend/data/bim_samples/
