@@ -67,6 +67,16 @@ function isStandalone(): boolean {
   return nav.standalone === true;
 }
 
+function isLocalDev(): boolean {
+  // Suppress the install nudge during local development — the prompt is
+  // confusing for devs running `npm run dev` against a Vite server, and
+  // an installed PWA pointing at localhost is not a useful artefact.
+  if (import.meta.env.DEV) return true;
+  if (typeof window === 'undefined') return false;
+  const host = window.location.hostname;
+  return host === 'localhost' || host === '127.0.0.1' || host === '[::1]' || host === '::1';
+}
+
 function dismissedRecently(): boolean {
   try {
     const raw = localStorage.getItem(DISMISS_KEY);
@@ -92,6 +102,7 @@ export function PWAInstallPrompt() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (isStandalone()) return;
+    if (isLocalDev()) return;
 
     const handler = (e: Event) => {
       // Prevent Chrome's mini-infobar; we'll show our own UI instead.
@@ -118,6 +129,7 @@ export function PWAInstallPrompt() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (isStandalone()) return;
+    if (isLocalDev()) return;
     if (!isIosSafari()) return;
     try {
       if (localStorage.getItem(IOS_HINT_KEY) === '1') return;

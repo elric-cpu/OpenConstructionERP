@@ -1,6 +1,7 @@
 // AI Agents — list registered agents, run them, watch the ReAct timeline.
 import { useMemo, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Bot,
@@ -12,6 +13,7 @@ import {
   Loader2,
   Play,
   ChevronRight,
+  Settings as SettingsIcon,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -53,6 +55,16 @@ export function AgentsPage(): JSX.Element {
     queryKey: ['ai-agents', 'list'],
     queryFn: () => aiAgentsApi.listAgents(),
   });
+
+  const healthQuery = useQuery({
+    queryKey: ['ai-agents', 'health'],
+    queryFn: () => aiAgentsApi.health(),
+    // 30 s — long enough to avoid hammering, short enough that fixing
+    // /settings/ai and tabbing back updates the banner promptly.
+    staleTime: 30_000,
+  });
+  const llmConfigured = healthQuery.data?.llm_configured ?? true;
+  const healthLoaded = healthQuery.isSuccess;
 
   const runQuery = useQuery({
     queryKey: ['ai-agents', 'run', activeRunId],
@@ -105,6 +117,36 @@ export function AgentsPage(): JSX.Element {
           </p>
         </div>
       </div>
+
+      {/* LLM-provider banner — surfaces the most common failure cause
+          (no_llm) upfront instead of letting the user write a prompt,
+          hit Run, and stare at a cryptic "failed" row. */}
+      {healthLoaded && !llmConfigured && (
+        <div
+          role="alert"
+          className="flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-900/20"
+        >
+          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-300" />
+          <div className="flex-1 text-sm">
+            <p className="font-semibold text-amber-900 dark:text-amber-100">
+              {t('agents.no_llm_title', 'AI provider not configured')}
+            </p>
+            <p className="mt-1 text-amber-800 dark:text-amber-200">
+              {t(
+                'agents.no_llm_body',
+                'Add an API key (Anthropic, OpenAI, Gemini, OpenRouter, …) in Settings → AI to run agents. Runs started without one fail immediately.',
+              )}
+            </p>
+            <Link
+              to={healthQuery.data?.settings_url ?? '/settings/ai'}
+              className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
+            >
+              <SettingsIcon className="h-3.5 w-3.5" />
+              {t('agents.open_ai_settings', 'Open AI settings')}
+            </Link>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Agent catalogue */}
@@ -198,7 +240,19 @@ export function AgentsPage(): JSX.Element {
                   </span>
                   <button
                     type="submit"
-                    disabled={!userInput.trim() || startMutation.isPending}
+                    disabled={
+                      !userInput.trim() ||
+                      startMutation.isPending ||
+                      (healthLoaded && !llmConfigured)
+                    }
+                    title={
+                      healthLoaded && !llmConfigured
+                        ? t(
+                            'agents.run_disabled_no_llm',
+                            'Configure an AI provider in Settings → AI first.',
+                          )
+                        : undefined
+                    }
                     className={clsx(
                       'inline-flex items-center gap-2 rounded-md bg-violet-600 px-4 py-2 text-sm font-medium text-white transition',
                       'hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-zinc-400',
@@ -236,9 +290,28 @@ function RunTimeline({ run }: { run: AgentRun }): JSX.Element {
   const { t } = useTranslation();
   const steps = useMemo(() => run.steps ?? [], [run.steps]);
 
+  // Humanise the few backend failure_reason enum values we know about so
+  // the user sees "AI provider not configured" instead of "no_llm".
+  const failureLabel = (() => {
+    if (!run.failure_reason) return null;
+    switch (run.failure_reason) {
+      case 'no_llm':
+        return t(
+          'agents.failure.no_llm',
+          'AI provider not configured — add an API key in Settings → AI.',
+        );
+      case 'unknown_agent':
+        return t('agents.failure.unknown_agent', 'Unknown agent registered.');
+      case 'exception':
+        return t('agents.failure.exception', 'Agent crashed during execution.');
+      default:
+        return run.failure_reason;
+    }
+  })();
+
   return (
     <div className="space-y-4 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
-      <header className="flex items-center justify-between text-sm">
+      <header className="flex items-center justify-between gap-3 text-sm">
         <div className="flex items-center gap-2">
           <span
             className={clsx(
@@ -256,10 +329,20 @@ function RunTimeline({ run }: { run: AgentRun }): JSX.Element {
             {t('agents.tokens', 'Tokens')}: {run.total_tokens}
           </span>
         </div>
-        {run.failure_reason && (
-          <span className="text-xs text-rose-600">{run.failure_reason}</span>
+        {failureLabel && (
+          <span className="text-right text-xs text-rose-600">{failureLabel}</span>
         )}
       </header>
+
+      {run.failure_reason === 'no_llm' && (
+        <Link
+          to="/settings/ai"
+          className="inline-flex items-center gap-1.5 self-start rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
+        >
+          <SettingsIcon className="h-3.5 w-3.5" />
+          {t('agents.open_ai_settings', 'Open AI settings')}
+        </Link>
+      )}
 
       {/* Steps timeline */}
       <ol className="space-y-3">

@@ -63,6 +63,13 @@ export interface CreateAgentRunRequest {
   user_input: string;
 }
 
+export interface AgentHealth {
+  llm_configured: boolean;
+  provider: string | null;
+  model: string | null;
+  settings_url: string;
+}
+
 export const aiAgentsApi = {
   listAgents: () => apiGet<AgentDescriptor[]>('/v1/ai-agents/agents/'),
   listRuns: (projectId?: string) =>
@@ -72,4 +79,5 @@ export const aiAgentsApi = {
   getRun: (runId: string) => apiGet<AgentRun>(`/v1/ai-agents/runs/${runId}`),
   startRun: (body: CreateAgentRunRequest) =>
     apiPost<AgentRun, CreateAgentRunRequest>('/v1/ai-agents/runs/', body),
+  health: () => apiGet<AgentHealth>('/v1/ai-agents/health/'),
 };

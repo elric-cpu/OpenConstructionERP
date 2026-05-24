@@ -25,6 +25,7 @@ from app.database import async_session_factory
 from app.dependencies import CurrentUserId, RequirePermission, SessionDep
 from app.modules.ai_agents.schemas import (
     AgentDescriptor,
+    AgentHealthResponse,
     AgentRunListItem,
     AgentRunResponse,
     AgentStepResponse,
@@ -106,6 +107,41 @@ async def list_tools_endpoint(
 ) -> list[ToolDescriptor]:
     """List every tool the runner can dispatch to."""
     return [ToolDescriptor(**t) for t in service.list_registered_tools()]
+
+
+@router.get(
+    "/health/",
+    response_model=AgentHealthResponse,
+    dependencies=[Depends(RequirePermission("ai_agents.read"))],
+)
+async def agents_health(
+    user_id: CurrentUserId,
+    session: SessionDep,
+) -> AgentHealthResponse:
+    """Cheap pre-flight: does the caller have a usable LLM provider?
+
+    The Agents page polls this on mount so it can warn before the user
+    spends a turn writing a prompt only to get a cryptic ``no_llm`` row
+    on the runs timeline. We resolve provider/key/model exactly the way
+    ``_resolve_production_llm`` does, but never instantiate the bridge.
+    """
+    uid = uuid.UUID(user_id)
+    try:
+        from app.modules.ai.ai_client import resolve_provider_key_model
+        from app.modules.ai.repository import AISettingsRepository
+    except Exception:  # pragma: no cover - import safety
+        return AgentHealthResponse(llm_configured=False)
+
+    settings = await AISettingsRepository(session).get_by_user_id(uid)
+    try:
+        provider, _api_key, model = resolve_provider_key_model(settings)
+    except ValueError:
+        return AgentHealthResponse(llm_configured=False)
+    return AgentHealthResponse(
+        llm_configured=True,
+        provider=provider,
+        model=model,
+    )
 
 
 # ── Run lifecycle ────────────────────────────────────────────────────────

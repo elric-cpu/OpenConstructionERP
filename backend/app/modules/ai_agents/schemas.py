@@ -90,3 +90,20 @@ class AgentRunListItem(BaseModel):
     total_tokens: int = 0
     created_at: datetime
     updated_at: datetime
+
+
+# ── Health ──────────────────────────────────────────────────────────────────
+
+
+class AgentHealthResponse(BaseModel):
+    """Pre-flight check so the UI can warn before the user wastes a click.
+
+    Returned by ``GET /ai-agents/health/``. ``llm_configured`` is the only
+    field the UI strictly needs; ``provider`` / ``model`` are surfaced so
+    the page can show "Will run on Anthropic claude-sonnet-4-5" reassurance.
+    """
+
+    llm_configured: bool
+    provider: str | None = None
+    model: str | None = None
+    settings_url: str = "/settings/ai"

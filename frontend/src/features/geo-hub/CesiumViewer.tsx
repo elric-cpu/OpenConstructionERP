@@ -249,6 +249,17 @@ async function loadCesium(): Promise<CesiumLike | null> {
       console.warn('[geo_hub] cesium import resolved but Viewer constructor is missing', Object.keys(mod || {}).slice(0, 10));
       return null;
     }
+    // Silence the "Cesium ion default access token" credit banner / popup.
+    // We don't use any Ion-hosted services (base imagery is OSM, terrain is
+    // ellipsoid). Setting the token to an empty string disables Ion calls
+    // outright and stops Cesium from rendering its default-token watermark.
+    // Enterprise tenants who *do* want Ion assets override this via the
+    // Terrain admin page after viewer boot.
+    try {
+      if (mod.Ion) mod.Ion.defaultAccessToken = '';
+    } catch {
+      // Ion namespace shape changed between major versions — never block boot.
+    }
     return mod as CesiumLike;
   } catch (err) {
     // eslint-disable-next-line no-console
@@ -338,6 +349,18 @@ export function CesiumViewer({
         // which would leave them as unstyled (invisible) toolbar pills.
         // The lat/lon HUD + altitude readout + our overlay panel cover
         // every interaction the home button traditionally provides.
+        // Hidden credit container. Cesium's built-in CreditDisplay always
+        // injects an "Ion default-token" credit whenever Ion.defaultAccessToken
+        // is unset OR matches the bundled default; clicking that credit opens
+        // a modal nagging the user to sign up. Setting the token to empty
+        // string did NOT suppress this (Cesium treats falsy as default).
+        // The robust fix is to redirect all viewer-managed credits into a
+        // detached <div>; we then render our own OSM attribution as an HTML
+        // overlay so we still honour the OSM tile-usage policy.
+        const hiddenCreditContainer = document.createElement('div');
+        hiddenCreditContainer.style.display = 'none';
+        hiddenCreditContainer.setAttribute('aria-hidden', 'true');
+
         const v = new cesium.Viewer(container, {
           terrainProvider: new cesium.EllipsoidTerrainProvider(),
           baseLayer: new cesium.ImageryLayer(
@@ -356,6 +379,7 @@ export function CesiumViewer({
           homeButton: false,
           navigationHelpButton: false,
           sceneModePicker: false,
+          creditContainer: hiddenCreditContainer,
         });
         viewer = v;
         viewerRef.current = v;
@@ -854,6 +878,19 @@ export function CesiumViewer({
         data-testid="geo-hub-cesium-container"
         className="h-full w-full bg-slate-900"
       />
+      {/* OSM attribution overlay — required by the OpenStreetMap tile
+          usage policy. We hide Cesium's own credit container (to suppress
+          the Ion default-token nag) so this owner-rendered badge keeps us
+          compliant. Bottom-left, small, accessible. */}
+      <a
+        href="https://www.openstreetmap.org/copyright"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="absolute bottom-1 left-1 z-10 rounded bg-black/40 px-1.5 py-0.5 text-[10px] leading-tight text-white/80 backdrop-blur-sm hover:text-white"
+        data-testid="geo-hub-osm-attribution"
+      >
+        © OpenStreetMap contributors
+      </a>
       {cesiumStatus === 'pending' && (
         <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-slate-950/40 text-sm text-slate-200 backdrop-blur-sm">
           <div className="relative">

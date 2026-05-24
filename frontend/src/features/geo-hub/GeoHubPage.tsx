@@ -570,7 +570,7 @@ export function GeoHubPage() {
     // Full-bleed layout — negate AppLayout's <main> padding (px-4 pt-6 pb-4 sm:px-7)
     // so the globe fills the viewport, then claim exactly viewport-minus-header
     // height so the Cesium canvas never spills past the visible browser area.
-    <div className="-mx-4 -mt-6 -mb-4 flex h-[calc(100vh-var(--oe-header-height,52px))] w-[calc(100%+2rem)] flex-col sm:-mx-7 sm:w-[calc(100%+3.5rem)]">
+    <div className="-mx-4 -mt-6 -mb-4 flex h-[calc(100dvh-var(--oe-header-height,52px))] w-[calc(100%+2rem)] flex-col sm:-mx-7 sm:w-[calc(100%+3.5rem)]">
       <header
         className={[
           'flex items-center gap-4 border-b border-border bg-surface-primary',
