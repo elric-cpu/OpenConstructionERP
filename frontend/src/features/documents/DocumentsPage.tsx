@@ -6,7 +6,7 @@ import {
   Search, X, Loader2, FolderOpen, ChevronDown, HardDrive, Eye,
   MoreHorizontal, Pencil, Tag, Ruler, Send,
 } from 'lucide-react';
-import { Button, Badge, EmptyState, Breadcrumb, ViewInBIMButton } from '@/shared/ui';
+import { Button, Badge, EmptyState, Breadcrumb, RecoveryCard, ViewInBIMButton } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import SimilarItemsPanel from '@/shared/ui/SimilarItemsPanel';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
@@ -463,7 +463,7 @@ export function DocumentsPage() {
 
   /* ── Data fetching ──────────────────────────────────────────────────── */
 
-  const { data: documents, isLoading } = useQuery({
+  const { data: documents, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['documents', projectId, category, debouncedQuery],
     queryFn: () => {
       const params = new URLSearchParams();
@@ -1175,6 +1175,8 @@ export function DocumentsPage() {
             </div>
           ))}
         </div>
+      ) : isError ? (
+        <RecoveryCard error={error} onRetry={() => refetch()} />
       ) : sortedDocuments.length === 0 ? (
         debouncedQuery.trim() ? (
           <EmptyState

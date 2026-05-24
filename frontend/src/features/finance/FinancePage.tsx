@@ -34,6 +34,7 @@ import {
   Badge,
   EmptyState,
   Breadcrumb,
+  RecoveryCard,
   SkeletonTable,
   ConfirmDialog,
   TabBar,
@@ -993,7 +994,7 @@ function BudgetsTab({ projectId }: { projectId: string }) {
     </WideModal>
   );
 
-  const { data: budgets, isLoading } = useQuery({
+  const budgetsQuery = useQuery({
     queryKey: ['finance-budgets', projectId],
     queryFn: () =>
       apiGet<BudgetLine[]>(
@@ -1001,6 +1002,7 @@ function BudgetsTab({ projectId }: { projectId: string }) {
       ),
     select: (d): BudgetLine[] => normalizeListResponse(d),
   });
+  const { data: budgets, isLoading, isError, error, refetch } = budgetsQuery;
 
   const filtered = useMemo(() => {
     if (!budgets) return [];
@@ -1032,6 +1034,8 @@ function BudgetsTab({ projectId }: { projectId: string }) {
   }, [filtered]);
 
   if (isLoading) return <SkeletonTable rows={6} columns={8} />;
+
+  if (isError) return <RecoveryCard error={error} onRetry={() => refetch()} />;
 
   if (!budgets || budgets.length === 0) {
     return (
@@ -1689,7 +1693,13 @@ function InvoicesTab({ projectId }: { projectId: string }) {
       }),
   });
 
-  const { data: invoices, isLoading } = useQuery({
+  const {
+    data: invoices,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
     queryKey: ['finance-invoices', projectId, subTab],
     queryFn: () =>
       apiGet<InvoiceWire[]>(
@@ -1862,6 +1872,8 @@ function InvoicesTab({ projectId }: { projectId: string }) {
 
         {isLoading ? (
           <SkeletonTable rows={5} columns={6} />
+        ) : isError ? (
+          <RecoveryCard error={error} onRetry={() => refetch()} />
         ) : !filtered.length ? (
           <div className="p-8">
             <EmptyState
@@ -2395,7 +2407,13 @@ function PaymentsTab({
 }) {
   const { t } = useTranslation();
 
-  const { data: payments, isLoading } = useQuery({
+  const {
+    data: payments,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
     queryKey: ['finance-payments', projectId],
     queryFn: () =>
       apiGet<Payment[]>(`/v1/finance/payments/?project_id=${projectId}`),
@@ -2412,6 +2430,8 @@ function PaymentsTab({
   }, [payments]);
 
   if (isLoading) return <SkeletonTable rows={5} columns={6} />;
+
+  if (isError) return <RecoveryCard error={error} onRetry={() => refetch()} />;
 
   if (!payments || payments.length === 0) {
     return (
@@ -2554,7 +2574,13 @@ function EVMTab({
   // sorted by snapshot_date DESC — the most-recent snapshot is items[0].
   // EVM money/index fields ship as Decimal-as-string; coerce to numbers
   // for the KPI cards. Empty list → show the "No EVM data" empty state.
-  const { data: evm, isLoading } = useQuery({
+  const {
+    data: evm,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
     queryKey: ['finance-evm', projectId],
     queryFn: () =>
       apiGet<{
@@ -2619,6 +2645,8 @@ function EVMTab({
       </div>
     );
   }
+
+  if (isError) return <RecoveryCard error={error} onRetry={() => refetch()} />;
 
   if (!evm) {
     const hasBudget =

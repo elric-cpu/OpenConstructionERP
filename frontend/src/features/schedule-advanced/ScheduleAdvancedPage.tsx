@@ -27,6 +27,7 @@ import {
   Badge,
   EmptyState,
   Breadcrumb,
+  RecoveryCard,
   SkeletonTable,
   WideModal,
   ConfirmDialog,
@@ -419,17 +420,7 @@ export function ScheduleAdvancedPage() {
           {projectsQ.isLoading ? (
             <SkeletonTable rows={6} columns={3} />
           ) : projectsQ.isError ? (
-            <EmptyState
-              icon={<AlertCircle size={22} strokeWidth={1.5} />}
-              title={t('common.error', { defaultValue: 'Error' })}
-              description={t('schedule_advanced.projects_load_error', {
-                defaultValue: 'Failed to load projects. Please try again.',
-              })}
-              action={{
-                label: t('common.retry', { defaultValue: 'Retry' }),
-                onClick: () => projectsQ.refetch(),
-              }}
-            />
+            <RecoveryCard error={projectsQ.error} onRetry={() => projectsQ.refetch()} />
           ) : (
             <RequiresProject
               emptyHint={t('schedule_advanced.no_project_desc', {
@@ -785,27 +776,12 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 /* Shared failed-query surface — a failed fetch must NOT masquerade as an
- * empty success. Mirrors the isError + retry pattern used across sibling
- * feature pages (e.g. HSEAdvancedPage). */
-function ErrorCard({ onRetry }: { onRetry?: () => void }) {
-  const { t } = useTranslation();
+ * empty success. Routes through RecoveryCard so 401/403 get the correct
+ * sign-in / request-access CTA instead of a generic retry. */
+function ErrorCard({ onRetry, error }: { onRetry?: () => void; error?: unknown }) {
   return (
     <Card className="py-12">
-      <EmptyState
-        icon={<AlertCircle size={28} strokeWidth={1.5} />}
-        title={t('common.error', { defaultValue: 'Error' })}
-        description={t('schedule_advanced.load_error', {
-          defaultValue: 'Failed to load schedule data. Please try again.',
-        })}
-        action={
-          onRetry
-            ? {
-                label: t('common.retry', { defaultValue: 'Retry' }),
-                onClick: onRetry,
-              }
-            : undefined
-        }
-      />
+      <RecoveryCard error={error} onRetry={onRetry} />
     </Card>
   );
 }
@@ -2560,21 +2536,9 @@ function ConstraintsTab({
             <SkeletonTable rows={6} columns={5} />
           </div>
         ) : isError ? (
-          <EmptyState
-            icon={<AlertCircle size={22} strokeWidth={1.5} />}
-            title={t('common.error', { defaultValue: 'Error' })}
-            description={t('schedule_advanced.load_error', {
-              defaultValue: 'Failed to load schedule data. Please try again.',
-            })}
-            action={
-              onRetry
-                ? {
-                    label: t('common.retry', { defaultValue: 'Retry' }),
-                    onClick: onRetry,
-                  }
-                : undefined
-            }
-          />
+          <div className="p-4">
+            <RecoveryCard onRetry={onRetry} error={undefined} />
+          </div>
         ) : constraints.length === 0 ? (
           <EmptyState
             icon={<AlertCircle size={22} />}

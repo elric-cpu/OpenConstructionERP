@@ -17,7 +17,6 @@ import {
   Loader2,
   ChevronRight,
   ArrowRight,
-  AlertTriangle,
   Pencil,
   Trash2,
 } from 'lucide-react';
@@ -27,6 +26,7 @@ import {
   Badge,
   EmptyState,
   Breadcrumb,
+  RecoveryCard,
   SkeletonTable,
   ConfirmDialog,
 } from '@/shared/ui';
@@ -697,17 +697,10 @@ export function VariationsPage() {
           </div>
         ) : isError ? (
           <div className="p-4">
-            <EmptyState
-              icon={<AlertTriangle size={22} />}
-              title={t('common.error', { defaultValue: 'Error' })}
-              description={t('variations.load_error', {
-                defaultValue: 'Failed to load data. Please try again.',
-              })}
-              action={{
-                label: t('common.retry', { defaultValue: 'Retry' }),
-                onClick: () => {
-                  void activeQuery.refetch();
-                },
+            <RecoveryCard
+              error={activeQuery.error}
+              onRetry={() => {
+                void activeQuery.refetch();
               }}
             />
           </div>

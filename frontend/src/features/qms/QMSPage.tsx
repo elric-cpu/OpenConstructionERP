@@ -23,6 +23,7 @@ import {
   Badge,
   EmptyState,
   Breadcrumb,
+  RecoveryCard,
   SkeletonTable,
   WideModal,
   WideModalSection,
@@ -369,15 +370,7 @@ export function QMSPage() {
             <SkeletonTable rows={8} columns={5} />
           </div>
         ) : loadError ? (
-          <EmptyState
-            icon={<AlertOctagon size={22} />}
-            title={t('qms.load_error', { defaultValue: 'Could not load QMS data' })}
-            description={getErrorMessage(loadError)}
-            action={{
-              label: t('common.retry', { defaultValue: 'Retry' }),
-              onClick: () => activeQuery.refetch(),
-            }}
-          />
+          <RecoveryCard error={loadError} onRetry={() => activeQuery.refetch()} />
         ) : tab === 'itp' ? (
           <ITPTable rows={filteredItp} onAction={() => setCreateOpen(true)} />
         ) : tab === 'inspections' ? (

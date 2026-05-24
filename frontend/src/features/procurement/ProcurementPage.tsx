@@ -15,7 +15,6 @@ import {
   Loader2,
   Trash2,
   Pencil,
-  AlertTriangle,
 } from 'lucide-react';
 import {
   Button,
@@ -23,6 +22,7 @@ import {
   Badge,
   EmptyState,
   Breadcrumb,
+  RecoveryCard,
   SkeletonTable,
   InfoHint,
 } from '@/shared/ui';
@@ -535,7 +535,7 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
       }),
   });
 
-  const { data: orders, isLoading, isError, refetch } = useQuery({
+  const { data: orders, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['procurement-po', projectId],
     queryFn: () =>
       apiGet<{ items: Array<PurchaseOrder & { vendor_contact_id?: string | null }>; total: number }>(
@@ -564,17 +564,7 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
   if (isError) {
     return (
       <Card className="py-12">
-        <EmptyState
-          icon={<AlertTriangle size={28} strokeWidth={1.5} />}
-          title={t('common.error', { defaultValue: 'Error' })}
-          description={t('procurement.po_load_error', {
-            defaultValue: 'Failed to load purchase orders. Please try again.',
-          })}
-          action={{
-            label: t('common.retry', { defaultValue: 'Retry' }),
-            onClick: () => refetch(),
-          }}
-        />
+        <RecoveryCard error={error} onRetry={() => refetch()} />
       </Card>
     );
   }
@@ -1112,7 +1102,7 @@ function GoodsReceiptsTab({
   const { t } = useTranslation();
   const [search, setSearch] = useState('');
 
-  const { data: receipts, isLoading, isError, refetch } = useQuery({
+  const { data: receipts, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['procurement-gr', projectId],
     queryFn: () =>
       apiGet<{ items: GoodsReceipt[]; total: number }>(
@@ -1136,17 +1126,7 @@ function GoodsReceiptsTab({
   if (isError) {
     return (
       <Card className="py-12">
-        <EmptyState
-          icon={<AlertTriangle size={28} strokeWidth={1.5} />}
-          title={t('common.error', { defaultValue: 'Error' })}
-          description={t('procurement.gr_load_error', {
-            defaultValue: 'Failed to load goods receipts. Please try again.',
-          })}
-          action={{
-            label: t('common.retry', { defaultValue: 'Retry' }),
-            onClick: () => refetch(),
-          }}
-        />
+        <RecoveryCard error={error} onRetry={() => refetch()} />
       </Card>
     );
   }

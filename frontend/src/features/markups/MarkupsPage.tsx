@@ -30,7 +30,7 @@ import {
   FileText,
   TriangleRight,
 } from 'lucide-react';
-import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog } from '@/shared/ui';
+import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, RecoveryCard } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { apiGet } from '@/shared/lib/api';
 import { useToastStore } from '@/stores/useToastStore';
@@ -915,7 +915,7 @@ export function MarkupsPage() {
   // otherwise both queries fire their own copy of GET /v1/markups/ on
   // every page open.
   const noFilters = !filterType && !filterStatus && !filterDocumentId;
-  const { data: markups = [], isLoading } = useQuery({
+  const { data: markups = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: noFilters
       ? ['unified-markups', projectId, 'hub']
       : ['markups', projectId, filterType, filterStatus, filterDocumentId],
@@ -1375,6 +1375,8 @@ export function MarkupsPage() {
               <div className="flex items-center justify-center py-12">
                 <div className="h-5 w-5 animate-spin rounded-full border-2 border-oe-blue border-t-transparent" />
               </div>
+            ) : isError ? (
+              <RecoveryCard error={error} onRetry={() => refetch()} />
             ) : filteredMarkups.length === 0 ? (
               <EmptyState
                 icon={<PenTool size={28} strokeWidth={1.5} />}

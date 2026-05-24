@@ -24,6 +24,7 @@ import {
   Badge,
   EmptyState,
   Breadcrumb,
+  RecoveryCard,
   SkeletonTable,
   WideModal,
   WideModalSection,
@@ -381,17 +382,7 @@ export function BidManagementPage() {
             <SkeletonTable rows={8} columns={5} />
           </div>
         ) : packagesQ.isError ? (
-          <EmptyState
-            icon={<XCircle size={22} />}
-            title={t('bid_management.load_failed', {
-              defaultValue: 'Could not load bid packages',
-            })}
-            description={getErrorMessage(packagesQ.error)}
-            action={{
-              label: t('common.retry', { defaultValue: 'Retry' }),
-              onClick: () => packagesQ.refetch(),
-            }}
-          />
+          <RecoveryCard error={packagesQ.error} onRetry={() => packagesQ.refetch()} />
         ) : tab === 'packages' ? (
           <PackageTable
             rows={filteredPackages}

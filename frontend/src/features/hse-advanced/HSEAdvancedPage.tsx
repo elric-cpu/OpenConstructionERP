@@ -24,6 +24,7 @@ import {
   Badge,
   EmptyState,
   Breadcrumb,
+  RecoveryCard,
   SkeletonTable,
 } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
@@ -482,7 +483,7 @@ function IncidentsTab({ projectId }: { projectId: string }) {
     severity: 'minor' as IncidentSeverity,
   });
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['hse-investigations', projectId],
     queryFn: () => fetchInvestigations(projectId),
     select: (d) => normalizeListResponse<IncidentInvestigation>(d),
@@ -531,13 +532,7 @@ function IncidentsTab({ projectId }: { projectId: string }) {
   if (isError) {
     return (
       <Card className="py-12">
-        <EmptyState
-          icon={<AlertTriangle size={28} strokeWidth={1.5} />}
-          title={t('common.error', { defaultValue: 'Error' })}
-          description={t('hse_advanced.load_error', {
-            defaultValue: 'Failed to load HSE records. Please try again.',
-          })}
-        />
+        <RecoveryCard error={error} onRetry={() => refetch()} />
       </Card>
     );
   }
@@ -864,7 +859,7 @@ function JSATab({ projectId }: { projectId: string }) {
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ title: '', task_description: '', location: '' });
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['hse-jsas', projectId],
     queryFn: () => fetchJSAs(projectId),
     select: (d) => normalizeListResponse<JobSafetyAnalysis>(d),
@@ -902,13 +897,7 @@ function JSATab({ projectId }: { projectId: string }) {
   if (isError) {
     return (
       <Card className="py-12">
-        <EmptyState
-          icon={<AlertTriangle size={28} strokeWidth={1.5} />}
-          title={t('common.error', { defaultValue: 'Error' })}
-          description={t('hse_advanced.load_error', {
-            defaultValue: 'Failed to load HSE records. Please try again.',
-          })}
-        />
+        <RecoveryCard error={error} onRetry={() => refetch()} />
       </Card>
     );
   }
@@ -1059,7 +1048,7 @@ function PermitsTab({ projectId }: { projectId: string }) {
     expires_at: '',
   });
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['hse-permits', projectId],
     queryFn: () => fetchPermits(projectId),
     select: (d) => normalizeListResponse<PermitToWork>(d),
@@ -1117,13 +1106,7 @@ function PermitsTab({ projectId }: { projectId: string }) {
   if (isError) {
     return (
       <Card className="py-12">
-        <EmptyState
-          icon={<AlertTriangle size={28} strokeWidth={1.5} />}
-          title={t('common.error', { defaultValue: 'Error' })}
-          description={t('hse_advanced.load_error', {
-            defaultValue: 'Failed to load HSE records. Please try again.',
-          })}
-        />
+        <RecoveryCard error={error} onRetry={() => refetch()} />
       </Card>
     );
   }
@@ -1510,7 +1493,7 @@ function ToolboxTab({ projectId }: { projectId: string }) {
     summary: '',
   });
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['hse-toolbox', projectId],
     queryFn: () => fetchToolboxTalks(projectId),
     select: (d) => normalizeListResponse<ToolboxTalk>(d),
@@ -1551,13 +1534,7 @@ function ToolboxTab({ projectId }: { projectId: string }) {
   if (isError) {
     return (
       <Card className="py-12">
-        <EmptyState
-          icon={<AlertTriangle size={28} strokeWidth={1.5} />}
-          title={t('common.error', { defaultValue: 'Error' })}
-          description={t('hse_advanced.load_error', {
-            defaultValue: 'Failed to load HSE records. Please try again.',
-          })}
-        />
+        <RecoveryCard error={error} onRetry={() => refetch()} />
       </Card>
     );
   }
@@ -1727,7 +1704,7 @@ function PPETab({ projectId }: { projectId: string }) {
     quantity: 1,
   });
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['hse-ppe', projectId],
     queryFn: () => fetchPPEIssues(projectId),
     select: (d) => normalizeListResponse<PPEIssue>(d),
@@ -1802,13 +1779,7 @@ function PPETab({ projectId }: { projectId: string }) {
   if (isError) {
     return (
       <Card className="py-12">
-        <EmptyState
-          icon={<AlertTriangle size={28} strokeWidth={1.5} />}
-          title={t('common.error', { defaultValue: 'Error' })}
-          description={t('hse_advanced.load_error', {
-            defaultValue: 'Failed to load HSE records. Please try again.',
-          })}
-        />
+        <RecoveryCard error={error} onRetry={() => refetch()} />
       </Card>
     );
   }
@@ -2170,7 +2141,7 @@ function AuditsTab({ projectId }: { projectId: string }) {
     scope: '',
   });
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['hse-audits', projectId],
     queryFn: () => fetchAudits(projectId),
     select: (d) => normalizeListResponse<SafetyAudit>(d),
@@ -2211,13 +2182,7 @@ function AuditsTab({ projectId }: { projectId: string }) {
   if (isError) {
     return (
       <Card className="py-12">
-        <EmptyState
-          icon={<AlertTriangle size={28} strokeWidth={1.5} />}
-          title={t('common.error', { defaultValue: 'Error' })}
-          description={t('hse_advanced.load_error', {
-            defaultValue: 'Failed to load HSE records. Please try again.',
-          })}
-        />
+        <RecoveryCard error={error} onRetry={() => refetch()} />
       </Card>
     );
   }
@@ -2435,7 +2400,7 @@ function CAPALegacyTab({ projectId }: { projectId: string }) {
     due_date: '',
   });
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['hse-capa', projectId],
     queryFn: () => fetchCAPAs(projectId),
     select: (d) => normalizeListResponse<CorrectiveAction>(d),
@@ -2500,13 +2465,7 @@ function CAPALegacyTab({ projectId }: { projectId: string }) {
   if (isError) {
     return (
       <Card className="py-12">
-        <EmptyState
-          icon={<AlertTriangle size={28} strokeWidth={1.5} />}
-          title={t('common.error', { defaultValue: 'Error' })}
-          description={t('hse_advanced.load_error', {
-            defaultValue: 'Failed to load HSE records. Please try again.',
-          })}
-        />
+        <RecoveryCard error={error} onRetry={() => refetch()} />
       </Card>
     );
   }
@@ -2752,7 +2711,7 @@ function CorrectiveActionsFSMTab({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
   const addToast = useToastStore((s) => s.addToast);
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['hse-corrective-actions', projectId],
     queryFn: () => fetchCorrectiveActions({ projectId }),
     select: (d) => normalizeListResponse<CorrectiveActionRow>(d),
@@ -2787,13 +2746,7 @@ function CorrectiveActionsFSMTab({ projectId }: { projectId: string }) {
   if (isError) {
     return (
       <Card className="py-12">
-        <EmptyState
-          icon={<AlertTriangle size={28} strokeWidth={1.5} />}
-          title={t('common.error', { defaultValue: 'Error' })}
-          description={t('hse.advanced.ca_load_error', {
-            defaultValue: 'Failed to load corrective actions. Please try again.',
-          })}
-        />
+        <RecoveryCard error={error} onRetry={() => refetch()} />
       </Card>
     );
   }

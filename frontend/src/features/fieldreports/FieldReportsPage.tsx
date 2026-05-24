@@ -34,6 +34,7 @@ import {
   EmptyState,
   Breadcrumb,
   ConfirmDialog,
+  RecoveryCard,
   WideModal,
   WideModalSection,
   WideModalField,
@@ -198,7 +199,13 @@ export function FieldReportsPage() {
     enabled: !!projectId && view === 'calendar',
   });
 
-  const { data: listReports = [], isLoading: isListLoading } = useQuery({
+  const {
+    data: listReports = [],
+    isLoading: isListLoading,
+    isError: isListError,
+    error: listError,
+    refetch: refetchList,
+  } = useQuery({
     queryKey: ['fieldreports', 'list', projectId, statusFilter, typeFilter],
     queryFn: () =>
       fetchFieldReports(projectId, {
@@ -691,6 +698,10 @@ export function FieldReportsPage() {
               {Array.from({ length: 5 }).map((_, i) => (
                 <div key={i} className="h-12 animate-pulse rounded-lg bg-surface-secondary" />
               ))}
+            </div>
+          ) : isListError ? (
+            <div className="p-4">
+              <RecoveryCard error={listError} onRetry={() => refetchList()} />
             </div>
           ) : listReports.length === 0 ? (
             <div className="p-8">

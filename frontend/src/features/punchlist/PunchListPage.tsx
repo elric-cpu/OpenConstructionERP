@@ -27,6 +27,7 @@ import {
   Badge,
   EmptyState,
   Breadcrumb,
+  RecoveryCard,
   ConfirmDialog,
   WideModal,
   WideModalSection,
@@ -661,7 +662,7 @@ export function PunchListPage() {
 
   const projectId = activeProjectId || projects[0]?.id || '';
 
-  const { data: punchItems = [], isLoading } = useQuery({
+  const { data: punchItems = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ['punchlist', projectId, filterPriority, filterStatus, filterCategory, filterAssignee],
     queryFn: () =>
       fetchPunchItems(projectId, {
@@ -1117,6 +1118,8 @@ export function PunchListPage() {
           <div className="flex items-center justify-center py-16">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-oe-blue border-t-transparent" />
           </div>
+        ) : isError ? (
+          <RecoveryCard error={error} onRetry={() => refetch()} />
         ) : filteredItems.length === 0 ? (
           <EmptyState
             icon={<ListChecks size={28} strokeWidth={1.5} />}

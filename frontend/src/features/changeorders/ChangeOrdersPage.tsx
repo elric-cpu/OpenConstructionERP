@@ -16,7 +16,7 @@ import {
   Trash2,
   Download,
 } from 'lucide-react';
-import { Button, Card, Badge, EmptyState, Breadcrumb, InfoHint, ConfirmDialog } from '@/shared/ui';
+import { Button, Card, Badge, EmptyState, Breadcrumb, InfoHint, ConfirmDialog, RecoveryCard } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import {
   WideModal,
@@ -1185,7 +1185,7 @@ export function ChangeOrdersPage() {
   const project = useMemo(() => projects.find((p) => p.id === projectId), [projects, projectId]);
 
   // Fetch change orders
-  const { data: orders = [], isLoading, isError } = useQuery({
+  const { data: orders = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ['changeorders', projectId],
     queryFn: () => apiGet<ChangeOrder[]>(`/v1/changeorders/?project_id=${projectId}`),
     select: (d): ChangeOrder[] => normalizeListResponse(d),
@@ -1402,11 +1402,7 @@ export function ChangeOrdersPage() {
           </div>
         ) : isError ? (
           <Card className="py-12">
-            <EmptyState
-              icon={<AlertTriangle size={28} strokeWidth={1.5} />}
-              title={t('common.error', { defaultValue: 'Error' })}
-              description={t('changeorders.load_error', { defaultValue: 'Failed to load change orders. Please try again.' })}
-            />
+            <RecoveryCard error={error} onRetry={() => refetch()} />
           </Card>
         ) : orders.length === 0 ? (
           <Card>

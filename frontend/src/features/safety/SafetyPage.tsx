@@ -28,6 +28,7 @@ import {
   Badge,
   EmptyState,
   Breadcrumb,
+  RecoveryCard,
   SkeletonTable,
 } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
@@ -722,7 +723,13 @@ function IncidentsTab({ projectId }: { projectId: string }) {
       }),
   });
 
-  const { data: incidents, isLoading } = useQuery({
+  const {
+    data: incidents,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
     queryKey: ['safety-incidents', projectId],
     queryFn: () =>
       apiGet<IncidentWire[]>(
@@ -745,6 +752,8 @@ function IncidentsTab({ projectId }: { projectId: string }) {
   }, [incidents, search]);
 
   if (isLoading) return <SkeletonTable rows={5} columns={7} />;
+
+  if (isError) return <RecoveryCard error={error} onRetry={() => refetch()} />;
 
   const isEmpty = !incidents || incidents.length === 0;
 
@@ -1224,7 +1233,13 @@ function ObservationsTab({ projectId }: { projectId: string }) {
       }),
   });
 
-  const { data: observations, isLoading } = useQuery({
+  const {
+    data: observations,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
     queryKey: ['safety-observations', projectId],
     queryFn: () =>
       apiGet<ObservationWire[]>(
@@ -1247,6 +1262,8 @@ function ObservationsTab({ projectId }: { projectId: string }) {
   }, [observations, search]);
 
   if (isLoading) return <SkeletonTable rows={5} columns={6} />;
+
+  if (isError) return <RecoveryCard error={error} onRetry={() => refetch()} />;
 
   const isEmpty = !observations || observations.length === 0;
 

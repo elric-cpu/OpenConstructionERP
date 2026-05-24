@@ -18,7 +18,6 @@ import {
   CheckCircle2,
   Send,
   DollarSign,
-  ShieldAlert,
   Users,
   FilePlus2,
 } from 'lucide-react';
@@ -28,6 +27,7 @@ import {
   Badge,
   EmptyState,
   Breadcrumb,
+  RecoveryCard,
   SkeletonTable,
 } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
@@ -462,17 +462,7 @@ export function ContractsPage() {
             <SkeletonTable rows={8} columns={6} />
           </div>
         ) : isError ? (
-          <EmptyState
-            icon={<ShieldAlert size={22} />}
-            title={t('contracts.load_error', {
-              defaultValue: 'Could not load contracts',
-            })}
-            description={getErrorMessage(loadError)}
-            action={{
-              label: t('common.retry', { defaultValue: 'Retry' }),
-              onClick: retryLoad,
-            }}
-          />
+          <RecoveryCard error={loadError} onRetry={retryLoad} />
         ) : tab === 'contracts' ? (
           <ContractTable
             rows={filteredContracts}

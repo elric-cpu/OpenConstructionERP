@@ -27,7 +27,7 @@ import {
   Pencil,
   Trash2,
 } from 'lucide-react';
-import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, SkeletonTable } from '@/shared/ui';
+import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, RecoveryCard, SkeletonTable } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { SectionIntro } from '@/features/validation';
 import { useConfirm } from '@/shared/hooks/useConfirm';
@@ -698,7 +698,7 @@ export function InspectionsPage() {
   const projectId = routeProjectId || activeProjectId || projects[0]?.id || '';
   const projectName = projects.find((p) => p.id === projectId)?.name || '';
 
-  const { data: inspections = [], isLoading } = useQuery({
+  const { data: inspections = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ['inspections', projectId, statusFilter],
     queryFn: () =>
       fetchInspections({
@@ -1117,6 +1117,8 @@ export function InspectionsPage() {
       <div>
         {isLoading ? (
           <SkeletonTable rows={5} columns={6} />
+        ) : isError ? (
+          <RecoveryCard error={error} onRetry={() => refetch()} />
         ) : filtered.length === 0 ? (
           <EmptyState
             icon={<ClipboardCheck size={28} strokeWidth={1.5} />}

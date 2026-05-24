@@ -19,7 +19,7 @@ import {
   FileText,
   AlertTriangle,
 } from 'lucide-react';
-import { Button, Card, Badge, EmptyState, Skeleton, InfoHint, SkeletonTable, Breadcrumb, ConfirmDialog } from '@/shared/ui';
+import { Button, Card, Badge, EmptyState, RecoveryCard, Skeleton, InfoHint, SkeletonTable, Breadcrumb, ConfirmDialog } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import {
   WideModal,
@@ -1131,6 +1131,8 @@ export function TenderingPage() {
     data: packages,
     isLoading: packagesLoading,
     isError: packagesError,
+    error: packagesErrorObj,
+    refetch: refetchPackages,
   } = useQuery({
     queryKey: ['tendering-packages', selectedProjectId],
     queryFn: () =>
@@ -1247,13 +1249,7 @@ export function TenderingPage() {
       {/* Failed to load packages */}
       {selectedProjectId && !packagesLoading && packagesError && (
         <Card className="py-12">
-          <EmptyState
-            icon={<AlertTriangle size={28} strokeWidth={1.5} />}
-            title={t('common.error', { defaultValue: 'Error' })}
-            description={t('tendering.packages_load_error', {
-              defaultValue: 'Failed to load tender packages. Please try again.',
-            })}
-          />
+          <RecoveryCard error={packagesErrorObj} onRetry={() => refetchPackages()} />
         </Card>
       )}
 

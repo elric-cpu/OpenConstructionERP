@@ -8,7 +8,7 @@ import {
   AlertTriangle, Shield, Trash2, X, Search, Filter, CalendarDays, TrendingUp,
   LayoutGrid, Activity,
 } from 'lucide-react';
-import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, InfoHint } from '@/shared/ui';
+import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, InfoHint, RecoveryCard } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { PlanningCrossLinks } from '@/features/schedule/PlanningCrossLinks';
 import SimilarItemsPanel from '@/shared/ui/SimilarItemsPanel';
@@ -529,7 +529,7 @@ export function RiskRegisterPage() {
   const projectId = activeProjectId || projects[0]?.id || '';
   const project = useMemo(() => projects.find((p) => p.id === projectId), [projects, projectId]);
 
-  const { data: risks = [], isLoading } = useQuery({ queryKey: ['risks', projectId], queryFn: () => apiGet<RiskItem[]>(`/v1/risk/?project_id=${projectId}`), select: (d): RiskItem[] => normalizeListResponse(d), enabled: !!projectId });
+  const { data: risks = [], isLoading, isError, error, refetch } = useQuery({ queryKey: ['risks', projectId], queryFn: () => apiGet<RiskItem[]>(`/v1/risk/?project_id=${projectId}`), select: (d): RiskItem[] => normalizeListResponse(d), enabled: !!projectId });
   const { data: summary } = useQuery({ queryKey: ['risk-summary', projectId], queryFn: () => apiGet<RiskSummary>(`/v1/risk/summary/?project_id=${projectId}`), enabled: !!projectId });
   const { data: matrixData } = useQuery({ queryKey: ['risk-matrix', projectId], queryFn: () => apiGet<{ cells: MatrixCell[] }>(`/v1/risk/matrix/?project_id=${projectId}`), enabled: !!projectId });
 
@@ -733,6 +733,8 @@ export function RiskRegisterPage() {
           >{null}</RequiresProject></Card>
         ) : isLoading ? (
           <div className="flex items-center justify-center py-20"><div className="h-6 w-6 animate-spin rounded-full border-2 border-oe-blue border-t-transparent" /></div>
+        ) : isError ? (
+          <Card className="py-12"><RecoveryCard error={error} onRetry={() => refetch()} /></Card>
         ) : filteredRisks.length === 0 ? (
           <Card><EmptyState
             icon={<ShieldAlert size={28} strokeWidth={1.5} />}

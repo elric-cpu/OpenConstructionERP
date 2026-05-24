@@ -32,6 +32,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
 import { DateDisplay } from '@/shared/ui/DateDisplay';
+import { RecoveryCard } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { useActiveProjectProfile } from '@/features/projects/useProjectProfile';
 import {
@@ -329,13 +330,11 @@ export function CoordinationHubPage() {
         </header>
 
         {hasError ? (
-          <div
-            data-testid="coordination-error"
-            className="rounded-2xl border border-rose-200/60 bg-rose-50/70 p-5 text-sm text-rose-900 backdrop-blur dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100"
-          >
-            {t('coordination.error', {
-              defaultValue: 'Could not load the coordination dashboard.',
-            })}
+          <div data-testid="coordination-error">
+            <RecoveryCard
+              error={dashboardQuery.error ?? matrixQuery.error ?? timelineQuery.error}
+              onRetry={handleRefresh}
+            />
           </div>
         ) : (
           <>
