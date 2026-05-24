@@ -34,7 +34,7 @@ import {
   Unlock,
   Save,
 } from 'lucide-react';
-import { Card, Badge } from '@/shared/ui';
+import { Card, Badge, Button, WideModal } from '@/shared/ui';
 import { useToastStore } from '@/stores/useToastStore';
 import {
   fetchUsers,
@@ -51,99 +51,162 @@ import {
 const inputCls =
   'h-10 w-full rounded-lg border border-border bg-surface-primary px-3 text-sm focus:outline-none focus:ring-2 focus:ring-oe-blue/30 focus:border-oe-blue';
 
-const ROLE_CONFIG: Record<
-  UserRole,
-  {
-    icon: React.ElementType;
-    label: string;
-    color: string;
-    variant: 'neutral' | 'blue' | 'success' | 'warning' | 'error';
-  }
-> = {
-  admin: { icon: Crown, label: 'Admin', color: 'text-red-600 dark:text-red-400', variant: 'error' },
+/* ── Role + module config ───────────────────────────────────────────────
+ *
+ * Display labels are i18n-keyed (NOT hardcoded English) so that admins
+ * running the UI in DE / RU / AR / etc. see translated chips. The
+ * canonical English copy lives in `frontend/src/app/locales/en.ts`
+ * under `users.roles.*`, `users.access_levels.*`, `users.module_group.*`
+ * and `users.modules.*`. Other locale files are backfilled in a
+ * separate i18n sweep — until then react-i18next falls back to the
+ * `en` resource via `fallbackLng: 'en'` (see app/i18n.ts).
+ *
+ * Note: no `labelDefault` strings are stored in this file. Doing so
+ * would re-introduce hardcoded English literals that the regression
+ * grep (Admin / Manager / Core / Planning / Bill of Quantities …) is
+ * supposed to catch. The English fallback lives ONLY in `en.ts`.
+ */
+
+interface RoleConfigEntry {
+  icon: React.ElementType;
+  /** i18n key suffix under `users.roles.{key}`. */
+  labelKey: UserRole;
+  color: string;
+  variant: 'neutral' | 'blue' | 'success' | 'warning' | 'error';
+}
+
+const ROLE_CONFIG: Record<UserRole, RoleConfigEntry> = {
+  admin: {
+    icon: Crown,
+    labelKey: 'admin',
+    color: 'text-red-600 dark:text-red-400',
+    variant: 'error',
+  },
   manager: {
     icon: ShieldCheck,
-    label: 'Manager',
+    labelKey: 'manager',
     color: 'text-amber-600 dark:text-amber-400',
     variant: 'warning',
   },
-  editor: { icon: Edit3, label: 'Editor', color: 'text-blue-600 dark:text-blue-400', variant: 'blue' },
-  viewer: { icon: Eye, label: 'Viewer', color: 'text-content-tertiary', variant: 'neutral' },
+  editor: {
+    icon: Edit3,
+    labelKey: 'editor',
+    color: 'text-blue-600 dark:text-blue-400',
+    variant: 'blue',
+  },
+  viewer: {
+    icon: Eye,
+    labelKey: 'viewer',
+    color: 'text-content-tertiary',
+    variant: 'neutral',
+  },
 };
 
 const ROLES: UserRole[] = ['admin', 'manager', 'editor', 'viewer'];
 
-const ACCESS_LEVELS: { value: ModuleAccessLevel; label: string; color: string }[] = [
-  { value: 'none', label: 'None', color: 'text-content-quaternary' },
-  { value: 'view', label: 'View', color: 'text-blue-600' },
-  { value: 'edit', label: 'Edit', color: 'text-amber-600' },
-  { value: 'full', label: 'Full', color: 'text-green-600' },
+const ACCESS_LEVELS: {
+  value: ModuleAccessLevel;
+  labelKey: ModuleAccessLevel;
+  color: string;
+}[] = [
+  { value: 'none', labelKey: 'none', color: 'text-content-quaternary' },
+  { value: 'view', labelKey: 'view', color: 'text-blue-600' },
+  { value: 'edit', labelKey: 'edit', color: 'text-amber-600' },
+  { value: 'full', labelKey: 'full', color: 'text-green-600' },
 ];
 
-// All manageable modules grouped by category
-const MODULE_GROUPS = [
+interface ModuleEntry {
+  /** Stable module key (used as i18n suffix and access map key). */
+  id: string;
+}
+
+interface ModuleGroupEntry {
+  /** Stable group key (used as i18n suffix under `users.module_group.{key}`). */
+  key: string;
+  modules: ModuleEntry[];
+}
+
+// All manageable modules grouped by category. Labels are translated at
+// render time via `t('users.modules.{id}')` and
+// `t('users.module_group.{key}')`. English copy lives in en.ts.
+const MODULE_GROUPS: ModuleGroupEntry[] = [
   {
-    label: 'Core',
+    key: 'core',
     modules: [
-      { id: 'projects', name: 'Projects' },
-      { id: 'boq', name: 'Bill of Quantities' },
-      { id: 'costs', name: 'Cost Database' },
-      { id: 'assemblies', name: 'Assemblies' },
-      { id: 'validation', name: 'Validation' },
+      { id: 'projects' },
+      { id: 'boq' },
+      { id: 'costs' },
+      { id: 'assemblies' },
+      { id: 'validation' },
     ],
   },
   {
-    label: 'Planning & Finance',
+    key: 'planning_finance',
     modules: [
-      { id: 'schedule', name: '4D Schedule' },
-      { id: 'costmodel', name: '5D Cost Model' },
-      { id: 'finance', name: 'Finance' },
-      { id: 'procurement', name: 'Procurement' },
-      { id: 'changeorders', name: 'Change Orders' },
+      { id: 'schedule' },
+      { id: 'costmodel' },
+      { id: 'finance' },
+      { id: 'procurement' },
+      { id: 'changeorders' },
     ],
   },
   {
-    label: 'Communication',
+    key: 'communication',
     modules: [
-      { id: 'tasks', name: 'Tasks' },
-      { id: 'meetings', name: 'Meetings' },
-      { id: 'rfi', name: 'RFI' },
-      { id: 'correspondence', name: 'Correspondence' },
-      { id: 'transmittals', name: 'Transmittals' },
+      { id: 'tasks' },
+      { id: 'meetings' },
+      { id: 'rfi' },
+      { id: 'correspondence' },
+      { id: 'transmittals' },
     ],
   },
   {
-    label: 'Quality & Safety',
+    key: 'quality_safety',
     modules: [
-      { id: 'inspections', name: 'Inspections' },
-      { id: 'ncr', name: 'NCR' },
-      { id: 'safety', name: 'Safety' },
-      { id: 'punchlist', name: 'Punch List' },
-      { id: 'submittals', name: 'Submittals' },
+      { id: 'inspections' },
+      { id: 'ncr' },
+      { id: 'safety' },
+      { id: 'punchlist' },
+      { id: 'submittals' },
     ],
   },
   {
-    label: 'Documents & BIM',
+    key: 'documents_bim',
     modules: [
-      { id: 'documents', name: 'Documents' },
-      { id: 'cde', name: 'CDE (ISO 19650)' },
-      { id: 'bim_hub', name: 'BIM Hub' },
-      { id: 'fieldreports', name: 'Field Reports' },
-      { id: 'contacts', name: 'Contacts' },
+      { id: 'documents' },
+      { id: 'cde' },
+      { id: 'bim_hub' },
+      { id: 'fieldreports' },
+      { id: 'contacts' },
     ],
   },
   {
-    label: 'AI & Analytics',
+    key: 'ai_analytics',
     modules: [
-      { id: 'ai', name: 'AI Estimation' },
-      { id: 'takeoff', name: 'Takeoff' },
-      { id: 'reporting', name: 'Reporting' },
-      { id: 'risk', name: 'Risk Register' },
+      { id: 'ai' },
+      { id: 'takeoff' },
+      { id: 'reporting' },
+      { id: 'risk' },
     ],
   },
 ];
 
-/* ── Invite User Modal ───────────────────────────────────────────────── */
+const PRESET_OPTIONS: { key: 'all' | 'viewer' | 'minimal' }[] = [
+  { key: 'all' },
+  { key: 'viewer' },
+  { key: 'minimal' },
+];
+
+/* ── Invite User Modal ─────────────────────────────────────────────────
+ *
+ * Replaced the hand-rolled <div> dialog wrapper with the shared
+ * <WideModal> component so we inherit focus-trap, Escape-to-close,
+ * backdrop-click dismissal, body-scroll-lock and the consistent
+ * surface / border / radii tokens. Round 2 audit flagged the old
+ * hand-rolled markup as a regression — every other recent module
+ * (Service / Resources / Procurement / Portal / etc.) standardised on
+ * WideModal.
+ */
 
 function InviteModal({
   onClose,
@@ -162,106 +225,106 @@ function InviteModal({
     role: 'editor' as UserRole,
   });
 
+  const canSubmit = !isPending && !!form.email && !!form.full_name && !!form.password;
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-lg animate-fade-in"
-      onClick={onClose}
-    >
-      <div
-        className="bg-surface-primary rounded-xl shadow-2xl border border-border w-full max-w-md mx-4 animate-scale-in"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-          <div className="flex items-center gap-2">
-            <UserPlus size={18} className="text-oe-blue" />
-            <h3 className="text-base font-semibold">
-              {t('users.invite_user', { defaultValue: 'Invite User' })}
-            </h3>
-          </div>
-          <button onClick={onClose} className="p-1 rounded hover:bg-surface-secondary">
-            <X size={16} />
-          </button>
-        </div>
-        <div className="p-5 space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-content-secondary mb-1">
-              {t('users.full_name', { defaultValue: 'Full Name' })}
-            </label>
-            <input
-              className={inputCls}
-              value={form.full_name}
-              onChange={(e) => setForm({ ...form, full_name: e.target.value })}
-              placeholder="John Doe"
-              autoFocus
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-content-secondary mb-1">
-              {t('users.email', { defaultValue: 'Email' })}
-            </label>
-            <input
-              className={inputCls}
-              type="email"
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-              placeholder="john@company.com"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-content-secondary mb-1">
-              {t('users.password', { defaultValue: 'Password' })}
-            </label>
-            <input
-              className={inputCls}
-              type="password"
-              value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
-              placeholder="Min 6 characters"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-content-secondary mb-1">
-              {t('users.role', { defaultValue: 'Role' })}
-            </label>
-            <div className="grid grid-cols-4 gap-2">
-              {ROLES.map((r) => {
-                const cfg = ROLE_CONFIG[r];
-                const Icon = cfg.icon;
-                return (
-                  <button
-                    key={r}
-                    onClick={() => setForm({ ...form, role: r })}
-                    className={clsx(
-                      'flex flex-col items-center gap-1 p-2 rounded-lg border text-xs font-medium transition-all',
-                      form.role === r
-                        ? 'border-oe-blue bg-oe-blue/5 ring-2 ring-oe-blue/20'
-                        : 'border-border hover:border-border-hover',
-                    )}
-                  >
-                    <Icon size={16} className={cfg.color} />
-                    {cfg.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-        <div className="flex justify-end gap-2 px-5 py-3 border-t border-border">
-          <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg hover:bg-surface-secondary">
+    <WideModal
+      open
+      onClose={onClose}
+      title={t('users.invite_user', { defaultValue: 'Invite User' })}
+      size="sm"
+      busy={isPending}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={isPending}>
             {t('common.cancel', { defaultValue: 'Cancel' })}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="primary"
+            icon={<UserPlus size={14} />}
+            disabled={!canSubmit}
+            loading={isPending}
             onClick={() => onSubmit(form)}
-            disabled={isPending || !form.email || !form.full_name || !form.password}
-            className="px-4 py-2 text-sm font-medium rounded-lg bg-oe-blue text-white hover:bg-oe-blue-dark disabled:opacity-50"
           >
             {isPending
               ? t('common.creating', { defaultValue: 'Creating...' })
               : t('users.invite', { defaultValue: 'Invite' })}
-          </button>
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div>
+          <label className="block text-xs font-medium text-content-secondary mb-1">
+            {t('users.full_name', { defaultValue: 'Full Name' })}
+          </label>
+          <input
+            className={inputCls}
+            value={form.full_name}
+            onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+            placeholder={t('users.invite.namePlaceholder', {
+              defaultValue: 'e.g. Anna Schmidt',
+            })}
+            autoFocus
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-content-secondary mb-1">
+            {t('users.email', { defaultValue: 'Email' })}
+          </label>
+          <input
+            className={inputCls}
+            type="email"
+            value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+            placeholder={t('users.invite.emailPlaceholder', {
+              defaultValue: 'name@company.com',
+            })}
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-content-secondary mb-1">
+            {t('users.password', { defaultValue: 'Password' })}
+          </label>
+          <input
+            className={inputCls}
+            type="password"
+            value={form.password}
+            onChange={(e) => setForm({ ...form, password: e.target.value })}
+            placeholder={t('users.invite.passwordHint', {
+              defaultValue: 'Min 6 characters',
+            })}
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-content-secondary mb-1">
+            {t('users.role', { defaultValue: 'Role' })}
+          </label>
+          <div className="grid grid-cols-4 gap-2">
+            {ROLES.map((r) => {
+              const cfg = ROLE_CONFIG[r];
+              const Icon = cfg.icon;
+              return (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => setForm({ ...form, role: r })}
+                  className={clsx(
+                    'flex flex-col items-center gap-1 p-2 rounded-lg border text-xs font-medium transition-all',
+                    form.role === r
+                      ? 'border-oe-blue bg-oe-blue/5 ring-2 ring-oe-blue/20'
+                      : 'border-border hover:border-border-hover',
+                  )}
+                >
+                  <Icon size={16} className={cfg.color} />
+                  {t(`users.roles.${cfg.labelKey}`)}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
-    </div>
+    </WideModal>
   );
 }
 
@@ -381,24 +444,22 @@ function ModuleAccessPanel({
                 setCustomRoleName(e.target.value);
                 setDirty(true);
               }}
-              placeholder="e.g. Site Engineer, Cost Manager..."
+              placeholder={t('users.custom_role_placeholder', {
+                defaultValue: 'e.g. Site Engineer, Cost Manager...',
+              })}
             />
           </div>
           <div className="flex items-center gap-1.5">
             <span className="text-2xs text-content-tertiary mr-1">
               {t('users.presets', { defaultValue: 'Presets' })}:
             </span>
-            {[
-              { key: 'all' as const, label: 'Full Access' },
-              { key: 'viewer' as const, label: 'View Only' },
-              { key: 'minimal' as const, label: 'Minimal' },
-            ].map((p) => (
+            {PRESET_OPTIONS.map((p) => (
               <button
                 key={p.key}
                 onClick={() => applyPreset(p.key)}
                 className="px-2 py-1 text-2xs rounded border border-border hover:bg-surface-secondary transition-colors"
               >
-                {p.label}
+                {t(`users.presets.${p.key}`)}
               </button>
             ))}
           </div>
@@ -407,12 +468,14 @@ function ModuleAccessPanel({
         {/* Module matrix */}
         <div className="flex-1 overflow-y-auto px-5 py-3">
           {isLoading ? (
-            <div className="text-center py-8 text-content-tertiary text-sm">Loading...</div>
+            <div className="text-center py-8 text-content-tertiary text-sm">
+              {t('common.loading', { defaultValue: 'Loading...' })}
+            </div>
           ) : (
             MODULE_GROUPS.map((group) => (
-              <div key={group.label} className="mb-4">
+              <div key={group.key} className="mb-4">
                 <h4 className="text-2xs font-semibold uppercase tracking-wider text-content-tertiary mb-2">
-                  {group.label}
+                  {t(`users.module_group.${group.key}`)}
                 </h4>
                 <div className="space-y-1">
                   {group.modules.map((mod) => {
@@ -439,7 +502,9 @@ function ModuleAccessPanel({
                         </button>
 
                         {/* Module name */}
-                        <span className="text-sm font-medium flex-1 min-w-0">{mod.name}</span>
+                        <span className="text-sm font-medium flex-1 min-w-0">
+                          {t(`users.modules.${mod.id}`)}
+                        </span>
 
                         {/* Access level selector */}
                         <div className="flex items-center gap-0.5 bg-surface-primary rounded-md border border-border p-0.5">
@@ -454,7 +519,7 @@ function ModuleAccessPanel({
                                   : 'hover:bg-surface-secondary text-content-secondary',
                               )}
                             >
-                              {lvl.label}
+                              {t(`users.access_levels.${lvl.labelKey}`)}
                             </button>
                           ))}
                         </div>
@@ -505,6 +570,7 @@ function RoleDropdown({
   userId: string;
   onUpdate: (userId: string, role: UserRole) => void;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
@@ -553,7 +619,7 @@ function RoleDropdown({
         className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors hover:bg-surface-secondary cursor-pointer"
       >
         <Icon size={13} className={cfg.color} />
-        {cfg.label}
+        {t(`users.roles.${cfg.labelKey}`)}
         <ChevronDown size={12} className="text-content-quaternary" />
       </button>
       {open && pos && createPortal(
@@ -579,7 +645,7 @@ function RoleDropdown({
                   )}
                 >
                   <RIcon size={13} className={rc.color} />
-                  {rc.label}
+                  {t(`users.roles.${rc.labelKey}`)}
                   {r === currentRole && <Check size={12} className="ml-auto text-oe-blue" />}
                 </button>
               );
@@ -883,7 +949,10 @@ export function UserManagementPage() {
           return (
             <span key={r} className="flex items-center gap-1">
               <Icon size={11} className={cfg.color} />
-              <strong>{cfg.label}</strong>:{' '}
+              <strong>
+                {t(`users.roles.${cfg.labelKey}`)}
+              </strong>
+              :{' '}
               {r === 'admin'
                 ? t('users.role_admin_desc', { defaultValue: 'Full access' })
                 : r === 'manager'
