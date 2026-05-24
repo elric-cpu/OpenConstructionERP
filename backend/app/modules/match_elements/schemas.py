@@ -6,12 +6,32 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from app.core.match_service.config import DEFAULT_AUTO_CONFIRM_THRESHOLD
 from app.core.match_service.envelope import MatchCandidate
+
+
+# ── v3 §10 money serialisation helper ─────────────────────────────────────
+# Money fields are stored / accepted as ``Decimal`` but emitted as plain
+# decimal *strings* in JSON. ``float`` silently drops precision past ~15
+# significant digits and forces every consumer to parse a locale-coloured
+# number; emitting a string keeps totals exact and language-neutral.
+# This helper mirrors ``backend/app/modules/boq/schemas.py::PositionResponse``.
+def _serialise_money(v: Decimal | None) -> str | None:
+    if v is None:
+        return None
+    if not isinstance(v, Decimal):
+        try:
+            v = Decimal(str(v))
+        except (InvalidOperation, ValueError):
+            return "0"
+    if not v.is_finite():
+        return "0"
+    return format(v, "f")
 
 SourceName = Literal["bim", "dwg", "boq", "text", "pdf", "photo", "image"]
 
@@ -151,8 +171,13 @@ class SessionSummary(BaseModel):
     group_count: int
     confirmed_count: int
     applied_count: int
-    total_value: float
+    # v3 §10 — money as Decimal, serialised to JSON as a plain string.
+    total_value: Decimal = Decimal("0")
     currency: str | None
+
+    @field_serializer("total_value", when_used="json")
+    def _ser_total_value(self, v: Decimal) -> str | None:
+        return _serialise_money(v)
 
 
 class GroupSummary(BaseModel):
@@ -191,9 +216,14 @@ class GroupSummary(BaseModel):
     # UI can show what the row would map to without opening the panel.
     suggested_code: str | None = None
     suggested_description: str | None = None
-    suggested_unit_rate: float | None = None
+    # v3 §10 — money as Decimal, serialised to JSON as a plain string.
+    suggested_unit_rate: Decimal | None = None
     suggested_currency: str | None = None
     sample_names: list[str] = Field(default_factory=list)
+
+    @field_serializer("suggested_unit_rate", when_used="json")
+    def _ser_suggested_unit_rate(self, v: Decimal | None) -> str | None:
+        return _serialise_money(v)
 
 
 class GroupDetail(BaseModel):
@@ -288,10 +318,15 @@ class ApplyToBoqRequest(BaseModel):
 
 class ApplyResourcePreview(BaseModel):
     description: str
-    factor: float  # per unit of parent position
-    quantity: float  # factor × parent quantity
+    factor: float  # per unit of parent position — ratio, not currency
+    quantity: float  # factor × parent quantity — measurement, not money
     unit: str
-    unit_rate: float
+    # v3 §10 — money as Decimal, serialised to JSON as a plain string.
+    unit_rate: Decimal = Decimal("0")
+
+    @field_serializer("unit_rate", when_used="json")
+    def _ser_unit_rate(self, v: Decimal) -> str | None:
+        return _serialise_money(v)
 
 
 class ApplyPositionPreview(BaseModel):
@@ -299,11 +334,16 @@ class ApplyPositionPreview(BaseModel):
     section_path: list[str]  # e.g. ["300 Konstruktionen", "330 Wände"]
     description: str
     unit: str
-    quantity: float
-    unit_rate: float
+    quantity: float  # measurement, not money
+    # v3 §10 — money as Decimal, serialised to JSON as a plain string.
+    unit_rate: Decimal = Decimal("0")
     currency: str
-    line_total: float = 0.0
+    line_total: Decimal = Decimal("0")
     resources: list[ApplyResourcePreview] = Field(default_factory=list)
+
+    @field_serializer("unit_rate", "line_total", when_used="json")
+    def _ser_money(self, v: Decimal) -> str | None:
+        return _serialise_money(v)
 
 
 class ApplyToBoqResponse(BaseModel):
@@ -311,8 +351,13 @@ class ApplyToBoqResponse(BaseModel):
     boq_id: uuid.UUID | None
     positions_created: int
     positions: list[ApplyPositionPreview]
-    grand_total: float = 0.0
+    # v3 §10 — money as Decimal, serialised to JSON as a plain string.
+    grand_total: Decimal = Decimal("0")
     currency: str | None = None
+
+    @field_serializer("grand_total", when_used="json")
+    def _ser_grand_total(self, v: Decimal) -> str | None:
+        return _serialise_money(v)
 
 
 class NoMatchRequest(BaseModel):
@@ -321,10 +366,15 @@ class NoMatchRequest(BaseModel):
     # When action=custom:
     custom_description: str | None = None
     custom_unit: str | None = None
-    custom_rate: float | None = None
+    # v3 §10 — money as Decimal; accepts str/number on input.
+    custom_rate: Decimal | None = None
     save_to_my_catalogue: bool = False
     # When action=rfq:
     rfq_supplier_ids: list[uuid.UUID] | None = None
+
+    @field_serializer("custom_rate", when_used="json")
+    def _ser_custom_rate(self, v: Decimal | None) -> str | None:
+        return _serialise_money(v)
 
 
 class TemplateRead(BaseModel):

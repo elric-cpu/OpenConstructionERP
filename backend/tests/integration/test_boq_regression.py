@@ -258,7 +258,10 @@ async def test_boq_full_lifecycle(shared_client: AsyncClient, shared_auth: dict)
             )
 
     expected_grand = sum(expected_totals.values())
-    assert abs(boq_full["grand_total"] - expected_grand) < 0.01, (
+    # v3 §10 — BOQWithPositions.grand_total is now Decimal-as-string for
+    # exact large-total round-trip (matches the per-position contract used
+    # at line 256 above). Coerce before float arithmetic.
+    assert abs(float(boq_full["grand_total"]) - expected_grand) < 0.01, (
         f"Grand total mismatch: {boq_full['grand_total']} != {expected_grand}"
     )
 
@@ -309,8 +312,9 @@ async def test_boq_full_lifecycle(shared_client: AsyncClient, shared_auth: dict)
     assert resp.status_code == 200
 
     structured = resp.json()
-    direct_cost = structured["direct_cost"]
-    net_total = structured["net_total"]
+    # v3 §10 — BOQWithSections money fields are Decimal-as-string.
+    direct_cost = float(structured["direct_cost"])
+    net_total = float(structured["net_total"])
 
     assert abs(direct_cost - expected_grand) < 0.01
     assert net_total >= direct_cost, "Net total should be >= direct cost"
@@ -323,7 +327,7 @@ async def test_boq_full_lifecycle(shared_client: AsyncClient, shared_auth: dict)
     assert "Site Overhead (BGK)" in markup_names
     assert "Profit (W&G)" in markup_names
     assert "VAT (MwSt.)" in markup_names
-    assert structured["grand_total"] > 0
+    assert float(structured["grand_total"]) > 0
 
     # ── Step 8: Export to Excel -- verify file is valid ──────────────────
 
@@ -601,8 +605,10 @@ async def test_export_data_integrity(shared_client: AsyncClient, shared_auth: di
     resp = await client.get(f"/api/v1/boq/boqs/{bid}/structured/", headers=auth)
     assert resp.status_code == 200
     structured_data = resp.json()
-    structured_grand = structured_data["grand_total"]
-    structured_direct = structured_data["direct_cost"]
+    # v3 §10 — BOQWithSections money fields (grand_total / direct_cost /
+    # net_total) are now Decimal-as-string. Parse before arithmetic.
+    structured_grand = float(structured_data["grand_total"])
+    structured_direct = float(structured_data["direct_cost"])
     # Direct cost should match raw position totals
     assert abs(structured_direct - expected_direct_cost) < 0.01, (
         f"Structured direct cost {structured_direct} != expected {expected_direct_cost}"

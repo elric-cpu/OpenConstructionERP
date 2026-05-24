@@ -11,7 +11,25 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
+
+
+# ── v3 §10 money serialisation helper ─────────────────────────────────────
+# Money fields are stored / accepted as ``Decimal`` but emitted as plain
+# decimal *strings* in JSON. Float forces every consumer to parse a
+# locale-coloured number and silently drops precision past ~15 sig figs.
+# Mirrors ``backend/app/modules/boq/schemas.py::PositionResponse``.
+def _serialise_money(v: Decimal | None) -> str | None:
+    if v is None:
+        return None
+    if not isinstance(v, Decimal):
+        try:
+            v = Decimal(str(v))
+        except (InvalidOperation, ValueError):
+            return "0"
+    if not v.is_finite():
+        return "0"
+    return format(v, "f")
 
 
 def _validate_multiplier(raw: str | None) -> str | None:
@@ -279,12 +297,19 @@ class BOQElementLinkBrief(BaseModel):
     boq_position_id: UUID
     boq_position_ordinal: str | None = None
     boq_position_description: str | None = None
-    boq_position_quantity: float | None = None
+    boq_position_quantity: float | None = None  # measurement, not money
     boq_position_unit: str | None = None
-    boq_position_unit_rate: float | None = None
-    boq_position_total: float | None = None
+    # v3 §10 — money as Decimal, serialised to JSON as a plain string.
+    boq_position_unit_rate: Decimal | None = None
+    boq_position_total: Decimal | None = None
     link_type: str
     confidence: str | None = None
+
+    @field_serializer(
+        "boq_position_unit_rate", "boq_position_total", when_used="json"
+    )
+    def _ser_money(self, v: Decimal | None) -> str | None:
+        return _serialise_money(v)
 
 
 class DocumentLinkBrief(BaseModel):
@@ -566,13 +591,20 @@ class BIMModelBOQLinkAggregate(BaseModel):
     boq_id: UUID
     boq_position_ordinal: str | None = None
     boq_position_description: str | None = None
-    boq_position_quantity: float | None = None
+    boq_position_quantity: float | None = None  # measurement, not money
     boq_position_unit: str | None = None
-    boq_position_unit_rate: float | None = None
-    boq_position_total: float | None = None
+    # v3 §10 — money as Decimal, serialised to JSON as a plain string.
+    boq_position_unit_rate: Decimal | None = None
+    boq_position_total: Decimal | None = None
     link_type: str
     confidence: str | None = None
     element_ids: list[UUID] = Field(default_factory=list)
+
+    @field_serializer(
+        "boq_position_unit_rate", "boq_position_total", when_used="json"
+    )
+    def _ser_money(self, v: Decimal | None) -> str | None:
+        return _serialise_money(v)
 
 
 class BIMModelBOQLinksResponse(BaseModel):

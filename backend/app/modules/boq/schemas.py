@@ -58,6 +58,25 @@ def _check_position_total_cap(
         )
 
 
+# ── v3 §10 money serialisation helper ─────────────────────────────────────
+# Money fields are stored / accepted as ``Decimal`` but emitted as plain
+# decimal *strings* in JSON. Float forces every consumer to parse a
+# locale-coloured number and silently drops precision past ~15 sig figs.
+# This is the canonical helper mirrored by sibling modules
+# (match_elements, bim_hub) — keep them in sync.
+def _serialise_money(v: Decimal | None) -> str | None:
+    if v is None:
+        return None
+    if not isinstance(v, Decimal):
+        try:
+            v = Decimal(str(v))
+        except (InvalidOperation, ValueError):
+            return "0"
+    if not v.is_finite():
+        return "0"
+    return format(v, "f")
+
+
 def _sanitise_free_text(value: str | None) -> str | None:
     """‌⁠‍Strip XSS-dangerous HTML from free-text BOQ fields (BUG-326/389).
 
@@ -179,12 +198,22 @@ class BOQListItem(BOQResponse):
     cost plus all active markups (and taxes when present).  ``direct_cost_total``
     breaks out the same number minus markups, so the two figures are always
     consistent across list / detail / structured endpoints (BUG-008).
+
+    v3 §10 — money emitted as Decimal-as-string. Floats here silently
+    truncated very-large totals on listing endpoints and forced every
+    consumer to parse a locale-coloured number.
     """
 
-    direct_cost_total: float = 0.0
-    markups_total: float = 0.0
-    grand_total: float = 0.0
+    direct_cost_total: Decimal = Decimal("0")
+    markups_total: Decimal = Decimal("0")
+    grand_total: Decimal = Decimal("0")
     position_count: int = 0
+
+    @field_serializer(
+        "direct_cost_total", "markups_total", "grand_total", when_used="json"
+    )
+    def _ser_money(self, v: Decimal) -> str | None:
+        return _serialise_money(v)
 
 
 # ── Position schemas ───────────────────────────────────────────────────────
@@ -744,9 +773,17 @@ class MarkupResponse(BaseModel):
 
 
 class MarkupCalculated(MarkupResponse):
-    """Markup response enriched with the computed amount."""
+    """Markup response enriched with the computed amount.
 
-    amount: float = 0.0
+    v3 §10 — ``amount`` is money; emitted as a Decimal-as-string so
+    rollups stay locale-neutral and exact.
+    """
+
+    amount: Decimal = Decimal("0")
+
+    @field_serializer("amount", when_used="json")
+    def _ser_amount(self, v: Decimal) -> str | None:
+        return _serialise_money(v)
 
 
 # ── Composite schemas ─────────────────────────────────────────────────────────
@@ -759,23 +796,34 @@ class BOQWithPositions(BOQResponse):
     semantics — BUG-008).  ``direct_cost_total`` and ``markups_total``
     are exposed alongside for clients that need the breakdown without
     re-summing markups themselves.
+
+    v3 §10 — money emitted as Decimal-as-string.
     """
 
     positions: list[PositionResponse] = Field(default_factory=list)
-    direct_cost_total: float = 0.0
-    markups_total: float = 0.0
-    grand_total: float = 0.0
+    direct_cost_total: Decimal = Decimal("0")
+    markups_total: Decimal = Decimal("0")
+    grand_total: Decimal = Decimal("0")
     position_count: int = 0
+
+    @field_serializer(
+        "direct_cost_total", "markups_total", "grand_total", when_used="json"
+    )
+    def _ser_money(self, v: Decimal) -> str | None:
+        return _serialise_money(v)
 
 
 class SectionResponse(BaseModel):
-    """A BOQ section (header) with its child positions and subtotal."""
+    """A BOQ section (header) with its child positions and subtotal.
+
+    v3 §10 — ``subtotal`` is money; Decimal-as-string in JSON.
+    """
 
     id: UUID
     ordinal: str
     description: str
     positions: list[PositionResponse] = Field(default_factory=list)
-    subtotal: float = 0.0
+    subtotal: Decimal = Decimal("0")
 
     # BUG-MATH04: matches PositionResponse / BOQResponse policy.
     @field_validator("description", mode="after")
@@ -784,6 +832,10 @@ class SectionResponse(BaseModel):
         from app.core.sanitize import sanitise_text
 
         return sanitise_text(v) or ""
+
+    @field_serializer("subtotal", when_used="json")
+    def _ser_subtotal(self, v: Decimal) -> str | None:
+        return _serialise_money(v)
 
 
 class BOQWithSections(BOQResponse):
@@ -795,14 +847,22 @@ class BOQWithSections(BOQResponse):
     ``markups`` — ordered list of markup lines with computed amounts.
     ``net_total`` — direct_cost + sum of markup amounts.
     ``grand_total`` — alias for net_total (reserved for future tax logic).
+
+    v3 §10 — money emitted as Decimal-as-string.
     """
 
     sections: list[SectionResponse] = Field(default_factory=list)
     positions: list[PositionResponse] = Field(default_factory=list)
-    direct_cost: float = 0.0
+    direct_cost: Decimal = Decimal("0")
     markups: list[MarkupCalculated] = Field(default_factory=list)
-    net_total: float = 0.0
-    grand_total: float = 0.0
+    net_total: Decimal = Decimal("0")
+    grand_total: Decimal = Decimal("0")
+
+    @field_serializer(
+        "direct_cost", "net_total", "grand_total", when_used="json"
+    )
+    def _ser_money(self, v: Decimal) -> str | None:
+        return _serialise_money(v)
 
 
 # ── Template schemas ─────────────────────────────────────────────────────────
@@ -932,14 +992,22 @@ class AIChatRequest(BaseModel):
 
 
 class AIChatItem(BaseModel):
-    """A single BOQ position suggested by AI chat."""
+    """A single BOQ position suggested by AI chat.
+
+    v3 §10 — ``unit_rate`` and ``total`` are money and emitted as
+    Decimal-as-string. ``quantity`` is a measurement and stays float.
+    """
 
     ordinal: str
     description: str
     unit: str
     quantity: float
-    unit_rate: float
-    total: float
+    unit_rate: Decimal = Decimal("0")
+    total: Decimal = Decimal("0")
+
+    @field_serializer("unit_rate", "total", when_used="json")
+    def _ser_money(self, v: Decimal) -> str | None:
+        return _serialise_money(v)
 
 
 class AIChatResponse(BaseModel):
@@ -1030,40 +1098,68 @@ class SnapshotDetail(SnapshotResponse):
 
 
 class CostBreakdownCategory(BaseModel):
-    """A single cost category in the breakdown (e.g. material, labor)."""
+    """A single cost category in the breakdown (e.g. material, labor).
+
+    v3 §10 — ``amount`` is money; ``percentage`` stays float (ratio).
+    """
 
     type: str
-    amount: float
+    amount: Decimal = Decimal("0")
     percentage: float
     item_count: int
 
+    @field_serializer("amount", when_used="json")
+    def _ser_amount(self, v: Decimal) -> str | None:
+        return _serialise_money(v)
+
 
 class CostBreakdownMarkup(BaseModel):
-    """A markup line in the cost breakdown."""
+    """A markup line in the cost breakdown.
+
+    v3 §10 — ``amount`` is money; ``percentage`` stays float (ratio).
+    """
 
     name: str
     percentage: float
-    amount: float
+    amount: Decimal = Decimal("0")
+
+    @field_serializer("amount", when_used="json")
+    def _ser_amount(self, v: Decimal) -> str | None:
+        return _serialise_money(v)
 
 
 class CostBreakdownResource(BaseModel):
-    """A top resource by cost in the breakdown."""
+    """A top resource by cost in the breakdown.
+
+    v3 §10 — ``total_cost`` is money.
+    """
 
     name: str
     type: str
-    total_cost: float
+    total_cost: Decimal = Decimal("0")
     positions_count: int
+
+    @field_serializer("total_cost", when_used="json")
+    def _ser_total_cost(self, v: Decimal) -> str | None:
+        return _serialise_money(v)
 
 
 class CostBreakdownResponse(BaseModel):
-    """Full cost breakdown response for a BOQ."""
+    """Full cost breakdown response for a BOQ.
+
+    v3 §10 — money emitted as Decimal-as-string.
+    """
 
     boq_id: str
-    grand_total: float
-    direct_cost: float
+    grand_total: Decimal = Decimal("0")
+    direct_cost: Decimal = Decimal("0")
     categories: list[CostBreakdownCategory] = Field(default_factory=list)
     markups: list[CostBreakdownMarkup] = Field(default_factory=list)
     top_resources: list[CostBreakdownResource] = Field(default_factory=list)
+
+    @field_serializer("grand_total", "direct_cost", when_used="json")
+    def _ser_money(self, v: Decimal) -> str | None:
+        return _serialise_money(v)
 
 
 # ── Resource Summary schemas ─────────────────────────────────────────────────
@@ -1093,9 +1189,10 @@ class ResourceSummaryItem(BaseModel):
     name: str
     type: str
     unit: str
-    total_quantity: float
-    avg_unit_rate: float
-    total_cost: float
+    total_quantity: float  # measurement, not money
+    # v3 §10 — avg_unit_rate / total_cost are money: Decimal-as-string.
+    avg_unit_rate: Decimal = Decimal("0")
+    total_cost: Decimal = Decimal("0")
     positions_used: int
 
     # Variant surface — null when the resource has no abstract-resource
@@ -1124,16 +1221,30 @@ class ResourceSummaryItem(BaseModel):
     abc_percentage: float = 0.0
     abc_class: str | None = None  # "A" | "B" | "C"
 
+    @field_serializer("avg_unit_rate", "total_cost", when_used="json")
+    def _ser_money(self, v: Decimal) -> str | None:
+        return _serialise_money(v)
+
 
 class ResourceTypeSummary(BaseModel):
-    """Summary statistics for a single resource type."""
+    """Summary statistics for a single resource type.
+
+    v3 §10 — ``total_cost`` is money; Decimal-as-string in JSON.
+    """
 
     count: int
-    total_cost: float
+    total_cost: Decimal = Decimal("0")
+
+    @field_serializer("total_cost", when_used="json")
+    def _ser_total_cost(self, v: Decimal) -> str | None:
+        return _serialise_money(v)
 
 
 class ResourceSummaryResponse(BaseModel):
-    """Full resource summary for a BOQ — aggregated across all positions."""
+    """Full resource summary for a BOQ — aggregated across all positions.
+
+    v3 §10 — ``grand_total`` is money; Decimal-as-string in JSON.
+    """
 
     total_resources: int
     by_type: dict[str, ResourceTypeSummary] = Field(default_factory=dict)
@@ -1142,7 +1253,11 @@ class ResourceSummaryResponse(BaseModel):
     # The frontend uses it to render the ABC dashboard's "Total" column
     # without recomputing, and to validate that the per-row percentages
     # sum to 100 (rounding tolerance ≤ 0.01).
-    grand_total: float = 0.0
+    grand_total: Decimal = Decimal("0")
+
+    @field_serializer("grand_total", when_used="json")
+    def _ser_grand_total(self, v: Decimal) -> str | None:
+        return _serialise_money(v)
 
 
 class ResourceCodeMatch(BaseModel):
@@ -1153,18 +1268,24 @@ class ResourceCodeMatch(BaseModel):
     "insert the existing resource" vs "create a new one with another code".
     Quantity is intentionally NOT part of the definition — it is always
     per-instance (mirrors the #127 position-reuse contract).
+
+    v3 §10 — ``unit_rate`` is money; Decimal-as-string in JSON.
     """
 
     code: str
     name: str = ""
     type: str = ""
     unit: str = ""
-    unit_rate: float = 0.0
+    unit_rate: Decimal = Decimal("0")
     currency: str = ""
     # Provenance — surfaced verbatim to the user in the collision prompt.
     position_id: str = ""
     position_ordinal: str = ""
     position_description: str = ""
+
+    @field_serializer("unit_rate", when_used="json")
+    def _ser_unit_rate(self, v: Decimal) -> str | None:
+        return _serialise_money(v)
 
 
 class ResourceCodeLookupResponse(BaseModel):
@@ -1428,22 +1549,36 @@ class SuggestRateRequest(BaseModel):
 
 
 class RateMatch(BaseModel):
-    """A single rate match from vector search results."""
+    """A single rate match from vector search results.
+
+    v3 §10 — ``rate`` is money; ``score`` stays float (similarity 0.0-1.0).
+    """
 
     code: str
     description: str
-    rate: float
+    rate: Decimal = Decimal("0")
     region: str
     score: float
 
+    @field_serializer("rate", when_used="json")
+    def _ser_rate(self, v: Decimal) -> str | None:
+        return _serialise_money(v)
+
 
 class SuggestRateResponse(BaseModel):
-    """Response containing a suggested market rate with supporting matches."""
+    """Response containing a suggested market rate with supporting matches.
 
-    suggested_rate: float
+    v3 §10 — ``suggested_rate`` is money; ``confidence`` stays float (ratio).
+    """
+
+    suggested_rate: Decimal = Decimal("0")
     confidence: float = Field(ge=0.0, le=1.0)
     source: str = "vector_search"
     matches: list[RateMatch] = Field(default_factory=list)
+
+    @field_serializer("suggested_rate", when_used="json")
+    def _ser_suggested_rate(self, v: Decimal) -> str | None:
+        return _serialise_money(v)
 
 
 # ── Anomaly Detection schemas ──────────────────────────────────────────────
@@ -1580,14 +1715,21 @@ class CheckScopeRequest(BaseModel):
 
 
 class ScopeMissingItem(BaseModel):
-    """A single missing scope item."""
+    """A single missing scope item.
+
+    v3 §10 — ``estimated_rate`` is money; Decimal-as-string in JSON.
+    """
 
     description: str
     category: str = ""
     priority: str = "medium"  # high | medium | low
     reason: str = ""
-    estimated_rate: float = 0.0
+    estimated_rate: Decimal = Decimal("0")
     unit: str = "lsum"
+
+    @field_serializer("estimated_rate", when_used="json")
+    def _ser_estimated_rate(self, v: Decimal) -> str | None:
+        return _serialise_money(v)
 
 
 class CheckScopeResponse(BaseModel):
@@ -1602,16 +1744,20 @@ class CheckScopeResponse(BaseModel):
 
 
 class BOQStatisticsResponse(BaseModel):
-    """Aggregated statistics for a BOQ."""
+    """Aggregated statistics for a BOQ.
+
+    v3 §10 — ``direct_cost`` / ``grand_total`` / ``avg_unit_rate`` are
+    money; emitted as Decimal-as-string. Percentage fields stay float.
+    """
 
     boq_id: str
     boq_name: str
     status: str
     position_count: int = 0
     section_count: int = 0
-    direct_cost: float = 0.0
-    grand_total: float = 0.0
-    avg_unit_rate: float = 0.0
+    direct_cost: Decimal = Decimal("0")
+    grand_total: Decimal = Decimal("0")
+    avg_unit_rate: Decimal = Decimal("0")
     completion_pct: float = Field(
         default=0.0,
         description="Percentage of positions with both quantity > 0 and unit_rate > 0",
@@ -1630,6 +1776,12 @@ class BOQStatisticsResponse(BaseModel):
     )
     created_at: datetime
     updated_at: datetime
+
+    @field_serializer(
+        "direct_cost", "grand_total", "avg_unit_rate", when_used="json"
+    )
+    def _ser_money(self, v: Decimal) -> str | None:
+        return _serialise_money(v)
 
 
 class EscalateRateRequest(BaseModel):
