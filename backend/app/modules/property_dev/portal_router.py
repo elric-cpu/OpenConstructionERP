@@ -154,17 +154,26 @@ async def _resolve_portal_context(
     settings: SettingsDep,
     token: str,
     request: Request,
+    *,
+    consume: bool = False,
 ) -> PortalContext:
     """Verify token + load PortalContext or raise 401.
 
     Wraps :meth:`PortalLinkService.verify_token` with rate limiting
     and standardised 401 mapping. Used by every public ``/buyer/...``
     endpoint.
+
+    Pass ``consume=True`` from the ``/verify/`` endpoint to enforce
+    single-use magic-link redemption (industry standard — Slack/Notion/
+    Linear). All other endpoints leave ``consume=False`` so the
+    longer-lived session JWT keeps working until expiry/revocation.
     """
     _portal_rate_check(token)
     svc = PortalLinkService(session, settings)
     try:
-        return await svc.verify_token(token, client_ip=_client_ip(request))
+        return await svc.verify_token(
+            token, client_ip=_client_ip(request), consume=consume,
+        )
     except PortalTokenError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -357,11 +366,27 @@ async def verify_portal_token(
 ) -> PortalVerifyResponse:
     """Public endpoint — used by the portal frontend on page load.
 
+    SINGLE-USE redemption — industry standard (Slack/Notion/Linear).
+    The first call atomically marks the magic-link consumed and
+    returns the buyer summary; any subsequent call (or a concurrent
+    second call that loses the DB race) gets a 401 with the
+    distinguishing ``portal_token_already_used`` code so the frontend
+    can render a "request a new login link" CTA instead of the
+    generic "your link expired" copy.
+
+    The JWT itself stays valid for follow-up buyer-portal calls
+    (``/overview/``, ``/documents/...``, ``/upload-kyc/``,
+    ``/contact-agent/``) until expiry/revocation — only the verify
+    endpoint enforces single-use. This matches the spec's
+    "session JWT stays multi-use after the first verify" contract.
+
     Returns enough buyer summary to render the welcome card but does
     NOT include any payment / document data; the buyer must follow up
     with ``/overview/`` for that.
     """
-    ctx = await _resolve_portal_context(session, settings, data.token, request)
+    ctx = await _resolve_portal_context(
+        session, settings, data.token, request, consume=True,
+    )
     scopes: list[str] = []
     if ctx.reservation is not None:
         scopes.append("reservation")

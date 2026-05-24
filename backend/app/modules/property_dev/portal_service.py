@@ -44,7 +44,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from jose import JWTError, jwt
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings
@@ -66,14 +66,32 @@ PORTAL_TOKEN_TTL_DAYS: int = 30
 # (or carrying a different one) is rejected as not-a-portal-token.
 PORTAL_TOKEN_SCOPE: str = "portal"
 
+# Error code for a magic-link token that has already been redeemed via
+# ``/verify/``. Distinct from the catch-all ``portal_token_invalid_or_expired``
+# so the frontend can render the targeted "request a new login link" CTA.
+PORTAL_TOKEN_ALREADY_USED_CODE: str = "portal_token_already_used"
+
 
 class PortalTokenError(Exception):
     """Raised when a portal JWT is malformed / expired / revoked / wrong scope.
 
-    Carries an ``code`` matching the spec
-    (``portal_token_invalid_or_expired``) so the router can map it to
-    a clean 401 response without leaking which of the four failure modes
-    triggered the rejection (anti-enumeration).
+    Two distinct error codes:
+
+    * ``portal_token_invalid_or_expired`` — default. Covers four failure
+      modes (signature mismatch / missing claims / row missing / expired
+      / revoked) collapsed into one code so the response can't be used
+      as an existence oracle for forged-but-DB-missing vs genuinely
+      expired tokens (anti-enumeration, spec §10).
+    * ``portal_token_already_used`` — magic-link has already been
+      redeemed via ``/verify/``. Industry-standard single-use semantics
+      (Slack/Notion/Linear). The frontend surfaces a dedicated
+      "request a new login link" CTA on this code so the buyer knows
+      to ask the agent for a fresh link rather than retrying the same
+      one. This code is distinguishable on purpose: it carries no
+      information that a forged/stranger token wouldn't reveal (the
+      row was successfully decoded + matched in the DB, so the only
+      thing the response leaks is "this token was previously valid",
+      which the holder already knew).
     """
 
     def __init__(self, code: str = "portal_token_invalid_or_expired") -> None:
@@ -165,13 +183,57 @@ class PortalLinkService:
 
     # ── Verification + IDOR guard ─────────────────────────────────────
 
+    async def consume_token_atomic(
+        self, jti: str, *, now: datetime,
+    ) -> bool:
+        """Single-use redemption — flip ``consumed_at`` NULL → ``now`` atomically.
+
+        Implemented as ONE SQL UPDATE with ``WHERE consumed_at IS NULL``
+        so concurrent verify requests on the same token cannot both
+        succeed. The DB enforces the race-safety, not a Python
+        read-then-write that could lose to a concurrent writer.
+
+        Returns:
+            ``True``  — row was previously unconsumed and is now marked
+                        consumed (this caller "won" the race).
+            ``False`` — row was already consumed (either by an earlier
+                        call or by a concurrent winner).
+        """
+        stmt = (
+            update(PortalToken)
+            .where(PortalToken.jwt_id == jti)
+            .where(PortalToken.consumed_at.is_(None))
+            .values(consumed_at=now)
+        )
+        result = await self.session.execute(stmt)
+        await self.session.flush()
+        # rowcount is 1 when the WHERE matched (we won), 0 otherwise
+        # (the row was already consumed). Cast through int() to make
+        # the boolean conversion explicit.
+        return int(result.rowcount or 0) == 1  # type: ignore[union-attr]
+
     async def verify_token(
         self, token: str, *, client_ip: str | None = None,
+        consume: bool = False,
     ) -> PortalContext:
         """Decode the JWT, check the revocation list, return resolved context.
 
         Updates ``last_used_at`` / ``last_used_ip`` as a side effect.
         Raises :class:`PortalTokenError` on any failure mode.
+
+        Args:
+            token: the raw JWT string from the URL / request body.
+            client_ip: best-effort client IP captured for the audit row.
+            consume: when ``True`` (only the ``/verify/`` route), the
+                token is atomically marked consumed via a single SQL
+                UPDATE WHERE consumed_at IS NULL. Already-consumed
+                tokens raise ``PortalTokenError`` with code
+                ``portal_token_already_used``. When ``False`` (every
+                buyer-facing endpoint after the first verify), the
+                token's consumed state is NOT checked — continued
+                access uses the same JWT as a session token until
+                its expiry or revocation, per the spec's
+                "session JWT stays multi-use" constraint.
         """
         if not token or not isinstance(token, str):
             raise PortalTokenError()
@@ -234,6 +296,22 @@ class PortalLinkService:
         if buyer is None:
             # Buyer deleted after token issuance — equivalent to revoked.
             raise PortalTokenError()
+
+        # Single-use redemption gate — only triggered by the /verify/
+        # route (consume=True). If the magic-link was already redeemed,
+        # the atomic UPDATE returns rowcount=0 and we surface the
+        # distinct ``portal_token_already_used`` code so the frontend
+        # can show "request a new login link" rather than "your link
+        # expired". A concurrent verify of the same token is naturally
+        # race-safe: exactly one UPDATE has its WHERE clause match,
+        # the loser gets rowcount=0.
+        if consume:
+            won = await self.consume_token_atomic(jti=str(jti), now=now)
+            if not won:
+                raise PortalTokenError(PORTAL_TOKEN_ALREADY_USED_CODE)
+            # Reflect the consumed_at on the cached row so the caller's
+            # log lines / return value carry the up-to-date state.
+            row.consumed_at = now
 
         reservation: Reservation | None = None
         if row.reservation_id is not None:
@@ -299,6 +377,7 @@ __all__ = [
     "PortalContext",
     "PortalLinkService",
     "PortalTokenError",
+    "PORTAL_TOKEN_ALREADY_USED_CODE",
     "PORTAL_TOKEN_SCOPE",
     "PORTAL_TOKEN_TTL_DAYS",
 ]

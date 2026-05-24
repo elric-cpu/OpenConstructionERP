@@ -140,7 +140,42 @@ export interface PortalIssueResponse {
 
 /* ── Public (no auth) helpers ──────────────────────────────────────── */
 
-/** Verify a magic-link token. Throws "INVALID" on 401. */
+/**
+ * Backend 401 ``detail.code`` discriminator. The verify endpoint is
+ * single-use (Slack/Notion/Linear convention) so the frontend needs to
+ * distinguish "this link was already redeemed" (render the "request a
+ * new link" CTA) from the generic invalid/expired/revoked bucket.
+ */
+export const PORTAL_TOKEN_ALREADY_USED_CODE = 'portal_token_already_used';
+export const PORTAL_TOKEN_INVALID_OR_EXPIRED_CODE =
+  'portal_token_invalid_or_expired';
+
+/**
+ * Extract the discriminator from a 401 body — defensive against
+ * misshaped error envelopes (anything that isn't the known code falls
+ * back to ``INVALID`` so existing UI states keep working).
+ */
+function _extract401Code(body: unknown): string {
+  if (!body || typeof body !== 'object') return 'INVALID';
+  const detail = (body as { detail?: unknown }).detail;
+  if (detail && typeof detail === 'object') {
+    const code = (detail as { code?: unknown }).code;
+    if (typeof code === 'string' && code) return code;
+  }
+  return 'INVALID';
+}
+
+/**
+ * Verify a magic-link token.
+ *
+ * Throws:
+ *   - ``"ALREADY_USED"`` when the backend returns 401 with
+ *     ``detail.code === 'portal_token_already_used'`` — the magic-link
+ *     was previously redeemed and must NOT be retried. The page maps
+ *     this to a dedicated CTA via :class:`RecoveryCard`-style messaging.
+ *   - ``"INVALID"`` for every other 401 (forged / expired / revoked).
+ *   - Generic ``Error(message)`` for other failure statuses.
+ */
 export async function verifyPortalToken(
   token: string,
 ): Promise<PortalVerifyResponse> {
@@ -149,7 +184,13 @@ export async function verifyPortalToken(
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ token }),
   });
-  if (res.status === 401) throw new Error('INVALID');
+  if (res.status === 401) {
+    const body = await res.json().catch(() => ({}));
+    const code = _extract401Code(body);
+    throw new Error(
+      code === PORTAL_TOKEN_ALREADY_USED_CODE ? 'ALREADY_USED' : 'INVALID',
+    );
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.detail || `Verify failed (${res.status})`);
@@ -157,7 +198,14 @@ export async function verifyPortalToken(
   return (await res.json()) as PortalVerifyResponse;
 }
 
-/** Fetch the buyer-portal landing-page payload. */
+/**
+ * Fetch the buyer-portal landing-page payload.
+ *
+ * Same 401 discriminator as :func:`verifyPortalToken` — the overview
+ * endpoint does NOT consume the token (single-use is enforced only on
+ * ``/verify/``), so in practice this throws ``ALREADY_USED`` only when
+ * a verify-and-revoke race left a previously-consumed link behind.
+ */
 export async function fetchPortalOverview(
   token: string,
 ): Promise<PortalOverviewResponse> {
@@ -165,7 +213,13 @@ export async function fetchPortalOverview(
     `${PORTAL_BASE}/buyer/${encodeURIComponent(token)}/overview/`,
     { headers: { Accept: 'application/json' } },
   );
-  if (res.status === 401) throw new Error('INVALID');
+  if (res.status === 401) {
+    const body = await res.json().catch(() => ({}));
+    const code = _extract401Code(body);
+    throw new Error(
+      code === PORTAL_TOKEN_ALREADY_USED_CODE ? 'ALREADY_USED' : 'INVALID',
+    );
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.detail || `Overview failed (${res.status})`);

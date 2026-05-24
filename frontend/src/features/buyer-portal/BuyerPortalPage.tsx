@@ -47,6 +47,13 @@ import {
 type PageState =
   | { kind: 'loading' }
   | { kind: 'invalid' }
+  // 'already_used' — backend code ``portal_token_already_used``. The
+  // magic-link was previously redeemed (single-use semantics, industry
+  // standard — Slack/Notion/Linear). Render a dedicated "request a new
+  // login link" CTA (RecoveryCard-shaped) instead of the generic
+  // "expired" copy so the buyer knows to ask the agent for a fresh link
+  // rather than retrying the same one.
+  | { kind: 'already_used' }
   | { kind: 'error'; message: string }
   | { kind: 'ready'; data: PortalOverviewResponse };
 
@@ -76,7 +83,12 @@ export function BuyerPortalPage() {
       } catch (err) {
         if (cancelled) return;
         const msg = (err as Error).message;
-        if (msg === 'INVALID') {
+        if (msg === 'ALREADY_USED') {
+          // Single-use magic-link was previously redeemed (Slack/Notion
+          // /Linear-style verify semantics). Different from the generic
+          // "expired" copy so the buyer knows exactly what to do next.
+          setState({ kind: 'already_used' });
+        } else if (msg === 'INVALID') {
           setState({ kind: 'invalid' });
         } else {
           setState({ kind: 'error', message: msg });
@@ -148,7 +160,53 @@ export function BuyerPortalPage() {
     }
   }
 
-  // ── Render: invalid / error / loading shells ─────────────────────
+  // ── Render: already-used / invalid / error / loading shells ──────
+
+  if (state.kind === 'already_used') {
+    // RecoveryCard-shaped surface for ``portal_token_already_used``.
+    // We don't reuse the shared <RecoveryCard> directly because the
+    // buyer-portal is a public, unauthenticated shell — RecoveryCard
+    // links to ``/login`` which doesn't exist for buyers. The shape /
+    // tone matches it so the visual language is consistent.
+    const mailto =
+      'mailto:info@datadrivenconstruction.io?subject=' +
+      encodeURIComponent('Buyer portal — request a new login link');
+    return (
+      <ShellWrapper>
+        <div
+          data-testid="buyer-portal-already-used"
+          className="rounded-2xl border border-amber-300/40 bg-amber-50 dark:bg-amber-900/20 p-6 text-center space-y-3"
+        >
+          <ShieldX
+            size={32}
+            strokeWidth={1.5}
+            className="mx-auto text-amber-600 dark:text-amber-400"
+          />
+          <h2 className="text-base font-semibold text-content-primary">
+            {t('buyer_portal.already_used.title', {
+              defaultValue: 'This link has already been used',
+            })}
+          </h2>
+          <p className="text-sm text-content-secondary">
+            {t('buyer_portal.already_used.body', {
+              defaultValue:
+                'For your security, each login link works only once. Request a new login link to continue.',
+            })}
+          </p>
+          <a
+            href={mailto}
+            className="mt-2 inline-flex items-center justify-center gap-2 h-9 px-4 rounded-lg bg-oe-blue text-white text-sm font-medium hover:bg-oe-blue-hover"
+            data-testid="buyer-portal-request-new-link"
+          >
+            <Mail size={14} aria-hidden />
+            {t('buyer_portal.already_used.request', {
+              defaultValue: 'Email a fresh link',
+            })}
+          </a>
+        </div>
+      </ShellWrapper>
+    );
+  }
 
   if (state.kind === 'invalid') {
     return (

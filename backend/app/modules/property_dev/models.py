@@ -2029,6 +2029,16 @@ class PortalToken(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True,
     )
+    # Single-use semantics (industry standard — Slack/Notion/Linear).
+    # NULL = unused, NOT NULL = the moment the magic-link was redeemed.
+    # The verify endpoint flips this from NULL → NOW() in a single atomic
+    # UPDATE (``WHERE consumed_at IS NULL``), so a second / concurrent
+    # verify of the same token cannot succeed. Continued buyer access
+    # is via the longer-lived session JWT issued at first verify; if the
+    # buyer needs a fresh device they must request a new magic-link.
+    consumed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, server_default=None,
+    )
     last_used_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True,
     )
@@ -2044,7 +2054,8 @@ class PortalToken(Base):
     def __repr__(self) -> str:  # pragma: no cover — debug only
         return (
             f"<PortalToken buyer={self.buyer_id} "
-            f"revoked={self.revoked_at is not None}>"
+            f"revoked={self.revoked_at is not None} "
+            f"consumed={self.consumed_at is not None}>"
         )
 
 
