@@ -45,8 +45,8 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "v3124_propdev_pricing_engine"
-down_revision: Union[str, Sequence[str], None] = "v3123_boq_fk_indexes"
+revision: str = "v3125_propdev_pricing_engine"
+down_revision: Union[str, Sequence[str], None] = "v3124_propdev_analytics_indexes"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
