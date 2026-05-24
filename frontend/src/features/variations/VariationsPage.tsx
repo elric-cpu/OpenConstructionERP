@@ -43,6 +43,7 @@ import { apiGet, getErrorMessage } from '@/shared/lib/api';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { usePreferencesStore } from '@/stores/usePreferencesStore';
+import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 import {
   listNotices,
   listVariationRequests,
@@ -92,7 +93,8 @@ import {
   type EotStatus,
 } from './api';
 
-type Tab = 'notices' | 'requests' | 'orders' | 'daywork' | 'eot';
+const VARIATIONS_TAB_IDS = ['notices', 'requests', 'orders', 'daywork', 'eot'] as const;
+type Tab = (typeof VARIATIONS_TAB_IDS)[number];
 
 /** A row currently being edited — carries its tab so the modal can prefill
  *  and PATCH the right sub-entity. */
@@ -261,6 +263,17 @@ export function VariationsPage() {
   const [tab, setTab] = useState<Tab>('notices');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
+  // Arrow-key navigation across the 5-tab variations strip (WCAG 2.1.1).
+  const onTabKeyDown = useTabKeyboardNav<Tab>({
+    ids: VARIATIONS_TAB_IDS,
+    activeId: tab,
+    onChange: (next) => {
+      setTab(next);
+      setStatusFilter('');
+      setSearch('');
+    },
+    orientation: 'horizontal',
+  });
   const [selected, setSelected] = useState<
     | { kind: 'notices'; id: string }
     | { kind: 'requests'; id: string }
@@ -581,7 +594,14 @@ export function VariationsPage() {
       )}
 
       <div className="border-b border-border-light">
-        <nav className="flex gap-1 -mb-px" role="tablist">
+        <nav
+          className="flex gap-1 -mb-px"
+          role="tablist"
+          aria-label={t('variations.tabs_aria', {
+            defaultValue: 'Variations sections',
+          })}
+          onKeyDown={onTabKeyDown}
+        >
           {(
             [
               {
@@ -612,12 +632,16 @@ export function VariationsPage() {
             ] as { id: Tab; label: string; icon: React.ElementType }[]
           ).map((tabItem) => {
             const Icon = tabItem.icon;
+            const isActive = tab === tabItem.id;
             return (
               <button
                 key={tabItem.id}
                 type="button"
                 role="tab"
-                aria-selected={tab === tabItem.id}
+                id={`variations-tab-${tabItem.id}`}
+                aria-selected={isActive}
+                aria-controls={`variations-panel-${tabItem.id}`}
+                tabIndex={isActive ? 0 : -1}
                 onClick={() => {
                   setTab(tabItem.id);
                   setStatusFilter('');

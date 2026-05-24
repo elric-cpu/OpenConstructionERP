@@ -42,6 +42,7 @@ import {
 } from '@/shared/ui';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { useToastStore } from '@/stores/useToastStore';
+import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 
 import { FederationTypeTree } from './FederationTypeTree';
 import { FederatedViewer, type FederatedViewerHandle } from './FederatedViewer';
@@ -341,6 +342,12 @@ function FederationDetailDrawer({
   const [activeTab, setActiveTab] = useState<'members' | 'types' | '3d'>(
     'members',
   );
+  const onTabKeyDown = useTabKeyboardNav<'members' | 'types' | '3d'>({
+    ids: ['members', 'types', '3d'] as const,
+    activeId: activeTab,
+    onChange: setActiveTab,
+    orientation: 'horizontal',
+  });
   const viewerRef = useRef<FederatedViewerHandle | null>(null);
   const handleSelectClass = useCallback(
     (ifcClass: string /* , _modelIds: string[] */) => {
@@ -485,6 +492,7 @@ function FederationDetailDrawer({
               aria-label={t('bim.federation.tabs_label', {
                 defaultValue: 'Federation views',
               })}
+              onKeyDown={onTabKeyDown}
               className="mb-3 flex items-center gap-1 border-b border-slate-200"
             >
               {(
@@ -493,28 +501,34 @@ function FederationDetailDrawer({
                   ['types', t('bim.federation.tab_types', { defaultValue: 'Element types' })],
                   ['3d', t('bim.federation.tab_3d', { defaultValue: '3D' })],
                 ] as Array<[typeof activeTab, string]>
-              ).map(([key, label]) => (
-                <button
-                  key={key}
-                  type="button"
-                  role="tab"
-                  aria-selected={activeTab === key}
-                  data-testid={`federation-tab-${key}`}
-                  onClick={() => setActiveTab(key)}
-                  className={
-                    'px-3 py-1.5 -mb-px border-b-2 text-sm font-medium transition-colors ' +
-                    (activeTab === key
-                      ? 'border-oe-blue text-oe-blue'
-                      : 'border-transparent text-slate-500 hover:text-slate-700')
-                  }
-                >
-                  {label}
-                </button>
-              ))}
+              ).map(([key, label]) => {
+                const isActive = activeTab === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    role="tab"
+                    id={`federation-tab-${key}`}
+                    aria-selected={isActive}
+                    aria-controls={`federation-tab-panel-${key}`}
+                    tabIndex={isActive ? 0 : -1}
+                    data-testid={`federation-tab-${key}`}
+                    onClick={() => setActiveTab(key)}
+                    className={
+                      'px-3 py-1.5 -mb-px border-b-2 text-sm font-medium transition-colors ' +
+                      (isActive
+                        ? 'border-oe-blue text-oe-blue'
+                        : 'border-transparent text-slate-500 hover:text-slate-700')
+                    }
+                  >
+                    {label}
+                  </button>
+                );
+              })}
             </div>
 
             {activeTab === 'members' ? (
-              <div data-testid="federation-tab-panel-members" role="tabpanel">
+              <div data-testid="federation-tab-panel-members" role="tabpanel" id="federation-tab-panel-members" aria-labelledby="federation-tab-members">
                 <h3 className="mb-2 text-sm font-semibold text-slate-700">
                   {t('bim.federation.members')}
                 </h3>
@@ -628,7 +642,7 @@ function FederationDetailDrawer({
             ) : null}
 
             {activeTab === 'types' ? (
-              <div data-testid="federation-tab-panel-types" role="tabpanel">
+              <div data-testid="federation-tab-panel-types" role="tabpanel" id="federation-tab-panel-types" aria-labelledby="federation-tab-types">
                 {/* Slice 2: federation-flat (NOT per-model) element-type
                     tree. Mirrors BIMcollab Zoom — IfcClass is the primary
                     axis so cross-model selections ("color all
@@ -641,7 +655,7 @@ function FederationDetailDrawer({
             ) : null}
 
             {activeTab === '3d' ? (
-              <div data-testid="federation-tab-panel-3d" role="tabpanel">
+              <div data-testid="federation-tab-panel-3d" role="tabpanel" id="federation-tab-panel-3d" aria-labelledby="federation-tab-3d">
                 <FederatedViewer ref={viewerRef} federationId={data.id} />
               </div>
             ) : null}

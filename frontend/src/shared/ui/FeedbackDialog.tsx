@@ -192,7 +192,7 @@ export function FeedbackDialog({ open, onClose }: FeedbackDialogProps) {
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
               placeholder={t('feedback.subject_placeholder', { defaultValue: 'Brief summary...' })}
-              required
+              required aria-required="true"
               maxLength={200}
               className={clsx(
                 'w-full rounded-lg border border-border-light bg-surface-primary px-3 py-2',
@@ -213,7 +213,7 @@ export function FeedbackDialog({ open, onClose }: FeedbackDialogProps) {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder={t('feedback.description_placeholder', { defaultValue: 'Tell us what happened or what you\'d like to see...' })}
-              required
+              required aria-required="true"
               rows={4}
               maxLength={2000}
               className={clsx(

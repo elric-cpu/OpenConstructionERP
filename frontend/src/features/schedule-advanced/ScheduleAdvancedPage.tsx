@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
@@ -86,13 +87,15 @@ import {
   type BaselineDeltaEntry,
 } from './api';
 
-type Tab =
-  | 'master'
-  | 'phases'
-  | 'look_ahead'
-  | 'weekly'
-  | 'constraints'
-  | 'baselines';
+const SCHEDULE_TAB_IDS = [
+  'master',
+  'phases',
+  'look_ahead',
+  'weekly',
+  'constraints',
+  'baselines',
+] as const;
+type Tab = (typeof SCHEDULE_TAB_IDS)[number];
 
 const PHASE_VARIANT: Record<PhaseStatus, 'neutral' | 'blue' | 'success' | 'warning'> = {
   in_planning: 'neutral',
@@ -160,6 +163,13 @@ function pctNumber(value: string | number | null | undefined): number {
 export function ScheduleAdvancedPage() {
   const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('master');
+  // Arrow-key navigation across the schedule advanced tab strip (WCAG 2.1.1).
+  const onTabKeyDown = useTabKeyboardNav<Tab>({
+    ids: SCHEDULE_TAB_IDS,
+    activeId: tab,
+    onChange: setTab,
+    orientation: 'horizontal',
+  });
   const activeProjectId = useProjectContextStore((s) => s.activeProjectId);
   const [projectId, setProjectId] = useState<string>('');
   const [masterId, setMasterId] = useState<string>('');
@@ -358,7 +368,14 @@ export function ScheduleAdvancedPage() {
 
       {/* Tabs */}
       <div className="border-b border-border-light">
-        <nav className="flex gap-1 -mb-px overflow-x-auto">
+        <nav
+          className="flex gap-1 -mb-px overflow-x-auto"
+          role="tablist"
+          aria-label={t('schedule_advanced.tabs_aria', {
+            defaultValue: 'Schedule sections',
+          })}
+          onKeyDown={onTabKeyDown}
+        >
           {(
             [
               { id: 'master', label: t('schedule_advanced.tab_master', { defaultValue: 'Master' }), icon: Calendar },
@@ -370,14 +387,20 @@ export function ScheduleAdvancedPage() {
             ] as { id: Tab; label: string; icon: React.ElementType }[]
           ).map((it) => {
             const Icon = it.icon;
+            const isActive = tab === it.id;
             return (
               <button
                 key={it.id}
                 type="button"
+                role="tab"
+                id={`sched-tab-${it.id}`}
+                aria-selected={isActive}
+                aria-controls={`sched-panel-${it.id}`}
+                tabIndex={isActive ? 0 : -1}
                 onClick={() => setTab(it.id)}
                 className={clsx(
                   'flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors whitespace-nowrap',
-                  tab === it.id
+                  isActive
                     ? 'border-oe-blue text-oe-blue'
                     : 'border-transparent text-content-secondary hover:text-content-primary',
                 )}

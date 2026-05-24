@@ -456,7 +456,7 @@ function RuleEditorModal({
               <input
                 id="rule-name"
                 type="text"
-                required
+                required aria-required="true"
                 value={form.name}
                 onChange={(e) => updateField('name', e.target.value)}
                 placeholder={t('bim_rules.field_name_placeholder', {

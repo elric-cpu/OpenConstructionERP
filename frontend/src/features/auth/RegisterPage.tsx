@@ -243,7 +243,7 @@ export function RegisterPage() {
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder={t('auth.full_name_placeholder', 'John Smith')}
-                  required
+                  required aria-required="true"
                   autoFocus
                   autoComplete="name"
                   icon={<User size={15} />}
@@ -260,7 +260,7 @@ export function RegisterPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@company.com"
                   autoComplete="email"
-                  required
+                  required aria-required="true"
                   icon={<Mail size={15} />}
                 />
               </div>
@@ -336,7 +336,7 @@ export function RegisterPage() {
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder={t('auth.password_min', 'Minimum 8 characters')}
                     autoComplete="new-password"
-                    required
+                    required aria-required="true"
                     minLength={8}
                     className="h-9 w-full rounded-lg border border-border bg-surface-primary pl-9 pr-9 text-sm text-content-primary placeholder:text-content-tertiary transition-all duration-fast ease-oe focus:outline-none focus:ring-2 focus:ring-oe-blue focus:border-transparent hover:border-content-tertiary"
                   />
@@ -372,7 +372,7 @@ export function RegisterPage() {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder={t('auth.confirm_password_placeholder', 'Repeat your password')}
                   autoComplete="new-password"
-                  required
+                  required aria-required="true"
                   error={confirmPassword && !passwordsMatch ? t('auth.passwords_mismatch', 'Passwords do not match') : undefined}
                   icon={<Lock size={15} />}
                 />

@@ -669,7 +669,7 @@ export function BuyerPortalPage() {
                   })}
                 </span>
                 <textarea
-                  required
+                  required aria-required="true"
                   maxLength={2000}
                   rows={4}
                   value={contactMessage}

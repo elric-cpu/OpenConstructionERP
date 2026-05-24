@@ -157,7 +157,7 @@ export function ForgotPasswordPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="you@company.com"
-                    required
+                    required aria-required="true"
                     autoFocus
                     icon={<Mail size={16} />}
                   />

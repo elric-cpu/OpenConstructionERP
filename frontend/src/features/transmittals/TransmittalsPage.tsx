@@ -773,7 +773,7 @@ function EditTransmittalModal({
                 onChange={(e) => setSubject(e.target.value)}
                 data-testid="edit-transmittal-subject"
                 className="w-full px-3 py-2 text-sm bg-surface-secondary border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-oe-blue"
-                required
+                required aria-required="true"
                 maxLength={500}
               />
             </div>

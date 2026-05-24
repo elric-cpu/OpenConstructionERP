@@ -1637,7 +1637,7 @@ function ScheduleDetail({
             placeholder={t('schedule.activity_name_placeholder', 'e.g. Foundation Works')}
             value={activityForm.name}
             onChange={(e) => setActivityForm((f) => ({ ...f, name: e.target.value }))}
-            required
+            required aria-required="true"
           />
           <Input
             label={t('schedule.wbs_code', 'WBS Code')}
@@ -1651,14 +1651,14 @@ function ScheduleDetail({
               type="date"
               value={activityForm.start_date}
               onChange={(e) => setActivityForm((f) => ({ ...f, start_date: e.target.value }))}
-              required
+              required aria-required="true"
             />
             <Input
               label={t('schedule.end_date', 'End Date')}
               type="date"
               value={activityForm.end_date}
               onChange={(e) => setActivityForm((f) => ({ ...f, end_date: e.target.value }))}
-              required
+              required aria-required="true"
             />
           </div>
           <div className="flex flex-col gap-1.5">
@@ -2008,7 +2008,7 @@ function ProjectSchedules({
             placeholder={t('schedule.schedule_name_placeholder', 'e.g. Main Construction Schedule')}
             value={form.name}
             onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            required
+            required aria-required="true"
           />
           <Input
             label={t('schedule.description', 'Description')}

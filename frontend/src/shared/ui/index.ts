@@ -58,6 +58,14 @@ export { BOQPicker } from './BOQPicker';
 export { ConfirmDialog } from './ConfirmDialog';
 export type { ConfirmDialogProps } from './ConfirmDialog';
 
+export { TabBar, tabIds } from './TabBar';
+export type {
+  TabBarTab,
+  TabBarProps,
+  TabBarVariant,
+  TabBarSize,
+} from './TabBar';
+
 export { WideModal, WideModalSection, WideModalField } from './WideModal';
 export type {
   WideModalProps,

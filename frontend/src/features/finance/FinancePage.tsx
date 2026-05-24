@@ -36,6 +36,8 @@ import {
   Breadcrumb,
   SkeletonTable,
   ConfirmDialog,
+  TabBar,
+  tabIds,
 } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import {
@@ -630,25 +632,14 @@ export function FinancePage() {
       )}
 
       {/* Tab Bar */}
-      <div className="flex items-center gap-1 mb-6 border-b border-border-light">
-        {tabs.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={`
-              flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-all
-              ${
-                activeTab === tab.key
-                  ? 'border-oe-blue text-oe-blue'
-                  : 'border-transparent text-content-tertiary hover:text-content-primary hover:bg-surface-secondary'
-              }
-            `}
-          >
-            {tab.icon}
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <TabBar<FinanceTab>
+        ariaLabel={t('finance.tabs_aria', { defaultValue: 'Finance sections' })}
+        idPrefix="finance"
+        className="mb-6"
+        tabs={tabs.map((tab) => ({ id: tab.key, label: tab.label, icon: tab.icon }))}
+        activeId={activeTab}
+        onChange={setActiveTab}
+      />
 
       {/* Tab Content */}
       <RequiresProject
@@ -657,20 +648,26 @@ export function FinancePage() {
             'Track invoices, budgets, and payments here. Select a project to view its financial data, or lock a BOQ to auto-generate budget lines.',
         })}
       >
-        {projectId && activeTab === 'budgets' && <BudgetsTab projectId={projectId} />}
-        {projectId && activeTab === 'invoices' && <InvoicesTab projectId={projectId} />}
-        {projectId && activeTab === 'payments' && (
-          <PaymentsTab
-            projectId={projectId}
-            onGoToInvoices={() => setActiveTab('invoices')}
-          />
-        )}
-        {projectId && activeTab === 'evm' && (
-          <EVMTab
-            projectId={projectId}
-            onGoToBudgets={() => setActiveTab('budgets')}
-          />
-        )}
+        <div
+          role="tabpanel"
+          id={tabIds('finance').panelId(activeTab)}
+          aria-labelledby={tabIds('finance').tabId(activeTab)}
+        >
+          {projectId && activeTab === 'budgets' && <BudgetsTab projectId={projectId} />}
+          {projectId && activeTab === 'invoices' && <InvoicesTab projectId={projectId} />}
+          {projectId && activeTab === 'payments' && (
+            <PaymentsTab
+              projectId={projectId}
+              onGoToInvoices={() => setActiveTab('invoices')}
+            />
+          )}
+          {projectId && activeTab === 'evm' && (
+            <EVMTab
+              projectId={projectId}
+              onGoToBudgets={() => setActiveTab('budgets')}
+            />
+          )}
+        </div>
       </RequiresProject>
     </div>
   );

@@ -28,7 +28,15 @@
 // the heading. Initial focus is moved into the first focusable form
 // element; Escape and backdrop click both call onClose.
 
-import { useEffect, useId, useRef } from 'react';
+import {
+  Children,
+  cloneElement,
+  isValidElement,
+  useEffect,
+  useId,
+  useRef,
+  type ReactElement,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import clsx from 'clsx';
@@ -299,6 +307,28 @@ export function WideModalField({
   className,
   htmlFor,
 }: WideModalFieldProps) {
+  // A11y: when `required` is set we want the inner form control to also
+  // expose aria-required to assistive tech (a screen reader only reads
+  // the wrapper's "*" if it can associate it with the field — which the
+  // visual asterisk alone does not do, per WCAG 3.3.2). We clone the
+  // first valid React-element child and inject aria-required="true" so
+  // every call site picks this up automatically, without a per-form
+  // change. If the child is a Fragment, plain text, or already declares
+  // aria-required, we leave it untouched.
+  const enhancedChildren = required
+    ? Children.map(children, (child, idx) => {
+        if (idx !== 0) return child;
+        if (!isValidElement(child)) return child;
+        const existing = (child.props as Record<string, unknown>)[
+          'aria-required'
+        ];
+        if (existing !== undefined) return child;
+        return cloneElement(child as ReactElement<Record<string, unknown>>, {
+          'aria-required': true,
+        });
+      })
+    : children;
+
   return (
     <div className={clsx('flex flex-col', SPAN_CLASSES[span], className)}>
       <label
@@ -312,7 +342,7 @@ export function WideModalField({
           </span>
         )}
       </label>
-      {children}
+      {enhancedChildren}
       {error ? (
         <p className="mt-1 text-xs text-semantic-error">{error}</p>
       ) : hint ? (

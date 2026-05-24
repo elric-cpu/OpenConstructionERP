@@ -33,6 +33,7 @@ import { normalizeListResponse } from '@/shared/lib/apiHelpers';
 import { getErrorMessage } from '@/shared/lib/api';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useToastStore } from '@/stores/useToastStore';
+import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 import {
   fetchInvestigations,
   fetchJSAs,
@@ -67,7 +68,10 @@ import {
   type FiveWhys,
 } from './api';
 
-type HSETab = 'incidents' | 'jsa' | 'permits' | 'toolbox' | 'ppe' | 'audits' | 'capa';
+const HSE_TAB_IDS = [
+  'incidents', 'jsa', 'permits', 'toolbox', 'ppe', 'audits', 'capa',
+] as const;
+type HSETab = (typeof HSE_TAB_IDS)[number];
 
 type BadgeVariant = 'neutral' | 'blue' | 'success' | 'warning' | 'error';
 
@@ -113,6 +117,12 @@ export function HSEAdvancedPage() {
   const projectId = routeProjectId || activeProjectId || '';
 
   const [tab, setTab] = useState<HSETab>('incidents');
+  const onTabKeyDown = useTabKeyboardNav<HSETab>({
+    ids: HSE_TAB_IDS,
+    activeId: tab,
+    onChange: setTab,
+    orientation: 'horizontal',
+  });
 
   const tabs: { key: HSETab; label: string; icon: React.ReactNode }[] = [
     {
@@ -205,32 +215,48 @@ export function HSEAdvancedPage() {
         <div
           className="flex items-center gap-1 mb-6 border-b border-border-light overflow-x-auto"
           role="tablist"
+          aria-label={t('hse_advanced.tabs_aria', {
+            defaultValue: 'HSE advanced sections',
+          })}
+          onKeyDown={onTabKeyDown}
         >
-          {tabs.map((tb) => (
-            <button
-              key={tb.key}
-              role="tab"
-              aria-selected={tab === tb.key}
-              onClick={() => setTab(tb.key)}
-              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
-                tab === tb.key
-                  ? 'border-oe-blue text-oe-blue'
-                  : 'border-transparent text-content-tertiary hover:text-content-primary hover:bg-surface-secondary'
-              }`}
-            >
-              {tb.icon}
-              {tb.label}
-            </button>
-          ))}
+          {tabs.map((tb) => {
+            const isActive = tab === tb.key;
+            return (
+              <button
+                key={tb.key}
+                role="tab"
+                id={`hse-tab-${tb.key}`}
+                aria-selected={isActive}
+                aria-controls={`hse-panel-${tb.key}`}
+                tabIndex={isActive ? 0 : -1}
+                onClick={() => setTab(tb.key)}
+                className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
+                  isActive
+                    ? 'border-oe-blue text-oe-blue'
+                    : 'border-transparent text-content-tertiary hover:text-content-primary hover:bg-surface-secondary'
+                }`}
+              >
+                {tb.icon}
+                {tb.label}
+              </button>
+            );
+          })}
         </div>
 
-        {tab === 'incidents' && <IncidentsTab projectId={projectId} />}
-        {tab === 'jsa' && <JSATab projectId={projectId} />}
-        {tab === 'permits' && <PermitsTab projectId={projectId} />}
-        {tab === 'toolbox' && <ToolboxTab projectId={projectId} />}
-        {tab === 'ppe' && <PPETab projectId={projectId} />}
-        {tab === 'audits' && <AuditsTab projectId={projectId} />}
-        {tab === 'capa' && <CAPATab projectId={projectId} />}
+        <div
+          role="tabpanel"
+          id={`hse-panel-${tab}`}
+          aria-labelledby={`hse-tab-${tab}`}
+        >
+          {tab === 'incidents' && <IncidentsTab projectId={projectId} />}
+          {tab === 'jsa' && <JSATab projectId={projectId} />}
+          {tab === 'permits' && <PermitsTab projectId={projectId} />}
+          {tab === 'toolbox' && <ToolboxTab projectId={projectId} />}
+          {tab === 'ppe' && <PPETab projectId={projectId} />}
+          {tab === 'audits' && <AuditsTab projectId={projectId} />}
+          {tab === 'capa' && <CAPATab projectId={projectId} />}
+        </div>
       </RequiresProject>
     </div>
   );

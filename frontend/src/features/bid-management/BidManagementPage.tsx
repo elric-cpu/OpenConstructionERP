@@ -35,6 +35,7 @@ import { PipelineBanner } from './PipelineBanner';
 import { apiGet, getErrorMessage } from '@/shared/lib/api';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
+import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 import {
   listPackages,
   getPackage,
@@ -61,7 +62,8 @@ import {
   type BidPackageLineItem,
 } from './api';
 
-type Tab = 'packages' | 'invitations' | 'submissions' | 'qa';
+const BID_TAB_IDS = ['packages', 'invitations', 'submissions', 'qa'] as const;
+type Tab = (typeof BID_TAB_IDS)[number];
 
 const PACKAGE_STATUS_VARIANT: Record<
   BidPackageStatus,
@@ -159,6 +161,17 @@ export function BidManagementPage() {
   const [tab, setTab] = useState<Tab>('packages');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
+  // Arrow-key navigation across the 4-tab bid management strip (WCAG 2.1.1).
+  const onTabKeyDown = useTabKeyboardNav<Tab>({
+    ids: BID_TAB_IDS,
+    activeId: tab,
+    onChange: (next) => {
+      setTab(next);
+      setStatusFilter('');
+      setSearch('');
+    },
+    orientation: 'horizontal',
+  });
   const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -269,7 +282,14 @@ export function BidManagementPage() {
       />
 
       <div className="border-b border-border-light">
-        <nav className="flex gap-1 -mb-px" role="tablist">
+        <nav
+          className="flex gap-1 -mb-px"
+          role="tablist"
+          aria-label={t('bid_management.tabs_aria', {
+            defaultValue: 'Bid management sections',
+          })}
+          onKeyDown={onTabKeyDown}
+        >
           {(
             [
               {
@@ -295,12 +315,16 @@ export function BidManagementPage() {
             ] as { id: Tab; label: string; icon: React.ElementType }[]
           ).map((tabItem) => {
             const Icon = tabItem.icon;
+            const isActive = tab === tabItem.id;
             return (
               <button
                 key={tabItem.id}
                 type="button"
                 role="tab"
-                aria-selected={tab === tabItem.id}
+                id={`bid-tab-${tabItem.id}`}
+                aria-selected={isActive}
+                aria-controls={`bid-panel-${tabItem.id}`}
+                tabIndex={isActive ? 0 : -1}
                 onClick={() => {
                   setTab(tabItem.id);
                   setStatusFilter('');
@@ -308,7 +332,7 @@ export function BidManagementPage() {
                 }}
                 className={clsx(
                   'flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors',
-                  tab === tabItem.id
+                  isActive
                     ? 'border-oe-blue text-oe-blue'
                     : 'border-transparent text-content-secondary hover:text-content-primary',
                 )}

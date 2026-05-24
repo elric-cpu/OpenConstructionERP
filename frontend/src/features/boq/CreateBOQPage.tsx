@@ -111,7 +111,7 @@ export function CreateBOQModal({ open, onClose, defaultProjectId }: CreateBOQMod
                 value={selectedProjectId}
                 onChange={(e) => setSelectedProjectId(e.target.value)}
                 className="w-full h-10 appearance-none rounded-lg border border-border px-3 pr-9 text-sm text-content-primary bg-surface-primary focus:outline-none focus:ring-2 focus:ring-oe-blue focus:border-transparent transition-all duration-fast ease-oe hover:border-content-tertiary"
-                required
+                required aria-required="true"
               >
                 <option value="" disabled>
                   {t('boq.select_project', { defaultValue: 'Select Project' })}
@@ -130,7 +130,7 @@ export function CreateBOQModal({ open, onClose, defaultProjectId }: CreateBOQMod
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Main Building — Structural Works"
-            required
+            required aria-required="true"
             autoFocus
           />
 

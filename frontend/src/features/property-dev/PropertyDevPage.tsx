@@ -68,6 +68,7 @@ import {
 import { MoneyDisplay } from '@/shared/ui/MoneyDisplay';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { useConfirm } from '@/shared/hooks/useConfirm';
+import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 import { PipelineBanner } from './PipelineBanner';
 import { useToastStore } from '@/stores/useToastStore';
 import { usePreferencesStore } from '@/stores/usePreferencesStore';
@@ -168,23 +169,26 @@ import {
   EscrowTab,
 } from './PropDevSubEntityTabs';
 
-type Tab =
-  | 'overview'
-  | 'developments'
-  | 'phases'
-  | 'blocks'
-  | 'plots'
-  | 'house_types'
-  | 'leads'
-  | 'buyers'
-  | 'reservations'
-  | 'spa'
-  | 'payment_schedule'
-  | 'brokers'
-  | 'price_matrix'
-  | 'escrow'
-  | 'handovers'
-  | 'warranty';
+// Order matters — arrow-key navigation walks the list in this order.
+const PROPDEV_TAB_IDS = [
+  'overview',
+  'developments',
+  'phases',
+  'blocks',
+  'plots',
+  'house_types',
+  'leads',
+  'buyers',
+  'reservations',
+  'spa',
+  'payment_schedule',
+  'brokers',
+  'price_matrix',
+  'escrow',
+  'handovers',
+  'warranty',
+] as const;
+type Tab = (typeof PROPDEV_TAB_IDS)[number];
 
 const PLOT_STATUS_VARIANT: Record<PlotStatus, 'neutral' | 'blue' | 'success' | 'warning' | 'error'> = {
   planned: 'neutral',
@@ -265,6 +269,16 @@ export function PropertyDevPage() {
   const [tab, setTab] = useState<Tab>('overview');
   const [selectedDevId, setSelectedDevId] = useState<string>('');
   const [search, setSearch] = useState('');
+  // Arrow-key navigation for the 16-tab strip (WCAG 2.1.1).
+  const onTabKeyDown = useTabKeyboardNav<Tab>({
+    ids: PROPDEV_TAB_IDS,
+    activeId: tab,
+    onChange: (next) => {
+      setTab(next);
+      setSearch('');
+    },
+    orientation: 'horizontal',
+  });
   const [createOpen, setCreateOpen] = useState(false);
   const [activePlotId, setActivePlotId] = useState<string | null>(null);
   const [activeBuyerId, setActiveBuyerId] = useState<string | null>(null);
@@ -531,6 +545,7 @@ export function PropertyDevPage() {
           className="flex flex-wrap items-stretch gap-1.5"
           aria-label={t('propdev.tabs_aria', { defaultValue: 'Property development sections' })}
           role="tablist"
+          onKeyDown={onTabKeyDown}
         >
           {(
             [
@@ -568,6 +583,9 @@ export function PropertyDevPage() {
                   role="tab"
                   aria-selected={active}
                   aria-label={tabItem.label}
+                  aria-controls={`propdev-panel-${tabItem.id}`}
+                  id={`propdev-tab-${tabItem.id}`}
+                  tabIndex={active ? 0 : -1}
                   title={`${tabItem.label} — ${tabItem.tip}`}
                   onClick={() => {
                     setTab(tabItem.id);
@@ -686,6 +704,11 @@ export function PropertyDevPage() {
       )}
 
       {/* Body */}
+      <div
+        role="tabpanel"
+        id={`propdev-panel-${tab}`}
+        aria-labelledby={`propdev-tab-${tab}`}
+      >
       {isLoading ? (
         <Card padding="md"><SkeletonTable rows={6} columns={4} /></Card>
       ) : loadError ? (
@@ -815,6 +838,7 @@ export function PropertyDevPage() {
           onConsumedPreset={() => setWarrantyStatusPreset('')}
         />
       )}
+      </div>
 
 
       {/* Plot detail */}

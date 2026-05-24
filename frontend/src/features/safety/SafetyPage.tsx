@@ -37,6 +37,7 @@ import { apiGet, apiPost, triggerDownload } from '@/shared/lib/api';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useToastStore } from '@/stores/useToastStore';
+import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -113,7 +114,8 @@ function normaliseObservation(o: ObservationWire): Observation {
 
 /* ── Constants ────────────────────────────────────────────────────────── */
 
-type SafetyTab = 'incidents' | 'observations';
+const SAFETY_TAB_IDS = ['incidents', 'observations'] as const;
+type SafetyTab = (typeof SAFETY_TAB_IDS)[number];
 
 const INCIDENT_TYPE_COLORS: Record<
   string,
@@ -476,6 +478,13 @@ export function SafetyPage() {
   const projectName = useProjectContextStore((s) => s.activeProjectName);
 
   const [activeTab, setActiveTab] = useState<SafetyTab>('incidents');
+  // Arrow-key navigation across the Incidents / Observations tabs (WCAG 2.1.1).
+  const onTabKeyDown = useTabKeyboardNav<SafetyTab>({
+    ids: SAFETY_TAB_IDS,
+    activeId: activeTab,
+    onChange: setActiveTab,
+    orientation: 'horizontal',
+  });
 
   const tabs: { key: SafetyTab; label: string; icon: React.ReactNode }[] = [
     {
@@ -566,35 +575,52 @@ export function SafetyPage() {
         })}
       >
         {/* Tab Bar */}
-        <div className="flex items-center gap-1 mb-6 border-b border-border-light" role="tablist">
-          {tabs.map((tab) => (
-            <button
-              key={tab.key}
-              role="tab"
-              aria-selected={activeTab === tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`
-                flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-all
-                ${
-                  activeTab === tab.key
-                    ? 'border-oe-blue text-oe-blue'
-                    : 'border-transparent text-content-tertiary hover:text-content-primary hover:bg-surface-secondary'
-                }
-              `}
-            >
-              {tab.icon}
-              {tab.label}
-            </button>
-          ))}
+        <div
+          className="flex items-center gap-1 mb-6 border-b border-border-light"
+          role="tablist"
+          aria-label={t('safety.tabs_aria', { defaultValue: 'Safety sections' })}
+          onKeyDown={onTabKeyDown}
+        >
+          {tabs.map((tab) => {
+            const isActive = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                role="tab"
+                id={`safety-tab-${tab.key}`}
+                aria-selected={isActive}
+                aria-controls={`safety-panel-${tab.key}`}
+                tabIndex={isActive ? 0 : -1}
+                onClick={() => setActiveTab(tab.key)}
+                className={`
+                  flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-all
+                  ${
+                    isActive
+                      ? 'border-oe-blue text-oe-blue'
+                      : 'border-transparent text-content-tertiary hover:text-content-primary hover:bg-surface-secondary'
+                  }
+                `}
+              >
+                {tab.icon}
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
 
         {/* Tab Content */}
-        {activeTab === 'incidents' && projectId && (
-          <IncidentsTab projectId={projectId} />
-        )}
-        {activeTab === 'observations' && projectId && (
-          <ObservationsTab projectId={projectId} />
-        )}
+        <div
+          role="tabpanel"
+          id={`safety-panel-${activeTab}`}
+          aria-labelledby={`safety-tab-${activeTab}`}
+        >
+          {activeTab === 'incidents' && projectId && (
+            <IncidentsTab projectId={projectId} />
+          )}
+          {activeTab === 'observations' && projectId && (
+            <ObservationsTab projectId={projectId} />
+          )}
+        </div>
       </RequiresProject>
     </div>
   );

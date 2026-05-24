@@ -17,9 +17,11 @@ import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/lib/api';
 import { getIntlLocale } from '@/shared/lib/formatters';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
+import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 import { MonteCarloTab } from './MonteCarloTab';
 
-type RiskTab = 'register' | 'montecarlo';
+const RISK_TAB_IDS = ['register', 'montecarlo'] as const;
+type RiskTab = (typeof RISK_TAB_IDS)[number];
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -501,6 +503,13 @@ export function RiskRegisterPage() {
   // qualitative register so the 5x5 matrix view stays the default — most
   // users land here to triage and edit risks, not to re-run simulations.
   const [activeTab, setActiveTab] = useState<RiskTab>('register');
+  // Arrow-key navigation across the Register / Monte Carlo tabs (WCAG 2.1.1).
+  const onTabKeyDown = useTabKeyboardNav<RiskTab>({
+    ids: RISK_TAB_IDS,
+    activeId: activeTab,
+    onChange: setActiveTab,
+    orientation: 'horizontal',
+  });
 
   // Deep-link auto-select: Cmd+Shift+K global search lands here with
   // ?id=<risk_id> — open the matching risk detail view immediately and
@@ -625,12 +634,16 @@ export function RiskRegisterPage() {
         <div
           role="tablist"
           aria-label={t('risk.tabs_aria', { defaultValue: 'Risk register tabs' })}
+          onKeyDown={onTabKeyDown}
           className="mt-6 flex items-center gap-1 border-b border-border-light"
         >
           <button
             type="button"
             role="tab"
+            id="risk-tab-register"
             aria-selected={activeTab === 'register'}
+            aria-controls="risk-panel-register"
+            tabIndex={activeTab === 'register' ? 0 : -1}
             onClick={() => setActiveTab('register')}
             className={`inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium ${
               activeTab === 'register'
@@ -644,7 +657,10 @@ export function RiskRegisterPage() {
           <button
             type="button"
             role="tab"
+            id="risk-tab-montecarlo"
             aria-selected={activeTab === 'montecarlo'}
+            aria-controls="risk-panel-montecarlo"
+            tabIndex={activeTab === 'montecarlo' ? 0 : -1}
             onClick={() => setActiveTab('montecarlo')}
             className={`inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium ${
               activeTab === 'montecarlo'

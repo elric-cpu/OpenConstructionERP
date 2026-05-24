@@ -41,6 +41,7 @@ import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { projectsApi } from '@/features/projects/api';
 import { getErrorMessage } from '@/shared/lib/api';
+import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 
 import {
   listAccommodations,
@@ -73,6 +74,13 @@ export function AccommodationListPage() {
   const activeProjectId = useProjectContextStore((s) => s.activeProjectId);
 
   const [filter, setFilter] = useState<KindFilter>('all');
+  // Arrow-key navigation across the kind-filter tabs (WCAG 2.1.1).
+  const onAccommodationTabKeyDown = useTabKeyboardNav<KindFilter>({
+    ids: ['all', 'worker_camp', 'rental', 'hotel'] as const,
+    activeId: filter,
+    onChange: setFilter,
+    orientation: 'horizontal',
+  });
   const [createOpen, setCreateOpen] = useState(false);
   const [hrAutobookOpen, setHrAutobookOpen] = useState(false);
 
@@ -166,6 +174,7 @@ export function AccommodationListPage() {
         aria-label={t('accommodation.filter_by_kind', {
           defaultValue: 'Filter by kind',
         })}
+        onKeyDown={onAccommodationTabKeyDown}
         className="flex flex-wrap gap-1 border-b border-border-light"
       >
         {(['all', 'worker_camp', 'rental', 'hotel'] as const).map((k) => {
@@ -185,7 +194,10 @@ export function AccommodationListPage() {
             <button
               key={k}
               role="tab"
+              id={`accommodation-tab-${k}`}
               aria-selected={isActive}
+              aria-controls="accommodation-tabpanel"
+              tabIndex={isActive ? 0 : -1}
               type="button"
               onClick={() => setFilter(k)}
               data-testid={`accommodation-tab-${k}`}
@@ -213,6 +225,11 @@ export function AccommodationListPage() {
       </div>
 
       {/* Body */}
+      <div
+        id="accommodation-tabpanel"
+        role="tabpanel"
+        aria-labelledby={`accommodation-tab-${filter}`}
+      >
       {isLoading ? (
         <div className="flex items-center justify-center py-16 text-content-tertiary">
           <Loader2 className="h-5 w-5 animate-spin" />
@@ -247,6 +264,7 @@ export function AccommodationListPage() {
           ))}
         </div>
       )}
+      </div>
 
       {/* Create modal */}
       {createOpen && (

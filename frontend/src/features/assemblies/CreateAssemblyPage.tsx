@@ -175,7 +175,7 @@ export function CreateAssemblyModal({ open, onClose }: CreateAssemblyModalProps)
                 value={form.code}
                 onChange={(e) => set('code', e.target.value)}
                 placeholder={t('assemblies.code_placeholder', { defaultValue: 'e.g. ASM-001' })}
-                required
+                required aria-required="true"
                 autoFocus
               />
               <div className="col-span-2">
@@ -184,7 +184,7 @@ export function CreateAssemblyModal({ open, onClose }: CreateAssemblyModalProps)
                   value={form.name}
                   onChange={(e) => set('name', e.target.value)}
                   placeholder={t('assemblies.name_placeholder', { defaultValue: 'e.g. Reinforced Concrete Wall C30/37' })}
-                  required
+                  required aria-required="true"
                 />
               </div>
             </div>

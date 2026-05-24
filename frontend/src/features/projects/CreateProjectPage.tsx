@@ -1528,7 +1528,7 @@ export function CreateProjectModal({
                 value={form.name}
                 onChange={(e) => set('name', e.target.value)}
                 placeholder={t('projects.project_name_placeholder', { defaultValue: 'e.g. Office Tower Downtown' })}
-                required
+                required aria-required="true"
                 autoFocus
               />
               {duplicateExists && (

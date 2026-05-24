@@ -36,6 +36,7 @@ import {
   LayoutGrid,
 } from 'lucide-react';
 import { Card, CardHeader, CardContent, CardFooter, Button, Badge, InfoHint, Skeleton, Breadcrumb } from '@/shared/ui';
+import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 import { DashboardLayoutManager } from '@/features/dashboard/DashboardLayoutManager';
 import { UpdateNotification } from '@/shared/ui/UpdateChecker';
 import { apiGet, apiPatch, apiPost } from '@/shared/lib/api';
@@ -1073,6 +1074,16 @@ export function SettingsPage() {
     }
   }, [searchParams, setSearchParams]);
 
+  // Arrow-key keyboard nav for the settings tab strip. Mobile is a
+  // horizontal scroll, desktop is a vertical sidebar — accept both
+  // orientations so the same handler serves both. (WCAG 2.1.1)
+  const onTabKeyDown = useTabKeyboardNav<SettingsTab>({
+    ids: validTabIds,
+    activeId: activeTab,
+    onChange: handleTabChange,
+    orientation: 'both',
+  });
+
   const activeTabDef: TabDef = TABS.find((tab) => tab.id === activeTab) ?? DEFAULT_TAB;
   const ActiveIcon = activeTabDef.icon;
 
@@ -1108,7 +1119,9 @@ export function SettingsPage() {
           <div
             role="tablist"
             aria-label={t('nav.settings', 'Settings')}
+            aria-orientation="horizontal"
             data-testid="settings-tabs"
+            onKeyDown={onTabKeyDown}
             className="lg:hidden -mx-4 px-4 flex gap-2 overflow-x-auto pb-2 scrollbar-thin"
           >
             {TABS.map((tab) => {
@@ -1123,6 +1136,7 @@ export function SettingsPage() {
                   aria-controls="settings-content"
                   id={`settings-tab-${tab.id}`}
                   data-testid={`settings-tab-${tab.id}`}
+                  tabIndex={isActive ? 0 : -1}
                   onClick={() => handleTabChange(tab.id)}
                   className={`shrink-0 inline-flex items-center gap-2 px-3.5 py-2 rounded-full text-sm font-medium transition-all ${
                     isActive
@@ -1141,6 +1155,8 @@ export function SettingsPage() {
           <nav
             role="tablist"
             aria-label={t('nav.settings', 'Settings')}
+            aria-orientation="vertical"
+            onKeyDown={onTabKeyDown}
             className="hidden lg:flex flex-col gap-1 rounded-xl border border-border-light bg-surface-elevated p-2 shadow-xs"
           >
             {TABS.map((tab) => {
@@ -1155,6 +1171,7 @@ export function SettingsPage() {
                   aria-controls="settings-content"
                   id={`settings-tab-${tab.id}-desktop`}
                   data-testid={`settings-tab-${tab.id}-desktop`}
+                  tabIndex={isActive ? 0 : -1}
                   onClick={() => handleTabChange(tab.id)}
                   className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-all duration-fast ${
                     isActive

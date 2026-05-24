@@ -146,6 +146,39 @@ describe('WideModalField', () => {
       screen.queryByText('Hint that should not appear'),
     ).toBeNull();
   });
+
+  it('propagates aria-required to the inner control when required=true (WCAG 3.3.2)', () => {
+    render(
+      <WideModalField label="Email" required>
+        <input data-testid="email-field" />
+      </WideModalField>,
+    );
+    const input = screen.getByTestId('email-field');
+    expect(input).toHaveAttribute('aria-required', 'true');
+  });
+
+  it('does NOT add aria-required when required=false', () => {
+    render(
+      <WideModalField label="Phone">
+        <input data-testid="phone-field" />
+      </WideModalField>,
+    );
+    const input = screen.getByTestId('phone-field');
+    expect(input).not.toHaveAttribute('aria-required');
+  });
+
+  it('respects an aria-required already declared by the caller', () => {
+    render(
+      <WideModalField label="Notes" required>
+        <textarea data-testid="notes" aria-required="false" />
+      </WideModalField>,
+    );
+    // Caller's explicit value wins — we do not overwrite.
+    expect(screen.getByTestId('notes')).toHaveAttribute(
+      'aria-required',
+      'false',
+    );
+  });
 });
 
 describe('WideModalSection', () => {

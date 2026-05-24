@@ -611,7 +611,7 @@ export function LoginPageNext() {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@company.com"
                   autoComplete="email"
-                  required
+                  required aria-required="true"
                   autoFocus
                   icon={<Mail size={15} />}
                 />
@@ -640,7 +640,7 @@ export function LoginPageNext() {
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder={t('auth.password_placeholder', 'Enter your password')}
                       autoComplete="current-password"
-                      required
+                      required aria-required="true"
                       minLength={8}
                       className="h-9 w-full rounded-lg border border-border bg-surface-primary pl-9 pr-9 text-sm text-content-primary placeholder:text-content-tertiary transition-all duration-fast ease-oe focus:outline-none focus:ring-2 focus:ring-oe-blue focus:border-transparent hover:border-content-tertiary"
                     />
