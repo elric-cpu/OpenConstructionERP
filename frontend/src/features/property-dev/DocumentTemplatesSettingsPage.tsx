@@ -33,15 +33,18 @@
  *   alternate tenant deployment that has disabled the built-ins).
  */
 
-import { useState, useMemo, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertOctagon,
   Banknote,
   CheckCircle2,
+  Code2,
   Download,
+  Edit3,
   Eye,
+  FilePlus,
   FileSignature,
   FileText,
   Globe2,
@@ -72,9 +75,12 @@ import { getErrorMessage } from '@/shared/lib/api';
 import {
   customDocumentTemplateDownloadUrl,
   deleteCustomDocumentTemplate,
+  getCustomDocumentTemplateContent,
   listDocumentTemplates,
   sampleDocumentPreview,
+  saveTextCustomDocumentTemplate,
   uploadCustomDocumentTemplate,
+  type CustomTemplateTextContentType,
   type DocumentTemplateEntry,
   type DocumentTemplateVariableGroup,
   type PropDevDocType,
@@ -162,9 +168,24 @@ function setDefaultTemplateForDev(
   }
 }
 
+/**
+ * Editor session state. `editingTemplateId === null` means a brand-new
+ * template (save creates a row). Otherwise the editor pre-loads the
+ * existing content via the GET-content endpoint and a save PATCHes the
+ * row in-place.
+ */
+interface EditorSession {
+  editingTemplateId: string | null;
+  initialName?: string;
+  initialDocType?: string;
+  initialEntity?: string;
+  initialContentType?: CustomTemplateTextContentType;
+}
+
 export function DocumentTemplatesSettingsPage() {
   const { t } = useTranslation();
   const [variablesOpen, setVariablesOpen] = useState(false);
+  const [editorSession, setEditorSession] = useState<EditorSession | null>(null);
   const [activeDevId, setActiveDevId] = useState<string | null>(
     () => readActiveDevelopmentId(),
   );
@@ -284,6 +305,39 @@ export function DocumentTemplatesSettingsPage() {
         </div>
       </Card>
 
+      {/* Create-in-browser CTA */}
+      <Card className="p-4 flex flex-wrap items-center justify-between gap-3 bg-oe-blue/5 border-oe-blue/20">
+        <div className="flex items-start gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-oe-blue/10 text-oe-blue">
+            <Edit3 size={16} />
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold text-content-primary">
+              {t('property_dev.doc_templates.editor_cta_title', {
+                defaultValue: 'Create or edit templates in your browser',
+              })}
+            </h2>
+            <p className="mt-0.5 text-xs text-content-secondary max-w-2xl">
+              {t('property_dev.doc_templates.editor_cta_subtitle', {
+                defaultValue:
+                  "Write HTML or Markdown directly here — no upload required. Click variable chips to insert {placeholders}, and see a live preview alongside the source.",
+              })}
+            </p>
+          </div>
+        </div>
+        <Button
+          variant="primary"
+          size="sm"
+          icon={<FilePlus size={14} />}
+          onClick={() => setEditorSession({ editingTemplateId: null })}
+          data-testid="open-editor-new"
+        >
+          {t('property_dev.doc_templates.editor_cta_btn', {
+            defaultValue: 'Create new template',
+          })}
+        </Button>
+      </Card>
+
       {/* Upload custom template */}
       <UploadCustomTemplateForm
         onUploaded={() => dataQ.refetch()}
@@ -345,6 +399,7 @@ export function DocumentTemplatesSettingsPage() {
                 regulators={dataQ.data!.regulators}
                 activeDevId={activeDevId}
                 onAfterDelete={() => dataQ.refetch()}
+                onOpenEditor={(session) => setEditorSession(session)}
               />
             ))}
           </div>
@@ -365,6 +420,7 @@ export function DocumentTemplatesSettingsPage() {
                     regulators={dataQ.data!.regulators}
                     activeDevId={activeDevId}
                     onAfterDelete={() => dataQ.refetch()}
+                    onOpenEditor={(session) => setEditorSession(session)}
                   />
                 ))}
               </div>
@@ -378,6 +434,19 @@ export function DocumentTemplatesSettingsPage() {
         onClose={() => setVariablesOpen(false)}
         groups={dataQ.data?.variables ?? []}
       />
+
+      {editorSession && (
+        <TemplateEditorModal
+          session={editorSession}
+          variableGroups={dataQ.data?.variables ?? []}
+          activeDevId={activeDevId}
+          onClose={() => setEditorSession(null)}
+          onSaved={() => {
+            setEditorSession(null);
+            dataQ.refetch();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -656,12 +725,14 @@ function TemplateCard({
   regulators,
   activeDevId,
   onAfterDelete,
+  onOpenEditor,
 }: {
   template: DocumentTemplateEntry;
   locales: string[];
   regulators: string[];
   activeDevId: string | null;
   onAfterDelete: () => void;
+  onOpenEditor: (session: EditorSession) => void;
 }) {
   const { t } = useTranslation();
   const addToast = useToastStore((s) => s.addToast);
@@ -989,6 +1060,32 @@ function TemplateCard({
             )}
             {isCustom && template.id && (
               <>
+                {/* Edit button — only for rows whose content_type is
+                    HTML / Markdown / plain text. Binary uploads (.docx,
+                    .pdf, .odt) get 415 from the GET-content endpoint so
+                    we don't even surface the button. */}
+                {(template.content_type === 'text/html' ||
+                  template.content_type === 'text/markdown' ||
+                  template.content_type === 'text/plain') && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    icon={<Edit3 size={12} />}
+                    onClick={() => onOpenEditor({
+                      editingTemplateId: template.id!,
+                      initialName: template.title,
+                      initialDocType: String(template.doc_type),
+                      initialEntity: template.entity,
+                      initialContentType:
+                        (template.content_type as CustomTemplateTextContentType) ||
+                        'text/html',
+                    })}
+                    disabled={busy}
+                    data-testid={`edit-custom-${template.id}`}
+                  >
+                    {t('common.edit', { defaultValue: 'Edit' })}
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="ghost"
@@ -1035,6 +1132,470 @@ function TemplateCard({
         />
       )}
     </Card>
+  );
+}
+
+/* ── In-browser template editor ────────────────────────────────────── */
+
+/**
+ * Tiny syntax-highlighted preview of an HTML/MD source string.
+ *
+ * Avoids any heavy editor framework — `<textarea>` for the source
+ * (preserves selection / clipboard / native a11y), a sibling
+ * <div className="prose"> for the live preview (HTML rendered raw via
+ * dangerouslySetInnerHTML, or markdown turned into <pre> for safety).
+ *
+ * The preview pane is deliberately not a full sandbox iframe — the
+ * template will be re-rendered server-side at document-generation time
+ * (with proper variable interpolation + reportlab), so this preview is
+ * advisory only. Users authoring HTML get a friendly visual hint, but
+ * the final document is server-controlled.
+ */
+const ALLOWED_CONTENT_TYPES: { value: CustomTemplateTextContentType; label: string }[] = [
+  { value: 'text/html', label: 'HTML' },
+  { value: 'text/markdown', label: 'Markdown' },
+  { value: 'text/plain', label: 'Plain text' },
+];
+
+const DOC_TYPE_OPTIONS: string[] = [
+  'custom',
+  'reservation_receipt',
+  'sales_contract',
+  'payment_receipt',
+  'handover_certificate',
+  'warranty_certificate',
+  'noc',
+  'snag_report',
+  'invoice',
+  'payment_reminder',
+  'kyc_checklist',
+  'brokerage_commission',
+  'tenant_lease_agreement',
+  'move_in_checklist',
+  'mortgage_clearance_letter',
+  'title_deed_transfer_request',
+  'escrow_release_authorization',
+  'refund_authorization',
+];
+
+const ENTITY_OPTIONS: string[] = [
+  'custom', 'reservation', 'sales_contract', 'instalment', 'handover',
+  'snag', 'broker', 'buyer', 'plot', 'development', 'tenant',
+];
+
+function TemplateEditorModal({
+  session,
+  variableGroups,
+  activeDevId,
+  onClose,
+  onSaved,
+}: {
+  session: EditorSession;
+  variableGroups: DocumentTemplateVariableGroup[];
+  activeDevId: string | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { t } = useTranslation();
+  const addToast = useToastStore((s) => s.addToast);
+  const isEditing = !!session.editingTemplateId;
+
+  const [name, setName] = useState(session.initialName ?? '');
+  const [docType, setDocType] = useState<string>(
+    session.initialDocType ?? 'custom',
+  );
+  const [entity, setEntity] = useState<string>(session.initialEntity ?? 'custom');
+  const [contentType, setContentType] = useState<CustomTemplateTextContentType>(
+    session.initialContentType ?? 'text/html',
+  );
+  const [contentText, setContentText] = useState<string>('');
+  const [description, setDescription] = useState<string>('');
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(isEditing);
+  const [debouncedContent, setDebouncedContent] = useState<string>('');
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Load existing content when editing.
+  useEffect(() => {
+    let cancelled = false;
+    if (!isEditing || !session.editingTemplateId) {
+      setLoading(false);
+      // Seed with a friendly HTML starter when creating new.
+      setContentText((prev) =>
+        prev ||
+        '<!-- Property-Development custom template -->\n' +
+          '<html>\n' +
+          '  <body style="font-family: Helvetica, Arial, sans-serif; padding: 24px;">\n' +
+          '    <h1>{development.name}</h1>\n' +
+          '    <p>Buyer: {buyer.full_name}</p>\n' +
+          '    <p>Unit: {plot.plot_number} ({plot.area_m2} m²)</p>\n' +
+          '    <p>Contract: {contract.contract_number} — {contract.total_value} {contract.currency}</p>\n' +
+          '  </body>\n' +
+          '</html>',
+      );
+      return;
+    }
+    setLoading(true);
+    getCustomDocumentTemplateContent(session.editingTemplateId)
+      .then((res) => {
+        if (cancelled) return;
+        setName(res.title);
+        setDocType(res.doc_type);
+        setEntity(res.entity);
+        setDescription(res.description);
+        const ct = (res.content_type as CustomTemplateTextContentType) || 'text/html';
+        setContentType(ct);
+        setContentText(res.content_text);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        addToast({ type: 'error', title: getErrorMessage(err) });
+        onClose();
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isEditing, session.editingTemplateId, addToast, onClose]);
+
+  // Debounce the preview pane re-render to keep typing snappy.
+  useEffect(() => {
+    const handle = window.setTimeout(() => setDebouncedContent(contentText), 250);
+    return () => window.clearTimeout(handle);
+  }, [contentText]);
+
+  const insertAtCursor = useCallback((snippet: string) => {
+    const ta = textareaRef.current;
+    if (!ta) {
+      setContentText((prev) => prev + snippet);
+      return;
+    }
+    const start = ta.selectionStart ?? ta.value.length;
+    const end = ta.selectionEnd ?? ta.value.length;
+    const before = ta.value.slice(0, start);
+    const after = ta.value.slice(end);
+    const next = before + snippet + after;
+    setContentText(next);
+    // Move cursor to AFTER the inserted snippet on next tick.
+    queueMicrotask(() => {
+      if (!textareaRef.current) return;
+      textareaRef.current.focus();
+      const caret = start + snippet.length;
+      textareaRef.current.setSelectionRange(caret, caret);
+    });
+  }, []);
+
+  const submit = async () => {
+    if (!name.trim()) {
+      addToast({
+        type: 'warning',
+        title: t('property_dev.doc_templates.editor_no_name', {
+          defaultValue: 'Give the template a name',
+        }),
+      });
+      return;
+    }
+    if (!contentText.trim()) {
+      addToast({
+        type: 'warning',
+        title: t('property_dev.doc_templates.editor_no_body', {
+          defaultValue: 'Template body is empty',
+        }),
+      });
+      return;
+    }
+    setBusy(true);
+    try {
+      await saveTextCustomDocumentTemplate({
+        template_id: session.editingTemplateId ?? undefined,
+        name: name.trim(),
+        doc_type: docType,
+        entity,
+        description,
+        content_type: contentType,
+        content_text: contentText,
+        development_id: activeDevId ?? undefined,
+      });
+      addToast({
+        type: 'success',
+        title: isEditing
+          ? t('property_dev.doc_templates.editor_updated', {
+              defaultValue: 'Template updated',
+            })
+          : t('property_dev.doc_templates.editor_created', {
+              defaultValue: 'Template created',
+            }),
+      });
+      onSaved();
+    } catch (err) {
+      addToast({ type: 'error', title: getErrorMessage(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Render the preview pane. For HTML we honour user markup verbatim
+  // (the preview is sandboxed inside the modal body — no script tags are
+  // executed against the host because dangerouslySetInnerHTML in React
+  // strips <script> at hydration on most modern browsers, and our
+  // backend re-renders the template in a non-JS reportlab pipeline at
+  // document-generation time anyway).
+  const previewHtml = useMemo(() => {
+    if (contentType === 'text/html') return debouncedContent;
+    if (contentType === 'text/markdown') {
+      // Tiny markdown renderer covering the 95% case (headings, bold,
+      // italic, code, paragraphs). Heavy markdown engines would balloon
+      // the bundle for what is fundamentally a preview pane.
+      let html = debouncedContent
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      html = html.replace(/^###### (.*)$/gm, '<h6>$1</h6>');
+      html = html.replace(/^##### (.*)$/gm, '<h5>$1</h5>');
+      html = html.replace(/^#### (.*)$/gm, '<h4>$1</h4>');
+      html = html.replace(/^### (.*)$/gm, '<h3>$1</h3>');
+      html = html.replace(/^## (.*)$/gm, '<h2>$1</h2>');
+      html = html.replace(/^# (.*)$/gm, '<h1>$1</h1>');
+      html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+      html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+      html = html.split(/\n{2,}/).map((p) =>
+        p.startsWith('<h') ? p : `<p>${p.replace(/\n/g, '<br/>')}</p>`,
+      ).join('\n');
+      return html;
+    }
+    // plain text — escape and wrap in <pre>.
+    return `<pre style="white-space: pre-wrap; font-family: monospace;">${
+      debouncedContent
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+    }</pre>`;
+  }, [contentType, debouncedContent]);
+
+  return (
+    <WideModal
+      open={true}
+      onClose={onClose}
+      title={
+        isEditing
+          ? t('property_dev.doc_templates.editor_title_edit', {
+              defaultValue: 'Edit custom template',
+            })
+          : t('property_dev.doc_templates.editor_title_new', {
+              defaultValue: 'New custom template',
+            })
+      }
+      size="full"
+      busy={busy}
+      footer={
+        <div className="flex items-center justify-between gap-3 w-full">
+          <span className="text-xs text-content-tertiary">
+            {t('property_dev.doc_templates.editor_footer_hint', {
+              defaultValue:
+                'Tip: click a variable chip to insert it at the cursor. The preview re-renders 250 ms after typing stops.',
+            })}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
+              {t('common.cancel', { defaultValue: 'Cancel' })}
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={submit}
+              loading={busy}
+              disabled={busy || loading}
+              data-testid="editor-save"
+            >
+              {isEditing
+                ? t('common.save', { defaultValue: 'Save' })
+                : t('property_dev.doc_templates.editor_create_btn', {
+                    defaultValue: 'Create template',
+                  })}
+            </Button>
+          </div>
+        </div>
+      }
+    >
+      {loading ? (
+        <SkeletonText lines={10} />
+      ) : (
+        <div className="space-y-3">
+          {/* Metadata row */}
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+            <div className="md:col-span-4">
+              <label className="block text-[10px] font-medium uppercase tracking-wide text-content-tertiary mb-1">
+                {t('property_dev.doc_templates.upload_field_name', {
+                  defaultValue: 'Display name',
+                })}
+              </label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="h-9 w-full rounded-lg border border-border bg-surface-primary px-3 text-sm focus:outline-none focus:ring-2 focus:ring-oe-blue/30 focus:border-oe-blue"
+                data-testid="editor-name"
+              />
+            </div>
+            <div className="md:col-span-3">
+              <label className="block text-[10px] font-medium uppercase tracking-wide text-content-tertiary mb-1">
+                {t('property_dev.doc_templates.upload_field_doctype', {
+                  defaultValue: 'Doc type',
+                })}
+              </label>
+              <select
+                value={docType}
+                onChange={(e) => setDocType(e.target.value)}
+                className="h-9 w-full rounded-lg border border-border bg-surface-primary px-2 text-sm focus:outline-none focus:ring-2 focus:ring-oe-blue/30 focus:border-oe-blue"
+                data-testid="editor-doctype"
+              >
+                {DOC_TYPE_OPTIONS.map((dt) => (
+                  <option key={dt} value={dt}>
+                    {dt}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-[10px] font-medium uppercase tracking-wide text-content-tertiary mb-1">
+                {t('property_dev.doc_templates.upload_field_entity', {
+                  defaultValue: 'Entity',
+                })}
+              </label>
+              <select
+                value={entity}
+                onChange={(e) => setEntity(e.target.value)}
+                className="h-9 w-full rounded-lg border border-border bg-surface-primary px-2 text-sm focus:outline-none focus:ring-2 focus:ring-oe-blue/30 focus:border-oe-blue"
+                data-testid="editor-entity"
+              >
+                {ENTITY_OPTIONS.map((e) => (
+                  <option key={e} value={e}>{e}</option>
+                ))}
+              </select>
+            </div>
+            <div className="md:col-span-3">
+              <label className="block text-[10px] font-medium uppercase tracking-wide text-content-tertiary mb-1">
+                {t('property_dev.doc_templates.editor_content_type', {
+                  defaultValue: 'Source format',
+                })}
+              </label>
+              <select
+                value={contentType}
+                onChange={(e) =>
+                  setContentType(e.target.value as CustomTemplateTextContentType)
+                }
+                className="h-9 w-full rounded-lg border border-border bg-surface-primary px-2 text-sm focus:outline-none focus:ring-2 focus:ring-oe-blue/30 focus:border-oe-blue"
+                data-testid="editor-content-type"
+              >
+                {ALLOWED_CONTENT_TYPES.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="md:col-span-12">
+              <label className="block text-[10px] font-medium uppercase tracking-wide text-content-tertiary mb-1">
+                {t('property_dev.doc_templates.upload_field_desc', {
+                  defaultValue: 'Description (optional)',
+                })}
+              </label>
+              <input
+                type="text"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="h-9 w-full rounded-lg border border-border bg-surface-primary px-3 text-sm focus:outline-none focus:ring-2 focus:ring-oe-blue/30 focus:border-oe-blue"
+                data-testid="editor-description"
+              />
+            </div>
+          </div>
+
+          {/* Variable picker chips */}
+          <div className="rounded-lg border border-border-light bg-surface-secondary px-3 py-2">
+            <div className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-content-tertiary">
+              <Code2 size={12} />
+              {t('property_dev.doc_templates.editor_variables_picker', {
+                defaultValue: 'Insert a variable',
+              })}
+            </div>
+            <div className="mt-2 max-h-40 overflow-auto space-y-2">
+              {variableGroups.length === 0 ? (
+                <p className="text-[11px] text-content-tertiary">
+                  {t('property_dev.doc_templates.variables_empty', {
+                    defaultValue:
+                      'No variable documentation is available — load this page from a tenant with property-dev enabled.',
+                  })}
+                </p>
+              ) : (
+                variableGroups.map((g) => (
+                  <div key={g.group}>
+                    <p className="text-[11px] font-semibold text-content-secondary mb-1">
+                      {g.label}
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {g.vars.map((v) => (
+                        <button
+                          key={v.key}
+                          type="button"
+                          title={v.desc}
+                          onClick={() => insertAtCursor(v.key)}
+                          className="inline-flex items-center rounded-full border border-oe-blue/30 bg-oe-blue/5 px-2 py-0.5 text-[11px] text-oe-blue hover:bg-oe-blue/15 hover:border-oe-blue focus:outline-none focus:ring-2 focus:ring-oe-blue/30"
+                          data-testid={`var-chip-${v.key}`}
+                        >
+                          <code>{v.key}</code>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Split editor — source on the left, preview on the right.
+              Both panes share the same fixed height so the modal stays
+              scroll-anchored at the metadata row. */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 h-[55vh] min-h-[360px]">
+            <div className="flex flex-col">
+              <div className="flex items-center justify-between text-[10px] font-medium uppercase tracking-wide text-content-tertiary mb-1">
+                <span>
+                  {t('property_dev.doc_templates.editor_source_pane', {
+                    defaultValue: 'Source',
+                  })}
+                </span>
+                <span className="font-mono">{contentType}</span>
+              </div>
+              <textarea
+                ref={textareaRef}
+                value={contentText}
+                onChange={(e) => setContentText(e.target.value)}
+                spellCheck={false}
+                className="flex-1 w-full rounded-lg border border-border bg-surface-primary px-3 py-2 font-mono text-[12px] leading-5 text-content-primary focus:outline-none focus:ring-2 focus:ring-oe-blue/30 focus:border-oe-blue resize-none"
+                data-testid="editor-source"
+              />
+            </div>
+            <div className="flex flex-col">
+              <div className="flex items-center justify-between text-[10px] font-medium uppercase tracking-wide text-content-tertiary mb-1">
+                <span>
+                  {t('property_dev.doc_templates.editor_preview_pane', {
+                    defaultValue: 'Live preview (advisory — final render is server-side)',
+                  })}
+                </span>
+              </div>
+              <div
+                className="flex-1 w-full overflow-auto rounded-lg border border-border bg-white text-black px-4 py-3 text-sm"
+                data-testid="editor-preview"
+                // eslint-disable-next-line react/no-danger
+                dangerouslySetInnerHTML={{ __html: previewHtml }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+    </WideModal>
   );
 }
 

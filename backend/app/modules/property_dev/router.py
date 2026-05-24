@@ -5148,6 +5148,393 @@ async def download_custom_document_template(
     )
 
 
+# ── In-browser editor — text-based custom templates ────────────────────
+
+
+# Max body for the JSON-content path. Mirrors the multipart cap so we
+# can't be tricked into storing oversized HTML by going through this
+# door instead of the upload form.
+_CUSTOM_TEMPLATE_TEXT_MAX_CHARS = _CUSTOM_TEMPLATE_MAX_BYTES  # 10 MB
+
+_TEXT_EXT_FOR_CONTENT_TYPE: dict[str, str] = {
+    "text/html": ".html",
+    "text/markdown": ".md",
+    "text/plain": ".txt",
+}
+
+_ALLOWED_TEXT_CONTENT_TYPES: frozenset[str] = frozenset({
+    "text/html", "text/markdown", "text/plain",
+})
+
+
+def _resolve_safe_text_filename(
+    name: str, doc_type: str, content_type: str,
+) -> str:
+    """Build a safe on-disk basename for a saved-text template.
+
+    Strips path separators and any character that's not letter / digit
+    / dash / underscore so a `name` like ``"a/b/c.txt"`` can't escape
+    the custom-templates directory or end up as a different extension
+    than the content type says.
+    """
+    raw = (name or doc_type or "template").strip()
+    # Drop any directory components and any leftover punctuation.
+    safe = "".join(
+        c if c.isalnum() or c in {"-", "_", " "} else "_" for c in raw
+    ).strip("_") or doc_type or "template"
+    # Collapse whitespace.
+    safe = "_".join(safe.split())[:80]  # 80 chars is plenty for a basename
+    ext = _TEXT_EXT_FOR_CONTENT_TYPE.get(content_type, ".txt")
+    return f"{safe}{ext}"
+
+
+@router.post("/document-templates/save-text", status_code=201)
+async def save_text_custom_document_template(
+    body: dict[str, Any],
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
+    _perm: None = Depends(RequirePermission("property_dev.create")),
+) -> dict[str, Any]:
+    """Save in-browser-edited HTML / Markdown / plain-text as a custom
+    template.
+
+    Counterpart to ``POST /document-templates/upload`` — accepts a JSON
+    body with the raw text content instead of a multipart file. Same
+    project-ownership / RBAC gating; same 10 MB cap (in characters,
+    since UTF-8 bytes are <= char count for ASCII / Latin-1 and only
+    modestly larger for cyrillic / asian scripts).
+
+    Request body::
+
+        {
+          "name": "My HTML reservation receipt",
+          "doc_type": "reservation_receipt",
+          "entity": "reservation",
+          "trigger": "manual",
+          "description": "Branded HTML template (2026)",
+          "project_id": "...",                 # optional
+          "development_id": "...",             # optional
+          "content_type": "text/html",         # html | markdown | plain
+          "content_text": "<html>…</html>",
+          "template_id": "..."                 # optional — update in place
+        }
+
+    When ``template_id`` is supplied the call REPLACES the named row's
+    body + filename in place (mirrors a `PATCH` semantically but stays
+    on the same endpoint for the SPA). Cross-tenant attempts collapse
+    to 404, never 403, mirroring the rest of the property_dev IDOR
+    closures.
+    """
+    from sqlalchemy import select
+
+    from app.modules.projects.models import Project
+    from app.modules.property_dev.models import PropertyDevCustomTemplate
+
+    name = str(body.get("name", "")).strip()
+    doc_type = str(body.get("doc_type", "custom")).strip().lower()
+    entity = str(body.get("entity", "custom")).strip().lower()
+    trigger = str(body.get("trigger", "manual")).strip()
+    description = str(body.get("description", "")).strip()
+    content_type = str(body.get("content_type", "text/html")).strip().lower()
+    content_text = body.get("content_text", "")
+    project_id_raw = body.get("project_id")
+    development_id_raw = body.get("development_id")
+    template_id_raw = body.get("template_id")
+
+    name, doc_type, entity, trigger = _validate_custom_template_metadata(
+        name, doc_type, entity, trigger,
+    )
+
+    if content_type not in _ALLOWED_TEXT_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"content_type '{content_type}' is not allowed. Use "
+                f"{', '.join(sorted(_ALLOWED_TEXT_CONTENT_TYPES))}."
+            ),
+        )
+    if not isinstance(content_text, str):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="content_text must be a string",
+        )
+    if not content_text.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="content_text is empty",
+        )
+    if len(content_text) > _CUSTOM_TEMPLATE_TEXT_MAX_CHARS:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=(
+                f"Template content exceeds {_CUSTOM_TEMPLATE_MAX_MB} MB "
+                "limit"
+            ),
+        )
+
+    is_admin = user_payload.get("role") == "admin"
+    user_id_raw = user_payload.get("sub") or user_payload.get("user_id")
+    if user_id_raw is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        user_id = uuid.UUID(str(user_id_raw))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid user id")
+
+    # ── Update-in-place path ──
+    template_id: uuid.UUID | None = None
+    existing_row: PropertyDevCustomTemplate | None = None
+    if template_id_raw:
+        try:
+            template_id = uuid.UUID(str(template_id_raw))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid template_id",
+            ) from exc
+        existing_row = await session.get(PropertyDevCustomTemplate, template_id)
+        if existing_row is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=translate("errors.template_not_found", locale=get_locale()),
+            )
+        # IDOR closure — only the owner (or admin) may overwrite the row.
+        if not is_admin and existing_row.project_id is not None:
+            from app.modules.projects.repository import ProjectRepository
+
+            proj = await ProjectRepository(session).get_by_id(
+                existing_row.project_id,
+            )
+            if proj is None or str(proj.owner_id) != str(user_id):
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=translate(
+                        "errors.template_not_found", locale=get_locale()
+                    ),
+                )
+
+    # ── Project resolution (same logic as the upload endpoint) ──
+    resolved_project_id: uuid.UUID | None = None
+    if existing_row is not None:
+        resolved_project_id = existing_row.project_id
+    elif project_id_raw is not None:
+        try:
+            project_id = uuid.UUID(str(project_id_raw))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid project_id",
+            ) from exc
+        proj = await session.get(Project, project_id)
+        if proj is None:
+            raise HTTPException(
+                status_code=404,
+                detail=translate("errors.project_not_found", locale=get_locale()),
+            )
+        if not is_admin and str(proj.owner_id) != str(user_id):
+            raise HTTPException(
+                status_code=404,
+                detail=translate("errors.project_not_found", locale=get_locale()),
+            )
+        resolved_project_id = project_id
+    else:
+        first_proj = (
+            await session.execute(
+                select(Project.id)
+                .where(Project.owner_id == user_id)
+                .limit(1),
+            )
+        ).scalar_one_or_none()
+        if first_proj is None and not is_admin:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "No project found for current user. Create a project "
+                    "before saving templates."
+                ),
+            )
+        resolved_project_id = first_proj
+
+    development_id: uuid.UUID | None = None
+    if development_id_raw not in (None, ""):
+        try:
+            development_id = uuid.UUID(str(development_id_raw))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Invalid development_id",
+            ) from exc
+
+    # ── Persist file ──
+    _CUSTOM_TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
+    if existing_row is not None:
+        # Reuse stored_path so we don't litter the directory on every save.
+        target_path = Path(existing_row.storage_path)
+        # If the saved content_type changed (e.g. .html → .md), rename.
+        new_basename = _resolve_safe_text_filename(name, doc_type, content_type)
+        if target_path.name != f"{template_id.hex}_{new_basename}":
+            try:
+                if target_path.exists():
+                    target_path.unlink()
+            except Exception:
+                _CUSTOM_TEMPLATE_LOG.warning(
+                    "Could not delete previous text template at %s",
+                    target_path, exc_info=True,
+                )
+            target_path = _CUSTOM_TEMPLATES_DIR / f"{template_id.hex}_{new_basename}"
+    else:
+        template_id = uuid.uuid4()
+        basename = _resolve_safe_text_filename(name, doc_type, content_type)
+        target_path = _CUSTOM_TEMPLATES_DIR / f"{template_id.hex}_{basename}"
+
+    try:
+        target_path.write_text(content_text, encoding="utf-8")
+    except Exception:
+        _CUSTOM_TEMPLATE_LOG.exception("Unable to save text template")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to save template — storage error",
+        )
+
+    size_bytes = target_path.stat().st_size
+
+    if existing_row is not None:
+        existing_row.name = name
+        existing_row.doc_type = doc_type
+        existing_row.entity = entity
+        existing_row.trigger = trigger
+        existing_row.description = description or None
+        existing_row.filename = target_path.name.split("_", 1)[-1]
+        existing_row.storage_path = str(target_path.as_posix())
+        existing_row.content_type = content_type
+        existing_row.size_bytes = size_bytes
+        if development_id is not None:
+            existing_row.development_id = development_id
+        await session.commit()
+        await session.refresh(existing_row)
+        row = existing_row
+    else:
+        assert template_id is not None  # narrowing for mypy
+        row = PropertyDevCustomTemplate(
+            id=template_id,
+            project_id=resolved_project_id,
+            development_id=development_id,
+            name=name,
+            doc_type=doc_type,
+            entity=entity,
+            trigger=trigger,
+            description=description or None,
+            filename=target_path.name.split("_", 1)[-1],
+            storage_path=str(target_path.as_posix()),
+            content_type=content_type,
+            size_bytes=size_bytes,
+            created_by=user_id,
+        )
+        session.add(row)
+        await session.commit()
+        await session.refresh(row)
+
+    return {
+        "id": str(row.id),
+        "doc_type": row.doc_type,
+        "title": row.name,
+        "description": row.description or "",
+        "trigger": row.trigger,
+        "entity": row.entity,
+        "pages": "—",
+        "is_custom": True,
+        "filename": row.filename,
+        "content_type": row.content_type,
+        "size_bytes": row.size_bytes,
+        "development_id": (
+            str(row.development_id) if row.development_id else None
+        ),
+        "project_id": (
+            str(row.project_id) if row.project_id else None
+        ),
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }
+
+
+@router.get("/document-templates/custom/{template_id}/content")
+async def get_custom_document_template_content(
+    template_id: uuid.UUID,
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
+    _perm: None = Depends(RequirePermission("property_dev.read")),
+) -> dict[str, Any]:
+    """Return the raw text content of a custom template — for the editor.
+
+    Only returns text content (text/html, text/markdown, text/plain).
+    Binary uploads (.docx / .pdf / .odt) return 415 — they can't be
+    round-tripped through the in-browser editor.
+
+    Same project-ownership / 404-not-403 guard as the download endpoint.
+    """
+    from app.modules.projects.repository import ProjectRepository
+    from app.modules.property_dev.models import PropertyDevCustomTemplate
+
+    row = await session.get(PropertyDevCustomTemplate, template_id)
+    if row is None:
+        raise HTTPException(
+            status_code=404,
+            detail=translate("errors.template_not_found", locale=get_locale()),
+        )
+
+    is_admin = user_payload.get("role") == "admin"
+    user_id = user_payload.get("sub") or user_payload.get("user_id")
+    if not is_admin and row.project_id is not None:
+        proj = await ProjectRepository(session).get_by_id(row.project_id)
+        if proj is None or str(proj.owner_id) != str(user_id):
+            raise HTTPException(
+                status_code=404,
+                detail=translate("errors.template_not_found", locale=get_locale()),
+            )
+
+    if (row.content_type or "").lower() not in _ALLOWED_TEXT_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=(
+                "This template was uploaded as a binary file and cannot "
+                "be opened in the editor. Download it instead."
+            ),
+        )
+
+    path = Path(row.storage_path)
+    if not path.exists():
+        raise HTTPException(
+            status_code=410,
+            detail="Template file missing from storage",
+        )
+
+    try:
+        content_text = path.read_text(encoding="utf-8")
+    except Exception:
+        _CUSTOM_TEMPLATE_LOG.exception(
+            "Could not read text template at %s", row.storage_path,
+        )
+        raise HTTPException(
+            status_code=500, detail="Unable to read template — storage error",
+        )
+
+    return {
+        "id": str(row.id),
+        "doc_type": row.doc_type,
+        "title": row.name,
+        "description": row.description or "",
+        "trigger": row.trigger,
+        "entity": row.entity,
+        "filename": row.filename,
+        "content_type": row.content_type,
+        "size_bytes": row.size_bytes,
+        "content_text": content_text,
+        "development_id": (
+            str(row.development_id) if row.development_id else None
+        ),
+        "project_id": str(row.project_id) if row.project_id else None,
+    }
+
+
 @router.post("/document-templates/{doc_type}/sample-preview")
 async def sample_preview_document_template(
     doc_type: str,
