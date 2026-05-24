@@ -1,4 +1,5 @@
 import clsx from 'clsx';
+import { useRef } from 'react';
 import { usePreferencesStore } from '../../stores/usePreferencesStore';
 import { currencyMinorUnits } from './currencyMinorUnits';
 
@@ -26,6 +27,15 @@ export interface MoneyDisplayProps {
  * has up-to-date currency data this would be a no-op — but we can't
  * rely on every supported browser/Node version having the latest
  * tables, hence the explicit overrides.
+ *
+ * Strict-currency policy (UX-audit fix): when neither the caller nor
+ * the user preferences provide a currency, we no longer fall back to
+ * EUR silently — a Saudi user with no project currency configured
+ * would otherwise see Euros on every card. Instead the component
+ * renders an em-dash with a "Currency not set" tooltip, surfacing the
+ * configuration gap. In dev builds we also emit a single console
+ * warning per component instance so call sites can be flushed out
+ * organically.
  */
 export function MoneyDisplay({
   amount,
@@ -35,10 +45,17 @@ export function MoneyDisplay({
   className,
   colorize = false,
 }: MoneyDisplayProps) {
-  // Selector-scoped reads — without these the component re-renders on
-  // every unrelated preferences-store mutation (v4.3 audit).
-  const defaultCurrency = usePreferencesStore((s) => s.currency);
+  // Selector-scoped read for numberLocale — without it the component
+  // re-renders on every unrelated preferences-store mutation (v4.3 audit).
+  // Note: we no longer read `currency` from the prefs store. The
+  // user-preferences default (always 'EUR' for a fresh install) was
+  // the source of the silent-EUR-fallback bug a Saudi user would hit
+  // on every money cell. Caller must supply a `currency` prop.
   const numberLocale = usePreferencesStore((s) => s.numberLocale);
+
+  // Dev-only one-shot warning when no currency is supplied by the caller.
+  // Tracked per-instance so we don't spam the console on every re-render.
+  const warnedMissingCurrencyRef = useRef(false);
 
   if (amount == null) {
     return <span className={clsx('text-content-tertiary', className)}>&mdash;</span>;
@@ -50,8 +67,48 @@ export function MoneyDisplay({
     return <span className={clsx('text-content-tertiary', className)}>&mdash;</span>;
   }
 
-  const resolvedCurrency = currency ?? defaultCurrency;
-  const safeCurrency = /^[A-Z]{3}$/.test(resolvedCurrency) ? resolvedCurrency : 'EUR';
+  // Strict currency resolution — no silent EUR fallback. Treat
+  // null / undefined / empty-string `currency` prop as "currency not
+  // set" and surface an em-dash so the configuration gap is visible
+  // rather than masked by a wrong currency symbol (a Saudi user with
+  // no project currency configured would otherwise see Euros).
+  const trimmedCurrency = typeof currency === 'string' ? currency.trim() : currency;
+  if (!trimmedCurrency) {
+    if (import.meta.env.DEV && !warnedMissingCurrencyRef.current) {
+      warnedMissingCurrencyRef.current = true;
+      // eslint-disable-next-line no-console
+      console.warn('[MoneyDisplay] missing currency prop');
+    }
+    return (
+      <span
+        className={clsx('text-content-tertiary', className)}
+        title="Currency not set"
+      >
+        &mdash;
+      </span>
+    );
+  }
+
+  // Validate ISO-4217 shape; a non-matching value (e.g. "us" lowercased,
+  // or a numeric code) still means "misconfigured" so we surface the
+  // same em-dash rather than guess at EUR.
+  if (!/^[A-Z]{3}$/.test(trimmedCurrency)) {
+    if (import.meta.env.DEV && !warnedMissingCurrencyRef.current) {
+      warnedMissingCurrencyRef.current = true;
+      // eslint-disable-next-line no-console
+      console.warn(`[MoneyDisplay] invalid currency code: ${trimmedCurrency}`);
+    }
+    return (
+      <span
+        className={clsx('text-content-tertiary', className)}
+        title="Currency not set"
+      >
+        &mdash;
+      </span>
+    );
+  }
+
+  const safeCurrency = trimmedCurrency;
 
   // Resolve the ISO-4217 minor-unit count. Falls back to 2 for currencies
   // we don't have an explicit override for — matching pre-fix behaviour

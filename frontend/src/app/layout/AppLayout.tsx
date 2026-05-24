@@ -150,12 +150,16 @@ export function AppLayout({ title, children }: AppLayoutProps) {
       <FloatingChatButton />
       <FloatingChatPanel />
 
-      {/* OnboardingTour mounts once at App.tsx top level — moving it
-          out of here was the fix for BUG-UI02-TOUR-PERSISTENT.  When
-          mounted inside AppLayout, it remounted on every route change
-          (the page wrapper ``P`` recreates the layout per Route), and
-          a tour clicked-but-not-completed re-rendered from step 1 on
-          every navigation. */}
+      {/* Global onboarding tour (ProductTour) mounts once at App.tsx
+          top level — moving it out of here was the fix for
+          BUG-UI02-TOUR-PERSISTENT. When mounted inside AppLayout, it
+          remounted on every route change (the page wrapper ``P``
+          recreates the layout per Route), and a tour
+          clicked-but-not-completed re-rendered from step 1 on every
+          navigation. The legacy `OnboardingTour` (storage key
+          `oe_tour_completed`, no dot) used to be mounted alongside it
+          and is now collapsed into ProductTour — see App.tsx for the
+          legacy-key migration. */}
     </div>
   );
 }

@@ -118,7 +118,12 @@ export function ProjectsPage() {
     () => (projects ? projects.map((p) => p.id).join(',') : ''),
     [projects],
   );
-  const { data: boqStats, error: boqStatsError } = useQuery({
+  const {
+    data: boqStats,
+    error: boqStatsError,
+    refetch: refetchBoqStats,
+    isFetching: isFetchingBoqStats,
+  } = useQuery({
     queryKey: ['projects-dashboard-cards', projectIdsKey],
     queryFn: async () => {
       const cards = await apiGet<DashboardCard[]>('/v1/projects/dashboard/cards/');
@@ -137,7 +142,12 @@ export function ProjectsPage() {
     staleTime: 60_000,
   });
 
-  // Show a persistent warning if BOQ stats failed to load at the top level
+  // Show a persistent warning if BOQ stats failed to load at the top level.
+  // The cards still render via per-project fallback (boqStatsMap.get(id) →
+  // undefined → ProjectCard's own fetcher fills in), so the whole page
+  // doesn't blank out on a 500 from the rollup endpoint — but the warning
+  // banner below makes the partial-data state explicit instead of leaving
+  // the cards looking like "no BOQs / €0 value".
   useEffect(() => {
     if (boqStatsError) {
       if (import.meta.env.DEV) console.error('BOQ stats query failed:', boqStatsError);
@@ -543,6 +553,41 @@ export function ProjectsPage() {
         </div>
       ) : (
         <>
+          {/* Rollup-failure banner. The aggregated /v1/projects/dashboard/
+              cards endpoint feeds every card's BOQ count + value. When it
+              500s the cards still render via per-project fallback (the
+              card fetches its own stats), but the user has no idea the
+              numbers are partial — they look identical to a zero-data
+              project. Surface the failure explicitly with a Retry CTA. */}
+          {boqStatsError && (
+            <div
+              role="status"
+              className="mb-4 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-3 py-2"
+            >
+              <AlertTriangle
+                size={16}
+                className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5"
+              />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-amber-900 dark:text-amber-100">
+                  {t('projects.rollup_error', {
+                    defaultValue:
+                      'Could not load aggregated stats. Showing individual project data only.',
+                  })}
+                </p>
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => refetchBoqStats()}
+                disabled={isFetchingBoqStats}
+              >
+                {isFetchingBoqStats
+                  ? t('common.loading', { defaultValue: 'Loading...' })
+                  : t('common.retry', { defaultValue: 'Retry' })}
+              </Button>
+            </div>
+          )}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {paginatedProjects.map((project, i) => (
               <ProjectCard

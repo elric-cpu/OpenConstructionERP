@@ -24,7 +24,8 @@ import { useModuleRouteElements } from '@/modules/ModuleRoutes';
 import { DatabaseSetupPage } from '@/features/setup';
 import { IntegrationsPage } from '@/features/integrations';
 import { AboutPage } from '@/features/about/AboutPage';
-import { Logo, ShortcutsDialog, CommandPalette, ToastContainer, ErrorBoundary, NotFoundPage, OnboardingTour, ProductTour, OfflineBanner, PWAInstallPrompt } from '@/shared/ui';
+import { Logo, ShortcutsDialog, CommandPalette, ToastContainer, ErrorBoundary, NotFoundPage, ProductTour, OfflineBanner, PWAInstallPrompt } from '@/shared/ui';
+import { AdminOnly } from '@/shared/auth/AdminOnly';
 import GlobalSearchModal from '@/features/search/GlobalSearchModal';
 import { useGlobalSearchStore } from '@/stores/useGlobalSearchStore';
 import { FloatingQueuePanel } from './layout/FloatingQueuePanel';
@@ -598,6 +599,31 @@ export default function App() {
     void syncCustomUnitsFromServer();
   }, [isAuthenticated]);
 
+  // Onboarding-tour migration (one-shot). The app used to mount two
+  // parallel tour systems — `OnboardingTour` (storage key
+  // `oe_tour_completed`, underscore) and `ProductTour` (storage key
+  // `oe.tour_completed`, dot). A user dismissing one would still see
+  // the other pop on the next page. We've collapsed onto ProductTour
+  // alone; this effect ports the legacy dismissed-flag forward so a
+  // returning user who already saw the old tour doesn't see the new
+  // one again. The legacy key is then deleted so the migration runs
+  // exactly once per browser.
+  useEffect(() => {
+    try {
+      const legacy = localStorage.getItem('oe_tour_completed');
+      if (legacy !== null) {
+        const current = localStorage.getItem('oe.tour_completed');
+        if (current === null) {
+          localStorage.setItem('oe.tour_completed', legacy);
+        }
+        localStorage.removeItem('oe_tour_completed');
+      }
+    } catch {
+      /* localStorage unavailable — non-fatal, ProductTour falls back
+         to server-side tour-state on next mount. */
+    }
+  }, []);
+
   // Dynamic routes from the module registry (lazy-loaded)
   const moduleRoutes = useModuleRouteElements({ Wrapper: P });
 
@@ -605,19 +631,23 @@ export default function App() {
     <Suspense fallback={<LoadingScreen />}>
       <OfflineBanner />
       {isAuthenticated && <GlobalShortcuts />}
-      {/* OnboardingTour mounted once at app top — moving it out of
-          AppLayout was the fix for BUG-UI02-TOUR-PERSISTENT.  When the
-          tour was inside AppLayout (which is recreated per-route by the
-          ``P`` page wrapper), every navigation re-mounted the tour and
-          a click-but-not-completed flow restarted from step 1 on the
-          next page. */}
-      {isAuthenticated && <OnboardingTour />}
-      {/* First-run product tour — 8-step spotlight walk-through.  Always
+      {/* First-run product tour — 8-step spotlight walk-through. Always
           mounted (for authenticated users) but renders nothing unless
-          active; auto-starts on the dashboard the first time a user logs
-          in (gated by `oe.tour_completed` in localStorage) and listens
-          for the `oe:start-tour` window event so the WhatsNewCard /
-          Help menu can (re-)launch it on demand. */}
+          active; auto-starts on the dashboard the first time a user
+          logs in (gated by `oe.tour_completed` in localStorage) and
+          listens for the `oe:start-tour` window event so the
+          WhatsNewCard / Help menu can (re-)launch it on demand.
+
+          UX-audit collapse: the older `OnboardingTour` (storage key
+          `oe_tour_completed`, no dot) used to be mounted here in
+          parallel — dismissing one still let the other pop on the
+          next page. ProductTour now owns the global tour surface;
+          a one-shot legacy-key migration in the effect above
+          forwards a dismissed flag from the old storage key so
+          returning users don't see the tour again. The
+          `OnboardingTour` component still ships for per-feature
+          custom tours (e.g. Pipelines page), but is no longer mounted
+          globally. */}
       {isAuthenticated && <ProductTour />}
       <Routes>
         {/* Public share-link landing page — no auth required, no app shell */}
@@ -771,14 +801,48 @@ export default function App() {
         <Route path="/integrations" element={<P title="Integrations"><IntegrationsPage /></P>} />
         <Route path="/about" element={<P title="About"><AboutPage /></P>} />
         <Route path="/project-intelligence" element={<P title="Project Intelligence"><ProjectIntelligencePage /></P>} />
-        <Route path="/architecture" element={<P title="Architecture Map"><ArchitectureMapPage /></P>} />
+        {/* Architecture Map — internal tool, admin-only. Surfaces module
+            dependency graph + DDC integrity audit; not for day-to-day use. */}
+        <Route
+          path="/architecture"
+          element={
+            <AdminOnly>
+              <P title="Architecture Map"><ArchitectureMapPage /></P>
+            </AdminOnly>
+          }
+        />
 
-        {/* EAC v2 (RFC 35) — block editor primitives preview, dev-only */}
-        <Route path="/eac/demo" element={<P title="EAC Block Primitives"><EacDemoPage /></P>} />
-        <Route path="/eac/blocks/:eacId" element={<P title="EAC Block Editor"><EACBlockEditorPage /></P>} />
+        {/* EAC v2 (RFC 35) — block editor primitives preview, dev-only.
+            Both the demo page and the orphan block-editor route are
+            gated to admins so a regular customer can't stumble into the
+            unfinished editor by URL. */}
+        <Route
+          path="/eac/demo"
+          element={
+            <AdminOnly>
+              <P title="EAC Block Primitives"><EacDemoPage /></P>
+            </AdminOnly>
+          }
+        />
+        <Route
+          path="/eac/blocks/:eacId"
+          element={
+            <AdminOnly>
+              <P title="EAC Block Editor"><EACBlockEditorPage /></P>
+            </AdminOnly>
+          }
+        />
 
-        {/* Styles Lab — design exploration, internal */}
-        <Route path="/styles-lab" element={<P title="Styles Lab"><StylesLabPage /></P>} />
+        {/* Styles Lab — design exploration, internal; admin-only so the
+            design system playground doesn't bleed into the customer UX. */}
+        <Route
+          path="/styles-lab"
+          element={
+            <AdminOnly>
+              <P title="Styles Lab"><StylesLabPage /></P>
+            </AdminOnly>
+          }
+        />
 
         {/* 18-Modules Wave — Field Operations */}
         <Route path="/service" element={<P title="Service & Maintenance"><ServicePage /></P>} />

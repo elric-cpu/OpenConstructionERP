@@ -114,6 +114,13 @@ interface NavItem {
    *  Used for admin-only items like the Audit Log (`audit.view`
    *  permission, MANAGER+ on the backend). */
   roleGate?: ('admin' | 'manager' | 'editor' | 'viewer')[];
+  /** Hide entirely unless the current JWT role is `admin`. Distinct
+   *  from `roleGate` (which is a multi-role allow-list) — `adminOnly`
+   *  is the simple "developer / internal tool" gate matched to the
+   *  `<AdminOnly>` route wrapper in App.tsx. Used for surfaces like
+   *  the Architecture Map that should never appear in a customer's
+   *  sidebar. */
+  adminOnly?: boolean;
 }
 
 interface NavGroup {
@@ -427,7 +434,10 @@ const navGroups: NavGroup[] = [
       // the sidebar before this redesign.
       { labelKey: 'nav.snapshots', to: '/dashboards', icon: TrendingUp, advancedOnly: true },
       { labelKey: 'nav.reporting_dashboards', to: '/reporting', icon: BarChart3, advancedOnly: true },
-      { labelKey: 'nav.architecture_map', to: '/architecture', icon: GitBranch, advancedOnly: true },
+      // Architecture Map — internal/dev tool, admin-only so a regular
+      // customer's analytics group isn't cluttered with the module
+      // dependency graph. Backend route is also gated via <AdminOnly>.
+      { labelKey: 'nav.architecture_map', to: '/architecture', icon: GitBranch, advancedOnly: true, adminOnly: true },
     ],
   },
   // ── REGIONAL EXCHANGE (setup-only, dynamic) ────────────────────────
@@ -1093,14 +1103,20 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
               advancedOnly: mi.advancedOnly,
             }));
 
-          // Filter by module-enabled + advanced mode ONLY. The menu
-          // keeps its original shape and order; project focus never
-          // removes or reorders rows — it only annotates them below.
+          // Filter by module-enabled + advanced mode + admin gate. The
+          // menu keeps its original shape and order; project focus
+          // never removes or reorders rows — it only annotates them
+          // below. `adminOnly` items disappear for non-admin JWTs so
+          // dev / internal surfaces (Architecture Map) don't clutter
+          // a regular customer's sidebar — the route itself is also
+          // wrapped in <AdminOnly> in App.tsx, so this is just keeping
+          // the menu tidy.
           const allItems = [...group.items, ...dynamicItems];
           const visibleItems = allItems.filter(
             (item) =>
               (!item.moduleKey || isModuleEnabled(item.moduleKey)) &&
               (!item.advancedOnly || isAdvanced) &&
+              (!item.adminOnly || userRole === 'admin') &&
               // Menu-editor filter — in normal mode, drop user-hidden
               // rows; in edit mode `effectiveHidden` is empty so every
               // row renders (muted via the editingHidden state below).
