@@ -997,19 +997,21 @@ def _quantize_money_str(value: str | int | float | Decimal | None) -> str:
 _CURRENCY_QUANTUM = Decimal("0.01")
 
 
-def _round_currency(value: Decimal | float | int | str | None) -> float:
+def _round_currency(value: Decimal | float | int | str | None) -> Decimal:
     """Quantise an aggregate monetary value to 2dp, ROUND_HALF_UP.
 
-    Returns a float (the response schemas type these as ``float``).
-    Non-finite / unparseable input collapses to ``0.0`` so a corrupt
-    intermediate never serialises as ``NaN``/``Infinity``.
+    v3 §10 — returns a ``Decimal`` so downstream Pydantic schemas
+    typed as ``Decimal`` don't round-trip through float and re-introduce
+    precision drift. Non-finite / unparseable input collapses to
+    ``Decimal('0.00')`` so a corrupt intermediate never serialises as
+    ``NaN`` / ``Infinity``.
     """
     from decimal import ROUND_HALF_UP
 
     d = value if isinstance(value, Decimal) else _to_decimal(value)
     if not d.is_finite():
-        return 0.0
-    return float(d.quantize(_CURRENCY_QUANTUM, rounding=ROUND_HALF_UP))
+        return Decimal("0.00")
+    return d.quantize(_CURRENCY_QUANTUM, rounding=ROUND_HALF_UP)
 
 
 def _coerce_audit_value(value: Any) -> Any:

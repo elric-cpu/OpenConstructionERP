@@ -684,7 +684,8 @@ async def test_run_match_vector_returns_candidates(
     g = body[0]
     # Candidate-derived fields surface on the GroupSummary row.
     assert g["suggested_code"] == "WALL-001"
-    assert g["suggested_unit_rate"] == 185.0
+    # v3 §10 — GroupSummary.suggested_unit_rate is Decimal-as-string.
+    assert float(g["suggested_unit_rate"]) == 185.0
     assert g["suggested_currency"] == "EUR"
     assert g["confidence_band"] in {"medium", "low", "high", "none"}
     # Score 0.87 is below the central DEFAULT_AUTO_CONFIRM_THRESHOLD
@@ -947,10 +948,12 @@ async def test_apply_to_boq_dry_run_returns_preview(http_client, two_tenants):
     p = body["positions"][0]
     assert p["unit"] == "m3"
     assert p["quantity"] > 0
-    assert p["unit_rate"] == 185.0
+    # v3 §10 — ApplyPositionPreview.unit_rate / ApplyToBoqResponse.grand_total
+    # are Decimal-as-string.
+    assert float(p["unit_rate"]) == 185.0
     assert body["currency"] == "EUR"
     # Grand total reflects the line preview.
-    assert body["grand_total"] > 0
+    assert float(body["grand_total"]) > 0
 
     # Crucially: dry_run did NOT write any Position rows.
     async with async_session_factory() as s:

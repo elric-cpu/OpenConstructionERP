@@ -25,7 +25,7 @@ import logging
 import uuid
 from collections import defaultdict
 from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
 from sqlalchemy import delete, func, select
@@ -2840,18 +2840,24 @@ class MatchElementsService:
         # untouched. Resource sub-rows are likewise summed in base via
         # _resource_total_in_base so the position breakdown stays
         # consistent with the headline.
-        grand_total = 0.0
+        # v3 §10 — money rollup uses Decimal end-to-end so cents never
+        # drift through float intermediates. p.unit_rate / p.line_total
+        # / grand_total are all Decimal on the schema; p.quantity stays
+        # float (measurement, not money).
+        grand_total: Decimal = Decimal("0")
+        _Q2 = Decimal("0.01")
         for p in positions_preview:
-            line = p.quantity * p.unit_rate
+            qty_dec = Decimal(str(p.quantity))
+            line: Decimal = qty_dec * p.unit_rate
             line_currency = (p.currency or base_currency).upper()
             if line_currency != base_currency and fx_map:
                 fx = fx_map.get(line_currency)
                 if fx:
                     try:
-                        line = line * float(fx)
-                    except (TypeError, ValueError):
+                        line = line * Decimal(str(fx))
+                    except (TypeError, ValueError, InvalidOperation):
                         pass
-            p.line_total = round(line, 2)
+            p.line_total = line.quantize(_Q2, rounding=ROUND_HALF_UP)
             grand_total += line
         currency: str | None = base_currency
 
@@ -2867,7 +2873,7 @@ class MatchElementsService:
             boq_id=boq_id,
             positions_created=reported_positions_created,
             positions=positions_preview,
-            grand_total=round(grand_total, 2),
+            grand_total=grand_total.quantize(_Q2, rounding=ROUND_HALF_UP),
             currency=currency,
         )
 

@@ -5976,6 +5976,7 @@ async def get_resource_summary(
             )
         )
 
+    # v3 §10 — item.total_cost is Decimal now; sort key still works.
     resource_items.sort(key=lambda r: r.total_cost, reverse=True)
 
     # Dedupe variant pickers across summary rows. Two collapse scenarios:
@@ -6013,13 +6014,24 @@ async def get_resource_summary(
             if label_hash:
                 seen_hashes.add(label_hash)
 
+    # v3 §10 — totals stay in Decimal so cents don't drift. ABC percentages
+    # are ratios (0-100) and stay float — they index into the response's
+    # ``abc_percentage`` field which is still float.
+    from decimal import ROUND_HALF_UP as _RHU
+    from decimal import Decimal as _Dec
+
+    _Q2 = _Dec("0.01")
+    Decimal = _Dec  # alias for clarity in the rest of this block
+
     # Build by_type summary
     by_type: dict[str, ResourceTypeSummary] = {}
     for item in resource_items:
         if item.type not in by_type:
-            by_type[item.type] = ResourceTypeSummary(count=0, total_cost=0.0)
+            by_type[item.type] = ResourceTypeSummary(count=0, total_cost=Decimal("0"))
         by_type[item.type].count += 1
-        by_type[item.type].total_cost = round(by_type[item.type].total_cost + item.total_cost, 2)
+        by_type[item.type].total_cost = (
+            by_type[item.type].total_cost + item.total_cost
+        ).quantize(_Q2, rounding=_RHU)
 
     # Issue #106 — Pareto / ABC analysis. Items are already sorted by total_cost
     # descending above, so we walk the cumulative percentage and assign the
@@ -6028,11 +6040,14 @@ async def get_resource_summary(
     # (A = ~top 20 % of items that drive ~80 % of cost). When grand_total is 0
     # (e.g. fresh BOQ with no rates yet) we skip ABC entirely so we don't
     # divide by zero.
-    grand_total = round(sum(it.total_cost for it in resource_items), 2)
+    grand_total: Decimal = sum(
+        (it.total_cost for it in resource_items), start=Decimal("0")
+    ).quantize(_Q2, rounding=_RHU)
     if grand_total > 0:
         cumulative = 0.0
+        gt_f = float(grand_total)
         for item in resource_items:
-            pct = (item.total_cost / grand_total) * 100.0
+            pct = (float(item.total_cost) / gt_f) * 100.0
             item.abc_percentage = round(pct, 2)
             cumulative += pct
             # Use the cumulative threshold *before* this item rather than

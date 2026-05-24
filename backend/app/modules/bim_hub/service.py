@@ -793,8 +793,19 @@ class BIMHubService:
                 desc = info[1] if info else None
                 qty = float(info[2]) if info and info[2] is not None else None
                 unit = info[3] if info else None
-                urate = float(info[4]) if info and info[4] is not None else None
-                total = float(info[5]) if info and info[5] is not None else None
+                # v3 §10 — money goes through Pydantic as the raw 4dp string
+                # from Position so Decimal() doesn't round-trip through float
+                # and re-introduce binary precision drift.
+                urate = (
+                    str(info[4])
+                    if info and info[4] is not None and str(info[4]).strip()
+                    else None
+                )
+                total = (
+                    str(info[5])
+                    if info and info[5] is not None and str(info[5]).strip()
+                    else None
+                )
                 briefs.append(
                     {
                         "id": lnk.id,
@@ -1466,8 +1477,18 @@ class BIMHubService:
                     "boq_position_description": row.description,
                     "boq_position_quantity": _safe_float(row.quantity),
                     "boq_position_unit": row.unit,
-                    "boq_position_unit_rate": _safe_float(row.unit_rate),
-                    "boq_position_total": _safe_float(row.total),
+                    # v3 §10 — pass money values as their raw 4dp string so
+                    # Pydantic Decimal coercion is exact (not float-rounded).
+                    "boq_position_unit_rate": (
+                        str(row.unit_rate)
+                        if row.unit_rate is not None and str(row.unit_rate).strip()
+                        else None
+                    ),
+                    "boq_position_total": (
+                        str(row.total)
+                        if row.total is not None and str(row.total).strip()
+                        else None
+                    ),
                     "link_type": row.link_type,
                     "confidence": row.confidence,
                     "element_ids": [],
