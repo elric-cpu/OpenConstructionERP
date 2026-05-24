@@ -18,7 +18,8 @@ import {
   Check,
   File,
 } from 'lucide-react';
-import { Button, Card, Badge, EmptyState, Breadcrumb, DateDisplay, ConfirmDialog, SkeletonTable } from '@/shared/ui';
+import { Button, Card, Badge, EmptyState, Breadcrumb, DateDisplay, ConfirmDialog, RecoveryCard, SkeletonTable } from '@/shared/ui';
+import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { apiGet } from '@/shared/lib/api';
 import { useToastStore } from '@/stores/useToastStore';
@@ -1008,7 +1009,13 @@ export function CDEPage() {
   const projectId = routeProjectId || activeProjectId || projects[0]?.id || '';
   const projectName = projects.find((p) => p.id === projectId)?.name || '';
 
-  const { data: containers = [], isLoading } = useQuery({
+  const {
+    data: containers = [],
+    isLoading,
+    isError: containersError,
+    error: containersErrorValue,
+    refetch: refetchContainers,
+  } = useQuery({
     queryKey: ['cde-containers', projectId, stateFilter],
     queryFn: () =>
       fetchCDEContainers({
@@ -1388,19 +1395,14 @@ export function CDEPage() {
         />
       </div>
 
-      {/* No project selected banner */}
-      {!projectId && (
-        <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-          {t('common.select_project_hint', {
-            defaultValue: 'Select a project from the header to get started.',
-          })}
-        </div>
-      )}
-
       {/* Table */}
       <div>
-        {!projectId ? null : isLoading ? (
+        {!projectId ? (
+          <RequiresProject>{null}</RequiresProject>
+        ) : isLoading ? (
           <SkeletonTable rows={5} columns={5} />
+        ) : containersError ? (
+          <RecoveryCard error={containersErrorValue} onRetry={() => refetchContainers()} />
         ) : filtered.length === 0 ? (
           <EmptyState
             icon={<Database size={28} strokeWidth={1.5} />}

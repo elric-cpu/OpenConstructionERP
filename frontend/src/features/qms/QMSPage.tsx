@@ -28,6 +28,7 @@ import {
   WideModalSection,
   WideModalField,
 } from '@/shared/ui';
+import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { MoneyDisplay } from '@/shared/ui/MoneyDisplay';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { SectionIntro } from '@/features/validation';
@@ -360,11 +361,9 @@ export function QMSPage() {
 
       <Card padding="none">
         {!projectId ? (
-          <EmptyState
-            icon={<ClipboardCheck size={22} />}
-            title={t('common.no_project', { defaultValue: 'No project selected' })}
-            description={t('common.no_project_desc', { defaultValue: 'Create or select a project to view QMS data.' })}
-          />
+          <RequiresProject
+            emptyHint={t('common.no_project_desc', { defaultValue: 'Create or select a project to view QMS data.' })}
+          >{null}</RequiresProject>
         ) : isLoading ? (
           <div className="p-4">
             <SkeletonTable rows={8} columns={5} />

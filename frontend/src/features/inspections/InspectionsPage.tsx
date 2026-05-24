@@ -28,6 +28,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, SkeletonTable } from '@/shared/ui';
+import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { SectionIntro } from '@/features/validation';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
@@ -1029,17 +1030,6 @@ export function InspectionsPage() {
         })}
       </SectionIntro>
 
-      {/* No-project warning */}
-      {!projectId && (
-        <div className="mb-4 flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 px-4 py-3">
-          <AlertTriangle size={18} className="text-amber-600 shrink-0" />
-          <div>
-            <p className="text-sm font-medium text-amber-800 dark:text-amber-300">{t('common.no_project_selected', { defaultValue: 'No project selected' })}</p>
-            <p className="text-xs text-amber-600 dark:text-amber-400">{t('common.select_project_hint', { defaultValue: 'Select a project from the header to view and manage items.' })}</p>
-          </div>
-        </div>
-      )}
-
       {projectId ? (
       <>
       {/* Stats */}
@@ -1205,11 +1195,9 @@ export function InspectionsPage() {
       </div>
       </>
       ) : (
-        <EmptyState
-          icon={<ClipboardCheck size={28} strokeWidth={1.5} />}
-          title={t('inspections.no_project', { defaultValue: 'No project selected' })}
-          description={t('inspections.select_project', { defaultValue: 'Open a project first to view and manage inspections.' })}
-        />
+        <RequiresProject
+          emptyHint={t('inspections.select_project', { defaultValue: 'Open a project first to view and manage inspections.' })}
+        >{null}</RequiresProject>
       )}
 
       {/* Create / Edit Modal — same form, prefilled in edit mode */}

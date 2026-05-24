@@ -722,7 +722,7 @@ export function FederationsPage() {
               >
                 {(projects ?? []).length === 0 && (
                   <option value="">
-                    {t('bim.no_project', { defaultValue: 'No project selected' })}
+                    {t('bim.no_projects_available', { defaultValue: 'No projects available' })}
                   </option>
                 )}
                 {(projects ?? []).map((p) => (

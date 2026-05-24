@@ -37,6 +37,7 @@ import {
   SkeletonTable,
   ConfirmDialog,
 } from '@/shared/ui';
+import { RequiresProject } from '@/shared/auth/RequiresProject';
 import {
   WideModal,
   WideModalSection,
@@ -650,35 +651,27 @@ export function FinancePage() {
       </div>
 
       {/* Tab Content */}
-      {!projectId ? (
-        <EmptyState
-          icon={<Wallet size={28} strokeWidth={1.5} />}
-          title={t('finance.no_project', {
-            defaultValue: 'No project selected',
-          })}
-          description={t('finance.select_project', {
-            defaultValue:
-              'Track invoices, budgets, and payments here. Select a project to view its financial data, or lock a BOQ to auto-generate budget lines.',
-          })}
-        />
-      ) : (
-        <>
-          {activeTab === 'budgets' && <BudgetsTab projectId={projectId} />}
-          {activeTab === 'invoices' && <InvoicesTab projectId={projectId} />}
-          {activeTab === 'payments' && (
-            <PaymentsTab
-              projectId={projectId}
-              onGoToInvoices={() => setActiveTab('invoices')}
-            />
-          )}
-          {activeTab === 'evm' && (
-            <EVMTab
-              projectId={projectId}
-              onGoToBudgets={() => setActiveTab('budgets')}
-            />
-          )}
-        </>
-      )}
+      <RequiresProject
+        emptyHint={t('finance.select_project', {
+          defaultValue:
+            'Track invoices, budgets, and payments here. Select a project to view its financial data, or lock a BOQ to auto-generate budget lines.',
+        })}
+      >
+        {projectId && activeTab === 'budgets' && <BudgetsTab projectId={projectId} />}
+        {projectId && activeTab === 'invoices' && <InvoicesTab projectId={projectId} />}
+        {projectId && activeTab === 'payments' && (
+          <PaymentsTab
+            projectId={projectId}
+            onGoToInvoices={() => setActiveTab('invoices')}
+          />
+        )}
+        {projectId && activeTab === 'evm' && (
+          <EVMTab
+            projectId={projectId}
+            onGoToBudgets={() => setActiveTab('budgets')}
+          />
+        )}
+      </RequiresProject>
     </div>
   );
 }

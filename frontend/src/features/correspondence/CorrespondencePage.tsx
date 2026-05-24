@@ -18,7 +18,6 @@ import {
   X,
   Pencil,
   Trash2,
-  AlertTriangle,
   Send,
   HelpCircle,
   Link2,
@@ -30,6 +29,7 @@ import {
   EmptyState,
   Breadcrumb,
   DateDisplay,
+  RecoveryCard,
   SkeletonTable,
   ConfirmDialog,
   WideModal,
@@ -1106,24 +1106,7 @@ export function CorrespondencePage() {
         {isLoading ? (
           <SkeletonTable rows={5} columns={6} />
         ) : isError ? (
-          <EmptyState
-            icon={<AlertTriangle size={28} strokeWidth={1.5} />}
-            title={t('correspondence.load_failed', {
-              defaultValue: 'Could not load correspondence',
-            })}
-            description={
-              error instanceof Error
-                ? error.message
-                : t('correspondence.load_failed_hint', {
-                    defaultValue:
-                      'Something went wrong fetching the correspondence log. Please try again.',
-                  })
-            }
-            action={{
-              label: t('common.retry', { defaultValue: 'Retry' }),
-              onClick: () => refetch(),
-            }}
-          />
+          <RecoveryCard error={error} onRetry={() => refetch()} />
         ) : filtered.length === 0 ? (
           <EmptyState
             icon={<Mail size={28} strokeWidth={1.5} />}

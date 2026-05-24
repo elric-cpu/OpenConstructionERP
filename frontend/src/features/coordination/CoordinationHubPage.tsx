@@ -32,7 +32,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
 import { DateDisplay } from '@/shared/ui/DateDisplay';
-import { EmptyState } from '@/shared/ui/EmptyState';
+import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { useActiveProjectProfile } from '@/features/projects/useProjectProfile';
 import {
   fetchCoordinationDashboard,
@@ -240,19 +240,11 @@ export function CoordinationHubPage() {
   if (!projectId) {
     return (
       <div data-testid="coordination-no-project" className="px-4 py-8">
-        <EmptyState
-          icon={<LayoutDashboard size={28} />}
-          title={t('coordination.no_project_title', {
-            defaultValue: 'No project selected',
-          })}
-          description={t('coordination.no_project_desc', {
+        <RequiresProject
+          emptyHint={t('coordination.no_project_desc', {
             defaultValue: 'Pick a project to see its coordination dashboard.',
           })}
-          action={{
-            label: t('nav.projects', { defaultValue: 'Projects' }),
-            onClick: () => navigate('/projects'),
-          }}
-        />
+        >{null}</RequiresProject>
       </div>
     );
   }

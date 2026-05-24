@@ -193,7 +193,7 @@ export function AgentsPage(): JSX.Element {
                   <span>
                     {projectId
                       ? t('agents.project_attached', 'Run will be linked to active project.')
-                      : t('agents.no_project', 'No project selected — run will be global.')}
+                      : t('agents.no_project', 'No active project — run will be global.')}
                   </span>
                   <button
                     type="submit"

@@ -38,6 +38,7 @@ import {
   WideModalSection,
   WideModalField,
 } from '@/shared/ui';
+import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
@@ -369,16 +370,14 @@ export function FieldReportsPage() {
     [deleteMut, t, confirm],
   );
 
-  // ── No project selected ─────────────────────────────────────────────
+  // Project gate
 
   if (!projectId) {
     return (
       <div className="p-6">
-        <EmptyState
-          icon={<ClipboardList size={28} strokeWidth={1.5} />}
-          title={t('fieldreports.no_project', { defaultValue: 'Select a project' })}
-          description={t('fieldreports.no_project_desc', { defaultValue: 'Choose a project from the sidebar to view field reports.' })}
-        />
+        <RequiresProject
+          emptyHint={t('fieldreports.no_project_desc', { defaultValue: 'Choose a project from the sidebar to view field reports.' })}
+        >{null}</RequiresProject>
       </div>
     );
   }

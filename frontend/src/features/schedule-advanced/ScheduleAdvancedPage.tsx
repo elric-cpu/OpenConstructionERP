@@ -31,6 +31,7 @@ import {
   ConfirmDialog,
   InfoHint,
 } from '@/shared/ui';
+import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { PlanningCrossLinks } from '@/features/schedule/PlanningCrossLinks';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { useToastStore } from '@/stores/useToastStore';
@@ -407,13 +408,13 @@ export function ScheduleAdvancedPage() {
               }}
             />
           ) : (
-            <EmptyState
-              icon={<Calendar size={22} />}
-              title={t('schedule_advanced.no_project', { defaultValue: 'No project selected' })}
-              description={t('schedule_advanced.no_project_desc', {
+            <RequiresProject
+              emptyHint={t('schedule_advanced.no_project_desc', {
                 defaultValue: 'Create a project first to start pull-planning.',
               })}
-            />
+            >
+              {null}
+            </RequiresProject>
           )}
         </Card>
       ) : tab === 'master' ? (

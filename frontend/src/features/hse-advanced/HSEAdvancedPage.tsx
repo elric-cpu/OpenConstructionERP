@@ -8,7 +8,6 @@ import {
   ClipboardList,
   HardHat,
   FileCheck,
-  Award,
   Wrench,
   Users,
   X,
@@ -27,6 +26,7 @@ import {
   Breadcrumb,
   SkeletonTable,
 } from '@/shared/ui';
+import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { SectionIntro } from '@/features/validation';
 import { normalizeListResponse } from '@/shared/lib/apiHelpers';
@@ -196,50 +196,42 @@ export function HSEAdvancedPage() {
         })}
       </SectionIntro>
 
-      {!projectId && (
-        <EmptyState
-          icon={<Award size={28} strokeWidth={1.5} />}
-          title={t('hse_advanced.no_project', { defaultValue: 'No project selected' })}
-          description={t('hse_advanced.no_project_desc', {
-            defaultValue:
-              'Pick a project from the header to manage advanced HSE records: investigations, permits, audits and corrective actions.',
-          })}
-        />
-      )}
+      <RequiresProject
+        emptyHint={t('hse_advanced.no_project_desc', {
+          defaultValue:
+            'Pick a project from the header to manage advanced HSE records: investigations, permits, audits and corrective actions.',
+        })}
+      >
+        <div
+          className="flex items-center gap-1 mb-6 border-b border-border-light overflow-x-auto"
+          role="tablist"
+        >
+          {tabs.map((tb) => (
+            <button
+              key={tb.key}
+              role="tab"
+              aria-selected={tab === tb.key}
+              onClick={() => setTab(tb.key)}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
+                tab === tb.key
+                  ? 'border-oe-blue text-oe-blue'
+                  : 'border-transparent text-content-tertiary hover:text-content-primary hover:bg-surface-secondary'
+              }`}
+            >
+              {tb.icon}
+              {tb.label}
+            </button>
+          ))}
+        </div>
 
-      {projectId && (
-        <>
-          <div
-            className="flex items-center gap-1 mb-6 border-b border-border-light overflow-x-auto"
-            role="tablist"
-          >
-            {tabs.map((tb) => (
-              <button
-                key={tb.key}
-                role="tab"
-                aria-selected={tab === tb.key}
-                onClick={() => setTab(tb.key)}
-                className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
-                  tab === tb.key
-                    ? 'border-oe-blue text-oe-blue'
-                    : 'border-transparent text-content-tertiary hover:text-content-primary hover:bg-surface-secondary'
-                }`}
-              >
-                {tb.icon}
-                {tb.label}
-              </button>
-            ))}
-          </div>
-
-          {tab === 'incidents' && <IncidentsTab projectId={projectId} />}
-          {tab === 'jsa' && <JSATab projectId={projectId} />}
-          {tab === 'permits' && <PermitsTab projectId={projectId} />}
-          {tab === 'toolbox' && <ToolboxTab projectId={projectId} />}
-          {tab === 'ppe' && <PPETab projectId={projectId} />}
-          {tab === 'audits' && <AuditsTab projectId={projectId} />}
-          {tab === 'capa' && <CAPATab projectId={projectId} />}
-        </>
-      )}
+        {tab === 'incidents' && <IncidentsTab projectId={projectId} />}
+        {tab === 'jsa' && <JSATab projectId={projectId} />}
+        {tab === 'permits' && <PermitsTab projectId={projectId} />}
+        {tab === 'toolbox' && <ToolboxTab projectId={projectId} />}
+        {tab === 'ppe' && <PPETab projectId={projectId} />}
+        {tab === 'audits' && <AuditsTab projectId={projectId} />}
+        {tab === 'capa' && <CAPATab projectId={projectId} />}
+      </RequiresProject>
     </div>
   );
 }

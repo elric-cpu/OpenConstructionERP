@@ -20,6 +20,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { Button, Card, Badge, EmptyState, Skeleton, InfoHint, SkeletonTable, Breadcrumb, ConfirmDialog } from '@/shared/ui';
+import { RequiresProject } from '@/shared/auth/RequiresProject';
 import {
   WideModal,
   WideModalSection,
@@ -1227,15 +1228,15 @@ export function TenderingPage() {
         </span>
       </div>
 
-      {/* No project selected */}
+      {/* Empty state when no project chosen (page-internal selector above) */}
       {!selectedProjectId && (
-        <EmptyState
-          icon={<FileText size={28} strokeWidth={1.5} />}
-          title={t('tendering.select_project_title', { defaultValue: 'Select a project' })}
-          description={t('tendering.select_project_desc', {
+        <RequiresProject
+          emptyHint={t('tendering.select_project_desc', {
             defaultValue: 'Select a project and create a tender from a BOQ to get started',
           })}
-        />
+        >
+          {null}
+        </RequiresProject>
       )}
 
       {/* Loading packages */}

@@ -29,6 +29,7 @@ import {
   CheckSquare,
 } from 'lucide-react';
 import { Card, Button, Badge, EmptyState, Breadcrumb, AuthImage } from '@/shared/ui';
+import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { apiGet } from '@/shared/lib/api';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
@@ -1115,13 +1116,11 @@ export function PhotoGalleryPage() {
   if (!projectId) {
     return (
       <div className="space-y-6 p-6 max-w-7xl mx-auto">
-        <EmptyState
-          icon={<Camera size={28} strokeWidth={1.5} />}
-          title={t('photos.no_project', { defaultValue: 'No project selected' })}
-          description={t('photos.select_project', {
+        <RequiresProject
+          emptyHint={t('photos.select_project', {
             defaultValue: 'Select a project from the header to view its photo documentation.',
           })}
-        />
+        >{null}</RequiresProject>
       </div>
     );
   }

@@ -16,6 +16,9 @@ export { Card, CardHeader, CardContent, CardFooter } from './Card';
 export { EmptyState } from './EmptyState';
 export type { EmptyStateProps } from './EmptyState';
 
+export { RecoveryCard } from './RecoveryCard';
+export type { RecoveryCardProps } from './RecoveryCard';
+
 export { AuthImage } from './AuthImage';
 export type { AuthImageProps } from './AuthImage';
 

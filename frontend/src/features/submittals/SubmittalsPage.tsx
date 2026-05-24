@@ -12,7 +12,6 @@ import {
   ChevronRight,
   Info,
   Edit3,
-  AlertTriangle,
 } from 'lucide-react';
 import {
   Button,
@@ -21,12 +20,14 @@ import {
   EmptyState,
   Breadcrumb,
   DateDisplay,
+  RecoveryCard,
   SkeletonTable,
   ConfirmDialog,
   WideModal,
   WideModalSection,
   WideModalField,
 } from '@/shared/ui';
+import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { apiGet } from '@/shared/lib/api';
 import { useToastStore } from '@/stores/useToastStore';
@@ -942,12 +943,7 @@ export function SubmittalsPage() {
         </div>
       )}
 
-      {/* No-project warning */}
-      {!projectId && (
-        <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-          {t('common.select_project_hint', { defaultValue: 'Select a project from the header to get started.' })}
-        </div>
-      )}
+      {!projectId && <RequiresProject>{null}</RequiresProject>}
 
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
@@ -1035,24 +1031,7 @@ export function SubmittalsPage() {
         {isLoading ? (
           <SkeletonTable rows={5} columns={6} />
         ) : isError ? (
-          <EmptyState
-            icon={<AlertTriangle size={28} strokeWidth={1.5} />}
-            title={t('submittals.load_failed', {
-              defaultValue: 'Could not load submittals',
-            })}
-            description={
-              error instanceof Error
-                ? error.message
-                : t('submittals.load_failed_hint', {
-                    defaultValue:
-                      'Something went wrong fetching the submittals log. Please try again.',
-                  })
-            }
-            action={{
-              label: t('common.retry', { defaultValue: 'Retry' }),
-              onClick: () => refetch(),
-            }}
-          />
+          <RecoveryCard error={error} onRetry={() => refetch()} />
         ) : filtered.length === 0 ? (
           <EmptyState
             icon={<FileCheck size={28} strokeWidth={1.5} />}

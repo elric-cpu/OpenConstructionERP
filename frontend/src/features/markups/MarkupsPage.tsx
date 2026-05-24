@@ -31,6 +31,7 @@ import {
   TriangleRight,
 } from 'lucide-react';
 import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog } from '@/shared/ui';
+import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { apiGet } from '@/shared/lib/api';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
@@ -1175,23 +1176,15 @@ export function MarkupsPage() {
         </div>
       </div>
 
-      {/* ── No project selected ──────────────────────────────────────────── */}
+      {/* Project gate */}
       {!projectId ? (
         <div className="mt-10">
-          <EmptyState
-            icon={<PenTool size={28} strokeWidth={1.5} />}
-            title={t('markups.no_project_title', { defaultValue: 'No project selected' })}
-            description={t('markups.no_project_desc', {
+          <RequiresProject
+            emptyHint={t('markups.no_project_desc', {
               defaultValue:
                 'Select a project from the dropdown to view markups and annotations. You can create markups on document pages, add measurements, and track review status.',
             })}
-            action={{
-              label: t('markups.select_project_btn', { defaultValue: 'Select a Project' }),
-              onClick: () => {
-                /* Focus the project selector */
-              },
-            }}
-          />
+          >{null}</RequiresProject>
         </div>
       ) : (
         <>

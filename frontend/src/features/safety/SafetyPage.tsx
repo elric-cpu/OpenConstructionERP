@@ -8,7 +8,6 @@ import {
   ShieldAlert,
   Eye,
   Search,
-  HardHat,
   Download,
   Loader2,
   Plus,
@@ -31,6 +30,7 @@ import {
   Breadcrumb,
   SkeletonTable,
 } from '@/shared/ui';
+import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { SectionIntro } from '@/features/validation';
 import { apiGet, apiPost, triggerDownload } from '@/shared/lib/api';
@@ -559,62 +559,43 @@ export function SafetyPage() {
       {/* Quality Ecosystem Summary */}
       {projectId && <QualityDashboardSummary projectId={projectId} />}
 
-      {/* No-project warning */}
-      {!projectId && (
-        <div className="mb-4 flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 px-4 py-3">
-          <AlertTriangle size={18} className="text-amber-600 shrink-0" />
-          <div>
-            <p className="text-sm font-medium text-amber-800 dark:text-amber-300">{t('common.no_project_selected', { defaultValue: 'No project selected' })}</p>
-            <p className="text-xs text-amber-600 dark:text-amber-400">{t('common.select_project_hint', { defaultValue: 'Select a project from the header to view and manage items.' })}</p>
-          </div>
+      <RequiresProject
+        emptyHint={t('safety.select_project', {
+          defaultValue:
+            'Select a project from the header to report incidents, record safety observations, and track compliance.',
+        })}
+      >
+        {/* Tab Bar */}
+        <div className="flex items-center gap-1 mb-6 border-b border-border-light" role="tablist">
+          {tabs.map((tab) => (
+            <button
+              key={tab.key}
+              role="tab"
+              aria-selected={activeTab === tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`
+                flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-all
+                ${
+                  activeTab === tab.key
+                    ? 'border-oe-blue text-oe-blue'
+                    : 'border-transparent text-content-tertiary hover:text-content-primary hover:bg-surface-secondary'
+                }
+              `}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
         </div>
-      )}
 
-      {projectId ? (
-        <>
-          {/* Tab Bar */}
-          <div className="flex items-center gap-1 mb-6 border-b border-border-light" role="tablist">
-            {tabs.map((tab) => (
-              <button
-                key={tab.key}
-                role="tab"
-                aria-selected={activeTab === tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                className={`
-                  flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-all
-                  ${
-                    activeTab === tab.key
-                      ? 'border-oe-blue text-oe-blue'
-                      : 'border-transparent text-content-tertiary hover:text-content-primary hover:bg-surface-secondary'
-                  }
-                `}
-              >
-                {tab.icon}
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Tab Content */}
-          {activeTab === 'incidents' && (
-            <IncidentsTab projectId={projectId} />
-          )}
-          {activeTab === 'observations' && (
-            <ObservationsTab projectId={projectId} />
-          )}
-        </>
-      ) : (
-        <EmptyState
-          icon={<HardHat size={28} strokeWidth={1.5} />}
-          title={t('safety.no_project', {
-            defaultValue: 'No project selected',
-          })}
-          description={t('safety.select_project', {
-            defaultValue:
-              'Select a project from the header to report incidents, record safety observations, and track compliance.',
-          })}
-        />
-      )}
+        {/* Tab Content */}
+        {activeTab === 'incidents' && projectId && (
+          <IncidentsTab projectId={projectId} />
+        )}
+        {activeTab === 'observations' && projectId && (
+          <ObservationsTab projectId={projectId} />
+        )}
+      </RequiresProject>
     </div>
   );
 }

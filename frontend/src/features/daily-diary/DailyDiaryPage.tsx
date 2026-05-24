@@ -33,6 +33,7 @@ import {
   WideModalSection,
   WideModalField,
 } from '@/shared/ui';
+import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
@@ -401,13 +402,11 @@ export function DailyDiaryPage() {
           {projectsQ.isLoading ? (
             <SkeletonTable rows={6} columns={3} />
           ) : (
-            <EmptyState
-              icon={<Calendar size={22} />}
-              title={t('daily_diary.no_project', { defaultValue: 'No project selected' })}
-              description={t('daily_diary.no_project_desc', {
+            <RequiresProject
+              emptyHint={t('daily_diary.no_project_desc', {
                 defaultValue: 'Create a project first to start logging site diaries.',
               })}
-            />
+            >{null}</RequiresProject>
           )}
         </Card>
       ) : tab === 'diaries' ? (

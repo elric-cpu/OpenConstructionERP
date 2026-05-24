@@ -29,7 +29,6 @@ import {
   PenTool,
   HardHat,
   Rocket,
-  AlertTriangle,
   Paperclip,
   Download,
   FileText,
@@ -41,11 +40,13 @@ import {
   EmptyState,
   Breadcrumb,
   ConfirmDialog,
+  RecoveryCard,
   SkeletonTable,
   WideModal,
   WideModalSection,
   WideModalField,
 } from '@/shared/ui';
+import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { useCreateShortcut } from '@/shared/hooks/useCreateShortcut';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
@@ -2064,7 +2065,7 @@ export function MeetingsPage() {
   const handleCreateSubmit = useCallback(
     (formData: MeetingFormData) => {
       if (!projectId) {
-        addToast({ type: 'error', title: t('meetings.no_project_error', { defaultValue: 'No project selected' }), message: t('common.select_project_first', { defaultValue: 'Please select a project first' }) });
+        addToast({ type: 'error', title: t('requiresProject.title'), message: t('common.select_project_first', { defaultValue: 'Please select a project first' }) });
         return;
       }
       const attendeesList = formData.attendees
@@ -2215,17 +2216,6 @@ export function MeetingsPage() {
         </div>
       </div>
 
-      {/* No-project warning */}
-      {!projectId && (
-        <div className="mb-4 flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 px-4 py-3">
-          <AlertTriangle size={18} className="text-amber-600 shrink-0" />
-          <div>
-            <p className="text-sm font-medium text-amber-800 dark:text-amber-300">{t('common.no_project_selected', { defaultValue: 'No project selected' })}</p>
-            <p className="text-xs text-amber-600 dark:text-amber-400">{t('common.select_project_hint', { defaultValue: 'Select a project from the header to view and manage items.' })}</p>
-          </div>
-        </div>
-      )}
-
       {projectId ? (
       <>
       {/* Cross-module links — action items flow into Tasks once a meeting
@@ -2346,24 +2336,7 @@ export function MeetingsPage() {
         {isLoading ? (
           <SkeletonTable rows={5} columns={6} />
         ) : isError ? (
-          <EmptyState
-            icon={<AlertTriangle size={28} strokeWidth={1.5} />}
-            title={t('meetings.load_failed', {
-              defaultValue: 'Could not load meetings',
-            })}
-            description={
-              error instanceof Error
-                ? error.message
-                : t('meetings.load_failed_hint', {
-                    defaultValue:
-                      'Something went wrong fetching the meetings list. Please try again.',
-                  })
-            }
-            action={{
-              label: t('common.retry', { defaultValue: 'Retry' }),
-              onClick: () => refetch(),
-            }}
-          />
+          <RecoveryCard error={error} onRetry={() => refetch()} />
         ) : filtered.length === 0 ? (
           <EmptyState
             icon={<CalendarDays size={28} strokeWidth={1.5} />}
@@ -2442,11 +2415,9 @@ export function MeetingsPage() {
       </div>
       </>
       ) : (
-        <EmptyState
-          icon={<CalendarDays size={28} strokeWidth={1.5} />}
-          title={t('meetings.no_project', { defaultValue: 'No project selected' })}
-          description={t('meetings.select_project', { defaultValue: 'Select a project from the header to schedule meetings, track attendance, and manage action items.' })}
-        />
+        <RequiresProject
+          emptyHint={t('meetings.select_project', { defaultValue: 'Select a project from the header to schedule meetings, track attendance, and manage action items.' })}
+        >{null}</RequiresProject>
       )}
 
       {/* Create Modal */}

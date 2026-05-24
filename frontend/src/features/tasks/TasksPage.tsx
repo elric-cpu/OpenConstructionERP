@@ -26,7 +26,8 @@ import {
   Trash2,
   GripVertical,
 } from 'lucide-react';
-import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, ViewInBIMButton, InfoHint } from '@/shared/ui';
+import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, RecoveryCard, ViewInBIMButton, InfoHint } from '@/shared/ui';
+import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { PlanningCrossLinks } from '@/features/schedule/PlanningCrossLinks';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { useConfirm } from '@/shared/hooks/useConfirm';
@@ -911,7 +912,13 @@ export function TasksPage() {
 
   // "My Tasks" is resolved server-side from the JWT (the client doesn't
   // carry the user UUID), so it uses a different endpoint and cache key.
-  const { data: tasks = [], isLoading } = useQuery({
+  const {
+    data: tasks = [],
+    isLoading,
+    isError: tasksError,
+    error: tasksErrorValue,
+    refetch: refetchTasks,
+  } = useQuery({
     queryKey: myTasksOnly
       ? ['tasks', 'mine']
       : ['tasks', projectId, typeFilter],
@@ -1025,7 +1032,7 @@ export function TasksPage() {
   const handleCreateSubmit = useCallback(
     (formData: TaskFormData) => {
       if (!projectId) {
-        addToast({ type: 'error', title: t('tasks.no_project_error', { defaultValue: 'No project selected' }), message: t('common.select_project_first', { defaultValue: 'Please select a project first' }) });
+        addToast({ type: 'error', title: t('requiresProject.title'), message: t('common.select_project_first', { defaultValue: 'Please select a project first' }) });
         return;
       }
       const assignee = formData.assigned_to.trim();
@@ -1413,7 +1420,7 @@ export function TasksPage() {
         <div className="mb-4 flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 px-4 py-3">
           <AlertTriangle size={18} className="text-amber-600 shrink-0" />
           <div>
-            <p className="text-sm font-medium text-amber-800 dark:text-amber-300">{t('common.no_project_selected', { defaultValue: 'No project selected' })}</p>
+            <p className="text-sm font-medium text-amber-800 dark:text-amber-300">{t('requiresProject.title')}</p>
             <p className="text-xs text-amber-600 dark:text-amber-400">{t('common.select_project_hint', { defaultValue: 'Select a project from the header to view and manage items.' })}</p>
           </div>
         </div>
@@ -1604,6 +1611,8 @@ export function TasksPage() {
               </div>
             ))}
           </div>
+        ) : tasksError ? (
+          <RecoveryCard error={tasksErrorValue} onRetry={() => refetchTasks()} />
         ) : filtered.length === 0 ? (
           <EmptyState
             icon={<ClipboardList size={28} strokeWidth={1.5} />}
@@ -1805,11 +1814,9 @@ export function TasksPage() {
       </div>
       </>
       ) : (
-        <EmptyState
-          icon={<ClipboardList size={28} strokeWidth={1.5} />}
-          title={t('tasks.no_project', { defaultValue: 'No project selected' })}
-          description={t('tasks.select_project', { defaultValue: 'Select a project from the header to view and manage tasks, assignments, and deadlines.' })}
-        />
+        <RequiresProject
+          emptyHint={t('tasks.select_project', { defaultValue: 'Select a project from the header to view and manage tasks, assignments, and deadlines.' })}
+        >{null}</RequiresProject>
       )}
 
       {/* Add / Edit Modal */}

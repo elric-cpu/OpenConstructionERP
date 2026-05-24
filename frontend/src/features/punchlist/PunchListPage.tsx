@@ -32,6 +32,7 @@ import {
   WideModalSection,
   WideModalField,
 } from '@/shared/ui';
+import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { SectionIntro } from '@/features/validation';
 import { apiGet } from '@/shared/lib/api';
@@ -1106,14 +1107,12 @@ export function PunchListPage() {
       {/* Content */}
       <div className="mt-6">
         {!projectId ? (
-          <EmptyState
-            icon={<ListChecks size={28} strokeWidth={1.5} />}
-            title={t('punch.no_project_title', { defaultValue: 'No project selected' })}
-            description={t('punch.no_project_desc', {
+          <RequiresProject
+            emptyHint={t('punch.no_project_desc', {
               defaultValue:
                 'Select a project from the dropdown above to view and manage punch list items.',
             })}
-          />
+          >{null}</RequiresProject>
         ) : isLoading ? (
           <div className="flex items-center justify-center py-16">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-oe-blue border-t-transparent" />

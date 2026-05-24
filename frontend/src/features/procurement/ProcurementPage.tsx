@@ -26,6 +26,7 @@ import {
   SkeletonTable,
   InfoHint,
 } from '@/shared/ui';
+import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { MoneyDisplay } from '@/shared/ui/MoneyDisplay';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { ContactSearchInput } from '@/shared/ui/ContactSearchInput';
@@ -251,16 +252,12 @@ export function ProcurementPage() {
 
       {/* Tab Content */}
       {!projectId ? (
-        <EmptyState
-          icon={<Package size={28} strokeWidth={1.5} />}
-          title={t('procurement.no_project', {
-            defaultValue: 'No project selected',
-          })}
-          description={t('procurement.select_project', {
+        <RequiresProject
+          emptyHint={t('procurement.select_project', {
             defaultValue:
               'Open a project first to view its procurement data',
           })}
-        />
+        >{null}</RequiresProject>
       ) : (
         <>
           {activeTab === 'purchase-orders' && (

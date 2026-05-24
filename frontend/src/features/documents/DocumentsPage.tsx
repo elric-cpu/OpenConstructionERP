@@ -7,6 +7,7 @@ import {
   MoreHorizontal, Pencil, Tag, Ruler, Send,
 } from 'lucide-react';
 import { Button, Badge, EmptyState, Breadcrumb, ViewInBIMButton } from '@/shared/ui';
+import { RequiresProject } from '@/shared/auth/RequiresProject';
 import SimilarItemsPanel from '@/shared/ui/SimilarItemsPanel';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { apiGet, apiDelete, apiPatch } from '@/shared/lib/api';
@@ -616,7 +617,7 @@ export function DocumentsPage() {
     if (!projectId) {
       addToast({
         type: 'error',
-        title: t('documents.no_project_error', { defaultValue: 'No project selected' }),
+        title: t('requiresProject.title'),
         message: t('documents.select_project_first', { defaultValue: 'Please select a project first before uploading.' }),
       });
       return;
@@ -803,17 +804,15 @@ export function DocumentsPage() {
     setEditForm((prev) => ({ ...prev, tags: prev.tags.filter((t) => t !== tag) }));
   }, []);
 
-  /* ── No project selected ────────────────────────────────────────────── */
+  /* Project gate */
 
   if (!projectId) {
     return (
       <div className="w-full px-5 py-4 space-y-4 animate-fade-in">
         <Breadcrumb items={[{ label: t('nav.dashboard', 'Dashboard'), to: '/' }, { label: t('nav.documents', 'Documents') }]} />
-        <EmptyState
-          icon={<FolderOpen size={28} strokeWidth={1.5} />}
-          title={t('documents.select_project', { defaultValue: 'Select a project' })}
-          description={t('documents.select_project_hint', { defaultValue: 'Use the project switcher in the header to select a project first.' })}
-        />
+        <RequiresProject
+          emptyHint={t('documents.select_project_hint', { defaultValue: 'Use the project switcher in the header to select a project first.' })}
+        >{null}</RequiresProject>
       </div>
     );
   }

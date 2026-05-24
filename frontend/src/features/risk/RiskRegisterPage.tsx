@@ -9,6 +9,7 @@ import {
   LayoutGrid, Activity,
 } from 'lucide-react';
 import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, InfoHint } from '@/shared/ui';
+import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { PlanningCrossLinks } from '@/features/schedule/PlanningCrossLinks';
 import SimilarItemsPanel from '@/shared/ui/SimilarItemsPanel';
 import { UserSearchInput } from '@/shared/ui/UserSearchInput';
@@ -586,17 +587,6 @@ export function RiskRegisterPage() {
         </div>
       </div>
 
-      {/* No-project warning */}
-      {!projectId && (
-        <div className="mb-4 mt-4 flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 px-4 py-3">
-          <AlertTriangle size={18} className="text-amber-600 shrink-0" />
-          <div>
-            <p className="text-sm font-medium text-amber-800 dark:text-amber-300">{t('common.no_project_selected', { defaultValue: 'No project selected' })}</p>
-            <p className="text-xs text-amber-600 dark:text-amber-400">{t('common.select_project_hint', { defaultValue: 'Select a project from the header to view and manage items.' })}</p>
-          </div>
-        </div>
-      )}
-
       {/* How the Risk Register connects to the rest of the platform */}
       <InfoHint
         className="mt-4"
@@ -722,11 +712,9 @@ export function RiskRegisterPage() {
 
       {activeTab === 'register' && <div className="mt-4">
         {!projectId ? (
-          <Card><EmptyState
-            icon={<ShieldAlert size={28} strokeWidth={1.5} />}
-            title={t('risk.no_project', { defaultValue: 'No project selected' })}
-            description={t('risk.no_project_desc', { defaultValue: 'Open a project first to view and manage risks.' })}
-          /></Card>
+          <Card><RequiresProject
+            emptyHint={t('risk.no_project_desc', { defaultValue: 'Open a project first to view and manage risks.' })}
+          >{null}</RequiresProject></Card>
         ) : isLoading ? (
           <div className="flex items-center justify-center py-20"><div className="h-6 w-6 animate-spin rounded-full border-2 border-oe-blue border-t-transparent" /></div>
         ) : filteredRisks.length === 0 ? (

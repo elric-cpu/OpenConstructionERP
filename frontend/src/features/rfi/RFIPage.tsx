@@ -16,7 +16,6 @@ import {
   Download,
   Loader2,
   CalendarClock,
-  AlertTriangle,
   Paperclip,
   ArrowRightLeft,
   UploadCloud,
@@ -30,11 +29,13 @@ import {
   EmptyState,
   Breadcrumb,
   ConfirmDialog,
+  RecoveryCard,
   SkeletonTable,
   WideModal,
   WideModalSection,
   WideModalField,
 } from '@/shared/ui';
+import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { UserSearchInput } from '@/shared/ui/UserSearchInput';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { useCreateShortcut } from '@/shared/hooks/useCreateShortcut';
@@ -461,7 +462,7 @@ function CreateRFIModal({
       if (!projectId) {
         addToast({
           type: 'error',
-          title: t('rfi.no_project_error', { defaultValue: 'No project selected' }),
+          title: t('requiresProject.title'),
         });
         return;
       }
@@ -1521,7 +1522,7 @@ export function RFIPage() {
   const handleCreateSubmit = useCallback(
     (formData: RFIFormData) => {
       if (!projectId) {
-        addToast({ type: 'error', title: t('rfi.no_project_error', { defaultValue: 'No project selected' }), message: t('common.select_project_first', { defaultValue: 'Please select a project first' }) });
+        addToast({ type: 'error', title: t('requiresProject.title'), message: t('common.select_project_first', { defaultValue: 'Please select a project first' }) });
         return;
       }
       const scheduleDays = Number.parseInt(formData.schedule_impact_days, 10);
@@ -1750,17 +1751,6 @@ export function RFIPage() {
         </Button>
       </div>
 
-      {/* No-project warning */}
-      {!projectId && (
-        <div className="mb-4 flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 px-4 py-3">
-          <AlertTriangle size={18} className="text-amber-600 shrink-0" />
-          <div>
-            <p className="text-sm font-medium text-amber-800 dark:text-amber-300">{t('common.no_project_selected', { defaultValue: 'No project selected' })}</p>
-            <p className="text-xs text-amber-600 dark:text-amber-400">{t('common.select_project_hint', { defaultValue: 'Select a project from the header to view and manage items.' })}</p>
-          </div>
-        </div>
-      )}
-
       {projectId ? (
       <>
       {/* Stats */}
@@ -1901,22 +1891,7 @@ export function RFIPage() {
         {isLoading ? (
           <SkeletonTable rows={5} columns={6} />
         ) : isError ? (
-          <EmptyState
-            icon={<AlertTriangle size={28} strokeWidth={1.5} />}
-            title={t('rfi.load_failed', { defaultValue: 'Could not load RFIs' })}
-            description={
-              error instanceof Error
-                ? error.message
-                : t('rfi.load_failed_hint', {
-                    defaultValue:
-                      'Something went wrong fetching the RFI log. Please try again.',
-                  })
-            }
-            action={{
-              label: t('common.retry', { defaultValue: 'Retry' }),
-              onClick: () => refetch(),
-            }}
-          />
+          <RecoveryCard error={error} onRetry={() => refetch()} />
         ) : filtered.length === 0 ? (
           <EmptyState
             icon={<HelpCircle size={28} strokeWidth={1.5} />}
@@ -2039,11 +2014,9 @@ export function RFIPage() {
       </div>
       </>
       ) : (
-        <EmptyState
-          icon={<HelpCircle size={28} strokeWidth={1.5} />}
-          title={t('rfi.no_project', { defaultValue: 'No project selected' })}
-          description={t('rfi.select_project_hint', { defaultValue: 'Select a project from the header to submit, track, and resolve requests for information.' })}
-        />
+        <RequiresProject
+          emptyHint={t('rfi.select_project_hint', { defaultValue: 'Select a project from the header to submit, track, and resolve requests for information.' })}
+        >{null}</RequiresProject>
       )}
 
       {/* Create Modal */}

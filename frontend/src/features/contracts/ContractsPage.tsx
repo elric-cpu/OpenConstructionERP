@@ -30,6 +30,7 @@ import {
   Breadcrumb,
   SkeletonTable,
 } from '@/shared/ui';
+import { RequiresProject } from '@/shared/auth/RequiresProject';
 import {
   WideModal,
   WideModalSection,
@@ -451,13 +452,11 @@ export function ContractsPage() {
       {/* Body */}
       <Card padding="none">
         {!projectId ? (
-          <EmptyState
-            icon={<FileText size={22} />}
-            title={t('contracts.no_project', { defaultValue: 'No project selected' })}
-            description={t('contracts.no_project_desc', {
+          <RequiresProject
+            emptyHint={t('contracts.no_project_desc', {
               defaultValue: 'Pick a project above to view its contracts.',
             })}
-          />
+          >{null}</RequiresProject>
         ) : isLoading ? (
           <div className="p-4">
             <SkeletonTable rows={8} columns={6} />
