@@ -28,7 +28,13 @@ from app.core.file_signature import (
     FileSignatureMismatch,
     require as require_signature,
 )
-from app.dependencies import CurrentUserId, RequirePermission, SessionDep, check_ai_rate_limit
+from app.dependencies import (
+    CurrentUserId,
+    RequirePermission,
+    SessionDep,
+    check_ai_rate_limit,
+    verify_project_access,
+)
 from app.modules.ai.ai_client import (
     call_ai,
     default_model_for,
@@ -319,6 +325,14 @@ async def quick_estimate(
     - Token usage and processing time
     """
     response.headers["X-RateLimit-Remaining"] = str(remaining)
+    # R7 audit: when the caller links the job to a project we must
+    # verify they actually own / can access that project. Without the
+    # check, any authenticated user could write AI estimate jobs that
+    # reference projects belonging to other tenants — useful for log
+    # poisoning, cross-tenant cost-context smuggling, and as a stepping
+    # stone for the create_boq_from_estimate flow.
+    if request.project_id is not None:
+        await verify_project_access(request.project_id, user_id, service.session)
     return await service.quick_estimate(user_id, request)
 
 
@@ -396,6 +410,9 @@ async def photo_estimate(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid project_id format: {project_id}",
             ) from exc
+        # R7 audit: enforce project access on the linkage (same rationale
+        # as quick_estimate — see comment there).
+        await verify_project_access(parsed_project_id, user_id, service.session)
 
     return await service.photo_estimate(
         user_id=user_id,
@@ -490,6 +507,9 @@ async def file_estimate(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid project_id: {project_id}",
             ) from exc
+        # R7 audit: enforce project access on the linkage (same rationale
+        # as quick_estimate — see comment there).
+        await verify_project_access(parsed_project_id, user_id, service.session)
 
     return await service.file_estimate(
         user_id=user_id,
@@ -571,17 +591,13 @@ async def enrich_estimate(
     job_repo = AIEstimateJobRepository(session)
     job = await job_repo.get_by_id(job_id)
 
-    if job is None:
+    # R7 audit: collapse "missing" + "wrong owner" into a single 404
+    # surface so the response cannot be used as a job-id oracle. The old
+    # 403 distinguished the two cases for any caller with a valid JWT.
+    if job is None or str(job.user_id) != str(uid):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Estimate job not found",
-        )
-
-    # 2. Verify ownership and status
-    if str(job.user_id) != str(uid):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only enrich your own estimate jobs",
         )
 
     if job.status != "completed":
@@ -745,16 +761,12 @@ async def get_estimate_job(
     uid = uuid.UUID(user_id)
     job = await service.job_repo.get_by_id(job_id)
 
-    if job is None:
+    # R7 audit: collapse missing-vs-wrong-owner into 404 (no enumeration
+    # oracle for job UUIDs).
+    if job is None or str(job.user_id) != str(uid):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Estimate job not found",
-        )
-
-    if str(job.user_id) != str(uid):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only view your own estimate jobs",
         )
 
     return _build_job_response(job)
@@ -793,6 +805,22 @@ async def advisor_chat(
     region = body.get("region", "")
     locale = body.get("locale", "en")
     history: list[dict] = body.get("history", []) or []
+
+    # R7 audit: when project_id is supplied (used to fetch project
+    # name / region / currency below) we must verify the caller can
+    # access it. Without the guard, a user with only ai.estimate could
+    # probe arbitrary project UUIDs and exfiltrate name/region/currency
+    # via the advisor reply text (the system prompt embeds them).
+    parsed_project_id: uuid.UUID | None = None
+    if project_id:
+        try:
+            parsed_project_id = uuid.UUID(str(project_id))
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid project_id: {project_id}",
+            ) from exc
+        await verify_project_access(parsed_project_id, user_id, session)
 
     # 1. Search cost database for relevant items
     from sqlalchemy import or_, select

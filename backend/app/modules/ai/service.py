@@ -1084,17 +1084,23 @@ class AIService:
         uid = uuid.UUID(user_id)
         job = await self.job_repo.get_by_id(job_id)
 
-        if job is None:
+        # R7 audit: collapse "job missing" + "different owner" into the
+        # same 404 surface so the response cannot be used as a job-id
+        # oracle by another tenant.
+        if job is None or str(job.user_id) != str(uid):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Estimate job not found",
             )
 
-        if str(job.user_id) != str(uid):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You can only create BOQs from your own estimates",
-            )
+        # R7 audit: the caller can supply ANY ``request.project_id``;
+        # without this guard a non-owner could land an AI-generated BOQ
+        # inside a project they don't own (silent BOQ injection that
+        # bypasses the projects-module RBAC). The shared helper returns
+        # 404 on "missing" OR "no access" — identical surface.
+        from app.dependencies import verify_project_access
+
+        await verify_project_access(request.project_id, user_id, self.session)
 
         if job.status != "completed":
             raise HTTPException(
