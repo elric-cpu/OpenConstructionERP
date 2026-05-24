@@ -1206,7 +1206,7 @@ function OverviewDevRow({
         ) : dash ? (
           <MoneyDisplay
             amount={toNumber(dash.contracted_value)}
-            currency={undefined}
+            currency={dev.currency || 'EUR'}
           />
         ) : (
           '—'
@@ -1348,7 +1348,10 @@ function OverviewKpiRow({
         })}
         value={
           allLoaded ? (
-            <MoneyDisplay amount={totals.contracted} currency={undefined} />
+            <MoneyDisplay
+              amount={totals.contracted}
+              currency={developments[0]?.currency || 'EUR'}
+            />
           ) : (
             '—'
           )

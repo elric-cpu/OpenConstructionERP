@@ -589,6 +589,14 @@ function PipelineBoard({
             (acc, o) => acc + toNum(o.estimated_value),
             0,
           );
+          // Stage rollup currency: use the dominant currency in the
+          // column. If the column mixes currencies the rollup number is
+          // arithmetically meaningless anyway — backend issue #TBD will
+          // eventually emit FX-converted totals; for now we display the
+          // first-seen code so users at least see a unit instead of a
+          // post-Wave2 em-dash.
+          const stageCurrency =
+            items.find((o) => o.currency)?.currency || 'EUR';
           const isClosingStage =
             stage.is_final && (stage.is_won || stage.is_lost);
           return (
@@ -597,6 +605,7 @@ function PipelineBoard({
               stage={stage}
               count={items.length}
               total={total}
+              currency={stageCurrency}
               droppable={!isClosingStage}
             >
               {items.length === 0 ? (
@@ -651,12 +660,14 @@ function StageColumn({
   stage,
   count,
   total,
+  currency,
   droppable,
   children,
 }: {
   stage: PipelineStage;
   count: number;
   total: number;
+  currency: string;
   droppable: boolean;
   children: React.ReactNode;
 }) {
@@ -676,7 +687,7 @@ function StageColumn({
             {stage.name}
           </p>
           <p className="text-[11px] text-content-tertiary">
-            {count} · <MoneyDisplay amount={total} />
+            {count} · <MoneyDisplay amount={total} currency={currency} />
           </p>
         </div>
         <span className="ml-2 inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-surface-primary px-1.5 text-[11px] font-medium text-content-secondary">

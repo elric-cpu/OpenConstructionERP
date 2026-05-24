@@ -34,6 +34,7 @@ import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { PipelineBanner } from './PipelineBanner';
 import { getErrorMessage, apiGet } from '@/shared/lib/api';
 import { useToastStore } from '@/stores/useToastStore';
+import { usePreferencesStore } from '@/stores/usePreferencesStore';
 import {
   listVendors,
   listCatalogItems,
@@ -571,6 +572,10 @@ function WarehousePanel({
   onAction: () => void;
 }) {
   const { t } = useTranslation();
+  // StockBalance carries no currency field; warehouses themselves are
+  // currency-agnostic. Fall back to the user's preferred currency so
+  // the column shows a unit instead of a post-Wave2 em-dash.
+  const prefCurrency = usePreferencesStore((s) => s.currency);
   if (warehouses.length === 0) {
     return (
       <EmptyState
@@ -634,7 +639,7 @@ function WarehousePanel({
                   <td className="px-4 py-2 text-right text-xs tabular-nums">{String(b.quantity_on_hand)}</td>
                   <td className="px-4 py-2 text-right text-xs tabular-nums">{String(b.quantity_reserved)}</td>
                   <td className="px-4 py-2 text-right text-xs tabular-nums">
-                    <MoneyDisplay amount={Number(b.unit_cost_avg) || 0} />
+                    <MoneyDisplay amount={Number(b.unit_cost_avg) || 0} currency={prefCurrency} />
                   </td>
                   <td className="px-4 py-2 text-xs text-content-secondary">
                     {b.last_movement_at ? <DateDisplay value={b.last_movement_at} /> : '—'}
