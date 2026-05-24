@@ -104,6 +104,71 @@ def _safe_lead_label(lead: Any) -> str:
     return f"<lead:{parts[0]} {parts[-1][:1]}>"
 
 
+# ── Viewer-aware PII redaction (response boundary) ────────────────────────
+#
+# R7 audit: ``LeadResponse`` historically echoed raw ``contact_email`` /
+# ``contact_phone`` to anyone holding ``crm.read`` (VIEWER role). That
+# leaks GDPR-class PII into rep dashboards, audit exports and any sub-
+# contractor with read-only access. Redact at the response boundary so
+# only the lead owner (``assigned_to``), admins and managers see full
+# values. Everyone else gets ``j***@example.com`` / ``+49…567``.
+
+_PII_FULL_ACCESS_ROLES: frozenset[str] = frozenset({"admin", "manager"})
+
+
+def viewer_can_see_lead_pii(
+    lead: Any,
+    *,
+    viewer_id: str | None,
+    viewer_role: str | None,
+) -> bool:
+    """Return True iff the viewer is owner / manager+ / admin."""
+    if viewer_role and viewer_role.lower() in _PII_FULL_ACCESS_ROLES:
+        return True
+    assigned_to = getattr(lead, "assigned_to", None)
+    if assigned_to is None or viewer_id is None:
+        return False
+    return str(assigned_to) == str(viewer_id)
+
+
+def _redact_email_response(email: str | None) -> str | None:
+    """Response-safe email redaction. Returns None on missing — never a label."""
+    if not email or "@" not in email:
+        return None
+    local, _, domain = email.partition("@")
+    return f"{local[:1]}***@{domain}" if local else f"***@{domain}"
+
+
+def _redact_phone_response(phone: str | None) -> str | None:
+    """Response-safe phone redaction. Returns None on missing — never a label."""
+    if not phone:
+        return None
+    cleaned = re.sub(r"\D", "", phone)
+    if len(cleaned) <= 4:
+        return None
+    prefix = phone[:3] if phone.startswith("+") else cleaned[:2]
+    return f"{prefix}…{cleaned[-3:]}"
+
+
+def redact_lead_pii(
+    lead: Any,
+    *,
+    viewer_id: str | None,
+    viewer_role: str | None,
+) -> tuple[str | None, str | None]:
+    """Return ``(email, phone)`` tuple — full values for owners, redacted otherwise.
+
+    Use this in router handlers BEFORE constructing the ``LeadResponse`` so
+    the response payload itself never carries raw PII for non-owners. Logs
+    and audit-trail entries should still use ``_redact_email`` directly.
+    """
+    raw_email = getattr(lead, "contact_email", None)
+    raw_phone = getattr(lead, "contact_phone", None)
+    if viewer_can_see_lead_pii(lead, viewer_id=viewer_id, viewer_role=viewer_role):
+        return raw_email, raw_phone
+    return _redact_email_response(raw_email), _redact_phone_response(raw_phone)
+
+
 # ── State machines ─────────────────────────────────────────────────────────
 
 
@@ -608,12 +673,18 @@ class CrmService:
         )
 
         # 2. Scrub linked activities.
+        # ``update_fields`` calls ``session.expire_all()`` between iterations
+        # which invalidates every loaded attribute; if we held ``act`` and
+        # read ``act.id`` on the next loop, SQLAlchemy would re-trigger IO
+        # outside the async greenlet (raising MissingGreenlet). Snapshot the
+        # IDs up-front so the loop never touches stale ORM state.
         activities, _ = await self.activity_repo.list_all(
             limit=10000, lead_id=lead_id
         )
-        for act in activities:
+        activity_ids = [act.id for act in activities]
+        for activity_id in activity_ids:
             await self.activity_repo.update_fields(
-                act.id,
+                activity_id,
                 subject=scrub_marker,
                 body="",
             )

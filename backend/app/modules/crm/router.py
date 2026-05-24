@@ -13,7 +13,12 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.dependencies import CurrentUserId, RequirePermission, SessionDep
+from app.dependencies import (
+    CurrentUserId,
+    CurrentUserPayload,
+    RequirePermission,
+    SessionDep,
+)
 from app.modules.crm.schemas import (
     AccountCreate,
     AccountResponse,
@@ -52,6 +57,7 @@ from app.modules.crm.service import (
     compute_lost_reasons_breakdown,
     compute_pipeline_metrics,
     compute_win_rate,
+    redact_lead_pii,
 )
 
 router = APIRouter()
@@ -59,6 +65,31 @@ router = APIRouter()
 
 def _get_service(session: SessionDep) -> CrmService:
     return CrmService(session)
+
+
+def _lead_to_response(
+    lead: Any,
+    *,
+    viewer_id: str | None,
+    viewer_role: str | None,
+) -> LeadResponse:
+    """‌⁠‍Build a ``LeadResponse`` with PII redacted for non-owner viewers.
+
+    R7 audit: ``LeadResponse.model_validate(lead)`` used to echo raw
+    contact_email / contact_phone to every VIEWER. Only the assigned rep,
+    managers and admins should see full PII; everyone else gets
+    ``j***@example.com`` / ``+49…567``. The lead row itself is unchanged —
+    redaction happens at the response boundary only.
+    """
+    email, phone = redact_lead_pii(
+        lead, viewer_id=viewer_id, viewer_role=viewer_role,
+    )
+    payload = LeadResponse.model_validate(lead)
+    # Pydantic v2 frozen=False default — we mutate the validated copy in
+    # place so the redaction can't be lost via a downstream .model_dump().
+    payload.contact_email = email
+    payload.contact_phone = phone
+    return payload
 
 
 # ── Accounts ─────────────────────────────────────────────────────────────
@@ -145,6 +176,7 @@ async def delete_account(
 
 @router.get("/leads/", response_model=list[LeadResponse])
 async def list_leads(
+    payload: CurrentUserPayload,
     status_filter: str | None = Query(default=None, alias="status"),
     assigned_to: uuid.UUID | None = Query(default=None),
     source: str | None = Query(default=None),
@@ -156,37 +188,53 @@ async def list_leads(
     items, _ = await service.lead_repo.list_all(
         offset=offset, limit=limit, status=status_filter, assigned_to=assigned_to, source=source
     )
-    return [LeadResponse.model_validate(li) for li in items]
+    viewer_id = payload.get("sub")
+    viewer_role = payload.get("role")
+    return [
+        _lead_to_response(li, viewer_id=viewer_id, viewer_role=viewer_role)
+        for li in items
+    ]
 
 
 @router.post("/leads/", response_model=LeadResponse, status_code=201)
 async def create_lead(
     data: LeadCreate,
     user_id: CurrentUserId,
+    payload: CurrentUserPayload,
     _perm: None = Depends(RequirePermission("crm.create")),
     service: CrmService = Depends(_get_service),
 ) -> LeadResponse:
     lead = await service.create_lead(data, user_id=user_id)
-    return LeadResponse.model_validate(lead)
+    return _lead_to_response(
+        lead, viewer_id=user_id, viewer_role=payload.get("role"),
+    )
 
 
 @router.get("/leads/{lead_id}", response_model=LeadResponse)
 async def get_lead(
     lead_id: uuid.UUID,
+    payload: CurrentUserPayload,
     _perm: None = Depends(RequirePermission("crm.read")),
     service: CrmService = Depends(_get_service),
 ) -> LeadResponse:
-    return LeadResponse.model_validate(await service.get_lead(lead_id))
+    lead = await service.get_lead(lead_id)
+    return _lead_to_response(
+        lead, viewer_id=payload.get("sub"), viewer_role=payload.get("role"),
+    )
 
 
 @router.patch("/leads/{lead_id}", response_model=LeadResponse)
 async def update_lead(
     lead_id: uuid.UUID,
     data: LeadUpdate,
+    payload: CurrentUserPayload,
     _perm: None = Depends(RequirePermission("crm.update")),
     service: CrmService = Depends(_get_service),
 ) -> LeadResponse:
-    return LeadResponse.model_validate(await service.update_lead(lead_id, data))
+    lead = await service.update_lead(lead_id, data)
+    return _lead_to_response(
+        lead, viewer_id=payload.get("sub"), viewer_role=payload.get("role"),
+    )
 
 
 @router.delete("/leads/{lead_id}", status_code=204)
@@ -219,24 +267,30 @@ async def qualify_lead(
     lead_id: uuid.UUID,
     data: LeadQualifyRequest,
     user_id: CurrentUserId,
+    payload: CurrentUserPayload,
     _perm: None = Depends(RequirePermission("crm.qualify_lead")),
     service: CrmService = Depends(_get_service),
 ) -> LeadResponse:
     lead = await service.qualify_lead(
         lead_id, data.qualification_notes, user_id=user_id
     )
-    return LeadResponse.model_validate(lead)
+    return _lead_to_response(
+        lead, viewer_id=user_id, viewer_role=payload.get("role"),
+    )
 
 
 @router.post("/leads/{lead_id}/disqualify", response_model=LeadResponse)
 async def disqualify_lead(
     lead_id: uuid.UUID,
     user_id: CurrentUserId,
+    payload: CurrentUserPayload,
     _perm: None = Depends(RequirePermission("crm.qualify_lead")),
     service: CrmService = Depends(_get_service),
 ) -> LeadResponse:
     lead = await service.disqualify_lead(lead_id, user_id=user_id)
-    return LeadResponse.model_validate(lead)
+    return _lead_to_response(
+        lead, viewer_id=user_id, viewer_role=payload.get("role"),
+    )
 
 
 @router.post("/leads/{lead_id}/convert", response_model=OpportunityResponse, status_code=201)
