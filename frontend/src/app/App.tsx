@@ -802,7 +802,9 @@ export default function App() {
 
         {/* Geo Hub — Cesium 3D Tiles + cross-module geo. */}
         <Route path="/geo" element={<P title="Geo Hub"><GeoHubPage /></P>} />
+        <Route path="/geo-hub" element={<Navigate to="/geo" replace />} />
         <Route path="/projects/:projectId/geo" element={<P title="Project map"><ProjectGeoPage /></P>} />
+        <Route path="/projects/:projectId/geo-hub" element={<Navigate to="/geo" replace />} />
 
         {/* 18-Modules Wave — Schedule & Quality */}
         <Route path="/schedule-advanced" element={<P title="Advanced Schedule"><ScheduleAdvancedPage /></P>} />
