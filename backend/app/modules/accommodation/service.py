@@ -178,6 +178,55 @@ def assert_room_bookable(room: Room) -> None:
         )
 
 
+# Bookings that still hold the room. ``cancelled`` and ``checked_out``
+# free the slot — see the matching transitions in ``_BOOKING_TRANSITIONS``.
+_LIVE_BOOKING_STATUSES: tuple[str, ...] = ("reserved", "checked_in")
+
+
+async def assert_no_booking_overlap(
+    session: AsyncSession,
+    room_id: uuid.UUID,
+    check_in: date,
+    check_out: date | None,
+    *,
+    exclude_booking_id: uuid.UUID | None = None,
+) -> None:
+    """Raise 409 if ``[check_in, check_out)`` overlaps a live booking.
+
+    Half-open interval semantics mirror :func:`_apply_booking_filters`
+    so the create/update guard is symmetric with the list-overlap
+    filter: back-to-back stays (``b.check_out == new.check_in``) are
+    allowed; any other intersection is rejected. ``check_out=None``
+    means the new booking is open-ended and conflicts with anything
+    starting on or after its ``check_in``. ``exclude_booking_id`` lets
+    PATCH skip the row being edited so re-saving its own window is a
+    no-op.
+    """
+    stmt = (
+        select(Booking.id)
+        .where(Booking.room_id == room_id)
+        .where(Booking.status.in_(_LIVE_BOOKING_STATUSES))
+    )
+    if exclude_booking_id is not None:
+        stmt = stmt.where(Booking.id != exclude_booking_id)
+
+    # Existing booking ends strictly after our start (or is open-ended).
+    stmt = stmt.where(
+        or_(Booking.check_out.is_(None), Booking.check_out > check_in),
+    )
+    # Our window must end strictly after the other's start — unless
+    # we're open-ended, in which case no upper bound applies.
+    if check_out is not None:
+        stmt = stmt.where(Booking.check_in < check_out)
+
+    conflict = (await session.execute(stmt.limit(1))).first()
+    if conflict is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Booking dates overlap an existing reservation for this room",
+        )
+
+
 # ── PropDev bootstrap ────────────────────────────────────────────────────
 
 

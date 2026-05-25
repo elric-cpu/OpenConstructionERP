@@ -48,6 +48,7 @@ from app.modules.accommodation.service import (
     _accessible_project_ids,
     _verify_project_access,
     active_bookings_count,
+    assert_no_booking_overlap,
     assert_room_bookable,
     bootstrap_from_propdev_block,
     get_accommodation_or_404,
@@ -456,6 +457,10 @@ async def create_booking(
     """Create a booking — gates on room status + payload date validity."""
     room, _accom = await get_room_or_404(session, room_id, user_id)
     assert_room_bookable(room)
+    # Block silent double-booking — half-open overlap with any live row.
+    await assert_no_booking_overlap(
+        session, room.id, payload.check_in, payload.check_out,
+    )
 
     booking = Booking(
         room_id=room.id,
@@ -539,6 +544,26 @@ async def update_booking(
             detail=(
                 f"Invalid transition: {booking.status} → {target_status}"
             ),
+        )
+
+    # If the patch moves the booking dates and the resulting row will
+    # still hold the room (i.e. not transitioning to cancelled /
+    # checked_out), re-check overlap against the rest of the room's
+    # live bookings. Excluding the booking's own id makes a no-op PATCH
+    # of identical dates idempotent.
+    resulting_status = target_status if target_status is not None else booking.status
+    if (
+        ("check_in" in data or "check_out" in data)
+        and resulting_status in ("reserved", "checked_in")
+    ):
+        new_check_in = data.get("check_in", booking.check_in)
+        new_check_out = data.get("check_out", booking.check_out)
+        await assert_no_booking_overlap(
+            session,
+            booking.room_id,
+            new_check_in,
+            new_check_out,
+            exclude_booking_id=booking.id,
         )
 
     for key, value in data.items():

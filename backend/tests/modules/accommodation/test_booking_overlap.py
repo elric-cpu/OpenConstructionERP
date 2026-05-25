@@ -57,7 +57,6 @@ async def _book(
     )
 
 
-@pytest.mark.xfail(reason="V6 S06: source fix deferred — see commit 38e7f7c0 + ROADMAP", strict=False)
 @pytest.mark.asyncio
 async def test_overlap_full_inside_other_rejected(
     client: AsyncClient,
@@ -77,7 +76,6 @@ async def test_overlap_full_inside_other_rejected(
     assert r2.status_code == 409, r2.text
 
 
-@pytest.mark.xfail(reason="V6 S06: source fix deferred — see commit 38e7f7c0 + ROADMAP", strict=False)
 @pytest.mark.asyncio
 async def test_overlap_left_edge_rejected(
     client: AsyncClient,
@@ -95,7 +93,6 @@ async def test_overlap_left_edge_rejected(
     assert r2.status_code == 409
 
 
-@pytest.mark.xfail(reason="V6 S06: source fix deferred — see commit 38e7f7c0 + ROADMAP", strict=False)
 @pytest.mark.asyncio
 async def test_back_to_back_allowed(
     client: AsyncClient,
@@ -114,7 +111,6 @@ async def test_back_to_back_allowed(
     assert r2.status_code == 201, r2.text
 
 
-@pytest.mark.xfail(reason="V6 S06: source fix deferred — see commit 38e7f7c0 + ROADMAP", strict=False)
 @pytest.mark.asyncio
 async def test_open_ended_blocks_future(
     client: AsyncClient,
@@ -132,7 +128,6 @@ async def test_open_ended_blocks_future(
     assert r2.status_code == 409
 
 
-@pytest.mark.xfail(reason="V6 S06: source fix deferred — see commit 38e7f7c0 + ROADMAP", strict=False)
 @pytest.mark.asyncio
 async def test_cancelled_booking_does_not_block(
     client: AsyncClient,
@@ -158,7 +153,6 @@ async def test_cancelled_booking_does_not_block(
     assert r2.status_code == 201, r2.text
 
 
-@pytest.mark.xfail(reason="V6 S06: source fix deferred — see commit 38e7f7c0 + ROADMAP", strict=False)
 @pytest.mark.asyncio
 async def test_patch_dates_into_overlap_rejected(
     client: AsyncClient,
