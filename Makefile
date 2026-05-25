@@ -1,4 +1,4 @@
-.PHONY: help dev dev-backend dev-frontend dev-unix stop test lint format migrate seed seed-regional seed-cwicr-v3 build
+.PHONY: help dev dev-backend dev-frontend dev-unix stop test lint format migrate seed seed-regional seed-cwicr-v3 build qa-screenshots
 
 # ─── Variables ──────────────────────────────────────────────────────────────
 BACKEND_DIR = backend
@@ -69,6 +69,12 @@ test-unit: ## Run only unit tests (no DB required)
 
 test-integration: ## Run integration tests (requires DB)
 	cd $(BACKEND_DIR) && pytest -x -v -m integration
+
+qa-screenshots: ## Capture full-app route grid → qa-report/screenshots/<date>/ (needs backend on :8000 + frontend on :5180)
+	# NODE_PATH lets a Playwright config sitting outside frontend/ still
+	# resolve @playwright/test from frontend/node_modules — required when
+	# running from a worktree that doesn't have its own node_modules.
+	cd $(FRONTEND_DIR) && NODE_PATH="$(CURDIR)/$(FRONTEND_DIR)/node_modules" npx playwright test --config ../qa/screenshots/playwright.config.ts --reporter=line
 
 # ─── Code Quality ───────────────────────────────────────────────────────────
 lint: ## Lint all code

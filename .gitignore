@@ -121,6 +121,11 @@ internal-notes/scheduled_tasks.lock
 # QA / Dev artifacts
 screenshots/
 !docs/screenshots/
+# qa/screenshots/ holds the source for the route-grid screenshot suite
+# (full-app.spec.ts + playwright.config.ts + README.md). Output PNGs go
+# to qa-report/screenshots/<date>/ which is still ignored.
+!qa/screenshots/
+qa/screenshots/_pw_artifacts/
 qa-tests/
 ux-review/
 QA_*.md
