@@ -263,6 +263,20 @@ class PaymentRepository:
         result = (await self.session.execute(base)).scalar_one()
         return round(float(result), 2)
 
+    async def get_by_idempotency_key(self, key: str) -> Payment | None:
+        """Return an existing payment that matches *key*, or None.
+
+        Used by create_payment() to implement idempotency: a second POST
+        with the same key returns the existing row without writing a duplicate.
+        """
+        stmt = (
+            select(Payment)
+            .where(Payment.idempotency_key == key)
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
 
 class BudgetRepository:
     """Data access for ProjectBudget model."""

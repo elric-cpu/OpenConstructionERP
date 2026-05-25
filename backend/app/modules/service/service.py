@@ -67,7 +67,11 @@ from app.modules.service.schemas import (
     SLABreachScanResponse,
     SLADefinitionCreate,
     SLADefinitionUpdate,
+    SLAOverdueSummaryResponse,
+    SLAOverdueReport,
+    TicketAwaitCustomerRequest,
     TicketDispatchRequest,
+    TicketReopenRequest,
     WorkOrderCompleteRequest,
     WorkOrderCreate,
     WorkOrderItemCreate,
@@ -81,21 +85,38 @@ logger = logging.getLogger(__name__)
 
 _TICKET_TRANSITIONS: dict[str, set[str]] = {
     "new": {"assigned", "in_progress", "cancelled"},
-    "assigned": {"in_progress", "cancelled", "new"},
-    "in_progress": {"resolved", "cancelled"},
+    "assigned": {"in_progress", "awaiting_customer", "cancelled", "new"},
+    "in_progress": {"resolved", "awaiting_customer", "cancelled"},
+    # awaiting_customer: tech is waiting on the customer (access, confirmation,
+    # spare-parts delivery). The ticket can resume to in_progress or be cancelled.
+    "awaiting_customer": {"in_progress", "cancelled"},
     "resolved": {"closed", "in_progress"},
-    "closed": set(),
+    # closed → in_progress is the reopen path. The window gate is enforced
+    # in reopen_ticket(); assert_transition() only checks the graph.
+    "closed": {"in_progress"},
     "cancelled": set(),
 }
+
+# How many days after closed_at a ticket may be reopened via POST /reopen.
+# Past this window the ticket is immutable and a new ticket must be filed.
+TICKET_REOPEN_WINDOW_DAYS: int = 30
 
 _WORK_ORDER_TRANSITIONS: dict[str, set[str]] = {
     "scheduled": {"dispatched", "cancelled"},
     "dispatched": {"in_progress", "cancelled"},
     "in_progress": {"completed", "cancelled"},
-    "completed": {"billed"},
-    "billed": set(),
-    "cancelled": set(),
+    # R7: verified = supervisor sign-off before billing/closing
+    "completed": {"verified", "billed"},  # billed kept for legacy callers
+    "verified": {"billed", "closed"},
+    "billed": {"closed"},
+    "closed": set(),  # terminal
+    "cancelled": {"scheduled"},  # allow re-opening a cancelled WO
 }
+
+# States where a WO is effectively done for the purposes of sub-task cascade
+_WO_TERMINAL_LIKE: frozenset[str] = frozenset(
+    {"completed", "verified", "billed", "closed", "cancelled"}
+)
 
 _CONTRACT_TRANSITIONS: dict[str, set[str]] = {
     "draft": {"active", "terminated"},
@@ -215,6 +236,45 @@ def compute_sla_due(ticket: ServiceTicket) -> datetime:
     return reported_dt + timedelta(minutes=priority_sla_minutes(ticket.priority))
 
 
+def compute_sla_response_and_resolution(
+    reported_at: datetime,
+    sla: SLADefinition | None,
+    *,
+    priority: str = "med",
+) -> tuple[datetime | None, datetime | None]:
+    """Return ``(response_due_at, resolution_due_at)`` for a ticket.
+
+    Unlike the legacy :func:`compute_sla_due_at` (which only tracked the
+    first-response deadline), this helper surfaces BOTH clocks so the UI
+    and :meth:`ServiceService.get_sla_overdue` can independently report
+    "response overdue" vs "resolution overdue".
+
+    Returns ``(None, None)`` when no SLA definition is attached to the contract.
+    """
+    if sla is None:
+        return None, None
+
+    def _pick(key: str, default: int) -> int:
+        overrides = sla.severity_levels or {}
+        if isinstance(overrides, dict):
+            override = overrides.get(priority)
+            if isinstance(override, dict):
+                candidate = override.get(key)
+                if isinstance(candidate, int) and candidate > 0:
+                    return candidate
+            elif isinstance(override, int) and override > 0:
+                if key == "response_time_minutes":
+                    return override
+        return default
+
+    response_minutes = _pick("response_time_minutes", sla.response_time_minutes)
+    resolution_minutes = _pick("resolution_time_minutes", sla.resolution_time_minutes)
+    return (
+        reported_at + timedelta(minutes=response_minutes),
+        reported_at + timedelta(minutes=resolution_minutes),
+    )
+
+
 def compute_work_order_total(items: list[ServiceWorkOrderItem]) -> Decimal:
     """Sum of ``item.total`` across a work order's items, rounded to 2dp."""
     total = Decimal("0")
@@ -237,7 +297,14 @@ _MAX_NUMBER_RETRIES: int = 5
 # the year 2099. The dispatch / dispatch-revoke endpoints already gate on
 # ``service.dispatch``; the same check needs to apply on the umbrella PATCH.
 TICKET_DISPATCH_PROTECTED_FIELDS: frozenset[str] = frozenset(
-    {"assigned_to", "sla_due_at", "sla_breach_notified_at", "sla_breached_at"},
+    {
+        "assigned_to",
+        "sla_due_at",
+        "response_due_at",
+        "resolution_due_at",
+        "sla_breach_notified_at",
+        "sla_breached_at",
+    }
 )
 
 
@@ -476,6 +543,9 @@ class ServiceService:
             sla = await self.sla_repo.get_by_id(contract.sla_definition_id)
 
         sla_due_dt = compute_sla_due_at(reported_at_dt, sla, priority=data.priority)
+        response_due_dt, resolution_due_dt = compute_sla_response_and_resolution(
+            reported_at_dt, sla, priority=data.priority,
+        )
 
         # Race-safe ticket number allocation, scoped per contract. See
         # ``create_contract`` for the rationale — concurrent /tickets/ POSTs
@@ -495,6 +565,8 @@ class ServiceService:
                 priority=data.priority,
                 reported_at=reported_at_dt.isoformat(),
                 sla_due_at=sla_due_dt.isoformat() if sla_due_dt else None,
+                response_due_at=response_due_dt.isoformat() if response_due_dt else None,
+                resolution_due_at=resolution_due_dt.isoformat() if resolution_due_dt else None,
                 status="new",
                 source=data.source,
                 reported_by=data.reported_by or user_id,
@@ -718,6 +790,192 @@ class ServiceService:
             source_module="service",
         )
         return ticket
+
+    async def reopen_ticket(
+        self,
+        ticket_id: uuid.UUID,
+        body: TicketReopenRequest,
+        *,
+        user_id: str | None = None,
+    ) -> ServiceTicket:
+        """Reopen a closed ticket within the reopen-window.
+
+        Tickets closed within the last :data:`TICKET_REOPEN_WINDOW_DAYS` days
+        may be moved back to ``in_progress``. Past that window a new ticket
+        must be filed — this keeps the audit trail clean and avoids inflating
+        old SLA measurements.
+        """
+        ticket = await self.get_ticket(ticket_id)
+        if ticket.status != "closed":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Only closed tickets can be reopened (current status: '{ticket.status}')."
+                ),
+            )
+        if ticket.closed_at is not None:
+            try:
+                closed_dt = _parse_iso(ticket.closed_at)
+                window_cutoff = datetime.now(UTC) - timedelta(days=TICKET_REOPEN_WINDOW_DAYS)
+                if closed_dt < window_cutoff:
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail=(
+                            f"Ticket was closed more than {TICKET_REOPEN_WINDOW_DAYS} days "
+                            f"ago ({ticket.closed_at}). Please open a new ticket instead."
+                        ),
+                    )
+            except HTTPException:
+                raise
+            except (ValueError, TypeError):
+                pass  # Unparseable closed_at — allow reopen rather than blocking
+
+        assert_transition(ticket.status, "in_progress", machine="ticket")
+        meta = dict(ticket.metadata_ or {})
+        reopen_history = list(meta.get("reopen_history", []))
+        reopen_history.append({
+            "reopened_at": _utcnow_iso(),
+            "reopened_by": user_id,
+            "reason": body.reason,
+        })
+        meta["reopen_history"] = reopen_history
+
+        await self.ticket_repo.update_fields(
+            ticket_id,
+            status="in_progress",
+            closed_at=None,
+            metadata_=meta,
+        )
+        await self.session.refresh(ticket)
+        logger.info(
+            "Service ticket reopened: %s by %s",
+            ticket.ticket_number, user_id,
+        )
+        event_bus.publish_detached(
+            "service.ticket.reopened",
+            {
+                "ticket_id": str(ticket_id),
+                "ticket_number": ticket.ticket_number,
+                "reopened_by": user_id,
+                "reason": body.reason,
+            },
+            source_module="service",
+        )
+        return ticket
+
+    async def await_customer(
+        self,
+        ticket_id: uuid.UUID,
+        body: TicketAwaitCustomerRequest,
+    ) -> ServiceTicket:
+        """Move a ticket to ``awaiting_customer`` — SLA clock paused."""
+        ticket = await self.get_ticket(ticket_id)
+        assert_transition(ticket.status, "awaiting_customer", machine="ticket")
+        now_iso = _utcnow_iso()
+        meta = dict(ticket.metadata_ or {})
+        meta["awaiting_customer_note"] = body.note
+        await self.ticket_repo.update_fields(
+            ticket_id,
+            status="awaiting_customer",
+            awaiting_customer_since=now_iso,
+            metadata_=meta,
+        )
+        await self.session.refresh(ticket)
+        event_bus.publish_detached(
+            "service.ticket.awaiting_customer",
+            {
+                "ticket_id": str(ticket_id),
+                "ticket_number": ticket.ticket_number,
+                "since": now_iso,
+            },
+            source_module="service",
+        )
+        return ticket
+
+    async def resume_ticket(self, ticket_id: uuid.UUID) -> ServiceTicket:
+        """Move a ticket from ``awaiting_customer`` back to ``in_progress``."""
+        ticket = await self.get_ticket(ticket_id)
+        assert_transition(ticket.status, "in_progress", machine="ticket")
+        await self.ticket_repo.update_fields(
+            ticket_id,
+            status="in_progress",
+            awaiting_customer_since=None,
+        )
+        await self.session.refresh(ticket)
+        event_bus.publish_detached(
+            "service.ticket.resumed",
+            {
+                "ticket_id": str(ticket_id),
+                "ticket_number": ticket.ticket_number,
+            },
+            source_module="service",
+        )
+        return ticket
+
+    async def get_sla_overdue(
+        self,
+        *,
+        contract_id: uuid.UUID | None = None,
+    ) -> SLAOverdueSummaryResponse:
+        """Return tickets overdue on response_due_at or resolution_due_at.
+
+        Tickets in ``awaiting_customer`` are excluded — the clock is
+        considered paused while waiting on the customer.
+        """
+        from sqlalchemy import select
+
+        now_dt = datetime.now(UTC)
+        now_iso = now_dt.isoformat()
+        active_statuses = ("new", "assigned", "in_progress")
+
+        stmt = select(ServiceTicket).where(ServiceTicket.status.in_(active_statuses))
+        if contract_id is not None:
+            stmt = stmt.where(ServiceTicket.contract_id == contract_id)
+
+        tickets = list((await self.session.execute(stmt)).scalars().all())
+        response_overdue: list[SLAOverdueReport] = []
+        resolution_overdue: list[SLAOverdueReport] = []
+
+        for ticket in tickets:
+            resp_mins = 0
+            res_mins = 0
+            if ticket.response_due_at and ticket.response_due_at < now_iso:
+                try:
+                    resp_mins = int(
+                        (now_dt - _parse_iso(ticket.response_due_at)).total_seconds() // 60
+                    )
+                except (ValueError, TypeError):
+                    pass
+            if ticket.resolution_due_at and ticket.resolution_due_at < now_iso:
+                try:
+                    res_mins = int(
+                        (now_dt - _parse_iso(ticket.resolution_due_at)).total_seconds() // 60
+                    )
+                except (ValueError, TypeError):
+                    pass
+            if resp_mins > 0 or res_mins > 0:
+                report = SLAOverdueReport(
+                    ticket_id=ticket.id,
+                    ticket_number=ticket.ticket_number,
+                    contract_id=ticket.contract_id,
+                    priority=ticket.priority,
+                    response_due_at=ticket.response_due_at,
+                    resolution_due_at=ticket.resolution_due_at,
+                    response_overdue_minutes=resp_mins,
+                    resolution_overdue_minutes=res_mins,
+                    status=ticket.status,
+                )
+                if resp_mins > 0:
+                    response_overdue.append(report)
+                if res_mins > 0:
+                    resolution_overdue.append(report)
+
+        return SLAOverdueSummaryResponse(
+            checked_at=now_iso,
+            total_open=len(tickets),
+            response_overdue=response_overdue,
+            resolution_overdue=resolution_overdue,
+        )
 
     async def delete_ticket(self, ticket_id: uuid.UUID) -> None:
         await self.get_ticket(ticket_id)
@@ -944,6 +1202,79 @@ class ServiceService:
                 "billed_amount": str(wo.billed_amount),
                 "currency": wo.currency,
             },
+            source_module="service",
+        )
+        return wo
+
+    async def verify_work_order(self, wo_id: uuid.UUID) -> ServiceWorkOrder:
+        """Supervisor sign-off: move a ``completed`` WO to ``verified``.
+
+        R7: requires at least one item on the WO — a verification with zero
+        items is rejected (400) to prevent empty sign-offs on untouched WOs.
+        """
+        wo = await self.get_work_order(wo_id)
+        assert_transition(wo.status, "verified", machine="work_order")
+
+        # Guard: must have at least one item to verify
+        items = await self.work_order_item_repo.list_for_work_order(wo_id)
+        if not items:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Cannot verify a work order with no line items. "
+                    "Add at least one labour/material line item before verifying."
+                ),
+            )
+
+        await self.work_order_repo.update_fields(
+            wo_id,
+            status="verified",
+        )
+        await self.session.refresh(wo)
+        logger.info("Work order verified: %s", wo.work_order_number)
+        event_bus.publish_detached(
+            "service.work_order.verified",
+            {"work_order_id": str(wo_id), "work_order_number": wo.work_order_number},
+            source_module="service",
+        )
+        return wo
+
+    async def close_work_order(self, wo_id: uuid.UUID) -> ServiceWorkOrder:
+        """Close a ``verified`` or ``billed`` WO.
+
+        R7 sub-task cascade: if there are sibling WOs on the same ticket that
+        are not yet in a terminal-like state, the close is rejected with 409.
+        This prevents marking a ticket done while some tasks are still open.
+        """
+        wo = await self.get_work_order(wo_id)
+        assert_transition(wo.status, "closed", machine="work_order")
+
+        # Sub-task cascade: all siblings must be in a terminal-like state
+        sibling_wos = await self.work_order_repo.list_for_ticket(wo.ticket_id)
+        open_siblings = [
+            s for s in sibling_wos
+            if s.id != wo_id and s.status not in _WO_TERMINAL_LIKE
+        ]
+        if open_siblings:
+            nums = ", ".join(s.work_order_number for s in open_siblings[:5])
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Cannot close WO {wo.work_order_number}: "
+                    f"{len(open_siblings)} sibling work order(s) are still open "
+                    f"({nums}). Close or cancel them first."
+                ),
+            )
+
+        await self.work_order_repo.update_fields(
+            wo_id,
+            status="closed",
+        )
+        await self.session.refresh(wo)
+        logger.info("Work order closed: %s", wo.work_order_number)
+        event_bus.publish_detached(
+            "service.work_order.closed",
+            {"work_order_id": str(wo_id), "work_order_number": wo.work_order_number},
             source_module="service",
         )
         return wo

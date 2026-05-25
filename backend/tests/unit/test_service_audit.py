@@ -23,11 +23,11 @@ SLA tests that already live in ``backend/tests/unit/``.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import HTTPException
@@ -38,12 +38,14 @@ from app.modules.service.schemas import (
     ServiceContractCreate,
     ServiceTicketCreate,
     ServiceTicketUpdate,
+    TicketReopenRequest,
     WorkOrderCreate,
 )
 from app.modules.service.service import (
     _MAX_NUMBER_RETRIES,
     TICKET_DISPATCH_PROTECTED_FIELDS,
     ServiceService,
+    compute_sla_response_and_resolution,
 )
 
 # Reuse the well-tested in-module stubs from test_service.py so behaviour
@@ -134,11 +136,15 @@ class TestDispatchProtectedFields:
         If the schema later grows a new dispatcher-only field, that field
         must also be added to ``TICKET_DISPATCH_PROTECTED_FIELDS``. The
         list is captured here so a future regression breaks loudly.
+
+        R7 additions: response_due_at, resolution_due_at (two-clock SLA).
         """
         assert TICKET_DISPATCH_PROTECTED_FIELDS == frozenset(
             {
                 "assigned_to",
                 "sla_due_at",
+                "response_due_at",
+                "resolution_due_at",
                 "sla_breach_notified_at",
                 "sla_breached_at",
             }
@@ -458,3 +464,177 @@ class TestServiceModuleSurface:
         assert isinstance(svc.contract_repo, ContractRepository)
         assert isinstance(svc.ticket_repo, TicketRepository)
         assert isinstance(svc.work_order_repo, WorkOrderRepository)
+
+
+# ── 7. Cross-tenant IDOR: get/update must 404 for wrong-tenant IDs ─────────
+
+
+class TestCrossTenantIDOR:
+    """Accessing a resource that belongs to another tenant must return 404.
+
+    The service layer does not own the tenant-isolation filter directly
+    (that lives in the repository / query layer), but we can verify the
+    surface: `get_ticket`, `get_contract`, and `update_ticket` all raise
+    404 when the repository returns None (i.e. the row was filtered out by
+    the tenant predicate).
+    """
+
+    @pytest.mark.asyncio
+    async def test_get_ticket_cross_tenant_returns_404(self) -> None:
+        """get_ticket(unknown_id) raises 404, not 500."""
+        svc = _make_service()
+        # Replace ticket_repo.get_by_id with one that always returns None
+        # (simulates the tenant filter excluding the row).
+        svc.ticket_repo = SimpleNamespace(get_by_id=AsyncMock(return_value=None))
+
+        with pytest.raises(HTTPException) as exc:
+            await svc.get_ticket(uuid.uuid4())
+        assert exc.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_get_contract_cross_tenant_returns_404(self) -> None:
+        """get_contract(unknown_id) raises 404 for cross-tenant IDs."""
+        svc = _make_service()
+        svc.contract_repo = SimpleNamespace(get_by_id=AsyncMock(return_value=None))
+
+        with pytest.raises(HTTPException) as exc:
+            await svc.get_contract(uuid.uuid4())
+        assert exc.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_update_ticket_cross_tenant_returns_404(self) -> None:
+        """PATCH /tickets/{id} returns 404 (not 500) for a cross-tenant id."""
+        svc = _make_service()
+        svc.ticket_repo = SimpleNamespace(get_by_id=AsyncMock(return_value=None))
+
+        with pytest.raises(HTTPException) as exc:
+            await svc.update_ticket(
+                uuid.uuid4(),
+                ServiceTicketUpdate(title="hack"),
+                has_dispatch_permission=True,
+            )
+        assert exc.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_asset_cross_tenant_404(self) -> None:
+        """get_asset(unknown_id) returns 404 — not a 403 or 500."""
+        svc = _make_service()
+        svc.asset_repo = SimpleNamespace(get_by_id=AsyncMock(return_value=None))
+
+        with pytest.raises(HTTPException) as exc:
+            await svc.get_asset(uuid.uuid4())
+        assert exc.value.status_code == 404
+
+
+# ── 8. awaiting_customer FSM transitions ────────────────────────────────────
+
+
+class TestAwaitingCustomerFSM:
+    """Full FSM: new→assigned→in_progress→awaiting_customer→in_progress→resolved→closed.
+
+    Also tests the reopen-window guard.
+    """
+
+    def test_in_progress_can_move_to_awaiting_customer(self) -> None:
+        from app.modules.service.service import allowed_ticket_transitions
+        assert "awaiting_customer" in allowed_ticket_transitions("in_progress")
+
+    def test_awaiting_customer_resumes_to_in_progress(self) -> None:
+        from app.modules.service.service import allowed_ticket_transitions
+        assert "in_progress" in allowed_ticket_transitions("awaiting_customer")
+
+    def test_closed_can_transition_to_in_progress_via_graph(self) -> None:
+        """Graph-level: closed→in_progress is allowed (window gate is separate)."""
+        from app.modules.service.service import allowed_ticket_transitions
+        assert "in_progress" in allowed_ticket_transitions("closed")
+
+    @pytest.mark.asyncio
+    async def test_reopen_outside_window_raises_422(self) -> None:
+        """Ticket closed more than TICKET_REOPEN_WINDOW_DAYS days ago → 422."""
+        from app.modules.service.service import TICKET_REOPEN_WINDOW_DAYS
+        from app.modules.service.schemas import TicketReopenRequest
+
+        svc = _make_service()
+        contract = await _setup_contract(svc)
+        with patch("app.modules.service.service.event_bus.publish_detached"):
+            ticket = await svc.create_ticket(
+                ServiceTicketCreate(contract_id=contract.id, title="Old", description="", priority="low"),
+                user_id="u",
+            )
+        # Manually force ticket to closed with an old closed_at date.
+        old_closed = (
+            datetime.now(UTC) - timedelta(days=TICKET_REOPEN_WINDOW_DAYS + 1)
+        ).isoformat()
+        ticket.status = "closed"
+        ticket.closed_at = old_closed
+
+        with pytest.raises(HTTPException) as exc:
+            with patch("app.modules.service.service.event_bus.publish_detached"):
+                await svc.reopen_ticket(ticket.id, TicketReopenRequest(reason="test"))
+        assert exc.value.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_reopen_within_window_succeeds(self) -> None:
+        """Ticket closed yesterday → reopen must succeed."""
+        from app.modules.service.schemas import TicketReopenRequest
+
+        svc = _make_service()
+        contract = await _setup_contract(svc)
+        with patch("app.modules.service.service.event_bus.publish_detached"):
+            ticket = await svc.create_ticket(
+                ServiceTicketCreate(contract_id=contract.id, title="Recent", description="", priority="med"),
+                user_id="u",
+            )
+        # Force ticket to closed with yesterday's date.
+        yesterday = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+        ticket.status = "closed"
+        ticket.closed_at = yesterday
+
+        with patch("app.modules.service.service.event_bus.publish_detached"):
+            reopened = await svc.reopen_ticket(ticket.id, TicketReopenRequest(reason="customer callback"))
+        assert reopened.status == "in_progress"
+
+
+# ── 9. SLA two-clock tracking ────────────────────────────────────────────────
+
+
+class TestSLATwoClock:
+    """Verify compute_sla_response_and_resolution and create_ticket integration."""
+
+    def test_create_ticket_without_sla_has_no_due_clocks(self) -> None:
+        """When no SLA definition exists, both due clocks must be None."""
+        from app.modules.service.service import compute_sla_response_and_resolution
+
+        resp, resol = compute_sla_response_and_resolution(
+            datetime.now(UTC), None, priority="med"
+        )
+        assert resp is None
+        assert resol is None
+
+    def test_compute_sla_response_and_resolution_with_sla(self) -> None:
+        """Given an SLA definition, both clocks must be set in the future."""
+        from app.modules.service.service import compute_sla_response_and_resolution
+
+        sla = SimpleNamespace(
+            response_time_minutes=60,     # 1-hour response window
+            resolution_time_minutes=1440, # 24-hour resolution window
+            severity_levels={},           # no per-priority overrides
+        )
+        now = datetime.now(UTC)
+        resp, resol = compute_sla_response_and_resolution(now, sla, priority="high")
+        assert resp is not None and resp > now
+        assert resol is not None and resol > now
+        assert resol >= resp  # resolution deadline must be no earlier than response
+
+    def test_compute_sla_response_and_resolution_no_sla(self) -> None:
+        """None SLA → both clocks are None."""
+        from app.modules.service.service import compute_sla_response_and_resolution
+
+        resp, resol = compute_sla_response_and_resolution(datetime.now(UTC), None)
+        assert resp is None
+        assert resol is None
+
+    def test_dispatch_protected_fields_includes_new_clocks(self) -> None:
+        """response_due_at and resolution_due_at must be dispatch-protected."""
+        assert "response_due_at" in TICKET_DISPATCH_PROTECTED_FIELDS
+        assert "resolution_due_at" in TICKET_DISPATCH_PROTECTED_FIELDS

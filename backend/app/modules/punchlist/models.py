@@ -60,6 +60,14 @@ class PunchItem(Base):
         server_default="[]",
     )
 
+    # ── Rework cost (Decimal as string — never Float) ─────────────────────
+    # Stored as VARCHAR so there is no floating-point rounding on money values.
+    # Service layer validates it as a Decimal string before persisting.
+    rework_cost: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    rework_cost_currency: Mapped[str] = mapped_column(
+        String(3), nullable=False, default="USD", server_default="USD"
+    )
+
     # ── Geo binding (cross-module) ────────────────────────────────────────
     # In addition to the sheet-pinned (page, location_x, location_y) drawing
     # coordinate, punch items can carry a world-space WGS84 pin so they

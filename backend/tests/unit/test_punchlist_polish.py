@@ -27,11 +27,25 @@ PROJECT_ID = uuid.uuid4()
 # ── Stubs (mirror tests/unit/test_punchlist.py shape) ─────────────────────
 
 
+class _FakeNested:
+    """Async context manager mimicking ``session.begin_nested()``."""
+
+    async def __aenter__(self) -> "object":
+        return self
+
+    async def __aexit__(self, exc_type: Any, *args: Any) -> None:
+        if exc_type is not None:
+            raise
+
+
 class _StubSession:
     async def refresh(self, obj: Any) -> None:
         # Mirror behaviour: items already carry mutations applied via
         # ``update_fields`` so refresh is a no-op for the stub.
         pass
+
+    def begin_nested(self) -> _FakeNested:
+        return _FakeNested()
 
 
 class _StubPunchRepo:

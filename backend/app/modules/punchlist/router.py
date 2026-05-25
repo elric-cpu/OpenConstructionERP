@@ -70,6 +70,8 @@ def _item_to_response(item: object) -> PunchItemResponse:
         photos=item.photos or [],  # type: ignore[attr-defined]
         geo_lat=getattr(item, "geo_lat", None),
         geo_lon=getattr(item, "geo_lon", None),
+        rework_cost=getattr(item, "rework_cost", None),
+        rework_cost_currency=getattr(item, "rework_cost_currency", None) or "USD",
         resolution_notes=item.resolution_notes,  # type: ignore[attr-defined]
         resolved_at=item.resolved_at,  # type: ignore[attr-defined]
         verified_at=item.verified_at,  # type: ignore[attr-defined]
@@ -138,6 +140,7 @@ async def list_items(
     priority: str | None = Query(default=None),
     assigned_to: str | None = Query(default=None),
     category: str | None = Query(default=None),
+    trade: str | None = Query(default=None),
     service: PunchListService = Depends(_get_service),
 ) -> list[PunchItemResponse]:
     """List punch items for a project with optional filters."""
@@ -150,6 +153,7 @@ async def list_items(
         priority_filter=priority,
         assigned_to=assigned_to,
         category_filter=category,
+        trade_filter=trade,
     )
     return [_item_to_response(i) for i in items]
 
@@ -174,6 +178,7 @@ async def list_items_root_alias(
     priority: str | None = Query(default=None),
     assigned_to: str | None = Query(default=None),
     category: str | None = Query(default=None),
+    trade: str | None = Query(default=None),
     service: PunchListService = Depends(_get_service),
 ) -> list[PunchItemResponse]:
     """Alias for ``GET /items/`` — see that handler for full semantics."""
@@ -187,6 +192,7 @@ async def list_items_root_alias(
         priority=priority,
         assigned_to=assigned_to,
         category=category,
+        trade=trade,
         service=service,
     )
 

@@ -5,10 +5,11 @@ for punch list items.
 """
 
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # ── Punch Item schemas ──────────────────────────────────────────────────
 
@@ -40,7 +41,24 @@ class PunchItemCreate(BaseModel):
     # Optional — punch items without a map pin still work end-to-end.
     geo_lat: float | None = Field(default=None, ge=-90, le=90)
     geo_lon: float | None = Field(default=None, ge=-180, le=180)
+    # Rework cost as Decimal string (never float — avoids binary rounding on money).
+    rework_cost: str | None = Field(default=None, max_length=40)
+    rework_cost_currency: str = Field(default="USD", max_length=3)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("rework_cost")
+    @classmethod
+    def _validate_rework_cost(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        try:
+            d = Decimal(v)
+        except InvalidOperation as exc:
+            raise ValueError(f"rework_cost must be a valid decimal string, got {v!r}") from exc
+        if d < 0:
+            raise ValueError("rework_cost must be non-negative")
+        # Normalise: round to 4 dp, drop trailing zeros
+        return str(d.quantize(Decimal("0.0001")).normalize())
 
 
 class PunchItemUpdate(BaseModel):
@@ -68,7 +86,22 @@ class PunchItemUpdate(BaseModel):
     resolution_notes: str | None = Field(default=None, max_length=5000)
     geo_lat: float | None = Field(default=None, ge=-90, le=90)
     geo_lon: float | None = Field(default=None, ge=-180, le=180)
+    rework_cost: str | None = Field(default=None, max_length=40)
+    rework_cost_currency: str | None = Field(default=None, max_length=3)
     metadata: dict[str, Any] | None = None
+
+    @field_validator("rework_cost")
+    @classmethod
+    def _validate_rework_cost(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        try:
+            d = Decimal(v)
+        except InvalidOperation as exc:
+            raise ValueError(f"rework_cost must be a valid decimal string, got {v!r}") from exc
+        if d < 0:
+            raise ValueError("rework_cost must be non-negative")
+        return str(d.quantize(Decimal("0.0001")).normalize())
 
 
 class PunchItemResponse(BaseModel):
@@ -93,6 +126,8 @@ class PunchItemResponse(BaseModel):
     photos: list[str] = Field(default_factory=list)
     geo_lat: float | None = None
     geo_lon: float | None = None
+    rework_cost: str | None = None
+    rework_cost_currency: str = "USD"
     resolution_notes: str | None = None
     resolved_at: datetime | None = None
     verified_at: datetime | None = None
@@ -108,13 +143,18 @@ class PunchItemResponse(BaseModel):
 
 
 class PunchStatusTransition(BaseModel):
-    """Request body for a status transition."""
+    """Request body for a status transition.
+
+    Allowed states (full FSM):
+        open → assigned → in_progress → resolved → verified → closed
+        Any state → open  (reopen, also via the ``reopened`` alias)
+    """
 
     model_config = ConfigDict(str_strip_whitespace=True)
 
     new_status: str = Field(
         ...,
-        pattern=r"^(open|in_progress|resolved|verified|closed)$",
+        pattern=r"^(open|assigned|in_progress|resolved|verified|closed|reopened)$",
     )
     notes: str | None = Field(default=None, max_length=5000)
 

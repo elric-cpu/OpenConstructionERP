@@ -255,6 +255,11 @@ class PaymentCreate(BaseModel):
     currency_code: str = Field(default="", max_length=10)
     exchange_rate_snapshot: str = Field(default="1", max_length=50)
     reference: str | None = Field(default=None, max_length=255)
+    # R7: idempotency key — supply a stable token per payment attempt;
+    # a second POST with the same key returns the existing row (no duplicate).
+    idempotency_key: str | None = Field(default=None, max_length=64)
+    # R7: refund flag — positive amount with is_refund=True decreases net_paid.
+    is_refund: bool = Field(default=False)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("amount")
@@ -280,6 +285,8 @@ class PaymentResponse(BaseModel):
     currency_code: str = ""
     exchange_rate_snapshot: str = "1"
     reference: str | None = None
+    idempotency_key: str | None = None
+    is_refund: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
     created_at: datetime
     updated_at: datetime
@@ -527,3 +534,75 @@ class FinanceDashboardResponse(BaseModel):
     )
     def _ser_money(self, v: Decimal) -> str | None:
         return _serialise_money(v)
+
+
+# ── Ledger (R7 double-entry) ──────────────────────────────────────────────
+
+
+class LedgerEntryCreate(BaseModel):
+    """Payload for create_ledger_transaction().
+
+    Represents a balanced double-entry transaction — the service enforces
+    debit_amount == credit_amount before writing any rows.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    project_id: UUID
+    transaction_ref: str = Field(..., min_length=1, max_length=100)
+    debit_account: str = Field(..., min_length=1, max_length=100)
+    credit_account: str = Field(..., min_length=1, max_length=100)
+    debit_amount: str = Field(..., max_length=50)
+    credit_amount: str = Field(..., max_length=50)
+    description: str | None = Field(default=None, max_length=2000)
+    currency_code: str = Field(default="", max_length=10)
+    posted_at: str = Field(default="", max_length=30)
+    source_type: str | None = Field(default=None, max_length=50)
+    source_id: str | None = Field(default=None, max_length=36)
+    created_by: str | None = Field(default=None, max_length=36)
+
+    @field_validator("debit_amount", "credit_amount")
+    @classmethod
+    def _check_non_negative(cls, v: str) -> str:
+        return _validate_non_negative_decimal(v)
+
+
+class LedgerEntryResponse(BaseModel):
+    """Single ledger row returned from the API."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    project_id: UUID
+    transaction_ref: str
+    account_code: str
+    description: str | None = None
+    debit_amount: str = "0"
+    credit_amount: str = "0"
+    currency_code: str = ""
+    posted_at: str
+    source_type: str | None = None
+    source_id: str | None = None
+    is_reversal: bool = False
+    reversal_of_id: UUID | None = None
+    created_by: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    _coerce_decimal = field_validator(
+        "debit_amount", "credit_amount", mode="before"
+    )(lambda cls, v: _decimal_to_str(v))
+
+
+class LedgerTransactionResponse(BaseModel):
+    """Pair of ledger rows from a balanced transaction."""
+
+    debit: LedgerEntryResponse
+    credit: LedgerEntryResponse
+
+
+class LedgerListResponse(BaseModel):
+    """Paginated ledger entry list."""
+
+    items: list[LedgerEntryResponse]
+    total: int

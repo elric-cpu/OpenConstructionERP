@@ -5,6 +5,7 @@ Stateless service layer.
 
 import logging
 import uuid
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 
 from fastapi import HTTPException, status
@@ -16,6 +17,7 @@ from app.modules.finance.models import (
     EVMSnapshot,
     Invoice,
     InvoiceLineItem,
+    LedgerEntry,
     Payment,
     ProjectBudget,
 )
@@ -32,10 +34,26 @@ from app.modules.finance.schemas import (
     EVMSnapshotCreate,
     InvoiceCreate,
     InvoiceUpdate,
+    LedgerEntryCreate,
     PaymentCreate,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_decimal(value: object, default: Decimal = Decimal("0")) -> Decimal:
+    """Coerce *value* to Decimal; return *default* on any error."""
+    if isinstance(value, Decimal):
+        return value
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return default
+
+
+def _utcnow_iso() -> str:
+    """Return current UTC time as ISO-8601 string."""
+    return datetime.now(UTC).isoformat()
 
 # ── Allowed status transitions ──────────────────────────────────────────────
 #
@@ -552,15 +570,67 @@ class FinanceService:
     ) -> Payment:
         """Record a payment against an invoice.
 
-        R7 (2026-05-24): emits an ``ActivityLog`` row tagged with the
-        actor — payments are real money entering or leaving the ledger,
-        and the audit trail is required for SOX-style compliance.
+        R7 guards:
+        1. Idempotency: if ``idempotency_key`` matches an existing payment,
+           return that row without writing a duplicate.
+        2. Currency normalization: if the payment currency differs from the
+           invoice currency, an explicit FX rate (exchange_rate_snapshot != "1")
+           must be provided — prevents silent silent currency confusion.
+        3. Refund guard: total refunds cannot exceed total forward payments
+           (net_paid >= 0).
 
         ``actor_id`` is optional so the legacy in-process callers
         (event-bus consumers, importers) don't break, but the router
         always supplies it.
         """
-        await self.get_invoice(data.invoice_id)  # 404 check
+        # ── 1. Idempotency check ──────────────────────────────────────────────
+        if data.idempotency_key:
+            existing = await self.payments_repo.get_by_idempotency_key(
+                data.idempotency_key
+            )
+            if existing is not None:
+                return existing
+
+        invoice = await self.get_invoice(data.invoice_id)  # 404 check
+
+        # ── 2. Currency normalization ─────────────────────────────────────────
+        inv_currency = getattr(invoice, "currency_code", "") or ""
+        pay_currency = data.currency_code or ""
+        fx_rate = _safe_decimal(data.exchange_rate_snapshot, Decimal("1"))
+        if inv_currency and pay_currency and inv_currency != pay_currency:
+            if fx_rate == Decimal("1"):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Payment currency '{pay_currency}' differs from invoice "
+                        f"currency '{inv_currency}' — supply an explicit "
+                        f"exchange_rate_snapshot != '1'."
+                    ),
+                )
+
+        # ── 3. Refund guard ───────────────────────────────────────────────────
+        if data.is_refund:
+            all_payments, _ = await self.payments_repo.list(invoice_id=data.invoice_id)
+            total_forward = sum(
+                _safe_decimal(p.amount)
+                for p in all_payments
+                if not getattr(p, "is_refund", False)
+            )
+            total_refunds = sum(
+                _safe_decimal(p.amount)
+                for p in all_payments
+                if getattr(p, "is_refund", False)
+            )
+            refund_amount = _safe_decimal(data.amount)
+            if total_forward - total_refunds - refund_amount < Decimal("0"):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Refund of {data.amount} would exceed total payments "
+                        f"({total_forward}) minus existing refunds ({total_refunds}). "
+                        f"Net paid cannot go negative."
+                    ),
+                )
 
         payment = Payment(
             invoice_id=data.invoice_id,
@@ -569,6 +639,8 @@ class FinanceService:
             currency_code=data.currency_code,
             exchange_rate_snapshot=data.exchange_rate_snapshot,
             reference=data.reference,
+            idempotency_key=data.idempotency_key,
+            is_refund=bool(data.is_refund),
             metadata_=data.metadata,
         )
         payment = await self.payments_repo.create(payment)
@@ -933,3 +1005,160 @@ class FinanceService:
             cash_flow_net=round(cash_flow_net, 2),
             currency=currency,
         ).model_dump()
+
+    # ── Ledger (R7 double-entry) ──────────────────────────────────────────────
+
+    async def create_ledger_transaction(
+        self,
+        data: LedgerEntryCreate,
+    ) -> tuple[LedgerEntry, LedgerEntry]:
+        """Write a balanced double-entry ledger transaction.
+
+        Invariants enforced:
+        * debit_amount == credit_amount (400 if unbalanced)
+        * Two rows are written atomically via a SAVEPOINT:
+            - debit row:  debit_amount > 0, credit_amount == 0
+            - credit row: credit_amount > 0, debit_amount == 0
+        * Rows are NEVER mutated after insert — corrections use
+          :meth:`reverse_ledger_transaction`.
+        """
+        debit_val = _safe_decimal(data.debit_amount)
+        credit_val = _safe_decimal(data.credit_amount)
+        if debit_val <= Decimal("0"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Zero or negative debit amount. "
+                    "Double-entry invariant requires debit_amount > 0."
+                ),
+            )
+        if debit_val != credit_val:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Double-entry invariant violated: debit {debit_val} "
+                    f"!= credit {credit_val}. "
+                    f"Unbalanced transaction rejected."
+                ),
+            )
+
+        posted_at = data.posted_at or _utcnow_iso()
+        project_id = data.project_id
+
+        async with self.session.begin_nested():
+            debit_row = LedgerEntry(
+                project_id=project_id,
+                transaction_ref=data.transaction_ref,
+                account_code=data.debit_account,
+                description=data.description,
+                debit_amount=debit_val,
+                credit_amount=Decimal("0"),
+                currency_code=data.currency_code or "",
+                posted_at=posted_at,
+                source_type=data.source_type,
+                source_id=data.source_id,
+                is_reversal=False,
+                created_by=data.created_by,
+            )
+            credit_row = LedgerEntry(
+                project_id=project_id,
+                transaction_ref=data.transaction_ref,
+                account_code=data.credit_account,
+                description=data.description,
+                debit_amount=Decimal("0"),
+                credit_amount=credit_val,
+                currency_code=data.currency_code or "",
+                posted_at=posted_at,
+                source_type=data.source_type,
+                source_id=data.source_id,
+                is_reversal=False,
+                created_by=data.created_by,
+            )
+            self.session.add(debit_row)
+            self.session.add(credit_row)
+            await self.session.flush()
+
+        logger.info(
+            "Ledger transaction created: ref=%s dr=%s cr=%s",
+            data.transaction_ref, debit_val, credit_val,
+        )
+        return debit_row, credit_row
+
+    async def reverse_ledger_transaction(
+        self,
+        transaction_ref: str,
+        *,
+        project_id: uuid.UUID | None = None,
+        description: str | None = None,
+        created_by: str | None = None,
+    ) -> tuple[LedgerEntry, LedgerEntry]:
+        """Append a corrective reversal pair for an existing transaction.
+
+        Immutability: the original rows are NEVER updated.  Reversal rows
+        have ``is_reversal=True`` and ``reversal_of_id`` pointing at the
+        original row they mirror.
+
+        The reversal transaction_ref uses the ``:rev`` suffix convention:
+        e.g. ``TXN-001:rev``.
+        """
+        from sqlalchemy import select
+
+        stmt = select(LedgerEntry).where(
+            LedgerEntry.transaction_ref == transaction_ref,
+            LedgerEntry.is_reversal == False,  # noqa: E712
+        )
+        rows = list((await self.session.execute(stmt)).scalars().all())
+        if not rows:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No ledger entries found for transaction_ref '{transaction_ref}'.",
+            )
+
+        posted_at = _utcnow_iso()
+        # :rev suffix is the canonical naming convention for corrective entries
+        reversal_ref = f"{transaction_ref}:rev"
+        rev_description = description or f"Reversal of {transaction_ref}"
+
+        # Identify the debit and credit legs by which amount is non-zero
+        orig_debit = next((r for r in rows if _safe_decimal(r.debit_amount) > 0), rows[0])
+        orig_credit = next((r for r in rows if _safe_decimal(r.credit_amount) > 0), rows[-1])
+
+        async with self.session.begin_nested():
+            # Reversal debit row uses the credit account (accounts are swapped)
+            rev_debit = LedgerEntry(
+                project_id=project_id or orig_debit.project_id,
+                transaction_ref=reversal_ref,
+                account_code=orig_credit.account_code,   # ← swapped
+                description=rev_description,
+                debit_amount=orig_debit.debit_amount,    # same magnitude
+                credit_amount=Decimal("0"),
+                currency_code=orig_debit.currency_code,
+                posted_at=posted_at,
+                source_type=orig_debit.source_type,
+                source_id=orig_debit.source_id,
+                is_reversal=True,
+                reversal_of_id=orig_debit.id,
+                created_by=created_by,
+            )
+            # Reversal credit row uses the debit account (accounts are swapped)
+            rev_credit = LedgerEntry(
+                project_id=project_id or orig_credit.project_id,
+                transaction_ref=reversal_ref,
+                account_code=orig_debit.account_code,    # ← swapped
+                description=rev_description,
+                debit_amount=Decimal("0"),
+                credit_amount=orig_credit.credit_amount,  # same magnitude
+                currency_code=orig_credit.currency_code,
+                posted_at=posted_at,
+                source_type=orig_credit.source_type,
+                source_id=orig_credit.source_id,
+                is_reversal=True,
+                reversal_of_id=orig_credit.id,
+                created_by=created_by,
+            )
+            self.session.add(rev_debit)
+            self.session.add(rev_credit)
+            await self.session.flush()
+
+        logger.info("Ledger reversal created: %s → %s", transaction_ref, reversal_ref)
+        return rev_debit, rev_credit

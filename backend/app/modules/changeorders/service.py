@@ -102,12 +102,16 @@ async def _safe_audit(
         )
 
 
-# Valid status transitions
+# Valid status transitions.
+# ``executed`` is a terminal state added in R7 hardening: after an approved CO
+# is actually executed on site, it moves to ``executed`` so dashboards can
+# distinguish "approved in principle" from "work done / cost committed."
 VALID_TRANSITIONS: dict[str, list[str]] = {
     "draft": ["submitted"],
     "submitted": ["approved", "rejected", "draft"],
-    "approved": [],
+    "approved": ["executed"],
     "rejected": ["draft"],
+    "executed": [],
 }
 
 
@@ -884,6 +888,33 @@ class ChangeOrderService:
             (fresh or order).code,
             user_id,
         )
+        return fresh or order
+
+    async def execute_order(self, order_id: uuid.UUID, user_id: str) -> ChangeOrder:
+        """Mark an approved change order as executed (work completed on site).
+
+        R7 hardening: the ``executed`` terminal state distinguishes COs that
+        have been approved-in-principle from those where the scope change has
+        actually been carried out, giving project controllers an accurate view
+        of committed vs. realised cost impact.
+        """
+        order = await self.get_order(order_id)
+        self._validate_transition(order.status, "executed")
+        from_status = order.status
+        code_snapshot = order.code
+
+        now = datetime.now(UTC).isoformat()[:19]
+        await self.repo.update_fields(order_id, status="executed")
+        await _safe_audit(
+            self.session,
+            actor_id=user_id,
+            order_id=order_id,
+            from_status=from_status,
+            to_status="executed",
+            metadata={"code": code_snapshot},
+        )
+        fresh = await self.repo.get_by_id(order_id)
+        logger.info("Change order executed: %s by %s", code_snapshot, user_id)
         return fresh or order
 
     def _validate_transition(self, current: str, target: str) -> None:

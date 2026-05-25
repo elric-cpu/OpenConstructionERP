@@ -192,6 +192,15 @@ class ServiceTicket(Base):
     # contract's SLA definition (response_time_minutes).
     reported_at: Mapped[str] = mapped_column(String(40), nullable=False)
     sla_due_at: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    # Two-clock SLA tracking (R7 hardening).
+    # response_due_at: deadline for first meaningful engineer response.
+    # resolution_due_at: deadline for ticket resolved/closed.
+    # Both computed at create time from the contract SLA definition.
+    response_due_at: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    resolution_due_at: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    # ISO timestamp set when ticket enters awaiting_customer state (SLA clock
+    # paused). Cleared when ticket resumes to in_progress.
+    awaiting_customer_since: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="new", index=True)
     # Channel the ticket came in on. Used by the dispatcher to triage portal

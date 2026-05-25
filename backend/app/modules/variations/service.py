@@ -940,6 +940,9 @@ class VariationsService:
                 status_code=http_status.HTTP_409_CONFLICT,
                 detail=f"Cannot transition VR from {vr.status} to {to_status}",
             )
+        # Snapshot immutable fields before update_fields() may expire ORM state.
+        from_status_snapshot = vr.status
+        code_snapshot = vr.code
         fields: dict[str, Any] = {"status": to_status}
         if to_status == "submitted":
             fields["submitted_at"] = _now_iso()
@@ -978,6 +981,28 @@ class VariationsService:
                 currency=vr.currency or None,
                 code=vr.code,
                 decision_notes=decision_notes,
+            )
+        # R7 audit trail: persist every status change to ActivityLog in the
+        # same transaction so the trail is atomic with the status write.
+        try:
+            from app.core.audit_log import log_activity as _log_act
+            await _log_act(
+                self.session,
+                actor_id=user_id,
+                entity_type="variation_request",
+                entity_id=str(vr_id),
+                action="status_changed",
+                from_status=from_status_snapshot,
+                to_status=to_status,
+                reason=decision_notes,
+                metadata={"code": code_snapshot},
+            )
+        except Exception:
+            logger.warning(
+                "ActivityLog write skipped for variation_request %s (%s)",
+                vr_id,
+                to_status,
+                exc_info=True,
             )
         return vr
 

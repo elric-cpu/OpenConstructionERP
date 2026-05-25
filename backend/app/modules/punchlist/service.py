@@ -68,15 +68,21 @@ async def _safe_publish(name: str, data: dict, source_module: str = "oe_punchlis
         _logger_ev.debug("Event publish skipped: %s", name)
 
 # Valid status transitions: current_status -> list of allowed next statuses
+# Valid status transitions: current_status -> list of allowed next statuses
+# FSM: open → assigned → in_progress → resolved → verified → closed
+# ``reopened`` is a display alias that always resolves to ``open`` in service code.
 VALID_TRANSITIONS: dict[str, list[str]] = {
-    "open": ["in_progress"],
-    "in_progress": ["resolved", "open"],
-    "resolved": ["verified", "open"],
-    "verified": ["closed", "open"],
-    "closed": ["open"],
+    "open": ["assigned", "in_progress"],              # direct assign or fast-track
+    "assigned": ["in_progress", "open"],              # accepted or unassigned
+    "in_progress": ["resolved", "verified", "assigned", "open"],  # done via either path
+    "resolved": ["verified", "open"],                 # legacy pre-verify step
+    "verified": ["closed", "open"],                   # approved or re-opened
+    "closed": ["open"],                               # can always reopen
 }
 
-# Statuses that require special role checks
+# Terminal statuses trigger a reopen_history entry when transitioning back
+# to an active status.
+# Statuses that require special role checks:
 # resolved -> verified: must be a different user than the resolver
 # verified -> closed: admin/manager only (handled via permissions in router)
 
@@ -112,6 +118,8 @@ class PunchListService:
             trade=data.trade,
             geo_lat=data.geo_lat,
             geo_lon=data.geo_lon,
+            rework_cost=getattr(data, "rework_cost", None),
+            rework_cost_currency=getattr(data, "rework_cost_currency", "USD") or "USD",
             created_by=user_id,
             metadata_=data.metadata,
         )
@@ -154,6 +162,7 @@ class PunchListService:
         priority_filter: str | None = None,
         assigned_to: str | None = None,
         category_filter: str | None = None,
+        trade_filter: str | None = None,
     ) -> tuple[list[PunchItem], int]:
         """List punch items for a project."""
         return await self.repo.list_for_project(
@@ -164,6 +173,7 @@ class PunchListService:
             priority=priority_filter,
             assigned_to=assigned_to,
             category=category_filter,
+            trade=trade_filter,
         )
 
     # ── Update ────────────────────────────────────────────────────────────
@@ -235,7 +245,9 @@ class PunchListService:
         """
         item = await self.get_item(item_id)
         current = item.status
-        target = transition.new_status
+        # ``reopened`` is a client-facing alias for ``open`` that always
+        # triggers the reopen audit path regardless of current state.
+        target = "open" if transition.new_status == "reopened" else transition.new_status
 
         # Reopen is always allowed from any status
         if target == "open":
@@ -277,11 +289,17 @@ class PunchListService:
         if transition.notes:
             update_fields["resolution_notes"] = transition.notes
 
-        # in_progress -> resolved: set resolved_at
+        # open/assigned → assigned: record assigned_at timestamp in metadata
+        if target == "assigned":
+            existing_meta = dict(getattr(item, "metadata_", None) or {})
+            existing_meta["assigned_at"] = now.isoformat()
+            update_fields["metadata_"] = existing_meta
+
+        # in_progress → resolved: set resolved_at
         if target == "resolved":
             update_fields["resolved_at"] = now
 
-        # resolved -> verified: must be different user than the one who resolved
+        # resolved/in_progress → verified: must be different user than the assigned worker
         if target == "verified":
             # Check who resolved it (by checking created_by or assigned_to as a proxy)
             # The resolver is typically the assigned user; we compare against created_by

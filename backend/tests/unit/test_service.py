@@ -309,8 +309,9 @@ def test_ticket_transitions_table() -> None:
     assert "in_progress" in allowed_ticket_transitions("assigned")
     assert "resolved" in allowed_ticket_transitions("in_progress")
     assert "closed" in allowed_ticket_transitions("resolved")
-    # Terminal states
-    assert allowed_ticket_transitions("closed") == set()
+    # closed → in_progress is the reopen path (window-gated in service).
+    assert "in_progress" in allowed_ticket_transitions("closed")
+    # cancelled is a true terminal
     assert allowed_ticket_transitions("cancelled") == set()
     # Cancellation allowed from every live state
     for live in ("new", "assigned", "in_progress"):
@@ -321,8 +322,12 @@ def test_work_order_transitions_table() -> None:
     assert "dispatched" in allowed_work_order_transitions("scheduled")
     assert "in_progress" in allowed_work_order_transitions("dispatched")
     assert "completed" in allowed_work_order_transitions("in_progress")
+    # R7: completed → verified (supervisor sign-off) or billed (legacy path)
+    assert "verified" in allowed_work_order_transitions("completed")
     assert "billed" in allowed_work_order_transitions("completed")
-    assert allowed_work_order_transitions("billed") == set()
+    # R7: billed → closed (terminal)
+    assert "closed" in allowed_work_order_transitions("billed")
+    assert allowed_work_order_transitions("closed") == set()
 
 
 def test_contract_transitions_table() -> None:
@@ -390,6 +395,7 @@ async def test_create_ticket_computes_sla_due_at() -> None:
     svc.sla_repo.rows[sla_id] = SimpleNamespace(
         id=sla_id,
         response_time_minutes=60,
+        resolution_time_minutes=480,  # 8h resolution window
         severity_levels={"high": {"response_time_minutes": 15}},
     )
 

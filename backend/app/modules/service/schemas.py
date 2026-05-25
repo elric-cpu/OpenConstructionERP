@@ -213,11 +213,23 @@ class ServiceTicketResponse(BaseModel):
 
 
 class TicketDispatchRequest(BaseModel):
-    """‌⁠‍Body for POST /tickets/{id}/dispatch."""
+    """Body for POST /tickets/{id}/dispatch."""
 
     technician_id: str = Field(..., min_length=1, max_length=36)
     scheduled_for: str | None = Field(default=None, pattern=ISO_DATETIME_PATTERN)
     notes: str = Field(default="", max_length=2000)
+
+
+class TicketReopenRequest(BaseModel):
+    """Body for POST /tickets/{id}/reopen."""
+
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+
+class TicketAwaitCustomerRequest(BaseModel):
+    """Body for POST /tickets/{id}/await-customer."""
+
+    note: str = Field(default="", max_length=2000)
 
 
 # ── WorkOrder + items ──────────────────────────────────────────────────────
@@ -606,3 +618,29 @@ class SLABreachCheckResponse(BaseModel):
     newly_breached: int = 0
     total_breached: int = 0
     breached_ticket_ids: list[UUID] = Field(default_factory=list)
+
+
+# ── SLA overdue summary (get_sla_overdue) ────────────────────────────────────
+
+
+class SLAOverdueReport(BaseModel):
+    """Single ticket overdue on response or resolution SLA."""
+
+    ticket_id: UUID
+    ticket_number: str
+    contract_id: UUID
+    priority: str
+    status: str
+    response_due_at: str | None = None
+    resolution_due_at: str | None = None
+    response_overdue_minutes: int = 0
+    resolution_overdue_minutes: int = 0
+
+
+class SLAOverdueSummaryResponse(BaseModel):
+    """Summary returned by GET /service/sla/overdue."""
+
+    checked_at: str
+    total_open: int = 0
+    response_overdue: list[SLAOverdueReport] = Field(default_factory=list)
+    resolution_overdue: list[SLAOverdueReport] = Field(default_factory=list)

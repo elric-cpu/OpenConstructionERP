@@ -74,12 +74,15 @@ class _StubPunchRepo:
         priority: str | None = None,
         assigned_to: str | None = None,
         category: str | None = None,
+        trade: str | None = None,
     ) -> tuple[list[Any], int]:
         rows = [r for r in self.rows.values() if r.project_id == project_id]
         if status:
             rows = [r for r in rows if r.status == status]
         if priority:
             rows = [r for r in rows if r.priority == priority]
+        if trade:
+            rows = [r for r in rows if getattr(r, "trade", None) == trade]
         return rows[offset : offset + limit], len(rows)
 
     async def update_fields(self, item_id: uuid.UUID, **kwargs: Any) -> None:

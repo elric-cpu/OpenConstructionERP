@@ -11,7 +11,7 @@ Tables:
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import JSON, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db_types import MoneyType
@@ -120,6 +120,9 @@ class Payment(Base):
     """A payment recorded against an invoice."""
 
     __tablename__ = "oe_finance_payment"
+    __table_args__ = (
+        Index("ix_finance_payment_idempotency", "idempotency_key", unique=True),
+    )
 
     invoice_id: Mapped[uuid.UUID] = mapped_column(
         GUID(),
@@ -134,6 +137,16 @@ class Payment(Base):
         MoneyType(scale=6), nullable=False, default=Decimal("1")
     )
     reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # R7: idempotency key — caller supplies a unique token per payment
+    # attempt; second POST with same key returns the existing row.
+    idempotency_key: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
+    # R7: is_refund flag — stored separately from amount sign so the positive
+    # amount validator on PaymentCreate can remain in place.
+    is_refund: Mapped[bool] = mapped_column(
+        Boolean(), nullable=False, default=False, server_default="0"
+    )
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         "metadata",
         JSON,
@@ -240,3 +253,53 @@ class EVMSnapshot(Base):
 
     def __repr__(self) -> str:
         return f"<EVMSnapshot project={self.project_id} date={self.snapshot_date}>"
+
+
+class LedgerEntry(Base):
+    """Append-only double-entry ledger row.
+
+    R7 invariants:
+    * Rows are NEVER updated or deleted — corrections come as new rows with
+      ``is_reversal=True`` referencing ``reversal_of_id``.
+    * Every transaction consists of exactly two rows:
+        - debit row:  debit_amount > 0, credit_amount == 0
+        - credit row: credit_amount > 0, debit_amount == 0
+    * Service enforces debit_amount == credit_amount before writing.
+    """
+
+    __tablename__ = "oe_finance_ledger"
+    __table_args__ = (
+        Index("ix_ledger_project_ref", "project_id", "transaction_ref"),
+        Index("ix_ledger_posted_at", "posted_at"),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(GUID(), nullable=False, index=True)
+    transaction_ref: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    account_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    debit_amount: Mapped[Decimal] = mapped_column(
+        MoneyType(), nullable=False, default=Decimal("0")
+    )
+    credit_amount: Mapped[Decimal] = mapped_column(
+        MoneyType(), nullable=False, default=Decimal("0")
+    )
+    currency_code: Mapped[str] = mapped_column(String(10), nullable=False, default="")
+    posted_at: Mapped[str] = mapped_column(String(30), nullable=False)
+    source_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    source_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # Reversal link — non-null when this row reverses a prior entry
+    is_reversal: Mapped[bool] = mapped_column(
+        Boolean(), nullable=False, default=False, server_default="0"
+    )
+    reversal_of_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(),
+        ForeignKey("oe_finance_ledger.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+    def __repr__(self) -> str:
+        return (
+            f"<LedgerEntry ref={self.transaction_ref} "
+            f"dr={self.debit_amount} cr={self.credit_amount}>"
+        )
