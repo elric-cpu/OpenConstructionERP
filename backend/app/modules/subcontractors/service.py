@@ -41,6 +41,7 @@ from app.modules.subcontractors.models import (
 from app.modules.subcontractors.repository import (
     AgreementRepository,
     CertificateRepository,
+    LienWaiverRepository,
     PaymentApplicationLineRepository,
     PaymentApplicationRepository,
     PrequalificationRepository,
@@ -501,6 +502,7 @@ class SubcontractorService:
         self.payment_lines = PaymentApplicationLineRepository(session)
         self.retention = RetentionLedgerRepository(session)
         self.ratings = RatingRepository(session)
+        self.lien_waivers = LienWaiverRepository(session)
 
     # ── Subcontractor CRUD ─────────────────────────────────────────────
 

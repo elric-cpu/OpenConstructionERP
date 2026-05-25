@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.subcontractors.models import (
     Certificate,
+    LienWaiver,
     PaymentApplication,
     PaymentApplicationLine,
     PrequalificationApplication,
@@ -407,3 +408,31 @@ class RatingRepository(_BaseRepo):
             SubcontractorRating.period == period,
         )
         return (await self.session.execute(stmt)).scalar_one_or_none()
+
+
+class LienWaiverRepository(_BaseRepo):
+    """CRUD for LienWaiver."""
+
+    model = LienWaiver
+
+    async def list_for_subcontractor(
+        self, subcontractor_id: uuid.UUID,
+    ) -> list[LienWaiver]:
+        """Return all waivers for a subcontractor, newest first."""
+        stmt = (
+            select(LienWaiver)
+            .where(LienWaiver.subcontractor_id == subcontractor_id)
+            .order_by(LienWaiver.created_at.desc())
+        )
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    async def list_for_payment_app(
+        self, payment_application_id: uuid.UUID,
+    ) -> list[LienWaiver]:
+        """Return waivers attached to a single payment application."""
+        stmt = (
+            select(LienWaiver)
+            .where(LienWaiver.payment_application_id == payment_application_id)
+            .order_by(LienWaiver.created_at.desc())
+        )
+        return list((await self.session.execute(stmt)).scalars().all())

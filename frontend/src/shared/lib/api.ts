@@ -17,9 +17,26 @@ import { logApiError, logError } from './errorLogger';
 
 const BASE_URL = '/api';
 
+/**
+ * Public API base path — exported for callers that need to bypass the
+ * JSON helpers (e.g. multipart uploads via raw fetch). Mirrors the
+ * private ``BASE_URL`` constant; keep them in lock-step.
+ */
+export const API_BASE = BASE_URL;
+
 /** Retrieve the stored JWT token from the auth store. */
 function getToken(): string | null {
   return useAuthStore.getState().accessToken;
+}
+
+/**
+ * Public alias of :func:`getToken` for callers (multipart upload
+ * helpers, file pickers, etc.) that need to assemble their own
+ * ``Authorization: Bearer …`` header. Returns ``null`` when the user
+ * is not authenticated.
+ */
+export function getAuthToken(): string | null {
+  return getToken();
 }
 
 /** Build common headers for every request. */

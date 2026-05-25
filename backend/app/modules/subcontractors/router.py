@@ -6,12 +6,33 @@ user and module-level permissions registered in :mod:`permissions`.
 
 from __future__ import annotations
 
+import logging
 import uuid
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, Query
+from fastapi import (
+    APIRouter,
+    Body,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 
+from app.core.file_signature import (
+    ALLOWED_DOCUMENT_TYPES,
+    SIGNATURE_BYTES_REQUIRED,
+    FileSignatureMismatch,
+    mime_for_signature,
+)
+from app.core.file_signature import require as require_signature
 from app.dependencies import CurrentUserId, RequirePermission, SessionDep, verify_project_access
+from app.modules.subcontractors.models import LienWaiver
 from app.modules.subcontractors.schemas import (
     AgreementCreate,
     AgreementResponse,
@@ -22,6 +43,8 @@ from app.modules.subcontractors.schemas import (
     CertificateUpdate,
     ExpiryAlert,
     InsuranceExpiryEntry,
+    LienWaiverFormFields,
+    LienWaiverResponse,
     PaymentApplicationCreate,
     PaymentApplicationResponse,
     PaymentApplicationUpdate,
@@ -48,6 +71,16 @@ from app.modules.subcontractors.schemas import (
     WorkPackageUpdate,
 )
 from app.modules.subcontractors.service import SubcontractorService, validate_tax_id
+
+logger = logging.getLogger(__name__)
+
+# Cap upload bytes — 10 MiB is well above any realistic lien waiver scan
+# (typical 1-2 pages PDF / phone photo) and below the proxy default.
+LIEN_WAIVER_MAX_BYTES: int = 10 * 1024 * 1024
+
+# Per-subcontractor folder under uploads/. Mirrors the per-module
+# convention used elsewhere (punchlist/photos, geo_hub/rasters, …).
+LIEN_WAIVERS_DIR: Path = Path("uploads/subcontractors/lien_waivers")
 
 router = APIRouter()
 
@@ -900,3 +933,211 @@ async def unblock_subcontractor_endpoint(
     svc = SubcontractorService(session)
     entity = await svc.unblock_subcontractor(sub_id, by_user_id=user_id)
     return SubcontractorResponse.model_validate(entity)
+
+
+# ── Lien waivers / tax forms ───────────────────────────────────────────
+
+
+def _serialize_lien_waiver(entity: LienWaiver) -> LienWaiverResponse:
+    """Hand-roll the response so the ``metadata`` alias resolves."""
+    return LienWaiverResponse.model_validate(entity, from_attributes=True)
+
+
+@router.get(
+    "/subcontractors/{sub_id}/lien-waivers",
+    response_model=list[LienWaiverResponse],
+)
+async def list_lien_waivers(
+    sub_id: uuid.UUID,
+    session: SessionDep,
+    _user: CurrentUserId,
+    _perm: None = Depends(RequirePermission("subcontractors.read")),
+) -> list[LienWaiverResponse]:
+    """List every lien waiver / W-9 / W-8 filed against a subcontractor.
+
+    Newest first so the most recent waiver wins on the dashboard. Returns
+    an empty list when no waivers exist — the UI shows an empty state.
+    """
+    svc = SubcontractorService(session)
+    rows = await svc.lien_waivers.list_for_subcontractor(sub_id)
+    return [_serialize_lien_waiver(r) for r in rows]
+
+
+@router.post(
+    "/subcontractors/{sub_id}/lien-waivers/upload",
+    response_model=LienWaiverResponse,
+    status_code=201,
+)
+async def upload_lien_waiver(
+    sub_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    waiver_type: str = Form(...),
+    file: UploadFile = File(...),
+    payment_application_id: uuid.UUID | None = Form(default=None),
+    signed_date: str | None = Form(default=None),
+    amount: str | None = Form(default=None),
+    currency: str | None = Form(default=None),
+    notes: str | None = Form(default=None),
+    _perm: None = Depends(RequirePermission("subcontractors.update")),
+) -> LienWaiverResponse:
+    """Upload a lien waiver / W-9 / W-8 PDF or image.
+
+    Magic-byte gated against :data:`ALLOWED_DOCUMENT_TYPES` (pdf, png,
+    jpeg, gif, webp, zip, ole, xml). The Content-Type header is
+    attacker-controlled, so we sniff the first
+    :data:`SIGNATURE_BYTES_REQUIRED` bytes and reject anything outside
+    the allow-list with HTTP 415. The stored MIME is derived from the
+    detected signature, not the request header.
+
+    422 when the form fields fail validation (bad waiver_type, bad
+    currency, negative amount). 404 when the linked subcontractor does
+    not exist (IDOR-safe — generic message, no enumeration leak).
+    """
+    # Cap the read at the configured ceiling. UploadFile streams in
+    # chunks; we collect into memory here because a lien waiver is
+    # tiny relative to a CAD file and we need the bytes for both the
+    # magic-byte sniff and the disk write.
+    raw = await file.read(LIEN_WAIVER_MAX_BYTES + 1)
+    if len(raw) > LIEN_WAIVER_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"file exceeds maximum size of {LIEN_WAIVER_MAX_BYTES} bytes",
+        )
+    if not raw:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="file body is empty",
+        )
+
+    # Magic-byte gate. Returns the detected signature token (e.g. "pdf")
+    # or raises FileSignatureMismatch — which we convert to 415 so the
+    # frontend can show a "Format not supported" toast.
+    try:
+        detected = require_signature(
+            raw[:SIGNATURE_BYTES_REQUIRED],
+            ALLOWED_DOCUMENT_TYPES,
+            filename=file.filename,
+        )
+    except FileSignatureMismatch as exc:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail=str(exc),
+        )
+    safe_mime = mime_for_signature(detected)
+
+    # Validate the structured form fields via Pydantic so the same
+    # checks apply that we'd use on a JSON-only endpoint. Convert raw
+    # form strings into typed values up-front so a bad ``amount``
+    # produces a 422 with a useful Pydantic-style detail.
+    try:
+        parsed_amount = Decimal(amount) if amount not in (None, "") else Decimal("0")
+    except (InvalidOperation, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"amount is not a valid decimal: {amount!r}",
+        )
+    try:
+        from datetime import date as _date
+
+        parsed_signed = _date.fromisoformat(signed_date) if signed_date else None
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"signed_date is not a valid ISO date: {signed_date!r}",
+        )
+    try:
+        form_payload = LienWaiverFormFields(
+            waiver_type=waiver_type,
+            payment_application_id=payment_application_id,
+            signed_date=parsed_signed,
+            amount=parsed_amount,
+            currency=currency or "",
+            notes=notes,
+        )
+    except Exception as exc:  # pydantic.ValidationError
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        )
+
+    # IDOR-safe: 404 if the subcontractor doesn't exist BEFORE we touch
+    # the disk — avoids leaving orphan files when the URL was guessed.
+    svc = SubcontractorService(session)
+    parent = await svc.subs.get_by_id(sub_id)
+    if parent is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Subcontractor not found",
+        )
+    # If a payment_application_id was provided, also verify ownership
+    # via the agreement → project chain. None means "free-standing W-9".
+    if form_payload.payment_application_id is not None:
+        await _verify_payment_application_project(
+            form_payload.payment_application_id, user_id, session, svc,
+        )
+
+    # Disk write — per-subcontractor folder so listings stay cheap.
+    target_dir = LIEN_WAIVERS_DIR / str(sub_id)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    ext = Path(file.filename or "waiver.pdf").suffix or ".pdf"
+    safe_filename = f"{form_payload.waiver_type}_{uuid.uuid4().hex[:10]}{ext}"
+    on_disk = target_dir / safe_filename
+    try:
+        on_disk.write_bytes(raw)
+    except OSError:
+        logger.exception("Failed to persist lien waiver for sub %s", sub_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="storage error",
+        )
+
+    # Relative path keeps storage URLs portable when moving between
+    # local disk and MinIO/S3 backends.
+    rel_path = f"subcontractors/lien_waivers/{sub_id}/{safe_filename}"
+
+    entity = LienWaiver(
+        subcontractor_id=sub_id,
+        payment_application_id=form_payload.payment_application_id,
+        waiver_type=form_payload.waiver_type,
+        document_url=rel_path,
+        mime_type=safe_mime,
+        file_size=len(raw),
+        signed_date=form_payload.signed_date,
+        amount=form_payload.amount,
+        currency=form_payload.currency,
+        notes=form_payload.notes,
+        uploaded_by=user_id,
+    )
+    await svc.lien_waivers.create(entity)
+    await session.commit()
+    await session.refresh(entity)
+    return _serialize_lien_waiver(entity)
+
+
+@router.delete(
+    "/subcontractors/{sub_id}/lien-waivers/{waiver_id}",
+    status_code=204,
+)
+async def delete_lien_waiver(
+    sub_id: uuid.UUID,
+    waiver_id: uuid.UUID,
+    session: SessionDep,
+    _user: CurrentUserId,
+    _perm: None = Depends(RequirePermission("subcontractors.delete")),
+) -> None:
+    """Delete a lien waiver record (file remains on disk for audit).
+
+    IDOR-safe: 404 when the waiver doesn't exist OR belongs to a
+    different subcontractor. Returning a generic 404 in both cases
+    prevents an attacker enumerating waiver UUIDs across the tenant.
+    """
+    svc = SubcontractorService(session)
+    entity = await svc.lien_waivers.get_by_id(waiver_id)
+    if entity is None or entity.subcontractor_id != sub_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Lien waiver not found",
+        )
+    await svc.lien_waivers.delete(waiver_id)
+    await session.commit()

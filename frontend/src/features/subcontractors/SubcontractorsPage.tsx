@@ -39,6 +39,8 @@ import { MoneyDisplay } from '@/shared/ui/MoneyDisplay';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { PipelineBanner } from './PipelineBanner';
 import { PrequalModal } from './PrequalModal';
+import { ScorecardTile } from './ScorecardTile';
+import { LienWaiverPanel } from './LienWaiverPanel';
 import { useToastStore } from '@/stores/useToastStore';
 import { getErrorMessage } from '@/shared/lib/api';
 import {
@@ -63,6 +65,7 @@ import {
   type PaymentApplication,
   type PaymentApplicationStatus,
   type CreateSubcontractorPayload,
+  type Rating,
 } from './api';
 
 type DrawerTab = 'scope' | 'payments' | 'ratings' | 'retention';
@@ -317,6 +320,9 @@ export function SubcontractorsPage() {
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
           className={clsx(inputCls, 'max-w-[200px]')}
+          aria-label={t('subcontractors.filter_by_status', {
+            defaultValue: 'Filter by prequalification status',
+          })}
         >
           <option value="">
             {t('common.all_statuses', { defaultValue: 'All statuses' })}
@@ -529,10 +535,13 @@ function DetailDrawer({ id, onClose }: { id: string; onClose: () => void }) {
     enabled: !!id,
   });
 
+  // Eager fetch so the ScorecardTile inside the Ratings tab has data
+  // by the time the user clicks the tab. ~1-3 KB payload (one row per
+  // YYYY-MM period); negligible compared to the dashboard rollup.
   const ratingsQ = useQuery({
     queryKey: ['subcontractors', 'ratings', id],
     queryFn: () => listRatings(id),
-    enabled: !!id && tab === 'ratings',
+    enabled: !!id,
   });
 
   const certsQ = useQuery({
@@ -966,6 +975,12 @@ function DetailDrawer({ id, onClose }: { id: string; onClose: () => void }) {
                 </div>
               </div>
             )}
+            {/* Lien waivers / W-9 / W-8 panel — magic-byte gated upload
+                + list. Mounted always (not behind a tab) so the list
+                is one scroll away from the Certificates summary. */}
+            <div className="border-t border-border-light px-5 py-4">
+              <LienWaiverPanel subcontractorId={sub.id} />
+            </div>
           </>
         )}
       </div>
@@ -1217,21 +1232,26 @@ function RatingsTab({
   data,
   loading,
 }: {
-  data: { id: string; period: string; overall_score: number | string; quality_score: number | string; hse_score: number | string; schedule_score: number | string; cost_score: number | string }[];
+  data: Rating[];
   loading: boolean;
 }) {
   const { t } = useTranslation();
   if (loading) return <SkeletonTable rows={4} columns={5} />;
   if (data.length === 0) {
     return (
-      <EmptyState
-        icon={<Star size={20} />}
-        title={t('subcontractors.no_ratings', { defaultValue: 'No ratings yet' })}
-      />
+      <div className="space-y-3">
+        <ScorecardTile ratings={data} />
+        <EmptyState
+          icon={<Star size={20} />}
+          title={t('subcontractors.no_ratings', { defaultValue: 'No ratings yet' })}
+        />
+      </div>
     );
   }
   return (
-    <div className="overflow-x-auto rounded-lg border border-border-light">
+    <div className="space-y-3">
+      <ScorecardTile ratings={data} />
+      <div className="overflow-x-auto rounded-lg border border-border-light">
       <table className="w-full text-xs">
         <thead className="bg-surface-secondary text-content-tertiary uppercase tracking-wide">
           <tr>
@@ -1278,6 +1298,7 @@ function RatingsTab({
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

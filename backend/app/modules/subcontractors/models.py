@@ -11,6 +11,7 @@ Tables:
     oe_subcontractors_payment_application_line   — line under a payment application
     oe_subcontractors_retention_ledger           — retention accrual / release entries
     oe_subcontractors_rating                     — monthly rating rollup
+    oe_subcontractors_lien_waiver                — uploaded lien waiver / W-9 form
 """
 
 from __future__ import annotations
@@ -377,6 +378,68 @@ class SubcontractorRating(Base):
         return (
             f"<SubcontractorRating sub={self.subcontractor_id} "
             f"period={self.period} overall={self.overall_score}>"
+        )
+
+
+class LienWaiver(Base):
+    """A lien-waiver / W-9 / W-8 form filed against a payment application.
+
+    Per US lien-law practice, every payment to a subcontractor must be
+    accompanied by a signed lien waiver (conditional / unconditional,
+    partial / final). We persist the uploaded PDF/PNG/JPEG/TIFF with a
+    magic-byte gate at upload time and link it back to both the
+    subcontractor and the specific payment application it covers.
+
+    ``payment_application_id`` is nullable so a stand-alone W-9 / W-8
+    upload (no payment-app linkage) can be filed against the
+    subcontractor as a whole, with ``waiver_type='w9'`` or ``'w8'``.
+    """
+
+    __tablename__ = "oe_subcontractors_lien_waiver"
+
+    subcontractor_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_subcontractors_subcontractor.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    payment_application_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(),
+        ForeignKey(
+            "oe_subcontractors_payment_application.id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+        index=True,
+    )
+    # Conditional / unconditional, partial / final, w9 (US), w8 (intl).
+    waiver_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    # Document path under uploads/ — populated by the magic-byte-gated
+    # upload endpoint, NEVER by the create-from-URL path (which would
+    # let a caller smuggle a remote URL into the storage column).
+    document_url: Mapped[str] = mapped_column(String(1000), nullable=False)
+    # IANA mime-type derived from the detected signature, not the
+    # attacker-controlled Content-Type header.
+    mime_type: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    signed_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Amount the waiver covers — informational; the actual money flows
+    # through the payment_application row. Stored as Numeric(18,2)
+    # like every other money column in the module.
+    amount: Mapped[Decimal] = mapped_column(
+        Numeric(18, 2), nullable=False, default=Decimal("0"), server_default="0",
+    )
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, server_default="")
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    uploaded_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        "metadata", JSON, nullable=False, default=dict, server_default="{}",
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<LienWaiver sub={self.subcontractor_id} type={self.waiver_type} "
+            f"amount={self.amount}>"
         )
 
 

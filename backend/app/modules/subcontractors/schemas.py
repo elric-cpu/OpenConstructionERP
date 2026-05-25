@@ -770,3 +770,78 @@ class TaxIdValidationResponse(BaseModel):
         default=None,
         description="Failure reason when format_valid is false; None on success.",
     )
+
+
+# ── Lien waivers / tax forms ─────────────────────────────────────────────
+
+
+# Valid waiver types — restrict at schema level so the magic-byte
+# endpoint cannot store arbitrary strings (avoids enum-poisoning that
+# could break downstream reporting).
+_VALID_WAIVER_TYPES: frozenset[str] = frozenset(
+    {
+        "conditional_partial",
+        "conditional_final",
+        "unconditional_partial",
+        "unconditional_final",
+        "w9",  # US — vendor tax form, annual
+        "w8",  # International — vendor tax form, valid 3 years
+    },
+)
+
+
+class LienWaiverResponse(BaseModel):
+    """Lien waiver / W-9 / W-8 record."""
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    subcontractor_id: UUID
+    payment_application_id: UUID | None = None
+    waiver_type: str
+    document_url: str
+    mime_type: str | None = None
+    file_size: int | None = None
+    signed_date: date | None = None
+    amount: Decimal = Decimal("0")
+    currency: str = ""
+    notes: str | None = None
+    uploaded_by: str | None = None
+    # ``metadata`` is exposed on the wire, but read from the ``metadata_``
+    # ORM attribute (the model maps SQLAlchemy's reserved ``metadata``
+    # column to ``metadata_`` in Python). Mirrors CertificateResponse.
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, validation_alias="metadata_",
+    )
+    created_at: datetime
+    updated_at: datetime
+
+
+class LienWaiverFormFields(BaseModel):
+    """Multipart form fields accepted by the lien-waiver upload endpoint."""
+
+    waiver_type: str
+    payment_application_id: UUID | None = None
+    signed_date: date | None = None
+    amount: Decimal = Decimal("0")
+    currency: str = ""
+    notes: str | None = None
+
+    @field_validator("waiver_type")
+    @classmethod
+    def _check_waiver_type(cls, v: str) -> str:
+        if v not in _VALID_WAIVER_TYPES:
+            raise ValueError(
+                f"waiver_type must be one of {sorted(_VALID_WAIVER_TYPES)}",
+            )
+        return v
+
+    @field_validator("currency")
+    @classmethod
+    def _check_currency(cls, v: str) -> str:
+        return _validate_currency(v) or ""
+
+    @field_validator("notes")
+    @classmethod
+    def _strip_notes(cls, v: str | None) -> str | None:
+        return _strip_crlf(v)
