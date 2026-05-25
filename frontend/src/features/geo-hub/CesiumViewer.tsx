@@ -53,6 +53,16 @@ export interface GeoCameraState {
   cameraAltitudeM: number;
 }
 
+/** Transient pin dropped by the address-search overlay. */
+export interface GeoSearchPin {
+  /** Latitude in degrees (-90..90). */
+  lat: number;
+  /** Longitude in degrees (-180..180). */
+  lon: number;
+  /** Human-readable label rendered next to the pin. */
+  name: string;
+}
+
 interface CesiumViewerProps {
   mode: ViewerMode;
   mapConfig?: MapConfig;
@@ -81,6 +91,15 @@ interface CesiumViewerProps {
    * own anchor at init time).
    */
   focusedProject?: AnchoredProject | null;
+  /**
+   * Transient pin from the top-of-page address search. When set we
+   * fly the camera to the coordinates and render a single accent-blue
+   * pin with the address as its label. Distinct visual treatment from
+   * project / HSE / punch / diary pins so the user can always tell
+   * "this is my search result, not a project anchor". Passing ``null``
+   * removes the pin without flying the camera.
+   */
+  searchPin?: GeoSearchPin | null;
   /**
    * Optional overlay rendered above the Cesium canvas (HUD, empty
    * states, custom badges). Rendered inside the same relative wrapper
@@ -286,6 +305,7 @@ export function CesiumViewer({
   pins,
   focusedTilesetId,
   focusedProject,
+  searchPin,
   overlay,
   onMouseMove,
   onCameraChange,
@@ -304,6 +324,9 @@ export function CesiumViewer({
   // from this map to flyTo() the bounding sphere of the user-selected
   // tileset (via deep-link). Keyed by our DB id, not the cesium uuid.
   const loadedTilesetsRef = useRef<Map<string, unknown>>(new Map());
+  // Single entity for the address-search pin so the dedicated effect can
+  // swap / clear it without disturbing project / HSE / punch / diary pins.
+  const searchPinEntityRef = useRef<CesiumEntityLike | null>(null);
   // Latest callback refs so the viewer effect doesn't have to re-run
   // when only the parent's handler identity changes.
   const onMouseMoveRef = useRef(onMouseMove);
@@ -613,6 +636,7 @@ export function CesiumViewer({
       viewerRef.current = null;
       cesiumRef.current = null;
       pinEntitiesRef.current = [];
+      searchPinEntityRef.current = null;
       loadedTilesetsRef.current = new Map();
       try {
         onViewerReady?.(null);
@@ -959,6 +983,82 @@ export function CesiumViewer({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusedProject?.project_id, cesiumStatus]);
+
+  // ── Address-search pin (global view) ────────────────────────────────
+  //
+  // Renders a single visually-distinct accent-blue point with a label
+  // callout for the latest hit from the address-search overlay. We fly
+  // the camera to the coordinates with a friendlier rooftop-altitude
+  // (~2 km) so the user lands close enough to recognise the place but
+  // still sees surrounding context. Re-runs whenever the search pin
+  // identity changes; ``null`` removes the entity without flying.
+  useEffect(() => {
+    if (cesiumStatus !== 'loaded') return;
+    const v = viewerRef.current;
+    const cesium = cesiumRef.current;
+    if (!v || !cesium) return;
+
+    // Always clear the previous pin first — switching addresses must
+    // not leave a stale marker on the globe.
+    if (searchPinEntityRef.current) {
+      try {
+        v.entities.remove(searchPinEntityRef.current);
+      } catch {
+        /* entity already gone — ignore */
+      }
+      searchPinEntityRef.current = null;
+    }
+
+    if (!searchPin) return;
+    const lat = Number(searchPin.lat);
+    const lon = Number(searchPin.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+    try {
+      const accent =
+        cesium.Color.fromCssColorString?.('#0ea5e9') ??
+        cesium.Color.DODGERBLUE;
+      const ent = v.entities.add({
+        position: cesium.Cartesian3.fromDegrees(lon, lat, 0),
+        point: {
+          pixelSize: 16,
+          color: accent,
+          outlineColor: cesium.Color.WHITE,
+          outlineWidth: 3,
+          heightReference: 1, // CLAMP_TO_GROUND
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        label: {
+          text: searchPin.name.length > 80
+            ? `${searchPin.name.slice(0, 77)}…`
+            : searchPin.name,
+          font: '12px sans-serif',
+          pixelOffset: { x: 0, y: -22 },
+          fillColor: cesium.Color.WHITE,
+          outlineColor:
+            cesium.Color.fromCssColorString?.('#000') ?? cesium.Color.WHITE,
+          outlineWidth: 2,
+          style: 2, // FILL_AND_OUTLINE
+          showBackground: true,
+          backgroundColor:
+            cesium.Color.fromCssColorString?.('rgba(14,165,233,0.92)') ??
+            cesium.Color.DODGERBLUE,
+          scale: 0.9,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        properties: { _oeGeoHubPinTag: 'search' },
+      });
+      searchPinEntityRef.current = ent;
+
+      v.camera.flyTo({
+        destination: cesium.Cartesian3.fromDegrees(lon, lat, 2000),
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[geo_hub] searchPin add/fly failed', err);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchPin?.lat, searchPin?.lon, searchPin?.name, cesiumStatus]);
 
   return (
     <div className="relative h-full w-full">

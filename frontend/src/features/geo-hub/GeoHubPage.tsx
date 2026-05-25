@@ -39,6 +39,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Layers,
+  X,
 } from 'lucide-react';
 
 import { ApiError } from '@/shared/lib/api';
@@ -46,8 +47,13 @@ import { ModuleHelpButton } from '@/shared/ui';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useToastStore } from '@/stores/useToastStore';
 
+import { AddressAutocomplete } from './AddressAutocomplete';
 import { bulkAutoAnchorFromAddress, fetchAnchoredProjects } from './api';
-import type { GeoCameraState, GeoCursorCoords } from './CesiumViewer';
+import type {
+  GeoCameraState,
+  GeoCursorCoords,
+  GeoSearchPin,
+} from './CesiumViewer';
 import { GeoModePicker } from './GeoModePicker';
 import { GeoOverlayHud } from './GeoOverlayHud';
 import { OverlayLayer } from './OverlayLayer';
@@ -496,6 +502,118 @@ function AnchoredProjectsOverlay({
   );
 }
 
+/**
+ * Top-center address search overlay — Nominatim-backed, debounced.
+ *
+ * Drops a single transient pin on the globe and flies the camera there.
+ * Renders the active search hit as a slim chip beneath the input with a
+ * dismiss button so the user always has an obvious way to clear the
+ * marker. Glass-card chrome matches the anchored-projects overlay so
+ * the two read as parts of the same control surface.
+ */
+function GeoSearchOverlay({
+  pin,
+  onSelect,
+  onClear,
+}: {
+  pin: GeoSearchPin | null;
+  onSelect: (sel: GeoSearchPin) => void;
+  onClear: () => void;
+}) {
+  const { t } = useTranslation();
+  const [query, setQuery] = useState<string>('');
+
+  return (
+    <div
+      className={[
+        // Phones: full-bleed under the top bar.
+        // md/lg: nudged right of the 288 px anchored-projects rail so the
+        //   two overlays never overlap.
+        // xl+: pinned to true center for the showcase aesthetic.
+        // The width formula caps at the smaller of 520 px (showcase size)
+        // and the viewport minus our left offset and a 1 rem right gutter,
+        // so the overlay never overflows the canvas at md/lg breakpoints.
+        'pointer-events-none absolute top-3 z-20',
+        'left-3 w-[calc(100vw-1.5rem)] max-w-[520px]',
+        'md:left-[19.5rem] md:w-[calc(100vw-20.5rem)]',
+        'xl:left-1/2 xl:w-[calc(100vw-1.5rem)] xl:-translate-x-1/2',
+      ].join(' ')}
+      data-testid="geo-search-overlay"
+    >
+      <div
+        className={[
+          'pointer-events-auto rounded-xl border border-white/15 bg-white/95',
+          'p-2 shadow-lg shadow-black/20 ring-1 ring-black/5 backdrop-blur-md',
+          'dark:bg-slate-900/90',
+        ].join(' ')}
+      >
+        <AddressAutocomplete
+          value={query}
+          onChange={setQuery}
+          placeholder={t('geo.search_placeholder', {
+            defaultValue: 'Search any address worldwide…',
+          })}
+          ariaLabel={t('geo.search_placeholder', {
+            defaultValue: 'Search any address worldwide…',
+          })}
+          onSelect={(sel) => {
+            setQuery(sel.display_name);
+            onSelect({
+              lat: sel.lat,
+              lon: sel.lon,
+              name: sel.display_name,
+            });
+          }}
+        />
+        {pin && (
+          <div
+            className={[
+              'mt-2 flex items-center gap-2 rounded-md',
+              'border border-sky-300/40 bg-sky-50/90 px-2.5 py-1.5',
+              'text-2xs text-sky-900 dark:bg-sky-950/40 dark:text-sky-100',
+            ].join(' ')}
+            role="status"
+          >
+            <MapPin
+              size={12}
+              strokeWidth={2.25}
+              className="shrink-0 text-sky-600 dark:text-sky-300"
+              aria-hidden
+            />
+            <span className="min-w-0 flex-1 truncate font-medium">
+              {t('geo.search_pin_label', {
+                defaultValue: 'Pinned: {{name}}',
+                name: pin.name,
+              })}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setQuery('');
+                onClear();
+              }}
+              className={[
+                'inline-flex h-5 w-5 shrink-0 items-center justify-center rounded',
+                'text-sky-700 hover:bg-sky-100 dark:text-sky-200 dark:hover:bg-sky-900/50',
+                'focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400',
+              ].join(' ')}
+              aria-label={t('geo.search_pin_dismiss', {
+                defaultValue: 'Clear search pin',
+              })}
+              title={t('geo.search_pin_dismiss', {
+                defaultValue: 'Clear search pin',
+              })}
+              data-testid="geo-search-pin-dismiss"
+            >
+              <X size={12} strokeWidth={2.25} />
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function GeoHubPage() {
   const { t } = useTranslation();
   const activeProjectId = useProjectContextStore((s) => s.activeProjectId);
@@ -525,6 +643,9 @@ export function GeoHubPage() {
   const [cesiumRuntime, setCesiumRuntime] = useState<
     { cesium: unknown; viewer: unknown } | null
   >(null);
+  // Transient address-search pin. Replaced wholesale on each search and
+  // cleared via the inline dismiss button in the overlay.
+  const [searchPin, setSearchPin] = useState<GeoSearchPin | null>(null);
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
@@ -717,11 +838,17 @@ export function GeoHubPage() {
                 ? projects.find((p) => p.project_id === focusedProjectId) ?? null
                 : null
             }
+            searchPin={searchPin}
             onMouseMove={setCursorCoords}
             onCameraChange={setCameraState}
             onViewerReady={setCesiumRuntime}
             overlay={
               <>
+                <GeoSearchOverlay
+                  pin={searchPin}
+                  onSelect={setSearchPin}
+                  onClear={() => setSearchPin(null)}
+                />
                 <GeoOverlayHud
                   cursorLat={cursorCoords?.lat ?? null}
                   cursorLon={cursorCoords?.lon ?? null}

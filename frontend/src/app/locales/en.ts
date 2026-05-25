@@ -6462,10 +6462,6 @@ const resource = {
     // --- propdev (task #141) ---
     "propdev.title": "Property Development",
     "propdev.subtitle": "Developments, plots, buyer journeys, handovers and warranty claims.",
-    // ── propdev tab grouping (v4.9) ──
-    "propdev.group.master_data": "Master data",
-    "propdev.group.sales": "Sales",
-    "propdev.group.operations": "Operations",
     // ── propdev: Overview-tab landing dashboard (R6 polish) ──
     "propdev.overview": "Overview",
     "propdev.dashboards_short": "Dashboards",
@@ -6776,6 +6772,11 @@ const resource = {
     "geo_hub.autocomplete.placeholder": "Start typing an address…",
     "geo_hub.autocomplete.list_aria": "Address suggestions",
     "geo_hub.autocomplete.no_results": "No matches — check spelling or paste coordinates below.",
+    // --- Top-of-page address-search overlay on /geo (Wave 24) ---
+    "geo.search_placeholder": "Search any address worldwide…",
+    "geo.search_pin_label": "Pinned: {{name}}",
+    "geo.search_pin_dismiss": "Clear search pin",
+    "geo.search_no_results": "No matches — try a city, street, or full address.",
     "geo_hub.autocomplete.network_error": "Address lookup is temporarily unavailable. Try again in a moment.",
     "geo_hub.autocomplete.disabled": "Geocoder is disabled in this deploy — enter coordinates manually below.",
     "geo_hub.autocomplete.rate_limited": "Too many lookups right now — wait a few seconds and retry.",
