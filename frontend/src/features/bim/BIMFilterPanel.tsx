@@ -718,7 +718,19 @@ export default function BIMFilterPanel({
       if (state.buildingsOnly && isNoiseCategory(tpe)) return false;
       if (state.storeys.size > 0 && !state.storeys.has(el.storey || '—'))
         return false;
-      if (state.types.size > 0 && !state.types.has(tpe)) return false;
+      // Type filter — must mirror applyFilters() above: match either the
+      // category (e.g. "Walls") OR the individual Type Name (e.g.
+      // "Generic - 200mm").  Without the second check, clicking an
+      // individual Type Name chip would correctly isolate the 3D viewport
+      // (driven by applyFilters → onFilterChange) while the panel's
+      // element-explorer list, group counts, summary bar and CSV export
+      // would all silently show 0 rows — the same Category-vs-TypeName
+      // alias bug we hit in the earliest versions (regressed when the
+      // visibleElements predicate was added alongside applyFilters).
+      if (state.types.size > 0) {
+        const typeName = getTypeNameKey(el);
+        if (!state.types.has(tpe) && !state.types.has(typeName)) return false;
+      }
       if (search) {
         const hay = (
           (el.name || '') +
