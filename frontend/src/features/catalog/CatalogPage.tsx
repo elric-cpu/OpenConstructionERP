@@ -592,19 +592,17 @@ function ResourceRow({
             >
               {resource.name}
             </span>
-            {/* Pretty hover-tooltip with the full name. Closes issue #156
-                \u2014 long resource names that share a prefix need to be
-                disambiguated without a column-resize. The native ``title=``
-                fallback above keeps the behaviour accessible and works
-                for screen readers / keyboard nav even if CSS fails. */}
-            {resource.name.length > 40 && (
-              <span
-                role="tooltip"
-                className="pointer-events-none absolute left-0 top-full z-[70] mt-1 hidden max-w-[640px] whitespace-normal rounded-md border border-border-light bg-surface-elevated px-3 py-2 text-xs font-normal text-content-primary shadow-xl group-hover/name:block"
-              >
-                {resource.name}
-              </span>
-            )}
+            {/* Pretty hover-tooltip with the full name. Always rendered so
+                Cyrillic / CJK / wide-glyph names that truncate below a
+                40-char gate still get disambiguated on hover. The native
+                ``title=`` fallback above keeps it accessible for screen
+                readers / keyboard nav even if CSS fails. */}
+            <span
+              role="tooltip"
+              className="pointer-events-none absolute left-0 top-full z-[70] mt-1 hidden max-w-[640px] whitespace-normal rounded-md border border-border-light bg-surface-elevated px-3 py-2 text-xs font-normal text-content-primary shadow-xl group-hover/name:block"
+            >
+              {resource.name}
+            </span>
           </div>
           {resource.source === 'boq_import' && resource.specifications?.source_project_name ? (
             <div
@@ -795,9 +793,17 @@ function ResourceDetailPanel({
         {/* Info grid */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {/* Identity */}
-          <div className="rounded-lg bg-surface-primary border border-border-light p-2.5">
+          <div className="rounded-lg bg-surface-primary border border-border-light p-2.5 relative">
             <div className="text-2xs text-content-quaternary uppercase tracking-wider mb-1">{t('catalog.resource_label', { defaultValue: 'Resource' })}</div>
-            <div className="text-xs font-medium text-content-primary truncate" title={resource.name}>{resource.name}</div>
+            <div className="group/cardname relative">
+              <div className="text-xs font-medium text-content-primary truncate" title={resource.name}>{resource.name}</div>
+              <span
+                role="tooltip"
+                className="pointer-events-none absolute left-0 top-full z-[70] mt-1 hidden max-w-[480px] whitespace-normal rounded-md border border-border-light bg-surface-elevated px-3 py-2 text-xs font-normal text-content-primary shadow-xl group-hover/cardname:block"
+              >
+                {resource.name}
+              </span>
+            </div>
             <div className="text-2xs text-content-tertiary font-mono mt-0.5 truncate" title={resource.resource_code}>{resource.resource_code}</div>
           </div>
 
