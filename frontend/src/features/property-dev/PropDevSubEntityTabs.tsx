@@ -125,6 +125,8 @@ const PLOT_STATUS_VARIANT: Record<
   ready: 'blue',
   sold: 'success',
   handed_over: 'success',
+  held: 'warning',
+  blocked: 'error',
 };
 
 /**

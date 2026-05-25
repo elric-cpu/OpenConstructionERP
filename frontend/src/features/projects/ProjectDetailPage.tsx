@@ -1,4 +1,4 @@
-import React, { Component, Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Component, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import i18n from '@/app/i18n';
@@ -42,11 +42,7 @@ import {
   ProjectMap, ProjectWeather,
 } from '@/shared/ui';
 import { ProjectLayoutManager } from './ProjectLayoutManager';
-import {
-  useProjectDetailLayoutStore,
-  reconcileProjectOrder,
-} from '@/stores/useProjectDetailLayoutStore';
-import { PROJECT_WIDGET_IDS } from './projectWidgetRegistry';
+import { useProjectDetailLayoutStore } from '@/stores/useProjectDetailLayoutStore';
 import {
   RFIInboxWidget,
   ChangeOrdersPulseWidget,
@@ -1136,12 +1132,7 @@ export function ProjectDetailPage() {
   // hidden state is read here so the top-of-page widget stack can be
   // re-arranged or trimmed live. Tab content below the tab bar is NOT
   // affected — only the always-visible header stack.
-  const layoutOrder = useProjectDetailLayoutStore((s) => s.order);
   const layoutHidden = useProjectDetailLayoutStore((s) => s.hidden);
-  const resolvedWidgetOrder = useMemo(
-    () => reconcileProjectOrder(layoutOrder, PROJECT_WIDGET_IDS),
-    [layoutOrder],
-  );
   const isWidgetHidden = useCallback(
     (id: string) => layoutHidden.includes(id),
     [layoutHidden],

@@ -52,9 +52,7 @@ import {
   getInventoryMap,
   type InventoryMapBlock,
   type InventoryMapPlot,
-  type InventoryMapResponse,
   type InventoryMapSummary,
-  type PlotStatus,
 } from './api';
 
 /* ──────────────────────────────────────────────────────────────────────
@@ -94,10 +92,6 @@ function statusForFilterKey(plot: InventoryMapPlot): string {
   // plots (canonical statuses on the wire).
   if (plot.status === 'planned' || plot.status === 'ready') return 'available';
   return plot.status;
-}
-
-function isAvailable(plot: InventoryMapPlot): boolean {
-  return plot.status === 'planned' || plot.status === 'ready';
 }
 
 interface FilterState {
@@ -238,7 +232,10 @@ export function InventoryMapPage() {
           const b = ids.indexOf(plotId);
           if (a !== -1 && b !== -1) {
             const [lo, hi] = a < b ? [a, b] : [b, a];
-            for (let i = lo; i <= hi; i += 1) next.add(ids[i]);
+            for (let i = lo; i <= hi; i += 1) {
+              const id = ids[i];
+              if (id) next.add(id);
+            }
             return next;
           }
         }
@@ -368,6 +365,7 @@ export function InventoryMapPage() {
             ? Math.min(idx + 1, ids.length - 1)
             : Math.max(idx - 1, 0);
         const targetId = ids[targetIdx];
+        if (!targetId) return;
         const el = document.querySelector<HTMLButtonElement>(
           `[data-plot-id="${CSS.escape(targetId)}"]`,
         );
@@ -1115,7 +1113,7 @@ function PlotDrawerBody({ plot }: { plot: InventoryMapPlot }) {
             })}
           </p>
           <MoneyDisplay
-            value={String(plot.base_price)}
+            amount={plot.base_price}
             currency={plot.currency}
           />
         </div>

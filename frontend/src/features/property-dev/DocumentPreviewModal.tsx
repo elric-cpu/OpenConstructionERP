@@ -75,6 +75,30 @@ const DOC_TITLES: Record<PropDevDocType, { key: string; defaultValue: string }> 
     key: 'propdev.documents.noc',
     defaultValue: 'No Objection Certificate',
   },
+  tenant_lease_agreement: {
+    key: 'propdev.documents.tenant_lease_agreement',
+    defaultValue: 'Tenant Lease Agreement',
+  },
+  move_in_checklist: {
+    key: 'propdev.documents.move_in_checklist',
+    defaultValue: 'Move-In Checklist',
+  },
+  mortgage_clearance_letter: {
+    key: 'propdev.documents.mortgage_clearance_letter',
+    defaultValue: 'Mortgage Clearance Letter',
+  },
+  title_deed_transfer_request: {
+    key: 'propdev.documents.title_deed_transfer_request',
+    defaultValue: 'Title Deed Transfer Request',
+  },
+  escrow_release_authorization: {
+    key: 'propdev.documents.escrow_release_authorization',
+    defaultValue: 'Escrow Release Authorization',
+  },
+  refund_authorization: {
+    key: 'propdev.documents.refund_authorization',
+    defaultValue: 'Refund Authorization',
+  },
 };
 
 export interface DocumentPreviewModalProps {

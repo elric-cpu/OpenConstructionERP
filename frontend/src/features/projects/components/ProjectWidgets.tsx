@@ -34,7 +34,7 @@ import {
   ArrowRight,
   Activity as ActivityIcon,
 } from 'lucide-react';
-import { Card, Skeleton, Badge, Button } from '@/shared/ui';
+import { Card, Skeleton, Badge } from '@/shared/ui';
 import { apiGet, ApiError } from '@/shared/lib/api';
 
 /* ── Shared shell ──────────────────────────────────────────────────────── */

@@ -198,6 +198,8 @@ const PLOT_STATUS_VARIANT: Record<PlotStatus, 'neutral' | 'blue' | 'success' | '
   ready: 'blue',
   sold: 'success',
   handed_over: 'success',
+  held: 'warning',
+  blocked: 'error',
 };
 
 const PLOT_STATUS_COLOR: Record<PlotStatus, string> = {
@@ -207,6 +209,8 @@ const PLOT_STATUS_COLOR: Record<PlotStatus, string> = {
   ready: 'bg-indigo-100 text-indigo-800 border-indigo-300',
   sold: 'bg-emerald-100 text-emerald-800 border-emerald-300',
   handed_over: 'bg-emerald-200 text-emerald-900 border-emerald-400',
+  held: 'bg-amber-200 text-amber-900 border-amber-400',
+  blocked: 'bg-rose-100 text-rose-800 border-rose-300',
 };
 
 const BUYER_STAGE_ORDER: BuyerStatus[] = ['lead', 'reserved', 'contracted', 'completed'];
@@ -6016,12 +6020,14 @@ function CreateWarrantyClaimModal({
 // Per-plot status transitions. Mirrors the backend
 // ``allowed_plot_transitions`` table — keep in sync if it changes.
 const PLOT_STATUS_TRANSITIONS: Record<PlotStatus, PlotStatus[]> = {
-  planned: ['reserved', 'under_construction', 'ready'],
-  reserved: ['planned', 'sold', 'under_construction', 'ready'],
-  under_construction: ['ready', 'reserved'],
-  ready: ['sold', 'reserved'],
+  planned: ['reserved', 'under_construction', 'ready', 'held', 'blocked'],
+  reserved: ['planned', 'sold', 'under_construction', 'ready', 'held'],
+  under_construction: ['ready', 'reserved', 'blocked'],
+  ready: ['sold', 'reserved', 'held'],
   sold: ['handed_over'],
   handed_over: [],
+  held: ['planned', 'reserved', 'ready'],
+  blocked: ['planned'],
 };
 
 function PlotDetailDrawer({

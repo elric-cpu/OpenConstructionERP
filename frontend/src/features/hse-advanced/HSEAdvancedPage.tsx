@@ -443,19 +443,19 @@ function HSEKpiStrip({ projectId }: { projectId: string }) {
       {
         queryKey: ['hse-kpi-investigations', projectId],
         queryFn: () => fetchInvestigations(projectId),
-        select: (d: unknown) => normalizeListResponse<IncidentInvestigation>(d),
+        select: (d: unknown) => normalizeListResponse<IncidentInvestigation>(d as IncidentInvestigation[] | { items: IncidentInvestigation[] } | null | undefined),
         staleTime: 30_000,
       },
       {
         queryKey: ['hse-kpi-capas', projectId],
         queryFn: () => fetchCAPAs(projectId),
-        select: (d: unknown) => normalizeListResponse<CorrectiveAction>(d),
+        select: (d: unknown) => normalizeListResponse<CorrectiveAction>(d as CorrectiveAction[] | { items: CorrectiveAction[] } | null | undefined),
         staleTime: 30_000,
       },
       {
         queryKey: ['hse-kpi-permits', projectId],
         queryFn: () => fetchPermits(projectId),
-        select: (d: unknown) => normalizeListResponse<PermitToWork>(d),
+        select: (d: unknown) => normalizeListResponse<PermitToWork>(d as PermitToWork[] | { items: PermitToWork[] } | null | undefined),
         staleTime: 30_000,
       },
     ],
