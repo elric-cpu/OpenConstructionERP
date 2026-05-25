@@ -794,6 +794,20 @@ function ResourceDetailPanel({
       )}
 
       <div className="px-6 py-4">
+        {/* Full resource name — always visible, wraps onto multiple lines
+            so users can read disambiguating prefixes/suffixes without
+            relying on the row's hover-tooltip. */}
+        <div className="mb-3">
+          <h3 className="text-sm font-semibold text-content-primary leading-snug break-words">
+            {resource.name}
+          </h3>
+          <div className="mt-0.5 flex items-center gap-2 text-2xs text-content-tertiary">
+            <span className="font-mono">{resource.resource_code}</span>
+            <span className="opacity-40">·</span>
+            <span>{resource.unit}</span>
+          </div>
+        </div>
+
         {/* Top row: Price cards + Identity */}
         <div className="flex gap-4 mb-4">
           {/* Price cards */}
@@ -830,16 +844,7 @@ function ResourceDetailPanel({
         </div>
 
         {/* Info grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {/* Identity */}
-          <div className="rounded-lg bg-surface-primary border border-border-light p-2.5">
-            <div className="text-2xs text-content-quaternary uppercase tracking-wider mb-1">{t('catalog.resource_label', { defaultValue: 'Resource' })}</div>
-            <HoverTooltip text={resource.name} className="block text-xs font-medium text-content-primary truncate">
-              {resource.name}
-            </HoverTooltip>
-            <div className="text-2xs text-content-tertiary font-mono mt-0.5 truncate" title={resource.resource_code}>{resource.resource_code}</div>
-          </div>
-
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {/* Type + Category */}
           <div className="rounded-lg bg-surface-primary border border-border-light p-2.5">
             <div className="text-2xs text-content-quaternary uppercase tracking-wider mb-1">{t('catalog.type_label', { defaultValue: 'Type' })}</div>
