@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, Fragment } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
 import {
@@ -537,102 +537,131 @@ export function PropertyDevPage() {
       {/* Tabs — all 16 icon buttons in a single wrap row. Group boundaries
           shown via a thin vertical divider so the master-data → sales →
           operations lifecycle is still discoverable without consuming
-          three separate rows on wide screens. */}
-      <div
-        className="rounded-2xl border border-border-light bg-white/60 backdrop-blur-sm px-3 py-3"
-        data-testid="propdev-tour-tabs"
-      >
-        <nav
-          className="flex flex-wrap items-stretch gap-1.5"
-          aria-label={t('propdev.tabs_aria', { defaultValue: 'Property development sections' })}
-          role="tablist"
-          onKeyDown={onTabKeyDown}
-        >
-          {(
-            [
-              { id: 'overview',         group: 'master_data', label: t('propdev.overview',         { defaultValue: 'Overview' }),         icon: Home,           tip: t('propdev.tab.overview.tooltip',         { defaultValue: 'Portfolio KPIs and pipeline snapshot' }) },
-              { id: 'developments',     group: 'master_data', label: t('propdev.developments',     { defaultValue: 'Developments' }),     icon: Building2,      tip: t('propdev.tab.developments.tooltip',     { defaultValue: 'Top-level real-estate projects' }) },
-              { id: 'phases',           group: 'master_data', label: t('propdev.phases',           { defaultValue: 'Phases' }),           icon: Layers,         tip: t('propdev.tab.phases.tooltip',           { defaultValue: 'Construction & sales phases within a development' }) },
-              { id: 'blocks',           group: 'master_data', label: t('propdev.blocks',           { defaultValue: 'Blocks' }),           icon: LayoutGrid,     tip: t('propdev.tab.blocks.tooltip',           { defaultValue: 'Building blocks / towers per phase' }) },
-              { id: 'plots',            group: 'master_data', label: t('propdev.plots',            { defaultValue: 'Plots' }),            icon: MapPin,         tip: t('propdev.tab.plots.tooltip',            { defaultValue: 'Inventory of sellable units' }) },
-              { id: 'house_types',      group: 'master_data', label: t('propdev.house_types',      { defaultValue: 'House Types' }),      icon: House,          tip: t('propdev.tab.house_types.tooltip',      { defaultValue: 'Reusable unit templates and variants' }) },
-              { id: 'leads',            group: 'sales',       label: t('propdev.leads',            { defaultValue: 'Leads' }),            icon: UserPlus,       tip: t('propdev.tab.leads.tooltip',            { defaultValue: 'Inbound prospects before becoming buyers' }) },
-              { id: 'buyers',           group: 'sales',       label: t('propdev.buyers',           { defaultValue: 'Buyers' }),           icon: Users,          tip: t('propdev.tab.buyers.tooltip',           { defaultValue: 'Qualified buyers and KYC records' }) },
-              { id: 'reservations',     group: 'sales',       label: t('propdev.reservations',     { defaultValue: 'Reservations' }),     icon: BookmarkCheck,  tip: t('propdev.tab.reservations.tooltip',     { defaultValue: 'Unit holds and deposit reservations' }) },
-              { id: 'spa',              group: 'sales',       label: t('propdev.spa',              { defaultValue: 'Sales Contracts' }),  icon: FileSignature,  tip: t('propdev.tab.spa.tooltip',              { defaultValue: 'Sale & Purchase Agreements (SPAs)' }) },
-              { id: 'payment_schedule', group: 'sales',       label: t('propdev.payment_schedule', { defaultValue: 'Payment Schedules' }), icon: CalendarClock, tip: t('propdev.tab.payment_schedule.tooltip', { defaultValue: 'Milestone-based buyer installments' }) },
-              { id: 'brokers',          group: 'operations',  label: t('propdev.brokers',          { defaultValue: 'Brokers' }),          icon: Briefcase,      tip: t('propdev.tab.brokers.tooltip',          { defaultValue: 'External agents and commission tracking' }) },
-              { id: 'price_matrix',     group: 'operations',  label: t('propdev.price_matrix',     { defaultValue: 'Price Matrix' }),     icon: Grid3X3,        tip: t('propdev.tab.price_matrix.tooltip',     { defaultValue: 'Floor / view / orientation price factors' }) },
-              { id: 'escrow',           group: 'operations',  label: t('propdev.escrow',           { defaultValue: 'Escrow' }),           icon: Lock,           tip: t('propdev.tab.escrow.tooltip',           { defaultValue: 'Trust accounts and released funds' }) },
-              { id: 'handovers',        group: 'operations',  label: t('propdev.handovers',        { defaultValue: 'Handovers' }),        icon: Key,            tip: t('propdev.tab.handovers.tooltip',        { defaultValue: 'Unit handover events and snags' }) },
-              { id: 'warranty',         group: 'operations',  label: t('propdev.warranty',         { defaultValue: 'Warranty Claims' }),  icon: ShieldAlert,    tip: t('propdev.tab.warranty.tooltip',         { defaultValue: 'Post-handover defect claims' }) },
-            ] as { id: Tab; group: string; label: string; icon: React.ElementType; tip: string }[]
-          ).map((tabItem, idx, arr) => {
-            const Icon = tabItem.icon;
-            const active = tab === tabItem.id;
-            const showDividerBefore = idx > 0 && arr[idx - 1]?.group !== tabItem.group;
-            return (
-              <Fragment key={tabItem.id}>
-                {showDividerBefore && (
-                  <div
-                    aria-hidden="true"
-                    className="self-stretch w-px bg-border-light/80 mx-0.5"
-                  />
-                )}
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  aria-label={tabItem.label}
-                  aria-controls={`propdev-panel-${tabItem.id}`}
-                  id={`propdev-tab-${tabItem.id}`}
-                  tabIndex={active ? 0 : -1}
-                  title={`${tabItem.label} — ${tabItem.tip}`}
-                  onClick={() => {
-                    setTab(tabItem.id);
-                    setSearch('');
-                  }}
-                  data-testid={
-                    tabItem.id === 'house_types'
-                      ? 'propdev-tour-house-types-tab'
-                      : tabItem.id === 'handovers'
-                        ? 'propdev-tour-handovers-tab'
-                        : tabItem.id === 'leads'
-                          ? 'propdev-tour-leads-tab'
-                          : undefined
-                  }
+          three separate rows on wide screens.
+
+          v4.9 — tabs are now rendered as three labelled blocks
+          (Master data / Sales / Operations) so the navigation reads
+          as a structured taxonomy instead of one undifferentiated
+          row. Each block carries its own header + subtle background. */}
+      {(() => {
+        const allTabs: { id: Tab; group: 'master_data' | 'sales' | 'operations'; label: string; icon: React.ElementType; tip: string }[] = [
+          { id: 'overview',         group: 'master_data', label: t('propdev.overview',         { defaultValue: 'Overview' }),         icon: Home,           tip: t('propdev.tab.overview.tooltip',         { defaultValue: 'Portfolio KPIs and pipeline snapshot' }) },
+          { id: 'developments',     group: 'master_data', label: t('propdev.developments',     { defaultValue: 'Developments' }),     icon: Building2,      tip: t('propdev.tab.developments.tooltip',     { defaultValue: 'Top-level real-estate projects' }) },
+          { id: 'phases',           group: 'master_data', label: t('propdev.phases',           { defaultValue: 'Phases' }),           icon: Layers,         tip: t('propdev.tab.phases.tooltip',           { defaultValue: 'Construction & sales phases within a development' }) },
+          { id: 'blocks',           group: 'master_data', label: t('propdev.blocks',           { defaultValue: 'Blocks' }),           icon: LayoutGrid,     tip: t('propdev.tab.blocks.tooltip',           { defaultValue: 'Building blocks / towers per phase' }) },
+          { id: 'plots',            group: 'master_data', label: t('propdev.plots',            { defaultValue: 'Plots' }),            icon: MapPin,         tip: t('propdev.tab.plots.tooltip',            { defaultValue: 'Inventory of sellable units' }) },
+          { id: 'house_types',      group: 'master_data', label: t('propdev.house_types',      { defaultValue: 'House Types' }),      icon: House,          tip: t('propdev.tab.house_types.tooltip',      { defaultValue: 'Reusable unit templates and variants' }) },
+          { id: 'leads',            group: 'sales',       label: t('propdev.leads',            { defaultValue: 'Leads' }),            icon: UserPlus,       tip: t('propdev.tab.leads.tooltip',            { defaultValue: 'Inbound prospects before becoming buyers' }) },
+          { id: 'buyers',           group: 'sales',       label: t('propdev.buyers',           { defaultValue: 'Buyers' }),           icon: Users,          tip: t('propdev.tab.buyers.tooltip',           { defaultValue: 'Qualified buyers and KYC records' }) },
+          { id: 'reservations',     group: 'sales',       label: t('propdev.reservations',     { defaultValue: 'Reservations' }),     icon: BookmarkCheck,  tip: t('propdev.tab.reservations.tooltip',     { defaultValue: 'Unit holds and deposit reservations' }) },
+          { id: 'spa',              group: 'sales',       label: t('propdev.spa',              { defaultValue: 'Sales Contracts' }),  icon: FileSignature,  tip: t('propdev.tab.spa.tooltip',              { defaultValue: 'Sale & Purchase Agreements (SPAs)' }) },
+          { id: 'payment_schedule', group: 'sales',       label: t('propdev.payment_schedule', { defaultValue: 'Payment Schedules' }), icon: CalendarClock, tip: t('propdev.tab.payment_schedule.tooltip', { defaultValue: 'Milestone-based buyer installments' }) },
+          { id: 'brokers',          group: 'operations',  label: t('propdev.brokers',          { defaultValue: 'Brokers' }),          icon: Briefcase,      tip: t('propdev.tab.brokers.tooltip',          { defaultValue: 'External agents and commission tracking' }) },
+          { id: 'price_matrix',     group: 'operations',  label: t('propdev.price_matrix',     { defaultValue: 'Price Matrix' }),     icon: Grid3X3,        tip: t('propdev.tab.price_matrix.tooltip',     { defaultValue: 'Floor / view / orientation price factors' }) },
+          { id: 'escrow',           group: 'operations',  label: t('propdev.escrow',           { defaultValue: 'Escrow' }),           icon: Lock,           tip: t('propdev.tab.escrow.tooltip',           { defaultValue: 'Trust accounts and released funds' }) },
+          { id: 'handovers',        group: 'operations',  label: t('propdev.handovers',        { defaultValue: 'Handovers' }),        icon: Key,            tip: t('propdev.tab.handovers.tooltip',        { defaultValue: 'Unit handover events and snags' }) },
+          { id: 'warranty',         group: 'operations',  label: t('propdev.warranty',         { defaultValue: 'Warranty Claims' }),  icon: ShieldAlert,    tip: t('propdev.tab.warranty.tooltip',         { defaultValue: 'Post-handover defect claims' }) },
+        ];
+
+        const groups: { id: 'master_data' | 'sales' | 'operations'; label: string; accent: string }[] = [
+          { id: 'master_data', label: t('propdev.group.master_data', { defaultValue: 'Master data' }), accent: 'from-sky-50/60 to-transparent' },
+          { id: 'sales',       label: t('propdev.group.sales',       { defaultValue: 'Sales' }),       accent: 'from-emerald-50/60 to-transparent' },
+          { id: 'operations',  label: t('propdev.group.operations',  { defaultValue: 'Operations' }),  accent: 'from-amber-50/60 to-transparent' },
+        ];
+
+        return (
+          <div
+            className="grid gap-3 lg:grid-cols-3"
+            data-testid="propdev-tour-tabs"
+            aria-label={t('propdev.tabs_aria', { defaultValue: 'Property development sections' })}
+          >
+            {groups.map((g) => {
+              const tabsInGroup = allTabs.filter((x) => x.group === g.id);
+              return (
+                <section
+                  key={g.id}
                   className={clsx(
-                    'group relative flex flex-col items-center justify-center gap-1',
-                    'h-[64px] w-[64px] md:h-[68px] md:w-[72px]',
-                    'rounded-xl border text-center transition-all duration-150',
-                    'focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/60 focus-visible:ring-offset-1',
-                    active
-                      ? 'border-oe-blue bg-oe-blue text-white shadow-sm shadow-oe-blue/30'
-                      : 'border-transparent bg-white/50 text-content-secondary hover:bg-white hover:text-content-primary hover:border-border-light hover:-translate-y-px',
+                    'rounded-2xl border border-border-light bg-gradient-to-br',
+                    g.accent,
+                    'backdrop-blur-sm px-3 pt-2 pb-3',
                   )}
+                  aria-labelledby={`propdev-group-${g.id}`}
                 >
-                  <Icon
-                    size={20}
-                    className={clsx(
-                      'transition-colors',
-                      active ? 'text-white' : 'text-content-secondary group-hover:text-oe-blue',
-                    )}
-                    aria-hidden="true"
-                  />
-                  <span
-                    className={clsx(
-                      'text-[10px] leading-tight font-medium line-clamp-2 px-1',
-                      active ? 'text-white' : 'text-content-secondary group-hover:text-content-primary',
-                    )}
+                  <h3
+                    id={`propdev-group-${g.id}`}
+                    className="px-1 pb-1.5 text-2xs font-semibold uppercase tracking-[0.08em] text-content-tertiary"
                   >
-                    {tabItem.label}
-                  </span>
-                </button>
-              </Fragment>
-            );
-          })}
-        </nav>
-      </div>
+                    {g.label}
+                  </h3>
+                  <nav
+                    className="flex flex-wrap items-stretch gap-1.5"
+                    role="tablist"
+                    aria-label={g.label}
+                    onKeyDown={onTabKeyDown}
+                  >
+                    {tabsInGroup.map((tabItem) => {
+                      const Icon = tabItem.icon;
+                      const active = tab === tabItem.id;
+                      return (
+                        <button
+                          key={tabItem.id}
+                          type="button"
+                          role="tab"
+                          aria-selected={active}
+                          aria-label={tabItem.label}
+                          aria-controls={`propdev-panel-${tabItem.id}`}
+                          id={`propdev-tab-${tabItem.id}`}
+                          tabIndex={active ? 0 : -1}
+                          title={`${tabItem.label} — ${tabItem.tip}`}
+                          onClick={() => {
+                            setTab(tabItem.id);
+                            setSearch('');
+                          }}
+                          data-testid={
+                            tabItem.id === 'house_types'
+                              ? 'propdev-tour-house-types-tab'
+                              : tabItem.id === 'handovers'
+                                ? 'propdev-tour-handovers-tab'
+                                : tabItem.id === 'leads'
+                                  ? 'propdev-tour-leads-tab'
+                                  : undefined
+                          }
+                          className={clsx(
+                            'group relative flex flex-col items-center justify-center gap-1',
+                            'h-[64px] w-[64px] md:h-[68px] md:w-[72px]',
+                            'rounded-xl border text-center transition-all duration-150',
+                            'focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/60 focus-visible:ring-offset-1',
+                            active
+                              ? 'border-oe-blue bg-oe-blue text-white shadow-sm shadow-oe-blue/30'
+                              : 'border-transparent bg-white/60 text-content-secondary hover:bg-white hover:text-content-primary hover:border-border-light hover:-translate-y-px',
+                          )}
+                        >
+                          <Icon
+                            size={20}
+                            className={clsx(
+                              'transition-colors',
+                              active ? 'text-white' : 'text-content-secondary group-hover:text-oe-blue',
+                            )}
+                            aria-hidden="true"
+                          />
+                          <span
+                            className={clsx(
+                              'text-[10px] leading-tight font-medium line-clamp-2 px-1',
+                              active ? 'text-white' : 'text-content-secondary group-hover:text-content-primary',
+                            )}
+                          >
+                            {tabItem.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </nav>
+                </section>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       {/* Filters */}
       {tab !== 'developments' && tab !== 'overview' && tab !== 'brokers' && developments.length > 0 && (

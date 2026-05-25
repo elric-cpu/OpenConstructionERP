@@ -6462,6 +6462,10 @@ const resource = {
     // --- propdev (task #141) ---
     "propdev.title": "Property Development",
     "propdev.subtitle": "Developments, plots, buyer journeys, handovers and warranty claims.",
+    // ── propdev tab grouping (v4.9) ──
+    "propdev.group.master_data": "Master data",
+    "propdev.group.sales": "Sales",
+    "propdev.group.operations": "Operations",
     // ── propdev: Overview-tab landing dashboard (R6 polish) ──
     "propdev.overview": "Overview",
     "propdev.dashboards_short": "Dashboards",
