@@ -541,10 +541,28 @@ async def list_project_files(
 
 
 async def file_tree(
-    session: AsyncSession, project_id: str,
+    session: AsyncSession,
+    project_id: str,
+    *,
+    query: str | None = None,
+    extension: str | None = None,
 ) -> list[FileTreeNode]:
-    """Build the left-pane tree: one node per category + count + size."""
-    listing = await list_project_files(session, project_id, limit=100_000, offset=0)
+    """Build the left-pane tree: one node per category + count + size.
+
+    When ``query`` or ``extension`` is provided the counts reflect the
+    same filters the file list uses, so the sidebar can't promise a
+    category has 9 files when a free-text search would return 0 — the
+    historical UX bug where users clicked "Documents 9" with ``?q=foo``
+    active and saw an empty list with no explanation.
+    """
+    listing = await list_project_files(
+        session,
+        project_id,
+        query=query,
+        extension=extension,
+        limit=100_000,
+        offset=0,
+    )
     by_kind: dict[FileKind, list[FileRow]] = {}
     for r in listing.items:
         by_kind.setdefault(r.kind, []).append(r)

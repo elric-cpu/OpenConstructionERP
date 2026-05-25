@@ -2162,10 +2162,19 @@ async def file_manager_tree(
     payload: CurrentUserPayload,
     session: SessionDep,
     service: ProjectService = Depends(_get_service),
+    q: str | None = Query(default=None, max_length=200),
+    extension: str | None = Query(default=None, max_length=10),
 ) -> list[FileTreeNode]:
-    """Return the left-pane category tree for the file manager."""
+    """Return the left-pane category tree for the file manager.
+
+    Accepts the same ``q`` / ``extension`` filters as the file-list
+    endpoint so the sidebar counts match what the user actually sees
+    in the right pane after a search.
+    """
     await _verify_project_owner(service, project_id, user_id, payload)
-    return await fm_file_tree(session, str(project_id))
+    return await fm_file_tree(
+        session, str(project_id), query=q, extension=extension,
+    )
 
 
 @router.get(

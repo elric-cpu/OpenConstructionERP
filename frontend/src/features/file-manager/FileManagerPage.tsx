@@ -261,7 +261,17 @@ export function FileManagerPage() {
     [sort, selectedKind, query, extension],
   );
 
-  const { data: tree, isLoading: treeLoading } = useFileTree(projectId);
+  // Tree counts mirror the same q/extension filters as the list so the
+  // sidebar can't show "Documents 9" while a free-text query is hiding
+  // every row in the right pane.
+  const treeFilters = useMemo(
+    () => ({
+      ...(query.trim() ? { q: query.trim() } : {}),
+      ...(extension ? { extension } : {}),
+    }),
+    [query, extension],
+  );
+  const { data: tree, isLoading: treeLoading } = useFileTree(projectId, treeFilters);
   const { data: locations, isLoading: locLoading } = useStorageLocations(projectId);
   // The list query is only needed when a category is selected; the
   // folder-grid view reads counts straight off the tree and skips the

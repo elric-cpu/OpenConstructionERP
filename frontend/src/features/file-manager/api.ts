@@ -31,8 +31,16 @@ function buildAuthHeaders(): Headers {
   return headers;
 }
 
-export async function fetchFileTree(projectId: string): Promise<FileTreeNode[]> {
-  return apiGet<FileTreeNode[]>(`${PROJECTS_BASE}/${projectId}/files/tree/`);
+export async function fetchFileTree(
+  projectId: string,
+  filters: { q?: string; extension?: string } = {},
+): Promise<FileTreeNode[]> {
+  const params = new URLSearchParams();
+  if (filters.q) params.set('q', filters.q);
+  if (filters.extension) params.set('extension', filters.extension);
+  const qs = params.toString();
+  const path = `${PROJECTS_BASE}/${projectId}/files/tree/${qs ? `?${qs}` : ''}`;
+  return apiGet<FileTreeNode[]>(path);
 }
 
 export async function fetchFileList(

@@ -17,10 +17,13 @@ const KEY_LOC = 'file-manager-locations';
 const KEY_FOLDER_PERMS = 'folder-permission-counts';
 const KEY_IS_PROJECT_OWNER = 'is-project-owner';
 
-export function useFileTree(projectId: string | null | undefined) {
+export function useFileTree(
+  projectId: string | null | undefined,
+  filters: { q?: string; extension?: string } = {},
+) {
   return useQuery({
-    queryKey: [KEY_TREE, projectId],
-    queryFn: () => fetchFileTree(projectId as string),
+    queryKey: [KEY_TREE, projectId, filters],
+    queryFn: () => fetchFileTree(projectId as string, filters),
     enabled: Boolean(projectId),
     staleTime: 30_000,
   });
