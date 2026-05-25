@@ -5,6 +5,67 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.12.0] - 2026-05-26
+
+20-wave deep audit + control wave on top of v4.11.0. R7 security pattern
+revival across three modules (CRM orphan tests, QMS audit-log infrastructure,
+EAC tenant-scoped hardening), QuickEstimatePage accessibility debt cleared,
+QA browser-screenshot harness parameterized for locale / theme / viewport,
+and the OpenConstructionERP concept paper published as a news article.
+
+### Added
+- `qms`: new `QMSAuditLog` SQLAlchemy model (alembic `v3140_qms_audit_log`)
+  recording entity-scoped state transitions on NCR raise/close and inspection
+  start/complete. Idempotent migration, 5 indexes, all NOT NULL columns
+  carry `server_default` so fresh-install `create_all` works. Repository
+  exposes `append_audit`, `list_audit_log`, `list_audit_for_entity`,
+  `purge_audit_for_tenant`. New GET endpoints honour IDOR→404 and tenant
+  scoping. Magic-byte denylist (PE/ELF/ZIP/PDF/PNG/JPEG) enforced on
+  attachment uploads with 8 MB cap (413). (65ea96b2)
+- `eac.aliases`: tenant-scoped service layer + magic-byte upload denylist +
+  Decimal-as-string serialization (`DecimalStr`) + 12 new R7-pattern tests in
+  `backend/tests/modules/eac/test_eac_r7_audit.py`. (a5fd6964)
+- 5 CRM R7 orphan test files restored (~59 tests, 1,155 lines) — covers
+  GDPR forget, lead dedupe, money decimal, PII redaction, win role gate.
+  These were parked by the v4.7.2 triage and never re-committed. (dd24aa1c)
+- Marketing site: OpenConstructionERP concept paper published as standalone
+  news article at `/news/open-erp-own-your-stack.html` with banner,
+  back-to-news nav, 7 inline images, 3 fonts, and downloadable PDF. Featured
+  card on `/news.html`. (cee9e5f9)
+- 6 workshop attendee testimonials localized across all 20 marketing-site
+  locales (14 i18n keys × 20 locales = 280 new strings). Quotes + roles +
+  read-more/less controls all data-i18n wired. (468bf82b)
+- `qa/screenshots/full-app.spec.ts` patched with three-layer public-demo
+  modal dismissal: sessionStorage seed (`oe_demo_modal_dismissed=1`) +
+  injected CSS hider for `z-[200]` fixed overlays + best-effort click on
+  "I understand, continue". Eliminates the modal interference that blocked
+  prior baseline captures. (c12a4252)
+- `qa/screenshots/full-app.spec.ts` parameterized with `QA_LOCALE` (seeds
+  i18next storage keys), `QA_THEME` (seeds `oe_theme`), and `QA_VIEWPORT`
+  (`WIDTHxHEIGHT` → `test.use({ viewport })`) env-var hooks. Enables
+  locale / dark-mode / mobile sweeps without harness forks. (63fb6f75)
+- `qa/screenshots/axe-sweep.spec.ts` + `axe.config.ts` — new accessibility
+  scan spec using `@axe-core/playwright` against a 29-route subset with
+  aggregated JSON output. (e9b5d38f)
+
+### Changed
+- `frontend/src/features/ai/QuickEstimatePage.tsx` accessibility pass — all
+  10 deferred findings closed (4 P1 + 6 P2): `sr-only` labels via `useId()`,
+  `aria-live` on `LoadingState`, `role="alert"` error banners, focus
+  management with `resultRegionRef` + `tabIndex={-1}`, `aria-describedby` on
+  disabled submit, tablist ARIA wiring, color-only banner `sr-only`
+  prefixes, `aria-hidden` decorative icons, `SaveDialog` focus trap via
+  `useFocusTrap`. 20/20 ai-feature unit tests pass. (97a1ed49)
+
+### Notes
+- Wave 16-DE i18n audit verified: German locale renders cleanly across
+  sidebar, content chrome, and module pages — no `__missing_key__`
+  fallbacks, no layout overflow despite long German compounds.
+- Two QA findings raised for follow-up (not blocking this release):
+  authenticated `/` should redirect to `/dashboard` (currently captures
+  marketing landing), and `/costs` shows DE chrome but Arabic-script data
+  (Middle East seed leaking into DE locale — should auto-pick regional DB).
+
 ## [4.9.2] - 2026-05-25
 
 Same-day patch on top of v4.9.1 — BIM Category→TypeName tree no longer explodes
