@@ -100,6 +100,11 @@ def _cde_gate_b(payload: Any) -> tuple[bool, str | None]:
     return True, None
 
 
+# CDEStateMachine.get_gate_requirements emits gate codes as plain
+# letters ("A" / "B" / "C") via the ``_GATES`` dict in cde_states.py.
+# Register the gate under both the short letter (live caller) and the
+# explicit "GATE_B" form for tests and future external callers.
+gate_registry.register("B", _cde_gate_b)
 gate_registry.register("GATE_B", _cde_gate_b)
 
 
