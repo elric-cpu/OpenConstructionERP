@@ -5,6 +5,85 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.0] - 2026-05-26
+
+**Second stable major.** First release to land community contributor work
+directly on `main` (`@Mourdi59` + `@rjohny55`). Bundles every fix and
+feature since v4.12.0 plus the full v4.12.0 deep-audit wave.
+
+### Added
+- **AI providers**: Kimi (Moonshot AI), Ollama (Local), vLLM (Local) —
+  first-class providers in the Settings → AI panel. Ollama / vLLM accept
+  a custom Server URL so on-prem and self-hosted models work without
+  patching the backend. Alembic `v3141_ai_kimi_api_key` adds the
+  encrypted-secret column for Kimi; Ollama / vLLM base URLs piggyback on
+  the existing metadata JSON column. (#161 by @rjohny55)
+- **BIM viewer `degraded` status**: models with geometry but no quantity
+  extraction are now viewable — element query and `geometryUrl` both
+  treat `degraded` as viewable, status dot is solid amber (distinct from
+  pulsing amber of in-progress and green of ready), label reads
+  *"Imported (no quantities)"*. (#159 by @Mourdi59)
+- **Dashboard Vector DB row** now surfaces the active engine name
+  (e.g. *"Qdrant · 12,400 vectors"*) instead of only the vector count.
+  (#161 by @rjohny55)
+
+### Changed
+- **Sign-up password validation**: in addition to the existing minimum
+  length (8 chars), new accounts now require at least one letter and one
+  digit. Backend FastAPI validation arrays are now flattened to a single
+  string in the error banner. Sign-up only — existing users keep their
+  passwords. (#161 by @rjohny55)
+- **Marketing site**: removed the redundant *"All modules · same as the
+  in-app menu"* grid that duplicated the *"One install. The whole
+  construction stack."* overview placed earlier on the same page. Drops
+  ~86 lines from `marketing-site/index.html`.
+
+### Fixed
+- **BIM COLLADA namespace prefix**: Python ElementTree was serialising
+  the patched DAE root tag as `<ns0:COLLADA xmlns:ns0="...">`, which the
+  frontend's literal `<COLLADA` text-scan rejected with *"Not a COLLADA
+  document"* — viewer rendered blank even after a successful conversion.
+  `_patch_collada_node_names()` now registers the COLLADA namespace as
+  default before `tree.write()`. As a defence-in-depth measure, the
+  frontend regex in `detectGeometryKind()` and `parseDAEBuffer()` now
+  also accepts namespace-prefixed forms. (#159 by @Mourdi59)
+- **Slow-query listener race**: `conn.info.pop("query_start_time", …)`
+  in `_log_slow_query` now guarded against connections closed
+  mid-call by a concurrent coroutine. (#161 by @rjohny55)
+- **Module-presence probe concurrency**: probes sharing an aborted
+  session now catch `InFailedSQLTransactionError` and return `False`
+  instead of bubbling and 500-ing the entire `/api/v1/projects/status`
+  endpoint. (#161 by @rjohny55)
+- **FieldReport activity-rollup**: `FieldReport` has no `title` column,
+  but the dashboard recent-activity SQL was selecting it — pure
+  `AttributeError` waiting to fire. Replaced with
+  `coalesce(work_performed, report_type)`. (#161 by @rjohny55)
+- **Qdrant snapshot restore**: `client.recover_snapshot(location=…)`
+  only accepts URIs the Qdrant server itself can fetch (http://, s3://,
+  or file:// on the server's own disk). Snapshots sitting on the app
+  container were therefore unreachable from a separate Qdrant container.
+  Restore now POSTs the snapshot bytes via the multipart upload
+  endpoint using the existing `qdrant_snapshot_loader`. (#161 by @rjohny55)
+- **Marketing-site i18n entities**: locale JSONs contained raw HTML
+  entities (`&amp;`, `&middot;`, `&rsquo;`, `&ldquo;`, `&rdquo;`,
+  `&ndash;`, `&mdash;`, numeric `&#128170;`) that rendered literally
+  whenever i18next applied them via `textContent` — most visible in
+  workshop testimonials as *"D&amp;S &middot; BIM Manager"* instead of
+  *"D&S · BIM Manager"*. `html.unescape` pass across 513 strings × 20
+  locales fixes every affected role/quote line.
+
+### Contributors
+- **@Mourdi59** — first community PR landed (BIM viewer fixes).
+- **@rjohny55** — multi-area patch set across slow-query guards, module
+  presence concurrency, FieldReport rollup, Qdrant restore, three new
+  AI providers.
+
+Three hunks from #161 were held back for follow-up discussion: the
+hardcoded `SQLITE_URL` Docker path (would break VPS + Windows dev), the
+`CREATE TABLE oe_costs_item` schema duplication, and the
+urllib→requests migration in catalog/router (httpx is the project-wide
+HTTP stack — `requests` would introduce a parallel dependency).
+
 ## [4.12.0] - 2026-05-26
 
 20-wave deep audit + control wave on top of v4.11.0. R7 security pattern
