@@ -31,8 +31,8 @@ const RegionalExchangePage = lazy(() => import('./RegionalExchangePage'));
  * underlying page but with its own template prop — without making
  * the user touch URL parameters or the registry plumbing.
  */
-function makeBoundComponent(templateId: string): ComponentType {
-  const Bound: ComponentType = () => {
+function makeBoundComponent(templateId: string): ComponentType<unknown> {
+  const Bound: ComponentType<unknown> = () => {
     // Resolve fresh on every render so HMR + lazy template edits work.
     const template = COUNTRY_TEMPLATES.find((t) => t.id === templateId);
     if (!template) {
@@ -51,15 +51,17 @@ function makeBoundComponent(templateId: string): ComponentType {
  * Build per-country routes + search entries from the registry. One
  * source of truth: add a new entry to COUNTRY_TEMPLATES and the route,
  * the sidebar search hit, and the i18n bundle pick it up automatically.
+ *
+ * Each per-country route mounts the SAME polymorphic page, but each
+ * goes through its own `React.lazy(...)` boundary so the route has a
+ * stable component identity in DevTools and React Router cache.
  */
 const routes = COUNTRY_TEMPLATES.map((tpl) => ({
   path: `/${tpl.routeSlug}`,
   title: tpl.label,
-  // Cast: ModuleRoute expects LazyExoticComponent, but a plain
-  // ComponentType works for the same Suspense-wrapped render path.
-  // We keep the bound factory plain so each per-country route has its
-  // own React component identity in DevTools.
-  component: lazy(async () => ({ default: makeBoundComponent(tpl.id) })),
+  component: lazy<ComponentType<unknown>>(async () => ({
+    default: makeBoundComponent(tpl.id),
+  })),
 }));
 
 const searchEntries = COUNTRY_TEMPLATES.map((tpl) => ({
