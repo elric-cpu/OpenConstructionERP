@@ -345,7 +345,7 @@
     "row_term_enterprise": "1–3 年锁定",
     "row_term_heavy": "1–3 年锁定",
     "row_term_legacy": "3–5 年锁定",
-    "note": "<span class=\"compare-check\">&#10003;</span> 完全支持  ·  <span class=\"compare-partial\">~</span> 部分支持或通过插件  ·  <span class=\"compare-cross\">&#10007;</span> 不支持"
+    "note": "<span class=\"compare-check\">✓</span> 完全支持  ·  <span class=\"compare-partial\">~</span> 部分支持或通过插件  ·  <span class=\"compare-cross\">✗</span> 不支持"
   },
   "developers": {
     "eyebrow": "<span class=\"num\">08</span> · 开发者体验",
@@ -518,7 +518,7 @@
     "aria_email": "邮箱",
     "link_cookies": "Cookie 设置",
     "link_docs": "文档",
-    "link_issues": "Issues &amp; 路线图",
+    "link_issues": "Issues & 路线图",
     "link_newsletter": "邮件订阅",
     "link_imprint": "法律声明"
   },
@@ -542,10 +542,10 @@
     "sub": "OpenConstructionERP 上线头几周注册的建筑、工程与基础设施团队的一个剪影 —— 来自欧洲、北美、中东与北非（MENA）、亚太（APAC）和大洋洲。"
   },
   "ddc": {
-    "eyebrow": "<span class=\"num\">10</span> &middot; 开放研究脉络",
+    "eyebrow": "<span class=\"num\">10</span> · 开放研究脉络",
     "title": "构建于 DataDrivenConstruction 之上。",
     "lede": "OpenConstructionERP 源自十年来的开放建筑技术研究。",
-    "trusted_title": "DDC 解决方案的客户 &amp; 用户",
+    "trusted_title": "DDC 解决方案的客户 & 用户",
     "trusted_sub": "过去十年里，使用 DataDrivenConstruction 的开放工具、数据集和 AI 工作流进行建造的建筑、工程与基础设施企业的一个剪影。"
   },
   "custom": {
@@ -596,7 +596,7 @@
     "l5_sub": "是工程师,不只是用户 · 已培训",
     "l5_title": "你的团队",
     "lede": "现成方案不合适?我们为你的业务量身设计技术栈,并连同完整源码一并交付。你的硬件。你的数据。你的规则。",
-    "legend_step1": "<span class=\"cb-legend-num\">1</span><span>从上往下 &darr; 阅读</span>",
+    "legend_step1": "<span class=\"cb-legend-num\">1</span><span>从上往下 ↓ 阅读</span>",
     "legend_step2": "<span class=\"cb-legend-num\">2</span><span>每一层 = 都跑在你的硬件上</span>",
     "legend_step3": "<span class=\"cb-legend-num\">3</span><span>数据永不越过虚线边界</span>",
     "submit": "发送请求",
@@ -654,18 +654,18 @@
     "eyebrow": "DataDrivenConstruction 工作坊",
     "lede": "仅展示公开的工作坊。大量重要企业项目仍在 NDA 范围内。",
     "title": "实战培训,<span class=\"italic\">就在你的技术栈里。</span>",
-    "t1_quote": "精彩的工作坊，Artem！准备工作正在如火如荼地进行！我已经在期待新年的黑客松了！&#128170;&#127995;",
-    "t1_role": "Drees &amp; Sommer &middot; 数字化转型负责人",
-    "t2_quote": "当我们不仅组织建筑流程，还对其进行智能分析时，会发生什么？这是我们与 Artem Boiko 一起举办的&ldquo;Data-Driven Construction&rdquo;工作坊的主题。焦点是这样一个问题：我们如何更好地利用现有数据&mdash;让建筑项目更高效、更透明、更不易出错。Artem 通过具体的应用示例，展示了结构化的建筑数据如何帮助保持全局视角、尽早识别变更，并改善设计与施工之间的沟通。尤为引人入胜的是：数字工具和模型今天已经可以用于自动化流程。数据驱动的建筑已不再是未来话题&mdash;我们正身处其中。这个工作坊表明，当我们携手合作并真正让数据为我们工作时，潜力有多么巨大。",
-    "t2_role": "Lindner Group &middot; 部门主管，BIM Professional",
+    "t1_quote": "精彩的工作坊，Artem！准备工作正在如火如荼地进行！我已经在期待新年的黑客松了！💪🏻",
+    "t1_role": "Drees & Sommer · 数字化转型负责人",
+    "t2_quote": "当我们不仅组织建筑流程，还对其进行智能分析时，会发生什么？这是我们与 Artem Boiko 一起举办的“Data-Driven Construction”工作坊的主题。焦点是这样一个问题：我们如何更好地利用现有数据—让建筑项目更高效、更透明、更不易出错。Artem 通过具体的应用示例，展示了结构化的建筑数据如何帮助保持全局视角、尽早识别变更，并改善设计与施工之间的沟通。尤为引人入胜的是：数字工具和模型今天已经可以用于自动化流程。数据驱动的建筑已不再是未来话题—我们正身处其中。这个工作坊表明，当我们携手合作并真正让数据为我们工作时，潜力有多么巨大。",
+    "t2_role": "Lindner Group · 部门主管，BIM Professional",
     "t3_quote": "Artem Boiko 为整个 Shapemaker 团队带来了出色的演讲，对工程软件的数据迁移及相关话题提供了深入的见解。他的专业素养和清晰的沟通让复杂的概念易于理解，让我们的团队掌握了可以立即应用的实用知识。强烈推荐他的服务给所有在该领域寻求明确性和可执行策略的人！",
-    "t3_role": "Shapemaker &middot; CRO 兼联合创始人",
-    "t4_quote": "我觉得 DataDrivenConstruction 工作坊非常有趣。在我看来，大家都跟得上节奏。从你的幻灯片中能看出你为此投入了多少时间、毅力和精力。现场演示也非常棒。我唯一要挑剔的是幻灯片数量&mdash;实在太多了。但这是最高级别的抱怨。总的来说，这是我参加过的最好的工作坊。而且你还是一个非常令人愉快的人。",
-    "t4_role": "Dimexcon &middot; BIM 自动化软件工程师",
-    "t5_quote": "总体而言，我觉得 DataDrivenConstruction 培训真的非常精彩且大有收获。特别让我喜欢的是：各种 CAD 软件的&ldquo;历史&rdquo;背景（听起来引人入胜，颇有调查新闻的味道）；通过 DataFrames 实现自动化的有趣方法；你自己关于建筑业流程自动化的实践案例；以及对 Claude Code 和 OpenClaw 等当前趋势的洞察&mdash;你真的让这个主题鲜活起来。唯一的不足：仅仅两天确实信息量太大了。同时你也非常出色地展示了我们如何能够进一步自我定位&mdash;例如通过在 Miro 看板上结构化地记录我们的流程。再次感谢你的培训和交流。",
-    "t5_role": "Herbert Gruppe &middot; 预制团队负责人",
-    "t6_quote": "这是一场精彩的工作坊，内容引人入胜，我们&mdash;以及我个人&mdash;都学到了很多。感谢你为我们花费了如此多的时间。我们期待尽快尝试所学内容，并将其融入我们的项目！#bleedingedge",
-    "t6_role": "D&amp;S &middot; BIM 经理",
+    "t3_role": "Shapemaker · CRO 兼联合创始人",
+    "t4_quote": "我觉得 DataDrivenConstruction 工作坊非常有趣。在我看来，大家都跟得上节奏。从你的幻灯片中能看出你为此投入了多少时间、毅力和精力。现场演示也非常棒。我唯一要挑剔的是幻灯片数量—实在太多了。但这是最高级别的抱怨。总的来说，这是我参加过的最好的工作坊。而且你还是一个非常令人愉快的人。",
+    "t4_role": "Dimexcon · BIM 自动化软件工程师",
+    "t5_quote": "总体而言，我觉得 DataDrivenConstruction 培训真的非常精彩且大有收获。特别让我喜欢的是：各种 CAD 软件的“历史”背景（听起来引人入胜，颇有调查新闻的味道）；通过 DataFrames 实现自动化的有趣方法；你自己关于建筑业流程自动化的实践案例；以及对 Claude Code 和 OpenClaw 等当前趋势的洞察—你真的让这个主题鲜活起来。唯一的不足：仅仅两天确实信息量太大了。同时你也非常出色地展示了我们如何能够进一步自我定位—例如通过在 Miro 看板上结构化地记录我们的流程。再次感谢你的培训和交流。",
+    "t5_role": "Herbert Gruppe · 预制团队负责人",
+    "t6_quote": "这是一场精彩的工作坊，内容引人入胜，我们—以及我个人—都学到了很多。感谢你为我们花费了如此多的时间。我们期待尽快尝试所学内容，并将其融入我们的项目！#bleedingedge",
+    "t6_role": "D&S · BIM 经理",
     "read_more": "阅读更多",
     "read_less": "收起"
   },
