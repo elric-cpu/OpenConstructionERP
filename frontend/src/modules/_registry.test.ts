@@ -10,8 +10,12 @@ import {
 } from './_registry';
 
 describe('MODULE_REGISTRY', () => {
-  it('should contain at least 18 modules', () => {
-    expect(MODULE_REGISTRY.length).toBeGreaterThanOrEqual(18);
+  it('should contain at least 16 modules (post Wave 5 Epic I collapse)', () => {
+    // Wave 5 Epic I collapsed 20 country exchange modules into one
+    // polymorphic `regional-exchange` module. The registry count
+    // dropped from 35 → 16; we keep the assertion conservative so
+    // future module additions don't break it.
+    expect(MODULE_REGISTRY.length).toBeGreaterThanOrEqual(16);
   });
 
   it('should have unique module ids', () => {
@@ -45,32 +49,31 @@ describe('MODULE_REGISTRY', () => {
     expect(ids).toContain('gaeb-exchange');
   });
 
-  it('should include all 6 regional exchange modules', () => {
+  // Wave 5 Epic I: 20 individual country modules collapsed into ONE
+  // polymorphic regional-exchange module. The old per-country routes
+  // are preserved as compat shims on that single manifest.
+  it('should include the collapsed regional-exchange module', () => {
     const ids = MODULE_REGISTRY.map((m) => m.id);
-    expect(ids).toContain('uk-nrm-exchange');
-    expect(ids).toContain('us-masterformat-exchange');
-    expect(ids).toContain('fr-dpgf-exchange');
-    expect(ids).toContain('uae-boq-exchange');
-    expect(ids).toContain('au-boq-exchange');
-    expect(ids).toContain('ca-boq-exchange');
+    expect(ids).toContain('regional-exchange');
   });
 
   it('regional modules should have category "regional"', () => {
     const regional = MODULE_REGISTRY.filter((m) => m.category === 'regional');
-    expect(regional.length).toBeGreaterThanOrEqual(6);
+    expect(regional.length).toBeGreaterThanOrEqual(1);
     const ids = regional.map((m) => m.id);
-    expect(ids).toContain('uk-nrm-exchange');
-    expect(ids).toContain('us-masterformat-exchange');
-    expect(ids).toContain('fr-dpgf-exchange');
-    expect(ids).toContain('uae-boq-exchange');
-    expect(ids).toContain('au-boq-exchange');
-    expect(ids).toContain('ca-boq-exchange');
+    expect(ids).toContain('regional-exchange');
   });
 
-  it('regional modules should be disabled by default', () => {
+  it('regional-exchange should be disabled by default (gaeb-exchange is the lone exception)', () => {
     const regional = MODULE_REGISTRY.filter((m) => m.category === 'regional');
     for (const mod of regional) {
-      expect(mod.defaultEnabled).toBe(false);
+      if (mod.id === 'gaeb-exchange') {
+        // GAEB DA XML 3.3 is core for the DACH workflow — on by default
+        // since v2.6.30, see modules/gaeb-exchange/manifest.ts.
+        expect(mod.defaultEnabled).toBe(true);
+      } else {
+        expect(mod.defaultEnabled).toBe(false);
+      }
     }
   });
 
@@ -81,21 +84,28 @@ describe('MODULE_REGISTRY', () => {
     }
   });
 
-  it('regional modules should have routes, navItems, and searchEntries', () => {
-    const regional = MODULE_REGISTRY.filter((m) => m.category === 'regional');
-    for (const mod of regional) {
-      expect(mod.routes.length).toBeGreaterThan(0);
-      expect(mod.navItems.length).toBeGreaterThan(0);
-      expect(mod.searchEntries!.length).toBeGreaterThan(0);
-    }
+  it('regional-exchange should expose all 20 back-compat country routes', () => {
+    const mod = MODULE_REGISTRY.find((m) => m.id === 'regional-exchange');
+    expect(mod).toBeDefined();
+    expect(mod!.routes.length).toBe(20);
+    const paths = mod!.routes.map((r) => r.path);
+    expect(paths).toContain('/uk-nrm-exchange');
+    expect(paths).toContain('/us-masterformat-exchange');
+    expect(paths).toContain('/fr-dpgf-exchange');
+    expect(paths).toContain('/uae-boq-exchange');
+    expect(paths).toContain('/au-boq-exchange');
+    expect(paths).toContain('/ca-boq-exchange');
+    expect(paths).toContain('/es-pbc-exchange');
+    expect(paths).toContain('/de-din276-exchange');
+    expect(paths).toContain('/nordic-ns3420-exchange');
   });
 
-  it('regional modules should have translations', () => {
-    const regional = MODULE_REGISTRY.filter((m) => m.category === 'regional');
-    for (const mod of regional) {
-      expect(mod.translations).toBeDefined();
-      expect(mod.translations!['en']).toBeDefined();
-    }
+  it('regional-exchange should expose search entries + translations', () => {
+    const mod = MODULE_REGISTRY.find((m) => m.id === 'regional-exchange');
+    expect(mod).toBeDefined();
+    expect(mod!.searchEntries!.length).toBe(20);
+    expect(mod!.translations).toBeDefined();
+    expect(mod!.translations!['en']).toBeDefined();
   });
 });
 
@@ -108,13 +118,18 @@ describe('getAllModuleRoutes', () => {
     expect(routes.some((r) => r.path === '/benchmarks')).toBe(true);
     expect(routes.some((r) => r.path === '/takeoff-viewer')).toBe(true);
     expect(routes.some((r) => r.path === '/collaboration')).toBe(true);
-    // Regional modules
+    // Regional back-compat routes — Wave 5 Epic I kept all 20 of them
+    // even though they now share one polymorphic page.
     expect(routes.some((r) => r.path === '/uk-nrm-exchange')).toBe(true);
     expect(routes.some((r) => r.path === '/us-masterformat-exchange')).toBe(true);
     expect(routes.some((r) => r.path === '/fr-dpgf-exchange')).toBe(true);
     expect(routes.some((r) => r.path === '/uae-boq-exchange')).toBe(true);
     expect(routes.some((r) => r.path === '/au-boq-exchange')).toBe(true);
     expect(routes.some((r) => r.path === '/ca-boq-exchange')).toBe(true);
+    expect(routes.some((r) => r.path === '/es-pbc-exchange')).toBe(true);
+    expect(routes.some((r) => r.path === '/de-din276-exchange')).toBe(true);
+    expect(routes.some((r) => r.path === '/jp-sekisan-exchange')).toBe(true);
+    expect(routes.some((r) => r.path === '/ru-gesn-exchange')).toBe(true);
   });
 
   it('should have lazy components for each route', () => {
@@ -129,23 +144,20 @@ describe('getAllModuleRoutes', () => {
 describe('getModuleNavItems', () => {
   it('should return nav items for tools group', () => {
     const items = getModuleNavItems('tools');
-    // Tools group currently holds: gaeb-exchange, risk-analysis, sustainability.
+    // Tools group currently holds at least sustainability + risk-analysis.
     // Other tools (benchmarks, takeoff-viewer, collaboration) live in their
-    // own groups now. Test the actual shape rather than a stale historical one.
-    expect(items.length).toBeGreaterThanOrEqual(3);
+    // own groups now; gaeb-exchange opts out of sidebar nav (#217).
+    expect(items.length).toBeGreaterThanOrEqual(2);
     expect(items.some((i) => i.to === '/sustainability')).toBe(true);
     expect(items.some((i) => i.to === '/risk-analysis')).toBe(true);
   });
 
-  it('should return nav items for regional group', () => {
+  it('regional nav-items are intentionally empty (the page is reached via /boq)', () => {
+    // Issue #217 — the 20 country pages are reached from the BOQ
+    // page, not from individual sidebar entries. Wave 5 Epic I kept
+    // this invariant when collapsing the modules.
     const items = getModuleNavItems('regional');
-    expect(items.length).toBeGreaterThanOrEqual(6);
-    expect(items.some((i) => i.to === '/uk-nrm-exchange')).toBe(true);
-    expect(items.some((i) => i.to === '/us-masterformat-exchange')).toBe(true);
-    expect(items.some((i) => i.to === '/fr-dpgf-exchange')).toBe(true);
-    expect(items.some((i) => i.to === '/uae-boq-exchange')).toBe(true);
-    expect(items.some((i) => i.to === '/au-boq-exchange')).toBe(true);
-    expect(items.some((i) => i.to === '/ca-boq-exchange')).toBe(true);
+    expect(items).toEqual([]);
   });
 
   it('should return empty array for non-existent group', () => {
@@ -185,12 +197,10 @@ describe('getModuleDefaults', () => {
     // gaeb-exchange flipped to on-by-default in v2.6.30 (GAEB DA XML 3.3
     // is core for the DACH workflow — see manifest defaultEnabled=true).
     expect(defaults['gaeb-exchange']).toBe(true);
-    expect(defaults['uk-nrm-exchange']).toBe(false);
-    expect(defaults['us-masterformat-exchange']).toBe(false);
-    expect(defaults['fr-dpgf-exchange']).toBe(false);
-    expect(defaults['uae-boq-exchange']).toBe(false);
-    expect(defaults['au-boq-exchange']).toBe(false);
-    expect(defaults['ca-boq-exchange']).toBe(false);
+    // Wave 5 Epic I: 20 individual country exchanges collapsed into
+    // one polymorphic module (kept disabled by default like its
+    // predecessors).
+    expect(defaults['regional-exchange']).toBe(false);
   });
 
   it('should return an object with boolean values', () => {
@@ -223,8 +233,10 @@ describe('getModulesByCategory', () => {
     expect(ids).toContain('sustainability');
   });
 
-  it('should have 6 regional modules in regional category', () => {
+  it('should have at least one module in regional category', () => {
     const grouped = getModulesByCategory();
-    expect(grouped['regional']!.length).toBeGreaterThanOrEqual(6);
+    expect(grouped['regional']!.length).toBeGreaterThanOrEqual(1);
+    const ids = grouped['regional']!.map((m) => m.id);
+    expect(ids).toContain('regional-exchange');
   });
 });
