@@ -26,6 +26,10 @@ class MarkupCreate(BaseModel):
 
     project_id: UUID
     document_id: str | None = Field(default=None, max_length=_MAX_LENGTH)
+    # Epic C — explicit version pin. When omitted the service resolves
+    # the current chain head for ``document_id``. Clients can pin to a
+    # historical version to draw on an old revision.
+    file_version_id: UUID | None = None
     page: int = Field(default=1, ge=1, le=_MAX_PAGE)
     type: str = Field(
         ...,
@@ -89,6 +93,7 @@ class MarkupResponse(BaseModel):
     id: UUID
     project_id: UUID
     document_id: str | None = None
+    file_version_id: UUID | None = None
     page: int = 1
     type: str
     geometry: dict[str, Any] = Field(default_factory=dict)

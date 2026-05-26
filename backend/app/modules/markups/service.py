@@ -123,11 +123,22 @@ class MarkupsService:
     # ── Markup CRUD ──────────────────────────────────────────────────────
 
     async def create_markup(self, data: MarkupCreate, user_id: str) -> Markup:
-        """Create a new markup annotation."""
+        """Create a new markup annotation.
+
+        Epic C — ``file_version_id`` defaults to the current chain head
+        for ``data.document_id`` so the viewer can later detect when
+        the markup is on a stale revision (and fade it).
+        """
         _validate_geometry(data.geometry, data.type)
+        file_version_id = await self._resolve_file_version_id(
+            project_id=data.project_id,
+            document_id=data.document_id,
+            explicit=data.file_version_id,
+        )
         item = Markup(
             project_id=data.project_id,
             document_id=data.document_id,
+            file_version_id=file_version_id,
             page=data.page,
             type=data.type,
             geometry=data.geometry,
@@ -149,6 +160,46 @@ class MarkupsService:
         item = await self.markup_repo.create(item)
         logger.info("Markup created: %s type=%s project=%s", item.id, data.type, data.project_id)
         return item
+
+    async def _resolve_file_version_id(
+        self,
+        *,
+        project_id: uuid.UUID,
+        document_id: str | None,
+        explicit: uuid.UUID | None,
+    ) -> uuid.UUID | None:
+        """Default the markup's ``file_version_id`` to the chain head.
+
+        Returns ``explicit`` unchanged when the caller provides it. When
+        omitted, looks up the current row in the chain keyed on
+        ``(project_id, document, file_id=document_id)``. Best-effort:
+        any failure leaves the field NULL (the viewer treats NULL as
+        "current", preserving legacy behaviour).
+        """
+        if explicit is not None:
+            return explicit
+        if not document_id:
+            return None
+        try:
+            from app.modules.file_versions.repository import FileVersionRepository
+
+            repo = FileVersionRepository(self.session)
+            seeds = await repo.list_for_file_id(str(document_id), "document")
+            if not seeds:
+                return None
+            chain = await repo.list_chain(
+                project_id=seeds[0].project_id,
+                file_kind=seeds[0].file_kind,
+                canonical_name=seeds[0].canonical_name,
+            )
+            current = next((r for r in chain if r.is_current), None)
+            return current.id if current else None
+        except Exception:
+            logger.debug(
+                "Failed to default file_version_id for markup; leaving NULL",
+                exc_info=True,
+            )
+            return None
 
     async def get_markup(self, markup_id: uuid.UUID) -> Markup:
         """Get markup by ID. Raises 404 if not found."""
@@ -215,11 +266,25 @@ class MarkupsService:
         logger.info("Markup deleted: %s", markup_id)
 
     async def bulk_create_markups(self, markups_data: list[MarkupCreate], user_id: str) -> list[Markup]:
-        """Create multiple markups at once (for import workflows)."""
+        """Create multiple markups at once (for import workflows).
+
+        Epic C — defaults ``file_version_id`` per item to the current
+        chain head if the caller omitted it (same rule as single create).
+        """
+        resolved_versions: list[uuid.UUID | None] = []
+        for data in markups_data:
+            resolved_versions.append(
+                await self._resolve_file_version_id(
+                    project_id=data.project_id,
+                    document_id=data.document_id,
+                    explicit=data.file_version_id,
+                )
+            )
         items = [
             Markup(
                 project_id=data.project_id,
                 document_id=data.document_id,
+                file_version_id=resolved_versions[idx],
                 page=data.page,
                 type=data.type,
                 geometry=data.geometry,
@@ -238,7 +303,7 @@ class MarkupsService:
                 metadata_=data.metadata,
                 created_by=user_id,
             )
-            for data in markups_data
+            for idx, data in enumerate(markups_data)
         ]
         items = await self.markup_repo.create_bulk(items)
         logger.info("Bulk created %d markups", len(items))

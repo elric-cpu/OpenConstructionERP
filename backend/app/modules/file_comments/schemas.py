@@ -46,7 +46,15 @@ class FileCommentCreate(BaseModel):
     project_id: UUID
     file_kind: str = Field(..., pattern=_FILE_KIND_PATTERN)
     file_id: str = Field(..., min_length=1, max_length=255)
+    # Pre-Epic-C label snapshot (V01 etc.) — kept for one release as a
+    # fallback. Prefer ``file_version_id`` below.
     file_version_snapshot: str | None = Field(default=None, max_length=32)
+    # Epic C — explicit version pin. When omitted the service looks up
+    # the chain head and uses it, so comments default to the current
+    # revision (the usual behaviour). Clients can pin to a historical
+    # version by passing this explicitly (e.g. when annotating an old
+    # revision still visible in the dropdown).
+    file_version_id: UUID | None = None
     parent_id: UUID | None = None
     body: str = Field(..., min_length=1, max_length=_MAX_BODY)
     page_number: int | None = Field(default=None, ge=1, le=_MAX_PAGE)
@@ -99,6 +107,7 @@ class FileCommentResponse(BaseModel):
     file_kind: str
     file_id: str
     file_version_snapshot: str | None = None
+    file_version_id: UUID | None = None
     parent_id: UUID | None = None
     author_id: UUID
     body: str

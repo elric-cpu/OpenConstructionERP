@@ -78,6 +78,7 @@ def _to_response(
         file_kind=comment.file_kind,
         file_id=comment.file_id,
         file_version_snapshot=comment.file_version_snapshot,
+        file_version_id=comment.file_version_id,
         parent_id=comment.parent_id,
         author_id=comment.author_id,
         body=comment.body,
@@ -238,11 +239,45 @@ async def create_comment(
                 "Parent comment belongs to a different file"
             )
 
+    # Epic C — default ``file_version_id`` to the chain head when the
+    # caller hasn't pinned one explicitly. Best-effort: a missing chain
+    # head leaves the FK NULL (legacy behaviour, treated as "current"
+    # in the viewer).
+    file_version_id = payload.file_version_id
+    if file_version_id is None:
+        try:
+            from app.modules.file_versions.repository import FileVersionRepository
+
+            # Reuse the seed-lookup helper to find the chain via
+            # (file_id, file_kind) so we don't need the canonical_name
+            # at the comment site. The newest current row in that
+            # chain is the right pin.
+            repo = FileVersionRepository(session)
+            seeds = await repo.list_for_file_id(payload.file_id, payload.file_kind)
+            if seeds:
+                # ``list_chain`` is the authoritative lookup — it
+                # follows the canonical_name even if the seed id
+                # itself is not the current row.
+                chain = await repo.list_chain(
+                    project_id=seeds[0].project_id,
+                    file_kind=seeds[0].file_kind,
+                    canonical_name=seeds[0].canonical_name,
+                )
+                current = next((r for r in chain if r.is_current), None)
+                if current is not None:
+                    file_version_id = current.id
+        except Exception:
+            logger.debug(
+                "Failed to default file_version_id for new comment; leaving NULL",
+                exc_info=True,
+            )
+
     comment = FileComment(
         project_id=payload.project_id,
         file_kind=payload.file_kind,
         file_id=payload.file_id,
         file_version_snapshot=payload.file_version_snapshot,
+        file_version_id=file_version_id,
         parent_id=payload.parent_id,
         author_id=author_id,
         body=payload.body,

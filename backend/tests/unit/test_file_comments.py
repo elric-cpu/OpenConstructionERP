@@ -29,6 +29,9 @@ from app.modules.file_comments.models import (  # noqa: F401 — registers ORM
     FileComment,
     FileCommentMention,
 )
+# Epic C: FileComment now has an FK to oe_file_version — the test's
+# Base.metadata.create_all() needs the version table registered too.
+from app.modules.file_versions.models import FileVersion  # noqa: F401 — registers ORM
 from app.modules.file_comments.schemas import (
     FileCommentCreate,
     FileCommentUpdate,

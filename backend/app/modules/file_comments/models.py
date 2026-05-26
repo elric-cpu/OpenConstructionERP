@@ -67,8 +67,25 @@ class FileComment(Base):
     # may use composite string ids; for plain UUID-backed kinds the
     # canonical UUID string is stored verbatim.
     file_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Pre-Epic-C snapshot column (string label of the version at comment
+    # time, e.g. "V01"). Retained for one release as a fallback while
+    # the unified ``file_version_id`` FK below propagates through stored
+    # rows. New writes populate both; reads prefer the FK and fall back
+    # to the snapshot only if the FK is NULL. DO NOT drop this column
+    # in this epic.
     file_version_snapshot: Mapped[str | None] = mapped_column(
         String(32), nullable=True
+    )
+    # Epic C: unified version-chain link. Points at the
+    # ``oe_file_version`` row that was current when this comment was
+    # created. NULL = legacy row written before Epic C; the UI treats
+    # those as "comment on the current version" (best-effort).
+    file_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(),
+        ForeignKey("oe_file_version.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        default=None,
     )
     parent_id: Mapped[uuid.UUID | None] = mapped_column(
         GUID(),

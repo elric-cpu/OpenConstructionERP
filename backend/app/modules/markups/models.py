@@ -32,6 +32,19 @@ class Markup(Base):
         index=True,
     )
     document_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    # Epic C: which version of ``document_id`` this markup was authored
+    # against. The viewer fades markups whose ``file_version_id`` is
+    # NOT the current version so users see at a glance that the markup
+    # was drawn on an older revision. NULL = legacy markup (treat as
+    # current; the viewer renders at full opacity). Set on create from
+    # the chain head — see ``MarkupsService.create_markup``.
+    file_version_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(),
+        ForeignKey("oe_file_version.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        default=None,
+    )
     page: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     type: Mapped[str] = mapped_column(String(50), nullable=False)
     geometry: Mapped[dict] = mapped_column(  # type: ignore[assignment]
