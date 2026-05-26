@@ -242,18 +242,24 @@ class CDEService:
         gate_meta = _state_machine.get_gate_requirements(current_state, target_state)
         gate_code = gate_meta.get("gate")
 
-        # Gate B — SHARED → PUBLISHED requires an explicit approver signature.
+        # Gate enforcement — Epic H lifted the bespoke Gate-B signature
+        # check into ``app.core.audit_gates.gate_registry`` so additional
+        # transition preconditions can be added declaratively elsewhere.
+        # ``enforce`` raises ``HTTPException(400)`` with the same detail
+        # message the inline check used to emit; the public contract is
+        # byte-identical.
+        from app.core.audit_gates import gate_registry as _gate_registry
+
+        _gate_registry.enforce(gate_code, data)
+
+        # Gate B — SHARED → PUBLISHED also captures the signature in the
+        # container's metadata for the compliance trail.
         updated_metadata: dict[str, Any] | None = None
         is_gate_b = (
             target_state == CDEState.PUBLISHED.value
             and current_state == CDEState.SHARED.value
         )
         if is_gate_b:
-            if not data.approver_signature or not data.approver_signature.strip():
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Gate B (SHARED → PUBLISHED) requires approver_signature",
-                )
             # Merge-in the approval block into metadata_ so it's persisted.
             md = dict(container.metadata_ or {})
             md["last_approval"] = {
