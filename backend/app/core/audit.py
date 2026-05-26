@@ -83,6 +83,32 @@ async def audit_log(
         entity_id or "-",
         user_id or "system",
     )
+
+    # Epic H — shim: mirror every legacy ``oe_core_audit_log`` write into
+    # the unified ``oe_activity_log`` so callers building dispute
+    # timelines from a single table see the full history. Best-effort: a
+    # failure here MUST NOT roll the legacy write back, since callers
+    # have been relying on it for two years. If the activity-log write
+    # raises, we swallow + log so the legacy contract stays unchanged.
+    try:
+        from app.core.audit_log import log_activity as _log_activity
+
+        await _log_activity(
+            session,
+            actor_id=user_id,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            action=action,
+            reason=None,
+            metadata=details or {},
+            module="audit_legacy_shim",
+            ip_address=ip_address,
+        )
+    except Exception:  # pragma: no cover — defensive, see docstring
+        logger.exception(
+            "audit shim: mirror to oe_activity_log failed (legacy write preserved)",
+        )
+
     return entry
 
 
