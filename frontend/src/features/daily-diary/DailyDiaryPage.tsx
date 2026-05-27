@@ -32,7 +32,9 @@ import {
   WideModal,
   WideModalSection,
   WideModalField,
+  ConfirmDialog,
 } from '@/shared/ui';
+import { useConfirm } from '@/shared/hooks/useConfirm';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { useToastStore } from '@/stores/useToastStore';
@@ -45,6 +47,7 @@ import {
   getDiary,
   createDiary,
   closeDiary,
+  deleteDiary,
   signDiary,
   weatherToday,
   listEntries,
@@ -137,7 +140,7 @@ function WorkflowIntro() {
       className="border-oe-blue/20 bg-oe-blue-subtle/10"
     >
       <div className="flex items-start gap-3">
-        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-oe-blue-subtle text-oe-blue">
+        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-oe-blue-subtle text-oe-blue-dark">
           <BookOpen size={16} />
         </div>
         <div className="min-w-0 flex-1">
@@ -464,6 +467,13 @@ export function DailyDiaryPage() {
             loading={activeLoading}
             onCreate={() => setCreateOpen(true)}
             onSign={() => setSignOpen(true)}
+            onDeleted={() => {
+              // After delete, drop the calendar-selected diary so the
+              // page falls back to the today-resolver (which will now
+              // show the empty state if today was the deleted entry).
+              setActiveDiaryId('');
+              setTab('diaries');
+            }}
           />
         )
       ) : archiveQ.isError ? (
@@ -658,16 +668,19 @@ function TodayTab({
   loading,
   onCreate,
   onSign,
+  onDeleted,
 }: {
   projectId: string;
   diary: DailyDiary | undefined;
   loading: boolean;
   onCreate: () => void;
   onSign: () => void;
+  onDeleted: () => void;
 }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const addToast = useToastStore((s) => s.addToast);
+  const confirmCtx = useConfirm();
 
   // All asset panels are scoped to the diary's OWN date — not todayIso().
   // A diary opened from the calendar can be any past day; previously the
@@ -720,6 +733,41 @@ function TodayTab({
     },
     onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),
   });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => deleteDiary(id),
+    onSuccess: () => {
+      // Invalidate every cached daily-diary query so the calendar grid,
+      // today-resolver and archive list all re-fetch (the deleted day
+      // must disappear from the calendar dot rendering).
+      qc.invalidateQueries({ queryKey: ['daily-diary'] });
+      addToast({
+        type: 'success',
+        title: t('daily_diary.deleted', { defaultValue: 'Diary deleted' }),
+      });
+      onDeleted();
+    },
+    onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),
+    onSettled: () => confirmCtx.setLoading(false),
+  });
+
+  const handleDelete = async () => {
+    if (!diary) return;
+    const ok = await confirmCtx.confirm({
+      title: t('daily_diary.confirm_delete_title', {
+        defaultValue: 'Delete this diary?',
+      }),
+      message: t('daily_diary.confirm_delete_message', {
+        defaultValue:
+          'This permanently removes the diary, its entries and links to weather/photos. This cannot be undone.',
+      }),
+      confirmLabel: t('common.delete', { defaultValue: 'Delete' }),
+      variant: 'danger',
+    });
+    if (!ok) return;
+    confirmCtx.setLoading(true);
+    deleteMut.mutate(diary.id);
+  };
 
   const sealed = diary?.status === 'signed' || diary?.status === 'archived';
 
@@ -794,8 +842,36 @@ function TodayTab({
               {t('daily_diary.sign_diary', { defaultValue: 'Sign Diary' })}
             </Button>
           )}
+          {/* Delete is intentionally gated to non-sealed diaries; the
+              backend rejects DELETE on signed/archived with 409 for
+              legal-record integrity, so don't even expose the button.
+              W22 audit fix — was previously orphan-able. */}
+          {!sealed && (
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<Trash2 size={14} />}
+              onClick={handleDelete}
+              loading={deleteMut.isPending}
+              data-testid="daily-diary-delete"
+              aria-label={t('daily_diary.delete_diary', { defaultValue: 'Delete diary' })}
+            >
+              {t('common.delete', { defaultValue: 'Delete' })}
+            </Button>
+          )}
         </div>
       </div>
+      <ConfirmDialog
+        open={confirmCtx.open}
+        title={confirmCtx.title}
+        message={confirmCtx.message}
+        confirmLabel={confirmCtx.confirmLabel}
+        cancelLabel={confirmCtx.cancelLabel}
+        variant={confirmCtx.variant}
+        loading={confirmCtx.loading}
+        onConfirm={confirmCtx.onConfirm}
+        onCancel={confirmCtx.onCancel}
+      />
 
       {sealed && latestSignature && (
         <Card padding="md" className="border-semantic-success/30 bg-semantic-success-bg/30">
