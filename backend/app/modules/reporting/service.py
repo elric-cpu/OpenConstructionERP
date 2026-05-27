@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.events import event_bus
 from app.modules.reporting.cron import CronParseError, next_occurrence
 from app.modules.reporting.models import GeneratedReport, KPISnapshot, ReportTemplate
+from app.modules.reporting.renderer import ReportRenderer
 from app.modules.reporting.repository import (
     GeneratedReportRepository,
     KPISnapshotRepository,
@@ -435,7 +436,21 @@ class ReportingService:
         data: GenerateReportRequest,
         user_id: str | None = None,
     ) -> GeneratedReport:
-        """Generate a new report."""
+        """Generate a new report.
+
+        After the metadata row is persisted we render the report body via
+        :class:`ReportRenderer` and store the resulting HTML through the
+        global storage backend, recording its key on ``report.storage_key``
+        so the ``/reports/{id}/content`` endpoint can fetch it back. Before
+        this wiring landed (W23 P0 audit, task #252) the row existed but
+        ``storage_key`` was always ``None`` — clicking the report in the
+        history panel showed nothing because there was nothing to show.
+
+        Rendering and storage failures are best-effort: we log them and
+        leave ``storage_key`` as ``None`` rather than rejecting the whole
+        call. This matches the cron-worker contract (a failed render
+        should not lose the audit trail of "we tried to render").
+        """
         report = GeneratedReport(
             project_id=data.project_id,
             template_id=data.template_id,
@@ -449,6 +464,52 @@ class ReportingService:
         )
         report = await self.report_repo.create(report)
 
+        # Best-effort render-and-store. Wrapped in try/except so a missing
+        # storage backend (e.g. unit tests with a stub service) or a
+        # renderer regression cannot prevent the metadata row from being
+        # returned to the caller.
+        try:
+            template_data: dict | None = None
+            if data.template_id is not None:
+                template = await self.template_repo.get_by_id(data.template_id)
+                if template is not None:
+                    template_data = template.template_data
+
+            project_name = await self._lookup_project_name(data.project_id)
+
+            renderer = ReportRenderer()
+            rendered_html = renderer.render_html(
+                report_type=data.report_type,
+                title=data.title,
+                project_name=project_name,
+                template_data=template_data,
+                data_snapshot=data.data_snapshot,
+                generated_at=report.generated_at,
+            )
+
+            storage_key = f"reports/{report.project_id}/{report.id}.html"
+            try:
+                from app.core.storage import get_storage_backend
+
+                backend = get_storage_backend()
+                await backend.put(storage_key, rendered_html.encode("utf-8"))
+                report.storage_key = storage_key
+                await self.report_repo.update(report)
+            except Exception:
+                logger.warning(
+                    "Report storage backend put failed for report_id=%s; "
+                    "the metadata row is preserved but storage_key remains null.",
+                    report.id,
+                    exc_info=True,
+                )
+        except Exception:
+            logger.warning(
+                "Report rendering failed for report_id=%s; the metadata row "
+                "is preserved but storage_key remains null.",
+                report.id,
+                exc_info=True,
+            )
+
         await _safe_publish(
             "reporting.report.generated",
             {
@@ -458,6 +519,7 @@ class ReportingService:
                 "format": report.format,
                 "template_id": (str(report.template_id) if report.template_id else None),
                 "generated_by": user_id,
+                "storage_key": report.storage_key,
             },
         )
 
@@ -468,6 +530,52 @@ class ReportingService:
             data.project_id,
         )
         return report
+
+    async def get_report_content(self, report_id: uuid.UUID) -> tuple[GeneratedReport, str]:
+        """Fetch a rendered report's HTML body.
+
+        Returns ``(report, html_string)``. Raises 404 if the report is
+        unknown or 410 (Gone) if the metadata row exists but the rendered
+        body is no longer reachable from the storage backend — a clearer
+        signal than blank 200 OK.
+        """
+        report = await self.get_report(report_id)
+        if not report.storage_key:
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE,
+                detail="Report body has not been rendered yet",
+            )
+
+        try:
+            from app.core.storage import get_storage_backend
+
+            backend = get_storage_backend()
+            blob = await backend.get(report.storage_key)
+        except FileNotFoundError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE,
+                detail="Rendered report body was removed from storage",
+            ) from exc
+        return report, blob.decode("utf-8")
+
+    async def _lookup_project_name(self, project_id: uuid.UUID) -> str:
+        """Best-effort lookup of a project's display name for the report header.
+
+        Falls back to the stringified UUID on any failure so a transient
+        DB error doesn't sabotage the whole render pipeline.
+        """
+        try:
+            from app.modules.projects.repository import ProjectRepository
+
+            project = await ProjectRepository(self.session).get_by_id(project_id)
+            if project is not None and getattr(project, "name", None):
+                return str(project.name)
+        except Exception:
+            logger.debug(
+                "Could not resolve project name for report; falling back to UUID",
+                exc_info=True,
+            )
+        return str(project_id)
 
     # ── KPI Auto-Recalculation ───────────────────────────────────────────
 

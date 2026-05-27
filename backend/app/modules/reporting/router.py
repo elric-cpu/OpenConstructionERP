@@ -18,6 +18,7 @@ import logging
 import uuid
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import HTMLResponse
 
 from app.dependencies import CurrentUserId, RequirePermission, SessionDep, verify_project_access
 from app.modules.reporting.schemas import (
@@ -295,6 +296,37 @@ async def list_reports(
         limit=limit,
     )
     return [GeneratedReportResponse.model_validate(r) for r in reports]
+
+
+@router.get(
+    "/reports/{report_id}/content",
+    response_class=HTMLResponse,
+    responses={
+        200: {"content": {"text/html": {}}},
+        404: {"description": "Report not found"},
+        410: {"description": "Report body not yet rendered or removed from storage"},
+    },
+)
+async def get_report_content(
+    report_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    service: ReportingService = Depends(_get_service),
+) -> HTMLResponse:
+    """Return the rendered HTML body of a generated report.
+
+    The matching metadata row must exist (404 otherwise) and have a
+    populated ``storage_key`` (410 Gone otherwise — the metadata exists
+    but the renderer never produced or persisted a body). IDOR-guarded
+    via ``verify_project_access`` on the report's parent project.
+
+    Before this endpoint landed (W23 P0 audit, task #252) the frontend
+    history panels listed report rows but had no way to open them
+    because no endpoint exposed the rendered body.
+    """
+    report, body_html = await service.get_report_content(report_id)
+    await verify_project_access(report.project_id, user_id, session)
+    return HTMLResponse(content=body_html, status_code=200)
 
 
 @router.get("/reports/{report_id}", response_model=GeneratedReportResponse)

@@ -159,3 +159,14 @@ class GeneratedReportRepository:
         self.session.add(report)
         await self.session.flush()
         return report
+
+    async def update(self, report: GeneratedReport) -> GeneratedReport:
+        """Persist updates to an existing generated report.
+
+        Used by ``ReportingService.generate_report`` to write back the
+        ``storage_key`` once the renderer has produced and stored the
+        HTML body.
+        """
+        await self.session.flush()
+        await self.session.refresh(report)
+        return report
