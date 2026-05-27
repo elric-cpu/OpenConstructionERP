@@ -995,10 +995,31 @@ export function CesiumViewer({
   // callout for the latest hit from the address-search overlay. We fly
   // the camera to the coordinates with a friendlier rooftop-altitude
   // (~2 km) so the user lands close enough to recognise the place but
-  // still sees surrounding context. Re-runs whenever the search pin
-  // identity changes; ``null`` removes the entity without flying.
+  // still sees surrounding context.
+  //
+  // Reliability invariants:
+  //
+  //   * If ``searchPin`` is set BEFORE Cesium finishes loading we MUST
+  //     replay the add + fly once status flips to 'loaded'. The effect
+  //     re-runs on ``cesiumStatus`` change so the closure picks up the
+  //     latest searchPin then.
+  //   * Pre-load attempts emit a single ``console.warn`` so developers
+  //     debugging "I selected an address but nothing happened" can see
+  //     why immediately in DevTools.
+  //   * Changes to ``cesiumStatus`` away from 'loaded' (rare — the
+  //     viewer doesn't downgrade) are skipped before the early return
+  //     so the existing pin never gets wiped by a status flicker.
   useEffect(() => {
-    if (cesiumStatus !== 'loaded') return;
+    if (cesiumStatus !== 'loaded') {
+      if (searchPin) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          '[geo_hub] searchPin set before Cesium loaded — will replay once cesiumStatus="loaded".',
+          { cesiumStatus, searchPin },
+        );
+      }
+      return;
+    }
     const v = viewerRef.current;
     const cesium = cesiumRef.current;
     if (!v || !cesium) return;
@@ -1017,12 +1038,21 @@ export function CesiumViewer({
     if (!searchPin) return;
     const lat = Number(searchPin.lat);
     const lon = Number(searchPin.lon);
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        '[geo_hub] searchPin rejected — lat/lon non-finite after Number()',
+        { lat, lon, original: searchPin },
+      );
+      return;
+    }
 
     try {
       const accent =
         cesium.Color.fromCssColorString?.('#0ea5e9') ??
         cesium.Color.DODGERBLUE;
+      // Note: Cartesian3.fromDegrees is (longitude, latitude, height).
+      // Mixing the order silently places the pin in the wrong hemisphere.
       const ent = v.entities.add({
         position: cesium.Cartesian3.fromDegrees(lon, lat, 0),
         point: {
