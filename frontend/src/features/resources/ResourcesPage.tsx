@@ -65,12 +65,15 @@ import {
   listWindows,
   listRequests,
   createResource,
+  updateResource,
+  deleteResource,
   createRequest,
   updateRequest,
   deleteRequest,
   fulfillRequest,
   type Resource,
   type ResourceType,
+  type ResourceStatus,
   type ResourceRequest,
   type RequestStatus,
   type RequestPriority,
@@ -208,12 +211,31 @@ export function ResourcesPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [proposeOpen, setProposeOpen] = useState(false);
+  // Per-row edit / delete state. Lifted up here so the modal / confirm
+  // dialog sit at page-root and survive table re-renders.
+  const [editTarget, setEditTarget] = useState<Resource | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Resource | null>(null);
   // Requests tab — lifted up so the page-header "New Request" button can open
   // the modal owned by the tab. Persisted across tab switches.
   const [newRequestOpen, setNewRequestOpen] = useState(false);
+  const qc = useQueryClient();
+  const addToast = useToastStore((s) => s.addToast);
   const activeProjectId = useProjectContextStore((s) => s.activeProjectId);
   const activeProjectName = useProjectContextStore((s) => s.activeProjectName);
   const setActiveProject = useProjectContextStore((s) => s.setActiveProject);
+
+  const deleteResourceMut = useMutation({
+    mutationFn: (id: string) => deleteResource(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['resources', 'list'] });
+      addToast({
+        type: 'success',
+        title: t('resources.deleted_ok', { defaultValue: 'Resource deleted' }),
+      });
+      setDeleteTarget(null);
+    },
+    onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),
+  });
   const [requestsProjectId, setRequestsProjectId] = useState<string>(
     activeProjectId ?? '',
   );
@@ -424,6 +446,8 @@ export function ResourcesPage() {
               <ResourceTable
                 rows={filteredResources}
                 onSelect={(id) => setSelectedId(id)}
+                onEdit={(r) => setEditTarget(r)}
+                onDelete={(r) => setDeleteTarget(r)}
                 emptyAction={() => setCreateOpen(true)}
               />
             )}
@@ -459,6 +483,32 @@ export function ResourcesPage() {
 
       {createOpen && <CreateResourceModal onClose={() => setCreateOpen(false)} />}
 
+      {editTarget && (
+        <EditResourceModal
+          resource={editTarget}
+          onClose={() => setEditTarget(null)}
+        />
+      )}
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title={t('resources.delete_resource_title', {
+          defaultValue: 'Delete this resource?',
+        })}
+        message={t('resources.delete_resource_msg', {
+          defaultValue:
+            'This permanently removes the resource. Active assignments referencing it will be blocked — cancel or reassign them first.',
+        })}
+        confirmLabel={t('common.delete', { defaultValue: 'Delete' })}
+        cancelLabel={t('common.cancel', { defaultValue: 'Cancel' })}
+        variant="danger"
+        loading={deleteResourceMut.isPending}
+        onConfirm={() => {
+          if (deleteTarget) deleteResourceMut.mutate(deleteTarget.id);
+        }}
+        onCancel={() => setDeleteTarget(null)}
+      />
+
       {proposeOpen && (
         <ProposeAssignmentModal
           resources={allResources}
@@ -474,10 +524,14 @@ export function ResourcesPage() {
 function ResourceTable({
   rows,
   onSelect,
+  onEdit,
+  onDelete,
   emptyAction,
 }: {
   rows: Resource[];
   onSelect: (id: string) => void;
+  onEdit: (r: Resource) => void;
+  onDelete: (r: Resource) => void;
   emptyAction: () => void;
 }) {
   const { t } = useTranslation();
@@ -488,7 +542,7 @@ function ResourceTable({
         title={t('resources.empty_title', { defaultValue: 'No resources yet' })}
         description={t('resources.empty_desc', {
           defaultValue:
-            'Add people, crews and equipment to start planning their assignments.',
+            'Add people, crews and equipment to start planning their assignments. Click + New Resource to create your first one.',
         })}
         action={{
           label: t('resources.new_resource', { defaultValue: 'New Resource' }),
@@ -498,69 +552,128 @@ function ResourceTable({
     );
   }
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead className="bg-surface-secondary text-content-tertiary text-xs uppercase tracking-wide">
-          <tr>
-            <th className="px-4 py-2.5 text-left">
-              {t('resources.col_code', { defaultValue: 'Code' })}
-            </th>
-            <th className="px-4 py-2.5 text-left">
-              {t('resources.col_name', { defaultValue: 'Name' })}
-            </th>
-            <th className="px-4 py-2.5 text-left">
-              {t('resources.col_type', { defaultValue: 'Type' })}
-            </th>
-            <th className="px-4 py-2.5 text-left">
-              {t('resources.col_status', { defaultValue: 'Status' })}
-            </th>
-            <th className="px-4 py-2.5 text-right">
-              {t('resources.col_rate', { defaultValue: 'Rate' })}
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr
-              key={r.id}
-              onClick={() => onSelect(r.id)}
-              className="border-t border-border-light hover:bg-surface-secondary cursor-pointer"
-            >
-              <td className="px-4 py-2 font-mono text-xs text-content-secondary">
-                {r.code}
-              </td>
-              <td className="px-4 py-2 font-medium text-content-primary">{r.name}</td>
-              <td className="px-4 py-2">
-                <Badge variant={TYPE_VARIANT[r.resource_type]} size="sm">
-                  {r.resource_type}
-                </Badge>
-              </td>
-              <td className="px-4 py-2">
-                <Badge
-                  variant={
-                    r.status === 'active'
-                      ? 'success'
-                      : r.status === 'on_leave'
-                        ? 'warning'
-                        : 'neutral'
-                  }
-                  dot
-                  size="sm"
-                >
-                  {r.status}
-                </Badge>
-              </td>
-              <td className="px-4 py-2 text-right">
-                <MoneyDisplay
-                  amount={Number(r.default_cost_rate) || 0}
-                  currency={r.currency || undefined}
-                />
-              </td>
+    <>
+      {/* Inline how-to hint above the grid — makes the edit / delete
+          affordance discoverable without a dedicated tour. */}
+      <div className="flex items-center gap-2 px-4 py-2 text-xs text-content-tertiary border-b border-border-light bg-surface-secondary/40">
+        <Pencil size={11} />
+        <span>
+          {t('resources.row_hint', {
+            defaultValue:
+              'Click a row to see the resource details. Use the pencil to edit, or the trash icon to delete.',
+          })}
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-surface-secondary text-content-tertiary text-xs uppercase tracking-wide">
+            <tr>
+              <th className="px-4 py-2.5 text-left">
+                {t('resources.col_code', { defaultValue: 'Code' })}
+              </th>
+              <th className="px-4 py-2.5 text-left">
+                {t('resources.col_name', { defaultValue: 'Name' })}
+              </th>
+              <th className="px-4 py-2.5 text-left">
+                {t('resources.col_type', { defaultValue: 'Type' })}
+              </th>
+              <th className="px-4 py-2.5 text-left">
+                {t('resources.col_status', { defaultValue: 'Status' })}
+              </th>
+              <th className="px-4 py-2.5 text-right">
+                {t('resources.col_rate', { defaultValue: 'Rate' })}
+              </th>
+              <th className="px-4 py-2.5 text-right w-24">
+                {t('resources.actions', { defaultValue: 'Actions' })}
+              </th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr
+                key={r.id}
+                onClick={(e) => {
+                  const target = e.target as HTMLElement;
+                  // Don't open the drawer when the click came from one of
+                  // the per-row action buttons.
+                  if (target.closest('[data-row-action]')) return;
+                  onSelect(r.id);
+                }}
+                className="border-t border-border-light hover:bg-surface-secondary cursor-pointer group"
+                data-testid={`resource-row-${r.id}`}
+              >
+                <td className="px-4 py-2 font-mono text-xs text-content-secondary">
+                  {r.code}
+                </td>
+                <td className="px-4 py-2 font-medium text-content-primary">{r.name}</td>
+                <td className="px-4 py-2">
+                  <Badge variant={TYPE_VARIANT[r.resource_type]} size="sm">
+                    {r.resource_type}
+                  </Badge>
+                </td>
+                <td className="px-4 py-2">
+                  <Badge
+                    variant={
+                      r.status === 'active'
+                        ? 'success'
+                        : r.status === 'on_leave'
+                          ? 'warning'
+                          : 'neutral'
+                    }
+                    dot
+                    size="sm"
+                  >
+                    {r.status}
+                  </Badge>
+                </td>
+                <td className="px-4 py-2 text-right">
+                  <MoneyDisplay
+                    amount={Number(r.default_cost_rate) || 0}
+                    currency={r.currency || undefined}
+                  />
+                </td>
+                <td className="px-4 py-2 text-right">
+                  <div className="inline-flex gap-1 opacity-60 group-hover:opacity-100 transition-opacity">
+                    <button
+                      type="button"
+                      data-row-action
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onEdit(r);
+                      }}
+                      className="rounded p-1 text-content-secondary hover:text-oe-blue hover:bg-oe-blue-subtle"
+                      aria-label={t('common.edit', { defaultValue: 'Edit' })}
+                      title={t('resources.edit_title', {
+                        defaultValue: 'Edit resource',
+                      })}
+                      data-testid={`resource-edit-${r.id}`}
+                    >
+                      <Pencil size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      data-row-action
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDelete(r);
+                      }}
+                      className="rounded p-1 text-content-secondary hover:text-rose-600 hover:bg-rose-50"
+                      aria-label={t('common.delete', { defaultValue: 'Delete' })}
+                      title={t('resources.delete_title', {
+                        defaultValue: 'Delete resource',
+                      })}
+                      data-testid={`resource-delete-${r.id}`}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 
@@ -3133,6 +3246,201 @@ function CreateResourceModal({ onClose }: { onClose: () => void }) {
             onChange={(e) => setForm({ ...form, currency: e.target.value })}
             maxLength={3}
             className={inputCls}
+          />
+        </WideModalField>
+      </WideModalSection>
+    </WideModal>
+  );
+}
+
+/* ─── Edit resource modal ─── */
+//
+// Mirrors CreateResourceModal's field layout for muscle-memory, but is
+// pre-filled from the row the user clicked and adds the two fields
+// missing from create (status, notes) which the backend accepts via
+// PATCH /resources/{id}.
+
+function EditResourceModal({
+  resource,
+  onClose,
+}: {
+  resource: Resource;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const addToast = useToastStore((s) => s.addToast);
+  const [busy, setBusy] = useState(false);
+  const [form, setForm] = useState({
+    code: resource.code,
+    name: resource.name,
+    resource_type: resource.resource_type,
+    default_cost_rate: String(resource.default_cost_rate ?? '0'),
+    currency: resource.currency || '',
+    status: resource.status,
+    notes: resource.notes ?? '',
+  });
+
+  async function submit() {
+    if (!form.code.trim() || !form.name.trim()) {
+      addToast({
+        type: 'error',
+        title: t('resources.required_missing', {
+          defaultValue: 'Code and name are required.',
+        }),
+      });
+      return;
+    }
+    const rateNum = Number(form.default_cost_rate);
+    if (Number.isNaN(rateNum) || rateNum < 0) {
+      addToast({
+        type: 'error',
+        title: t('resources.rate_invalid', {
+          defaultValue: 'Rate must be a non-negative number.',
+        }),
+      });
+      return;
+    }
+    setBusy(true);
+    try {
+      await updateResource(resource.id, {
+        code: form.code.trim(),
+        name: form.name.trim(),
+        resource_type: form.resource_type,
+        default_cost_rate: rateNum,
+        currency: form.currency.trim() || undefined,
+        status: form.status,
+        notes: form.notes,
+      });
+      addToast({
+        type: 'success',
+        title: t('resources.updated_ok', { defaultValue: 'Resource updated' }),
+      });
+      qc.invalidateQueries({ queryKey: ['resources', 'list'] });
+      qc.invalidateQueries({ queryKey: ['resources', 'dashboard', resource.id] });
+      onClose();
+    } catch (err) {
+      addToast({ type: 'error', title: getErrorMessage(err) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <WideModal
+      open
+      onClose={onClose}
+      busy={busy}
+      size="lg"
+      title={t('resources.edit_resource', { defaultValue: 'Edit Resource' })}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
+            {t('common.cancel', { defaultValue: 'Cancel' })}
+          </Button>
+          <Button
+            variant="primary"
+            onClick={submit}
+            loading={busy}
+            data-testid="edit-resource-save"
+            icon={busy ? <Loader2 size={14} /> : <CheckCircle2 size={14} />}
+          >
+            {t('common.save', { defaultValue: 'Save' })}
+          </Button>
+        </>
+      }
+    >
+      <WideModalSection columns={2}>
+        <WideModalField label={t('resources.code', { defaultValue: 'Code' })} required>
+          <input
+            value={form.code}
+            onChange={(e) => setForm({ ...form, code: e.target.value })}
+            className={inputCls}
+            placeholder="e.g. CR-001"
+            data-testid="edit-resource-code"
+          />
+        </WideModalField>
+        <WideModalField label={t('resources.name', { defaultValue: 'Name' })} required>
+          <input
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            className={inputCls}
+            data-testid="edit-resource-name"
+          />
+        </WideModalField>
+        <WideModalField label={t('resources.col_type', { defaultValue: 'Type' })}>
+          <select
+            value={form.resource_type}
+            onChange={(e) =>
+              setForm({ ...form, resource_type: e.target.value as ResourceType })
+            }
+            className={inputCls}
+          >
+            <option value="person">
+              {t('resources.type_person', { defaultValue: 'Person' })}
+            </option>
+            <option value="crew">
+              {t('resources.type_crew', { defaultValue: 'Crew' })}
+            </option>
+            <option value="equipment">
+              {t('resources.type_equipment', { defaultValue: 'Equipment' })}
+            </option>
+            <option value="subcontractor">
+              {t('resources.type_subcontractor', { defaultValue: 'Subcontractor' })}
+            </option>
+          </select>
+        </WideModalField>
+        <WideModalField label={t('resources.col_status', { defaultValue: 'Status' })}>
+          <select
+            value={form.status}
+            onChange={(e) =>
+              setForm({ ...form, status: e.target.value as ResourceStatus })
+            }
+            className={inputCls}
+          >
+            <option value="active">
+              {t('resources.status_active', { defaultValue: 'Active' })}
+            </option>
+            <option value="on_leave">
+              {t('resources.status_on_leave', { defaultValue: 'On leave' })}
+            </option>
+            <option value="inactive">
+              {t('resources.status_inactive', { defaultValue: 'Inactive' })}
+            </option>
+          </select>
+        </WideModalField>
+        <WideModalField label={t('resources.rate', { defaultValue: 'Rate' })}>
+          <input
+            type="number"
+            min={0}
+            step="0.01"
+            value={form.default_cost_rate}
+            onChange={(e) =>
+              setForm({ ...form, default_cost_rate: e.target.value })
+            }
+            className={inputCls}
+          />
+        </WideModalField>
+        <WideModalField label={t('common.currency', { defaultValue: 'Currency' })}>
+          <input
+            value={form.currency}
+            onChange={(e) => setForm({ ...form, currency: e.target.value })}
+            maxLength={3}
+            className={inputCls}
+          />
+        </WideModalField>
+        <WideModalField
+          label={t('common.notes', { defaultValue: 'Notes' })}
+          span={2}
+        >
+          <textarea
+            value={form.notes}
+            onChange={(e) => setForm({ ...form, notes: e.target.value })}
+            rows={3}
+            className={clsx(inputCls, 'h-auto py-2 resize-y')}
+            placeholder={t('resources.notes_placeholder', {
+              defaultValue: 'Optional notes about this resource…',
+            })}
           />
         </WideModalField>
       </WideModalSection>
