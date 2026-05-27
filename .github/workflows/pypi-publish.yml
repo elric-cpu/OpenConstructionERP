@@ -68,8 +68,14 @@ jobs:
           cd frontend
           npm ci
           npm run build
-          rm -rf ../backend/app/_frontend_dist
-          cp -r dist ../backend/app/_frontend_dist
+          # NOTE: do NOT copy dist into backend/app/_frontend_dist here.
+          # backend/pyproject.toml already declares
+          #   [tool.hatch.build.targets.wheel.force-include]
+          #   "../frontend/dist" = "app/_frontend_dist"
+          # so hatchling vendors the bundle into the wheel itself. A manual
+          # pre-copy makes the same files visible to both the packages=["app"]
+          # walker AND the force-include map, producing duplicate ZIP entries
+          # that PyPI rejects with 400 "Duplicate filename in local headers".
 
       - name: Install build tooling
         run: python -m pip install --upgrade build
