@@ -1964,7 +1964,7 @@ const resource = {
     "login.benefit.open_source_desc": "Transparent code. No vendor lock-in. Export everything, anytime.",
     "login.benefit.standards": "International standards",
     "login.benefit.standards_desc": "55,000+ cost items across 30 regional databases worldwide.",
-    "login.hero_desc": "Professional BOQ, 4D scheduling, 5D cost model, and tendering — all in one open-source platform.",
+    "login.hero_desc": "Professional BOQ, 4D scheduling, 5D cost model, and tendering - all in one open-source platform.",
     "login.hero_highlight": "reimagined",
     "login.hero_title": "Construction cost estimation,",
     "login.open_source_badge": "The #1 open-source construction ERP",

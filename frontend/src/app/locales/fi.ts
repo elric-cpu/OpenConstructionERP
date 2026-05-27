@@ -850,7 +850,7 @@ const resource = {
     "login.benefit.open_source_desc": "Läpinäkyvä koodi. Ei toimittajalukkoa. Vie kaikki milloin tahansa.",
     "login.benefit.standards": "Kansainväliset standardit",
     "login.benefit.standards_desc": "Yli 55 000 kustannusnimikettä 11 alueellisessa tietokannassa maailmanlaajuisesti.",
-    "login.hero_desc": "Ammattimainen määräluettelo, 4D-aikataulutus, 5D-kustannusmalli ja tarjouskilpailu — kaikki yhdessä avoimen lähdekoodin alustassa.",
+    "login.hero_desc": "Ammattimainen määräluettelo, 4D-aikataulutus, 5D-kustannusmalli ja tarjouskilpailu - kaikki yhdessä avoimen lähdekoodin alustassa.",
     "login.hero_highlight": "uudelleenajateltuna",
     "login.hero_title": "Rakennuskustannuslaskenta,",
     "login.open_source_badge": "Ensimmäinen avoimen lähdekoodin rakennusalan ERP",

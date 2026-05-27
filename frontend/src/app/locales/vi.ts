@@ -918,7 +918,7 @@ const resource = {
     "login.benefit.open_source_desc": "Mã minh bạch. Không bị ràng buộc nhà cung cấp. Xuất tất cả, bất cứ lúc nào.",
     "login.benefit.standards": "Tiêu chuẩn quốc tế",
     "login.benefit.standards_desc": "55.000+ hạng mục chi phí trong 11 cơ sở dữ liệu vùng trên toàn thế giới.",
-    "login.hero_desc": "BOQ chuyên nghiệp, lịch 4D, mô hình chi phí 5D và đấu thầu — tất cả trong một nền tảng mã nguồn mở.",
+    "login.hero_desc": "BOQ chuyên nghiệp, lịch 4D, mô hình chi phí 5D và đấu thầu - tất cả trong một nền tảng mã nguồn mở.",
     "login.hero_highlight": "tái định nghĩa",
     "login.hero_title": "Dự toán chi phí xây dựng,",
     "login.open_source_badge": "ERP xây dựng mã nguồn mở số 1",

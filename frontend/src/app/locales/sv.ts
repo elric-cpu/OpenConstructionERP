@@ -870,7 +870,7 @@ const resource = {
     "login.benefit.open_source_desc": "Transparent kod. Inget leverantörsberoende. Exportera allt, när som helst.",
     "login.benefit.standards": "Internationella standarder",
     "login.benefit.standards_desc": "Över 55 000 kostnadsposter i 11 regionala databaser världen över.",
-    "login.hero_desc": "Professionell mängdförteckning, 4D-tidplanering, 5D-kostnadsmodell och upphandling — allt i en plattform med öppen källkod.",
+    "login.hero_desc": "Professionell mängdförteckning, 4D-tidplanering, 5D-kostnadsmodell och upphandling - allt i en plattform med öppen källkod.",
     "login.hero_highlight": "nytänkt",
     "login.hero_title": "Byggkalkylering,",
     "login.open_source_badge": "Första open-source bygg-ERP",

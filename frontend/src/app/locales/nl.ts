@@ -870,7 +870,7 @@ const resource = {
     "login.benefit.open_source_desc": "Transparante code. Geen vendor lock-in. Exporteer alles, altijd.",
     "login.benefit.standards": "Internationale standaarden",
     "login.benefit.standards_desc": "Meer dan 55.000 kostenposten in 11 regionale databases wereldwijd.",
-    "login.hero_desc": "Professionele raming, 4D planning, 5D kostenmodel en aanbesteding — alles in één open-source platform.",
+    "login.hero_desc": "Professionele raming, 4D planning, 5D kostenmodel en aanbesteding - alles in één open-source platform.",
     "login.hero_highlight": "opnieuw uitgevonden",
     "login.hero_title": "Bouwkostencalculatie,",
     "login.open_source_badge": "Eerste open-source bouw-ERP",

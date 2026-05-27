@@ -889,7 +889,7 @@ const resource = {
     "login.benefit.open_source_desc": "代码透明。无供应商锁定。随时导出一切。",
     "login.benefit.standards": "国际标准",
     "login.benefit.standards_desc": "全球11个区域数据库中超过55,000+个成本项目。",
-    "login.hero_desc": "专业清单编制、4D 进度管理、5D 造价模型和招投标——尽在一个开源平台。",
+    "login.hero_desc": "专业清单编制、4D 进度管理、5D 造价模型和招投标--尽在一个开源平台。",
     "login.hero_highlight": "全新定义",
     "login.hero_title": "工程造价估算，",
     "login.open_source_badge": "首个开源建筑ERP",

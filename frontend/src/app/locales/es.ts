@@ -889,7 +889,7 @@ const resource = {
     "login.benefit.open_source_desc": "Código transparente. Sin dependencia de proveedores. Exporte todo, en cualquier momento.",
     "login.benefit.standards": "Estándares internacionales",
     "login.benefit.standards_desc": "Más de 55.000 partidas de coste en 11 bases de datos regionales de todo el mundo.",
-    "login.hero_desc": "Presupuesto profesional, programación 4D, modelo de costes 5D y licitaciones — todo en una plataforma de código abierto.",
+    "login.hero_desc": "Presupuesto profesional, programación 4D, modelo de costes 5D y licitaciones - todo en una plataforma de código abierto.",
     "login.hero_highlight": "reinventada",
     "login.hero_title": "Estimación de costes de construcción,",
     "login.open_source_badge": "Primer ERP de construcción open-source",

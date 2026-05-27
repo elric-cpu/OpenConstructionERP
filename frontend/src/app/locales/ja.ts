@@ -852,7 +852,7 @@ const resource = {
     "login.benefit.open_source_desc": "透明なコード。ベンダーロックインなし。いつでもすべてエクスポート可能。",
     "login.benefit.standards": "国際基準",
     "login.benefit.standards_desc": "世界中の11の地域データベースに55,000以上のコスト項目。",
-    "login.hero_desc": "プロフェッショナルな数量明細書、4Dスケジューリング、5Dコストモデル、入札管理 — すべてを一つのオープンソースプラットフォームで。",
+    "login.hero_desc": "プロフェッショナルな数量明細書、4Dスケジューリング、5Dコストモデル、入札管理 - すべてを一つのオープンソースプラットフォームで。",
     "login.hero_highlight": "再定義",
     "login.hero_title": "建設積算を、",
     "login.open_source_badge": "初のオープンソース建設ERP",

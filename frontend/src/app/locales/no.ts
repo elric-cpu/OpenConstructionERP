@@ -850,7 +850,7 @@ const resource = {
     "login.benefit.open_source_desc": "Transparent kode. Ingen leverandorlasing. Eksporter alt, nar som helst.",
     "login.benefit.standards": "Internasjonale standarder",
     "login.benefit.standards_desc": "Over 55 000 kostnadsposter i 11 regionale databaser over hele verden.",
-    "login.hero_desc": "Profesjonell kalkyle, 4D fremdriftsplan, 5D kostnadsmodell og anbud — alt i en apen kildekode-plattform.",
+    "login.hero_desc": "Profesjonell kalkyle, 4D fremdriftsplan, 5D kostnadsmodell og anbud - alt i en apen kildekode-plattform.",
     "login.hero_highlight": "nytenkt",
     "login.hero_title": "Byggekostnadskalkyle,",
     "login.open_source_badge": "Første open-source bygge-ERP",

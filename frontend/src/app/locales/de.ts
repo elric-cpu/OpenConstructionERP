@@ -1047,7 +1047,7 @@ const resource = {
     "login.benefit.open_source_desc": "Transparenter Code. Kein Vendor Lock-in. Jederzeit alles exportieren.",
     "login.benefit.standards": "Internationale Standards",
     "login.benefit.standards_desc": "Über 55.000 Kostenpositionen in 11 regionalen Datenbanken weltweit.",
-    "login.hero_desc": "Professionelles LV, 4D-Terminplanung, 5D-Kostenmodell und Ausschreibung — alles in einer Open-Source-Plattform.",
+    "login.hero_desc": "Professionelles LV, 4D-Terminplanung, 5D-Kostenmodell und Ausschreibung - alles in einer Open-Source-Plattform.",
     "login.hero_highlight": "neu gedacht",
     "login.hero_title": "Baukalkulation,",
     "login.open_source_badge": "Erste Open-Source Bau-ERP",

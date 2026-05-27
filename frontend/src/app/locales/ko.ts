@@ -870,7 +870,7 @@ const resource = {
     "login.benefit.open_source_desc": "투명한 코드. 공급업체 종속 없음. 언제든지 모든 것을 내보낼 수 있습니다.",
     "login.benefit.standards": "국제 표준",
     "login.benefit.standards_desc": "전 세계 11개 지역 데이터베이스에 55,000개 이상의 비용 항목.",
-    "login.hero_desc": "전문 내역서, 4D 공정관리, 5D 원가 모델, 입찰 — 하나의 오픈 소스 플랫폼에 모두 담았습니다.",
+    "login.hero_desc": "전문 내역서, 4D 공정관리, 5D 원가 모델, 입찰 - 하나의 오픈 소스 플랫폼에 모두 담았습니다.",
     "login.hero_highlight": "재창조된",
     "login.hero_title": "건설 적산,",
     "login.open_source_badge": "최초의 오픈소스 건설 ERP",

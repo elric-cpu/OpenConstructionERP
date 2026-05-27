@@ -870,7 +870,7 @@ const resource = {
     "login.benefit.open_source_desc": "Przejrzysty kod. Brak uzależnienia od dostawcy. Eksportuj wszystko w dowolnym momencie.",
     "login.benefit.standards": "Standardy międzynarodowe",
     "login.benefit.standards_desc": "Ponad 55 000 pozycji kosztowych w 11 regionalnych bazach danych na całym świecie.",
-    "login.hero_desc": "Profesjonalny kosztorys, harmonogramowanie 4D, model kosztów 5D i przetargi — wszystko w jednej platformie open source.",
+    "login.hero_desc": "Profesjonalny kosztorys, harmonogramowanie 4D, model kosztów 5D i przetargi - wszystko w jednej platformie open source.",
     "login.hero_highlight": "na nowo",
     "login.hero_title": "Kosztorysowanie budowlane",
     "login.open_source_badge": "Pierwszy open-source ERP budowlany",

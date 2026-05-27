@@ -870,7 +870,7 @@ const resource = {
     "login.benefit.open_source_desc": "Transparent kode. Ingen leverandørlåsning. Eksportér alt, når som helst.",
     "login.benefit.standards": "Internationale standarder",
     "login.benefit.standards_desc": "Over 55.000 omkostningsposter i 11 regionale databaser verden over.",
-    "login.hero_desc": "Professionel tilbudsliste, 4D-tidsplanlægning, 5D-omkostningsmodel og udbud — alt i én open source-platform.",
+    "login.hero_desc": "Professionel tilbudsliste, 4D-tidsplanlægning, 5D-omkostningsmodel og udbud - alt i én open source-platform.",
     "login.hero_highlight": "nytænkt",
     "login.hero_title": "Byggeomkostningskalkulation,",
     "login.open_source_badge": "Første open-source bygge-ERP",

@@ -918,7 +918,7 @@ const resource = {
     "login.benefit.open_source_desc": "Cod transparent. Fără blocare la furnizor. Exportați totul, oricând.",
     "login.benefit.standards": "Standarde internaționale",
     "login.benefit.standards_desc": "55.000+ poziții de cost în 11 baze de date regionale din întreaga lume.",
-    "login.hero_desc": "BOQ profesional, programare 4D, model de cost 5D și licitații — totul într-o singură platformă cu sursă deschisă.",
+    "login.hero_desc": "BOQ profesional, programare 4D, model de cost 5D și licitații - totul într-o singură platformă cu sursă deschisă.",
     "login.hero_highlight": "reimaginată",
     "login.hero_title": "Estimarea costurilor în construcții,",
     "login.open_source_badge": "Cel mai bun ERP cu sursă deschisă pentru construcții",

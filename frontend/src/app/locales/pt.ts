@@ -871,7 +871,7 @@ const resource = {
     "login.benefit.open_source_desc": "Código transparente. Sem dependência de fornecedor. Exporte tudo, a qualquer momento.",
     "login.benefit.standards": "Padrões internacionais",
     "login.benefit.standards_desc": "Mais de 55.000 itens de custo em 11 bancos de dados regionais em todo o mundo.",
-    "login.hero_desc": "Orçamento profissional, cronograma 4D, modelo de custos 5D e licitação — tudo em uma plataforma de código aberto.",
+    "login.hero_desc": "Orçamento profissional, cronograma 4D, modelo de custos 5D e licitação - tudo em uma plataforma de código aberto.",
     "login.hero_highlight": "reinventada",
     "login.hero_title": "Orçamentação de obras,",
     "login.open_source_badge": "Primeiro ERP de construção open-source",

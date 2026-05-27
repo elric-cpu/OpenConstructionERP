@@ -918,7 +918,7 @@ const resource = {
     "login.benefit.open_source_desc": "Kode transparan. Tanpa vendor lock-in. Ekspor semua, kapan saja.",
     "login.benefit.standards": "Standar internasional",
     "login.benefit.standards_desc": "55.000+ item biaya di 11 basis data regional di seluruh dunia.",
-    "login.hero_desc": "BOQ profesional, jadwal 4D, model biaya 5D, dan tender — semua dalam satu platform sumber terbuka.",
+    "login.hero_desc": "BOQ profesional, jadwal 4D, model biaya 5D, dan tender - semua dalam satu platform sumber terbuka.",
     "login.hero_highlight": "yang baru",
     "login.hero_title": "Estimasi biaya konstruksi,",
     "login.open_source_badge": "ERP konstruksi sumber terbuka #1",

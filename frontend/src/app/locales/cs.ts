@@ -870,7 +870,7 @@ const resource = {
     "login.benefit.open_source_desc": "Transparentní kód. Žádné uzamčení dodavatelem. Exportujte vše, kdykoli.",
     "login.benefit.standards": "Mezinárodní standardy",
     "login.benefit.standards_desc": "Více než 55 000 nákladových položek v 11 regionálních databázích po celém světě.",
-    "login.hero_desc": "Profesionální rozpočet, 4D harmonogram, 5D model nákladů a výběrová řízení — vše v jedné open-source platformě.",
+    "login.hero_desc": "Profesionální rozpočet, 4D harmonogram, 5D model nákladů a výběrová řízení - vše v jedné open-source platformě.",
     "login.hero_highlight": "přepracovaná",
     "login.hero_title": "Stavební kalkulace,",
     "login.open_source_badge": "První open-source stavební ERP",

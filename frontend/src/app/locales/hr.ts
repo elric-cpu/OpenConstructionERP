@@ -918,7 +918,7 @@ const resource = {
     "login.benefit.open_source_desc": "Transparentan kod. Bez ovisnosti o dobavljaču. Izvezite sve, bilo kada.",
     "login.benefit.standards": "Međunarodni standardi",
     "login.benefit.standards_desc": "55.000+ stavki troškova u 11 regionalnih baza diljem svijeta.",
-    "login.hero_desc": "Profesionalni BOQ, 4D raspored, 5D model troškova i nadmetanje — sve u jednoj platformi otvorenog koda.",
+    "login.hero_desc": "Profesionalni BOQ, 4D raspored, 5D model troškova i nadmetanje - sve u jednoj platformi otvorenog koda.",
     "login.hero_highlight": "redefinirana",
     "login.hero_title": "Procjena građevinskih troškova,",
     "login.open_source_badge": "Br. 1 ERP otvorenog koda za građevinarstvo",

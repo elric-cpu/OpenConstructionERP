@@ -888,7 +888,7 @@ const resource = {
     "login.benefit.open_source_desc": "Şeffaf kod. Satıcı bağımlılığı yok. Her şeyi istediğiniz zaman dışa aktarın.",
     "login.benefit.standards": "Uluslararası standartlar",
     "login.benefit.standards_desc": "Dünya genelinde 11 bölgesel veritabanında 55.000'den fazla maliyet kalemi.",
-    "login.hero_desc": "Profesyonel metraj, 4B iş programı, 5B maliyet modeli ve ihale — hepsi tek bir açık kaynak platformda.",
+    "login.hero_desc": "Profesyonel metraj, 4B iş programı, 5B maliyet modeli ve ihale - hepsi tek bir açık kaynak platformda.",
     "login.hero_highlight": "yeniden tasarlandı",
     "login.hero_title": "İnşaat maliyet tahmini,",
     "login.open_source_badge": "İlk açık kaynak inşaat ERP",
