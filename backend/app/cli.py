@@ -121,12 +121,16 @@ def _bold(text: str) -> str:
 
 
 # ── Banner ────────────────────────────────────────────────────────────────
-_BANNER_ART = r"""‌⁠‍  ___                  ____                _                   _   _
- / _ \ _ __   ___ _ _ / ___|___  _ __  ___| |_ _ _ _   _  ___ | |_(_) ___  _ _
-| | | | '_ \ / _ \ '_| |   / _ \| '_ \/ __| __| '_| | | |/ __|| __| |/ _ \| '_ \
-| |_| | |_) |  __/ | | |__| (_) | | | \__ \ |_| |  | |_| | (__ | |_| | (_) | | | |
- \___/| .__/ \___|_|  \____\___/|_| |_|___/\__|_|   \__,_|\___(_)__|_|\___/|_| |_|
-      |_|                                                             ERP"""
+# "OpenConstructionERP" rendered in the figlet "small" font (82 cols × 5
+# rows). The previous "Standard" font wrapped the 19-character name onto
+# multiple visual rows on a typical 80-col terminal, which looked crooked;
+# the "small" font fits the full name on one row with the trailing "ERP"
+# inline. Generated once with pyfiglet and pasted in — no runtime dep.
+_BANNER_ART = r"""  ___                 ___             _               _   _          ___ ___ ___
+ / _ \ _ __  ___ _ _ / __|___ _ _  __| |_ _ _ _  _ __| |_(_)___ _ _ | __| _ \ _ \
+| (_) | '_ \/ -_) ' \ (__/ _ \ ' \(_-<  _| '_| || / _|  _| / _ \ ' \| _||   /  _/
+ \___/| .__/\___|_||_\___\___/_||_/__/\__|_|  \_,_\__|\__|_\___/_||_|___|_|_\_|
+      |_|"""
 
 
 def print_startup_banner(
