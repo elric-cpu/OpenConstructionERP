@@ -7548,6 +7548,7 @@ const resource = {
     "sidebar.admin_grid.audit": "Audit",
     "sidebar.admin_grid.permissions": "Roles",
     "sidebar.admin_grid.modules": "Modules",
+    "sidebar.admin_grid.integrations": "Integrationen",
     "sidebar.admin_grid.settings": "Settings",
     "sidebar.admin_grid.about": "About",
     "audit.page_of_total": "Showing {{start}}–{{end}} of {{total}}",

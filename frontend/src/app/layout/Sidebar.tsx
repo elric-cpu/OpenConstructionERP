@@ -57,6 +57,7 @@ import {
   Github,
   HardDrive,
   Link2,
+  Plug,
   // 18-Modules Wave icons
   Wrench,
   Truck,
@@ -483,6 +484,7 @@ const adminGridItems: NavItem[] = [
     icon: ShieldCheck,
   },
   { labelKey: 'sidebar.admin_grid.modules', to: '/modules', icon: Package },
+  { labelKey: 'sidebar.admin_grid.integrations', to: '/integrations', icon: Plug },
   { labelKey: 'sidebar.admin_grid.settings', to: '/settings', icon: Settings },
   { labelKey: 'sidebar.admin_grid.about', to: '/about', icon: Info },
 ];

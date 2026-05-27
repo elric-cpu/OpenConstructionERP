@@ -3421,6 +3421,7 @@ const resource = {
     "sidebar.admin_grid.audit": "Аудит",
     "sidebar.admin_grid.permissions": "Роли",
     "sidebar.admin_grid.modules": "Модули",
+    "sidebar.admin_grid.integrations": "Интеграции",
     "sidebar.admin_grid.settings": "Настройки",
     "sidebar.admin_grid.about": "О ПО",
     "admin.audit_log_title": "Журнал аудита",

@@ -2410,6 +2410,7 @@ const resource = {
     "sidebar.admin_grid.permissions": "Roles",
     "sidebar.admin_grid.validation_rules": "Rules",
     "sidebar.admin_grid.modules": "Modules",
+    "sidebar.admin_grid.integrations": "Integrations",
     "sidebar.admin_grid.settings": "Settings",
     "sidebar.admin_grid.about": "About",
     "sidebar.edit_menu": "Edit menu",
