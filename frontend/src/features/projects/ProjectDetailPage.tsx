@@ -57,6 +57,7 @@ import {
   BudgetBurnWidget,
   ComplianceSummaryWidget,
   ScheduleStripWidget,
+  ProjectWidgetsRollupProvider,
 } from './components/ProjectWidgets';
 import { useWidgetSettingsStore } from '@/stores/useWidgetSettingsStore';
 import { apiGet, apiPatch, ApiError } from '@/shared/lib/api';
@@ -1586,71 +1587,79 @@ export function ProjectDetailPage() {
       )}
 
       {/* ── New widgets — interleaved between built-in sections ──────── */}
-      {!isWidgetHidden('rfi-inbox') && (
-        <div className="mb-4">
-          <RFIInboxWidget projectId={projectId!} />
-        </div>
-      )}
-      {!isWidgetHidden('change-orders') && (
-        <div className="mb-4">
-          <ChangeOrdersPulseWidget projectId={projectId!} currency={currency} />
-        </div>
-      )}
-      {!isWidgetHidden('daily-diary') && (
-        <div className="mb-4">
-          <DailyDiaryWidget projectId={projectId!} />
-        </div>
-      )}
-      {!isWidgetHidden('hse-incidents') && (
-        <div className="mb-4">
-          <HSEIncidentsWidget projectId={projectId!} />
-        </div>
-      )}
-      {!isWidgetHidden('variations') && (
-        <div className="mb-4">
-          <VariationsWidget projectId={projectId!} currency={currency} />
-        </div>
-      )}
-      {!isWidgetHidden('schedule-strip') && (
-        <div className="mb-4">
-          <ScheduleStripWidget projectId={projectId!} />
-        </div>
-      )}
-      {!isWidgetHidden('budget-burn') && (
-        <div className="mb-4">
-          <BudgetBurnWidget projectId={projectId!} currency={currency} />
-        </div>
-      )}
-      {!isWidgetHidden('quality-ncr') && (
-        <div className="mb-4">
-          <QualityNCRWidget projectId={projectId!} />
-        </div>
-      )}
-      {!isWidgetHidden('compliance-summary') && (
-        <div className="mb-4">
-          <ComplianceSummaryWidget projectId={projectId!} />
-        </div>
-      )}
-      {!isWidgetHidden('recent-files') && (
-        <div className="mb-4">
-          <RecentFilesWidget projectId={projectId!} />
-        </div>
-      )}
-      {!isWidgetHidden('photo-strip') && (
-        <div className="mb-4">
-          <PhotoStripWidget projectId={projectId!} />
-        </div>
-      )}
-      {!isWidgetHidden('ai-insights') && (
-        <div className="mb-4">
-          <AIInsightsWidget projectId={projectId!} />
-        </div>
-      )}
-      {!isWidgetHidden('activity-feed') && (
-        <div className="mb-4">
-          <ActivityFeedWidget projectId={projectId!} />
-        </div>
-      )}
+      {/* W23 P0: the provider fires ONE rollup request that feeds 8 of
+          the 13 widgets below. The 5 widgets whose endpoints don't yet
+          exist on the backend (photo strip, activity feed, schedule
+          strip, AI insights, recent files) keep their own
+          ``useGracefulQuery`` — adding them to the rollup would require
+          new backend endpoints. */}
+      <ProjectWidgetsRollupProvider projectId={projectId!}>
+        {!isWidgetHidden('rfi-inbox') && (
+          <div className="mb-4">
+            <RFIInboxWidget projectId={projectId!} />
+          </div>
+        )}
+        {!isWidgetHidden('change-orders') && (
+          <div className="mb-4">
+            <ChangeOrdersPulseWidget projectId={projectId!} currency={currency} />
+          </div>
+        )}
+        {!isWidgetHidden('daily-diary') && (
+          <div className="mb-4">
+            <DailyDiaryWidget projectId={projectId!} />
+          </div>
+        )}
+        {!isWidgetHidden('hse-incidents') && (
+          <div className="mb-4">
+            <HSEIncidentsWidget projectId={projectId!} />
+          </div>
+        )}
+        {!isWidgetHidden('variations') && (
+          <div className="mb-4">
+            <VariationsWidget projectId={projectId!} currency={currency} />
+          </div>
+        )}
+        {!isWidgetHidden('schedule-strip') && (
+          <div className="mb-4">
+            <ScheduleStripWidget projectId={projectId!} />
+          </div>
+        )}
+        {!isWidgetHidden('budget-burn') && (
+          <div className="mb-4">
+            <BudgetBurnWidget projectId={projectId!} currency={currency} />
+          </div>
+        )}
+        {!isWidgetHidden('quality-ncr') && (
+          <div className="mb-4">
+            <QualityNCRWidget projectId={projectId!} />
+          </div>
+        )}
+        {!isWidgetHidden('compliance-summary') && (
+          <div className="mb-4">
+            <ComplianceSummaryWidget projectId={projectId!} />
+          </div>
+        )}
+        {!isWidgetHidden('recent-files') && (
+          <div className="mb-4">
+            <RecentFilesWidget projectId={projectId!} />
+          </div>
+        )}
+        {!isWidgetHidden('photo-strip') && (
+          <div className="mb-4">
+            <PhotoStripWidget projectId={projectId!} />
+          </div>
+        )}
+        {!isWidgetHidden('ai-insights') && (
+          <div className="mb-4">
+            <AIInsightsWidget projectId={projectId!} />
+          </div>
+        )}
+        {!isWidgetHidden('activity-feed') && (
+          <div className="mb-4">
+            <ActivityFeedWidget projectId={projectId!} />
+          </div>
+        )}
+      </ProjectWidgetsRollupProvider>
       {/* ``weather-alerts`` is a thin pointer to ProjectWeather (already
           rendered inside the location panel) — no separate render needed
           here, but the manager still exposes the toggle for future use. */}

@@ -157,6 +157,11 @@ async def test_rollup_returns_all_widgets_by_default(
     assert resp.status_code == 200, resp.text
     body = resp.json()
 
+    # The 10 wave-2 dashboard widgets — frozen contract, can grow but
+    # never shrink. W23 P0 added 8 more project-detail widget ids
+    # (project_rfi_inbox, project_change_orders_pulse, …) which are
+    # also surfaced by the same rollup endpoint, so we check for
+    # *subset* containment rather than exact equality.
     expected = {
         "boq_summary",
         "validation_score",
@@ -175,7 +180,9 @@ async def test_rollup_returns_all_widgets_by_default(
     # Envelope metadata
     assert "generated_at" in body
     assert body["project_count"] >= 1
-    assert set(body["widgets_requested"]) == expected
+    assert expected.issubset(set(body["widgets_requested"])), (
+        "widgets_requested must include every wave-2 dashboard widget id"
+    )
 
     # ETag + Cache-Control headers ship.
     assert "etag" in {k.lower() for k in resp.headers.keys()}

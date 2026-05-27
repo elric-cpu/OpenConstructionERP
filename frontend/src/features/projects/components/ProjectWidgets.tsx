@@ -13,8 +13,20 @@
  * we never coerce to Float on read until after the format step. Visual
  * polish matches the dashboard's ``NewWidgets`` (same shell, same
  * typography ratios) so the two surfaces feel like one design system.
+ *
+ * **W23 P0 — fan-out → rollup refactor:** 8 of the 13 widgets used to
+ * each fire their own ``useQuery`` against per-widget endpoints. On a
+ * cold /projects/:id load this caused ~8 parallel HTTP calls (=> 502
+ * spikes on VPS, slow paint, react-query thrash). They now share one
+ * parent ``useProjectWidgetsRollup`` and read their slice via
+ * ``ProjectWidgetsRollupProvider``. The 5 widgets whose original
+ * endpoints don't exist server-side (photo strip, activity feed,
+ * schedule strip, AI insights, recent files — all currently graceful-
+ * null on every install) keep their own ``useGracefulQuery`` for now
+ * — adding them to the rollup would require new backend endpoints
+ * that don't yet exist.
  */
-import { useMemo } from 'react';
+import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -36,6 +48,105 @@ import {
 } from 'lucide-react';
 import { Card, Skeleton, Badge } from '@/shared/ui';
 import { apiGet, ApiError } from '@/shared/lib/api';
+import { useProjectWidgetsRollup } from '../hooks/useProjectWidgetsRollup';
+import type {
+  ProjectBudgetBurnPayload,
+  ProjectChangeOrdersPulsePayload,
+  ProjectComplianceSummaryPayload,
+  ProjectDailyDiaryPayload,
+  ProjectHSEIncidentsPayload,
+  ProjectQualityNCRPayload,
+  ProjectRFIInboxPayload,
+  ProjectVariationsPayload,
+} from '@/shared/api/dashboardRollup';
+
+/* ── Rollup provider ──────────────────────────────────────────────────── */
+
+interface ProjectWidgetsRollupContextValue {
+  isLoading: boolean;
+  data: {
+    project_rfi_inbox?: ProjectRFIInboxPayload;
+    project_change_orders_pulse?: ProjectChangeOrdersPulsePayload;
+    project_daily_diary?: ProjectDailyDiaryPayload;
+    project_hse_incidents?: ProjectHSEIncidentsPayload;
+    project_variations?: ProjectVariationsPayload;
+    project_quality_ncr?: ProjectQualityNCRPayload;
+    project_compliance_summary?: ProjectComplianceSummaryPayload;
+    project_budget_burn?: ProjectBudgetBurnPayload;
+  } | null;
+}
+
+const ProjectWidgetsRollupContext =
+  createContext<ProjectWidgetsRollupContextValue | null>(null);
+
+/**
+ * Wraps the project-detail widget block so every widget can read its
+ * slice of the rollup without re-firing its own ``useQuery``. Render
+ * this once per /projects/:id surface, around all the ``*Widget``
+ * components below.
+ */
+export function ProjectWidgetsRollupProvider({
+  projectId,
+  children,
+}: {
+  projectId: string;
+  children: ReactNode;
+}) {
+  const { data, isLoading } = useProjectWidgetsRollup({ projectId });
+  const value = useMemo<ProjectWidgetsRollupContextValue>(
+    () => ({
+      isLoading,
+      data: data
+        ? {
+            project_rfi_inbox: data.project_rfi_inbox,
+            project_change_orders_pulse: data.project_change_orders_pulse,
+            project_daily_diary: data.project_daily_diary,
+            project_hse_incidents: data.project_hse_incidents,
+            project_variations: data.project_variations,
+            project_quality_ncr: data.project_quality_ncr,
+            project_compliance_summary: data.project_compliance_summary,
+            project_budget_burn: data.project_budget_burn,
+          }
+        : null,
+    }),
+    [data, isLoading],
+  );
+  return (
+    <ProjectWidgetsRollupContext.Provider value={value}>
+      {children}
+    </ProjectWidgetsRollupContext.Provider>
+  );
+}
+
+/**
+ * Read this widget's slice of the parent rollup. Returns ``undefined``
+ * when:
+ *   - the provider isn't mounted (call-sites that aren't yet wrapped),
+ *   - the parent query is still loading,
+ *   - the widget key is missing from the payload (backend module disabled).
+ *
+ * The widget should fall back to its own ``useGracefulQuery`` in the
+ * "provider not mounted" case so it still works when rendered standalone.
+ */
+function useRollupSlice<K extends keyof NonNullable<ProjectWidgetsRollupContextValue['data']>>(
+  key: K,
+): {
+  /** True while the parent rollup is in flight. */
+  isLoadingFromRollup: boolean;
+  /** True when a rollup provider is mounted (whether loaded yet or not). */
+  hasProvider: boolean;
+  data: NonNullable<ProjectWidgetsRollupContextValue['data']>[K] | undefined;
+} {
+  const ctx = useContext(ProjectWidgetsRollupContext);
+  if (ctx == null) {
+    return { isLoadingFromRollup: false, hasProvider: false, data: undefined };
+  }
+  return {
+    isLoadingFromRollup: ctx.isLoading,
+    hasProvider: true,
+    data: ctx.data?.[key],
+  };
+}
 
 /* ── Shared shell ──────────────────────────────────────────────────────── */
 
@@ -107,6 +218,10 @@ function WidgetEmpty({ message }: { message: string }) {
 /**
  * Run a query that tolerates 4xx / network errors by resolving to ``null``.
  * The widget then decides what to render based on the resolved value.
+ *
+ * When the parent ``ProjectWidgetsRollupProvider`` is mounted, individual
+ * widgets pass ``enabled=false`` to suppress this fallback query — the
+ * rollup already returned their slice.
  */
 function useGracefulQuery<T>(key: readonly unknown[], path: string, enabled = true) {
   return useQuery<T | null>({
@@ -141,10 +256,19 @@ interface RFIItem {
 export function RFIInboxWidget({ projectId }: { projectId: string }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { data, isLoading } = useGracefulQuery<RFIItem[]>(
+  // W23 P0: prefer the rolled-up payload from the parent provider.
+  // Fall back to the per-widget query if the provider isn't mounted —
+  // some surfaces (storybook, ad-hoc embeds) render the widget standalone.
+  const rollup = useRollupSlice('project_rfi_inbox');
+  const fallback = useGracefulQuery<RFIItem[]>(
     ['proj-widget-rfi', projectId],
     `/v1/rfi/?project_id=${projectId}&status=open&limit=5`,
+    !rollup.hasProvider,
   );
+  const data: RFIItem[] | null | undefined = rollup.hasProvider
+    ? (rollup.data?.items as RFIItem[] | undefined) ?? null
+    : fallback.data;
+  const isLoading = rollup.hasProvider ? rollup.isLoadingFromRollup : fallback.isLoading;
 
   const title = t('project.widget.rfi-inbox.title', { defaultValue: 'RFI inbox' });
   const subtitle = t('project.widget.rfi-inbox.card_subtitle', {
@@ -220,10 +344,19 @@ export function ChangeOrdersPulseWidget({
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { data, isLoading } = useGracefulQuery<ChangeOrderSummary>(
+  const rollup = useRollupSlice('project_change_orders_pulse');
+  const fallback = useGracefulQuery<ChangeOrderSummary>(
     ['proj-widget-co', projectId],
     `/v1/changeorders/summary/?project_id=${projectId}`,
+    !rollup.hasProvider,
   );
+  // Rollup payload already matches ChangeOrderSummary's shape closely
+  // (open_count, pending_count, approved_count, approved_value,
+  // total_value, currency). Money fields stay as strings.
+  const data: ChangeOrderSummary | null | undefined = rollup.hasProvider
+    ? (rollup.data as ChangeOrderSummary | undefined) ?? null
+    : fallback.data;
+  const isLoading = rollup.hasProvider ? rollup.isLoadingFromRollup : fallback.isLoading;
 
   const title = t('project.widget.change-orders.title', {
     defaultValue: 'Change orders pulse',
@@ -312,10 +445,16 @@ function formatWeatherSummary(w: DiaryWeatherSummary | undefined): string | null
 export function DailyDiaryWidget({ projectId }: { projectId: string }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { data, isLoading } = useGracefulQuery<DiaryItem[]>(
+  const rollup = useRollupSlice('project_daily_diary');
+  const fallback = useGracefulQuery<DiaryItem[]>(
     ['proj-widget-diary', projectId],
     `/v1/daily-diary/diaries/?project_id=${projectId}&limit=1`,
+    !rollup.hasProvider,
   );
+  const data: DiaryItem[] | null | undefined = rollup.hasProvider
+    ? (rollup.data?.items as DiaryItem[] | undefined) ?? null
+    : fallback.data;
+  const isLoading = rollup.hasProvider ? rollup.isLoadingFromRollup : fallback.isLoading;
 
   const latest = data?.[0];
   const title = t('project.widget.daily-diary.title', { defaultValue: 'Daily diary' });
@@ -389,12 +528,29 @@ interface HSEInvestigation {
 export function HSEIncidentsWidget({ projectId }: { projectId: string }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { data, isLoading } = useGracefulQuery<HSEInvestigation[]>(
+  const rollup = useRollupSlice('project_hse_incidents');
+  const fallback = useGracefulQuery<HSEInvestigation[]>(
     ['proj-widget-hse', projectId],
     `/v1/hse/investigations/?project_id=${projectId}&limit=20`,
+    !rollup.hasProvider,
   );
+  const data: HSEInvestigation[] | null | undefined = rollup.hasProvider
+    ? (rollup.data?.items as HSEInvestigation[] | undefined) ?? null
+    : fallback.data;
+  const isLoading = rollup.hasProvider ? rollup.isLoadingFromRollup : fallback.isLoading;
 
   const severityCounts = useMemo(() => {
+    // Prefer server-side counts when the rollup supplied them so the
+    // dashboard stays consistent with the QMS module's own canonical
+    // bucketing.
+    if (rollup.hasProvider && rollup.data) {
+      return {
+        high: rollup.data.high,
+        medium: rollup.data.medium,
+        low: rollup.data.low,
+        total: rollup.data.total,
+      };
+    }
     const c = { high: 0, medium: 0, low: 0, total: 0 };
     if (!data) return c;
     for (const inv of data) {
@@ -406,7 +562,7 @@ export function HSEIncidentsWidget({ projectId }: { projectId: string }) {
       else c.low++;
     }
     return c;
-  }, [data]);
+  }, [data, rollup.hasProvider, rollup.data]);
 
   const title = t('project.widget.hse-incidents.title', { defaultValue: 'HSE incidents' });
   const subtitle = t('project.widget.hse-incidents.card_subtitle', {
@@ -482,12 +638,28 @@ export function VariationsWidget({
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { data, isLoading } = useGracefulQuery<VariationRequest[]>(
+  const rollup = useRollupSlice('project_variations');
+  const fallback = useGracefulQuery<VariationRequest[]>(
     ['proj-widget-var', projectId],
     `/v1/variations/variation-requests/?project_id=${projectId}&limit=50`,
+    !rollup.hasProvider,
   );
+  const data: VariationRequest[] | null | undefined = rollup.hasProvider
+    ? (rollup.data?.items as VariationRequest[] | undefined) ?? null
+    : fallback.data;
+  const isLoading = rollup.hasProvider ? rollup.isLoadingFromRollup : fallback.isLoading;
 
   const stats = useMemo(() => {
+    // Prefer server-side rollup counts when present — they treat money
+    // as Decimal-string everywhere, avoiding float drift.
+    if (rollup.hasProvider && rollup.data) {
+      return {
+        open: rollup.data.open,
+        // ``disputed_value`` is Decimal-as-string; only convert it
+        // immediately before formatting, not during accumulation.
+        disputedValue: Number(rollup.data.disputed_value) || 0,
+      };
+    }
     if (!data) return { open: 0, disputedValue: 0 };
     let open = 0;
     let disputedValue = 0;
@@ -506,7 +678,7 @@ export function VariationsWidget({
       }
     }
     return { open, disputedValue };
-  }, [data]);
+  }, [data, rollup.hasProvider, rollup.data]);
 
   const title = t('project.widget.variations.title', {
     defaultValue: 'Variations counter',
@@ -844,12 +1016,25 @@ interface NCRItem {
 export function QualityNCRWidget({ projectId }: { projectId: string }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { data, isLoading } = useGracefulQuery<NCRItem[]>(
+  const rollup = useRollupSlice('project_quality_ncr');
+  const fallback = useGracefulQuery<NCRItem[]>(
     ['proj-widget-ncr', projectId],
     `/v1/qms/ncrs/?project_id=${projectId}&limit=50`,
+    !rollup.hasProvider,
   );
+  const data: NCRItem[] | null | undefined = rollup.hasProvider
+    ? (rollup.data?.items as NCRItem[] | undefined) ?? null
+    : fallback.data;
+  const isLoading = rollup.hasProvider ? rollup.isLoadingFromRollup : fallback.isLoading;
 
   const counts = useMemo(() => {
+    if (rollup.hasProvider && rollup.data) {
+      return {
+        open: rollup.data.open,
+        major: rollup.data.major,
+        minor: rollup.data.minor,
+      };
+    }
     const c = { open: 0, major: 0, minor: 0 };
     if (!data) return c;
     for (const n of data) {
@@ -860,7 +1045,7 @@ export function QualityNCRWidget({ projectId }: { projectId: string }) {
       else c.minor++;
     }
     return c;
-  }, [data]);
+  }, [data, rollup.hasProvider, rollup.data]);
 
   const title = t('project.widget.quality-ncr.title', {
     defaultValue: 'Quality NCRs',
@@ -940,10 +1125,26 @@ export function BudgetBurnWidget({
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { data, isLoading } = useGracefulQuery<BudgetBurnPayload>(
+  const rollup = useRollupSlice('project_budget_burn');
+  const fallback = useGracefulQuery<BudgetBurnPayload>(
     ['proj-widget-burn', projectId],
     `/v1/costmodel/projects/${projectId}/5d/dashboard/`,
+    !rollup.hasProvider,
   );
+  // Rollup payload exposes planned_total + actual_total directly; the
+  // fallback hits /5d/dashboard which uses ``total_budget`` / ``total_actual``,
+  // so we normalise both shapes onto the widget's ``BudgetBurnPayload``.
+  const data: BudgetBurnPayload | null | undefined = rollup.hasProvider
+    ? rollup.data
+      ? ({
+          planned_total: rollup.data.planned_total,
+          actual_total: rollup.data.actual_total,
+          currency: rollup.data.currency,
+          series: rollup.data.series,
+        } as BudgetBurnPayload)
+      : null
+    : fallback.data;
+  const isLoading = rollup.hasProvider ? rollup.isLoadingFromRollup : fallback.isLoading;
 
   // The costmodel dashboard returns aggregated totals; sparkline is
   // synthesised from cumulative actual/planned values for v1. If a
@@ -1042,12 +1243,25 @@ interface ComplianceDoc {
 export function ComplianceSummaryWidget({ projectId }: { projectId: string }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { data, isLoading } = useGracefulQuery<ComplianceDoc[]>(
+  const rollup = useRollupSlice('project_compliance_summary');
+  const fallback = useGracefulQuery<ComplianceDoc[]>(
     ['proj-widget-compliance', projectId],
     `/v1/compliance-docs/?project_id=${projectId}&limit=50`,
+    !rollup.hasProvider,
   );
+  const data: ComplianceDoc[] | null | undefined = rollup.hasProvider
+    ? (rollup.data?.items as ComplianceDoc[] | undefined) ?? null
+    : fallback.data;
+  const isLoading = rollup.hasProvider ? rollup.isLoadingFromRollup : fallback.isLoading;
 
   const counts = useMemo(() => {
+    if (rollup.hasProvider && rollup.data) {
+      return {
+        active: rollup.data.active,
+        expiring: rollup.data.expiring,
+        expired: rollup.data.expired,
+      };
+    }
     const c = { active: 0, expiring: 0, expired: 0 };
     if (!data) return c;
     const now = Date.now();
@@ -1063,7 +1277,7 @@ export function ComplianceSummaryWidget({ projectId }: { projectId: string }) {
       }
     }
     return c;
-  }, [data]);
+  }, [data, rollup.hasProvider, rollup.data]);
 
   const title = t('project.widget.compliance-summary.title', {
     defaultValue: 'Compliance summary',

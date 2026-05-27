@@ -205,6 +205,120 @@ class WeatherSitePayload(_Widget):
     source: str | None
 
 
+# ── Project-detail widget payloads (W23 P0) ──────────────────────────────────
+#
+# These widgets live on /projects/:id. The rollup endpoint accepts them as
+# additional widget keys + a ``project_ids=<id>`` filter, so the frontend
+# can replace ~8 parallel per-widget useQuery calls with a single rollup.
+# Money fields ship as Decimal strings, same as the wave-2 widgets above.
+
+
+class ProjectRFIItem(BaseModel):
+    id: str
+    number: str | None
+    subject: str
+    status: str
+    created_at: str | None = None
+    due_date: str | None = None
+
+
+class ProjectRFIInboxPayload(_Widget):
+    items: list[ProjectRFIItem]
+
+
+class ProjectChangeOrdersPulsePayload(_Widget):
+    open_count: int
+    pending_count: int
+    approved_count: int
+    total_value: str
+    approved_value: str
+    currency: str
+
+
+class ProjectDiaryItem(BaseModel):
+    """Single diary header — shape matches the widget's ``DiaryItem``.
+
+    ``weather_summary`` is a JSONB dict server-side; the widget already
+    has a ``formatWeatherSummary`` helper that handles both shapes, so
+    we pass the dict through untouched.
+    """
+
+    id: str
+    diary_date: str | None
+    status: str | None
+    weather_summary: dict | str | None = None
+    manpower_total: int | None = None
+    narrative: str | None = None
+
+
+class ProjectDailyDiaryPayload(_Widget):
+    items: list[ProjectDiaryItem]
+
+
+class ProjectHSEItem(BaseModel):
+    id: str
+    status: str | None
+    severity: str | None
+
+
+class ProjectHSEIncidentsPayload(_Widget):
+    total: int
+    high: int
+    medium: int
+    low: int
+    items: list[ProjectHSEItem]
+
+
+class ProjectVariationItem(BaseModel):
+    id: str
+    status: str | None
+    estimated_value: str  # Decimal-as-string
+    disputed: bool
+
+
+class ProjectVariationsPayload(_Widget):
+    open: int
+    disputed_value: str  # Decimal-as-string
+    currency: str
+    items: list[ProjectVariationItem]
+
+
+class ProjectNCRItem(BaseModel):
+    id: str
+    status: str | None
+    severity: str | None
+
+
+class ProjectQualityNCRPayload(_Widget):
+    open: int
+    major: int
+    minor: int
+    items: list[ProjectNCRItem]
+
+
+class ProjectComplianceItem(BaseModel):
+    id: str
+    status: str | None
+    expires_at: str | None
+    doc_type: str | None
+
+
+class ProjectComplianceSummaryPayload(_Widget):
+    active: int
+    expiring: int
+    expired: int
+    items: list[ProjectComplianceItem]
+
+
+class ProjectBudgetBurnPayload(_Widget):
+    planned_total: str  # Decimal-as-string
+    actual_total: str  # Decimal-as-string
+    currency: str
+    # Per-period series omitted in v1 (kept on the schema so the widget's
+    # sparkline glue keeps working when a future endpoint fills it in).
+    series: list[dict] = Field(default_factory=list)
+
+
 class RollupResponse(BaseModel):
     """Top-level rollup response.
 
@@ -230,6 +344,16 @@ class RollupResponse(BaseModel):
     change_orders: ChangeOrdersPayload | None = None
     weather_site: WeatherSitePayload | None = None
 
+    # Project-detail widgets (W23 P0).
+    project_rfi_inbox: ProjectRFIInboxPayload | None = None
+    project_change_orders_pulse: ProjectChangeOrdersPulsePayload | None = None
+    project_daily_diary: ProjectDailyDiaryPayload | None = None
+    project_hse_incidents: ProjectHSEIncidentsPayload | None = None
+    project_variations: ProjectVariationsPayload | None = None
+    project_quality_ncr: ProjectQualityNCRPayload | None = None
+    project_compliance_summary: ProjectComplianceSummaryPayload | None = None
+    project_budget_burn: ProjectBudgetBurnPayload | None = None
+
     # Cache metadata — populated by the router so the frontend can
     # display a "last refreshed Xs ago" stamp without round-tripping
     # headers through React Query's transport layer.
@@ -252,6 +376,20 @@ __all__ = [
     "HSEScorecardPayload",
     "LastBOQRef",
     "ProcurementPipelinePayload",
+    "ProjectBudgetBurnPayload",
+    "ProjectChangeOrdersPulsePayload",
+    "ProjectComplianceItem",
+    "ProjectComplianceSummaryPayload",
+    "ProjectDailyDiaryPayload",
+    "ProjectDiaryItem",
+    "ProjectHSEIncidentsPayload",
+    "ProjectHSEItem",
+    "ProjectNCRItem",
+    "ProjectQualityNCRPayload",
+    "ProjectRFIInboxPayload",
+    "ProjectRFIItem",
+    "ProjectVariationItem",
+    "ProjectVariationsPayload",
     "RiskItem",
     "RiskTopPayload",
     "RollupResponse",
