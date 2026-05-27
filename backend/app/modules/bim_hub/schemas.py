@@ -823,6 +823,71 @@ class BIMElementGroupResponse(BaseModel):
     member_element_ids: list[UUID] = Field(default_factory=list)
 
 
+# ── Smart Views — canonical-format rule builder (Phase 2.A) ─────────────────
+
+
+class SmartViewPropertyEntry(BaseModel):
+    """One row in the Property Catalog returned to the Smart View builder.
+
+    The catalog is the union of every queryable field exposed by the
+    canonical element format, grouped by Identity / Geometry / Quantities
+    / Properties and stamped with the source-format badge ("RVT" / "IFC"
+    / "DWG" / "DGN" / "PDF").  ``sample_values`` is the alphabetically
+    sorted prefix of the distinct values observed in the model — feeds
+    enum dropdowns in the UI without an extra fetch.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    field: str
+    label: str
+    group: Literal["identity", "geometry", "quantities", "properties"]
+    data_type: Literal["string", "number", "enum", "boolean"]
+    source_formats: list[str] = Field(default_factory=list)
+    sample_values: list[str] = Field(default_factory=list)
+    distinct_count: int = 0
+    truncated: bool = False
+
+
+class SmartViewPropertyCatalogResponse(BaseModel):
+    """Property catalog payload returned by ``GET /smart-views/properties``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    model_id: UUID | None = None
+    source_format: str = "other"
+    element_count: int = 0
+    entries: list[SmartViewPropertyEntry] = Field(default_factory=list)
+
+
+class SmartViewPreviewRequest(BaseModel):
+    """Body of ``POST /smart-views/preview``.
+
+    ``rule_tree`` is the validated rule tree (see ``smart_views.py``);
+    callers may also send the legacy ``filter_criteria`` shape and the
+    server will up-convert it on the fly.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    model_id: UUID | None = None
+    project_id: UUID | None = None
+    rule_tree: dict[str, Any] | None = None
+    filter_criteria: dict[str, Any] | None = None
+    sample_limit: int = Field(default=20, ge=0, le=200)
+
+
+class SmartViewPreviewResponse(BaseModel):
+    """Element count + sample id list for a Smart View rule tree."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    matched_count: int = 0
+    sample_element_ids: list[UUID] = Field(default_factory=list)
+    truncated: bool = False
+    normalised_rule_tree: dict[str, Any] = Field(default_factory=dict)
+
+
 # ── Model schema introspection (RFC 24 — Quantity Rules editor) ──────────────
 
 

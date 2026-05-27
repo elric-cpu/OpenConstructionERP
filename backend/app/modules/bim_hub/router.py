@@ -108,6 +108,9 @@ from app.modules.bim_hub.schemas import (
     FederationUpdate,
     QuantityMapApplyRequest,
     QuantityMapApplyResult,
+    SmartViewPreviewRequest,
+    SmartViewPreviewResponse,
+    SmartViewPropertyCatalogResponse,
 )
 from app.modules.bim_hub.service import BIMHubService
 
@@ -3767,6 +3770,70 @@ async def delete_element_group(
     """Delete a BIM element group."""
     await _verify_group_access(service, group_id, user_id or "")
     await service.delete_element_group(group_id)
+
+
+# ── Smart Views — canonical-format rule builder ──────────────────────────
+#
+# These three endpoints power the new Smart View builder in the BIM page.
+# They are intentionally light wrappers over service methods so the bulk
+# of the engine (validation + evaluation + property catalog) lives in
+# ``smart_views.py`` and stays unit-testable without the FastAPI deps.
+
+
+@router.get(
+    "/smart-views/properties",
+    response_model=SmartViewPropertyCatalogResponse,
+)
+async def get_smart_view_property_catalog(
+    model_id: uuid.UUID = Query(...),
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("bim.read")),
+    service: BIMHubService = Depends(_get_service),
+) -> SmartViewPropertyCatalogResponse:
+    """Return the canonical Property Catalog for a BIM model.
+
+    The catalog is grouped (Identity / Geometry / Quantities / Properties)
+    and stamped with a source-format badge ("RVT" / "IFC" / "DWG" / "DGN"
+    / "PDF") so the UI can show users where each property came from.
+    Sample distinct values feed enum dropdowns in the rule builder.
+    """
+    await _verify_model_access(service, model_id, user_id or "")
+    catalog = await service.get_smart_view_property_catalog(model_id)
+    return SmartViewPropertyCatalogResponse(**catalog)
+
+
+@router.post(
+    "/smart-views/preview",
+    response_model=SmartViewPreviewResponse,
+)
+async def preview_smart_view(
+    payload: SmartViewPreviewRequest,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("bim.read")),
+    service: BIMHubService = Depends(_get_service),
+) -> SmartViewPreviewResponse:
+    """Evaluate an unsaved Smart View rule tree and return the match count.
+
+    Drives the live "234 elements match" counter in the builder UI.
+    Either ``model_id`` or ``project_id`` is required for scoping.
+    """
+    if payload.model_id is None and payload.project_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Either model_id or project_id is required",
+        )
+    if payload.model_id is not None:
+        await _verify_model_access(service, payload.model_id, user_id or "")
+    elif payload.project_id is not None:
+        await _verify_project_access(service.session, payload.project_id, user_id or "")
+    result = await service.preview_smart_view(
+        rule_tree=payload.rule_tree,
+        legacy_criteria=payload.filter_criteria,
+        model_id=payload.model_id,
+        project_id=payload.project_id,
+        sample_limit=payload.sample_limit,
+    )
+    return SmartViewPreviewResponse(**result)
 
 
 # ── Vector / semantic memory endpoints ───────────────────────────────────

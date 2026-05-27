@@ -2891,6 +2891,136 @@ class BIMHubService:
 
         return [e.id for e in elements if _matches(e)]
 
+    async def _scoped_element_ids_for_group(
+        self, group: BIMElementGroup,
+    ) -> list[uuid.UUID] | None:
+        """Return the candidate-element id-list a group's filter runs over.
+
+        Group-scope rule:
+        - If ``group.model_id`` is set, restrict to that single model.
+        - Else, restrict to every model in the group's project.
+
+        Returns ``None`` (treated as "no candidates") when the project has
+        no BIM models at all so the caller can short-circuit to ``[]``.
+        """
+        if group.model_id is not None:
+            stmt = select(BIMElement.id).where(BIMElement.model_id == group.model_id)
+            return list((await self.session.execute(stmt)).scalars().all())
+
+        model_ids_stmt = select(BIMModel.id).where(BIMModel.project_id == group.project_id)
+        model_ids = [row[0] for row in (await self.session.execute(model_ids_stmt)).all()]
+        if not model_ids:
+            return None
+        stmt = select(BIMElement.id).where(BIMElement.model_id.in_(model_ids))
+        return list((await self.session.execute(stmt)).scalars().all())
+
+    # ── Smart Views — property catalog + preview (canonical-format) ──────────
+
+    async def get_smart_view_property_catalog(
+        self,
+        model_id: uuid.UUID,
+    ) -> dict[str, Any]:
+        """Build the Smart View property catalog for a single model.
+
+        Returns the Identity / Geometry / Quantities / Properties grouped
+        view of every queryable field, with sample distinct values and a
+        source-format badge per row.  Caps element scan at 50K (the
+        ``DYNAMIC_GROUP_CAP``) so federated models with hundreds of
+        thousands of rows stay responsive.
+        """
+        from app.modules.bim_hub.smart_views import (
+            _source_format_of,
+            build_property_catalog,
+            catalog_to_dict,
+        )
+
+        model = await self.model_repo.get(model_id)
+        if model is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="BIM model not found",
+            )
+
+        elements, _total = await self.element_repo.list_for_model(
+            model_id,
+            offset=0,
+            limit=50_000,
+        )
+
+        catalog = build_property_catalog(
+            list(elements),
+            model_format=getattr(model, "model_format", None),
+        )
+        return {
+            "model_id": model_id,
+            "source_format": _source_format_of(getattr(model, "model_format", None)),
+            "element_count": len(elements),
+            "entries": [catalog_to_dict(e) for e in catalog],
+        }
+
+    async def preview_smart_view(
+        self,
+        rule_tree: dict[str, Any] | None,
+        legacy_criteria: dict[str, Any] | None,
+        model_id: uuid.UUID | None,
+        project_id: uuid.UUID | None,
+        sample_limit: int = 20,
+    ) -> dict[str, Any]:
+        """Resolve a (possibly unsaved) Smart View predicate to (count, ids).
+
+        Accepts either a new ``rule_tree`` or the legacy ``filter_criteria``
+        shape and runs it through the canonical evaluator.  When neither is
+        supplied the predicate is treated as "match every element in scope".
+        """
+        from app.modules.bim_hub.smart_views import (
+            evaluate as smartview_evaluate,
+            legacy_criteria_to_tree,
+            validate_rule_tree,
+        )
+
+        if rule_tree is not None:
+            tree = validate_rule_tree(rule_tree)
+        elif legacy_criteria:
+            tree = legacy_criteria_to_tree(legacy_criteria)
+        else:
+            tree = {"op": "AND", "rules": []}
+
+        # Scope: explicit model_id wins; otherwise restrict to project's models.
+        base = select(BIMElement)
+        if model_id is not None:
+            base = base.where(BIMElement.model_id == model_id)
+        elif project_id is not None:
+            mids = await self.session.execute(
+                select(BIMModel.id).where(BIMModel.project_id == project_id)
+            )
+            mid_list = [row[0] for row in mids.all()]
+            if not mid_list:
+                return {
+                    "matched_count": 0,
+                    "sample_element_ids": [],
+                    "truncated": False,
+                    "normalised_rule_tree": tree,
+                }
+            base = base.where(BIMElement.model_id.in_(mid_list))
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Either model_id or project_id is required for preview",
+            )
+
+        base = base.limit(50_000)
+        result = await self.session.execute(base)
+        elements = list(result.scalars().all())
+        matched = smartview_evaluate(tree, elements)
+
+        sample = [e.id for e in matched[: max(0, sample_limit)]]
+        return {
+            "matched_count": len(matched),
+            "sample_element_ids": sample,
+            "truncated": len(elements) >= 50_000,
+            "normalised_rule_tree": tree,
+        }
+
     @staticmethod
     def _group_to_response(group: BIMElementGroup) -> BIMElementGroupResponse:
         """Convert a ``BIMElementGroup`` ORM row to its API response.
