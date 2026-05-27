@@ -11,6 +11,15 @@ import { useAuthStore } from '@/stores/useAuthStore';
 
 export type DwgScaleMode = 'preset' | 'calibrated' | 'per_annotation';
 
+/** Lifecycle states the backend reports for a drawing.
+ *  - `uploaded`: file persisted, conversion not yet started.
+ *  - `processing`: DXF parser or DDC DwgExporter is running. This is the
+ *    long step — a medium DWG can stay here for 3–8 minutes.
+ *  - `ready`: entities + thumbnail are available. The viewer can render.
+ *  - `empty`: file parsed cleanly but produced 0 entities.
+ *  - `error`: conversion failed. `error_message` carries the reason. */
+export type DwgDrawingStatus = 'uploaded' | 'processing' | 'ready' | 'empty' | 'error';
+
 export interface DwgDrawing {
   id: string;
   project_id: string;
@@ -26,6 +35,13 @@ export interface DwgDrawing {
   scale_mode?: DwgScaleMode;
   /** DXF $INSUNITS name: "mm", "cm", "m", "inches", "feet", "unitless", ... */
   units?: string | null;
+  /** Backend conversion lifecycle (see {@link DwgDrawingStatus}). Polled
+   *  by the DWG takeoff page while the user waits — uploading a .dwg
+   *  immediately returns a row with ``status="processing"`` while the
+   *  actual DDC conversion runs in the background for several minutes. */
+  status?: DwgDrawingStatus;
+  /** Human-readable reason when ``status === 'error'`` or ``'empty'``. */
+  error_message?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -189,6 +205,14 @@ export async function fetchDrawings(projectId: string): Promise<DwgDrawing[]> {
   // return empty instead of 404-logging on every project switch.
   if (!(await isModuleLoaded('oe_dwg_takeoff'))) return [];
   return apiGet<DwgDrawing[]>(`/v1/dwg_takeoff/drawings/?project_id=${projectId}`);
+}
+
+/** Fetch a single drawing — used to poll conversion status while the
+ *  user watches the honest progress UI on /dwg-takeoff. The backend
+ *  flips `status` from `processing` → `ready` (or `error` / `empty`)
+ *  once the DDC pipeline finishes. */
+export async function fetchDrawing(drawingId: string): Promise<DwgDrawing> {
+  return apiGet<DwgDrawing>(`/v1/dwg_takeoff/drawings/${drawingId}`);
 }
 
 export async function uploadDrawing(

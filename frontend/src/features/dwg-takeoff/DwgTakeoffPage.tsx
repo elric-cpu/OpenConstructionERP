@@ -64,6 +64,7 @@ import { projectsApi } from '@/features/projects/api';
 import { installBIMConverter } from '@/features/bim/api';
 import { ConverterInstallProgressBar } from '@/features/bim/ConverterInstallProgressBar';
 import {
+  fetchDrawing,
   fetchDrawings,
   deleteDrawing,
   fetchEntities,
@@ -732,9 +733,24 @@ export function DwgTakeoffPage() {
       if (!projectId) return;
       for (const [id, job] of state.jobs) {
         const prev = prevState.jobs.get(id);
+        // As soon as the upload POST returns and the backend's drawing
+        // row exists (drawingId is set), auto-select it so the user
+        // immediately sees the ConversionProgressCard bound to *their*
+        // specific drawing — instead of staring at the upload card with
+        // a vague corner dock. The card itself drives the 3-8 minute
+        // wait honestly, with elapsed time + step list.
+        if (
+          job.drawingId
+          && !prev?.drawingId
+          && job.projectId === projectId
+        ) {
+          queryClient.invalidateQueries({ queryKey: ['dwg-drawings', projectId] });
+          setSelectedDrawingId(job.drawingId);
+        }
         if (prev?.status !== 'ready' && job.status === 'ready' && job.projectId === projectId) {
           queryClient.invalidateQueries({ queryKey: ['dwg-drawings', projectId] });
           queryClient.invalidateQueries({ queryKey: ['documents'] });
+          queryClient.invalidateQueries({ queryKey: ['dwg-entities', job.drawingId] });
           if (job.drawingId) setSelectedDrawingId(job.drawingId);
           addToast({
             type: 'success',
@@ -851,6 +867,62 @@ export function DwgTakeoffPage() {
     queryFn: () => fetchAnnotations(selectedDrawingId!),
     enabled: !!selectedDrawingId,
   });
+
+  /* ── Honest progress: backend status polling ────────────────────────
+   * The /drawings list reflects the row at first paint, but for .dwg
+   * uploads the backend dispatches conversion as an asyncio.create_task
+   * and immediately returns `status="processing"` — that row can stay
+   * "processing" for 3-8 minutes on a medium DWG. Without active
+   * polling the user previously saw the empty DxfViewer (entities=[])
+   * and assumed it was "loaded but broken". Poll every 3.5 s while the
+   * drawing is not yet ready so we can render an honest conversion
+   * card and invalidate the entities query when it flips to `ready`.
+   *
+   * The query reads its own dedicated `dwg-drawing` queryKey so we
+   * don't keep refetching the whole drawings list (which would also
+   * trash the SheetStrip thumbnails). */
+  const selectedDrawingFromList = useMemo(
+    () => drawings.find((d) => d.id === selectedDrawingId),
+    [drawings, selectedDrawingId],
+  );
+  const isStatusKnownReady = (selectedDrawingFromList?.status ?? null) === 'ready';
+  const { data: liveDrawing } = useQuery({
+    queryKey: ['dwg-drawing', selectedDrawingId],
+    queryFn: () => fetchDrawing(selectedDrawingId!),
+    enabled: !!selectedDrawingId && !isStatusKnownReady,
+    refetchInterval: (q) => {
+      const s = (q.state.data as { status?: string } | undefined)?.status;
+      // Stop polling once the backend has reached a terminal state.
+      if (s === 'ready' || s === 'error' || s === 'empty') return false;
+      return 3500;
+    },
+    refetchIntervalInBackground: false,
+    staleTime: 0,
+    gcTime: 0,
+  });
+  /** Effective backend status. Prefer the live-poll result; fall back
+   *  to whatever the drawings list carried (so we don't briefly drop
+   *  back into "loading…" between the first paint and the first poll
+   *  response). */
+  const drawingStatus =
+    liveDrawing?.status ?? selectedDrawingFromList?.status ?? null;
+  const isConverting =
+    !!selectedDrawingId &&
+    (drawingStatus === 'processing' || drawingStatus === 'uploaded');
+  const isErrorStatus = drawingStatus === 'error';
+  const isEmptyStatus = drawingStatus === 'empty';
+  const drawingErrorMessage =
+    liveDrawing?.error_message ?? selectedDrawingFromList?.error_message ?? null;
+
+  // When the backend finishes conversion, invalidate the entities and
+  // drawings list queries so the canvas renders the freshly-parsed
+  // entities without waiting for the next stale-time cycle.
+  useEffect(() => {
+    if (drawingStatus === 'ready' && selectedDrawingId) {
+      queryClient.invalidateQueries({ queryKey: ['dwg-entities', selectedDrawingId] });
+      queryClient.invalidateQueries({ queryKey: ['dwg-drawings', projectId] });
+    }
+  }, [drawingStatus, selectedDrawingId, projectId, queryClient]);
 
   /**
    * Offline-readiness probe (R3 #9). 60 s staleTime — the binary either
@@ -2462,6 +2534,27 @@ export function DwgTakeoffPage() {
                 </div>
               </div>
             </div>
+          ) : isConverting ? (
+            <ConversionProgressCard
+              drawingName={selectedDrawingFromList?.name || selectedDrawingFromList?.filename || ''}
+              filename={selectedDrawingFromList?.filename || ''}
+              status={drawingStatus}
+              startedAt={
+                selectedDrawingFromList?.created_at
+                  ? new Date(selectedDrawingFromList.created_at).getTime()
+                  : Date.now()
+              }
+            />
+          ) : isErrorStatus ? (
+            <ConversionErrorCard
+              drawingName={selectedDrawingFromList?.name || selectedDrawingFromList?.filename || ''}
+              message={drawingErrorMessage}
+            />
+          ) : isEmptyStatus ? (
+            <ConversionEmptyCard
+              drawingName={selectedDrawingFromList?.name || selectedDrawingFromList?.filename || ''}
+              message={drawingErrorMessage}
+            />
           ) : loadingEntities ? (
             <div className="flex flex-1 items-center justify-center">
               <div className="flex flex-col items-center gap-4 max-w-sm w-full px-6">
@@ -4922,6 +5015,273 @@ function UploadProgressInline() {
       <p className="text-[10px] text-content-tertiary">
         {t(active.stage, { defaultValue: 'Processing upload…' })}
       </p>
+    </div>
+  );
+}
+
+/* ── Conversion progress / error / empty cards ──────────────────────────
+ *
+ * These render in place of the DxfViewer when the selected drawing has
+ * not yet reached `status="ready"`. Before P1 the page silently rendered
+ * an empty viewer for the entire 3-8 minute DDC conversion window — the
+ * user reported it as "показывает что проект загружен — но ничего не
+ * показывается и только потом через 5 минут происходит загрузка".
+ *
+ * ConversionProgressCard intentionally does NOT show a determinate
+ * percentage. The DDC pipeline does not expose granular progress, and a
+ * fake percentage that climbs to 95% and sits there for minutes is worse
+ * than honest indeterminate motion + a step list + a live elapsed-time
+ * counter. The cancel affordance is omitted because the backend has no
+ * cancel endpoint for in-flight conversions (the asyncio task runs the
+ * DwgExporter subprocess to completion); we surface that in microcopy
+ * instead of offering a button that wouldn't actually stop the work. */
+function ConversionProgressCard({
+  drawingName,
+  filename,
+  status,
+  startedAt,
+}: {
+  drawingName: string;
+  filename: string;
+  status: string | null;
+  startedAt: number;
+}) {
+  const { t } = useTranslation();
+  const [, force] = useState(0);
+
+  // Refresh once a second so the elapsed-time pill stays honest.
+  useEffect(() => {
+    const iv = setInterval(() => force((n) => n + 1), 1000);
+    return () => clearInterval(iv);
+  }, []);
+
+  const elapsedSec = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
+  const elapsedLabel =
+    elapsedSec < 60
+      ? `${elapsedSec}s`
+      : `${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s`;
+
+  // Step machine — drives the highlighted "current step". When the
+  // backend says `uploaded` the file is on disk but conversion has not
+  // started yet (step 1). `processing` covers steps 2 and 3 — we can't
+  // distinguish them from the API, so step 2 is "current" until the
+  // status flips out of processing.
+  const currentStep = status === 'uploaded' ? 1 : status === 'processing' ? 2 : 4;
+
+  const steps: { id: number; label: string; hint: string }[] = [
+    {
+      id: 1,
+      label: t('dwg_takeoff.conv_step_upload', { defaultValue: 'Upload received' }),
+      hint: t('dwg_takeoff.conv_step_upload_hint', {
+        defaultValue: 'File saved on the server.',
+      }),
+    },
+    {
+      id: 2,
+      label: t('dwg_takeoff.conv_step_convert', {
+        defaultValue: 'Converting DWG to canonical JSON',
+      }),
+      hint: t('dwg_takeoff.conv_step_convert_hint', {
+        defaultValue:
+          'DDC cad2data is parsing your drawing. This is the slow step — usually 3-8 minutes for a medium DWG, longer for large architectural sets.',
+      }),
+    },
+    {
+      id: 3,
+      label: t('dwg_takeoff.conv_step_extract', {
+        defaultValue: 'Extracting entities and layers',
+      }),
+      hint: t('dwg_takeoff.conv_step_extract_hint', {
+        defaultValue: 'Building the entity list the viewer will render.',
+      }),
+    },
+    {
+      id: 4,
+      label: t('dwg_takeoff.conv_step_render', { defaultValue: 'Opening the viewer' }),
+      hint: t('dwg_takeoff.conv_step_render_hint', {
+        defaultValue: 'You will see the drawing here as soon as the entities arrive.',
+      }),
+    },
+  ];
+
+  return (
+    <div className="flex flex-1 items-center justify-center overflow-y-auto p-6">
+      <div
+        data-testid="dwg-conversion-progress-card"
+        className="w-full max-w-xl rounded-2xl border border-border-light bg-surface-elevated p-6 shadow-xl"
+      >
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-oe-blue/10 border border-oe-blue/20 flex items-center justify-center shrink-0">
+            <Loader2 size={20} className="text-oe-blue animate-spin" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-base font-semibold text-content-primary leading-tight">
+              {t('dwg_takeoff.conv_title', { defaultValue: 'Converting your drawing…' })}
+            </h2>
+            <p className="text-xs text-content-tertiary mt-1 truncate" title={filename}>
+              {drawingName || filename}
+            </p>
+          </div>
+          <span
+            className="text-[11px] font-semibold tabular-nums text-content-secondary bg-surface-secondary px-2 py-1 rounded-md shrink-0"
+            aria-label={t('dwg_takeoff.conv_elapsed', { defaultValue: 'Elapsed time' })}
+          >
+            {elapsedLabel}
+          </span>
+        </div>
+
+        {/* Indeterminate progress bar — honest motion without a fake %. */}
+        <div className="mt-5 h-1.5 rounded-full bg-surface-tertiary overflow-hidden relative">
+          <div
+            className="absolute inset-y-0 w-1/3 rounded-full bg-oe-blue"
+            style={{
+              animation: 'oe-dwg-indeterminate 1.6s ease-in-out infinite',
+            }}
+          />
+        </div>
+        <style>{`
+          @keyframes oe-dwg-indeterminate {
+            0%   { left: -33%; }
+            50%  { left: 50%; }
+            100% { left: 110%; }
+          }
+        `}</style>
+
+        {/* Step list — one row per pipeline phase, current step highlighted. */}
+        <ol className="mt-5 space-y-2">
+          {steps.map((step) => {
+            const isDone = step.id < currentStep;
+            const isCurrent = step.id === currentStep;
+            return (
+              <li
+                key={step.id}
+                className={clsx(
+                  'flex items-start gap-3 rounded-lg px-3 py-2 transition-colors',
+                  isCurrent && 'bg-oe-blue/5 border border-oe-blue/20',
+                  !isCurrent && 'border border-transparent',
+                )}
+              >
+                <div
+                  className={clsx(
+                    'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold',
+                    isDone && 'bg-emerald-500/15 text-emerald-500',
+                    isCurrent && 'bg-oe-blue/15 text-oe-blue',
+                    !isDone && !isCurrent && 'bg-surface-secondary text-content-quaternary',
+                  )}
+                >
+                  {isDone ? '✓' : step.id}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p
+                    className={clsx(
+                      'text-xs font-medium leading-tight',
+                      isCurrent ? 'text-content-primary' : 'text-content-secondary',
+                    )}
+                  >
+                    {step.label}
+                    {isCurrent && (
+                      <Loader2
+                        size={11}
+                        className="inline-block ml-1.5 text-oe-blue animate-spin align-[-1px]"
+                      />
+                    )}
+                  </p>
+                  {isCurrent && (
+                    <p className="text-[11px] text-content-tertiary leading-snug mt-0.5">
+                      {step.hint}
+                    </p>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+
+        <div className="mt-5 rounded-lg bg-amber-500/5 border border-amber-500/20 px-3 py-2.5 text-[11px] text-amber-700 dark:text-amber-300 leading-relaxed">
+          {t('dwg_takeoff.conv_note', {
+            defaultValue:
+              'You can safely navigate to other pages — conversion runs on the server. The drawing will be ready here when you come back.',
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConversionErrorCard({
+  drawingName,
+  message,
+}: {
+  drawingName: string;
+  message: string | null;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-1 items-center justify-center p-6">
+      <div
+        data-testid="dwg-conversion-error-card"
+        className="w-full max-w-xl rounded-2xl border border-red-500/30 bg-red-500/5 p-6 shadow-xl"
+      >
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-red-500/15 border border-red-500/30 flex items-center justify-center shrink-0">
+            <X size={20} className="text-red-500" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-base font-semibold text-content-primary leading-tight">
+              {t('dwg_takeoff.conv_error_title', { defaultValue: 'Conversion failed' })}
+            </h2>
+            <p className="text-xs text-content-tertiary mt-1 truncate" title={drawingName}>
+              {drawingName}
+            </p>
+            <p className="text-xs text-content-secondary mt-3 leading-relaxed">
+              {message ||
+                t('dwg_takeoff.conv_error_default', {
+                  defaultValue:
+                    'The server could not parse this file. Try re-saving as a newer DWG/DXF version or upload a different file.',
+                })}
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConversionEmptyCard({
+  drawingName,
+  message,
+}: {
+  drawingName: string;
+  message: string | null;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-1 items-center justify-center p-6">
+      <div
+        data-testid="dwg-conversion-empty-card"
+        className="w-full max-w-xl rounded-2xl border border-amber-500/30 bg-amber-500/5 p-6 shadow-xl"
+      >
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0">
+            <Info size={20} className="text-amber-500" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-base font-semibold text-content-primary leading-tight">
+              {t('dwg_takeoff.conv_empty_title', { defaultValue: 'No entities found' })}
+            </h2>
+            <p className="text-xs text-content-tertiary mt-1 truncate" title={drawingName}>
+              {drawingName}
+            </p>
+            <p className="text-xs text-content-secondary mt-3 leading-relaxed">
+              {message ||
+                t('dwg_takeoff.conv_empty_default', {
+                  defaultValue:
+                    'This DWG/DXF parsed successfully but contains no drawable entities. The file may contain only metadata or be a template.',
+                })}
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

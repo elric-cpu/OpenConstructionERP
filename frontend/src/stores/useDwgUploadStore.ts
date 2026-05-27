@@ -11,7 +11,7 @@
  */
 
 import { create } from 'zustand';
-import { uploadDrawing } from '@/features/dwg-takeoff/api';
+import { fetchDrawing, uploadDrawing } from '@/features/dwg-takeoff/api';
 import type { DwgDrawing } from '@/features/dwg-takeoff/api';
 
 export type DwgUploadStatus = 'uploading' | 'converting' | 'ready' | 'error';
@@ -104,6 +104,81 @@ export const useDwgUploadStore = create<DwgUploadState>((set, get) => {
     }
   }
 
+  /** Poll the backend for the drawing's conversion status until it
+   *  flips out of `processing` / `uploaded`. The POST returns almost
+   *  immediately for DWG files because the backend hands the
+   *  conversion off to a fire-and-forget asyncio task — without this
+   *  poll the store would mark the job `ready` while the DDC pipeline
+   *  was still running for several minutes, which is exactly the
+   *  "false loaded" bug the user reported ("показывает что проект
+   *  загружен — но ничего не показывается и только потом через 5 минут
+   *  происходит загрузка"). Max 20 min — beyond that the zombie
+   *  janitor below sweeps the job. */
+  async function pollUntilReady(jobId: string, drawingId: string): Promise<void> {
+    const POLL_MS = 3500;
+    const TIMEOUT_MS = 20 * 60 * 1000;
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < TIMEOUT_MS) {
+      // Bail out if the user cancelled or the job was dismissed.
+      const current = useDwgUploadStore.getState().jobs.get(jobId);
+      if (!current) return;
+      if (current.status === 'error') return;
+
+      try {
+        const drawing = await fetchDrawing(drawingId);
+        const backendStatus = drawing.status ?? 'processing';
+        if (backendStatus === 'ready' || backendStatus === 'empty') {
+          patchJob(jobId, {
+            status: 'ready',
+            progress: 100,
+            stage:
+              backendStatus === 'empty'
+                ? 'dwg_upload.stage_empty'
+                : 'dwg_upload.stage_done',
+            drawingId,
+            completedAt: Date.now(),
+          });
+          return;
+        }
+        if (backendStatus === 'error') {
+          patchJob(jobId, {
+            status: 'error',
+            progress: 0,
+            stage: 'dwg_upload.stage_failed',
+            errorMessage: drawing.error_message || 'Conversion failed',
+            completedAt: Date.now(),
+          });
+          return;
+        }
+        // Still processing — keep the simulated stage timer running so
+        // the % keeps climbing toward 95, and refresh `stage` to make
+        // it clear the backend is actively working (not stuck).
+        patchJob(jobId, {
+          drawingId,
+          status: 'converting',
+          stage: 'dwg_upload.stage_converting',
+        });
+      } catch {
+        // Transient network blip — keep polling. The 20-min ceiling
+        // means we still bail eventually if the backend is gone.
+      }
+      await new Promise((r) => setTimeout(r, POLL_MS));
+    }
+
+    // Hit the 20-min ceiling without status flipping — surface as a
+    // soft error so the user can decide whether to retry rather than
+    // staring at a forever-spinner.
+    patchJob(jobId, {
+      status: 'error',
+      progress: 0,
+      stage: 'dwg_upload.stage_stalled',
+      errorMessage:
+        'Conversion did not finish within 20 minutes. The DDC converter may need attention — try uploading a smaller file or restart the converter.',
+      completedAt: Date.now(),
+    });
+  }
+
   async function executeUpload(jobId: string, params: StartDwgUploadParams) {
     startStageTimer(jobId);
     try {
@@ -113,14 +188,36 @@ export const useDwgUploadStore = create<DwgUploadState>((set, get) => {
         params.modelName,
         params.discipline,
       );
-      clearStageTimer(jobId);
+      // POST returned with the drawing row. For .dwg the backend
+      // dispatches the actual conversion in a background task and
+      // immediately replies with `status="processing"` — so we do
+      // NOT mark the job ready here. Instead we transition into the
+      // `converting` stage and poll the backend until status flips.
+      const backendStatus = res.status ?? 'processing';
+      if (backendStatus === 'ready' || backendStatus === 'empty') {
+        // Fast-path: DXF parsing already finished inline.
+        clearStageTimer(jobId);
+        patchJob(jobId, {
+          status: 'ready',
+          progress: 100,
+          stage:
+            backendStatus === 'empty'
+              ? 'dwg_upload.stage_empty'
+              : 'dwg_upload.stage_done',
+          drawingId: res.id,
+          completedAt: Date.now(),
+        });
+        return;
+      }
+      // Long-path (.dwg): swap stage to converting, expose drawingId
+      // now so the takeoff page can render the honest progress card
+      // bound to this specific drawing, then poll.
       patchJob(jobId, {
-        status: 'ready',
-        progress: 100,
-        stage: 'dwg_upload.stage_done',
         drawingId: res.id,
-        completedAt: Date.now(),
+        status: 'converting',
+        stage: 'dwg_upload.stage_converting',
       });
+      await pollUntilReady(jobId, res.id);
     } catch (err) {
       clearStageTimer(jobId);
       if (err instanceof DOMException && err.name === 'AbortError') return;
@@ -133,6 +230,7 @@ export const useDwgUploadStore = create<DwgUploadState>((set, get) => {
         completedAt: Date.now(),
       });
     } finally {
+      clearStageTimer(jobId);
       abortControllers.delete(jobId);
     }
   }
