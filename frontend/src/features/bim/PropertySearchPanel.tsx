@@ -32,6 +32,14 @@ interface PropertySearchPanelProps {
   /** Called when the user clears the search — the parent should drop any
    *  active isolation set so the user sees the full model again. */
   onClear?: () => void;
+  /** Optional list of child model IDs for federated viewers. When supplied
+   *  with 2+ entries the panel renders an additional "Target model" picker
+   *  so the user chooses WHICH constituent model to search — the dataframe
+   *  endpoints are per-model, not federation-wide. When undefined or
+   *  single-entry the panel falls back to ``modelId`` and the picker is
+   *  hidden. Forward-compatible for FederationsPage / FederatedViewer; the
+   *  single-model BIMPage mount leaves it unset. */
+  childModelIds?: string[];
 }
 
 type SearchOp = BIMDataframeFilter['op'];
@@ -67,6 +75,7 @@ export default function PropertySearchPanel({
   modelId,
   onIsolate,
   onClear,
+  childModelIds,
 }: PropertySearchPanelProps) {
   const { t } = useTranslation();
   const [schema, setSchema] = useState<BIMDataframeColumn[]>([]);
@@ -76,13 +85,32 @@ export default function PropertySearchPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resultCount, setResultCount] = useState<number | null>(null);
+  /** Federation-aware target model id — see ``childModelIds`` prop. When the
+   *  parent only knows about one model (the common single-viewer case) this
+   *  collapses to ``modelId`` and the per-model picker stays hidden. */
+  const hasChildPicker = !!childModelIds && childModelIds.length > 1;
+  const [targetModelId, setTargetModelId] = useState<string>(
+    () => (hasChildPicker ? childModelIds![0]! : modelId),
+  );
+  // Keep the target in sync if the parent swaps the active model wholesale
+  // (e.g. user picks a different federation from a sidebar). Single-model
+  // mounts also benefit — refresh after upload completes triggers re-fetch.
+  useEffect(() => {
+    setTargetModelId(hasChildPicker ? childModelIds![0]! : modelId);
+  }, [modelId, hasChildPicker, childModelIds]);
 
   useEffect(() => {
-    if (!modelId) return;
+    if (!targetModelId) return;
     let cancelled = false;
     const ctrl = new AbortController();
     setError(null);
-    fetchBIMDataframeSchema(modelId, ctrl.signal)
+    // Reset the column when the target switches so a stale column name from
+    // a previous model's schema cannot poison the next query (column names
+    // diverge across disciplines: ARC vs MEP vs STR rarely share full sets).
+    setSchema([]);
+    setColumn('');
+    setResultCount(null);
+    fetchBIMDataframeSchema(targetModelId, ctrl.signal)
       .then((rows) => {
         if (cancelled) return;
         setSchema(rows);
@@ -101,14 +129,17 @@ export default function PropertySearchPanel({
         }
       })
       .catch((e: unknown) => {
+        // Ignore AbortError when the user switches targets mid-flight —
+        // there's no real "error" to display, just a superseded request.
         if (cancelled) return;
+        if (e instanceof DOMException && e.name === 'AbortError') return;
         setError(e instanceof Error ? e.message : String(e));
       });
     return () => {
       cancelled = true;
       ctrl.abort();
     };
-  }, [modelId]);
+  }, [targetModelId]);
 
   /** Sorted, deduplicated column list. Long schemas (DDC exports can carry
    *  1000+ columns) are kept manageable by alphabetising — the user will
@@ -124,7 +155,7 @@ export default function PropertySearchPanel({
     setError(null);
     setResultCount(null);
     try {
-      const rows = await queryBIMDataframe(modelId, {
+      const rows = await queryBIMDataframe(targetModelId, {
         columns: ['id'],
         filters: [{ column, op, value: coerceValue(op, value) }],
         limit: 5000,
@@ -140,7 +171,7 @@ export default function PropertySearchPanel({
     } finally {
       setLoading(false);
     }
-  }, [modelId, column, op, value, onIsolate]);
+  }, [targetModelId, column, op, value, onIsolate]);
 
   const handleClear = useCallback(() => {
     setValue('');
@@ -162,6 +193,32 @@ export default function PropertySearchPanel({
             'Filter the full DDC dataframe (1000+ columns). Matches isolate in the 3D view.',
         })}
       </p>
+
+      {/* Federation target-model picker — only when the parent passed 2+
+          child model ids. The dataframe endpoints are scoped to a single
+          model (the URL ``/bim/<id>`` for a federation is the federation
+          id, NOT a model id, so searches MUST resolve to a constituent
+          model before they hit the backend). */}
+      {hasChildPicker && (
+        <>
+          <label className="block text-[10px] font-medium text-content-secondary">
+            {t('bim.property_search_target', { defaultValue: 'Target model' })}
+          </label>
+          <select
+            value={targetModelId}
+            onChange={(e) => setTargetModelId(e.target.value)}
+            disabled={loading}
+            className="w-full min-w-0 px-2 py-1 text-[11px] rounded border border-border-light bg-surface-primary focus:outline-none focus:ring-1 focus:ring-oe-blue disabled:opacity-50"
+            data-testid="property-search-target"
+          >
+            {childModelIds!.map((id) => (
+              <option key={id} value={id}>
+                {id}
+              </option>
+            ))}
+          </select>
+        </>
+      )}
 
       {/* Column dropdown */}
       <label className="block text-[10px] font-medium text-content-secondary">
@@ -187,6 +244,22 @@ export default function PropertySearchPanel({
           </option>
         ))}
       </select>
+      {/* Empty-schema hint — without this, the user just sees a disabled
+          dropdown saying "No schema available" and assumes the panel is
+          broken. The most common reason is a model imported without the
+          DDC Parquet sidecar (legacy upload path / converter unavailable).
+          Surface that explicitly so the user knows what to do next. */}
+      {schema.length === 0 && !error && (
+        <p
+          className="text-[10px] text-content-tertiary leading-tight"
+          data-testid="property-search-empty-hint"
+        >
+          {t('bim.property_search_no_schema_hint', {
+            defaultValue:
+              'This model has no DDC dataframe — re-import via the CAD/BIM converter to enable property search.',
+          })}
+        </p>
+      )}
 
       {/* Operator + value */}
       <div className="flex items-center gap-1.5 min-w-0">
