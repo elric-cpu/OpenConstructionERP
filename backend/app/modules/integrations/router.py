@@ -155,7 +155,7 @@ async def delete_integration_config(
     await session.flush()
 
 
-@router.post("/configs/{config_id}/test/", response_model=TestNotificationResponse)
+@router.post("/configs/{config_id}/test", response_model=TestNotificationResponse)
 async def test_integration_config(
     config_id: uuid.UUID,
     user_id: CurrentUserId,
