@@ -46,7 +46,7 @@ export interface PartnerPackResponse {
 export function usePartnerPack() {
   return useQuery<PartnerPackResponse>({
     queryKey: ['partner-pack', 'current'],
-    queryFn: () => apiGet<PartnerPackResponse>('/api/v1/partner-pack/current'),
+    queryFn: () => apiGet<PartnerPackResponse>('/v1/partner-pack/current'),
     staleTime: 5 * 60_000,
     gcTime: 30 * 60_000,
     refetchOnWindowFocus: false,

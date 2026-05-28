@@ -102,9 +102,15 @@ export function Header({ title, onMenuClick }: HeaderProps) {
 
       {/* Partner co-brand chip — absolute-centered so it sits between
           the left workspace zone and the right action zones without
-          pushing either around. Hidden on small screens (no room). */}
-      <div className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 hidden md:flex justify-center">
-        <div className="pointer-events-auto">
+          pushing either around. Only shown at xl+ (1280px) and width-
+          capped via max-w-[14rem] + truncate so it physically cannot
+          extend into the right action zone, which on a busy header
+          eats most of the space from ~830px onward. */}
+      <div
+        className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 hidden xl:flex justify-center"
+        aria-hidden={false}
+      >
+        <div className="pointer-events-auto max-w-[14rem] overflow-hidden">
           <PartnerLogoBadge variant="nav" />
         </div>
       </div>

@@ -5,6 +5,75 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.6.0] - 2026-05-28
+
+**Partner-pack system — pip-installable white-label preset bundles.**
+Adds Shape-A partner-pack architecture: a separate Python package
+(`openconstructionerp-<slug>`) registers via the entry-point group
+`openconstructionerp.partner_packs` and declares a `PartnerPackManifest`
+that the core picks up at boot. The pack supplies branding (logo,
+primary/accent colours, favicon), default locale, additional locale
+JSON overrides, CWICR region preloads, validation rule packs to
+enable, default modules, and a custom onboarding script. Single-tenant
+(one pack per install); active pack chosen by env var
+`OE_PARTNER_PACK` or the first registered entry.
+
+Co-branding contract: every UI surface shows
+`Powered by OpenConstructionERP · In partnership with <Partner>`.
+The badge mounts on the dashboard (top) and in the top nav bar
+(absolute-centered, only at xl+ width). Users can dismiss per
+browser session — the badge reappears on next browser launch
+(sessionStorage, not localStorage).
+
+Five reference packs ship under `packs/`:
+- `batimatech-ca` — Canadian construction conferences (fr-CA primary
+  + en-CA, Toronto + Montréal CWICR, NBC 2020 + CCDC + CSA-A23 rule
+  packs, CAD, ca_gst_pst tax, batimatech red `#BE1B2F`).
+- `doker-formwork` — formwork supplier (de, Berlin CWICR, DIN 18218
+  + concrete + formwork-cycle rule packs, EUR, Doker blue `#003D7A`).
+- `bimhessen-de` — German BIM consultancy (de, Berlin CWICR, DIN
+  276 + GAEB X83/X86 + VOB 2023 + ISO 19650 CDE + BKI rule packs,
+  EUR, Hessen blue `#005CA9`).
+- `uk-jct` — UK general contractor (en-GB, London CWICR, NRM 1+2 +
+  JCT contract clauses + BCIS benchmarks, GBP, Union flag blue
+  `#012169`).
+- `us-rsmeans` — US general contractor (en-US, New York CWICR,
+  MasterFormat 2018 + AIA A201 2017 + RSMeans City Cost Index rule
+  packs, USD, Old Glory blue `#0A3161`).
+
+Install pattern:
+```
+pip install openconstructionerp openconstructionerp-batimatech-ca
+openconstructionerp serve
+# logs: Partner pack active: batimatech-ca (batimatech) v0.1.0
+```
+
+### Added
+- `backend/app/core/partner_pack/` — Pydantic manifest schema,
+  entry-point discovery with env override + LRU cache + graceful
+  failure, REST router exposing `/api/v1/partner-pack/{current,
+  installed, logo, favicon, onboarding-script, locale/{code},
+  by-slug/{slug}}`.
+- `frontend/src/shared/hooks/usePartnerPack.ts` — React Query hook
+  against the current-pack endpoint.
+- `frontend/src/shared/ui/PartnerLogoBadge.tsx` — two render
+  variants (`nav` chip and `dashboard` banner) with per-session
+  dismiss.
+- 13/13 backend unit tests in `tests/test_partner_pack_core.py`
+  cover schema validation, entry-point precedence, broken-pack
+  tolerance, and all router endpoints.
+- Fresh-venv install verification screenshots at
+  `docs/qa/v6-partner-pack-verification/`.
+
+### Fixed
+- `usePartnerPack` originally double-prefixed the path
+  (`/api/api/v1/...`) because `apiGet` already prepends `BASE_URL =
+  '/api'`. Path corrected to `/v1/partner-pack/current` so the
+  badges render on a real install.
+- Nav-bar chip overlapped the right-zone action buttons at 1366×768
+  and 1920×1080. Constrained to `xl:flex` (1280+) and capped at
+  `max-w-[14rem]` so it can never physically reach the action zone.
+
 ## [5.5.3] - 2026-05-28
 
 **Build-unblock patch — re-ships v5.5.2 with the PyPI workflow green.**
