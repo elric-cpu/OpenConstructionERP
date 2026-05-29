@@ -14,11 +14,12 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { Edit3, X } from 'lucide-react';
 import { Button } from '@/shared/ui';
 import { useToastStore } from '@/stores/useToastStore';
+import { fetchUsers, type User as AssigneeUser } from '@/features/users/api';
 import { updateMarkup } from './api';
 import type { Markup, UpdateMarkupPayload } from './api';
 
@@ -58,6 +59,20 @@ export function EditMarkupModal({
   const [label, setLabel] = useState('');
   const [text, setText] = useState('');
   const [color, setColor] = useState(PRESET_COLORS[4]!.value); // Blue default
+  // M3 — assignee can now be re-assigned through this modal. Empty
+  // string = clear (NULL on the wire). Loaded lazily only while the
+  // modal is open so closed-page renders don't pay the /v1/users/ cost.
+  const [assigneeId, setAssigneeId] = useState<string>('');
+
+  const { data: users = [] } = useQuery({
+    queryKey: ['markups', 'users'],
+    queryFn: () =>
+      fetchUsers({ is_active: true, limit: 200 }).catch(
+        () => [] as AssigneeUser[],
+      ),
+    enabled: open,
+    staleTime: 5 * 60_000,
+  });
 
   // Reseed form whenever a different markup is opened.
   useEffect(() => {
@@ -65,6 +80,7 @@ export function EditMarkupModal({
       setLabel(markup.label ?? '');
       setText(markup.text ?? '');
       setColor(markup.color || PRESET_COLORS[4]!.value);
+      setAssigneeId(markup.assignee_id ?? '');
     }
   }, [open, markup]);
 
@@ -143,6 +159,9 @@ export function EditMarkupModal({
       // sending undefined (which is "no change" in PATCH semantics).
       text: trimmedText,
       color,
+      // M3 — re-assign (or clear) the markup owner. Empty select value ⇒
+      // null on the wire (Unassigned); a UUID sets the assignee.
+      assignee_id: assigneeId || null,
     };
     updateMut.mutate(payload);
   };
@@ -256,6 +275,32 @@ export function EditMarkupModal({
                 );
               })}
             </div>
+          </div>
+
+          {/* Assignee (M3) — re-assign the markup owner without losing the
+              annotation's position on the document. */}
+          <div>
+            <label
+              htmlFor="edit-markup-assignee"
+              className="block text-xs font-medium text-content-secondary mb-1.5"
+            >
+              {t('markups.assignee', { defaultValue: 'Assignee' })}
+            </label>
+            <select
+              id="edit-markup-assignee"
+              value={assigneeId}
+              onChange={(e) => setAssigneeId(e.target.value)}
+              className={inputCls + ' w-full'}
+            >
+              <option value="">
+                {t('markups.unassigned', { defaultValue: 'Unassigned' })}
+              </option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.full_name || u.email}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
