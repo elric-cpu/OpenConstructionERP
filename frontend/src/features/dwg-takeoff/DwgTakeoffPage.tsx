@@ -2417,6 +2417,10 @@ export function DwgTakeoffPage() {
   }, [selectedEntityIds, selectedAnnotationId, contextMenu, handleUndo, handleRedo]);
 
   /* ── Render ──────────────────────────────────────────────────────── */
+  // WAVE-FOLLOWUP: BetaBanner cannot mount here because the page renders a
+  // full-screen drafting canvas (negative margins + 100vh-56px). A drafting
+  // surface absorbs the whole viewport; adding a banner row would crop the
+  // canvas. Surface beta status via the page header chip instead.
 
   return (
     <div className="flex flex-col -mx-4 sm:-mx-7 -mt-6 -mb-4 overflow-hidden" style={{ height: 'calc(100vh - 56px)' }}>
