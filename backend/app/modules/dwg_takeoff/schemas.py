@@ -218,6 +218,16 @@ class BoqLinkRequest(BaseModel):
     """Request body for linking an annotation to a BOQ position."""
 
     position_id: str = Field(..., min_length=1, max_length=255)
+    push_quantity: bool = Field(
+        default=False,
+        description=(
+            "When true, copy the annotation's measured value into the "
+            "target BOQ position's quantity and recompute the position "
+            "total. An annotation with no usable value is a no-op (the "
+            "existing quantity is left untouched). Default false keeps "
+            "existing callers backward-compatible."
+        ),
+    )
 
 
 # ── Measurement result ─────────────────────────────────────────────────

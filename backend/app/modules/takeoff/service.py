@@ -453,6 +453,56 @@ def recompute_measurement_value(
     return client_value
 
 
+def _pick_takeoff_value(measurement: Any) -> float | None:
+    """Pick the scalar value to push into a BOQ position's ``quantity``.
+
+    Dispatches on the measurement ``type`` to read the right column:
+
+    * ``volume`` — prefer the dedicated ``volume`` column (area × depth);
+      fall back to ``measurement_value`` for legacy rows that predate the
+      volume column.
+    * ``count`` — read ``count_value``. ``0`` is a valid count (e.g. "no
+      doors on this sheet") and round-trips as ``0.0`` rather than the
+      ``None`` no-op.
+    * everything else (``distance`` / ``area`` / ``polyline`` / default) —
+      read the canonical ``measurement_value`` scalar.
+
+    Every read is coerced through :func:`float` inside a try/except so a
+    string-typed column (``Numeric`` round-trips as ``Decimal`` but a
+    sloppy fixture or a garbage value should not crash the link flow).
+    Returns ``None`` when the relevant column is empty or unparseable so
+    the caller treats the push as a no-op and never zeroes the existing
+    BOQ quantity.
+    """
+    mtype = (getattr(measurement, "type", None) or "").strip().lower()
+
+    if mtype == "volume":
+        volume = getattr(measurement, "volume", None)
+        if volume is not None:
+            try:
+                return float(volume)
+            except (ValueError, TypeError):
+                return None
+        # Legacy volume rows without a ``volume`` column fall through to
+        # the measurement_value scalar below.
+    elif mtype == "count":
+        count = getattr(measurement, "count_value", None)
+        if count is None:
+            return None
+        try:
+            return float(count)
+        except (ValueError, TypeError):
+            return None
+
+    value = getattr(measurement, "measurement_value", None)
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
+
+
 # Directory where uploaded PDF files are stored on disk
 _TAKEOFF_DOCUMENTS_DIR = Path.home() / ".openestimator" / "takeoff_documents"
 
@@ -1178,16 +1228,20 @@ class TakeoffService:
         boq_position_id: str,
         *,
         existing: TakeoffMeasurement | None = None,
+        push_quantity: bool = False,
     ) -> TakeoffMeasurement:
         """Link a measurement to a BOQ position.
 
         Round-6 audit (2026-05-22) — accept a pre-fetched row from the
         router's IDOR check to avoid the duplicate ``get_by_id`` query.
+
+        Estimation-cluster wave (2026-05-28) — opt-in ``push_quantity``.
+        When true, the measurement's measured value (per
+        :func:`_pick_takeoff_value`) is copied into the target BOQ
+        position's ``quantity`` and the position total is recomputed.
+        A measurement with no usable value leaves the quantity untouched.
         """
-        if existing is None:
-            item = await self.get_measurement(measurement_id)
-        else:
-            item = existing
+        item = existing if existing is not None else await self.get_measurement(measurement_id)
         await self.measurement_repo.update_fields(measurement_id, linked_boq_position_id=boq_position_id)
         await self.session.refresh(item)
         logger.info(
@@ -1195,4 +1249,42 @@ class TakeoffService:
             measurement_id,
             boq_position_id,
         )
+        if push_quantity:
+            await self._push_quantity_to_position(boq_position_id, item)
         return item
+
+    async def _push_quantity_to_position(self, boq_position_id: str, measurement: Any) -> None:
+        """Copy a measurement's value into a BOQ position's quantity.
+
+        Reuses the BOQ module's established total-recompute path so the
+        money math stays in one place. A ``None`` picked value (empty or
+        garbage measurement) is a no-op — we never zero an existing BOQ
+        quantity from a measurement that carries no usable number.
+        """
+        value = _pick_takeoff_value(measurement)
+        if value is None:
+            logger.info(
+                "push_quantity: measurement %s has no usable value — leaving BOQ position %s untouched",
+                getattr(measurement, "id", "?"),
+                boq_position_id,
+            )
+            return
+
+        from app.modules.boq.service import BOQService  # noqa: PLC0415 — avoid import cycle
+
+        try:
+            position_uuid = uuid.UUID(str(boq_position_id))
+        except (ValueError, AttributeError):
+            logger.warning("push_quantity: BOQ position id %r is not a UUID — skipping", boq_position_id)
+            return
+
+        boq_service = BOQService(self.session)
+        position = await boq_service.position_repo.get_by_id(position_uuid)
+        if position is None:
+            logger.warning("push_quantity: BOQ position %s not found — skipping", boq_position_id)
+            return
+
+        await boq_service.position_repo.update_fields(position.id, quantity=str(value))
+        await self.session.refresh(position)
+        await boq_service._recompute_position_total(position)  # noqa: SLF001 — reuse the canonical recompute path
+        logger.info("push_quantity: BOQ position %s quantity set to %s", boq_position_id, value)

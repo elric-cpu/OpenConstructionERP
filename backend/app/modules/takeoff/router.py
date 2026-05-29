@@ -4347,5 +4347,6 @@ async def link_measurement_to_boq(
         measurement_id,
         data.boq_position_id,
         existing=existing,
+        push_quantity=data.push_quantity,
     )
     return _measurement_to_response(item)

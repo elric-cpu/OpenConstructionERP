@@ -244,3 +244,13 @@ class LinkToBoqRequest(BaseModel):
     """Request to link a measurement to a BOQ position."""
 
     boq_position_id: str = Field(..., min_length=1, max_length=255)
+    push_quantity: bool = Field(
+        default=False,
+        description=(
+            "When true, copy the measurement's measured value into the "
+            "target BOQ position's quantity and recompute the position "
+            "total. A measurement with no usable value is a no-op (the "
+            "existing quantity is left untouched). Default false keeps "
+            "existing callers backward-compatible."
+        ),
+    )

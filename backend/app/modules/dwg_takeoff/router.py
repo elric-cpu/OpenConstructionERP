@@ -529,7 +529,11 @@ async def link_to_boq(
     (poisoning their estimate) or vice versa.
     """
     await _gate_by_annotation(annotation_id, user_id, service, session)
-    item = await service.link_annotation_to_boq(annotation_id, data.position_id)
+    item = await service.link_annotation_to_boq(
+        annotation_id,
+        data.position_id,
+        push_quantity=data.push_quantity,
+    )
     return _annotation_to_response(item)
 
 

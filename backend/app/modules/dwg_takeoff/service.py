@@ -1039,15 +1039,75 @@ class DwgTakeoffService:
         self,
         annotation_id: uuid.UUID,
         position_id: str,
+        *,
+        push_quantity: bool = False,
     ) -> DwgAnnotation:
-        """Link an annotation to a BOQ position."""
+        """Link an annotation to a BOQ position.
+
+        Estimation-cluster wave (2026-05-28) — opt-in ``push_quantity``.
+        When true, the annotation's measured value is copied into the
+        target BOQ position's ``quantity`` and the position total is
+        recomputed. An annotation with no usable value is a no-op.
+        """
         item = await self.get_annotation(annotation_id)
 
         await self.annotation_repo.update_fields(annotation_id, linked_boq_position_id=position_id)
         await self.session.refresh(item)
 
         logger.info("Annotation %s linked to BOQ position %s", annotation_id, position_id)
+
+        if push_quantity:
+            await self._push_quantity_to_position(position_id, item)
         return item
+
+    async def _push_quantity_to_position(self, position_id: str, annotation: DwgAnnotation) -> None:
+        """Copy an annotation's value into a BOQ position's quantity.
+
+        Reuses the takeoff module's :func:`_pick_takeoff_value` value
+        picker and the BOQ module's canonical total-recompute path. The
+        ``DwgAnnotation`` ORM only carries a scalar ``measurement_value``
+        (no separate volume/count columns), so we adapt it to the shape
+        the picker expects. A ``None`` picked value is a no-op — we never
+        zero an existing BOQ quantity from an annotation with no number.
+        """
+        from types import SimpleNamespace
+
+        from app.modules.takeoff.service import _pick_takeoff_value
+
+        adapter = SimpleNamespace(
+            type=annotation.annotation_type,
+            measurement_value=annotation.measurement_value,
+            volume=None,
+            count_value=None,
+            id=annotation.id,
+        )
+        value = _pick_takeoff_value(adapter)
+        if value is None:
+            logger.info(
+                "push_quantity: annotation %s has no usable value — leaving BOQ position %s untouched",
+                annotation.id,
+                position_id,
+            )
+            return
+
+        from app.modules.boq.service import BOQService
+
+        try:
+            position_uuid = uuid.UUID(str(position_id))
+        except (ValueError, AttributeError):
+            logger.warning("push_quantity: BOQ position id %r is not a UUID — skipping", position_id)
+            return
+
+        boq_service = BOQService(self.session)
+        position = await boq_service.position_repo.get_by_id(position_uuid)
+        if position is None:
+            logger.warning("push_quantity: BOQ position %s not found — skipping", position_id)
+            return
+
+        await boq_service.position_repo.update_fields(position.id, quantity=str(value))
+        await self.session.refresh(position)
+        await boq_service._recompute_position_total(position)  # noqa: SLF001 — reuse canonical recompute path
+        logger.info("push_quantity: BOQ position %s quantity set to %s", position_id, value)
 
     # ── Pins (task/punchlist) ───────────────────────────────────────────
 
