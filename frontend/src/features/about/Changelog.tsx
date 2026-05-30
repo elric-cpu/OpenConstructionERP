@@ -29,6 +29,7 @@ interface ChangelogEntry {
 // Sorted newest → oldest. Sort is enforced at runtime below (semver-aware) so
 // out-of-order entries here still display correctly.
 const CHANGELOG: ChangelogEntry[] = [
+  { version: '6.0.0', date: '2026-05-30', tag: 'MILESTONE', summary: 'PostgreSQL is now the default database with zero setup — a real in-process PG16 boots on first run (no Docker), data under ~/.openestimate/pgdata, with transparent one-time migration from any legacy SQLite file. SQLite stays as an opt-out (--sqlite / OE_USE_SQLITE=1). PG drivers + embedded server moved to base deps. Plus 15 PostgreSQL dialect bugs fixed and a CI regression suite against a real PG16 cluster' },
   { version: '5.9.2', date: '2026-05-30', tag: 'NEW',       summary: 'PostgreSQL scale foundation (opt-in) - JSON columns emit JSONB, automatic FK/composite/GIN performance indexes, connection-pool hardening, PostgreSQL-safe CWICR import, and a SQLite-to-PostgreSQL migration script. Default SQLite single-command install is unchanged. PyPI metadata de-branded' },
   // ── v5.x — second stable major ───────────────────────────────────────────
   { version: '5.5.1', date: '2026-05-28', tag: 'FIX',       summary: 'README CLI-name patch — re-ships the 5.5.0 wheel so the PyPI long-description shows openconstructionerp instead of the legacy openestimate command in the quickstart and doctor hints. No runtime changes' },

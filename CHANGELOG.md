@@ -5,6 +5,38 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.0.0] - 2026-05-30
+
+### Changed
+
+- **PostgreSQL is now the default database, with zero setup.** A fresh
+  `openconstructionerp serve` boots a real in-process PostgreSQL 16 cluster
+  (bundled binaries, no Docker, no separate install) and stores its data under
+  `~/.openestimate/pgdata`. The single-file SQLite database is still available
+  as an opt-out escape hatch - run with `--sqlite` or set `OE_USE_SQLITE=1`.
+  This is the headline change of the 6.0 series and the reason for the major
+  version bump.
+- **Transparent one-time data migration.** On first boot, if a legacy
+  `openestimate.db` is present and the embedded cluster is empty, its data is
+  copied into PostgreSQL automatically and the old file is retired to
+  `openestimate.db.migrated`. Nothing to run by hand.
+- The PostgreSQL drivers (`asyncpg`, `psycopg2-binary`) and the embedded server
+  (`pixeltable-pgserver`) moved into the base dependencies, so `pip install
+  openconstructionerp` ships everything needed for the default PostgreSQL path.
+  The `[server]` extra is now just Celery + boto3.
+
+### Fixed
+
+- **15 PostgreSQL dialect bugs** that previously only worked on SQLite: tolerant
+  numeric coercion for money-as-text columns (no more `invalid input syntax` on
+  a malformed row), timezone-aware datetime binding for `TIMESTAMPTZ` columns,
+  `GROUP BY` on JSONB expressions instead of output aliases, `jsonb_array_length`
+  on JSONB columns, `string_agg` in place of SQLite-only `GROUP_CONCAT`,
+  UTC-normalised timestamp writes for lexically-ordered date columns, and
+  consistent BIM dynamic-group filtering across both backends.
+- A dedicated embedded-PostgreSQL regression suite (`backend/tests/pg`) runs in
+  CI against a real PG16 cluster so these dialect differences cannot regress.
+
 ## [5.9.2] - 2026-05-30
 
 ### Added

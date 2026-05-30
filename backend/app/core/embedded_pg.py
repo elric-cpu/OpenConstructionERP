@@ -35,11 +35,39 @@ logger = logging.getLogger(__name__)
 _server = None
 
 _TRUTHY = {"1", "true", "yes", "on"}
+_FALSY = {"0", "false", "no", "off"}
 
 
 def is_requested() -> bool:
-    """True when embedded PostgreSQL was requested (flag or env)."""
-    return os.environ.get("OE_USE_EMBEDDED_PG", "").strip().lower() in _TRUTHY
+    """True when the app should run on the embedded PostgreSQL cluster.
+
+    As of v6.0.0 embedded PostgreSQL is the **default** runtime — a fresh
+    ``openconstructionerp serve`` boots a real in-process PG16 (no Docker). The
+    operator opts out in any of three ways, checked in order:
+
+    * ``OE_USE_SQLITE`` truthy — keep the legacy single-file SQLite database
+      (the documented escape hatch while PostgreSQL is proven in production);
+    * an explicit ``DATABASE_URL`` in the environment — "use my own database",
+      so we never override it with an embedded cluster;
+    * ``OE_USE_EMBEDDED_PG`` set to a falsy value (``0``/``false``/``no``/``off``)
+      — explicit opt-out without switching to SQLite (e.g. an external PG set
+      via ``DATABASE_URL`` is also covered by the rule above).
+
+    Otherwise (the default, and any truthy ``OE_USE_EMBEDDED_PG``) it returns
+    ``True``. An explicit truthy ``OE_USE_EMBEDDED_PG`` wins over an ambient
+    ``DATABASE_URL`` (the two together are contradictory; the explicit flag is
+    the clearer intent).
+    """
+    explicit = os.environ.get("OE_USE_EMBEDDED_PG", "").strip().lower()
+    if os.environ.get("OE_USE_SQLITE", "").strip().lower() in _TRUTHY:
+        return False
+    if explicit in _TRUTHY:
+        return True
+    if os.environ.get("DATABASE_URL", "").strip():
+        return False
+    if explicit in _FALSY:
+        return False
+    return True
 
 
 def is_running() -> bool:

@@ -1,6 +1,6 @@
 [project]
 name = "openconstructionerp"
-version = "5.9.2"
+version = "6.0.0"
 description = "Open-source construction cost estimation — multi-currency BOQ, AI vector matching, CAD/BIM takeoff without IfcOpenShell, resource-based cost DB import with example templates, 48 regional catalogues, 24 languages. AGPL-3.0. After install, run: openconstructionerp"
 license = "AGPL-3.0-or-later"
 requires-python = ">=3.12"
@@ -46,6 +46,12 @@ dependencies = [
     "python-multipart>=0.0.26",
     "sqlalchemy[asyncio]>=2.0.36,<2.1",
     "aiosqlite>=0.20.0",
+    # Embedded PostgreSQL 16 is the default runtime (v6.0.0): a real in-process
+    # cluster with no Docker, plus the async/sync drivers it speaks through.
+    # SQLite stays available as an opt-out escape hatch (OE_USE_SQLITE=1).
+    "pixeltable-pgserver>=0.5.1,<0.6",
+    "asyncpg>=0.30.0",
+    "psycopg2-binary>=2.9.10",
     "alembic>=1.14.0,<2",
     "pydantic>=2.10.0,<3",
     "pydantic-settings>=2.6.0,<3",
@@ -80,10 +86,10 @@ Issues = "https://github.com/datadrivenconstruction/OpenConstructionERP/issues"
 Changelog = "https://github.com/datadrivenconstruction/OpenConstructionERP/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
-# PostgreSQL + Redis + S3 for production deployments
+# Production add-ons: background tasks (Redis/Celery) + S3 storage. The
+# PostgreSQL drivers (asyncpg / psycopg2) and the embedded server moved to the
+# base dependencies in v6.0.0, so this extra is now just Celery + boto3.
 server = [
-    "asyncpg>=0.30.0",
-    "psycopg2-binary>=2.9.10",
     "celery[redis]>=5.4.0",
     "boto3>=1.35.0",
 ]
@@ -159,10 +165,9 @@ dev = [
     "mypy>=1.13.0",
     "pre-commit>=4.0.0",
     "pyinstaller>=6.0.0",
-    # Embedded PostgreSQL 16 for the tests/pg dialect suite (bundled PG
-    # binaries in the wheel, NO Docker). Pinned <0.6 (0.2.0/0.2.1 are yanked).
-    # asyncpg + psycopg2-binary live in the `server` extra.
-    "pixeltable-pgserver>=0.5.1,<0.6",
+    # pixeltable-pgserver, asyncpg and psycopg2-binary moved to the base
+    # dependencies in v6.0.0 (embedded PostgreSQL is the default runtime), so the
+    # tests/pg dialect suite needs nothing extra here.
 ]
 
 [build-system]

@@ -184,21 +184,32 @@ def _setup_env(data_dir: Path, host: str, port: int) -> None:
 
     db_path = data_dir / "openestimate.db"
 
-    # Optional embedded PostgreSQL (no Docker): boot a real in-process PG and
-    # point DATABASE_URL/DATABASE_SYNC_URL at it BEFORE the SQLite setdefault
-    # below (which then no-ops because the keys are already set). Opt-in via
-    # ``serve --embedded-pg`` or OE_USE_EMBEDDED_PG=1. If it cannot start it logs
-    # and falls back to SQLite. Must run before any ``from app...`` import that
-    # builds the engine — _setup_env is that earliest point for every command.
+    # Embedded PostgreSQL (no Docker) is the DEFAULT runtime as of v6.0.0: boot a
+    # real in-process PG16 and point DATABASE_URL/DATABASE_SYNC_URL at it BEFORE
+    # the SQLite setdefault below (which then no-ops because the keys are already
+    # set). Opt out with OE_USE_SQLITE=1 (legacy single-file SQLite) or by setting
+    # your own DATABASE_URL. Must run before any ``from app...`` import that builds
+    # the engine — _setup_env is that earliest point for every command.
     from app.core import embedded_pg
 
-    if embedded_pg.is_requested() and embedded_pg.boot(data_dir):
-        # Transparent one-time SQLite -> PostgreSQL migration: if the box has a
-        # legacy openestimate.db and the embedded cluster is still empty, move
-        # the data over before the server starts. No-op otherwise.
-        status = embedded_pg.auto_migrate_legacy_sqlite(data_dir)
-        if status.startswith("migrated"):
-            print(_green(_u("✓ ", "OK ")) + status)
+    if embedded_pg.is_requested():
+        if embedded_pg.boot(data_dir):
+            # Transparent one-time SQLite -> PostgreSQL migration: if the box has
+            # a legacy openestimate.db and the embedded cluster is still empty,
+            # move the data over before the server starts. No-op otherwise.
+            status = embedded_pg.auto_migrate_legacy_sqlite(data_dir)
+            if status.startswith("migrated"):
+                print(_green(_u("✓ ", "OK ")) + status)
+            print(_green(_u("✓ ", "OK ")) + "Database: embedded PostgreSQL 16 (no Docker)")
+        else:
+            # pixeltable-pgserver missing or initdb failed: degrade to SQLite so
+            # the app still comes up. Surface it so the operator can install the
+            # server extra or set DATABASE_URL.
+            print(
+                _yellow(_u("⚠ ", "! "))
+                + "Embedded PostgreSQL unavailable; falling back to SQLite. "
+                + "Install with 'pip install openconstructionerp[server]' or set OE_USE_SQLITE=1 to silence."
+            )
 
     os.environ.setdefault("DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
     os.environ.setdefault("DATABASE_SYNC_URL", f"sqlite:///{db_path}")
@@ -1023,7 +1034,12 @@ def _add_common_server_args(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--embedded-pg",
         action="store_true",
-        help="Run an in-process PostgreSQL (no Docker); data in <data-dir>/pgdata",
+        help="Run an in-process PostgreSQL (no Docker); data in <data-dir>/pgdata (this is the default)",
+    )
+    p.add_argument(
+        "--sqlite",
+        action="store_true",
+        help="Use the legacy single-file SQLite database instead of embedded PostgreSQL",
     )
 
 
@@ -1116,9 +1132,13 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    # An explicit --embedded-pg flag (serve) is equivalent to exporting
-    # OE_USE_EMBEDDED_PG=1: it tells _setup_env to boot an in-process PostgreSQL
-    # before any app module (and therefore the engine) is imported.
+    # Embedded PostgreSQL is the default (see embedded_pg.is_requested). The
+    # flags are explicit overrides mapped to the same env vars _setup_env reads
+    # before any app module (and therefore the engine) is imported:
+    #   --sqlite      → OE_USE_SQLITE=1     (escape hatch to legacy SQLite)
+    #   --embedded-pg → OE_USE_EMBEDDED_PG=1 (explicit; already the default)
+    if getattr(args, "sqlite", False):
+        os.environ["OE_USE_SQLITE"] = "1"
     if getattr(args, "embedded_pg", False):
         os.environ["OE_USE_EMBEDDED_PG"] = "1"
 
