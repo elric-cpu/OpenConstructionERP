@@ -228,6 +228,22 @@ def create_engine_from_settings():
     return create_async_engine(url, **kwargs)
 
 
+# Register PostgreSQL optimizations (JSON->JSONB DDL + performance-index event)
+# before any engine use. This is a side-effect import placed after Base is defined
+# so the module's ``from app.database import Base`` resolves against the
+# partially-initialised module. Guarded so it can never break engine creation.
+try:
+    from app.core import pg_optimizations as _pg_opt
+
+    _pg_opt.register(Base)
+except Exception as _pg_opt_exc:  # noqa: BLE001
+    import logging as _logging
+
+    _logging.getLogger(__name__).warning(
+        "pg_optimizations not registered: %r", _pg_opt_exc
+    )
+
+
 engine = create_engine_from_settings()
 async_session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
