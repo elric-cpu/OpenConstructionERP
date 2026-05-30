@@ -1,0 +1,34 @@
+name: CI (PostgreSQL)
+
+# Runs the backend test suite against a real PostgreSQL 16 cluster, booted
+# in-process from the pixeltable-pgserver wheel (bundled PG binaries, no Docker
+# service container). This is the gate that stops PostgreSQL-only regressions
+# (JSONB operators, ILIKE, dialect DDL) from shipping untested while SQLite is
+# still the default runtime. See docs/postgres-migration/MASTER_PLAN_pg_embedded.md.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend-postgres:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      OE_TEST_DB: pg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[test]"
+          pip install -e ".[server]"
+      - name: Run tests on embedded PostgreSQL
+        run: pytest -q -p no:cacheprovider
