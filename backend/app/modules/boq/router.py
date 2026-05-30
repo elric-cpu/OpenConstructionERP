@@ -581,6 +581,8 @@ async def list_templates(
 async def create_boq_from_template(
     data: BOQFromTemplateRequest,
     _user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
     service: BOQService = Depends(_get_service),
 ) -> BOQResponse:
     """Create a complete BOQ from a built-in template.
@@ -593,6 +595,11 @@ async def create_boq_from_template(
 
     Use ``GET /boqs/templates`` to discover available template IDs.
     """
+    # IDOR guard: the global boq.create role is not project-scoped, so verify the
+    # caller may access the target project before seeding a BOQ into it. Without
+    # this any role holder could create BOQs in a project/tenant they cannot
+    # access (and a bogus project_id would surface as a raw FK 500 instead of 404).
+    await _verify_project_owner_for_boq(session, data.project_id, _user_id, payload)
     boq = await service.create_boq_from_template(data)
     return BOQResponse.model_validate(boq)
 
@@ -1172,6 +1179,9 @@ async def get_boq_activity(
 )
 async def get_project_activity(
     project_id: uuid.UUID,
+    _user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
     service: BOQService = Depends(_get_service),
@@ -1180,6 +1190,10 @@ async def get_project_activity(
 
     Returns all BOQ-related activity across all BOQs in the project.
     """
+    # IDOR guard: the global boq.read role is not project-scoped, so verify the
+    # caller may access this project before returning its full activity log.
+    # Without this any role holder could read the audit trail of any project by id.
+    await _verify_project_owner_for_boq(session, project_id, _user_id, payload)
     return await service.get_activity_for_project(project_id, offset=offset, limit=limit)
 
 
@@ -2225,6 +2239,16 @@ async def update_markup(
 ) -> MarkupResponse:
     """Update a markup/overhead line on a BOQ."""
     await _verify_boq_owner(session, boq_id, user_id, payload)
+    # IDOR guard: owning the URL boq_id is not enough — confirm the markup
+    # actually belongs to it, otherwise a user owning BOQ-A could mutate a markup
+    # of another tenant's BOQ-B via /boqs/{A}/markups/{B-markup-id} (404, not 403,
+    # to avoid leaking existence — same cross-check delete_quantity_link uses).
+    existing_markup = await service.markup_repo.get_by_id(markup_id)
+    if existing_markup is None or existing_markup.boq_id != boq_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Markup not found",
+        )
     markup = await service.update_markup(markup_id, data)
     return _markup_to_response(markup)
 
@@ -2245,6 +2269,16 @@ async def delete_markup(
 ) -> None:
     """Delete a markup/overhead line from a BOQ."""
     await _verify_boq_owner(session, boq_id, user_id, payload)
+    # IDOR guard: owning the URL boq_id is not enough — confirm the markup
+    # actually belongs to it, otherwise a user owning BOQ-A could delete a markup
+    # of another tenant's BOQ-B via /boqs/{A}/markups/{B-markup-id} (404, not 403,
+    # to avoid leaking existence — same cross-check delete_quantity_link uses).
+    existing_markup = await service.markup_repo.get_by_id(markup_id)
+    if existing_markup is None or existing_markup.boq_id != boq_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Markup not found",
+        )
     await service.delete_markup(markup_id)
 
 
@@ -2256,6 +2290,9 @@ async def delete_markup(
 )
 async def apply_default_markups(
     boq_id: uuid.UUID,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
     region: str = Query(
         default="DEFAULT",
         description="Region code: DACH, UK, US, FR, GULF, IN, AU, JP, BR, NORDIC, RU, CN, KR, DEFAULT",
@@ -2270,6 +2307,10 @@ async def apply_default_markups(
     Supported regions: DACH, UK, US, FR, GULF, IN, AU, JP, BR, NORDIC,
     RU, CN, KR, DEFAULT.
     """
+    # IDOR guard: this destructively REPLACES all markups, yet the global
+    # boq.update role is not project-scoped — verify the caller may access the
+    # BOQ's project before wiping/resetting markups on a BOQ in another tenant.
+    await _verify_boq_owner(session, boq_id, user_id, payload)
     markups = await service.apply_default_markups(boq_id, region)
     return [_markup_to_response(m) for m in markups]
 
@@ -2464,9 +2505,15 @@ async def compare_boqs(
 )
 async def list_snapshots(
     boq_id: uuid.UUID,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
     service: BOQService = Depends(_get_service),
 ) -> list[SnapshotResponse]:
     """List all snapshots for a BOQ, newest first."""
+    # IDOR guard: the global boq.read role is not project-scoped — verify the
+    # caller may access this BOQ's project before listing its version history.
+    await _verify_boq_owner(session, boq_id, user_id, payload)
     snapshots = await service.list_snapshots(boq_id)
     return [
         SnapshotResponse(
@@ -2490,10 +2537,15 @@ async def list_snapshots(
 async def create_snapshot(
     boq_id: uuid.UUID,
     data: SnapshotCreate,
+    payload: CurrentUserPayload,
+    session: SessionDep,
     user_id: CurrentUserId = None,
     service: BOQService = Depends(_get_service),
 ) -> SnapshotResponse:
     """Create a point-in-time snapshot of the current BOQ state."""
+    # IDOR guard: the global boq.update role is not project-scoped — verify the
+    # caller may access this BOQ's project before snapshotting it.
+    await _verify_boq_owner(session, boq_id, user_id, payload)
     snap = await service.create_snapshot(boq_id, name=data.name, user_id=user_id)
     return SnapshotResponse(
         id=snap.id,
@@ -2513,9 +2565,16 @@ async def create_snapshot(
 async def restore_snapshot(
     boq_id: uuid.UUID,
     snapshot_id: uuid.UUID,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
     service: BOQService = Depends(_get_service),
 ) -> BOQWithPositions:
     """Restore a BOQ to a previous snapshot state."""
+    # IDOR guard: restore OVERWRITES the BOQ, yet the global boq.update role is
+    # not project-scoped — verify the caller may access this BOQ's project before
+    # rolling it back to a snapshot in a project/tenant they cannot access.
+    await _verify_boq_owner(session, boq_id, user_id, payload)
     boq = await service.restore_snapshot(boq_id, snapshot_id)
     return boq
 

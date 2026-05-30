@@ -156,11 +156,17 @@ def _set_to_detail(item: object) -> RequirementSetDetail:
 
 @router.get("/stats/", response_model=RequirementStats)
 async def get_stats(
+    session: SessionDep,
     project_id: uuid.UUID = Query(...),
     user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("requirements.read")),
     service: RequirementsService = Depends(_get_service),
 ) -> RequirementStats:
     """Aggregated requirement stats for a project."""
+    # IDOR guard: the global requirements.read role is not project-scoped, so
+    # verify the caller can access this project before leaking its aggregate
+    # requirement counts/statuses (cross-tenant leak otherwise).
+    await verify_project_access(project_id, str(user_id), session)
     data = await service.get_stats(project_id)
     return RequirementStats(**data)
 
@@ -242,14 +248,20 @@ async def create_set(
 
 @router.get("/", response_model=list[RequirementSetResponse])
 async def list_sets(
+    session: SessionDep,
     project_id: uuid.UUID = Query(...),
     user_id: CurrentUserId = None,  # type: ignore[assignment]
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
     status_filter: str | None = Query(default=None, alias="status"),
+    _perm: None = Depends(RequirePermission("requirements.read")),
     service: RequirementsService = Depends(_get_service),
 ) -> list[RequirementSetResponse]:
     """List requirement sets for a project."""
+    # IDOR guard: the global requirements.read role is not project-scoped, so
+    # verify the caller can access this project before listing its sets
+    # (names/descriptions/statuses) — cross-tenant leak otherwise.
+    await verify_project_access(project_id, str(user_id), session)
     items, _ = await service.list_sets(
         project_id,
         offset=offset,
@@ -326,12 +338,13 @@ async def get_set(
 @router.get("/{set_id}/export/", response_model=None)
 async def export_requirements_legacy(
     set_id: uuid.UUID,
+    session: SessionDep,
     format: str = Query(default="csv", pattern="^(csv|json|xlsx)$"),
     user_id: CurrentUserId = None,  # type: ignore[assignment]
     service: RequirementsService = Depends(_get_service),
 ):
     """Export all requirements (legacy ``?format=`` flavour kept for callers)."""
-    return await _export_dispatch(set_id, format, service)
+    return await _export_dispatch(set_id, format, service, str(user_id), session)
 
 
 @router.get("/{set_id}/export.{ext}", response_model=None)
@@ -339,6 +352,7 @@ async def export_requirements(
     set_id: uuid.UUID,
     ext: str,
     user_id: CurrentUserId,
+    session: SessionDep,
     service: RequirementsService = Depends(_get_service),
 ):
     """Export all requirements as ``csv | json | xlsx``.
@@ -351,15 +365,21 @@ async def export_requirements(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unsupported export format '{ext}'. Use csv, json, or xlsx.",
         )
-    return await _export_dispatch(set_id, ext, service)
+    return await _export_dispatch(set_id, ext, service, str(user_id), session)
 
 
 async def _export_dispatch(
     set_id: uuid.UUID,
     fmt: str,
     service: RequirementsService,
+    user_id: str,
+    session: SessionDep,
 ):
     item = await service.get_set(set_id)
+    # IDOR guard: gate the export on the set's owning project. The global
+    # requirements role is not project-scoped, so without this any holder
+    # could dump another tenant's requirement data via the set UUID.
+    await verify_project_access(item.project_id, user_id, session)
     rows = _export_rows(item)
     safe_name = (getattr(item, "name", None) or f"requirements_{set_id}").replace("/", "_").replace(
         "\\", "_"
@@ -582,7 +602,8 @@ async def delete_set(
 async def bulk_delete_requirements(
     set_id: uuid.UUID,
     data: RequirementBulkDeleteRequest,
-    _user_id: CurrentUserId,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("requirements.delete")),
     service: RequirementsService = Depends(_get_service),
 ) -> RequirementBulkDeleteResult:
@@ -595,6 +616,12 @@ async def bulk_delete_requirements(
     ``requirements.requirement.deleted`` event so vector indexes stay
     in sync.
     """
+    # IDOR guard: gate on the set's owning project. The service only scopes
+    # the deletes to set_id; without the project check any requirements.delete
+    # holder could wipe another tenant's set by UUID (the per-row set-membership
+    # check inside the service keeps the blast radius to this set only).
+    req_set = await service.get_set(set_id)
+    await verify_project_access(req_set.project_id, str(user_id), session)
     try:
         deleted, skipped = await service.bulk_delete_requirements(set_id, data.requirement_ids)
         return RequirementBulkDeleteResult(deleted_count=deleted, skipped_count=skipped)
@@ -620,10 +647,16 @@ async def add_requirement(
     set_id: uuid.UUID,
     data: RequirementCreate,
     user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("requirements.create")),
     service: RequirementsService = Depends(_get_service),
 ) -> RequirementResponse:
     """Add a requirement to a set."""
+    # IDOR guard: gate on the target set's project before inserting into it.
+    # requirements.create is a global role, so without this any holder could
+    # write requirements into another tenant's set by its UUID.
+    req_set = await service.get_set(set_id)
+    await verify_project_access(req_set.project_id, str(user_id), session)
     try:
         item = await service.add_requirement(set_id, data, user_id=user_id)
         return _req_to_response(item)
