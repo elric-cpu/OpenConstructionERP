@@ -5,6 +5,52 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.9.1] - 2026-05-30
+
+**Stability and correctness hardening, plus sharper flags and partner logos.**
+
+A focused, module-by-module QA sweep took every reachable button, endpoint and
+permission check and verified it behaves. The result is a long list of small,
+concrete fixes rather than new features. Eight reachable server errors were
+traced to their source and removed, several buttons that looked active but went
+nowhere are now wired to real handlers, and a number of access checks that were
+either too loose or silently denying were corrected.
+
+Access control was tightened where it was wrong in either direction. Cross
+project and cross tenant read holes were closed, sub resources under BOQ and
+requirements now enforce the same guards as their parents, and a few endpoints
+that conflated read and write permission were split so that viewers can read
+without being able to change anything. The money handling started in 5.9.0 was
+carried the rest of the way: amounts are never blended across ISO currencies,
+totals are grouped by currency or converted through a project's own rates, and
+the currency code travels with every value end to end.
+
+The API contracts that drifted between the backend and the frontend were
+reconciled - HSE advanced, procurement goods receipts, transmittals, smart
+views and bid management now agree on their request and response shapes.
+
+Finally, two visual fixes. The inline country flags were rebuilt with proper
+geometry: the United States canton no longer relies on a star glyph font that
+renders as empty boxes inside an image, and China, Turkey, Saudi Arabia,
+Australia, New Zealand, South Africa and the India chakra were redrawn cleanly.
+Five partner packs that shared a placeholder logo now carry their own emblem.
+
+### Fixed
+
+- Removed eight reachable HTTP 500s found by the QA sweep across the touched modules.
+- Wired up buttons and actions that were unreachable or had no handler, including bid management open bids, the match wizard setup panels, smart view sharing and the transmittals payload.
+- Closed cross project and cross tenant access holes (IDOR/RBAC), added the missing file distribution subscribe guard, and added RBAC guards on BOQ and requirements sub resources.
+- Split read and write permissions where they were conflated, made access team inclusive where intended, scoped list queries to the caller, and gated high value actions.
+- Reconciled drifted API contracts: HSE advanced (seven entities), procurement goods receipts, transmittals, smart views and bid management.
+- Fixed the procurement goods receipts project query and response enrichment, and a dashboards snapshot route ordering shadow.
+- Settings backup and restore now use the correct restore and validate request shapes.
+
+### Changed
+
+- Money totals are grouped by currency or converted through project `fx_rates`, never blended; the ISO code is shown next to every amount, and the EUR fallback default was removed from the compare and rollup paths.
+- Rebuilt the inline country flags (US, CN, TR, SA, AU, NZ, ZA and the India chakra) with proper SVG geometry so they render correctly at small sizes on every platform.
+- Gave the five placeholder partner pack logos (Australia, New Zealand, UK, Modular & Prefab, Renewables EPC) distinctive emblems consistent with the packs that already shipped real marks.
+
 ## [5.9.0] - 2026-05-30
 
 **Quality wave, full localization, and partner-pack country projects.**
