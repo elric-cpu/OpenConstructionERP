@@ -45,27 +45,20 @@ def _get_service(session: SessionDep) -> ApprovalService:
 
 
 async def _require_project_access(session: AsyncSession, project_id: uuid.UUID, user_id: str) -> None:
-    """Verify the caller owns or is admin on ``project_id``."""
-    from app.modules.projects.repository import ProjectRepository
-    from app.modules.users.repository import UserRepository
+    """Verify the caller may access ``project_id`` (owner, admin, or team member).
 
-    project = await ProjectRepository(session).get_by_id(project_id)
-    if project is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Project {project_id} not found",
-        )
-    try:
-        user = await UserRepository(session).get_by_id(uuid.UUID(str(user_id)))
-        if user is not None and getattr(user, "role", "") == "admin":
-            return
-    except Exception:  # noqa: BLE001
-        logger.exception("Admin-role lookup failed during approval access check")
-    if str(getattr(project, "owner_id", "")) != str(user_id):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied: you do not own this project",
-        )
+    Delegates to the app-wide canonical policy
+    ``app.dependencies.verify_project_access`` so legitimate project TEAM
+    MEMBERS are no longer wrongly denied. The previous owner-only gate was
+    over-strict and 403'd valid non-owner approvers on every workflow
+    endpoint, breaking the multi-approver premise.
+    """
+    # RBAC/broken-access-control fix: relax the owner-only gate to the
+    # canonical owner/admin/team-member policy. verify_project_access raises
+    # HTTPException(404) on denial, preserving the 404-not-403 IDOR behaviour.
+    from app.dependencies import verify_project_access
+
+    await verify_project_access(project_id, user_id, session)
 
 
 # ── Stamp templates ───────────────────────────────────────────────────────

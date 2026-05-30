@@ -10,7 +10,13 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, Query
 from pydantic import BaseModel, Field
 
-from app.dependencies import CurrentUserId, RequirePermission, SessionDep, verify_project_access
+from app.dependencies import (
+    CurrentUserId,
+    CurrentUserPayload,
+    RequirePermission,
+    SessionDep,
+    verify_project_access,
+)
 from app.modules.variations.schemas import (
     DayworkSheetCreate,
     DayworkSheetLineCreate,
@@ -51,6 +57,7 @@ from app.modules.variations.schemas import (
 )
 from app.modules.variations.service import (
     VariationsService,
+    ensure_high_value_authorised,
     is_nec4_overdue,
     supported_contract_standards,
 )
@@ -308,12 +315,18 @@ async def approve_variation_request(
     vr_id: uuid.UUID,
     session: SessionDep,
     user_id: CurrentUserId,
+    payload: CurrentUserPayload,
     body: _DecisionBody = Body(default=_DecisionBody()),
     _perm: None = Depends(RequirePermission("variations.approve_request")),
     service: VariationsService = Depends(_get_service),
 ) -> VariationRequestResponse:
     existing = await service.get_request(vr_id)
     await verify_project_access(existing.project_id, str(user_id), session)
+    # RBAC: enforce the high-value approval tier — a Manager holding only
+    # variations.approve_request must not wave through a variation whose cost
+    # impact exceeds HIGH_VALUE_APPROVAL_THRESHOLD without the admin-only
+    # variations.approve_high_value permission (closes the dead-gate finding).
+    ensure_high_value_authorised(existing.estimated_cost_impact, payload=payload)
     vr = await service.transition_variation_request(
         vr_id,
         "approved",
@@ -348,12 +361,19 @@ async def convert_vr_to_vo(
     vr_id: uuid.UUID,
     session: SessionDep,
     user_id: CurrentUserId,
+    user_payload: CurrentUserPayload,
     body: _ConvertVOBody = Body(default=_ConvertVOBody()),
     _perm: None = Depends(RequirePermission("variations.convert_to_vo")),
     service: VariationsService = Depends(_get_service),
 ) -> VariationOrderResponse:
     vr = await service.get_request(vr_id)
     await verify_project_access(vr.project_id, str(user_id), session)
+    # RBAC: convert-to-VO commits the variation's money into a VariationOrder
+    # (and a mirrored ChangeOrder), so it is symmetric with approval — gate
+    # high-value conversions behind variations.approve_high_value too. Use the
+    # effective committed amount (body override else the source VR estimate).
+    effective_amount = body.final_cost_impact or vr.estimated_cost_impact
+    ensure_high_value_authorised(effective_amount, payload=user_payload)
     payload = VariationOrderCreate(
         project_id=vr.project_id,
         variation_request_id=vr_id,

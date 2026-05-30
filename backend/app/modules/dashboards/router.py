@@ -23,7 +23,7 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse, Response
 
-from app.dependencies import CurrentUserPayload, SessionDep
+from app.dependencies import CurrentUserPayload, SessionDep, verify_project_access
 from app.modules.dashboards import messages
 from app.modules.dashboards.cad2data_bridge import (
     UploadedFile,
@@ -149,6 +149,11 @@ async def create_snapshot(
             detail=f"At most {_MAX_UPLOAD_COUNT} files per snapshot.",
         )
 
+    # IDOR/RBAC guard: reject snapshot creation under a project the caller
+    # cannot access (404 on denial, team-inclusive via verify_project_access).
+    user_id = _user_id_from_payload(payload)
+    await verify_project_access(project_id, str(user_id), session)
+
     disciplines = disciplines or []
     uploaded: list[UploadedFile] = []
     for idx, f in enumerate(files):
@@ -163,7 +168,6 @@ async def create_snapshot(
             )
         )
 
-    user_id = _user_id_from_payload(payload)
     tenant_id = _tenant_id_from_payload(payload)
 
     service = SnapshotService(
@@ -203,6 +207,11 @@ async def list_snapshots(
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> SnapshotListResponse:
+    # IDOR/RBAC guard: only list snapshots for a project the caller can
+    # access (404 on denial, team-inclusive via verify_project_access).
+    user_id = _user_id_from_payload(payload)
+    await verify_project_access(project_id, str(user_id), session)
+
     tenant_id = _tenant_id_from_payload(payload)
     service = SnapshotService(repo=SnapshotRepository(session))
     rows, total = await service.list_for_project(
@@ -1301,6 +1310,11 @@ async def get_snapshot_timeline(
     from app.modules.dashboards.snapshot_navigator import (
         list_snapshots_for_project,
     )
+
+    # IDOR/RBAC guard: scope the timeline to a project the caller can
+    # access (404 on denial, team-inclusive via verify_project_access).
+    user_id = _user_id_from_payload(payload)
+    await verify_project_access(project_id, str(user_id), session)
 
     tenant_id = _tenant_id_from_payload(payload)
     service = SnapshotService(repo=SnapshotRepository(session))

@@ -2404,7 +2404,8 @@ async def file_manager_tree(
     endpoint so the sidebar counts match what the user actually sees
     in the right pane after a search.
     """
-    await _verify_project_owner(service, project_id, user_id, payload)
+    # IDOR/RBAC: team-readable docs — allow project team members (owner/admin/member), not owner-only
+    await _verify_project_access(service, project_id, user_id, session, payload)
     return await fm_file_tree(
         session,
         str(project_id),
@@ -2437,7 +2438,8 @@ async def file_manager_list(
     Each row carries the *real* on-disk path so the UI can ground users
     on where their data actually lives.
     """
-    await _verify_project_owner(service, project_id, user_id, payload)
+    # IDOR/RBAC: team-readable docs — allow project team members (owner/admin/member), not owner-only
+    await _verify_project_access(service, project_id, user_id, session, payload)
     return await fm_list_files(
         session,
         str(project_id),
@@ -2460,6 +2462,7 @@ async def file_manager_locations(
     user_id: CurrentUserId,
     payload: CurrentUserPayload,
     settings: SettingsDep,
+    session: SessionDep,
     service: ProjectService = Depends(_get_service),
 ) -> StorageLocations:
     """Return the absolute filesystem paths used by the project.
@@ -2468,7 +2471,8 @@ async def file_manager_locations(
     open the containing folder (Tauri-only), or just understand where
     their attachments live.
     """
-    project = await _verify_project_owner(service, project_id, user_id, payload)
+    # IDOR/RBAC: team-readable docs — allow project team members (owner/admin/member), not owner-only
+    project = await _verify_project_access(service, project_id, user_id, session, payload)
     return fm_resolve_locations(
         str(project_id),
         getattr(project, "name", ""),

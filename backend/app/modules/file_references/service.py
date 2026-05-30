@@ -499,9 +499,20 @@ async def create_reference(
 async def delete_reference(
     session: AsyncSession,
     reference_id: uuid.UUID,
+    *,
+    project_id: uuid.UUID,
 ) -> bool:
-    """Delete a single reference by id. ``False`` when missing."""
-    stmt = select(FileReference).where(FileReference.id == reference_id)
+    """Delete a single reference by id. ``False`` when missing.
+
+    Scoped by ``project_id`` (verified by the router) so a reference id
+    from another project cannot be deleted — closes a cross-project IDOR
+    on the DELETE endpoint.
+    """
+    # IDOR fix: only delete when the row belongs to the verified project.
+    stmt = select(FileReference).where(
+        FileReference.id == reference_id,
+        FileReference.project_id == project_id,
+    )
     row = (await session.execute(stmt)).scalar_one_or_none()
     if row is None:
         return False
@@ -513,13 +524,17 @@ async def delete_reference(
 async def list_references_for_file(
     session: AsyncSession,
     *,
+    project_id: uuid.UUID,
     file_kind: str,
     file_id: str,
 ) -> tuple[list[FileReferenceResponse], int]:
-    """All entities that reference a given file."""
+    """All entities that reference a given file (within one project)."""
+    # IDOR fix: scope by the router-verified project_id so a file_id
+    # cannot leak references that belong to another project.
     stmt = (
         select(FileReference)
         .where(
+            FileReference.project_id == project_id,
             FileReference.file_kind == file_kind,
             FileReference.file_id == file_id,
         )
@@ -533,13 +548,17 @@ async def list_references_for_file(
 async def list_files_for_target(
     session: AsyncSession,
     *,
+    project_id: uuid.UUID,
     target_type: str,
     target_id: str,
 ) -> tuple[list[FileReferenceResponse], int]:
-    """All files that reference a given entity."""
+    """All files that reference a given entity (within one project)."""
+    # IDOR fix: scope by the router-verified project_id so a target_id
+    # cannot leak file references that belong to another project.
     stmt = (
         select(FileReference)
         .where(
+            FileReference.project_id == project_id,
             FileReference.target_type == target_type,
             FileReference.target_id == target_id,
         )

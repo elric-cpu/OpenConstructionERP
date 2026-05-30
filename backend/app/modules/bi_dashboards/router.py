@@ -128,6 +128,52 @@ async def _ensure_dashboard_owner(
     raise _not_found("Dashboard not found")
 
 
+async def _ensure_dashboard_read_access(
+    dashboard_id: uuid.UUID,
+    user_id: str,
+    session: SessionDep,
+) -> Dashboard:
+    """‌⁠‍Authorize READ access (render / evaluate), mirroring list visibility.
+
+    Closes the read-vs-write RBAC gap: ``_ensure_dashboard_owner`` was
+    gating reads too, so non-owners saw shared (global/role) dashboards in
+    the grid via ``list_dashboards_visible_to`` but got 404 on open, and
+    project team members with legitimate project access could never read a
+    project-scoped dashboard.
+
+    Read policy — kept in sync with
+    :meth:`BIDashboardsRepository.list_dashboards_visible_to`:
+
+    * admin                      -> allowed (cross-tenant superpower)
+    * owner                      -> allowed
+    * scope in ('global','role') -> allowed (shared dashboards)
+    * scope == 'project'         -> require ``verify_project_access`` on the
+      dashboard's ``project_id`` (team-inclusive: project owner, admin,
+      team members; 404 on denial)
+    * otherwise (personal/unknown, non-owner) -> 404 (IDOR-safe, no leak)
+
+    Writes are unaffected — mutation endpoints keep ``_ensure_dashboard_owner``.
+    """
+    dashboard = await session.get(Dashboard, dashboard_id)
+    if dashboard is None:
+        raise _not_found("Dashboard not found")
+    caller = _user_uuid(user_id)
+    if dashboard.owner_user_id is not None and dashboard.owner_user_id == caller:
+        return dashboard
+    if await _is_admin(user_id, session):
+        return dashboard
+    scope = getattr(dashboard, "scope", None)
+    if scope in ("global", "role"):
+        return dashboard
+    if scope == "project":
+        # verify_project_access raises 404 on denial; grants owner/admin/team.
+        await verify_project_access(
+            getattr(dashboard, "project_id", None), user_id, session
+        )
+        return dashboard
+    raise _not_found("Dashboard not found")
+
+
 async def _ensure_widget_owner(
     widget_id: uuid.UUID,
     user_id: str,
@@ -401,7 +447,9 @@ async def render_dashboard(
     session: SessionDep,
     service: BIDashboardsService = Depends(_service),
 ) -> DashboardRenderResponse:
-    await _ensure_dashboard_owner(dashboard_id, user_id, session)
+    # Read-vs-write RBAC: render is a READ — allow owner/admin + shared
+    # (global/role) + project-team access, matching the dashboards grid.
+    await _ensure_dashboard_read_access(dashboard_id, user_id, session)
     result = await service.render_dashboard(dashboard_id)
     if result is None:
         raise _not_found("Dashboard not found")
@@ -430,7 +478,9 @@ async def evaluate_dashboard(
     If ``filters['project_id']`` is supplied we also verify the caller
     can access that project — same IDOR pattern as the KPI endpoints.
     """
-    await _ensure_dashboard_owner(dashboard_id, user_id, session)
+    # Read-vs-write RBAC: evaluate is a READ — allow owner/admin + shared
+    # (global/role) + project-team access, matching the dashboards grid.
+    await _ensure_dashboard_read_access(dashboard_id, user_id, session)
     filters = payload.filters or {}
     project_filter = filters.get("project_id")
     if project_filter:

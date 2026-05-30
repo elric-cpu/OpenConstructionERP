@@ -190,7 +190,10 @@ async def list_for_file_route(
     """Entities that reference a single file (the "Referenced in N" chip)."""
     _validate_kind(kind)
     await verify_project_access(project_id, user_id, session)
-    items, total = await list_references_for_file(session, file_kind=kind, file_id=file_id)
+    # IDOR fix: pass the verified project_id so the service scopes the query.
+    items, total = await list_references_for_file(
+        session, project_id=project_id, file_kind=kind, file_id=file_id
+    )
     return FileReferenceListResponse(items=items, total=total)
 
 
@@ -209,7 +212,10 @@ async def list_for_target_route(
     """Files that reference a given entity (e.g. files attached to an RFI)."""
     _validate_target_type(target_type)
     await verify_project_access(project_id, user_id, session)
-    items, total = await list_files_for_target(session, target_type=target_type, target_id=target_id)
+    # IDOR fix: pass the verified project_id so the service scopes the query.
+    items, total = await list_files_for_target(
+        session, project_id=project_id, target_type=target_type, target_id=target_id
+    )
     return FileReferenceListResponse(items=items, total=total)
 
 
@@ -246,7 +252,9 @@ async def delete_reference_route(
 ) -> None:
     """Drop a single reference link."""
     await verify_project_access(project_id, user_id, session)
-    ok = await delete_reference(session, reference_id)
+    # IDOR fix: scope the delete to the verified project so a reference id
+    # from another project yields 404 instead of a cross-project delete.
+    ok = await delete_reference(session, reference_id, project_id=project_id)
     if not ok:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reference not found")
     return
