@@ -68,6 +68,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.http_headers import content_disposition_attachment
 from app.core.i18n import get_locale
 from app.core.rate_limiter import upload_limiter
 from app.core.validation.messages import translate
@@ -3563,7 +3564,9 @@ async def export_cobie_xlsx(
         io.BytesIO(xlsx_bytes),
         media_type=("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
         headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
+            # RFC 6266 — a model name with non-Latin-1 chars would otherwise make
+            # the ASGI server 500 while encoding this header.
+            "Content-Disposition": content_disposition_attachment(filename),
             "Content-Length": str(len(xlsx_bytes)),
         },
     )

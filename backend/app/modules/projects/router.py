@@ -570,6 +570,8 @@ async def grant_folder_permission_endpoint(
     body: dict = Body(...),  # type: ignore[assignment]
 ) -> dict:
     """Mint a new grant. 409 on duplicate (scope, user). 400 on bad role."""
+    from pydantic import ValidationError
+
     from app.modules.documents.folder_permissions_service import (
         grant_permission,
         is_project_member,
@@ -578,7 +580,22 @@ async def grant_folder_permission_endpoint(
 
     await _verify_project_owner(service, project_id, user_id, payload)
 
-    data = FolderPermissionCreate(**body)
+    # body is an untyped dict (FolderPermissionCreate is imported lazily to
+    # avoid a circular import), so validate it explicitly — otherwise a
+    # malformed/incomplete body raises pydantic.ValidationError that escapes
+    # as an opaque HTTP 500 instead of a clean 422.
+    try:
+        data = FolderPermissionCreate(**body)
+    except ValidationError as exc:
+        # Reduce to JSON-safe fields — pydantic's raw errors() can carry a
+        # non-serialisable ``ctx`` (exception objects) that would itself 500.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=[
+                {"loc": list(e.get("loc", [])), "msg": e.get("msg"), "type": e.get("type")}
+                for e in exc.errors()
+            ],
+        ) from exc
 
     # Refuse to grant to a non-member — leaks "this user doesn't exist
     # on this project" but is more useful than a downstream FK error.

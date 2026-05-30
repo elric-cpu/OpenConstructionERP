@@ -538,7 +538,7 @@ function TemplateDrawer({
                         {c.scaled_quantity.toFixed(2)} {c.unit}
                       </td>
                       <td className="py-1.5 pr-2 text-right font-mono">
-                        {c.unit_rate.toFixed(2)} {result.currency}
+                        {Number(c.unit_rate).toFixed(2)} {result.currency}
                       </td>
                       <td className="py-1.5 text-right font-mono">
                         {c.total.toFixed(2)} {result.currency}
@@ -552,7 +552,7 @@ function TemplateDrawer({
                       {t('assemblies.library.grand_total', 'Grand total')}
                     </td>
                     <td className="py-2 text-right font-mono">
-                      {result.grand_total.toFixed(2)} {result.currency}
+                      {Number(result.grand_total).toFixed(2)} {result.currency}
                     </td>
                   </tr>
                 </tfoot>

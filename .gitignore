@@ -214,3 +214,6 @@ backend/uploads/qms/
 backend/.pytest_*.out
 backend/_dev_backend.err
 backend/*.err
+
+# Deep-QA sweep working artifacts (progress + per-module findings; durable on disk, not committed)
+qa-sweep/

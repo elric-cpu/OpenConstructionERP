@@ -174,8 +174,42 @@ export async function fetchFieldReportCalendar(
   return Array.isArray(res) ? res : res.items ?? [];
 }
 
-export function getFieldReportPdfUrl(id: string): string {
-  return `/api/v1/fieldreports/reports/${id}/export/pdf`;
+/**
+ * Download a single field report as PDF.
+ *
+ * The endpoint is bearer-authenticated (RequirePermission('fieldreports.read')),
+ * so a plain `<a href>` navigation would drop the token and 401 — and the route
+ * needs its trailing slash (the app runs with redirect_slashes=False). We fetch
+ * with the Authorization header and stream the blob to a download, mirroring
+ * exportFieldReports below.
+ */
+export async function exportFieldReportPdf(id: string): Promise<void> {
+  const token = useAuthStore.getState().accessToken;
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`/api/v1/fieldreports/reports/${id}/export/pdf/`, {
+    method: 'GET',
+    headers,
+  });
+  if (!response.ok) {
+    let detail = `Export failed (HTTP ${response.status})`;
+    try {
+      const body = await response.json();
+      detail = extractErrorMessageFromBody(body) ?? detail;
+    } catch {
+      // ignore parse error
+    }
+    throw new Error(detail);
+  }
+
+  const blob = await response.blob();
+  const disposition = response.headers.get('Content-Disposition');
+  const filename =
+    disposition?.match(/filename="?(.+?)"?$/)?.[1] || `field_report_${id}.pdf`;
+  triggerDownload(blob, filename);
 }
 
 /* ── Report Templates ──────────────────────────────────────────────────── */

@@ -724,4 +724,9 @@ def _build_minimal_pdf(text: str) -> bytes:
 
     parts.append(f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF")
 
-    return "\n".join(parts).encode("latin-1")
+    # Courier (a Type1 base font) only covers Latin-1, and the document is a
+    # single-byte stream, so any non-Latin-1 glyph in the report text (Cyrillic,
+    # CJK, emoji, …) must be substituted rather than crash the export with a
+    # UnicodeEncodeError -> HTTP 500. errors="replace" emits one '?' byte per
+    # unencodable char, which keeps each char 1 byte so the /Length stays valid.
+    return "\n".join(parts).encode("latin-1", "replace")

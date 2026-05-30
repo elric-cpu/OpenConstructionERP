@@ -98,6 +98,20 @@ ASSIGNMENT_STATUS_TRANSITIONS: dict[str, frozenset[str]] = {
 # ── Pure helpers ───────────────────────────────────────────────────────────
 
 
+def _as_aware(dt: datetime) -> datetime:
+    """Coerce a datetime to timezone-aware UTC.
+
+    Columns are declared ``DateTime(timezone=True)`` (so Postgres returns aware
+    values), but SQLite — used in dev and on the single-node VPS — ignores the
+    timezone flag and hands back naive datetimes. Comparing such a naive value
+    with ``datetime.now(UTC)`` raises ``TypeError: can't compare offset-naive and
+    offset-aware datetimes`` (a 500 on every resource dashboard). Stored values
+    are UTC by convention, so attaching UTC to a naive value is correct; aware
+    values pass through unchanged.
+    """
+    return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt
+
+
 def _intervals_overlap(
     a_start: datetime,
     a_end: datetime,
@@ -309,6 +323,10 @@ def compute_resource_utilization(
     excluded. Returns dict with utilization_percent, hours_assigned,
     hours_available.
     """
+    # Normalise to aware-UTC so naive (SQLite) and aware (Postgres) datetimes
+    # can be compared regardless of which side the period bounds came from.
+    period_start = _as_aware(period_start)
+    period_end = _as_aware(period_end)
     if period_end <= period_start:
         return {"utilization_percent": 0.0, "hours_assigned": 0.0, "hours_available": 0.0}
 
@@ -327,8 +345,8 @@ def compute_resource_utilization(
         # inflates the figure and can push utilization past 100%.
         if a.status in ("cancelled", "proposed"):
             continue
-        ov_start = max(period_start, a.start_at)
-        ov_end = min(period_end, a.end_at)
+        ov_start = max(period_start, _as_aware(a.start_at))
+        ov_end = min(period_end, _as_aware(a.end_at))
         if ov_end <= ov_start:
             continue
         ov_sec = (ov_end - ov_start).total_seconds()
@@ -1105,9 +1123,14 @@ class ResourcesService:
         active = [
             a
             for a in all_assignments
-            if a.status in ("proposed", "confirmed", "in_progress") and a.start_at <= now <= a.end_at
+            if a.status in ("proposed", "confirmed", "in_progress")
+            and _as_aware(a.start_at) <= now <= _as_aware(a.end_at)
         ]
-        upcoming = [a for a in all_assignments if a.status in ("proposed", "confirmed") and a.start_at > now]
+        upcoming = [
+            a
+            for a in all_assignments
+            if a.status in ("proposed", "confirmed") and _as_aware(a.start_at) > now
+        ]
         certs = await self.cert_repo.list_for_resource(resource_id)
         today = now.date()
         cutoff = today + timedelta(days=60)

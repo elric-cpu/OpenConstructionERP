@@ -54,7 +54,7 @@ import {
   deleteFieldReport,
   submitFieldReport,
   approveFieldReport,
-  getFieldReportPdfUrl,
+  exportFieldReportPdf,
   importFieldReportsFile,
   exportFieldReports,
   downloadFieldReportsTemplate,
@@ -295,6 +295,17 @@ export function FieldReportsPage() {
         title: t('fieldreports.export_success', { defaultValue: 'Export complete' }),
         message: t('fieldreports.export_success_msg', { defaultValue: 'Excel file downloaded.' }),
       }),
+    onError: (e: Error) =>
+      addToast({
+        type: 'error',
+        title: t('fieldreports.export_failed', { defaultValue: 'Export failed' }),
+        message: e.message,
+      }),
+  });
+
+  // Per-report PDF download (bearer-authenticated; not a plain link)
+  const pdfMut = useMutation({
+    mutationFn: (id: string) => exportFieldReportPdf(id),
     onError: (e: Error) =>
       addToast({
         type: 'error',
@@ -817,16 +828,15 @@ export function FieldReportsPage() {
                                 <CheckCircle2 size={15} />
                               </button>
                             )}
-                            <a
-                              href={getFieldReportPdfUrl(report.id)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="rounded p-1.5 text-content-tertiary hover:bg-surface-secondary hover:text-content-primary"
+                            <button
+                              onClick={() => pdfMut.mutate(report.id)}
+                              disabled={pdfMut.isPending}
+                              className="rounded p-1.5 text-content-tertiary hover:bg-surface-secondary hover:text-content-primary disabled:opacity-50"
                               title={t('fieldreports.export_pdf', { defaultValue: 'Export PDF' })}
                               aria-label={t('fieldreports.export_pdf', { defaultValue: 'Export PDF' })}
                             >
                               <Download size={15} />
-                            </a>
+                            </button>
                             {report.status !== 'approved' && (
                               <button
                                 onClick={() => handleDelete(report.id)}

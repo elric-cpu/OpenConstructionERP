@@ -41,13 +41,14 @@ class MeetingRepository:
         if status is not None:
             base = base.where(Meeting.status == status)
 
-        # Free-text search across title, agenda, minutes, and meeting number
+        # Free-text search across title, minutes, and meeting number.
+        # (agenda_items is a JSON list column, not a text column — ilike on it
+        # is not portable across SQLite/Postgres, so it is excluded here.)
         if search and search.strip():
             pattern = f"%{search.strip()}%"
             base = base.where(
                 or_(
                     Meeting.title.ilike(pattern),
-                    Meeting.agenda.ilike(pattern),
                     Meeting.minutes.ilike(pattern),
                     Meeting.meeting_number.ilike(pattern),
                 )

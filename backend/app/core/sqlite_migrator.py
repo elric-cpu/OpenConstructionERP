@@ -8,6 +8,7 @@ without requiring full Alembic for SQLite users.
 """
 
 import logging
+from datetime import UTC, datetime
 
 from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -51,10 +52,42 @@ async def sqlite_auto_migrate(engine: AsyncEngine, base) -> int:
                 default = ""
                 if col.server_default is not None:
                     raw = col.server_default.arg
-                    # Ensure string defaults are properly quoted for SQLite
-                    if isinstance(raw, str) and not raw.startswith("'"):
-                        raw = "'" + raw.replace("'", "''") + "'"
-                    default = f" DEFAULT {raw}"
+                    if isinstance(raw, str):
+                        # Ensure string defaults are properly quoted for SQLite
+                        if not raw.startswith("'"):
+                            raw = "'" + raw.replace("'", "''") + "'"
+                        default = f" DEFAULT {raw}"
+                    else:
+                        # Non-string server_default (e.g. func.now() /
+                        # CURRENT_TIMESTAMP / any expression). SQLite forbids a
+                        # function or expression as the DEFAULT in ALTER TABLE
+                        # ADD COLUMN, so the ALTER would fail silently and leave
+                        # the column missing (the original bug behind the
+                        # oe_notification_digest_queue.updated_at drift, which
+                        # 500s every ORM read of that table). Compile it; if it
+                        # is a literal constant keep it, otherwise substitute a
+                        # constant so the column actually gets added.
+                        try:
+                            compiled = str(
+                                raw.compile(
+                                    dialect=engine.dialect,
+                                    compile_kwargs={"literal_binds": True},
+                                )
+                            )
+                        except Exception:  # noqa: BLE001
+                            compiled = ""
+                        low = compiled.lower()
+                        if not compiled or "(" in compiled or "now" in low or "current_" in low:
+                            if col.nullable:
+                                default = " DEFAULT NULL"
+                            else:
+                                # Backfill existing rows with the migration time
+                                # (a constant literal SQLite accepts). New rows
+                                # get the real default via the app on write.
+                                stamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+                                default = f" DEFAULT '{stamp}'"
+                        else:
+                            default = f" DEFAULT {compiled}"
                 elif col.nullable:
                     default = " DEFAULT NULL"
 
