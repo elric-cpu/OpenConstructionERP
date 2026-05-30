@@ -43,6 +43,7 @@ import {
   fetchPPEIssues,
   fetchAudits,
   fetchCAPAs,
+  getKpi,
   createInvestigation,
   createJSA,
   createPermit,
@@ -61,12 +62,11 @@ import {
   type PPEIssue,
   type SafetyAudit,
   type CorrectiveAction,
-  type IncidentSeverity,
   type PermitStatus,
   type CAPAStatus,
   type CATargetStatus,
   type CorrectiveActionRow,
-  type FiveWhys,
+  type HSEKpi,
 } from './api';
 
 const HSE_TAB_IDS = [
@@ -76,30 +76,26 @@ type HSETab = (typeof HSE_TAB_IDS)[number];
 
 type BadgeVariant = 'neutral' | 'blue' | 'success' | 'warning' | 'error';
 
-const SEVERITY_COLORS: Record<IncidentSeverity, BadgeVariant> = {
-  minor: 'neutral',
-  moderate: 'warning',
-  major: 'error',
-  severe: 'error',
-  critical: 'error',
-};
-
+// Permit status colours — keyed to the real backend FSM states
+// (requested → approved → active → suspended → closed/cancelled; expired).
 const PERMIT_STATUS_COLORS: Record<PermitStatus, BadgeVariant> = {
-  draft: 'neutral',
-  pending: 'warning',
+  requested: 'warning',
+  approved: 'blue',
   active: 'success',
-  expired: 'error',
+  suspended: 'warning',
   closed: 'neutral',
   cancelled: 'neutral',
+  expired: 'error',
 };
 
+// CAPA status colours — keyed to the real backend enum
+// (open | in_progress | completed | overdue | cancelled).
 const CAPA_STATUS_COLORS: Record<CAPAStatus, BadgeVariant> = {
   open: 'warning',
   in_progress: 'blue',
   completed: 'success',
-  verified: 'success',
-  closed: 'neutral',
   overdue: 'error',
+  cancelled: 'neutral',
 };
 
 const inputCls =
@@ -422,13 +418,16 @@ function Osha300Download({ projectId }: { projectId: string }) {
  * deliberately runs the fetches in parallel — hook-rule-safe per the
  * v4.5.0 propdev decision (memory: useQueries for hook safety).
  *
- *  - Open Investigations: status != completed/abandoned
- *  - Overdue CAPAs:       due_date < today AND not closed
+ *  - Open Investigations: status != completed/abandoned (backend statuses are
+ *                         in_progress | completed | abandoned)
+ *  - Overdue CAPAs:       target_date < today AND not completed/cancelled
  *  - Active Permits:      status === 'active'
- *  - Days Since LTI:      proxy = today - latest investigation incident_date
- *                         (no LTI flag exists yet on investigations; we
- *                         approximate via "last severe/major/critical
- *                         incident" which is what RIDDOR / OSHA flag).
+ *  - Days Since LTI:      read straight off the KPI endpoint's
+ *                         days_without_lti (computed server-side from the
+ *                         safety module's lost-time incidents). The
+ *                         investigation record no longer carries
+ *                         severity/incident_date, so we no longer try to
+ *                         re-derive this on the client.
  *
  * Severity-tinted backgrounds drive at-a-glance reading:
  *  - red       when overdue CAPAs > 0 or days-since-LTI < 7
@@ -458,30 +457,41 @@ function HSEKpiStrip({ projectId }: { projectId: string }) {
         select: (d: unknown) => normalizeListResponse<PermitToWork>(d as PermitToWork[] | { items: PermitToWork[] } | null | undefined),
         staleTime: 30_000,
       },
+      {
+        queryKey: ['hse-kpi-summary', projectId],
+        queryFn: () => getKpi(projectId),
+        staleTime: 30_000,
+      },
     ],
   });
 
-  const [invQ, capaQ, permQ] = results;
+  const [invQ, capaQ, permQ, kpiQ] = results;
   const isLoading = results.some((r) => r.isLoading);
-  const isError = results.some((r) => r.isError);
+  // The list queries gate the strip; a KPI-summary failure only blanks the
+  // LTI card (days-since-LTI shows "No record") rather than hiding the strip.
+  const isError = invQ.isError || capaQ.isError || permQ.isError;
 
   const stats = useMemo(() => {
     const investigations = (invQ.data ?? []) as IncidentInvestigation[];
     const capas = (capaQ.data ?? []) as CorrectiveAction[];
     const permits = (permQ.data ?? []) as PermitToWork[];
+    const kpi = kpiQ.data as HSEKpi | undefined;
 
+    // Investigation statuses are in_progress | completed | abandoned — both
+    // completed and abandoned count as closed.
     const openInvestigations = investigations.filter(
-      (it) => it.status !== 'completed' && it.status !== 'cancelled',
+      (it) => it.status !== 'completed' && it.status !== 'abandoned',
     ).length;
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const overdueCapas = capas.filter((c) => {
-      if (c.status === 'closed' || c.status === 'verified' || c.status === 'completed') {
+      if (c.status === 'completed' || c.status === 'cancelled') {
         return false;
       }
-      if (!c.due_date) return false;
-      const due = new Date(c.due_date);
+      // Backend CAPA field is target_date (not due_date).
+      if (!c.target_date) return false;
+      const due = new Date(c.target_date);
       if (Number.isNaN(due.getTime())) return false;
       due.setHours(0, 0, 0, 0);
       return due.getTime() < today.getTime();
@@ -489,32 +499,11 @@ function HSEKpiStrip({ projectId }: { projectId: string }) {
 
     const activePermits = permits.filter((p) => p.status === 'active').length;
 
-    // Days-since-LTI proxy: most-recent severe/major/critical incident
-    // among the formal investigations. The investigation record is what
-    // RIDDOR / OSHA actually cares about (not the lightweight Safety log).
-    let mostRecentSevere: Date | null = null;
-    for (const inv of investigations) {
-      if (
-        inv.severity !== 'major' &&
-        inv.severity !== 'severe' &&
-        inv.severity !== 'critical'
-      ) {
-        continue;
-      }
-      if (!inv.incident_date) continue;
-      const d = new Date(inv.incident_date);
-      if (Number.isNaN(d.getTime())) continue;
-      if (mostRecentSevere === null || d > mostRecentSevere) {
-        mostRecentSevere = d;
-      }
-    }
-    const daysSinceLti: number | null =
-      mostRecentSevere === null
-        ? null
-        : Math.max(0, Math.floor((today.getTime() - mostRecentSevere.getTime()) / 86_400_000));
+    // Days-since-LTI comes from the server-computed KPI; null when no LTI.
+    const daysSinceLti: number | null = kpi?.days_without_lti ?? null;
 
     return { openInvestigations, overdueCapas, activePermits, daysSinceLti };
-  }, [invQ.data, capaQ.data, permQ.data]);
+  }, [invQ.data, capaQ.data, permQ.data, kpiQ.data]);
 
   if (isError) {
     // Don't block the page on KPI failure — just hide the strip silently
@@ -685,10 +674,13 @@ function IncidentsTab({ projectId }: { projectId: string }) {
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [detail, setDetail] = useState<IncidentInvestigation | null>(null);
+  // InvestigationCreate requires incident_ref (UUID of the linked safety
+  // incident) + started_at; method/findings are optional with defaults.
   const [form, setForm] = useState({
-    title: '',
-    incident_date: new Date().toISOString().slice(0, 10),
-    severity: 'minor' as IncidentSeverity,
+    incident_ref: '',
+    started_at: new Date().toISOString().slice(0, 10),
+    method: '5_whys' as IncidentInvestigation['method'],
+    findings: '',
   });
 
   const { data, isLoading, isError, error, refetch } = useQuery({
@@ -698,14 +690,23 @@ function IncidentsTab({ projectId }: { projectId: string }) {
   });
 
   const createMut = useMutation({
-    mutationFn: () => createInvestigation({ project_id: projectId, ...form }),
+    mutationFn: () =>
+      createInvestigation({
+        incident_ref: form.incident_ref.trim(),
+        // The date input gives YYYY-MM-DD; widen to an ISO datetime the
+        // backend's started_at: datetime accepts.
+        started_at: new Date(form.started_at).toISOString(),
+        method: form.method,
+        findings: form.findings || undefined,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['hse-investigations', projectId] });
       setShowCreate(false);
       setForm({
-        title: '',
-        incident_date: new Date().toISOString().slice(0, 10),
-        severity: 'minor',
+        incident_ref: '',
+        started_at: new Date().toISOString().slice(0, 10),
+        method: '5_whys',
+        findings: '',
       });
       addToast({
         type: 'success',
@@ -730,8 +731,8 @@ function IncidentsTab({ projectId }: { projectId: string }) {
     const q = search.toLowerCase();
     return data.filter(
       (it) =>
-        it.title.toLowerCase().includes(q) ||
-        it.investigation_number.toLowerCase().includes(q),
+        it.incident_ref.toLowerCase().includes(q) ||
+        it.findings.toLowerCase().includes(q),
     );
   }, [data, search]);
 
@@ -783,29 +784,26 @@ function IncidentsTab({ projectId }: { projectId: string }) {
             <thead>
               <tr className="border-b border-border-light bg-surface-secondary/50">
                 <th className="px-4 py-3 text-left font-medium text-content-tertiary">
-                  {t('common.number', { defaultValue: '#' })}
+                  {t('hse_advanced.incident_ref', { defaultValue: 'Incident ref' })}
                 </th>
                 <th className="px-4 py-3 text-left font-medium text-content-tertiary">
-                  {t('common.title', { defaultValue: 'Title' })}
+                  {t('hse_advanced.method', { defaultValue: 'Method' })}
                 </th>
                 <th className="px-4 py-3 text-left font-medium text-content-tertiary">
-                  {t('hse_advanced.incident_date', { defaultValue: 'Incident date' })}
-                </th>
-                <th className="px-4 py-3 text-center font-medium text-content-tertiary">
-                  {t('hse_advanced.severity', { defaultValue: 'Severity' })}
+                  {t('hse_advanced.started_at', { defaultValue: 'Started' })}
                 </th>
                 <th className="px-4 py-3 text-center font-medium text-content-tertiary">
                   {t('common.status', { defaultValue: 'Status' })}
                 </th>
-                <th className="px-4 py-3 text-center font-medium text-content-tertiary">
-                  {t('hse_advanced.linked_capa', { defaultValue: 'CAPA' })}
+                <th className="px-4 py-3 text-left font-medium text-content-tertiary">
+                  {t('hse_advanced.lead', { defaultValue: 'Lead' })}
                 </th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-content-tertiary">
+                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-content-tertiary">
                     {t('hse_advanced.no_matches', { defaultValue: 'No matches' })}
                   </td>
                 </tr>
@@ -817,16 +815,15 @@ function IncidentsTab({ projectId }: { projectId: string }) {
                     onClick={() => setDetail(it)}
                   >
                     <td className="px-4 py-3 font-mono text-xs text-content-primary">
-                      {it.investigation_number}
+                      {it.incident_ref}
                     </td>
-                    <td className="px-4 py-3 text-content-primary">{it.title}</td>
                     <td className="px-4 py-3 text-content-secondary">
-                      <DateDisplay value={it.incident_date} />
+                      {t(`hse_advanced.method_${it.method}`, {
+                        defaultValue: it.method.replace(/_/g, ' '),
+                      })}
                     </td>
-                    <td className="px-4 py-3 text-center">
-                      <Badge variant={SEVERITY_COLORS[it.severity] ?? 'neutral'} size="sm">
-                        {t(`hse_advanced.severity_${it.severity}`, { defaultValue: it.severity })}
-                      </Badge>
+                    <td className="px-4 py-3 text-content-secondary">
+                      <DateDisplay value={it.started_at} />
                     </td>
                     <td className="px-4 py-3 text-center">
                       <Badge
@@ -838,8 +835,8 @@ function IncidentsTab({ projectId }: { projectId: string }) {
                         })}
                       </Badge>
                     </td>
-                    <td className="px-4 py-3 text-center text-xs text-content-tertiary tabular-nums">
-                      {it.linked_capa_ids?.length ?? 0}
+                    <td className="px-4 py-3 text-content-secondary text-xs font-mono">
+                      {it.investigation_lead ?? '—'}
                     </td>
                   </tr>
                 ))
@@ -860,7 +857,7 @@ function IncidentsTab({ projectId }: { projectId: string }) {
               </Button>
               <Button
                 variant="primary"
-                disabled={!form.title.trim() || createMut.isPending}
+                disabled={!form.incident_ref.trim() || createMut.isPending}
                 onClick={() => createMut.mutate()}
               >
                 {t('common.create', { defaultValue: 'Create' })}
@@ -870,53 +867,67 @@ function IncidentsTab({ projectId }: { projectId: string }) {
         >
           <div>
             <label className="block text-sm font-medium text-content-primary mb-1.5">
-              {t('common.title', { defaultValue: 'Title' })}{' '}
+              {t('hse_advanced.incident_ref', { defaultValue: 'Incident reference (ID)' })}{' '}
               <span className="text-semantic-error">*</span>
             </label>
             <input
               className={inputCls}
-              value={form.title}
-              onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+              value={form.incident_ref}
+              placeholder={t('hse_advanced.incident_ref_placeholder', {
+                defaultValue: 'UUID of the linked safety incident',
+              })}
+              onChange={(e) => setForm((f) => ({ ...f, incident_ref: e.target.value }))}
             />
           </div>
           <div>
             <label className="block text-sm font-medium text-content-primary mb-1.5">
-              {t('hse_advanced.incident_date', { defaultValue: 'Incident date' })}
+              {t('hse_advanced.started_at', { defaultValue: 'Started' })}
             </label>
             <input
               type="date"
               className={inputCls}
-              value={form.incident_date}
-              onChange={(e) => setForm((f) => ({ ...f, incident_date: e.target.value }))}
+              value={form.started_at}
+              onChange={(e) => setForm((f) => ({ ...f, started_at: e.target.value }))}
             />
           </div>
           <div>
             <label className="block text-sm font-medium text-content-primary mb-1.5">
-              {t('hse_advanced.severity', { defaultValue: 'Severity' })}
+              {t('hse_advanced.method', { defaultValue: 'Method' })}
             </label>
             <select
               className={inputCls}
-              value={form.severity}
+              value={form.method}
               onChange={(e) =>
-                setForm((f) => ({ ...f, severity: e.target.value as IncidentSeverity }))
+                setForm((f) => ({
+                  ...f,
+                  method: e.target.value as IncidentInvestigation['method'],
+                }))
               }
             >
-              <option value="minor">
-                {t('hse_advanced.severity_minor', { defaultValue: 'Minor' })}
+              <option value="5_whys">
+                {t('hse_advanced.method_5_whys', { defaultValue: '5 Whys' })}
               </option>
-              <option value="moderate">
-                {t('hse_advanced.severity_moderate', { defaultValue: 'Moderate' })}
+              <option value="fishbone">
+                {t('hse_advanced.method_fishbone', { defaultValue: 'Fishbone' })}
               </option>
-              <option value="major">
-                {t('hse_advanced.severity_major', { defaultValue: 'Major' })}
+              <option value="timeline">
+                {t('hse_advanced.method_timeline', { defaultValue: 'Timeline' })}
               </option>
-              <option value="severe">
-                {t('hse_advanced.severity_severe', { defaultValue: 'Severe' })}
-              </option>
-              <option value="critical">
-                {t('hse_advanced.severity_critical', { defaultValue: 'Critical' })}
+              <option value="swot">
+                {t('hse_advanced.method_swot', { defaultValue: 'SWOT' })}
               </option>
             </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-content-primary mb-1.5">
+              {t('hse_advanced.findings', { defaultValue: 'Findings' })}
+            </label>
+            <textarea
+              rows={3}
+              className={textareaCls}
+              value={form.findings}
+              onChange={(e) => setForm((f) => ({ ...f, findings: e.target.value }))}
+            />
           </div>
         </ModalShell>
       )}
@@ -936,18 +947,10 @@ function IncidentDetailDrawer({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const five: FiveWhys = item.five_whys ?? {};
-  const whys: { key: keyof FiveWhys; label: string }[] = [
-    { key: 'why1', label: 'Why 1' },
-    { key: 'why2', label: 'Why 2' },
-    { key: 'why3', label: 'Why 3' },
-    { key: 'why4', label: 'Why 4' },
-    { key: 'why5', label: 'Why 5' },
-  ];
 
   return (
     <ModalShell
-      title={`${item.investigation_number} — ${item.title}`}
+      title={`${t('hse_advanced.investigation', { defaultValue: 'Investigation' })} — ${item.incident_ref}`}
       onClose={onClose}
       size="max-w-3xl"
       footer={
@@ -959,100 +962,89 @@ function IncidentDetailDrawer({
       <div className="grid grid-cols-2 gap-3 text-sm">
         <div>
           <div className="text-xs text-content-tertiary uppercase">
-            {t('hse_advanced.severity', { defaultValue: 'Severity' })}
+            {t('hse_advanced.method', { defaultValue: 'Method' })}
           </div>
-          <Badge variant={SEVERITY_COLORS[item.severity] ?? 'neutral'} size="sm">
-            {t(`hse_advanced.severity_${item.severity}`, { defaultValue: item.severity })}
-          </Badge>
+          <div className="text-content-primary">
+            {t(`hse_advanced.method_${item.method}`, {
+              defaultValue: item.method.replace(/_/g, ' '),
+            })}
+          </div>
         </div>
         <div>
           <div className="text-xs text-content-tertiary uppercase">
             {t('common.status', { defaultValue: 'Status' })}
           </div>
           <Badge variant={item.status === 'completed' ? 'success' : 'blue'} size="sm">
-            {item.status.replace(/_/g, ' ')}
+            {t(`hse_advanced.invest_status_${item.status}`, {
+              defaultValue: item.status.replace(/_/g, ' '),
+            })}
           </Badge>
         </div>
-      </div>
-
-      <div>
-        <div className="text-xs font-semibold uppercase tracking-wider text-content-tertiary mb-2">
-          {t('hse_advanced.section_5_whys', { defaultValue: '5-Whys analysis' })}
-        </div>
-        <div className="space-y-2">
-          {whys.map((w) => (
-            <div key={w.key} className="flex items-start gap-2">
-              <span className="text-xs font-medium text-content-tertiary w-12 pt-2 shrink-0">
-                {w.label}
-              </span>
-              <textarea
-                rows={2}
-                className={textareaCls}
-                readOnly
-                value={five[w.key] ?? ''}
-                placeholder={t('hse_advanced.why_placeholder', {
-                  defaultValue: 'No answer recorded',
-                })}
-              />
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <div className="text-xs font-semibold uppercase tracking-wider text-content-tertiary mb-2">
-          {t('hse_advanced.section_factors', { defaultValue: 'Contributing factors' })}
-        </div>
-        {item.contributing_factors && item.contributing_factors.length > 0 ? (
-          <ul className="list-disc pl-5 text-sm text-content-secondary space-y-1">
-            {item.contributing_factors.map((f, i) => (
-              <li key={i}>{f}</li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-content-tertiary">
-            {t('hse_advanced.no_factors', { defaultValue: 'No contributing factors recorded.' })}
-          </p>
-        )}
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
         <div>
-          <div className="text-xs font-semibold uppercase tracking-wider text-content-tertiary mb-1">
-            {t('hse_advanced.immediate_cause', { defaultValue: 'Immediate cause' })}
+          <div className="text-xs text-content-tertiary uppercase">
+            {t('hse_advanced.started_at', { defaultValue: 'Started' })}
           </div>
-          <p className="text-sm text-content-secondary">
-            {item.immediate_cause || t('common.not_set', { defaultValue: 'Not set' })}
-          </p>
+          <div className="text-content-secondary">
+            <DateDisplay value={item.started_at} />
+          </div>
         </div>
         <div>
-          <div className="text-xs font-semibold uppercase tracking-wider text-content-tertiary mb-1">
-            {t('hse_advanced.root_cause', { defaultValue: 'Root cause' })}
+          <div className="text-xs text-content-tertiary uppercase">
+            {t('hse_advanced.completed_at', { defaultValue: 'Completed' })}
           </div>
-          <p className="text-sm text-content-secondary">
-            {item.root_cause || t('common.not_set', { defaultValue: 'Not set' })}
-          </p>
+          <div className="text-content-secondary">
+            {item.completed_at ? (
+              <DateDisplay value={item.completed_at} />
+            ) : (
+              t('common.not_set', { defaultValue: 'Not set' })
+            )}
+          </div>
         </div>
       </div>
 
       <div>
-        <div className="text-xs font-semibold uppercase tracking-wider text-content-tertiary mb-2">
-          {t('hse_advanced.linked_capa_actions', { defaultValue: 'Linked CAPA actions' })}
+        <div className="text-xs font-semibold uppercase tracking-wider text-content-tertiary mb-1">
+          {t('hse_advanced.investigation_lead', { defaultValue: 'Investigation lead' })}
         </div>
-        {item.linked_capa_ids && item.linked_capa_ids.length > 0 ? (
-          <ul className="space-y-1 text-sm text-content-secondary">
-            {item.linked_capa_ids.map((id) => (
-              <li key={id} className="font-mono text-xs">
-                {id}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-content-tertiary">
-            {t('hse_advanced.no_capa_linked', { defaultValue: 'No CAPA linked yet.' })}
-          </p>
-        )}
+        <p className="text-sm text-content-secondary font-mono">
+          {item.investigation_lead || t('common.not_set', { defaultValue: 'Not set' })}
+        </p>
       </div>
+
+      <div>
+        <div className="text-xs font-semibold uppercase tracking-wider text-content-tertiary mb-1">
+          {t('hse_advanced.findings', { defaultValue: 'Findings' })}
+        </div>
+        <p className="text-sm text-content-secondary whitespace-pre-wrap">
+          {item.findings || t('hse_advanced.no_findings', { defaultValue: 'No findings recorded.' })}
+        </p>
+      </div>
+
+      <div>
+        <div className="text-xs font-semibold uppercase tracking-wider text-content-tertiary mb-1">
+          {t('hse_advanced.recommendations', { defaultValue: 'Recommendations' })}
+        </div>
+        <p className="text-sm text-content-secondary whitespace-pre-wrap">
+          {item.recommendations ||
+            t('hse_advanced.no_recommendations', { defaultValue: 'No recommendations recorded.' })}
+        </p>
+      </div>
+
+      {item.report_url && (
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wider text-content-tertiary mb-1">
+            {t('hse_advanced.report', { defaultValue: 'Report' })}
+          </div>
+          <a
+            href={item.report_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-oe-blue-text underline break-all"
+          >
+            {item.report_url}
+          </a>
+        </div>
+      )}
     </ModalShell>
   );
 }
@@ -1065,7 +1057,12 @@ function JSATab({ projectId }: { projectId: string }) {
   const addToast = useToastStore((s) => s.addToast);
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ title: '', task_description: '', location: '' });
+  // JSACreate requires project_id + task_description + work_date.
+  const [form, setForm] = useState({
+    task_description: '',
+    work_date: new Date().toISOString().slice(0, 10),
+    location: '',
+  });
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['hse-jsas', projectId],
@@ -1074,11 +1071,21 @@ function JSATab({ projectId }: { projectId: string }) {
   });
 
   const createMut = useMutation({
-    mutationFn: () => createJSA({ project_id: projectId, ...form }),
+    mutationFn: () =>
+      createJSA({
+        project_id: projectId,
+        task_description: form.task_description,
+        work_date: form.work_date,
+        location: form.location || undefined,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['hse-jsas', projectId] });
       setShowCreate(false);
-      setForm({ title: '', task_description: '', location: '' });
+      setForm({
+        task_description: '',
+        work_date: new Date().toISOString().slice(0, 10),
+        location: '',
+      });
       addToast({
         type: 'success',
         title: t('hse_advanced.jsa_created', { defaultValue: 'JSA created' }),
@@ -1096,9 +1103,7 @@ function JSATab({ projectId }: { projectId: string }) {
     if (!data) return [];
     if (!search) return data;
     const q = search.toLowerCase();
-    return data.filter(
-      (it) => it.title.toLowerCase().includes(q) || it.jsa_number.toLowerCase().includes(q),
-    );
+    return data.filter((it) => it.task_description.toLowerCase().includes(q));
   }, [data, search]);
 
   if (isLoading) return <SkeletonTable rows={5} columns={5} />;
@@ -1141,19 +1146,19 @@ function JSATab({ projectId }: { projectId: string }) {
             <thead>
               <tr className="border-b border-border-light bg-surface-secondary/50">
                 <th className="px-4 py-3 text-left font-medium text-content-tertiary">
-                  {t('common.number', { defaultValue: '#' })}
-                </th>
-                <th className="px-4 py-3 text-left font-medium text-content-tertiary">
-                  {t('common.title', { defaultValue: 'Title' })}
+                  {t('hse_advanced.task_description', { defaultValue: 'Task' })}
                 </th>
                 <th className="px-4 py-3 text-left font-medium text-content-tertiary">
                   {t('hse_advanced.location', { defaultValue: 'Location' })}
                 </th>
-                <th className="px-4 py-3 text-center font-medium text-content-tertiary">
-                  {t('hse_advanced.steps', { defaultValue: 'Steps' })}
-                </th>
                 <th className="px-4 py-3 text-left font-medium text-content-tertiary">
-                  {t('common.created', { defaultValue: 'Created' })}
+                  {t('hse_advanced.work_date', { defaultValue: 'Work date' })}
+                </th>
+                <th className="px-4 py-3 text-center font-medium text-content-tertiary">
+                  {t('hse_advanced.risk_score', { defaultValue: 'Risk' })}
+                </th>
+                <th className="px-4 py-3 text-center font-medium text-content-tertiary">
+                  {t('common.status', { defaultValue: 'Status' })}
                 </th>
               </tr>
             </thead>
@@ -1167,12 +1172,23 @@ function JSATab({ projectId }: { projectId: string }) {
               ) : (
                 filtered.map((it) => (
                   <tr key={it.id} className="border-b border-border-light hover:bg-surface-secondary/30">
-                    <td className="px-4 py-3 font-mono text-xs">{it.jsa_number}</td>
-                    <td className="px-4 py-3 text-content-primary">{it.title}</td>
+                    <td className="px-4 py-3 text-content-primary max-w-[24rem] truncate">
+                      {it.task_description}
+                    </td>
                     <td className="px-4 py-3 text-content-secondary">{it.location ?? '—'}</td>
-                    <td className="px-4 py-3 text-center tabular-nums">{it.steps?.length ?? 0}</td>
                     <td className="px-4 py-3 text-content-secondary">
-                      <DateDisplay value={it.created_at} />
+                      <DateDisplay value={it.work_date} />
+                    </td>
+                    <td className="px-4 py-3 text-center tabular-nums">{it.risk_score}</td>
+                    <td className="px-4 py-3 text-center">
+                      <Badge
+                        variant={it.status === 'approved' || it.status === 'active' ? 'success' : 'blue'}
+                        size="sm"
+                      >
+                        {t(`hse_advanced.jsa_status_${it.status}`, {
+                          defaultValue: it.status.replace(/_/g, ' '),
+                        })}
+                      </Badge>
                     </td>
                   </tr>
                 ))
@@ -1193,7 +1209,7 @@ function JSATab({ projectId }: { projectId: string }) {
               </Button>
               <Button
                 variant="primary"
-                disabled={!form.title.trim() || createMut.isPending}
+                disabled={!form.task_description.trim() || createMut.isPending}
                 onClick={() => createMut.mutate()}
               >
                 {t('common.create', { defaultValue: 'Create' })}
@@ -1203,18 +1219,8 @@ function JSATab({ projectId }: { projectId: string }) {
         >
           <div>
             <label className="block text-sm font-medium text-content-primary mb-1.5">
-              {t('common.title', { defaultValue: 'Title' })}{' '}
+              {t('hse_advanced.task_description', { defaultValue: 'Task description' })}{' '}
               <span className="text-semantic-error">*</span>
-            </label>
-            <input
-              className={inputCls}
-              value={form.title}
-              onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-content-primary mb-1.5">
-              {t('hse_advanced.task_description', { defaultValue: 'Task description' })}
             </label>
             <textarea
               rows={3}
@@ -1223,15 +1229,28 @@ function JSATab({ projectId }: { projectId: string }) {
               onChange={(e) => setForm((f) => ({ ...f, task_description: e.target.value }))}
             />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-content-primary mb-1.5">
-              {t('hse_advanced.location', { defaultValue: 'Location' })}
-            </label>
-            <input
-              className={inputCls}
-              value={form.location}
-              onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-content-primary mb-1.5">
+                {t('hse_advanced.work_date', { defaultValue: 'Work date' })}
+              </label>
+              <input
+                type="date"
+                className={inputCls}
+                value={form.work_date}
+                onChange={(e) => setForm((f) => ({ ...f, work_date: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-content-primary mb-1.5">
+                {t('hse_advanced.location', { defaultValue: 'Location' })}
+              </label>
+              <input
+                className={inputCls}
+                value={form.location}
+                onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
+              />
+            </div>
           </div>
         </ModalShell>
       )}
@@ -1249,11 +1268,14 @@ function PermitsTab({ projectId }: { projectId: string }) {
   const [showCreate, setShowCreate] = useState(false);
   const [detail, setDetail] = useState<PermitToWork | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'expired'>('active');
+  // Default work window: start now, end in 8h — supervisors adjust before issue.
+  const nowLocal = new Date().toISOString().slice(0, 16);
   const [form, setForm] = useState({
-    title: '',
+    permit_number: '',
     permit_type: 'hot_work',
-    scope: '',
-    expires_at: '',
+    description: '',
+    work_start: nowLocal,
+    work_end: nowLocal,
   });
 
   const { data, isLoading, isError, error, refetch } = useQuery({
@@ -1266,15 +1288,24 @@ function PermitsTab({ projectId }: { projectId: string }) {
     mutationFn: () =>
       createPermit({
         project_id: projectId,
-        title: form.title,
+        permit_number: form.permit_number.trim(),
         permit_type: form.permit_type,
-        scope: form.scope,
-        expires_at: form.expires_at || undefined,
+        description: form.description,
+        // datetime-local gives YYYY-MM-DDTHH:mm; ISO-widen for the backend.
+        work_start: new Date(form.work_start).toISOString(),
+        work_end: new Date(form.work_end).toISOString(),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['hse-permits', projectId] });
       setShowCreate(false);
-      setForm({ title: '', permit_type: 'hot_work', scope: '', expires_at: '' });
+      const reset = new Date().toISOString().slice(0, 16);
+      setForm({
+        permit_number: '',
+        permit_type: 'hot_work',
+        description: '',
+        work_start: reset,
+        work_end: reset,
+      });
       addToast({
         type: 'success',
         title: t('hse_advanced.permit_created', { defaultValue: 'Permit issued' }),
@@ -1306,7 +1337,9 @@ function PermitsTab({ projectId }: { projectId: string }) {
     if (!search) return rows;
     const q = search.toLowerCase();
     return rows.filter(
-      (p) => p.title.toLowerCase().includes(q) || p.permit_number.toLowerCase().includes(q),
+      (p) =>
+        p.description.toLowerCase().includes(q) ||
+        p.permit_number.toLowerCase().includes(q),
     );
   }, [data, search, filter]);
 
@@ -1377,7 +1410,7 @@ function PermitsTab({ projectId }: { projectId: string }) {
                   {t('common.number', { defaultValue: '#' })}
                 </th>
                 <th className="px-4 py-3 text-left font-medium text-content-tertiary">
-                  {t('common.title', { defaultValue: 'Title' })}
+                  {t('common.description', { defaultValue: 'Description' })}
                 </th>
                 <th className="px-4 py-3 text-left font-medium text-content-tertiary">
                   {t('hse_advanced.permit_type', { defaultValue: 'Type' })}
@@ -1386,7 +1419,7 @@ function PermitsTab({ projectId }: { projectId: string }) {
                   {t('common.status', { defaultValue: 'Status' })}
                 </th>
                 <th className="px-4 py-3 text-left font-medium text-content-tertiary">
-                  {t('hse_advanced.expires', { defaultValue: 'Expires' })}
+                  {t('hse_advanced.work_end', { defaultValue: 'Work end' })}
                 </th>
                 <th className="px-4 py-3 text-center font-medium text-content-tertiary">
                   {t('hse_advanced.countdown', { defaultValue: 'Countdown' })}
@@ -1402,7 +1435,9 @@ function PermitsTab({ projectId }: { projectId: string }) {
                 </tr>
               ) : (
                 filtered.map((p) => {
-                  const days = daysUntil(p.expires_at);
+                  // Countdown is driven off the permit's work_end window
+                  // (there is no separate expiry field on the backend).
+                  const days = daysUntil(p.work_end);
                   return (
                     <tr
                       key={p.id}
@@ -1410,7 +1445,9 @@ function PermitsTab({ projectId }: { projectId: string }) {
                       onClick={() => setDetail(p)}
                     >
                       <td className="px-4 py-3 font-mono text-xs">{p.permit_number}</td>
-                      <td className="px-4 py-3 text-content-primary">{p.title}</td>
+                      <td className="px-4 py-3 text-content-primary max-w-[20rem] truncate">
+                        {p.description || '—'}
+                      </td>
                       <td className="px-4 py-3 text-content-secondary text-xs">
                         {p.permit_type.replace(/_/g, ' ')}
                       </td>
@@ -1422,7 +1459,7 @@ function PermitsTab({ projectId }: { projectId: string }) {
                         </Badge>
                       </td>
                       <td className="px-4 py-3 text-content-secondary">
-                        {p.expires_at ? <DateDisplay value={p.expires_at} /> : '—'}
+                        {p.work_end ? <DateDisplay value={p.work_end} /> : '—'}
                       </td>
                       <td className="px-4 py-3 text-center tabular-nums">
                         {days === null ? (
@@ -1470,7 +1507,7 @@ function PermitsTab({ projectId }: { projectId: string }) {
               </Button>
               <Button
                 variant="primary"
-                disabled={!form.title.trim() || createMut.isPending}
+                disabled={!form.permit_number.trim() || createMut.isPending}
                 onClick={() => createMut.mutate()}
               >
                 {t('common.issue', { defaultValue: 'Issue' })}
@@ -1480,13 +1517,13 @@ function PermitsTab({ projectId }: { projectId: string }) {
         >
           <div>
             <label className="block text-sm font-medium text-content-primary mb-1.5">
-              {t('common.title', { defaultValue: 'Title' })}{' '}
+              {t('hse_advanced.permit_number', { defaultValue: 'Permit number' })}{' '}
               <span className="text-semantic-error">*</span>
             </label>
             <input
               className={inputCls}
-              value={form.title}
-              onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+              value={form.permit_number}
+              onChange={(e) => setForm((f) => ({ ...f, permit_number: e.target.value }))}
             />
           </div>
           <div>
@@ -1524,25 +1561,38 @@ function PermitsTab({ projectId }: { projectId: string }) {
           </div>
           <div>
             <label className="block text-sm font-medium text-content-primary mb-1.5">
-              {t('hse_advanced.scope', { defaultValue: 'Scope of work' })}
+              {t('common.description', { defaultValue: 'Description' })}
             </label>
             <textarea
               rows={3}
               className={textareaCls}
-              value={form.scope}
-              onChange={(e) => setForm((f) => ({ ...f, scope: e.target.value }))}
+              value={form.description}
+              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
             />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-content-primary mb-1.5">
-              {t('hse_advanced.expires_at', { defaultValue: 'Expires at' })}
-            </label>
-            <input
-              type="datetime-local"
-              className={inputCls}
-              value={form.expires_at}
-              onChange={(e) => setForm((f) => ({ ...f, expires_at: e.target.value }))}
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-content-primary mb-1.5">
+                {t('hse_advanced.work_start', { defaultValue: 'Work start' })}
+              </label>
+              <input
+                type="datetime-local"
+                className={inputCls}
+                value={form.work_start}
+                onChange={(e) => setForm((f) => ({ ...f, work_start: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-content-primary mb-1.5">
+                {t('hse_advanced.work_end', { defaultValue: 'Work end' })}
+              </label>
+              <input
+                type="datetime-local"
+                className={inputCls}
+                value={form.work_end}
+                onChange={(e) => setForm((f) => ({ ...f, work_end: e.target.value }))}
+              />
+            </div>
           </div>
         </ModalShell>
       )}
@@ -1556,11 +1606,12 @@ function PermitsTab({ projectId }: { projectId: string }) {
 
 function PermitDetailDrawer({ item, onClose }: { item: PermitToWork; onClose: () => void }) {
   const { t } = useTranslation();
-  const days = daysUntil(item.expires_at);
+  // Countdown is driven off the permit's work_end window (no expiry field).
+  const days = daysUntil(item.work_end);
 
   return (
     <ModalShell
-      title={`${item.permit_number} — ${item.title}`}
+      title={`${item.permit_number} — ${item.permit_type.replace(/_/g, ' ')}`}
       onClose={onClose}
       size="max-w-2xl"
       footer={
@@ -1581,52 +1632,36 @@ function PermitDetailDrawer({ item, onClose }: { item: PermitToWork; onClose: ()
             {t('common.status', { defaultValue: 'Status' })}
           </div>
           <Badge variant={PERMIT_STATUS_COLORS[item.status] ?? 'neutral'} size="sm">
-            {item.status}
+            {t(`hse_advanced.permit_status_${item.status}`, { defaultValue: item.status })}
           </Badge>
         </div>
       </div>
 
       <div>
         <div className="text-xs font-semibold uppercase tracking-wider text-content-tertiary mb-1">
-          {t('hse_advanced.scope', { defaultValue: 'Scope of work' })}
+          {t('common.description', { defaultValue: 'Description' })}
         </div>
         <p className="text-sm text-content-secondary whitespace-pre-wrap">
-          {item.scope || t('common.not_set', { defaultValue: 'Not set' })}
+          {item.description || t('common.not_set', { defaultValue: 'Not set' })}
         </p>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         <div>
           <div className="text-xs font-semibold uppercase tracking-wider text-content-tertiary mb-1">
-            {t('hse_advanced.hazards', { defaultValue: 'Hazards' })}
+            {t('hse_advanced.work_start', { defaultValue: 'Work start' })}
           </div>
-          {item.hazards && item.hazards.length > 0 ? (
-            <ul className="list-disc pl-5 text-sm text-content-secondary">
-              {item.hazards.map((h, i) => (
-                <li key={i}>{h}</li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-content-tertiary">
-              {t('hse_advanced.no_hazards', { defaultValue: 'None listed' })}
-            </p>
-          )}
+          <p className="text-sm text-content-secondary">
+            <DateDisplay value={item.work_start} />
+          </p>
         </div>
         <div>
           <div className="text-xs font-semibold uppercase tracking-wider text-content-tertiary mb-1">
-            {t('hse_advanced.controls', { defaultValue: 'Controls' })}
+            {t('hse_advanced.work_end', { defaultValue: 'Work end' })}
           </div>
-          {item.controls && item.controls.length > 0 ? (
-            <ul className="list-disc pl-5 text-sm text-content-secondary">
-              {item.controls.map((c, i) => (
-                <li key={i}>{c}</li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-content-tertiary">
-              {t('hse_advanced.no_controls', { defaultValue: 'None listed' })}
-            </p>
-          )}
+          <p className="text-sm text-content-secondary">
+            <DateDisplay value={item.work_end} />
+          </p>
         </div>
       </div>
 
@@ -1634,28 +1669,11 @@ function PermitDetailDrawer({ item, onClose }: { item: PermitToWork; onClose: ()
 
       <div>
         <div className="text-xs font-semibold uppercase tracking-wider text-content-tertiary mb-1">
-          {t('hse_advanced.signatures', { defaultValue: 'Signatures' })}
+          {t('hse_advanced.conditions', { defaultValue: 'Conditions' })}
         </div>
-        {item.signatures && item.signatures.length > 0 ? (
-          <ul className="text-sm text-content-secondary space-y-1">
-            {item.signatures.map((s, i) => (
-              <li key={i} className="flex items-center gap-2">
-                <CheckCircle2 size={14} className="text-semantic-success" />
-                <span className="font-medium">{s.role}:</span>
-                <span>{s.name}</span>
-                {s.signed_at && (
-                  <span className="text-xs text-content-tertiary">
-                    <DateDisplay value={s.signed_at} />
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-content-tertiary">
-            {t('hse_advanced.no_signatures', { defaultValue: 'No signatures yet' })}
-          </p>
-        )}
+        <p className="text-sm text-content-secondary whitespace-pre-wrap">
+          {item.conditions || t('hse_advanced.no_conditions', { defaultValue: 'None recorded' })}
+        </p>
       </div>
 
       <div className="rounded-lg bg-surface-secondary p-3">
@@ -1789,11 +1807,12 @@ function ToolboxTab({ projectId }: { projectId: string }) {
   const addToast = useToastStore((s) => s.addToast);
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  // ToolboxTalkCreate requires project_id + topic_code + topic_title + conducted_at.
   const [form, setForm] = useState({
-    title: '',
-    talk_date: new Date().toISOString().slice(0, 10),
-    presenter: '',
-    summary: '',
+    topic_code: '',
+    topic_title: '',
+    conducted_at: new Date().toISOString().slice(0, 10),
+    notes: '',
   });
 
   const { data, isLoading, isError, error, refetch } = useQuery({
@@ -1803,15 +1822,23 @@ function ToolboxTab({ projectId }: { projectId: string }) {
   });
 
   const createMut = useMutation({
-    mutationFn: () => createToolboxTalk({ project_id: projectId, ...form }),
+    mutationFn: () =>
+      createToolboxTalk({
+        project_id: projectId,
+        topic_code: form.topic_code.trim(),
+        topic_title: form.topic_title.trim(),
+        // date input → ISO datetime for conducted_at: datetime.
+        conducted_at: new Date(form.conducted_at).toISOString(),
+        notes: form.notes || undefined,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['hse-toolbox', projectId] });
       setShowCreate(false);
       setForm({
-        title: '',
-        talk_date: new Date().toISOString().slice(0, 10),
-        presenter: '',
-        summary: '',
+        topic_code: '',
+        topic_title: '',
+        conducted_at: new Date().toISOString().slice(0, 10),
+        notes: '',
       });
       addToast({
         type: 'success',
@@ -1830,7 +1857,11 @@ function ToolboxTab({ projectId }: { projectId: string }) {
     if (!data) return [];
     if (!search) return data;
     const q = search.toLowerCase();
-    return data.filter((it) => it.title.toLowerCase().includes(q));
+    return data.filter(
+      (it) =>
+        it.topic_title.toLowerCase().includes(q) ||
+        it.topic_code.toLowerCase().includes(q),
+    );
   }, [data, search]);
 
   if (isLoading) return <SkeletonTable rows={5} columns={5} />;
@@ -1873,16 +1904,13 @@ function ToolboxTab({ projectId }: { projectId: string }) {
             <thead>
               <tr className="border-b border-border-light bg-surface-secondary/50">
                 <th className="px-4 py-3 text-left font-medium text-content-tertiary">
-                  {t('common.number', { defaultValue: '#' })}
+                  {t('hse_advanced.topic_code', { defaultValue: 'Code' })}
                 </th>
                 <th className="px-4 py-3 text-left font-medium text-content-tertiary">
-                  {t('common.title', { defaultValue: 'Title' })}
+                  {t('hse_advanced.topic', { defaultValue: 'Topic' })}
                 </th>
                 <th className="px-4 py-3 text-left font-medium text-content-tertiary">
-                  {t('hse_advanced.presenter', { defaultValue: 'Presenter' })}
-                </th>
-                <th className="px-4 py-3 text-left font-medium text-content-tertiary">
-                  {t('hse_advanced.date', { defaultValue: 'Date' })}
+                  {t('hse_advanced.conducted_at', { defaultValue: 'Conducted' })}
                 </th>
                 <th className="px-4 py-3 text-center font-medium text-content-tertiary">
                   {t('hse_advanced.attendance', { defaultValue: 'Attendance' })}
@@ -1892,22 +1920,21 @@ function ToolboxTab({ projectId }: { projectId: string }) {
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-content-tertiary">
+                  <td colSpan={4} className="px-4 py-8 text-center text-sm text-content-tertiary">
                     {t('hse_advanced.no_matches', { defaultValue: 'No matches' })}
                   </td>
                 </tr>
               ) : (
                 filtered.map((it) => (
                   <tr key={it.id} className="border-b border-border-light hover:bg-surface-secondary/30">
-                    <td className="px-4 py-3 font-mono text-xs">{it.talk_number}</td>
-                    <td className="px-4 py-3 text-content-primary">{it.title}</td>
-                    <td className="px-4 py-3 text-content-secondary">{it.presenter ?? '—'}</td>
+                    <td className="px-4 py-3 font-mono text-xs">{it.topic_code}</td>
+                    <td className="px-4 py-3 text-content-primary">{it.topic_title}</td>
                     <td className="px-4 py-3 text-content-secondary">
-                      <DateDisplay value={it.talk_date} />
+                      <DateDisplay value={it.conducted_at} />
                     </td>
                     <td className="px-4 py-3 text-center">
                       <Badge variant="blue" size="sm">
-                        {it.attendance?.length ?? 0}
+                        {it.attendance_count}
                       </Badge>
                     </td>
                   </tr>
@@ -1929,7 +1956,9 @@ function ToolboxTab({ projectId }: { projectId: string }) {
               </Button>
               <Button
                 variant="primary"
-                disabled={!form.title.trim() || createMut.isPending}
+                disabled={
+                  !form.topic_code.trim() || !form.topic_title.trim() || createMut.isPending
+                }
                 onClick={() => createMut.mutate()}
               >
                 {t('common.save', { defaultValue: 'Save' })}
@@ -1937,49 +1966,50 @@ function ToolboxTab({ projectId }: { projectId: string }) {
             </>
           }
         >
-          <div>
-            <label className="block text-sm font-medium text-content-primary mb-1.5">
-              {t('common.title', { defaultValue: 'Title' })}{' '}
-              <span className="text-semantic-error">*</span>
-            </label>
-            <input
-              className={inputCls}
-              value={form.title}
-              onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-            />
-          </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-content-primary mb-1.5">
-                {t('hse_advanced.date', { defaultValue: 'Date' })}
+                {t('hse_advanced.topic_code', { defaultValue: 'Topic code' })}{' '}
+                <span className="text-semantic-error">*</span>
+              </label>
+              <input
+                className={inputCls}
+                value={form.topic_code}
+                onChange={(e) => setForm((f) => ({ ...f, topic_code: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-content-primary mb-1.5">
+                {t('hse_advanced.conducted_at', { defaultValue: 'Conducted at' })}
               </label>
               <input
                 type="date"
                 className={inputCls}
-                value={form.talk_date}
-                onChange={(e) => setForm((f) => ({ ...f, talk_date: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-content-primary mb-1.5">
-                {t('hse_advanced.presenter', { defaultValue: 'Presenter' })}
-              </label>
-              <input
-                className={inputCls}
-                value={form.presenter}
-                onChange={(e) => setForm((f) => ({ ...f, presenter: e.target.value }))}
+                value={form.conducted_at}
+                onChange={(e) => setForm((f) => ({ ...f, conducted_at: e.target.value }))}
               />
             </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-content-primary mb-1.5">
-              {t('hse_advanced.summary', { defaultValue: 'Summary' })}
+              {t('hse_advanced.topic_title', { defaultValue: 'Topic title' })}{' '}
+              <span className="text-semantic-error">*</span>
+            </label>
+            <input
+              className={inputCls}
+              value={form.topic_title}
+              onChange={(e) => setForm((f) => ({ ...f, topic_title: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-content-primary mb-1.5">
+              {t('common.notes', { defaultValue: 'Notes' })}
             </label>
             <textarea
               rows={3}
               className={textareaCls}
-              value={form.summary}
-              onChange={(e) => setForm((f) => ({ ...f, summary: e.target.value }))}
+              value={form.notes}
+              onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
             />
           </div>
         </ModalShell>
@@ -1998,42 +2028,42 @@ function PPETab({ projectId }: { projectId: string }) {
   const [showCreate, setShowCreate] = useState(false);
   const [detail, setDetail] = useState<PPEIssue | null>(null);
   const [filter, setFilter] = useState<'all' | 'issued' | 'expiring'>('all');
+  // PPEIssueCreate requires ppe_type + issued_at; recipient_name is optional.
+  // There is no project_id/quantity/return_by on the backend.
   const [form, setForm] = useState({
-    item_type: 'hard_hat',
-    item_description: '',
-    issued_to_name: '',
+    ppe_type: 'hard_hat',
+    recipient_name: '',
     issued_at: new Date().toISOString().slice(0, 10),
-    return_by: '',
-    quantity: 1,
+    valid_until: '',
   });
 
+  // The PPE list is org-wide (the backend route takes no project_id). We keep
+  // projectId in the query key so the cache resets when the user switches
+  // projects, but the request itself is unscoped.
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['hse-ppe', projectId],
-    queryFn: () => fetchPPEIssues(projectId),
+    queryFn: () => fetchPPEIssues(),
     select: (d) => normalizeListResponse<PPEIssue>(d),
   });
 
   const createMut = useMutation({
     mutationFn: () =>
       createPPEIssue({
-        project_id: projectId,
-        item_type: form.item_type,
-        item_description: form.item_description || undefined,
-        issued_to_name: form.issued_to_name,
-        issued_at: form.issued_at,
-        return_by: form.return_by || undefined,
-        quantity: form.quantity,
+        ppe_type: form.ppe_type,
+        recipient_name: form.recipient_name || undefined,
+        // date input → ISO datetime for issued_at: datetime.
+        issued_at: new Date(form.issued_at).toISOString(),
+        // valid_until is a plain date on the backend.
+        valid_until: form.valid_until || undefined,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['hse-ppe', projectId] });
       setShowCreate(false);
       setForm({
-        item_type: 'hard_hat',
-        item_description: '',
-        issued_to_name: '',
+        ppe_type: 'hard_hat',
+        recipient_name: '',
         issued_at: new Date().toISOString().slice(0, 10),
-        return_by: '',
-        quantity: 1,
+        valid_until: '',
       });
       addToast({
         type: 'success',
@@ -2053,7 +2083,7 @@ function PPETab({ projectId }: { projectId: string }) {
     if (!data) return c;
     for (const it of data) {
       if (!it.returned_at) c.issued++;
-      const d = daysUntil(it.expires_at);
+      const d = daysUntil(it.valid_until);
       if (d !== null && d >= 0 && d <= 30) c.expiring++;
     }
     return c;
@@ -2065,16 +2095,15 @@ function PPETab({ projectId }: { projectId: string }) {
     if (filter === 'issued') rows = rows.filter((p) => !p.returned_at);
     else if (filter === 'expiring')
       rows = rows.filter((p) => {
-        const d = daysUntil(p.expires_at);
+        const d = daysUntil(p.valid_until);
         return d !== null && d >= 0 && d <= 30;
       });
     if (!search) return rows;
     const q = search.toLowerCase();
     return rows.filter(
       (p) =>
-        p.issued_to_name.toLowerCase().includes(q) ||
-        p.item_type.toLowerCase().includes(q) ||
-        p.ppe_number.toLowerCase().includes(q),
+        (p.recipient_name ?? '').toLowerCase().includes(q) ||
+        p.ppe_type.toLowerCase().includes(q),
     );
   }, [data, search, filter]);
 
@@ -2142,9 +2171,6 @@ function PPETab({ projectId }: { projectId: string }) {
             <thead>
               <tr className="border-b border-border-light bg-surface-secondary/50">
                 <th className="px-4 py-3 text-left font-medium text-content-tertiary">
-                  {t('common.number', { defaultValue: '#' })}
-                </th>
-                <th className="px-4 py-3 text-left font-medium text-content-tertiary">
                   {t('hse_advanced.item', { defaultValue: 'Item' })}
                 </th>
                 <th className="px-4 py-3 text-left font-medium text-content-tertiary">
@@ -2154,23 +2180,23 @@ function PPETab({ projectId }: { projectId: string }) {
                   {t('hse_advanced.issued_at', { defaultValue: 'Issued at' })}
                 </th>
                 <th className="px-4 py-3 text-center font-medium text-content-tertiary">
-                  {t('hse_advanced.qty', { defaultValue: 'Qty' })}
+                  {t('common.status', { defaultValue: 'Status' })}
                 </th>
                 <th className="px-4 py-3 text-center font-medium text-content-tertiary">
-                  {t('hse_advanced.expiry', { defaultValue: 'Expiry' })}
+                  {t('hse_advanced.valid_until', { defaultValue: 'Valid until' })}
                 </th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-content-tertiary">
+                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-content-tertiary">
                     {t('hse_advanced.no_matches', { defaultValue: 'No matches' })}
                   </td>
                 </tr>
               ) : (
                 filtered.map((p) => {
-                  const d = daysUntil(p.expires_at);
+                  const d = daysUntil(p.valid_until);
                   const flag = d !== null && d >= 0 && d <= 30;
                   return (
                     <tr
@@ -2178,17 +2204,24 @@ function PPETab({ projectId }: { projectId: string }) {
                       className="border-b border-border-light hover:bg-surface-secondary/30 cursor-pointer"
                       onClick={() => setDetail(p)}
                     >
-                      <td className="px-4 py-3 font-mono text-xs">{p.ppe_number}</td>
                       <td className="px-4 py-3 text-content-primary">
-                        {p.item_type.replace(/_/g, ' ')}
+                        {p.ppe_type.replace(/_/g, ' ')}
                       </td>
-                      <td className="px-4 py-3 text-content-secondary">{p.issued_to_name}</td>
+                      <td className="px-4 py-3 text-content-secondary">
+                        {p.recipient_name ?? '—'}
+                      </td>
                       <td className="px-4 py-3 text-content-secondary">
                         <DateDisplay value={p.issued_at} />
                       </td>
-                      <td className="px-4 py-3 text-center tabular-nums">{p.quantity}</td>
                       <td className="px-4 py-3 text-center">
-                        {p.expires_at ? (
+                        <Badge variant={p.returned_at ? 'neutral' : 'success'} size="sm">
+                          {t(`hse_advanced.ppe_status_${p.status}`, {
+                            defaultValue: p.status.replace(/_/g, ' '),
+                          })}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {p.valid_until ? (
                           <span
                             className={
                               flag
@@ -2196,7 +2229,7 @@ function PPETab({ projectId }: { projectId: string }) {
                                 : 'text-content-secondary text-xs'
                             }
                           >
-                            <DateDisplay value={p.expires_at} />
+                            <DateDisplay value={p.valid_until} />
                             {flag && (
                               <AlertTriangle
                                 size={12}
@@ -2228,7 +2261,7 @@ function PPETab({ projectId }: { projectId: string }) {
               </Button>
               <Button
                 variant="primary"
-                disabled={!form.issued_to_name.trim() || createMut.isPending}
+                disabled={createMut.isPending}
                 onClick={() => createMut.mutate()}
               >
                 {t('common.issue', { defaultValue: 'Issue' })}
@@ -2239,18 +2272,21 @@ function PPETab({ projectId }: { projectId: string }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-content-primary mb-1.5">
-                {t('hse_advanced.item_type', { defaultValue: 'Item type' })}
+                {t('hse_advanced.ppe_type', { defaultValue: 'PPE type' })}
               </label>
               <select
                 className={inputCls}
-                value={form.item_type}
-                onChange={(e) => setForm((f) => ({ ...f, item_type: e.target.value }))}
+                value={form.ppe_type}
+                onChange={(e) => setForm((f) => ({ ...f, ppe_type: e.target.value }))}
               >
                 <option value="hard_hat">
                   {t('hse_advanced.ppe_hard_hat', { defaultValue: 'Hard hat' })}
                 </option>
                 <option value="safety_boots">
                   {t('hse_advanced.ppe_safety_boots', { defaultValue: 'Safety boots' })}
+                </option>
+                <option value="gloves">
+                  {t('hse_advanced.ppe_gloves', { defaultValue: 'Gloves' })}
                 </option>
                 <option value="hi_vis">
                   {t('hse_advanced.ppe_hi_vis', { defaultValue: 'Hi-vis vest' })}
@@ -2261,38 +2297,14 @@ function PPETab({ projectId }: { projectId: string }) {
                 <option value="respirator">
                   {t('hse_advanced.ppe_respirator', { defaultValue: 'Respirator' })}
                 </option>
-                <option value="hearing">
-                  {t('hse_advanced.ppe_hearing', { defaultValue: 'Hearing protection' })}
+                <option value="glasses">
+                  {t('hse_advanced.ppe_glasses', { defaultValue: 'Safety glasses' })}
+                </option>
+                <option value="other">
+                  {t('hse_advanced.ppe_other', { defaultValue: 'Other' })}
                 </option>
               </select>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-content-primary mb-1.5">
-                {t('hse_advanced.qty', { defaultValue: 'Qty' })}
-              </label>
-              <input
-                type="number"
-                min={1}
-                className={inputCls}
-                value={form.quantity}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, quantity: Math.max(1, Number(e.target.value) || 1) }))
-                }
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-content-primary mb-1.5">
-              {t('hse_advanced.issued_to', { defaultValue: 'Issued to' })}{' '}
-              <span className="text-semantic-error">*</span>
-            </label>
-            <input
-              className={inputCls}
-              value={form.issued_to_name}
-              onChange={(e) => setForm((f) => ({ ...f, issued_to_name: e.target.value }))}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-content-primary mb-1.5">
                 {t('hse_advanced.issued_at', { defaultValue: 'Issued at' })}
@@ -2304,17 +2316,27 @@ function PPETab({ projectId }: { projectId: string }) {
                 onChange={(e) => setForm((f) => ({ ...f, issued_at: e.target.value }))}
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-content-primary mb-1.5">
-                {t('hse_advanced.return_by', { defaultValue: 'Return by' })}
-              </label>
-              <input
-                type="date"
-                className={inputCls}
-                value={form.return_by}
-                onChange={(e) => setForm((f) => ({ ...f, return_by: e.target.value }))}
-              />
-            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-content-primary mb-1.5">
+              {t('hse_advanced.issued_to', { defaultValue: 'Issued to' })}
+            </label>
+            <input
+              className={inputCls}
+              value={form.recipient_name}
+              onChange={(e) => setForm((f) => ({ ...f, recipient_name: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-content-primary mb-1.5">
+              {t('hse_advanced.valid_until', { defaultValue: 'Valid until' })}
+            </label>
+            <input
+              type="date"
+              className={inputCls}
+              value={form.valid_until}
+              onChange={(e) => setForm((f) => ({ ...f, valid_until: e.target.value }))}
+            />
           </div>
         </ModalShell>
       )}
@@ -2328,12 +2350,13 @@ function PPETab({ projectId }: { projectId: string }) {
 
 function PPEDetailDrawer({ item, onClose }: { item: PPEIssue; onClose: () => void }) {
   const { t } = useTranslation();
-  const expiryDays = daysUntil(item.expires_at);
-  const returnDays = daysUntil(item.return_by);
+  const expiryDays = daysUntil(item.valid_until);
 
   return (
     <ModalShell
-      title={`${item.ppe_number} — ${item.item_type.replace(/_/g, ' ')}`}
+      title={`${item.ppe_type.replace(/_/g, ' ')}${
+        item.recipient_name ? ` — ${item.recipient_name}` : ''
+      }`}
       onClose={onClose}
       size="max-w-xl"
       footer={
@@ -2347,13 +2370,17 @@ function PPEDetailDrawer({ item, onClose }: { item: PPEIssue; onClose: () => voi
           <div className="text-xs text-content-tertiary uppercase">
             {t('hse_advanced.issued_to', { defaultValue: 'Issued to' })}
           </div>
-          <div className="text-content-primary font-medium">{item.issued_to_name}</div>
+          <div className="text-content-primary font-medium">{item.recipient_name ?? '—'}</div>
         </div>
         <div>
           <div className="text-xs text-content-tertiary uppercase">
-            {t('hse_advanced.qty', { defaultValue: 'Quantity' })}
+            {t('common.status', { defaultValue: 'Status' })}
           </div>
-          <div className="text-content-primary tabular-nums">{item.quantity}</div>
+          <Badge variant={item.returned_at ? 'neutral' : 'success'} size="sm">
+            {t(`hse_advanced.ppe_status_${item.status}`, {
+              defaultValue: item.status.replace(/_/g, ' '),
+            })}
+          </Badge>
         </div>
         <div>
           <div className="text-xs text-content-tertiary uppercase">
@@ -2365,34 +2392,35 @@ function PPEDetailDrawer({ item, onClose }: { item: PPEIssue; onClose: () => voi
         </div>
         <div>
           <div className="text-xs text-content-tertiary uppercase">
-            {t('hse_advanced.return_by', { defaultValue: 'Return by' })}
+            {t('hse_advanced.returned_at', { defaultValue: 'Returned at' })}
           </div>
-          <div
-            className={
-              returnDays !== null && returnDays < 0
-                ? 'text-semantic-error font-medium'
-                : 'text-content-secondary'
-            }
-          >
-            {item.return_by ? <DateDisplay value={item.return_by} /> : '—'}
-            {returnDays !== null &&
-              ` (${
-                returnDays < 0
-                  ? t('hse_advanced.expired_days_ago', {
-                      defaultValue: '{{n}}d ago',
-                      n: Math.abs(returnDays),
-                    })
-                  : t('hse_advanced.in_days', { defaultValue: 'in {{n}}d', n: returnDays })
-              })`}
+          <div className="text-content-secondary">
+            {item.returned_at ? <DateDisplay value={item.returned_at} /> : '—'}
           </div>
         </div>
+        {item.size && (
+          <div>
+            <div className="text-xs text-content-tertiary uppercase">
+              {t('hse_advanced.size', { defaultValue: 'Size' })}
+            </div>
+            <div className="text-content-secondary">{item.size}</div>
+          </div>
+        )}
+        {item.serial && (
+          <div>
+            <div className="text-xs text-content-tertiary uppercase">
+              {t('hse_advanced.serial', { defaultValue: 'Serial' })}
+            </div>
+            <div className="text-content-secondary font-mono text-xs">{item.serial}</div>
+          </div>
+        )}
       </div>
 
-      {item.expires_at && (
+      {item.valid_until && (
         <div className="rounded-lg bg-surface-secondary p-3 text-sm flex items-center justify-between">
           <span className="flex items-center gap-1.5 text-content-secondary">
             <Clock size={14} />
-            {t('hse_advanced.expiry', { defaultValue: 'Expiry' })}
+            {t('hse_advanced.valid_until', { defaultValue: 'Valid until' })}
           </span>
           <span
             className={
@@ -2403,7 +2431,7 @@ function PPEDetailDrawer({ item, onClose }: { item: PPEIssue; onClose: () => voi
                   : 'text-content-primary'
             }
           >
-            <DateDisplay value={item.expires_at} />
+            <DateDisplay value={item.valid_until} />
             {expiryDays !== null &&
               ` — ${
                 expiryDays < 0
@@ -2414,15 +2442,6 @@ function PPEDetailDrawer({ item, onClose }: { item: PPEIssue; onClose: () => voi
                   : t('hse_advanced.in_days', { defaultValue: 'in {{n}}d', n: expiryDays })
               }`}
           </span>
-        </div>
-      )}
-
-      {item.notes && (
-        <div>
-          <div className="text-xs text-content-tertiary uppercase mb-1">
-            {t('common.notes')}
-          </div>
-          <p className="text-sm text-content-secondary whitespace-pre-wrap">{item.notes}</p>
         </div>
       )}
     </ModalShell>
@@ -2437,11 +2456,11 @@ function AuditsTab({ projectId }: { projectId: string }) {
   const addToast = useToastStore((s) => s.addToast);
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  // AuditCreate requires project_id + audit_type + conducted_at.
   const [form, setForm] = useState({
-    title: '',
-    audit_date: new Date().toISOString().slice(0, 10),
-    auditor: '',
-    scope: '',
+    audit_type: 'internal',
+    conducted_at: new Date().toISOString().slice(0, 10),
+    summary: '',
   });
 
   const { data, isLoading, isError, error, refetch } = useQuery({
@@ -2451,15 +2470,21 @@ function AuditsTab({ projectId }: { projectId: string }) {
   });
 
   const createMut = useMutation({
-    mutationFn: () => createAudit({ project_id: projectId, ...form }),
+    mutationFn: () =>
+      createAudit({
+        project_id: projectId,
+        audit_type: form.audit_type,
+        // date input → ISO datetime for conducted_at: datetime.
+        conducted_at: new Date(form.conducted_at).toISOString(),
+        summary: form.summary || undefined,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['hse-audits', projectId] });
       setShowCreate(false);
       setForm({
-        title: '',
-        audit_date: new Date().toISOString().slice(0, 10),
-        auditor: '',
-        scope: '',
+        audit_type: 'internal',
+        conducted_at: new Date().toISOString().slice(0, 10),
+        summary: '',
       });
       addToast({
         type: 'success',
@@ -2478,7 +2503,11 @@ function AuditsTab({ projectId }: { projectId: string }) {
     if (!data) return [];
     if (!search) return data;
     const q = search.toLowerCase();
-    return data.filter((it) => it.title.toLowerCase().includes(q));
+    return data.filter(
+      (it) =>
+        it.audit_type.toLowerCase().includes(q) ||
+        it.summary.toLowerCase().includes(q),
+    );
   }, [data, search]);
 
   if (isLoading) return <SkeletonTable rows={5} columns={6} />;
@@ -2521,54 +2550,68 @@ function AuditsTab({ projectId }: { projectId: string }) {
             <thead>
               <tr className="border-b border-border-light bg-surface-secondary/50">
                 <th className="px-4 py-3 text-left font-medium text-content-tertiary">
-                  {t('common.number', { defaultValue: '#' })}
+                  {t('hse_advanced.audit_type', { defaultValue: 'Type' })}
                 </th>
                 <th className="px-4 py-3 text-left font-medium text-content-tertiary">
-                  {t('common.title', { defaultValue: 'Title' })}
+                  {t('hse_advanced.conducted_at', { defaultValue: 'Conducted' })}
                 </th>
                 <th className="px-4 py-3 text-left font-medium text-content-tertiary">
-                  {t('hse_advanced.auditor', { defaultValue: 'Auditor' })}
-                </th>
-                <th className="px-4 py-3 text-left font-medium text-content-tertiary">
-                  {t('hse_advanced.date', { defaultValue: 'Date' })}
+                  {t('hse_advanced.summary', { defaultValue: 'Summary' })}
                 </th>
                 <th className="px-4 py-3 text-center font-medium text-content-tertiary">
                   {t('common.status', { defaultValue: 'Status' })}
                 </th>
                 <th className="px-4 py-3 text-center font-medium text-content-tertiary">
-                  {t('hse_advanced.findings', { defaultValue: 'Findings' })}
+                  {t('hse_advanced.score', { defaultValue: 'Score' })}
                 </th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-content-tertiary">
+                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-content-tertiary">
                     {t('hse_advanced.no_matches', { defaultValue: 'No matches' })}
                   </td>
                 </tr>
               ) : (
-                filtered.map((it) => (
-                  <tr key={it.id} className="border-b border-border-light hover:bg-surface-secondary/30">
-                    <td className="px-4 py-3 font-mono text-xs">{it.audit_number}</td>
-                    <td className="px-4 py-3 text-content-primary">{it.title}</td>
-                    <td className="px-4 py-3 text-content-secondary">{it.auditor ?? '—'}</td>
-                    <td className="px-4 py-3 text-content-secondary">
-                      <DateDisplay value={it.audit_date} />
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <Badge
-                        variant={it.status === 'completed' ? 'success' : 'blue'}
-                        size="sm"
-                      >
-                        {it.status.replace(/_/g, ' ')}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3 text-center tabular-nums">
-                      {it.findings_count ?? it.findings?.length ?? 0}
-                    </td>
-                  </tr>
-                ))
+                filtered.map((it) => {
+                  // score_total / max_score are Decimal serialized as STRING —
+                  // Number()-wrap before computing the percentage.
+                  const total = it.score_total == null ? null : Number(it.score_total);
+                  const max = it.max_score == null ? null : Number(it.max_score);
+                  const pct =
+                    total !== null && max !== null && max > 0
+                      ? Math.round((total / max) * 100)
+                      : null;
+                  return (
+                    <tr key={it.id} className="border-b border-border-light hover:bg-surface-secondary/30">
+                      <td className="px-4 py-3 text-content-primary">
+                        {t(`hse_advanced.audit_type_${it.audit_type}`, {
+                          defaultValue: it.audit_type.replace(/_/g, ' '),
+                        })}
+                      </td>
+                      <td className="px-4 py-3 text-content-secondary">
+                        <DateDisplay value={it.conducted_at} />
+                      </td>
+                      <td className="px-4 py-3 text-content-secondary max-w-[20rem] truncate">
+                        {it.summary || '—'}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <Badge
+                          variant={it.status === 'completed' ? 'success' : 'blue'}
+                          size="sm"
+                        >
+                          {t(`hse_advanced.audit_status_${it.status}`, {
+                            defaultValue: it.status.replace(/_/g, ' '),
+                          })}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-center tabular-nums">
+                        {pct === null ? '—' : `${pct}%`}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -2586,7 +2629,7 @@ function AuditsTab({ projectId }: { projectId: string }) {
               </Button>
               <Button
                 variant="primary"
-                disabled={!form.title.trim() || createMut.isPending}
+                disabled={createMut.isPending}
                 onClick={() => createMut.mutate()}
               >
                 {t('common.schedule', { defaultValue: 'Schedule' })}
@@ -2594,49 +2637,51 @@ function AuditsTab({ projectId }: { projectId: string }) {
             </>
           }
         >
-          <div>
-            <label className="block text-sm font-medium text-content-primary mb-1.5">
-              {t('common.title', { defaultValue: 'Title' })}{' '}
-              <span className="text-semantic-error">*</span>
-            </label>
-            <input
-              className={inputCls}
-              value={form.title}
-              onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-            />
-          </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-content-primary mb-1.5">
-                {t('hse_advanced.date', { defaultValue: 'Date' })}
+                {t('hse_advanced.audit_type', { defaultValue: 'Type' })}
+              </label>
+              <select
+                className={inputCls}
+                value={form.audit_type}
+                onChange={(e) => setForm((f) => ({ ...f, audit_type: e.target.value }))}
+              >
+                <option value="internal">
+                  {t('hse_advanced.audit_type_internal', { defaultValue: 'Internal' })}
+                </option>
+                <option value="external">
+                  {t('hse_advanced.audit_type_external', { defaultValue: 'External' })}
+                </option>
+                <option value="regulatory">
+                  {t('hse_advanced.audit_type_regulatory', { defaultValue: 'Regulatory' })}
+                </option>
+                <option value="site_walk">
+                  {t('hse_advanced.audit_type_site_walk', { defaultValue: 'Site walk' })}
+                </option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-content-primary mb-1.5">
+                {t('hse_advanced.conducted_at', { defaultValue: 'Conducted at' })}
               </label>
               <input
                 type="date"
                 className={inputCls}
-                value={form.audit_date}
-                onChange={(e) => setForm((f) => ({ ...f, audit_date: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-content-primary mb-1.5">
-                {t('hse_advanced.auditor', { defaultValue: 'Auditor' })}
-              </label>
-              <input
-                className={inputCls}
-                value={form.auditor}
-                onChange={(e) => setForm((f) => ({ ...f, auditor: e.target.value }))}
+                value={form.conducted_at}
+                onChange={(e) => setForm((f) => ({ ...f, conducted_at: e.target.value }))}
               />
             </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-content-primary mb-1.5">
-              {t('hse_advanced.scope', { defaultValue: 'Scope' })}
+              {t('hse_advanced.summary', { defaultValue: 'Summary' })}
             </label>
             <textarea
               rows={3}
               className={textareaCls}
-              value={form.scope}
-              onChange={(e) => setForm((f) => ({ ...f, scope: e.target.value }))}
+              value={form.summary}
+              onChange={(e) => setForm((f) => ({ ...f, summary: e.target.value }))}
             />
           </div>
         </ModalShell>
@@ -2696,11 +2741,12 @@ function CAPALegacyTab({ projectId }: { projectId: string }) {
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [filter, setFilter] = useState<'all' | 'open' | 'closed'>('open');
+  // CAPACreate requires project_id + source_type + title + target_date.
   const [form, setForm] = useState({
+    source_type: 'observation',
     title: '',
     description: '',
-    assigned_to: '',
-    due_date: '',
+    target_date: new Date().toISOString().slice(0, 10),
   });
 
   const { data, isLoading, isError, error, refetch } = useQuery({
@@ -2713,15 +2759,20 @@ function CAPALegacyTab({ projectId }: { projectId: string }) {
     mutationFn: () =>
       createCAPA({
         project_id: projectId,
+        source_type: form.source_type,
         title: form.title,
-        description: form.description,
-        assigned_to: form.assigned_to || undefined,
-        due_date: form.due_date || undefined,
+        description: form.description || undefined,
+        target_date: form.target_date,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['hse-capa', projectId] });
       setShowCreate(false);
-      setForm({ title: '', description: '', assigned_to: '', due_date: '' });
+      setForm({
+        source_type: 'observation',
+        title: '',
+        description: '',
+        target_date: new Date().toISOString().slice(0, 10),
+      });
       addToast({
         type: 'success',
         title: t('hse_advanced.capa_created', { defaultValue: 'CAPA created' }),
@@ -2735,12 +2786,16 @@ function CAPALegacyTab({ projectId }: { projectId: string }) {
       }),
   });
 
+  // CAPA status enum: open | in_progress | completed | overdue | cancelled.
+  // "Closed" buckets the terminal states (completed | cancelled).
+  const isCapaClosed = (status: CAPAStatus) =>
+    status === 'completed' || status === 'cancelled';
+
   const counts = useMemo(() => {
     const c = { all: data?.length ?? 0, open: 0, closed: 0 };
     if (!data) return c;
     for (const it of data) {
-      if (it.status === 'closed' || it.status === 'verified' || it.status === 'completed')
-        c.closed++;
+      if (isCapaClosed(it.status)) c.closed++;
       else c.open++;
     }
     return c;
@@ -2749,19 +2804,11 @@ function CAPALegacyTab({ projectId }: { projectId: string }) {
   const filtered = useMemo(() => {
     if (!data) return [];
     let rows = data;
-    if (filter === 'open')
-      rows = rows.filter(
-        (it) => it.status !== 'closed' && it.status !== 'verified' && it.status !== 'completed',
-      );
-    else if (filter === 'closed')
-      rows = rows.filter(
-        (it) => it.status === 'closed' || it.status === 'verified' || it.status === 'completed',
-      );
+    if (filter === 'open') rows = rows.filter((it) => !isCapaClosed(it.status));
+    else if (filter === 'closed') rows = rows.filter((it) => isCapaClosed(it.status));
     if (!search) return rows;
     const q = search.toLowerCase();
-    return rows.filter(
-      (it) => it.title.toLowerCase().includes(q) || it.capa_number.toLowerCase().includes(q),
-    );
+    return rows.filter((it) => it.title.toLowerCase().includes(q));
   }, [data, search, filter]);
 
   if (isLoading) return <SkeletonTable rows={5} columns={6} />;
@@ -2828,16 +2875,16 @@ function CAPALegacyTab({ projectId }: { projectId: string }) {
             <thead>
               <tr className="border-b border-border-light bg-surface-secondary/50">
                 <th className="px-4 py-3 text-left font-medium text-content-tertiary">
-                  {t('common.number', { defaultValue: '#' })}
+                  {t('hse_advanced.source_type', { defaultValue: 'Source' })}
                 </th>
                 <th className="px-4 py-3 text-left font-medium text-content-tertiary">
                   {t('common.title', { defaultValue: 'Title' })}
                 </th>
                 <th className="px-4 py-3 text-left font-medium text-content-tertiary">
-                  {t('hse_advanced.assigned_to', { defaultValue: 'Assigned to' })}
+                  {t('hse_advanced.owner', { defaultValue: 'Owner' })}
                 </th>
                 <th className="px-4 py-3 text-left font-medium text-content-tertiary">
-                  {t('hse_advanced.due', { defaultValue: 'Due' })}
+                  {t('hse_advanced.target_date', { defaultValue: 'Target' })}
                 </th>
                 <th className="px-4 py-3 text-center font-medium text-content-tertiary">
                   {t('common.status', { defaultValue: 'Status' })}
@@ -2856,27 +2903,31 @@ function CAPALegacyTab({ projectId }: { projectId: string }) {
                 </tr>
               ) : (
                 filtered.map((it) => {
-                  const days = daysUntil(it.due_date);
-                  const isClosed =
-                    it.status === 'closed' ||
-                    it.status === 'verified' ||
-                    it.status === 'completed';
+                  // Countdown is driven off the CAPA's target_date.
+                  const days = daysUntil(it.target_date);
+                  const isClosed = isCapaClosed(it.status);
                   return (
                     <tr
                       key={it.id}
                       className="border-b border-border-light hover:bg-surface-secondary/30"
                     >
-                      <td className="px-4 py-3 font-mono text-xs">{it.capa_number}</td>
+                      <td className="px-4 py-3 text-content-secondary text-xs">
+                        {t(`hse_advanced.source_type_${it.source_type}`, {
+                          defaultValue: it.source_type.replace(/_/g, ' '),
+                        })}
+                      </td>
                       <td className="px-4 py-3 text-content-primary">{it.title}</td>
-                      <td className="px-4 py-3 text-content-secondary">
-                        {it.assigned_to ?? '—'}
+                      <td className="px-4 py-3 text-content-secondary text-xs font-mono">
+                        {it.owner_user_id ?? '—'}
                       </td>
                       <td className="px-4 py-3 text-content-secondary">
-                        {it.due_date ? <DateDisplay value={it.due_date} /> : '—'}
+                        {it.target_date ? <DateDisplay value={it.target_date} /> : '—'}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <Badge variant={CAPA_STATUS_COLORS[it.status] ?? 'neutral'} size="sm">
-                          {it.status.replace(/_/g, ' ')}
+                          {t(`hse_advanced.capa_status_${it.status}`, {
+                            defaultValue: it.status.replace(/_/g, ' '),
+                          })}
                         </Badge>
                       </td>
                       <td className="px-4 py-3 text-center tabular-nums text-xs">
@@ -2950,26 +3001,38 @@ function CAPALegacyTab({ projectId }: { projectId: string }) {
               onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
             />
           </div>
+          {/* api-HIGH fix: the backend CAPACreate has no assigned_to/due_date —
+              the form state only carries source_type + target_date, so the two
+              stray inputs (which referenced non-existent form fields) are
+              replaced by the real source_type select + target_date picker. */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium text-content-primary mb-1.5">
-                {t('hse_advanced.assigned_to', { defaultValue: 'Assigned to' })}
+                {t('hse_advanced.source_type', { defaultValue: 'Source' })}
               </label>
-              <input
+              <select
                 className={inputCls}
-                value={form.assigned_to}
-                onChange={(e) => setForm((f) => ({ ...f, assigned_to: e.target.value }))}
-              />
+                value={form.source_type}
+                onChange={(e) => setForm((f) => ({ ...f, source_type: e.target.value }))}
+              >
+                {['observation', 'audit', 'incident', 'inspection'].map((s) => (
+                  <option key={s} value={s}>
+                    {t(`hse_advanced.source_type_${s}`, {
+                      defaultValue: s.charAt(0).toUpperCase() + s.slice(1),
+                    })}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-content-primary mb-1.5">
-                {t('hse_advanced.due_date', { defaultValue: 'Due date' })}
+                {t('hse_advanced.target_date', { defaultValue: 'Target date' })}
               </label>
               <input
                 type="date"
                 className={inputCls}
-                value={form.due_date}
-                onChange={(e) => setForm((f) => ({ ...f, due_date: e.target.value }))}
+                value={form.target_date}
+                onChange={(e) => setForm((f) => ({ ...f, target_date: e.target.value }))}
               />
             </div>
           </div>

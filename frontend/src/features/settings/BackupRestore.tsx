@@ -24,20 +24,36 @@ import { useToastStore } from '@/stores/useToastStore';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+// FIX (api-HIGH): align with backend ValidateResponse (backup/schemas.py).
+// Backend returns { valid, format_version, created_at, record_counts, warnings, checksum }.
+// The old shape ({ version, compatible, errors }) did not exist on the wire, so the
+// version chip was blank, `!compatible` was always true (spurious "incompatible" banner),
+// and `errors` never surfaced real messages.
 interface ValidateResult {
   valid: boolean;
-  version: string;
-  compatible: boolean;
+  format_version: string;
+  created_at: string;
   record_counts: Record<string, number>;
   warnings: string[];
-  errors: string[];
+  checksum: string;
 }
 
+// FIX (api-HIGH): align with backend RestoreResponse (backup/schemas.py).
+// Backend returns { status, mode, imported, skipped, warnings }.
+// The old shape ({ success, records_imported }) never matched: `success` was always
+// undefined (every restore reported as failed) and `Object.values(records_imported)`
+// was Object.values(undefined) which throws a TypeError in the success branch.
 interface RestoreResult {
-  success: boolean;
-  records_imported: Record<string, number>;
+  status: 'success' | 'partial' | 'failed';
+  mode: string;
+  imported: Record<string, number>;
+  skipped: Record<string, number>;
   warnings: string[];
 }
+
+// Supported backup format major version. Compatibility is derived locally from
+// format_version because backend ValidateResponse exposes no "compatible" flag.
+const SUPPORTED_FORMAT_MAJOR = '1';
 
 // ── API helpers ──────────────────────────────────────────────────────────────
 
@@ -177,10 +193,12 @@ export function BackupRestore() {
         setValidation(result);
 
         if (!result.valid) {
+          // FIX (api-HIGH): ValidateResponse has no `errors` field; surface the first
+          // warning (if any) instead of reading a non-existent property.
           addToast({
             type: 'error',
             title: t('backup.validation_failed', { defaultValue: 'Invalid backup' }),
-            message: result.errors?.[0] || t('backup.validation_failed_detail', { defaultValue: 'The backup file is not valid' }),
+            message: result.warnings?.[0] || t('backup.validation_failed_detail', { defaultValue: 'The backup file is not valid' }),
           });
         }
       } catch (err) {
@@ -237,8 +255,11 @@ export function BackupRestore() {
     try {
       const result = await restoreBackup(selectedFile, restoreMode);
 
-      if (result.success) {
-        const totalRecords = Object.values(result.records_imported).reduce(
+      // FIX (api-HIGH): RestoreResponse has no boolean `success`; treat status
+      // "success" or "partial" as a successful restore, and sum `imported`
+      // (not the non-existent `records_imported`, which threw on Object.values).
+      if (result.status === 'success' || result.status === 'partial') {
+        const totalRecords = Object.values(result.imported).reduce(
           (a, b) => a + b,
           0,
         );
@@ -418,8 +439,9 @@ export function BackupRestore() {
                           </p>
                           <p className="text-xs text-content-tertiary">
                             {formatBytes(selectedFile.size)}
-                            {validation?.version &&
-                              ` \u2014 v${validation.version}`}
+                            {/* FIX (api-HIGH): version chip reads backend `format_version`. */}
+                            {validation?.format_version &&
+                              ` \u2014 v${validation.format_version}`}
                           </p>
                         </div>
                         <button
@@ -482,7 +504,10 @@ export function BackupRestore() {
                           )}
 
                           {/* Compatibility check */}
-                          {!validation.compatible && (
+                          {/* FIX (api-HIGH): derive compatibility locally from format_version
+                              major instead of a non-existent `validation.compatible`, which was
+                              always undefined and fired this banner on every valid backup. */}
+                          {!validation.format_version.startsWith(`${SUPPORTED_FORMAT_MAJOR}.`) && (
                             <div className="rounded-lg border border-semantic-error/30 bg-semantic-error-bg px-3 py-2.5">
                               <div className="flex items-start gap-2 text-xs text-semantic-error">
                                 <AlertTriangle size={13} className="shrink-0 mt-0.5" />
