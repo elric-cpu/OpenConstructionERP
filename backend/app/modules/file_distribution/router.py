@@ -25,7 +25,12 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.dependencies import CurrentUserId, RequirePermission, SessionDep
+from app.dependencies import (
+    CurrentUserId,
+    RequirePermission,
+    SessionDep,
+    verify_project_access,
+)
 from app.modules.file_distribution.schemas import (
     DistributionListCreate,
     DistributionListListResponse,
@@ -368,6 +373,10 @@ async def create_subscription(
     current_user_id: CurrentUserId,
 ) -> SubscriptionResponse:
     user_uuid = _user_uuid(current_user_id)
+    # IDOR guard: file_distribution.subscribe is a global role; without this any
+    # holder could subscribe to (and receive notifications about) files in a
+    # project they cannot access — a cross-project information leak.
+    await verify_project_access(payload.project_id, str(user_uuid), session)
     service = SubscriptionService(session)
     try:
         sub = await service.create(payload, user_uuid)
