@@ -8,10 +8,12 @@ Tables:
 """
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Date, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.db_types import AwareDateTime
 from app.database import GUID, Base
 
 
@@ -107,7 +109,7 @@ class FieldReport(Base):
     # raw strings. On SQLite GUID() impls as VARCHAR(36), so the storage
     # layout is identical to the prior String(36) declaration.
     approved_by: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
-    approved_at: Mapped[str | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(AwareDateTime(), nullable=True)
 
     # Linked documents (cross-module references to oe_documents_document)
     document_ids: Mapped[list] = mapped_column(  # type: ignore[assignment]

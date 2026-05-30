@@ -110,6 +110,25 @@ def _utc_now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _to_utc_iso(value: datetime | None) -> str | None:
+    """Normalise a datetime to a UTC ISO-8601 string for the String(32) columns.
+
+    The QMS temporal columns are stored as ISO strings and queried by lexical
+    ``>=`` / ``<`` range comparisons that only preserve chronology when every
+    value carries the **same** UTC offset. A naive client datetime produces an
+    offset-less string (``"...T10:00:00"``) that sorts *before* an offset-bearing
+    one (``"...T10:00:00+00:00"``), silently corrupting the ordering — on both
+    SQLite and PostgreSQL, but it bites harder on PG where this is the only
+    ordering the planner has. Coercing every write to UTC-with-offset here keeps
+    lexical order == chronological order regardless of what the client sent.
+    """
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).isoformat()
+
+
 def _guard_transition(
     table: dict[str, set[str]],
     *,
@@ -246,7 +265,7 @@ class QMSService:
             project_id=data.project_id,
             location_ref=data.location_ref,
             inspector_user_id=data.inspector_user_id,
-            scheduled_at=data.scheduled_at.isoformat() if data.scheduled_at else None,
+            scheduled_at=_to_utc_iso(data.scheduled_at),
             status="scheduled",
             bim_element_ref=data.bim_element_ref,
             drawing_ref=data.drawing_ref,
@@ -286,7 +305,7 @@ class QMSService:
         for key in ("scheduled_at", "performed_at"):
             value = fields.get(key)
             if isinstance(value, datetime):
-                fields[key] = value.isoformat()
+                fields[key] = _to_utc_iso(value)
         if fields:
             await self.repo.update_inspection_fields(inspection_id, **fields)
             await self.session.refresh(inspection)
@@ -596,7 +615,7 @@ class QMSService:
             ncr_id=ncr_id,
             description=data.description,
             responsible_user_id=data.responsible_user_id,
-            due_date=data.due_date.isoformat() if data.due_date else None,
+            due_date=_to_utc_iso(data.due_date),
             status="assigned",
             verification_method=data.verification_method,
         )
@@ -790,7 +809,7 @@ class QMSService:
             status="open",
             severity=data.severity,
             assigned_to=data.assigned_to,
-            due_date=data.due_date.isoformat() if data.due_date else None,
+            due_date=_to_utc_iso(data.due_date),
             photos_json=list(data.photos_json),
             source=data.source,
             category=data.category,
@@ -828,7 +847,7 @@ class QMSService:
                 entity="punch",
             )
         if "due_date" in fields and isinstance(fields["due_date"], datetime):
-            fields["due_date"] = fields["due_date"].isoformat()
+            fields["due_date"] = _to_utc_iso(fields["due_date"])
         if fields:
             await self.repo.update_punch_fields(punch_id, **fields)
             await self.session.refresh(punch)
@@ -929,7 +948,7 @@ class QMSService:
         audit = QMSAudit(
             project_id=data.project_id,
             audit_type=data.audit_type,
-            planned_date=data.planned_date.isoformat() if data.planned_date else None,
+            planned_date=_to_utc_iso(data.planned_date),
             auditor_user_id=data.auditor_user_id,
             audit_scope=data.audit_scope,
             standard_ref=data.standard_ref,
@@ -957,7 +976,7 @@ class QMSService:
         for key in ("planned_date", "performed_at"):
             value = fields.get(key)
             if isinstance(value, datetime):
-                fields[key] = value.isoformat()
+                fields[key] = _to_utc_iso(value)
         if fields:
             await self.repo.update_audit_fields(audit_id, **fields)
             await self.session.refresh(audit)
@@ -994,7 +1013,7 @@ class QMSService:
             clause_ref=data.clause_ref,
             corrective_action_required=data.corrective_action_required,
             status="open",
-            due_date=data.due_date.isoformat() if data.due_date else None,
+            due_date=_to_utc_iso(data.due_date),
         )
         finding = await self.repo.create_finding(finding)
         event_bus.publish_detached(

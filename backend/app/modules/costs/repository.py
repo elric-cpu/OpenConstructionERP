@@ -219,7 +219,7 @@ class CostItemRepository:
         Returns:
             Tuple of (items, total_count_or_None, has_more).
         """
-        from sqlalchemy import Float
+        from app.core.sql_numeric import numeric_value
 
         base = select(CostItem).where(CostItem.is_active.is_(True))
 
@@ -266,15 +266,17 @@ class CostItemRepository:
                 expr = _classification_expr(_CLASSIFICATION_DEPTHS[depth_idx])
                 base = base.where(expr == segment)
 
-        # Cast to Float for cross-dialect comparison — the rate column is
-        # String(50) for SQLite Decimal compat (see models.py). Pre-cast
-        # the bound so Decimal inputs (Round-7) don't end up with mixed
-        # precision under PostgreSQL's stricter type promotion.
+        # Coerce to float for cross-dialect comparison — the rate column is
+        # String(50) for SQLite Decimal compat (see models.py). ``numeric_value``
+        # is tolerant of non-numeric strings on PostgreSQL (a bare ``cast(.., Float)``
+        # would raise "invalid input syntax" on one malformed row), matching
+        # SQLite's silent 0.0 coercion. Pre-cast the bound so Decimal inputs
+        # (Round-7) don't end up with mixed precision.
         if min_rate is not None:
-            base = base.where(cast(CostItem.rate, Float) >= float(min_rate))
+            base = base.where(numeric_value(CostItem.rate) >= float(min_rate))
 
         if max_rate is not None:
-            base = base.where(cast(CostItem.rate, Float) <= float(max_rate))
+            base = base.where(numeric_value(CostItem.rate) <= float(max_rate))
 
         # Total count — only when explicitly requested. Cursor-paginated
         # queries skip this since counting on every page is wasteful and
@@ -360,8 +362,6 @@ class CostItemRepository:
             Up to ``limit`` ``CostItem`` rows, items-with-components
             first then code-ascending.
         """
-        from app.database import engine as _engine
-
         base = select(CostItem).where(CostItem.is_active.is_(True))
 
         pattern = f"%{q}%"
@@ -378,15 +378,22 @@ class CostItemRepository:
         # ``jsonb_array_length`` is the canonical helper; SQLite has
         # ``json_array_length`` which mirrors it semantically (both return
         # 0 for ``[]`` and NULL for non-arrays / NULL).
-        if "sqlite" in str(_engine.url):
+        #
+        # Detect the dialect from THIS session's bind, not the global
+        # ``app.database.engine``: under the PG test lane the global engine is
+        # still SQLite while the session runs on PostgreSQL, and picking the
+        # wrong branch emits ``json_array_length(jsonb)`` which PG rejects.
+        dialect_name = self.session.bind.dialect.name if self.session.bind else "sqlite"
+        if dialect_name == "sqlite":
             comp_len = func.coalesce(func.json_array_length(CostItem.components), 0)
         else:
-            # ``jsonb_array_length`` on a TEXT JSON column requires an
-            # explicit cast on Postgres; CostItem.components is declared
-            # as plain ``JSON`` so we route through ``json_array_length``
-            # which works on json (text-domain) and reuse the same
-            # coalesce semantics so NULL rows sort AFTER empty arrays.
-            comp_len = func.coalesce(func.json_array_length(CostItem.components), 0)
+            # CostItem.components is declared as generic ``JSON`` but
+            # ``pg_optimizations`` rewrites it to JSONB on PostgreSQL DDL, so the
+            # column is physically ``jsonb`` — and ``json_array_length(jsonb)``
+            # does NOT exist on PG (it raises "function does not exist"). The
+            # JSONB-domain helper is ``jsonb_array_length``; same coalesce
+            # semantics so NULL rows sort AFTER empty arrays.
+            comp_len = func.coalesce(func.jsonb_array_length(CostItem.components), 0)
 
         # CASE(comp_len > 0 → 1 else 0) — items WITH components first.
         # DESC so the "1" rows lead.
@@ -440,16 +447,22 @@ class CostItemRepository:
         # (json_extract returns NULL for missing keys, which IS what we
         # want to detect) — we coerce in Python instead so empty strings
         # and missing keys collapse into the same sentinel.
-        all_cols = [_classification_expr(key).label(key) for key in _CLASSIFICATION_DEPTHS]
+        all_exprs = [_classification_expr(key) for key in _CLASSIFICATION_DEPTHS]
+        all_cols = [expr.label(key) for expr, key in zip(all_exprs, _CLASSIFICATION_DEPTHS, strict=True)]
         cnt = func.count(CostItem.id).label("cnt")
 
-        # Slice to requested depth.  The GROUP BY label list and the row
+        # Slice to requested depth.  The GROUP BY expression list and the row
         # tuple length follow the same slice so the Python loop below
-        # iterates the correct number of segments per row.
+        # iterates the correct number of segments per row. GROUP BY must
+        # reference the actual JSONB-extraction *expressions*, not the SELECT
+        # aliases: PostgreSQL rejects ``GROUP BY <output-alias>`` (the column
+        # "collection" does not exist), while SQLite accepted it as a
+        # non-standard extension.
         active_cols = all_cols[:depth]
-        active_keys = list(_CLASSIFICATION_DEPTHS[:depth])
+        active_exprs = all_exprs[:depth]
+        active_keys = list(_CLASSIFICATION_DEPTHS[:depth])  # label names for row access
 
-        stmt = select(*active_cols, cnt).where(CostItem.is_active.is_(True)).group_by(*active_keys)
+        stmt = select(*active_cols, cnt).where(CostItem.is_active.is_(True)).group_by(*active_exprs)
         if region:
             stmt = stmt.where(CostItem.region == region)
 

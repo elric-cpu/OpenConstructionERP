@@ -7,9 +7,10 @@ No business logic — pure data access.
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import Float, cast, func, select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.sql_numeric import numeric_value
 from app.modules.catalog.models import CatalogResource
 
 
@@ -97,10 +98,10 @@ class CatalogResourceRepository:
             base = base.where(CatalogResource.unit == unit)
 
         if min_price is not None:
-            base = base.where(cast(CatalogResource.base_price, Float) >= float(min_price))
+            base = base.where(numeric_value(CatalogResource.base_price) >= float(min_price))
 
         if max_price is not None:
-            base = base.where(cast(CatalogResource.base_price, Float) <= float(max_price))
+            base = base.where(numeric_value(CatalogResource.base_price) <= float(max_price))
 
         # Count
         count_stmt = select(func.count()).select_from(base.subquery())

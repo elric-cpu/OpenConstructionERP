@@ -2751,10 +2751,6 @@ class BIMHubService:
         if name_contains:
             base = base.where(BIMElement.name.ilike(f"%{name_contains}%"))
 
-        # Detect dialect for JSON-based filters.
-        dialect_name = self.session.bind.dialect.name if self.session.bind else ""
-        is_postgres = dialect_name in ("postgresql", "postgres")
-
         # category — lives inside the JSON ``properties`` column.
         category = criteria.get("category")
         property_filter = criteria.get("property_filter") or {}
@@ -2775,19 +2771,15 @@ class BIMHubService:
         _DYNAMIC_GROUP_CAP = 50_000
         base = base.limit(_DYNAMIC_GROUP_CAP)
 
-        # On Postgres: use @> JSON containment when possible (property_filter
-        # only; category with multiple values still needs Python-side check).
-        if is_postgres and expected_props and not category_values:
-            from sqlalchemy import cast
-            from sqlalchemy.dialects.postgresql import JSONB
-
-            base = base.where(cast(BIMElement.properties, JSONB).contains(expected_props))
-            result = await self.session.execute(base)
-            elements = list(result.scalars().all())
-            return [e.id for e in elements]
-
-        # Fallback: load candidates and filter in Python. This is the path
-        # used on SQLite and whenever we need list-semantics for ``category``.
+        # Load candidates and filter in Python with the shared type-aware
+        # predicate. We deliberately do NOT push property_filter down to a
+        # PostgreSQL ``@>`` JSONB containment query: ``@>`` is exact, type-strict
+        # and case-sensitive, whereas ``_property_value_matches`` is
+        # case-insensitive, supports ``*``/``?`` wildcards and coerces scalar
+        # types (so ``{"count": 42}`` matches a stored ``"42"``). A ``@>``
+        # fast-path therefore returned a DIFFERENT element set on PostgreSQL
+        # than on SQLite for the same group filter. The 50K cap bounds the
+        # in-Python pass, so both backends now resolve groups identically.
         result = await self.session.execute(base)
         elements = list(result.scalars().all())
 

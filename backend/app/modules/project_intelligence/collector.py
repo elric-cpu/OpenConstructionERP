@@ -591,10 +591,22 @@ async def _collect_documents(
     """Collect documents domain state."""
     state = DocumentsState()
     try:
+        # GROUP_CONCAT is SQLite-only; PostgreSQL spells the same aggregate
+        # ``string_agg(category, ',')``. Without this branch the query raises
+        # "function group_concat does not exist" on PG, which the bare except
+        # below swallows — silently returning 0 files / no categories. Detect
+        # the dialect from this session's bind (not the global engine, which can
+        # differ from the session under test).
+        dialect_name = session.bind.dialect.name if session.bind else "sqlite"
+        concat = (
+            "GROUP_CONCAT(DISTINCT category)"
+            if dialect_name == "sqlite"
+            else "string_agg(DISTINCT category, ',')"
+        )
         doc_row = (
             await session.execute(
                 text(
-                    "SELECT COUNT(*), GROUP_CONCAT(DISTINCT category) "
+                    f"SELECT COUNT(*), {concat} "  # noqa: S608 - concat is a fixed literal, not user input
                     "FROM oe_documents_document WHERE project_id = :pid"
                 ),
                 {"pid": project_id},

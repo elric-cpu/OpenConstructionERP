@@ -678,8 +678,9 @@ async def project_dashboard(
     """
     from datetime import date, datetime, timedelta
 
-    from sqlalchemy import Float, func, literal_column, select, union_all
-    from sqlalchemy.sql.expression import cast
+    from sqlalchemy import func, literal_column, select, union_all
+
+    from app.core.sql_numeric import numeric_value
 
     # Verify read access — owner, admin, or team member
     project = await _verify_project_access(service, project_id, user_id, session, payload)
@@ -741,7 +742,7 @@ async def project_dashboard(
             ).scalar_one()
 
             total_result = (
-                await session.execute(select(func.sum(cast(Position.total, Float))).where(Position.boq_id.in_(boq_ids)))
+                await session.execute(select(func.sum(numeric_value(Position.total))).where(Position.boq_id.in_(boq_ids)))
             ).scalar_one()
             boq_total_value = round(total_result or 0.0, 2)
 
@@ -756,8 +757,8 @@ async def project_dashboard(
         from app.modules.costmodel.models import BudgetLine
 
         budget_stmt = select(
-            func.sum(cast(BudgetLine.planned_amount, Float)).label("planned"),
-            func.sum(cast(BudgetLine.actual_amount, Float)).label("actual"),
+            func.sum(numeric_value(BudgetLine.planned_amount)).label("planned"),
+            func.sum(numeric_value(BudgetLine.actual_amount)).label("actual"),
         ).where(BudgetLine.project_id == project_id)
         budget_row = (await session.execute(budget_stmt)).one_or_none()
         planned_total = float(budget_row.planned or 0) if budget_row else 0.0
@@ -785,7 +786,7 @@ async def project_dashboard(
             committed_total = float(
                 (
                     await session.execute(
-                        select(func.sum(cast(PurchaseOrder.amount_total, Float))).where(
+                        select(func.sum(numeric_value(PurchaseOrder.amount_total))).where(
                             PurchaseOrder.project_id == project_id,
                             PurchaseOrder.status.notin_(["draft", "cancelled"]),
                         )
@@ -1201,7 +1202,7 @@ async def project_dashboard(
 
         total_committed_result = (
             await session.execute(
-                select(func.sum(cast(PurchaseOrder.amount_total, Float))).where(
+                select(func.sum(numeric_value(PurchaseOrder.amount_total))).where(
                     PurchaseOrder.project_id == project_id,
                     PurchaseOrder.status.notin_(["draft", "cancelled"]),
                 )
@@ -1843,9 +1844,9 @@ async def analytics_overview(
 
     Scoped to the current user's owned projects; admins see every project.
     """
-    from sqlalchemy import Float, func, select
-    from sqlalchemy.sql.expression import cast
+    from sqlalchemy import func, select
 
+    from app.core.sql_numeric import numeric_value
     from app.modules.boq.models import BOQ
     from app.modules.costmodel.models import BudgetLine
     from app.modules.projects.models import Project
@@ -1875,8 +1876,8 @@ async def analytics_overview(
         budget_stmt = (
             select(
                 BudgetLine.project_id,
-                func.sum(cast(BudgetLine.planned_amount, Float)).label("planned"),
-                func.sum(cast(BudgetLine.actual_amount, Float)).label("actual"),
+                func.sum(numeric_value(BudgetLine.planned_amount)).label("planned"),
+                func.sum(numeric_value(BudgetLine.actual_amount)).label("actual"),
             )
             .where(BudgetLine.project_id.in_(project_ids))
             .group_by(BudgetLine.project_id)
