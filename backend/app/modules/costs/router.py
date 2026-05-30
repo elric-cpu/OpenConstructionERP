@@ -96,6 +96,8 @@ router = APIRouter(tags=["costs"])
 logger = logging.getLogger(__name__)
 
 
+from app.core.sql_json import json_path_text
+
 class CertaintyBatchRequest(BaseModel):
     """Request body for ``POST /v1/costs/certainty/batch``.
 
@@ -2242,7 +2244,7 @@ async def list_categories(
 
     _url = str(_engine.url)
     if "sqlite" in _url:
-        collection_expr = func.json_extract(CostItem.classification, "$.collection")
+        collection_expr = json_path_text(CostItem.classification, "$.collection")
     else:
         collection_expr = CostItem.classification["collection"].as_string()
 

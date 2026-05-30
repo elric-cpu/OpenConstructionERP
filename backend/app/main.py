@@ -61,6 +61,8 @@ from app.dependencies import RequireRole, get_current_user_id
 logger = logging.getLogger(__name__)
 
 
+from app.core.sql_json import json_path_text
+
 def configure_logging(settings: Settings) -> None:
     """‌⁠‍Configure structured logging."""
     structlog.configure(
@@ -2452,7 +2454,7 @@ def create_app() -> FastAPI:
                     from app.database import engine as __engine
 
                     if "sqlite" in str(__engine.url):
-                        coll_expr = __func.json_extract(CostItem.classification, "$.collection")
+                        coll_expr = __json_path_text(CostItem.classification, "$.collection")
                     else:
                         coll_expr = CostItem.classification["collection"].as_string()
                     c = await cost_session.execute(

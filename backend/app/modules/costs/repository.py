@@ -31,6 +31,8 @@ _CLASSIFICATION_DEPTHS: tuple[str, ...] = (
 )
 
 
+from app.core.sql_json import json_path_text
+
 def _split_classification_path(path: str) -> list[str | None]:
     """‌⁠‍Split a slash-delimited prefix path into per-depth filters.
 
@@ -65,7 +67,7 @@ def _classification_expr(depth_key: str) -> Any:
     from app.database import engine as _engine
 
     if "sqlite" in str(_engine.url):
-        return func.json_extract(CostItem.classification, f"$.{depth_key}")
+        return json_path_text(CostItem.classification, f"$.{depth_key}")
     return CostItem.classification[depth_key].as_string()
 
 
@@ -248,7 +250,7 @@ class CostItemRepository:
 
             _url = str(_engine.url)
             if "sqlite" in _url:
-                collection_expr = func.json_extract(CostItem.classification, "$.collection")
+                collection_expr = json_path_text(CostItem.classification, "$.collection")
                 base = base.where(collection_expr == category)
             else:
                 # PostgreSQL: use the ->> operator via SQLAlchemy column subscript

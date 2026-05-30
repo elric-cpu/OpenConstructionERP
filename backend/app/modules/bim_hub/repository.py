@@ -22,6 +22,8 @@ from app.modules.bim_hub.models import (
 )
 
 
+from app.core.sql_json import json_path_text
+
 class BIMModelRepository:
     """‌⁠‍Data access for BIMModel."""
 
@@ -219,7 +221,7 @@ class BIMElementRepository:
             base = base.where(BIMElement.element_type == element_type)
         if operational_status is not None:
             # Portable JSON extraction — works on SQLite + Postgres.
-            base = base.where(func.json_extract(BIMElement.asset_info, "$.operational_status") == operational_status)
+            base = base.where(json_path_text(BIMElement.asset_info, "$.operational_status") == operational_status)
         if search is not None and search.strip():
             q = f"%{search.strip().lower()}%"
             base = base.where(
@@ -227,19 +229,19 @@ class BIMElementRepository:
                 | func.lower(func.coalesce(BIMElement.name, "")).like(q)
                 | func.lower(
                     func.coalesce(
-                        func.json_extract(BIMElement.asset_info, "$.serial_number"),
+                        json_path_text(BIMElement.asset_info, "$.serial_number"),
                         "",
                     )
                 ).like(q)
                 | func.lower(
                     func.coalesce(
-                        func.json_extract(BIMElement.asset_info, "$.asset_tag"),
+                        json_path_text(BIMElement.asset_info, "$.asset_tag"),
                         "",
                     )
                 ).like(q)
                 | func.lower(
                     func.coalesce(
-                        func.json_extract(BIMElement.asset_info, "$.manufacturer"),
+                        json_path_text(BIMElement.asset_info, "$.manufacturer"),
                         "",
                     )
                 ).like(q)
