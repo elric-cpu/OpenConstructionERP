@@ -43,7 +43,7 @@ class BIMModel(Base):
     discipline: Mapped[str | None] = mapped_column(String(50), nullable=True)
     model_format: Mapped[str | None] = mapped_column(String(20), nullable=True)
     version: Mapped[str] = mapped_column(String(20), nullable=False, default="1")
-    import_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    import_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="processing")
     element_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     storey_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

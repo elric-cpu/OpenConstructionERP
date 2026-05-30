@@ -50,9 +50,13 @@ class ChangeOrder(Base):
     # BUG-351: rejection populates its own fields — previously ``approved_by``
     # was reused on reject, which made UIs show the rejector as the approver.
     rejected_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    submitted_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    approved_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    rejected_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # ISO-8601 timestamp strings ("2026-05-30T16:33:01.947702+00:00" = 32 chars).
+    # Width must hold microseconds + offset: String(20) silently overflowed on
+    # PostgreSQL ("value too long for character varying(20)") while SQLite ignored
+    # the limit. String(40) leaves margin for any offset form.
+    submitted_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    approved_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    rejected_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     # Phase 2e: signed money column (scope changes can be negative on credits).
     cost_impact: Mapped[Decimal] = mapped_column(MoneyType(), nullable=False, default=Decimal("0"))
     schedule_impact_days: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -65,7 +69,7 @@ class ChangeOrder(Base):
     # Variation fields (Phase 16 enhancement)
     variation_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     cost_basis: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    contractor_submission_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    contractor_submission_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     contractor_amount: Mapped[Decimal | None] = mapped_column(MoneyType(), nullable=True)
     engineer_amount: Mapped[Decimal | None] = mapped_column(MoneyType(), nullable=True)
     approved_amount: Mapped[Decimal | None] = mapped_column(MoneyType(), nullable=True)

@@ -37,7 +37,7 @@ class QualityInspection(Base):
     location: Mapped[str | None] = mapped_column(String(500), nullable=True)
     wbs_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     inspector_id: Mapped[str | None] = mapped_column(GUID(), nullable=True)
-    inspection_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    inspection_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="scheduled", index=True)
     result: Mapped[str | None] = mapped_column(String(50), nullable=True)
 

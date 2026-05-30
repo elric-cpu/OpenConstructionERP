@@ -39,8 +39,8 @@ class PurchaseOrder(Base):
     vendor_contact_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     po_number: Mapped[str] = mapped_column(String(50), nullable=False)
     po_type: Mapped[str] = mapped_column(String(50), nullable=False, default="standard")
-    issue_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    delivery_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    issue_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    delivery_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     # Empty by default — service inherits the parent project's currency so
     # no PO silently shows EUR when the project is non-EUR (task #217).
     currency_code: Mapped[str] = mapped_column(String(10), nullable=False, default="")
@@ -113,7 +113,7 @@ class GoodsReceipt(Base):
         nullable=False,
         index=True,
     )
-    receipt_date: Mapped[str] = mapped_column(String(20), nullable=False)
+    receipt_date: Mapped[str] = mapped_column(String(40), nullable=False)
     received_by_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
     delivery_note_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="draft", index=True)
@@ -184,10 +184,10 @@ class MaterialRequisition(Base):
     approver_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="draft", index=True)
     title: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    required_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    required_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     lead_time_days: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     # Computed from required_date - lead_time_days; stored for query efficiency
-    estimated_delivery_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    estimated_delivery_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     # FK to PO once approved → ordered
     po_id: Mapped[uuid.UUID | None] = mapped_column(
         GUID(),

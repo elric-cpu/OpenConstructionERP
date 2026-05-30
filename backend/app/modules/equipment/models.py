@@ -110,7 +110,7 @@ class Equipment(Base):
     )
 
     # Accounting
-    purchase_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    purchase_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     purchase_value: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
     depreciation_method: Mapped[str] = mapped_column(
         String(30),
@@ -200,13 +200,13 @@ class MaintenanceSchedule(Base):
         server_default="0",
     )
     description: Mapped[str] = mapped_column(String(500), nullable=False, default="")
-    last_completed_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    last_completed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     last_completed_meter: Mapped[Decimal | None] = mapped_column(
         Numeric(18, 4),
         nullable=True,
     )
     next_due_meter: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
-    next_due_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    next_due_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     def __repr__(self) -> str:
@@ -231,7 +231,7 @@ class MaintenanceWorkOrder(Base):
         nullable=True,
     )
     scheduled_for: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    completed_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    completed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     status: Mapped[str] = mapped_column(
         String(30),
         nullable=False,
@@ -276,7 +276,7 @@ class Inspection(Base):
         index=True,
     )
     inspection_type: Mapped[str] = mapped_column(String(40), nullable=False)
-    inspected_at: Mapped[str] = mapped_column(String(20), nullable=False)
+    inspected_at: Mapped[str] = mapped_column(String(40), nullable=False)
     valid_until: Mapped[str] = mapped_column(String(20), nullable=False)
     inspector_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     result: Mapped[str] = mapped_column(String(20), nullable=False, default="pass")
@@ -306,8 +306,8 @@ class EquipmentRental(Base):
         nullable=False,
         index=True,
     )
-    start_date: Mapped[str] = mapped_column(String(20), nullable=False)
-    end_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    start_date: Mapped[str] = mapped_column(String(40), nullable=False)
+    end_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     internal_rate_per_day: Mapped[Decimal] = mapped_column(
         Numeric(18, 4),
         nullable=False,
@@ -350,7 +350,7 @@ class FuelLog(Base):
         nullable=False,
         index=True,
     )
-    logged_at: Mapped[str] = mapped_column(String(20), nullable=False)
+    logged_at: Mapped[str] = mapped_column(String(40), nullable=False)
     fuel_liters: Mapped[Decimal] = mapped_column(
         Numeric(18, 4),
         nullable=False,
@@ -420,7 +420,7 @@ class PartsLog(Base):
         default="",
         server_default="",
     )
-    logged_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    logged_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     def __repr__(self) -> str:
         return f"<PartsLog equipment={self.equipment_id} part={self.part_number}>"
@@ -437,7 +437,7 @@ class DamageReport(Base):
         nullable=False,
         index=True,
     )
-    reported_at: Mapped[str] = mapped_column(String(20), nullable=False)
+    reported_at: Mapped[str] = mapped_column(String(40), nullable=False)
     reported_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
     severity: Mapped[str] = mapped_column(String(20), nullable=False, default="minor")
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")

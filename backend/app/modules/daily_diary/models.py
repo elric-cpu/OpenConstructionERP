@@ -63,7 +63,7 @@ class DailyDiary(Base):
         nullable=False,
         index=True,
     )
-    diary_date: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    diary_date: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     site_supervisor_id: Mapped[uuid.UUID | None] = mapped_column(
         GUID(),
         ForeignKey("oe_users_user.id", ondelete="SET NULL"),

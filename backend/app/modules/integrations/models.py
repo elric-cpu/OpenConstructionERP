@@ -47,7 +47,7 @@ class WebhookEndpoint(Base):
         server_default="[]",
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="1")
-    last_triggered_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    last_triggered_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     last_status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     failure_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
@@ -139,7 +139,7 @@ class IntegrationConfig(Base):
         server_default='["*"]',
     )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="1")
-    last_triggered_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    last_triggered_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         "metadata",
         JSON,

@@ -22,7 +22,7 @@ class EVMForecast(Base):
         nullable=False,
         index=True,
     )
-    forecast_date: Mapped[str] = mapped_column(String(20), nullable=False)
+    forecast_date: Mapped[str] = mapped_column(String(40), nullable=False)
     etc_: Mapped[str] = mapped_column(
         "etc",
         String(50),

@@ -77,7 +77,7 @@ class JobSafetyAnalysis(Base):
     )
     task_description: Mapped[str] = mapped_column(Text, nullable=False)
     location: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    work_date: Mapped[str] = mapped_column(String(20), nullable=False)
+    work_date: Mapped[str] = mapped_column(String(40), nullable=False)
     prepared_by: Mapped[uuid.UUID] = mapped_column(
         GUID(),
         ForeignKey("oe_users_user.id", ondelete="SET NULL"),

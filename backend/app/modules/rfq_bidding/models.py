@@ -70,7 +70,7 @@ class RFQBid(Base):
     bidder_contact_id: Mapped[str] = mapped_column(String(36), nullable=False)
     bid_amount: Mapped[str] = mapped_column(String(50), nullable=False)
     currency_code: Mapped[str] = mapped_column(String(10), nullable=False, default="EUR")
-    submitted_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    submitted_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     validity_days: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
     technical_score: Mapped[str | None] = mapped_column(String(10), nullable=True)
     commercial_score: Mapped[str | None] = mapped_column(String(10), nullable=True)

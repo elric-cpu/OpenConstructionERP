@@ -50,10 +50,10 @@ class Schedule(Base):
         String(50), nullable=False, default="master", server_default="master"
     )  # master / baseline / revision / what_if
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    start_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    end_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    start_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    end_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="draft")
-    data_date: Mapped[str | None] = mapped_column(String(20), nullable=True)  # current data/status date
+    data_date: Mapped[str | None] = mapped_column(String(40), nullable=True)  # current data/status date
     created_by: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         "metadata",
@@ -95,8 +95,8 @@ class Activity(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     wbs_code: Mapped[str] = mapped_column(String(50), nullable=False, default="")
-    start_date: Mapped[str] = mapped_column(String(20), nullable=False)
-    end_date: Mapped[str] = mapped_column(String(20), nullable=False)
+    start_date: Mapped[str] = mapped_column(String(40), nullable=False)
+    end_date: Mapped[str] = mapped_column(String(40), nullable=False)
     duration_days: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     progress_pct: Mapped[str] = mapped_column(String(10), nullable=False, default="0")
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="not_started", index=True)
@@ -136,7 +136,7 @@ class Activity(Base):
         String(50), nullable=True
     )  # as_soon_as_possible / as_late_as_possible / must_start_on / must_finish_on
     #   start_no_earlier / start_no_later / finish_no_earlier / finish_no_later
-    constraint_date: Mapped[str | None] = mapped_column(String(20), nullable=True)  # ISO date
+    constraint_date: Mapped[str | None] = mapped_column(String(40), nullable=True)  # ISO date
 
     # Auto-generated activity code
     activity_code: Mapped[str | None] = mapped_column(String(50), nullable=True)  # ACT-001, ACT-002
@@ -308,7 +308,7 @@ class ScheduleBaseline(Base):
         index=True,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    baseline_date: Mapped[str] = mapped_column(String(20), nullable=False)
+    baseline_date: Mapped[str] = mapped_column(String(40), nullable=False)
     snapshot_data: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         JSON,
         nullable=False,
@@ -348,7 +348,7 @@ class ProgressUpdate(Base):
         GUID(),
         nullable=True,
     )
-    update_date: Mapped[str] = mapped_column(String(20), nullable=False)
+    update_date: Mapped[str] = mapped_column(String(40), nullable=False)
     progress_pct: Mapped[str | None] = mapped_column(String(10), nullable=True)
     actual_start: Mapped[str | None] = mapped_column(String(20), nullable=True)
     actual_finish: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -512,12 +512,12 @@ class ScheduleProgressEntry(Base):
         doc="One of: mobile, desktop, api.",
     )
     actual_start_date: Mapped[str | None] = mapped_column(
-        String(20),
+        String(40),
         nullable=True,
         doc="ISO date — only set when the entry transitions task to in_progress.",
     )
     actual_finish_date: Mapped[str | None] = mapped_column(
-        String(20),
+        String(40),
         nullable=True,
         doc="ISO date — only set when the entry brings progress to 100%.",
     )

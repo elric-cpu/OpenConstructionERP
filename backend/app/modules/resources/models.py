@@ -135,8 +135,8 @@ class ResourceSkill(Base):
         nullable=False,
     )
     level: Mapped[str] = mapped_column(String(16), nullable=False, default="competent", server_default="competent")
-    acquired_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    expires_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    acquired_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    expires_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         "metadata",
@@ -164,7 +164,7 @@ class Certification(Base):
     cert_type: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     cert_number: Mapped[str | None] = mapped_column(String(128), nullable=True)
     issued_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    issue_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    issue_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     valid_until: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
     document_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="valid", server_default="valid", index=True)

@@ -136,7 +136,7 @@ class ServiceAsset(Base):
     manufacturer: Mapped[str | None] = mapped_column(String(255), nullable=True)
     model: Mapped[str | None] = mapped_column(String(255), nullable=True)
     serial: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    install_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    install_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     warranty_until: Mapped[str | None] = mapped_column(String(20), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active", index=True)
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
@@ -443,7 +443,7 @@ class ServiceSchedule(Base):
         index=True,
     )
     frequency: Mapped[str] = mapped_column(String(20), nullable=False, default="quarterly")
-    next_due_date: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    next_due_date: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     last_completed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     checklist_template_id: Mapped[uuid.UUID | None] = mapped_column(
         GUID(),

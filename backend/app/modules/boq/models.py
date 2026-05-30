@@ -44,8 +44,8 @@ class BOQ(Base):
         index=True,
     )
     approved_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    approved_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    base_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    approved_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    base_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         "metadata",

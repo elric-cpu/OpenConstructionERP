@@ -35,8 +35,8 @@ class Invoice(Base):
     contact_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     invoice_direction: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     invoice_number: Mapped[str] = mapped_column(String(50), nullable=False)
-    invoice_date: Mapped[str] = mapped_column(String(20), nullable=False)
-    due_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    invoice_date: Mapped[str] = mapped_column(String(40), nullable=False)
+    due_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     currency_code: Mapped[str] = mapped_column(String(10), nullable=False, default="")
     # Phase 2e: money columns back to NUMERIC on PG while staying VARCHAR
     # on SQLite for dev-DB compatibility. Python always sees ``Decimal``.
@@ -114,7 +114,7 @@ class Payment(Base):
         nullable=False,
         index=True,
     )
-    payment_date: Mapped[str] = mapped_column(String(20), nullable=False)
+    payment_date: Mapped[str] = mapped_column(String(40), nullable=False)
     amount: Mapped[Decimal] = mapped_column(MoneyType(), nullable=False)
     currency_code: Mapped[str] = mapped_column(String(10), nullable=False, default="")
     exchange_rate_snapshot: Mapped[Decimal] = mapped_column(MoneyType(scale=6), nullable=False, default=Decimal("1"))
@@ -194,7 +194,7 @@ class EVMSnapshot(Base):
         nullable=False,
         index=True,
     )
-    snapshot_date: Mapped[str] = mapped_column(String(20), nullable=False)
+    snapshot_date: Mapped[str] = mapped_column(String(40), nullable=False)
     bac: Mapped[str] = mapped_column(String(50), nullable=False, default="0")
     pv: Mapped[str] = mapped_column(String(50), nullable=False, default="0")
     ev: Mapped[str] = mapped_column(String(50), nullable=False, default="0")
@@ -249,7 +249,7 @@ class LedgerEntry(Base):
     debit_amount: Mapped[Decimal] = mapped_column(MoneyType(), nullable=False, default=Decimal("0"))
     credit_amount: Mapped[Decimal] = mapped_column(MoneyType(), nullable=False, default=Decimal("0"))
     currency_code: Mapped[str] = mapped_column(String(10), nullable=False, default="")
-    posted_at: Mapped[str] = mapped_column(String(30), nullable=False)
+    posted_at: Mapped[str] = mapped_column(String(40), nullable=False)
     source_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     source_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     # Reversal link — non-null when this row reverses a prior entry

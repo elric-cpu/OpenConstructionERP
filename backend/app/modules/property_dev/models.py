@@ -81,9 +81,9 @@ class Development(Base):
     )
     total_floors: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     sales_phase: Mapped[str] = mapped_column(String(40), nullable=False, default="planning", index=True)
-    start_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    launch_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    completion_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    start_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    launch_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    completion_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     marketing_brief: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="active", index=True)
     units: Mapped[str] = mapped_column(String(16), nullable=False, default="metric")
@@ -368,8 +368,8 @@ class Buyer(Base):
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="lead", index=True)
     contract_value: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False, default=Decimal("0"))
     currency: Mapped[str] = mapped_column(String(8), nullable=False, default="")
-    contract_signed_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    deposit_paid_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    contract_signed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    deposit_paid_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     freeze_deadline: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # Deposit accounting — drives forfeiture rules per jurisdiction.
     deposit_amount: Mapped[Decimal] = mapped_column(
@@ -383,7 +383,7 @@ class Buyer(Base):
     )
     # ISO 3166-1 alpha-2 country code — selects forfeiture rules.
     jurisdiction: Mapped[str] = mapped_column(String(8), nullable=False, default="", server_default="")
-    cancelled_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    cancelled_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     cancelled_reason: Mapped[str] = mapped_column(String(500), nullable=False, default="", server_default="")
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         "metadata", JSON, nullable=False, default=dict, server_default="{}"
@@ -408,8 +408,8 @@ class BuyerSelection(Base):
         index=True,
     )
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="draft", index=True)
-    submitted_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    locked_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    submitted_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    locked_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     total_options_value: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False, default=Decimal("0"))
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
@@ -463,11 +463,11 @@ class Handover(Base):
         ForeignKey("oe_property_dev_plot.id", ondelete="CASCADE"),
         nullable=False,
     )
-    scheduled_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    completed_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    scheduled_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    completed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     snag_count_at_handover: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     final_check_passed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    keys_handed_over_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    keys_handed_over_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     customer_signature_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
@@ -554,8 +554,8 @@ class Snag(Base):
     severity: Mapped[str] = mapped_column(String(20), nullable=False, default="minor", index=True)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="open", index=True)
-    reported_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    fixed_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    reported_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    fixed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     fix_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Estimated repair cost. Decimal so rollups stay exact.
     cost_impact: Mapped[Decimal] = mapped_column(
@@ -637,7 +637,7 @@ class WarrantyClaim(Base):
     # No FK on oe_users_user (cross-module ref kept loose; matches the
     # rest of property_dev's external-ref convention).
     assigned_to_user_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True, index=True)
-    raised_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    raised_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     category: Mapped[str] = mapped_column(String(40), nullable=False, default="defect", index=True)
     # NOTE: severity mirrors Snag.severity (minor/major/critical) — used
     # for SLA escalation in the UI.
@@ -657,8 +657,8 @@ class WarrantyClaim(Base):
     )
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="raised", index=True)
     sla_deadline: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    accepted_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    closed_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    accepted_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    closed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     resolution_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Cross-module ref to oe_service_ticket.id — plain UUID, NO FK.
     linked_service_ticket_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
@@ -790,7 +790,7 @@ class Reservation(Base):
     cooling_off_until: Mapped[str | None] = mapped_column(  # ISO date
         String(20), nullable=True
     )
-    expires_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    expires_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="active", index=True)
     # Pricing-engine snapshot captured at the moment this reservation was
     # created — the canonical audit record of "why did this deal close at
@@ -840,7 +840,7 @@ class SalesContract(Base):
         nullable=True,
     )
     tenant_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True, index=True)
-    signing_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    signing_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     # ISO 3166-2 region code (e.g. "DE-BE", "GB-ENG"). Optional —
     # falls back to the development's jurisdiction at write time.
     governing_law: Mapped[str] = mapped_column(String(16), nullable=False, default="")
@@ -967,7 +967,7 @@ class Instalment(Base):
     # ``due`` (e.g. ``reservation`` | ``spa_signed`` | ``foundation_complete``
     # | ``structure_complete`` | ``handover``).
     milestone_event: Mapped[str] = mapped_column(String(80), nullable=False, default="", index=True)
-    due_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    due_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False, default=Decimal("0"))
     amount_paid: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False, default=Decimal("0"))
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -1255,8 +1255,8 @@ class EscrowAccount(Base):
     iban: Mapped[str] = mapped_column(String(40), nullable=False, default="")
     swift_bic: Mapped[str] = mapped_column(String(16), nullable=False, default="")
     currency: Mapped[str] = mapped_column(String(8), nullable=False, default="")
-    opened_at: Mapped[str] = mapped_column(String(20), nullable=False, default="")
-    closed_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    opened_at: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    closed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         "metadata", JSON, nullable=False, default=dict, server_default="{}"
@@ -1285,7 +1285,7 @@ class EscrowTransaction(Base):
     source_instalment_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True, index=True)
     source_reference: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     bank_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    transaction_date: Mapped[str] = mapped_column(String(20), nullable=False, default="", index=True)
+    transaction_date: Mapped[str] = mapped_column(String(40), nullable=False, default="", index=True)
     reconciliation_state: Mapped[str] = mapped_column(String(20), nullable=False, default="unreconciled", index=True)
     reconciled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reconciled_by_user_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)

@@ -26,7 +26,7 @@ class KPISnapshot(Base):
     __table_args__ = (UniqueConstraint("project_id", "snapshot_date", name="uq_kpi_project_date"),)
 
     project_id: Mapped[uuid.UUID] = mapped_column(GUID(), nullable=False, index=True)
-    snapshot_date: Mapped[str] = mapped_column(String(20), nullable=False)  # ISO date
+    snapshot_date: Mapped[str] = mapped_column(String(40), nullable=False)  # ISO date
 
     # Earned Value indicators
     cpi: Mapped[str | None] = mapped_column(String(20), nullable=True, default=None)
@@ -188,7 +188,7 @@ class GeneratedReport(Base):
     )
     report_type: Mapped[str] = mapped_column(String(50), nullable=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
-    generated_at: Mapped[str] = mapped_column(String(20), nullable=False)
+    generated_at: Mapped[str] = mapped_column(String(40), nullable=False)
     generated_by: Mapped[uuid.UUID | None] = mapped_column(
         GUID(),
         nullable=True,

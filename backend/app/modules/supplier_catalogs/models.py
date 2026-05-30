@@ -251,7 +251,7 @@ class CatalogEntry(Base):
         default=Decimal("1"),
     )
     lead_time_days: Mapped[int] = mapped_column(Integer, nullable=False, default=7)
-    last_purchased_at: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    last_purchased_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     price_list: Mapped[PriceList] = relationship(back_populates="entries")
@@ -268,7 +268,7 @@ class PurchaseRequisition(Base):
     number: Mapped[str] = mapped_column(String(50), nullable=False, unique=True, index=True)
     project_id: Mapped[uuid.UUID] = mapped_column(GUID(), nullable=False, index=True)
     requested_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    requested_at: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    requested_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     needed_by: Mapped[str | None] = mapped_column(String(20), nullable=True)
     status: Mapped[str] = mapped_column(
         String(32),
@@ -364,7 +364,7 @@ class SupplierPurchaseOrder(Base):
         default="draft",
         index=True,
     )
-    order_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    order_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     expected_delivery: Mapped[str | None] = mapped_column(String(20), nullable=True)
     currency: Mapped[str] = mapped_column(String(10), nullable=False, default="EUR")
     subtotal: Mapped[Decimal] = mapped_column(
@@ -457,7 +457,7 @@ class SupplierGoodsReceipt(Base):
         nullable=False,
         index=True,
     )
-    received_at: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    received_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     received_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
     status: Mapped[str] = mapped_column(
         String(32),
@@ -545,8 +545,8 @@ class VendorInvoice(Base):
         nullable=True,
         index=True,
     )
-    invoice_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    due_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    invoice_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    due_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     currency: Mapped[str] = mapped_column(String(10), nullable=False, default="EUR")
     subtotal: Mapped[Decimal] = mapped_column(
         Numeric(18, 2),
@@ -666,7 +666,7 @@ class ThreeWayMatchRecord(Base):
         nullable=True,
         index=True,
     )
-    matched_at: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    matched_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     matched_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
     price_variance: Mapped[Decimal] = mapped_column(
         Numeric(18, 4),
@@ -754,7 +754,7 @@ class StockBalance(Base):
         nullable=False,
         default=Decimal("0"),
     )
-    last_movement_at: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    last_movement_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
 
 class StockMovement(Base):
@@ -794,7 +794,7 @@ class StockMovement(Base):
     batch_lot: Mapped[str | None] = mapped_column(String(100), nullable=True)
     project_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True, index=True)
     performed_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    performed_at: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    performed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     extra: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         "metadata",

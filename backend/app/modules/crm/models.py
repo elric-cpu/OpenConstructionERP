@@ -211,7 +211,7 @@ class Opportunity(Base):
         Numeric(18, 2), nullable=False, default=Decimal("0"), server_default="0"
     )
     currency: Mapped[str] = mapped_column(String(8), nullable=False, default="", server_default="")
-    expected_close_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    expected_close_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     probability_percent: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     stage_id: Mapped[uuid.UUID] = mapped_column(
         GUID(),

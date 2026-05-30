@@ -38,13 +38,13 @@ class RFI(Base):
     ball_in_court: Mapped[str | None] = mapped_column(GUID(), nullable=True)
     official_response: Mapped[str | None] = mapped_column(Text, nullable=True)
     responded_by: Mapped[str | None] = mapped_column(GUID(), nullable=True)
-    responded_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    responded_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     cost_impact: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     cost_impact_value: Mapped[str | None] = mapped_column(String(50), nullable=True)
     schedule_impact: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     schedule_impact_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     date_required: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    response_due_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    response_due_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     # Priority: low | normal | high | critical (validated by the Pydantic
     # schema; free-form on the DB side so future values can land without

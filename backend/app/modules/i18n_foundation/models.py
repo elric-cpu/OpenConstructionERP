@@ -26,7 +26,7 @@ class ExchangeRate(Base):
     from_currency: Mapped[str] = mapped_column(String(10), index=True, nullable=False)
     to_currency: Mapped[str] = mapped_column(String(10), index=True, nullable=False)
     rate: Mapped[str] = mapped_column(String(50), nullable=False)  # Decimal as string for SQLite compat
-    rate_date: Mapped[str] = mapped_column(String(20), nullable=False)  # ISO date string, e.g. "2026-04-07"
+    rate_date: Mapped[str] = mapped_column(String(40), nullable=False)  # ISO date string, e.g. "2026-04-07"
     source: Mapped[str] = mapped_column(String(50), nullable=False, default="manual")  # manual / ecb / custom
     is_manual: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]

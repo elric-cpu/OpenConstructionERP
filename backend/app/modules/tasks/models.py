@@ -60,7 +60,7 @@ class Task(Base):
         server_default="[]",
     )
 
-    due_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    due_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     milestone_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     meeting_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="draft", index=True)

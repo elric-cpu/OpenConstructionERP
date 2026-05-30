@@ -104,10 +104,10 @@ class Project(Base):
         JSON, nullable=True
     )
     contract_value: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    planned_start_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    planned_end_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    actual_start_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    actual_end_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    planned_start_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    planned_end_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    actual_start_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    actual_end_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     budget_estimate: Mapped[str | None] = mapped_column(String(50), nullable=True)
     contingency_pct: Mapped[str | None] = mapped_column(String(10), nullable=True)
     custom_fields: Mapped[dict | None] = mapped_column(  # type: ignore[assignment]
@@ -275,8 +275,8 @@ class ProjectMilestone(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     milestone_type: Mapped[str] = mapped_column(String(50), nullable=False, default="general")
-    planned_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    actual_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    planned_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    actual_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending")
     linked_payment_pct: Mapped[str | None] = mapped_column(String(10), nullable=True)
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]

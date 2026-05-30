@@ -43,7 +43,7 @@ class Notice(Base):
     raised_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
     recipient_type: Mapped[str] = mapped_column(String(40), nullable=False, default="owner")
     recipient_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
-    target_response_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    target_response_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     response_received_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     response_summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="issued", index=True)
@@ -214,8 +214,8 @@ class VariationScheduleImpact(Base):
     )
     # Free-text reference: a Task id or activity name. No FK to oe_tasks_task.
     affected_activity_ref: Mapped[str] = mapped_column(String(255), nullable=False, default="")
-    original_finish_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    revised_finish_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    original_finish_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    revised_finish_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     days_added: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_critical_path: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     justification: Mapped[str] = mapped_column(Text, nullable=False, default="")
@@ -288,7 +288,7 @@ class DayworkSheet(Base):
         index=True,
     )
     sheet_number: Mapped[str] = mapped_column(String(50), nullable=False)
-    work_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    work_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     subtotal_amount: Mapped[Decimal] = mapped_column(
         MoneyType(), nullable=False, default=Decimal("0"), server_default="0"

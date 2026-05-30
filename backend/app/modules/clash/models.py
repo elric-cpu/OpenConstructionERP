@@ -243,7 +243,7 @@ class ClashResult(Base):
     # ISO-8601 date ("YYYY-MM-DD") the clash is due to be resolved by.
     # Stored as a string to match this codebase's nullable-date column
     # convention (e.g. finance.Invoice.due_date). NULL = no deadline.
-    due_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    due_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     # Threaded triage discussion. JSON list of
     # ``{"author": str, "author_id": str|null, "ts": ISO8601, "text": str}``
     # newest-prepended on carry-forward. Empty list on legacy rows.

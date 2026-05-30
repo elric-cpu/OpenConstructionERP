@@ -28,8 +28,8 @@ class Transmittal(Base):
     subject: Mapped[str] = mapped_column(String(500), nullable=False)
     sender_org_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
     purpose_code: Mapped[str] = mapped_column(String(50), nullable=False)
-    issued_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    response_due_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    issued_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    response_due_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     status: Mapped[str] = mapped_column(
         String(50),
         nullable=False,

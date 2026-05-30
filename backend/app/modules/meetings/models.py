@@ -39,7 +39,7 @@ class Meeting(Base):
     meeting_number: Mapped[str] = mapped_column(String(20), nullable=False)
     meeting_type: Mapped[str] = mapped_column(String(50), nullable=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
-    meeting_date: Mapped[str] = mapped_column(String(20), nullable=False)
+    meeting_date: Mapped[str] = mapped_column(String(40), nullable=False)
     location: Mapped[str | None] = mapped_column(String(500), nullable=True)
     chairperson_id: Mapped[str | None] = mapped_column(GUID(), nullable=True)
 

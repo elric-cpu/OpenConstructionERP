@@ -69,7 +69,7 @@ class ApprovalRequest(Base):
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending", index=True)
     requested_by: Mapped[uuid.UUID] = mapped_column(GUID(), nullable=False, index=True)
     decided_by: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
-    decided_at: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    decided_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     decision_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         "metadata",

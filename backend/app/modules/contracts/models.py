@@ -67,8 +67,8 @@ class Contract(Base):
         ForeignKey("oe_contracts_contract.id", ondelete="SET NULL"),
         nullable=True,
     )
-    start_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    end_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    start_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    end_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     total_value: Mapped[Decimal] = mapped_column(
         Numeric(18, 4),
         nullable=False,
@@ -339,7 +339,7 @@ class ProgressClaim(Base):
     claim_number: Mapped[str] = mapped_column(String(40), nullable=False, default="")
     period_start: Mapped[str | None] = mapped_column(String(20), nullable=True)
     period_end: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    claim_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    claim_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     gross_amount: Mapped[Decimal] = mapped_column(
         Numeric(18, 4),
         nullable=False,
@@ -461,7 +461,7 @@ class FinalAccount(Base):
         nullable=False,
         default=Decimal("0"),
     )
-    sign_off_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    sign_off_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     sign_off_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
     status: Mapped[str] = mapped_column(
         String(40),

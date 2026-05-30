@@ -70,7 +70,7 @@ class DiaryEntry(Base):
     # Plain ISO ``YYYY-MM-DD`` string — matches the legacy ``daily_diary``
     # convention and avoids a timezone trap when site clocks roll over at
     # local midnight while the server is on UTC.
-    entry_date: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    entry_date: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     weather: Mapped[str | None] = mapped_column(String(64), nullable=True)
     temperature_c: Mapped[float | None] = mapped_column(Numeric(6, 2), nullable=True)
     headcount: Mapped[int] = mapped_column(
