@@ -1,6 +1,6 @@
 [project]
 name = "openconstructionerp"
-version = "5.9.1"
+version = "5.9.2"
 description = "Open-source construction cost estimation — multi-currency BOQ, AI vector matching, CAD/BIM takeoff without IfcOpenShell, resource-based cost DB import with example templates, 48 regional catalogues, 24 languages. AGPL-3.0. After install, run: openconstructionerp"
 license = "AGPL-3.0-or-later"
 requires-python = ">=3.12"
@@ -12,10 +12,20 @@ maintainers = [
 ]
 readme = "README.md"
 keywords = [
-    "construction", "cost-estimation", "boq", "bill-of-quantities",
-    "quantity-surveying", "erp", "bim", "cad", "revit", "ifc",
-    "din276", "nrm", "masterformat", "gaeb", "cwicr",
-    "fastapi", "react", "open-source",
+    "openconstructionerp",
+    "construction",
+    "construction-management",
+    "ERP",
+    "estimation",
+    "cost-estimation",
+    "boq",
+    "gaeb",
+    "din276",
+    "cwicr",
+    "bim",
+    "ifc",
+    "takeoff",
+    "dxf",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -31,67 +41,33 @@ classifiers = [
 ]
 
 dependencies = [
-    # Web framework
-    # FastAPI 0.115.0-0.115.7 had a regression where @router.delete(status_code=204)
-    # routes with `-> None` annotation fail with AssertionError "Status code 204 must
-    # not have a response body". Floor at 0.116 forces the fix. Affected installs on
-    # 4.5.0 wheel could not start at all (issue #157).
     "fastapi>=0.116.0,<1",
     "uvicorn[standard]>=0.32.0,<1",
-    "python-multipart>=0.0.26",  # CVE-2026-40347: request smuggling via malformed multipart
-    # Database (SQLite — works out of the box, no external DB needed)
+    "python-multipart>=0.0.26",
     "sqlalchemy[asyncio]>=2.0.36,<2.1",
     "aiosqlite>=0.20.0",
     "alembic>=1.14.0,<2",
-    # Validation & serialization
     "pydantic>=2.10.0,<3",
     "pydantic-settings>=2.6.0,<3",
     "email-validator>=2.1.0",
-    # Auth
     "python-jose[cryptography]>=3.3.0",
     "bcrypt>=4.0.0",
-    # Export & Import
     "openpyxl>=3.1.0",
     "reportlab>=4.0.0",
     "pdfplumber>=0.11.0",
-    # Utilities
     "httpx>=0.28.0,<1",
     "orjson>=3.10.0",
     "python-dateutil>=2.9.0",
     "structlog>=24.4.0",
-    # YAML for data-driven match-service config (region_groups, region_language).
-    # Falls back to hardcoded constants when missing, but adding it to base so
-    # operators can extend without a manual pip install.
     "pyyaml>=6.0",
-    # Hardened XML parsing for all user-supplied inputs (XER/MSP schedules,
-    # IDS rule packs, Collada geometry, ECB FX feed). defusedxml disables
-    # XXE / billion-laughs / DTD-remote-fetch classes of attacks by default.
     "defusedxml>=0.7.1",
-    # Tabular data — needed by the CWICR cost-database loader and the
-    # BIM Excel parser, both of which are core onboarding paths. Used to
-    # be optional via the `[vector]` extra; promoted to base in v1.3.13
-    # after a fresh-install bug where load-cwicr returned HTTP 500 with
-    # "ModuleNotFoundError: No module named 'pandas'" on the headline
-    # quickstart command. pyarrow is the parquet engine pandas needs.
     "pandas>=2.2.0,<4",
     "pyarrow>=18.0.0,<25",
-    # 3D geometry — DAE->GLB conversion for 8.8x faster BIM viewer loading.
-    # Degrades gracefully: if missing, the viewer falls back to raw DAE.
     "trimesh>=4.0.0",
-    # DWG/DXF parsing for 2D takeoff viewer
     "ezdxf>=0.18.0",
-    # Analytical queries on snapshot Parquet files (dashboards layer).
-    # Promoted to base in v2.5.0 — the dashboard layer treats DuckDB as
-    # load-bearing for filter / aggregation / FTS endpoints. Previously
-    # lived in [analytics] as optional; fallback path through pure-pyarrow
-    # still exists for row-level reads but isn't sufficient for the
-    # dashboard workflow.
     "duckdb>=1.2.0,<2",
-    # Fuzzy autocomplete for attribute-value suggestions (T03). Small
-    # wheel, no deps; much faster than pure-Python ratio loops.
     "rapidfuzz>=3.0.0",
 ]
-
 [project.scripts]
 openestimate = "app.cli:main"
 openconstructionerp = "app.cli:main"

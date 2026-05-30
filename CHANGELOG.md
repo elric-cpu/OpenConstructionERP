@@ -5,6 +5,34 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.9.2] - 2026-05-30
+
+### Added
+
+- **PostgreSQL scale foundation** - generic JSON columns now emit `JSONB`
+  on PostgreSQL (GIN-indexable, fast containment queries); SQLite is
+  unchanged. PostgreSQL is fully optional - the default zero-dependency
+  SQLite path (`pip install openconstructionerp` and one command, no
+  Docker) is untouched.
+- **Automatic performance indexes on PostgreSQL** - foreign-key btree
+  indexes, composite `(project_id, created_at)` and `(project_id, status)`
+  indexes, and GIN indexes on path-queried JSON columns, emitted at
+  schema creation.
+- **SQLite-to-PostgreSQL migration script**
+  (`backend/app/scripts/migrate_sqlite_to_postgres.py`) - streams every
+  table, resets sequences, with `--truncate` / `--dry-run` / `--only`.
+
+### Changed
+
+- **Connection pooling hardening** - `pool_pre_ping` and `pool_recycle`
+  on PostgreSQL; configurable pool size and overflow on both backends.
+- **CWICR cost-database bulk import** is now PostgreSQL-safe
+  (`INSERT ... ON CONFLICT DO NOTHING`), with the fast raw-SQLite path
+  retained.
+- **Packaging** - removed stale "openestimate" branding from the
+  PyPI-facing metadata (keywords) so the project page reads as
+  OpenConstructionERP throughout.
+
 ## [5.9.1] - 2026-05-30
 
 **Stability and correctness hardening, plus sharper flags and partner logos.**

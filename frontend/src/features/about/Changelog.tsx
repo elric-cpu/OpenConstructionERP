@@ -29,6 +29,7 @@ interface ChangelogEntry {
 // Sorted newest → oldest. Sort is enforced at runtime below (semver-aware) so
 // out-of-order entries here still display correctly.
 const CHANGELOG: ChangelogEntry[] = [
+  { version: '5.9.2', date: '2026-05-30', tag: 'NEW',       summary: 'PostgreSQL scale foundation (opt-in) - JSON columns emit JSONB, automatic FK/composite/GIN performance indexes, connection-pool hardening, PostgreSQL-safe CWICR import, and a SQLite-to-PostgreSQL migration script. Default SQLite single-command install is unchanged. PyPI metadata de-branded' },
   // ── v5.x — second stable major ───────────────────────────────────────────
   { version: '5.5.1', date: '2026-05-28', tag: 'FIX',       summary: 'README CLI-name patch — re-ships the 5.5.0 wheel so the PyPI long-description shows openconstructionerp instead of the legacy openestimate command in the quickstart and doctor hints. No runtime changes' },
   { version: '5.5.0', date: '2026-05-28', tag: 'NEW',       summary: 'Stability wave (last stable 5.x) — 8 user-reported bug fixes (/takeoff PDF worker + 403, /dwg-takeoff load, BIM walk + Section Box, /bim/federations 3D, CAD/BIM Data Explorer RVT, /projects maps), session-reset fix (JWT persistence), JA locale to 98.5% (1,627 keys), i18n high-impact pass on 26 locales, news related-articles widget on 15 article pages, PR #164 team-member access merged, 9/9 PASS browser verification' },
