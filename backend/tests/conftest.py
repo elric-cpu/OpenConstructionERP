@@ -22,6 +22,19 @@ import os
 import tempfile
 from pathlib import Path
 
+# ── Windows asyncpg event-loop policy ──────────────────────────────────────
+# On Windows the default ProactorEventLoop leaves asyncpg socket transports to
+# be finalized by the GC after the per-test loop has closed, surfacing as a
+# noisy "RuntimeError: Event loop is closed" at teardown. The SelectorEventLoop
+# policy (the default on Linux/macOS) closes them deterministically. Harmless
+# for the aiosqlite lane. Must run before any event loop is created.
+import sys as _sys  # noqa: E402
+
+if _sys.platform == "win32":
+    import asyncio as _asyncio
+
+    _asyncio.set_event_loop_policy(_asyncio.WindowsSelectorEventLoopPolicy())
+
 # ── Per-session SQLite isolation (must run before app imports) ─────────────
 _TMP_DIR = Path(tempfile.mkdtemp(prefix="oe-tests-"))
 _TMP_DB = _TMP_DIR / "session.db"
