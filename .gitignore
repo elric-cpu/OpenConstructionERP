@@ -137,6 +137,8 @@ test-screenshots/
 *.png
 *.jpeg
 *.jpg
+# Desktop (Tauri) app icons are real source, not dev screenshots
+!desktop/src-tauri/icons/**/*.png
 !frontend/public/favicon.png
 !frontend/public/logo.png
 !docs/screenshots/*.png

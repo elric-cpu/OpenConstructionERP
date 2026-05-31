@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicegui/nicegui/main/nicegui/templates/tauri-schema.json",
   "productName": "OpenEstimator ERP",
-  "version": "0.1.0",
+  "version": "6.2.0",
   "identifier": "io.openestimator.desktop",
   "build": {
     "frontendDist": "../../frontend/dist",
@@ -62,12 +62,6 @@
     }
   },
   "plugins": {
-    "updater": {
-      "endpoints": [
-        "https://releases.openestimate.io/{{target}}/{{arch}}/{{current_version}}"
-      ],
-      "pubkey": ""
-    },
     "shell": {
       "open": true
     }
