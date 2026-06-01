@@ -15,7 +15,7 @@ MANIFEST = PartnerPackManifest(
     pack_version="0.2.0",
     description=(
         "Pre-configured for modular construction, off-site fabrication and "
-        "PMC contractors — factory-line scheduling, dimensional tolerance "
+        "PMC contractors: factory-line scheduling, dimensional tolerance "
         "control, transport logistics (EU + US), inter-module assembly and "
         "phased handover. Standards: EN 1090, ICC/MBI 1200 + 1205, CSA A277, "
         "NEN 9090, AS 5104 / ISO 2394 reliability targets, ISO 19650 BIM, "

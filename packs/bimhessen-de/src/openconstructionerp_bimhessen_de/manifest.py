@@ -24,7 +24,7 @@ MANIFEST = PartnerPackManifest(
     partner_url="https://bimhessen.de",
     pack_version="0.2.0",
     description=(
-        "Vorkonfiguriert für deutsche BIM-Beratungs- und Ingenieurbüros — "
+        "Vorkonfiguriert für deutsche BIM-Beratungs- und Ingenieurbüros: "
         "DIN 276, GAEB X83/X84/X86, VOB/A+B+C, ISO 19650 CDE, BKI Benchmarks, "
         "HOAI 2021 Leistungsphasen und LV-Qualitätsregeln."
     ),

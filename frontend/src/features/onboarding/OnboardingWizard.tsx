@@ -32,6 +32,9 @@ import {
   XCircle,
   MinusCircle,
   AlertTriangle,
+  HardHat,
+  Briefcase,
+  Box,
   type LucideIcon,
 } from 'lucide-react';
 import { Logo, Button, CountryFlag, Badge } from '@/shared/ui';
@@ -42,7 +45,7 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { useModuleStore } from '@/stores/useModuleStore';
 import { useViewModeStore } from '@/stores/useViewModeStore';
 import { aiApi, type AIProvider } from '@/features/ai/api';
-import { apiPost, extractErrorMessageFromBody } from '@/shared/lib/api';
+import { apiGet, apiPost, extractErrorMessageFromBody } from '@/shared/lib/api';
 import {
   ALL_MODULES,
   MODULE_GROUPS,
@@ -200,110 +203,75 @@ const AI_PROVIDERS: ProviderOption[] = [
 ];
 
 // ── Company Type Presets ────────────────────────────────────────────────────
+// The profile catalogue lives in the backend as the single source of truth
+// (``backend/app/core/onboarding_presets.py``, served by
+// ``GET /v1/users/onboarding-presets/``). The Modules page reads the same
+// endpoint, so onboarding and /modules can never drift. Each preset's module
+// keys match the ``ALL_MODULES`` catalogue in ./modules and the sidebar's
+// ``ROUTE_MODULE_KEY``, which is what lets a profile actually shape the menu.
 
-type CompanyTypeKey =
-  | 'general_contractor'
-  | 'estimator'
-  | 'project_management'
-  | 'architecture_engineering'
-  | 'property_developer'
-  | 'full_enterprise';
-
-interface CompanyPreset {
-  key: CompanyTypeKey;
-  labelKey: string;
-  descriptionKey: string;
-  icon: LucideIcon;
-  enabledModules: string[];
+interface ApiCompanyPreset {
+  key: string;
+  label: string;
+  description: string;
+  icon: string;
   tags: string[];
-  popular?: boolean;
+  enabled_modules: string[];
+  module_count: number;
 }
 
-const COMPANY_PRESETS: CompanyPreset[] = [
-  {
-    key: 'general_contractor',
-    labelKey: 'onboarding.company_general_contractor',
-    descriptionKey: 'onboarding.company_general_contractor_desc',
-    icon: Building2,
-    popular: true,
-    tags: ['BOQ', 'Finance', 'Safety', 'HSE'],
-    enabledModules: [
-      'boq', 'costs', 'assemblies', 'catalog', 'validation',
-      'schedule', 'schedule_advanced', 'tasks',
-      'finance', 'procurement', 'changeorders', 'contracts', 'variations',
-      'safety', 'hse_advanced', 'inspections', 'punchlist', 'ncr', 'qms',
-      'fieldreports', 'daily_diary', 'subcontractors', 'equipment',
-      'meetings', 'documents', 'markups',
-      'risk', 'reporting', 'requirements',
-    ],
-  },
-  {
-    key: 'estimator',
-    labelKey: 'onboarding.company_estimator',
-    descriptionKey: 'onboarding.company_estimator_desc',
-    icon: Calculator,
-    tags: ['BOQ', 'Costs', 'Takeoff', 'AI'],
-    enabledModules: [
-      'boq', 'costs', 'assemblies', 'catalog', 'validation',
-      'cost_match', 'match', 'match_elements',
-      'takeoff', 'dwg_takeoff', 'cad',
-      'ai', 'erp_chat',
-      'tendering', 'bid_management', 'supplier_catalogs',
-      'reporting', 'documents',
-    ],
-  },
-  {
-    key: 'project_management',
-    labelKey: 'onboarding.company_project_management',
-    descriptionKey: 'onboarding.company_project_management_desc',
-    icon: ClipboardList,
-    tags: ['Schedule', 'Tasks', 'CDE', 'RFI'],
-    enabledModules: [
-      'schedule', 'schedule_advanced', 'tasks', 'meetings',
-      'finance', 'procurement', 'changeorders', 'contracts', 'variations',
-      'documents', 'cde', 'transmittals', 'rfi', 'submittals', 'correspondence',
-      'risk', 'reporting', 'markups', 'fieldreports', 'daily_diary',
-      'requirements', 'inspections', 'eac', 'costmodel',
-    ],
-  },
-  {
-    key: 'architecture_engineering',
-    labelKey: 'onboarding.company_architecture',
-    descriptionKey: 'onboarding.company_architecture_desc',
-    icon: Pencil,
-    tags: ['BIM', 'CDE', 'Documents'],
-    enabledModules: [
-      'documents', 'cde', 'opencde_api',
-      'bim_hub', 'bim_requirements', 'match_elements',
-      'transmittals', 'rfi', 'submittals', 'correspondence',
-      'takeoff', 'dwg_takeoff', 'cad',
-      'boq', 'costs',
-      'markups', 'validation', 'requirements', 'carbon', 'reporting',
-    ],
-  },
-  {
-    key: 'property_developer',
-    labelKey: 'onboarding.company_property_developer',
-    descriptionKey: 'onboarding.company_property_developer_desc',
-    icon: Home,
-    tags: ['Property', 'Finance', 'Carbon'],
-    enabledModules: [
-      'property_dev', 'finance', 'carbon',
-      'tendering', 'bid_management', 'contracts',
-      'documents', 'schedule', 'costs', 'boq',
-      'validation', 'reporting', 'crm', 'portal',
-      'requirements', 'meetings',
-    ],
-  },
+const PRESET_ICON_MAP: Record<string, LucideIcon> = {
+  Building2, Calculator, ClipboardList, Pencil, Home, Boxes, HardHat, Briefcase, Box,
+};
+
+function presetIcon(name: string): LucideIcon {
+  return PRESET_ICON_MAP[name] ?? Boxes;
+}
+
+/** Localised label/description for a preset, falling back to the backend's
+ *  English copy when a locale string is not present. */
+function usePresetText() {
+  const { t } = useTranslation();
+  return {
+    label: (p: ApiCompanyPreset) =>
+      t(`onboarding.company_${p.key}`, { defaultValue: p.label }),
+    description: (p: ApiCompanyPreset) =>
+      t(`onboarding.company_${p.key}_desc`, { defaultValue: p.description }),
+  };
+}
+
+// Minimal fallback used only if the presets endpoint is unreachable. The SPA is
+// served by the same backend, so in practice the fetch always succeeds and the
+// live nine profiles are shown.
+const FALLBACK_PRESETS: ApiCompanyPreset[] = [
   {
     key: 'full_enterprise',
-    labelKey: 'onboarding.company_full_enterprise',
-    descriptionKey: 'onboarding.company_full_enterprise_desc',
-    icon: Boxes,
+    label: 'Full Enterprise',
+    description: 'Every module across the full construction lifecycle.',
+    icon: 'Boxes',
     tags: [],
-    enabledModules: [], // special case: all modules
+    enabled_modules: ALL_MODULES.filter((m) => !m.core).map((m) => m.key),
+    module_count: ALL_MODULES.filter((m) => !m.core).length,
   },
 ];
+
+/** Fetch the company-type presets (shares the Modules-page query cache). */
+function useOnboardingPresets(): ApiCompanyPreset[] {
+  const { data } = useQuery({
+    queryKey: ['onboarding-presets'],
+    queryFn: () => apiGet<ApiCompanyPreset[]>('/v1/users/onboarding-presets/'),
+    staleTime: 5 * 60 * 1000,
+  });
+  return data && data.length > 0 ? data : FALLBACK_PRESETS;
+}
+
+/** The module keys a preset enables (full_enterprise = every non-core module). */
+function presetModuleSet(preset: ApiCompanyPreset): Set<string> {
+  if (preset.key === 'full_enterprise') {
+    return new Set(ALL_MODULES.filter((m) => !m.core).map((m) => m.key));
+  }
+  return new Set(preset.enabled_modules);
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -707,20 +675,23 @@ function StepStartChoice({
 function StepCompanyProfile({
   onNext,
   onBack,
+  presets,
   selectedType,
   onSelectType,
   onConfigureIndividually,
 }: {
   onNext: () => void;
   onBack: () => void;
-  selectedType: CompanyTypeKey | null;
-  onSelectType: (key: CompanyTypeKey) => void;
+  presets: ApiCompanyPreset[];
+  selectedType: string | null;
+  onSelectType: (key: string) => void;
   onConfigureIndividually: () => void;
 }) {
   const { t } = useTranslation();
+  const text = usePresetText();
 
   const handleSelect = useCallback(
-    (key: CompanyTypeKey) => {
+    (key: string) => {
       onSelectType(key);
     },
     [onSelectType],
@@ -739,10 +710,10 @@ function StepCompanyProfile({
 
       {/* Profile cards: 2 column grid on desktop, 1 on mobile */}
       <div className="mt-6 w-full max-w-2xl grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {COMPANY_PRESETS.filter((p) => p.key !== 'full_enterprise').map((preset) => {
+        {presets.filter((p) => p.key !== 'full_enterprise').map((preset) => {
           const isSelected = selectedType === preset.key;
-          const Icon = preset.icon;
-          const moduleCount = preset.enabledModules.length;
+          const Icon = presetIcon(preset.icon);
+          const moduleCount = preset.module_count;
           const visibleTags = preset.tags.slice(0, 3);
           const extraCount = moduleCount - visibleTags.length;
 
@@ -769,7 +740,7 @@ function StepCompanyProfile({
                 >
                   <Icon size={20} />
                 </div>
-                {preset.popular && (
+                {preset.key === 'general_contractor' && (
                   <Badge variant="blue" size="sm">
                     {t('onboarding.popular', { defaultValue: 'Popular' })}
                   </Badge>
@@ -785,10 +756,10 @@ function StepCompanyProfile({
                   isSelected ? 'text-oe-blue' : 'text-content-primary',
                 )}
               >
-                {t(preset.labelKey, { defaultValue: preset.key })}
+                {text.label(preset)}
               </h3>
               <p className="mt-1 text-sm text-content-secondary leading-snug">
-                {t(preset.descriptionKey, { defaultValue: '' })}
+                {text.description(preset)}
               </p>
 
               {/* Module tags */}
@@ -814,10 +785,10 @@ function StepCompanyProfile({
 
       {/* Full Enterprise — wide card */}
       {(() => {
-        const enterprise = COMPANY_PRESETS.find((p) => p.key === 'full_enterprise');
+        const enterprise = presets.find((p) => p.key === 'full_enterprise');
         if (!enterprise) return null;
         const isSelected = selectedType === 'full_enterprise';
-        const Icon = enterprise.icon;
+        const Icon = presetIcon(enterprise.icon);
 
         return (
           <button
@@ -848,14 +819,12 @@ function StepCompanyProfile({
                     isSelected ? 'text-oe-blue' : 'text-content-primary',
                   )}
                 >
-                  {t(enterprise.labelKey, { defaultValue: 'Full Enterprise' })}
+                  {text.label(enterprise)}
                 </h3>
                 {isSelected && <CheckCircle2 size={16} className="text-oe-blue" />}
               </div>
               <p className="mt-0.5 text-sm text-content-secondary">
-                {t(enterprise.descriptionKey, {
-                  defaultValue: 'Complete construction lifecycle -- everything enabled',
-                })}
+                {text.description(enterprise)}
               </p>
             </div>
             <span
@@ -2587,20 +2556,24 @@ function StepFinish({
   onBack,
   companyType,
   enabledModules,
+  presets,
 }: {
   onBack: () => void;
-  companyType: CompanyTypeKey | null;
+  companyType: string | null;
   enabledModules: Set<string>;
+  presets: ApiCompanyPreset[];
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const setModuleEnabled = useModuleStore((s) => s.setModuleEnabled);
   const setViewMode = useViewModeStore((s) => s.setMode);
+  const text = usePresetText();
   const [saving, setSaving] = useState(false);
 
-  const presetLabel = companyType
-    ? COMPANY_PRESETS.find((p) => p.key === companyType)?.labelKey
-    : null;
+  const selectedPreset = companyType
+    ? presets.find((p) => p.key === companyType)
+    : undefined;
+  const presetLabel = selectedPreset ? text.label(selectedPreset) : null;
 
   const enabledCount = enabledModules.size + CORE_MODULE_KEYS.size;
 
@@ -2665,7 +2638,7 @@ function StepFinish({
         {companyType && presetLabel && (
           <>
             <span className="font-semibold">
-              {t(presetLabel, { defaultValue: companyType })}
+              {presetLabel}
             </span>
             <span className="text-content-tertiary">|</span>
           </>
@@ -2729,7 +2702,8 @@ export function OnboardingWizard() {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [selectedLang, setSelectedLang] = useState(() => i18n.language?.split('-')[0] || 'en');
-  const [companyType, setCompanyType] = useState<CompanyTypeKey | null>(null);
+  const presets = useOnboardingPresets();
+  const [companyType, setCompanyType] = useState<string | null>(null);
   const [enabledModules, setEnabledModules] = useState<Set<string>>(
     () => new Set(ALL_MODULES.filter((m) => !m.core).map((m) => m.key)),
   );
@@ -2772,18 +2746,15 @@ export function OnboardingWizard() {
     setSelectedLang(lang);
   }, []);
 
-  const handleSelectCompanyType = useCallback((key: CompanyTypeKey) => {
-    setCompanyType(key);
-    // Apply the preset modules
-    const preset = COMPANY_PRESETS.find((p) => p.key === key);
-    if (preset) {
-      if (key === 'full_enterprise') {
-        setEnabledModules(new Set(ALL_MODULES.filter((m) => !m.core).map((m) => m.key)));
-      } else {
-        setEnabledModules(new Set(preset.enabledModules));
-      }
-    }
-  }, []);
+  const handleSelectCompanyType = useCallback(
+    (key: string) => {
+      setCompanyType(key);
+      // Apply the preset's module set (full_enterprise = every non-core module).
+      const preset = presets.find((p) => p.key === key);
+      if (preset) setEnabledModules(presetModuleSet(preset));
+    },
+    [presets],
+  );
 
   const handleToggleModule = useCallback((key: string) => {
     setEnabledModules((prev) => {
@@ -2941,6 +2912,7 @@ export function OnboardingWizard() {
                 <StepCompanyProfile
                   onNext={handleNextFromProfile}
                   onBack={() => setStep(1)}
+                  presets={presets}
                   selectedType={companyType}
                   onSelectType={handleSelectCompanyType}
                   onConfigureIndividually={handleConfigureIndividually}
@@ -2970,6 +2942,7 @@ export function OnboardingWizard() {
                   onBack={() => setStep(4)}
                   companyType={companyType}
                   enabledModules={enabledModules}
+                  presets={presets}
                 />
               )}
             </StepTransition>

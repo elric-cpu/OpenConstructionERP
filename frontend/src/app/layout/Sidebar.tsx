@@ -594,6 +594,102 @@ const ROUTE_BACKEND_MODULE: Record<string, string> = {
   '/architecture': 'oe_architecture_map',
 };
 
+/** Maps a sidebar route (`NavItem.to`, query string stripped) to the canonical
+ *  module key used by Company Profiles and the onboarding catalogue
+ *  (`frontend/src/features/onboarding/modules.ts` + the backend
+ *  `onboarding_presets.py`). When a profile leaves that module out, the row is
+ *  hidden — this is what makes a Company Profile actually shape the sidebar
+ *  rather than just toggle a counter.
+ *
+ *  Several routes can share one key (e.g. all model-coordination surfaces map
+ *  to `bim_hub`, every property-dev tab to `property_dev`) so a profile reveals
+ *  or hides a whole capability at once. Core surfaces every company needs
+ *  (Dashboard, Projects, Files, Contacts, Estimation Intelligence, Architecture
+ *  Map) are intentionally absent here, so a profile can never hide them. */
+const ROUTE_MODULE_KEY: Record<string, string> = {
+  // Estimating
+  '/boq': 'boq',
+  '/match-elements': 'match_elements',
+  '/ai-estimate': 'ai',
+  // Catalogues & reference
+  '/costs': 'costs',
+  '/catalog': 'catalog',
+  '/assemblies': 'assemblies',
+  // Takeoff
+  '/takeoff': 'takeoff',
+  '/dwg-takeoff': 'dwg_takeoff',
+  '/bim': 'bim_hub',
+  '/data-explorer': 'cad',
+  // Model coordination (all powered by the BIM hub capability)
+  '/coordination': 'bim_hub',
+  '/bim/federations': 'bim_hub',
+  '/clash': 'bim_hub',
+  '/bim/rules': 'bim_requirements',
+  '/requirements/matrix': 'bim_requirements',
+  '/geo': 'bim_hub',
+  // AI & tools
+  '/ai-agents': 'ai',
+  '/advisor': 'ai',
+  '/chat': 'erp_chat',
+  // Commercial
+  '/crm': 'crm',
+  '/contracts': 'contracts',
+  '/subcontractors': 'subcontractors',
+  '/bid-management': 'bid_management',
+  '/tendering': 'tendering',
+  '/variations': 'variations',
+  '/supplier-catalogs': 'supplier_catalogs',
+  // Real estate development (every tab tied to the one capability)
+  '/property-dev': 'property_dev',
+  '/accommodation': 'property_dev',
+  '/property-dev/dashboards': 'property_dev',
+  '/property-dev/settings/house-types': 'property_dev',
+  '/property-dev/settings/document-templates': 'property_dev',
+  // Planning
+  '/schedule': 'schedule',
+  '/schedule-advanced': 'schedule_advanced',
+  '/tasks': 'tasks',
+  '/5d': 'costmodel',
+  '/risks': 'risk',
+  // Field operations
+  '/daily-diary': 'daily_diary',
+  '/field-reports': 'fieldreports',
+  '/equipment': 'equipment',
+  '/resources': 'resources',
+  '/service': 'service',
+  '/portal': 'portal',
+  '/assets': 'equipment',
+  // Quality
+  '/validation': 'validation',
+  '/inspections': 'inspections',
+  '/ncr': 'ncr',
+  '/punchlist': 'punchlist',
+  '/qms': 'qms',
+  // Safety & HSE
+  '/safety': 'safety',
+  '/hse-advanced': 'hse_advanced',
+  '/carbon': 'carbon',
+  // Communication
+  '/meetings': 'meetings',
+  '/rfi': 'rfi',
+  '/submittals': 'submittals',
+  '/transmittals': 'transmittals',
+  '/correspondence': 'correspondence',
+  // Documentation
+  '/cde': 'cde',
+  '/photos': 'documents',
+  '/markups': 'markups',
+  // Finance & procurement
+  '/finance': 'finance',
+  '/procurement': 'procurement',
+  '/changeorders': 'changeorders',
+  // Analytics & reports
+  '/reports': 'reporting',
+  '/bi-dashboards': 'bi_dashboards',
+  '/dashboards': 'reporting',
+  '/reporting': 'reporting',
+};
+
 // localStorage key for collapsed state
 const COLLAPSED_KEY = 'oe_sidebar_collapsed';
 const PINNED_KEY = 'oe_sidebar_pinned';
@@ -1266,9 +1362,14 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           // wrapped in <AdminOnly> in App.tsx, so this is just keeping
           // the menu tidy.
           const allItems = [...group.items, ...dynamicItems];
-          const visibleItems = allItems.filter(
-            (item) =>
-              (!item.moduleKey || isModuleEnabled(item.moduleKey)) &&
+          const visibleItems = allItems.filter((item) => {
+            // The active Company Profile maps each route to a canonical module
+            // key; when the profile leaves that module out, the row is hidden.
+            // Inline `moduleKey` (e.g. dynamic plugin rows) is the fallback.
+            // Routes absent from ROUTE_MODULE_KEY are never profile-gated.
+            const moduleKey = ROUTE_MODULE_KEY[item.to.split('?')[0]!] ?? item.moduleKey;
+            return (
+              (!moduleKey || isModuleEnabled(moduleKey)) &&
               (!item.advancedOnly || isAdvanced) &&
               (!item.adminOnly || userRole === 'admin') &&
               // Backend-disabled gate — a System Module switched off on the
@@ -1278,8 +1379,9 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
               // Menu-editor filter — in normal mode, drop user-hidden
               // rows; in edit mode `effectiveHidden` is empty so every
               // row renders (muted via the editingHidden state below).
-              !effectiveHidden.includes(item.to),
-          );
+              !effectiveHidden.includes(item.to)
+            );
+          });
 
           // Skip group if no visible items. In normal mode this means
           // "every item in this group is user-hidden or unavailable" —

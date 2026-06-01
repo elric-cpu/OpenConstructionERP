@@ -10,7 +10,7 @@ MANIFEST = PartnerPackManifest(
     partner_url=None,
     pack_version="0.1.0",
     description=(
-        "Pre-configured for New Zealand contractors — New Zealand Building "
+        "Pre-configured for New Zealand contractors: New Zealand Building "
         "Code (NZBC) clauses B1/B2/E2/H1, NZS 3604:2011 timber-framed "
         "buildings, NZS 3910:2023 Conditions of Contract (replaces 2013 ed.), "
         "MBIE Acceptable Solutions and Rawlinsons New Zealand Construction "

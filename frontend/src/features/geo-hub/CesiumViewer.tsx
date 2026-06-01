@@ -291,6 +291,14 @@ type CesiumViewerInstance = {
   camera: {
     flyTo: (options: { destination: unknown }) => void;
     /**
+     * Instantly position the camera with no animation. Used for the
+     * initial project/development framing so the very first painted frame
+     * is already at the anchor instead of animating in from the default
+     * whole-globe view out in deep space. Optional in the shim so a build
+     * without it falls back to a short flyTo.
+     */
+    setView?: (options: { destination: unknown; orientation?: unknown }) => void;
+    /**
      * Optional in our type-shim — exists in all Cesium versions we ship
      * but we guard the call at runtime so the focus effect degrades to
      * a no-op on hypothetical builds where it's absent.
@@ -747,11 +755,31 @@ export function CesiumViewer({
           const lat = Number(mapConfig.anchor.lat);
           const lon = Number(mapConfig.anchor.lon);
           const alt = Number(mapConfig.anchor.alt || 200);
-          v.camera.flyTo({
-            destination: cesium.Cartesian3.fromDegrees(
-              lon, lat, Math.max(alt + 500, 1500),
-            ),
-          });
+          // Place the camera AT the project on the very first frame.
+          //
+          // ROOT CAUSE of the "why am I in space, and why is the earth
+          // loading forever" report: ``flyTo`` animates FROM Cesium's
+          // default view (the whole globe seen from deep space) TO the
+          // anchor, and its duration scales with distance — so the user
+          // watched a multi-second descent from orbit. Worse, while the
+          // camera is up in space Cesium needs the entire low-zoom tile
+          // pyramid for the whole planet, and every one of those tiles is
+          // a round-trip through our same-origin proxy, so the globe took
+          // a long time to even texture.
+          //
+          // ``setView`` is instant: the first painted frame is already
+          // over the site at a rooftop altitude, so Cesium only streams
+          // the handful of high-zoom tiles around the project. No orbital
+          // fly-in, and first meaningful paint is near-immediate.
+          const destination = cesium.Cartesian3.fromDegrees(
+            lon, lat, Math.max(alt + 500, 1500),
+          );
+          if (typeof v.camera.setView === 'function') {
+            v.camera.setView({ destination });
+          } else {
+            // Older Cesium build without setView — fall back to flyTo.
+            v.camera.flyTo({ destination });
+          }
         }
         if (mapConfig?.tilesets) {
           for (const ts of mapConfig.tilesets) {
@@ -1794,6 +1822,17 @@ export function CesiumViewer({
   useEffect(() => {
     if (cesiumStatus !== 'loaded') return;
     if (hasAutoZoomedRef.current) return;
+    // When the only thing to frame is the project anchor itself (no
+    // tilesets, no pins, no address-search hit), the instant ``setView``
+    // run at viewer init has already framed it. Calling fitToData here
+    // would build a bounding sphere from a single point (radius 0), which
+    // Cesium's flyToBoundingSphere reads as "drop the camera onto that
+    // exact spot" — a jarring second camera move right after first paint,
+    // sometimes ending at ground level. Mark auto-zoom done and bail.
+    if (tilesetCount === 0 && pinDataLen === 0 && !searchPin) {
+      hasAutoZoomedRef.current = true;
+      return;
+    }
     // Wait briefly so tilesets that are still resolving have a chance to
     // register in ``loadedTilesetsRef`` and populate ``boundingSphere``.
     const handle = window.setTimeout(() => {

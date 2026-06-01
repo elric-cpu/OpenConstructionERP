@@ -8,6 +8,10 @@
  *  - "dashboard" — wider banner with logo + powered-by line, mounted at
  *                 the top of the dashboard.
  *
+ * Clicking the badge opens the in-app Partner Packs page
+ * (``/modules?tab=partner-packs``) so the user can see what the active pack
+ * configures, switch it, or reach the partner's website/contact shown there.
+ *
  * Dismiss behaviour: the user can hide the badge for the current session
  * via a small ✕. We persist the dismissal to ``sessionStorage`` so it
  * comes back on next browser launch — matches the product spec ("logo
@@ -16,13 +20,27 @@
 
 import { X } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { usePartnerPack, partnerLogoUrl } from '@/shared/hooks/usePartnerPack';
 
 const SESSION_DISMISS_KEY = 'partner-pack:dismissed';
 
+/** In-app destination for the co-brand badge. */
+const PACKS_ROUTE = '/modules?tab=partner-packs';
+
 interface PartnerLogoBadgeProps {
   variant: 'nav' | 'dashboard';
   className?: string;
+}
+
+/** Two-letter monogram from the partner name, for the no-logo fallback. */
+function partnerInitials(name: string): string {
+  const words = name.trim().split(/[\s._-]+/).filter(Boolean);
+  const letters =
+    words.length >= 2
+      ? `${words[0]?.[0] ?? ''}${words[1]?.[0] ?? ''}`
+      : name.trim().slice(0, 2);
+  return letters.toUpperCase() || '?';
 }
 
 export function PartnerLogoBadge({ variant, className = '' }: PartnerLogoBadgeProps) {
@@ -49,22 +67,23 @@ export function PartnerLogoBadge({ variant, className = '' }: PartnerLogoBadgePr
   if (packQ.isLoading || !packQ.data?.active || dismissed) return null;
 
   const m = packQ.data.manifest!;
-  const url = m.partner_url ?? '#';
-  const isExternal = m.partner_url && /^https?:\/\//.test(m.partner_url);
   // Brand colour (pack's primary). Only an exact 6-digit hex can synthesize the
   // alpha-tinted banner background; otherwise fall back to the app accent token
   // (a CSS var can't carry an alpha suffix).
   const brand = m.branding.primary_color || '';
   const isHex = /^#[0-9a-f]{6}$/i.test(brand);
   const accent = isHex ? brand : 'var(--accent)';
+  const accentEnd = /^#[0-9a-f]{6}$/i.test(m.branding.accent_color ?? '')
+    ? m.branding.accent_color!
+    : accent;
   // Clearly-visible, brand-tinted background for the dashboard banner.
   const dashBg = isHex
     ? `linear-gradient(90deg, ${brand}26, ${brand}0d 55%, transparent)`
     : undefined;
   // Show the logo image only when the pack declares one AND it actually loads;
-  // a declared-but-unreadable logo falls back to the partner name text instead
-  // of a broken-image glyph.
+  // a declared-but-unreadable logo falls back to a brand-gradient monogram.
   const showLogo = m.branding.has_logo && !logoBroken;
+  const initials = partnerInitials(m.partner_name);
 
   if (variant === 'nav') {
     return (
@@ -72,23 +91,28 @@ export function PartnerLogoBadge({ variant, className = '' }: PartnerLogoBadgePr
         className={`inline-flex items-center gap-2 rounded-full bg-surface-secondary/60 px-2.5 py-1 text-xs text-content-secondary backdrop-blur ${className}`}
         data-testid="partner-logo-nav"
       >
-        <a
-          href={url}
-          target={isExternal ? '_blank' : undefined}
-          rel={isExternal ? 'noreferrer' : undefined}
+        <Link
+          to={PACKS_ROUTE}
           className="inline-flex items-center gap-1.5 hover:text-content-primary"
           title={m.branding.powered_by_text}
         >
-          {showLogo && (
+          {showLogo ? (
             <img
               src={partnerLogoUrl(m.slug)}
               alt={`${m.partner_name} logo`}
               className="h-5 w-5 shrink-0 rounded-[5px] object-contain"
               onError={() => setLogoBroken(true)}
             />
+          ) : (
+            <span
+              className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-[9px] font-bold text-white"
+              style={{ background: `linear-gradient(135deg, ${accent}, ${accentEnd})` }}
+            >
+              {initials}
+            </span>
           )}
           <span className="max-w-[10rem] truncate font-medium">{m.partner_name}</span>
-        </a>
+        </Link>
         <button
           type="button"
           aria-label="Hide partner badge"
@@ -108,26 +132,29 @@ export function PartnerLogoBadge({ variant, className = '' }: PartnerLogoBadgePr
       style={{ borderLeftColor: accent, backgroundImage: dashBg }}
       data-testid="partner-logo-dashboard"
     >
-      <a
-        href={url}
-        target={isExternal ? '_blank' : undefined}
-        rel={isExternal ? 'noreferrer' : undefined}
+      <Link
+        to={PACKS_ROUTE}
         className="flex min-w-0 items-center gap-3 hover:opacity-90"
+        title={m.branding.powered_by_text}
       >
         {showLogo ? (
           <img
             src={partnerLogoUrl(m.slug)}
             alt={`${m.partner_name} logo`}
-            className="h-9 w-9 shrink-0 rounded-md object-contain"
+            className="h-11 w-11 shrink-0 rounded-xl object-contain shadow-sm ring-1 ring-black/5"
             onError={() => setLogoBroken(true)}
           />
         ) : (
-          <span className="shrink-0 text-base font-semibold" style={{ color: accent }}>
-            {m.partner_name}
+          <span
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-base font-bold text-white shadow-sm"
+            style={{ background: `linear-gradient(135deg, ${accent}, ${accentEnd})` }}
+          >
+            {initials}
           </span>
         )}
         <div className="min-w-0 leading-tight">
-          <div className="text-xs uppercase tracking-wide text-content-tertiary">
+          <div className="text-sm font-semibold text-content-primary">{m.partner_name}</div>
+          <div className="mt-0.5 text-2xs uppercase tracking-wide text-content-tertiary">
             {m.branding.powered_by_text}
           </div>
           {m.description && (
@@ -136,7 +163,7 @@ export function PartnerLogoBadge({ variant, className = '' }: PartnerLogoBadgePr
             </div>
           )}
         </div>
-      </a>
+      </Link>
       <button
         type="button"
         aria-label="Hide partner badge"

@@ -14,7 +14,7 @@ MANIFEST = PartnerPackManifest(
     partner_url=None,
     pack_version="0.2.0",
     description=(
-        "Pre-configured for UK general contractors — RICS NRM 1+2 (2nd ed, 2021) "
+        "Pre-configured for UK general contractors: RICS NRM 1+2 (2nd ed, 2021) "
         "with optional NRM 3 maintenance, JCT 2024 contract suite, BCIS cost "
         "benchmarks, CDM 2015 regulations and Building Safety Act 2022 (HRB) "
         "compliance."

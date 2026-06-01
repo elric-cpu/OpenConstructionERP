@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import clsx from 'clsx';
 import {
   Search,
@@ -31,9 +31,17 @@ import {
   Server,
   ExternalLink,
   Mail,
+  Power,
+  BookOpen,
+  Home,
+  HardHat,
+  Briefcase,
+  Box,
   type LucideIcon,
 } from 'lucide-react';
 import { Card, Badge, Button, Input, InfoHint, Breadcrumb, ConfirmDialog } from '@/shared/ui';
+import { PartnerPackApplyDialog } from './PartnerPackApplyDialog';
+import { useAppliedPack, useUnapplyPack } from './partnerPacks';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 import { apiGet, apiPost, apiDelete } from '@/shared/lib/api';
@@ -232,6 +240,7 @@ const MODULE_CATEGORY_META: Record<string, { labelKey: string; defaultLabel: str
 
 const PRESET_ICON_MAP: Record<string, LucideIcon> = {
   Building2, Calculator, ClipboardList, Pencil, Boxes,
+  Home, HardHat, Briefcase, Box,
 };
 
 function getPresetIcon(iconName: string): LucideIcon {
@@ -244,7 +253,15 @@ function getPresetIcon(iconName: string): LucideIcon {
 
 export function ModulesPage() {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState<TabKey>('profiles');
+  const [searchParams] = useSearchParams();
+  // Deep-link support: ``/modules?tab=partner-packs`` opens that tab directly
+  // (used by the dashboard co-brand banner). Falls back to Company Profiles.
+  const [activeTab, setActiveTab] = useState<TabKey>(() => {
+    const tab = searchParams.get('tab');
+    return tab && (MODULE_TAB_IDS as readonly string[]).includes(tab)
+      ? (tab as TabKey)
+      : 'profiles';
+  });
   const onTabKeyDown = useTabKeyboardNav<TabKey>({
     ids: MODULE_TAB_IDS,
     activeId: activeTab,
@@ -450,7 +467,7 @@ function CompanyProfilesTab() {
               <div>
                 <p className="text-sm font-semibold text-content-primary">
                   {t('modules.current_profile', { defaultValue: 'Current Profile' })}:{' '}
-                  {activePreset.label}
+                  {t(`onboarding.company_${activePreset.key}`, { defaultValue: activePreset.label })}
                 </p>
                 <p className="text-xs text-content-secondary">
                   {activeModuleCount} {t('modules.modules_active_label', { defaultValue: 'modules active' })}
@@ -515,7 +532,7 @@ function CompanyProfilesTab() {
               <button
                 key={preset.key}
                 onClick={() => handleProfileClick(preset)}
-                aria-label={`${preset.label} — ${preset.module_count} ${t('modules.modules_label', { defaultValue: 'modules' })}`}
+                aria-label={`${t(`onboarding.company_${preset.key}`, { defaultValue: preset.label })} - ${preset.module_count} ${t('modules.modules_label', { defaultValue: 'modules' })}`}
                 aria-pressed={isActive}
                 className={clsx(
                   'text-left rounded-xl border p-4 transition-all',
@@ -535,7 +552,7 @@ function CompanyProfilesTab() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-content-primary">{preset.label}</span>
+                      <span className="text-sm font-semibold text-content-primary">{t(`onboarding.company_${preset.key}`, { defaultValue: preset.label })}</span>
                       {isActive && (
                         <Badge variant="success" size="sm">
                           <Check size={10} className="mr-0.5" />
@@ -544,7 +561,7 @@ function CompanyProfilesTab() {
                       )}
                     </div>
                     <p className="mt-0.5 text-xs text-content-secondary line-clamp-2">
-                      {preset.description}
+                      {t(`onboarding.company_${preset.key}_desc`, { defaultValue: preset.description })}
                     </p>
                     <p className="mt-1.5 text-2xs text-content-tertiary font-medium">
                       {preset.module_count} {t('modules.modules_label', { defaultValue: 'modules' })}
@@ -605,8 +622,10 @@ function PartnerPacksTab() {
     staleTime: 5 * 60 * 1000,
   });
 
+  const applied = useAppliedPack();
   const packs = data?.installed ?? [];
   const activeSlug = data?.active_slug ?? null;
+  const activeSource = applied.data?.applied ? applied.data.source ?? null : null;
 
   return (
     <div className="animate-card-in" style={{ animationDelay: '60ms' }}>
@@ -615,11 +634,20 @@ function PartnerPacksTab() {
           {t('modules.partner_packs_title', { defaultValue: 'Partner Packs' })}
         </h2>
         <p className="text-xs text-content-tertiary">
-          {t('modules.partner_packs_desc', {
+          {t('modules.partner_packs_desc_v2', {
             defaultValue:
-              'Country- and partner-specific presets — currency, tax templates, validation standards, and co-branding. Activate one by setting OE_PARTNER_PACK.',
+              'Ready-made presets for a country or a partner: currency, tax template, validation standards and co-branding. Press Activate on a pack to apply it, and you can switch back any time.',
           })}
         </p>
+        <Link
+          to="/modules/developer-guide#partner-packs"
+          className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-oe-blue hover:underline"
+        >
+          <BookOpen size={13} />
+          {t('modules.partner_packs_build_own', {
+            defaultValue: 'Build your own pack and share it with others',
+          })}
+        </Link>
       </div>
 
       {isLoading ? (
@@ -679,6 +707,7 @@ function PartnerPacksTab() {
               pack={pack}
               index={i}
               isActive={activeSlug === pack.slug}
+              activeSource={activeSlug === pack.slug ? activeSource : null}
             />
           ))}
         </div>
@@ -693,6 +722,10 @@ interface PartnerPackCardProps {
   pack: PartnerPackManifestAPI;
   index: number;
   isActive: boolean;
+  /** When the pack is active, whether it was applied in-app (can be
+   *  deactivated from the UI) or pinned via the OE_PARTNER_PACK env var
+   *  (managed by the operator, not unappliable here). */
+  activeSource?: 'in-app' | 'env' | null;
 }
 
 function asStringArray(value: unknown): string[] {
@@ -700,23 +733,32 @@ function asStringArray(value: unknown): string[] {
   return value.filter((v): v is string => typeof v === 'string');
 }
 
-/* Renders the partner's real logo (served per-slug from the pack package).
-   Falls back to a brand-coloured monogram + name if the pack ships no logo. */
+/* Two-letter monogram from the partner name, for the no-logo fallback. */
+function packInitials(name: string): string {
+  const words = name.trim().split(/[\s._-]+/).filter(Boolean);
+  const letters =
+    words.length >= 2
+      ? `${words[0]?.[0] ?? ''}${words[1]?.[0] ?? ''}`
+      : name.trim().slice(0, 2);
+  return letters.toUpperCase() || '?';
+}
+
+/* The pack's app-icon emblem (served per-slug from the pack package).
+   Falls back to a brand-gradient monogram built from the partner's own name,
+   so a pack with no logo still gets a distinct mark - never our building icon. */
 function PartnerPackLogo({ pack }: { pack: PartnerPackManifestAPI }) {
   const [errored, setErrored] = useState(false);
+  const accent = pack.branding.accent_color ?? pack.branding.primary_color;
 
   if (errored) {
     return (
-      <div className="flex items-center gap-2 min-w-0">
-        <div
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white shadow-xs"
-          style={{ backgroundColor: pack.branding.primary_color }}
-        >
-          <Building2 size={18} strokeWidth={1.75} />
-        </div>
-        <span className="text-sm font-semibold text-content-primary truncate">
-          {pack.partner_name}
-        </span>
+      <div
+        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl text-base font-bold tracking-tight text-white shadow-sm"
+        style={{
+          background: `linear-gradient(135deg, ${pack.branding.primary_color}, ${accent})`,
+        }}
+      >
+        {packInitials(pack.partner_name)}
       </div>
     );
   }
@@ -725,15 +767,53 @@ function PartnerPackLogo({ pack }: { pack: PartnerPackManifestAPI }) {
     <img
       src={`/api/v1/partner-pack/logo/${encodeURIComponent(pack.slug)}`}
       alt={`${pack.partner_name} logo`}
-      className="h-9 max-w-[180px] object-contain object-left"
+      className="h-12 w-12 shrink-0 rounded-xl object-contain shadow-sm"
       loading="lazy"
       onError={() => setErrored(true)}
     />
   );
 }
 
-function PartnerPackCard({ pack, index, isActive }: PartnerPackCardProps) {
+function PartnerPackCard({ pack, index, isActive, activeSource }: PartnerPackCardProps) {
   const { t } = useTranslation();
+  const addToast = useToastStore((s) => s.addToast);
+  const [applyOpen, setApplyOpen] = useState(false);
+  const unapply = useUnapplyPack();
+  const { confirm, setLoading, ...confirmProps } = useConfirm();
+
+  const handleDeactivate = async () => {
+    const ok = await confirm({
+      title: t('modules.pack_deactivate_confirm_title', {
+        defaultValue: 'Deactivate this pack?',
+      }),
+      message: t('modules.pack_deactivate_confirm_msg', {
+        defaultValue:
+          'This restores any modules the pack switched off and removes its co-branding. Your projects and data are not affected.',
+      }),
+      confirmLabel: t('modules.pack_deactivate', { defaultValue: 'Deactivate' }),
+      variant: 'warning',
+    });
+    if (!ok) return;
+    setLoading(true);
+    unapply.mutate(undefined, {
+      onSuccess: () => {
+        setLoading(false);
+        addToast({
+          type: 'success',
+          title: t('modules.pack_deactivated', { defaultValue: 'Pack deactivated' }),
+        });
+      },
+      onError: () => {
+        setLoading(false);
+        addToast({
+          type: 'error',
+          title: t('modules.pack_deactivate_failed', {
+            defaultValue: 'Could not deactivate the pack',
+          }),
+        });
+      },
+    });
+  };
 
   const countryName =
     typeof pack.metadata.country_name_en === 'string'
@@ -764,26 +844,35 @@ function PartnerPackCard({ pack, index, isActive }: PartnerPackCardProps) {
       />
 
       <div className="pl-2">
-        {/* Logo plate — the partner's real logo on a subtle brand-tinted ground */}
-        <div
-          className="mb-2.5 flex h-14 items-center gap-2 rounded-lg px-3"
-          style={{ backgroundColor: `${pack.branding.primary_color}14` }}
-        >
+        {/* Logo plate — the pack's own emblem with its name and version */}
+        <div className="mb-3 flex items-center gap-3">
           <PartnerPackLogo pack={pack} />
-          {isActive && (
-            <Badge variant="success" size="sm" className="ml-auto shrink-0">
-              <Check size={10} className="mr-0.5" />
-              {t('modules.active', { defaultValue: 'Active' })}
-            </Badge>
-          )}
-        </div>
-
-        <div className="flex items-center gap-1.5 text-2xs text-content-tertiary flex-wrap">
-          <span className="font-medium text-content-secondary">{pack.partner_name}</span>
-          <span className="text-border">|</span>
-          <span className="font-mono">{pack.slug}</span>
-          <span className="text-border">|</span>
-          <span className="font-mono">v{pack.pack_version}</span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h3 className="truncate text-[15px] font-bold leading-tight text-content-primary">
+                {pack.partner_name}
+              </h3>
+              {isActive && (
+                <Badge variant="success" size="sm" className="shrink-0">
+                  <Check size={10} className="mr-0.5" />
+                  {t('modules.active', { defaultValue: 'Active' })}
+                </Badge>
+              )}
+            </div>
+            <div className="mt-1 flex items-center gap-1.5 text-2xs text-content-tertiary">
+              <span className="truncate font-mono">{pack.slug}</span>
+              <span className="text-border">·</span>
+              <span
+                className="shrink-0 rounded-full px-1.5 py-0.5 font-mono font-semibold"
+                style={{
+                  color: pack.branding.primary_color,
+                  backgroundColor: `${pack.branding.primary_color}14`,
+                }}
+              >
+                v{pack.pack_version}
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* Region / currency badges */}
@@ -852,7 +941,54 @@ function PartnerPackCard({ pack, index, isActive }: PartnerPackCardProps) {
             )}
           </div>
         )}
+
+        {/* Activate / deactivate */}
+        <div className="mt-4 flex items-center gap-2 border-t border-border-light pt-3">
+          {isActive ? (
+            activeSource === 'env' ? (
+              <span className="inline-flex items-center gap-1.5 text-2xs text-content-tertiary">
+                <Info size={12} />
+                {t('modules.pack_active_via_env', {
+                  defaultValue: 'Active via environment (OE_PARTNER_PACK)',
+                })}
+              </span>
+            ) : (
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={unapply.isPending}
+                icon={
+                  unapply.isPending ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Power size={14} />
+                  )
+                }
+                onClick={handleDeactivate}
+              >
+                {t('modules.pack_deactivate', { defaultValue: 'Deactivate' })}
+              </Button>
+            )
+          ) : (
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<Power size={14} />}
+              onClick={() => setApplyOpen(true)}
+            >
+              {t('modules.pack_activate', { defaultValue: 'Activate pack' })}
+            </Button>
+          )}
+        </div>
       </div>
+
+      <PartnerPackApplyDialog
+        open={applyOpen}
+        onClose={() => setApplyOpen(false)}
+        slug={pack.slug}
+        partnerName={pack.partner_name}
+      />
+      <ConfirmDialog {...confirmProps} />
     </Card>
   );
 }

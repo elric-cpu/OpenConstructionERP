@@ -41,7 +41,7 @@ MANIFEST = PartnerPackManifest(
     partner_url="https://doker.com",
     pack_version="0.2.0",
     description=(
-        "Vorkonfiguriert für Schalungs- und Betonbau-Unternehmen in der DACH-Region — "
+        "Vorkonfiguriert für Schalungs- und Betonbau-Unternehmen in der DACH-Region: "
         "DIN 18218 Frischbetondruck, DIN EN 12812 Traggerüste, DIN EN 13670 Ausführung, "
         "DIN EN 206 Beton, VOB/C DIN 18331, DGUV 101-008 Arbeitssicherheit, "
         "Schalungszyklus-Qualität und -Ökonomie. Inklusive Katalog der gängigen "

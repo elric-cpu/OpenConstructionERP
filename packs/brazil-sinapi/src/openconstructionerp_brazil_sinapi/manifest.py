@@ -45,7 +45,7 @@ MANIFEST = PartnerPackManifest(
     partner_url=None,
     pack_version="0.2.0",
     description=(
-        "Pre-configured for Brazilian construction firms — SINAPI cost "
+        "Pre-configured for Brazilian construction firms: SINAPI cost "
         "database, NBR 12721 CUB, ABNT structural codes (NBR 6118 / 8800), "
         "NBR 9050 accessibility, NBR 5419 lightning protection, Lei 14.133/2021 "
         "public procurement, RPS/NFS-e PDF generation, municipal ISS taxation."

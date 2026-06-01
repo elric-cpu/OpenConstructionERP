@@ -14,7 +14,7 @@ MANIFEST = PartnerPackManifest(
     partner_url="https://batimatech.ca",
     pack_version="0.2.0",
     description=(
-        "Pré-configuré pour les entreprises canadiennes de construction — "
+        "Pré-configuré pour les entreprises canadiennes de construction: "
         "CNB 2020, contrats CCDC, normes CSA et conformité provinciale "
         "(Québec CCQ/RBQ, Ontario OBC)."
     ),

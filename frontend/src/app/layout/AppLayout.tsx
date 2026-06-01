@@ -12,6 +12,7 @@ import { GlobalUploadIndicator } from '@/shared/ui/GlobalUploadIndicator';
 import { DwgUploadIndicator } from '@/shared/ui/DwgUploadIndicator';
 import { GlobalCatalogueInstallIndicator } from '@/shared/ui/GlobalCatalogueInstallIndicator';
 import { DemoBanner } from '@/shared/ui/DemoBanner';
+import { PostgresMigrationNotice } from '@/shared/ui/PostgresMigrationNotice';
 import { FloatingChatButton } from '@/features/erp-chat/FloatingChatButton';
 import { FloatingChatPanel } from '@/features/erp-chat/FloatingChatPanel';
 import {
@@ -87,6 +88,7 @@ export function AppLayout({ title, children }: AppLayoutProps) {
           context and hides the tinted spotlight. */}
       <DashboardBackdrop variant={backdropVariant} />
       <DemoBanner />
+      <PostgresMigrationNotice />
       <GlobalProgress />
 
       {/* Mobile overlay */}

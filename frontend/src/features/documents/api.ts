@@ -195,6 +195,23 @@ export async function deleteDocument(id: string): Promise<void> {
   return apiDelete(`/v1/documents/${id}`);
 }
 
+/** Download a stored document's bytes as a Blob (auth-aware).
+ *
+ *  Used by the Geo Hub "Place on map" picker, which re-uploads a stored
+ *  PDF drawing as a map raster overlay. ``apiGet`` only deals in JSON, so
+ *  we hand-roll the fetch with the same auth + client headers. */
+export async function downloadDocumentBlob(id: string): Promise<Blob> {
+  const token = useAuthStore.getState().accessToken;
+  const res = await fetch(`/api/v1/documents/${id}/download`, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      'X-DDC-Client': 'OE/1.0',
+    },
+  });
+  if (!res.ok) throw new Error(`Download failed (${res.status})`);
+  return res.blob();
+}
+
 /** Epic C — upload a NEW revision of an existing document.
  *
  *  Hits ``POST /api/v1/documents/{id}/revisions/``. The chain key stays

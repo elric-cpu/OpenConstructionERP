@@ -14,7 +14,7 @@ MANIFEST = PartnerPackManifest(
     partner_url=None,
     pack_version="0.2.0",
     description=(
-        "Pre-configured for solar / wind / BESS EPC contractors — PV array "
+        "Pre-configured for solar / wind / BESS EPC contractors: PV array "
         "takeoff, turbine BOM, MV cable schedules, LCOE templates, "
         "IEC 61400 (wind) + IEC 61215 + IEC 61730 (PV) + IEC 62548 (PV array) "
         "+ NFPA 855 / IEC 62619 (BESS) + ENTSO-E RfG + IEEE 1547 grid "

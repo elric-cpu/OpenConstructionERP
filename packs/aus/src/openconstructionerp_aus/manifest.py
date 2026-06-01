@@ -14,7 +14,7 @@ MANIFEST = PartnerPackManifest(
     partner_url=None,
     pack_version="0.1.0",
     description=(
-        "Pre-configured for Australian general contractors — National "
+        "Pre-configured for Australian general contractors: National "
         "Construction Code (NCC) 2022, AS 1684 timber-framing (Parts 1-4), "
         "AS 3600 concrete, AS 4100 steel, AS 4000-1997 / AS 4902-2000 "
         "contract suite, Rawlinsons Australian Construction Handbook 2024. "

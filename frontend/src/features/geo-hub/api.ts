@@ -101,6 +101,33 @@ export function deleteTileset(id: string): Promise<void> {
   return apiDelete(`${BASE}/tilesets/${id}`);
 }
 
+/**
+ * Place an already-converted BIM/CAD model on the project map as a
+ * georeferenced 3D Tileset, anchored to the project location.
+ *
+ * ``cadImportId`` is the bim_hub model id - the backend resolves it
+ * through ``BIMModelRepository`` in ``POST /from-canonical/{id}``, then
+ * builds the tileset against the project's geo anchor. The body is left
+ * empty so the tileset name falls back to the model's own name.
+ *
+ * Surfaced errors (the picker maps these to friendly toasts):
+ *   - 404 ``cad_import_not_found`` - bad id or project mismatch;
+ *   - 422 ``no_anchor_for_project`` - project has no map location yet;
+ *   - 422 ``canonical_elements_empty`` / ``canonical_elements_have_no_geometry``
+ *     - the model carries no usable 3D geometry to place.
+ */
+export function placeBimModelOnMap(
+  cadImportId: string,
+  options: { projectId: string; developmentId?: string | null },
+): Promise<Tileset> {
+  const qs = new URLSearchParams({ project_id: options.projectId });
+  if (options.developmentId) qs.set('development_id', options.developmentId);
+  return apiPost<Tileset>(
+    `${BASE}/from-canonical/${cadImportId}?${qs.toString()}`,
+    {},
+  );
+}
+
 /* ── Jobs ────────────────────────────────────────────────────────────── */
 
 export function listJobs(projectId: string, state?: string): Promise<TileJob[]> {

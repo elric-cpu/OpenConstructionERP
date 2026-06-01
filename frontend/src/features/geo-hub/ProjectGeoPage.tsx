@@ -25,7 +25,7 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { MapPinned, AlertTriangle, ServerCrash, Loader2 } from 'lucide-react';
+import { MapPinned, AlertTriangle, ServerCrash, Loader2, MapPin } from 'lucide-react';
 
 import { ApiError } from '@/shared/lib/api';
 import { useToastStore } from '@/stores/useToastStore';
@@ -43,6 +43,7 @@ import {
 import type { GeoCameraState, GeoCursorCoords } from './CesiumViewer';
 import { GeoEmptyState, type GeoEmptyKind } from './GeoEmptyState';
 import { GeoModePicker } from './GeoModePicker';
+import { PlaceOnMapPicker } from './PlaceOnMapPicker';
 import { GeoOverlayHud } from './GeoOverlayHud';
 import { OverlayLayer } from './OverlayLayer';
 import { OverlayPanel, type OverlayEditMode } from './OverlayPanel';
@@ -192,6 +193,10 @@ export function ProjectGeoPage() {
   // "Drag to adjust" toggle for the anchor — when on, the page captures
   // the next click on the map and PATCHes the anchor's lat/lon.
   const [anchorDragMode, setAnchorDragMode] = useState<boolean>(false);
+  // "Place on map" picker — lists project files (BIM models + PDFs) and
+  // drops the chosen one onto the map. Opened from the header button and
+  // from the ``no_tilesets`` empty state.
+  const [pickerOpen, setPickerOpen] = useState<boolean>(false);
   // Cesium runtime ref, populated by ``CesiumViewer.onViewerReady`` so
   // the overlay layer can attach its imagery + interaction handlers.
   const [cesiumRuntime, setCesiumRuntime] = useState<
@@ -417,7 +422,18 @@ export function ProjectGeoPage() {
               'Drag to rotate · scroll to zoom · click a pin to inspect',
           })}
         </p>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          {data?.anchor && (
+            <button
+              type="button"
+              onClick={() => setPickerOpen(true)}
+              data-testid="geo-place-on-map"
+              className="inline-flex items-center gap-1.5 rounded-md bg-oe-blue px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-oe-blue/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
+            >
+              <MapPin size={14} strokeWidth={2.25} />
+              {t('geo_hub.place.header_cta', { defaultValue: 'Place on map' })}
+            </button>
+          )}
           <GeoModePicker current="project" projectId={projectId} />
         </div>
       </header>
@@ -544,7 +560,11 @@ export function ProjectGeoPage() {
                     onChangeEditMode={setOverlayEditMode}
                   />
                   {emptyKind && (
-                    <GeoEmptyState kind={emptyKind} projectId={projectId} />
+                    <GeoEmptyState
+                      kind={emptyKind}
+                      projectId={projectId}
+                      onPlaceOnMap={() => setPickerOpen(true)}
+                    />
                   )}
                   {data?.anchor && !emptyKind && (
                     <AnchorAdjustPanel
@@ -561,6 +581,22 @@ export function ProjectGeoPage() {
           </Suspense>
         )}
       </main>
+      <PlaceOnMapPicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        projectId={projectId}
+        hasAnchor={Boolean(data?.anchor)}
+        onPlaced={(modelId) => {
+          // For a 3D model, focus the camera on it once the map config
+          // refetches and the new tileset appears (?model resolves to the
+          // tileset via source_id). PDF overlays (null) just appear.
+          if (modelId) {
+            navigate(`/projects/${projectId}/geo?model=${modelId}`, {
+              replace: true,
+            });
+          }
+        }}
+      />
     </div>
   );
 }

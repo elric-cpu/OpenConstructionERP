@@ -33,7 +33,7 @@ MANIFEST = PartnerPackManifest(
     partner_url=None,
     pack_version="0.2.0",
     description=(
-        "Pre-configured for Saudi Arabian mega-projects — full SBC 2018 stack "
+        "Pre-configured for Saudi Arabian mega-projects: full SBC 2018 stack "
         "(per-Part: 201 / 301 / 304 / 401 / 501 / 801), MoMRAH & Balady, "
         "Saudi Aramco SAES + SAMSS + 9COM, NEOM net-zero standards, "
         "Saudization (Nitaqat), ISO 19650 BIM, Vision 2030 KPIs. "

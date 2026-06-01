@@ -14,7 +14,7 @@ MANIFEST = PartnerPackManifest(
     partner_url=None,
     pack_version="0.2.0",
     description=(
-        "Pre-configured for US general contractors — CSI MasterFormat 2020 + "
+        "Pre-configured for US general contractors: CSI MasterFormat 2020 + "
         "UniFormat II elemental, AIA A201-2017 General Conditions + Owner-"
         "Contractor agreement family (A101/A102/A103/A104/A141), OSHA 29 CFR "
         "1926 construction safety, IBC 2021 building code, and RSMeans City "
@@ -25,7 +25,7 @@ MANIFEST = PartnerPackManifest(
     cwicr_regions=[
         # Note: only one CWICR pack exists for the US (national-average USD
         # with regional adjustment factors). RSMeans CCI is applied on top
-        # for per-metro localization — the cities are listed under
+        # for per-metro localization. The cities are listed under
         # ``metadata.rsmeans_cci_cities`` for the onboarding wizard.
         "cwicr-usa-usd",
     ],
@@ -84,22 +84,22 @@ MANIFEST = PartnerPackManifest(
             # in the onboarding ``state_license_number`` help text.
             "CA": "California State Licensing Board (CSLB)",
             "FL": "Florida Construction Industry Licensing Board (CILB)",
-            "NY": "NYC Department of Buildings (DOB) — city-issued",
-            "TX": "Texas Dept. of Licensing & Regulation (TDLR) — no state GC license",
+            "NY": "NYC Department of Buildings (DOB), city-issued",
+            "TX": "Texas Dept. of Licensing & Regulation (TDLR), no state GC license",
             "VA": "Virginia DPOR Board for Contractors",
             "WA": "Washington L&I Contractor Registration",
             "MA": "Massachusetts CSL / HIC",
             "GA": "Georgia State Licensing Board for Residential & General Contractors",
-            "IL": "Illinois — municipal licensing only (Chicago DOB)",
+            "IL": "Illinois, municipal licensing only (Chicago DOB)",
             "OR": "Oregon Construction Contractors Board (CCB)",
         },
         "ibc_state_adoptions": {
             # State-level IBC editions currently adopted (as of pack release).
-            "CA": "2022 California Building Code (CBC) — based on IBC 2021",
-            "NY": "2020 New York City Building Code — based on IBC 2015 with NYC amendments",
-            "FL": "Florida Building Code 8th Edition (2023) — based on IBC 2021",
-            "TX": "IBC 2021 — municipal adoption",
-            "MA": "780 CMR 9th Edition — based on IBC 2015 + Massachusetts amendments",
+            "CA": "2022 California Building Code (CBC), based on IBC 2021",
+            "NY": "2020 New York City Building Code, based on IBC 2015 with NYC amendments",
+            "FL": "Florida Building Code 8th Edition (2023), based on IBC 2021",
+            "TX": "IBC 2021, municipal adoption",
+            "MA": "780 CMR 9th Edition, based on IBC 2015 + Massachusetts amendments",
         },
         "support_email": "info@datadrivenconstruction.io",
     },

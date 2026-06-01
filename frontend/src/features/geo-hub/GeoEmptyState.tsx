@@ -28,6 +28,7 @@ import {
   ArrowUpRight,
   Loader2,
   Sparkles,
+  Plus,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -45,6 +46,10 @@ interface GeoEmptyStateProps {
    *  parent can re-fetch the map config without forcing the user to
    *  reload the page. */
   onAnchored?: () => void;
+  /** Optional - when provided on the ``no_tilesets`` state, the primary
+   *  CTA opens the in-place "Place on map" picker (existing project files)
+   *  instead of only linking out to BIM Hub. */
+  onPlaceOnMap?: () => void;
 }
 
 interface Variant {
@@ -72,6 +77,7 @@ export function GeoEmptyState({
   kind,
   projectId,
   onAnchored,
+  onPlaceOnMap,
 }: GeoEmptyStateProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -179,14 +185,14 @@ export function GeoEmptyState({
       icon: Layers,
       tone: 'warning',
       title: t('geo_hub.empty.no_tilesets_title', {
-        defaultValue: 'No 3D Tiles yet',
+        defaultValue: 'Nothing on the map yet',
       }),
-      description: t('geo_hub.empty.no_tilesets_description', {
+      description: t('geo_hub.empty.no_tilesets_description_v2', {
         defaultValue:
-          'The project is anchored but no model has been published as 3D Tiles. Convert a BIM model and send it to the map from BIM Hub.',
+          'The project is anchored but no file is on the map. Place an existing model or PDF drawing, or convert a new BIM model in BIM Hub.',
       }),
-      ctaLabel: t('geo_hub.empty.no_tilesets_cta', {
-        defaultValue: 'Convert a BIM model + send to map',
+      ctaLabel: t('geo_hub.empty.no_tilesets_cta_v2', {
+        defaultValue: 'Convert a new model in BIM Hub',
       }),
       ctaHref: projectId ? `/projects/${projectId}/bim` : '/bim',
     },
@@ -212,6 +218,8 @@ export function GeoEmptyState({
   const v = variants[kind];
   const Icon = v.icon;
   const showAutoAnchor = kind === 'no_anchor' && Boolean(projectId);
+  const showPlaceButton = kind === 'no_tilesets' && Boolean(onPlaceOnMap);
+  const hasPrimaryAction = showAutoAnchor || showPlaceButton;
 
   return (
     <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-6">
@@ -269,12 +277,30 @@ export function GeoEmptyState({
                 })}
               </button>
             )}
+            {showPlaceButton && (
+              <button
+                type="button"
+                onClick={onPlaceOnMap}
+                data-testid="geo-empty-place-on-map"
+                className={[
+                  'inline-flex items-center gap-1.5 rounded-md',
+                  'bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white',
+                  'shadow-sm transition hover:bg-emerald-400',
+                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/70',
+                ].join(' ')}
+              >
+                <Plus size={13} strokeWidth={2.25} />
+                {t('geo_hub.empty.place_existing_cta', {
+                  defaultValue: 'Place a project file on the map',
+                })}
+              </button>
+            )}
             {v.ctaHref && (
               <Link
                 to={v.ctaHref}
                 className={[
                   'inline-flex items-center gap-1.5 rounded-md',
-                  showAutoAnchor
+                  hasPrimaryAction
                     ? 'border border-white/15 bg-white/5 text-white hover:bg-white/10'
                     : 'bg-white text-slate-900 hover:bg-slate-100',
                   'px-3 py-1.5 text-xs font-semibold shadow-sm transition',

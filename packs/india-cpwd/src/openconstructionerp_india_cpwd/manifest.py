@@ -15,7 +15,7 @@ MANIFEST = PartnerPackManifest(
     pack_version="0.2.0",
     description=(
         "Pre-configured for Indian general contractors, PSUs and private "
-        "developers — CPWD Specifications 2019 + Works Manual 2019, "
+        "developers: CPWD Specifications 2019 + Works Manual 2019, "
         "CPWD DSR 2023, full IS-codes bundle (456, 800, 1893, 875, 13920), "
         "NBC 2016 with 2024 amendments, RERA 2016, GST + TDS u/s 194C + "
         "BOCW labour cess. English + Hindi UI."

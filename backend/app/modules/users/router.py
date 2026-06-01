@@ -783,13 +783,12 @@ async def save_onboarding(
         "completed": data.completed,
     }
 
-    # Also persist module preferences so sidebar picks them up
-    module_prefs: dict[str, bool] = {}
-    from app.core.onboarding_presets import _ALL_MODULES
+    # Also persist module preferences so the sidebar reflects the selection.
+    # ``modules_for`` writes an explicit True/False for every known module and
+    # forces core modules on, so a profile can never hide Projects/Settings/etc.
+    from app.core.onboarding_presets import modules_for
 
-    for mod_key in _ALL_MODULES:
-        module_prefs[mod_key] = mod_key in data.enabled_modules
-    metadata["module_preferences"] = module_prefs
+    metadata["module_preferences"] = modules_for(data.enabled_modules)
 
     await service.update_profile(uuid.UUID(user_id), metadata_=metadata)
 

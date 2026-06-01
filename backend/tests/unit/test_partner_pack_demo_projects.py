@@ -29,7 +29,13 @@ from app.core.demo_projects import (
 )
 
 # Units accepted by the BOQ position model / demo installer.
-_ALLOWED_UNITS = {"m2", "m3", "m", "t", "kg", "pcs", "lsum", "hour", "day", "month", "each", "ha", "l"}
+# Includes locale-authentic codes the flagship country demos use on purpose:
+# Brazil "vb" (verba / lump sum), "un" (unidade), "mes" (month); India "MT"
+# (metric tonne), "rm" (running metre); Canada "suite".
+_ALLOWED_UNITS = {
+    "m2", "m3", "m", "t", "kg", "pcs", "lsum", "hour", "day", "month", "each", "ha", "l",
+    "MT", "rm", "un", "vb", "mes", "suite",
+}
 
 _CATALOG_BY_ID = {c["demo_id"]: c for c in DEMO_CATALOG}
 _TEMPLATE_IDS = {t.demo_id for t in PACK_TEMPLATES}

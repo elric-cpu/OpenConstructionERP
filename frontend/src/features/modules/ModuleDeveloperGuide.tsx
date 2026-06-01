@@ -4,6 +4,7 @@
  * natively so users don't leave the app to learn the workflow.
  */
 
+import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import {
@@ -80,6 +81,15 @@ function Inline({ children }: { children: React.ReactNode }) {
 export function ModuleDeveloperGuide() {
   const { t } = useTranslation();
 
+  // Deep-link support: when the page is opened with a #hash (e.g. the
+  // Partner Packs tab links to #partner-packs), scroll that section into
+  // view once the content has rendered.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.location.hash) return;
+    const el = document.querySelector(window.location.hash);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
+
   return (
     <div className="max-w-4xl mx-auto animate-fade-in">
       <Breadcrumb
@@ -117,6 +127,164 @@ export function ModuleDeveloperGuide() {
           {t('modules.back_to_modules', { defaultValue: 'Back to Modules & Marketplace' })}
         </Link>
       </div>
+
+      {/* Partner Packs — create & share your own */}
+      <Card id="partner-packs" className="mb-5 scroll-mt-24">
+        <div className="p-6">
+          <div className="flex items-center gap-2 mb-3">
+            <Package size={18} className="text-oe-blue" />
+            <h2 className="text-lg font-semibold text-content-primary">
+              {t('modules.dev_pack_title', {
+                defaultValue: 'Partner Packs: create and share your own',
+              })}
+            </h2>
+            <Badge variant="neutral" size="sm">No code</Badge>
+          </div>
+          <p className="text-sm text-content-secondary leading-relaxed mb-4">
+            {t('modules.dev_pack_intro', {
+              defaultValue:
+                'A partner pack is a small, code-free preset bundle for a country, region or company: default currency, tax template, validation standards, default language, co-branding (logo and colours) and an optional demo project. Anyone can build one, share it, and let other users activate it in one click from the Partner Packs tab.',
+            })}
+          </p>
+
+          <div className="space-y-5">
+            <Step number={1} title={t('modules.dev_pack_step_folder', { defaultValue: 'Create the pack folder' })}>
+              <p>
+                Drop a pack under <Inline>packs/&lt;your-slug&gt;/</Inline> in a checkout, or ship it
+                as a tiny pip package. Both are discovered automatically.
+              </p>
+              <Code lang="tree">
+{`packs/acme-co/
+└── src/openconstructionerp_acme_co/
+    ├── __init__.py
+    ├── manifest.py        # the pack definition (below)
+    ├── logo.svg           # your logo, shown in-app
+    ├── locales/           # optional shipped translations
+    └── onboarding.yaml    # optional guided setup`}
+              </Code>
+            </Step>
+
+            <Step number={2} title={t('modules.dev_pack_step_manifest', { defaultValue: 'Write manifest.py' })}>
+              <Code lang="python">
+{`from app.core.partner_pack.manifest import (
+    PartnerPackManifest, PartnerBranding,
+)
+
+MANIFEST = PartnerPackManifest(
+    slug="acme-co",
+    partner_name="ACME Construction",
+    partner_url="https://acme.example",     # your website, shown to users
+    pack_version="0.1.0",
+    description="Preset for ACME teams in the UK.",
+    default_locale="en-GB",
+    default_currency="GBP",
+    default_tax_template="uk_vat",
+    validation_rule_packs=["nrm2"],
+    default_modules=[],                      # empty = show all modules
+    hidden_modules=[],
+    branding=PartnerBranding(
+        primary_color="#0F2C5F",
+        logo_path="logo.svg",
+        powered_by_text="Powered by OpenConstructionERP, "
+                        "in partnership with ACME",
+    ),
+    metadata={
+        "country": "GB",
+        "country_name_en": "United Kingdom",
+        "support_email": "hello@acme.example",  # shown on your pack card
+    },
+)`}
+              </Code>
+            </Step>
+
+            <Step number={3} title={t('modules.dev_pack_step_register', { defaultValue: 'Register it (pip package option)' })}>
+              <p>
+                If you ship the pack as its own pip package, expose it through the entry-point group
+                so it is discovered after <Inline>pip install</Inline>:
+              </p>
+              <Code lang="toml">
+{`[project.entry-points."openconstructionerp.partner_packs"]
+acme-co = "openconstructionerp_acme_co:MANIFEST"`}
+              </Code>
+            </Step>
+
+            <Step number={4} title={t('modules.dev_pack_step_activate', { defaultValue: 'Activate and test' })}>
+              <p>
+                Restart the backend, open{' '}
+                <Link to="/modules" className="text-oe-blue hover:underline">
+                  Modules &rarr; Partner Packs
+                </Link>
+                , and your pack appears with an Activate button. Activating applies the currency,
+                language, standards and branding, and can install your demo project. You can switch
+                back any time.
+              </p>
+            </Step>
+          </div>
+
+          {/* Sharing */}
+          <div className="mt-5 rounded-lg border border-oe-blue/20 bg-oe-blue/5 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Rocket size={15} className="text-oe-blue" />
+              <h3 className="text-sm font-semibold text-content-primary">
+                {t('modules.dev_pack_share_title', { defaultValue: 'Sharing your pack' })}
+              </h3>
+            </div>
+            <ul className="space-y-2 text-sm text-content-secondary list-disc pl-5">
+              <li>
+                {t('modules.dev_pack_share_pip', {
+                  defaultValue:
+                    'You can add it as a package to the platform (publish your pip package), so anyone can install and activate it.',
+                })}
+              </li>
+              <li>
+                {t('modules.dev_pack_share_pr', {
+                  defaultValue:
+                    'Or contribute it directly through a pull request, which makes it visible to everyone out of the box.',
+                })}
+              </li>
+              <li>
+                {t('modules.dev_pack_share_contact', {
+                  defaultValue:
+                    'The pack can display your contact details or website to whoever uses it (your partner website, support email and your co-branding line).',
+                })}
+              </li>
+              <li>
+                {t('modules.dev_pack_share_social', {
+                  defaultValue:
+                    'We can also share information about you and your pack through our social networks, so more people discover your work.',
+                })}
+              </li>
+            </ul>
+            <a
+              href="https://github.com/datadrivenconstruction/OpenConstructionERP"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-oe-blue hover:underline"
+            >
+              <ExternalLink size={13} />
+              {t('modules.dev_pack_share_repo', {
+                defaultValue: 'Open the repository to contribute a pack',
+              })}
+            </a>
+            <p className="mt-2 text-xs text-content-tertiary">
+              {t('modules.dev_pack_contact_us', {
+                defaultValue:
+                  'To list your pack or get featured, contact info@datadrivenconstruction.io.',
+              })}
+            </p>
+          </div>
+
+          <div className="mt-4 flex items-start gap-2 rounded-lg border border-border-light bg-surface-secondary/40 p-3">
+            <Info size={14} className="text-content-tertiary shrink-0 mt-0.5" />
+            <p className="text-xs text-content-secondary">
+              {t('modules.dev_pack_vs_module', {
+                defaultValue:
+                  'A pack holds presets only, no code. If you need new screens, endpoints or tables, build a module (below) and reference it from your pack via default_modules.',
+              })}
+            </p>
+          </div>
+        </div>
+      </Card>
 
       {/* Prerequisites */}
       <Card className="mb-5">

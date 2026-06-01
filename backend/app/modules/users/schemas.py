@@ -403,7 +403,10 @@ class OnboardingRequest(BaseModel):
 
     company_type: str = Field(
         ...,
-        pattern=r"^(general_contractor|estimator|project_management|architecture_engineering|full_enterprise)$",
+        # Any profile-key slug. Kept loose on purpose so the company-profile
+        # catalogue can grow in ``core/onboarding_presets.py`` without the
+        # request schema drifting out of sync with it.
+        pattern=r"^[a-z][a-z0-9_]{1,48}$",
         description="Selected company type preset key",
     )
     enabled_modules: list[str] = Field(

@@ -422,6 +422,17 @@ function BugReportMenu() {
     if (!open) setOverrodeNetworkWarning(false);
   }, [open]);
 
+  // Open this menu when any component dispatches ``oe:open-bug-report``.
+  // The v6 PostgreSQL-migration notice strip points its "Report a problem"
+  // action here: the community build ships without SMTP, so routing people
+  // to this menu (whose first channel opens a pre-filled GitHub issue) is
+  // the path that can actually deliver a report, unlike the e-mail form.
+  useEffect(() => {
+    const openMenu = () => setOpen(true);
+    window.addEventListener('oe:open-bug-report', openMenu);
+    return () => window.removeEventListener('oe:open-bug-report', openMenu);
+  }, []);
+
   const handleGithub = () => {
     setOpen(false);
     const { url, body } = buildBugReportUrl(t);
