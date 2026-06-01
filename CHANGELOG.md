@@ -5,6 +5,20 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.3.0] - 2026-06-01
+
+### Added
+
+- Nine role-based company profiles: general contractor, estimator, architecture and engineering, construction manager, real estate developer, subcontractor, owner and client, BIM and VDC, and full enterprise. The profile picked during onboarding now tailors the workspace. The sidebar shows the modules that role needs and hides the rest, while the core modules stay on for everyone. The onboarding wizard reads the profile catalogue from the backend so the wizard, the saved preferences and the sidebar all use one vocabulary.
+- A unified place-on-map picker on the project geo page.
+- An apply dialog and a short developer guide on the Partner Packs page.
+
+### Changed
+
+- The dashboard co-branding banner now links into the in-app Partner Packs page, and the partner logo is shown as a proper app icon with a brand-coloured monogram fallback.
+- The US Construction Pack ships a clean stars-and-stripes emblem, and the pack descriptions across every region were tidied up.
+- AUTHORS and CONTRIBUTORS were split so authorship and copyright stay with DataDrivenConstruction while community contributors are credited in their own file.
+
 ## [6.1.2] - 2026-05-31
 
 ### Added
