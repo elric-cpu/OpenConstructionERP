@@ -175,10 +175,11 @@ export function Header({ title, onMenuClick }: HeaderProps) {
   // returned version number is unused — its role is to invalidate the
   // memoization React applies to this render.
   useI18nReady();
-  // A partner pack drives the centered co-brand chip. When one is active we
-  // also condense the secondary header actions (search, Support, Subscribe)
-  // to their icon forms so the right cluster narrows and the chip lands in a
-  // clean, near-centered slot instead of colliding with the search field.
+  // A partner pack drives the centered co-brand chip only. The secondary
+  // header actions (search, Support, Subscribe) keep their full labelled
+  // form whether or not a pack is active, so the top bar looks the same for
+  // every operator. The chip sits in a flex-1 column that yields space, so it
+  // never has to push the action buttons into icon-only mode to fit.
   const packActive = usePartnerPack().data?.active === true;
   const translatedTitle = title
     ? t(TITLE_I18N_MAP[title] ?? title, { defaultValue: title })
@@ -267,7 +268,7 @@ export function Header({ title, onMenuClick }: HeaderProps) {
         <button
           onClick={openCommandPalette}
           className={clsx(
-            packActive ? 'hidden' : 'hidden sm:flex',
+            'hidden sm:flex',
             'h-8 items-center gap-2 rounded-lg px-3',
             // Solid-ish white background so the field doesn't dissolve into
             // the translucent header background; falls back to a dark tint
@@ -292,7 +293,7 @@ export function Header({ title, onMenuClick }: HeaderProps) {
           onClick={openCommandPalette}
           aria-label={t('common.search', { defaultValue: 'Search' })}
           className={clsx(
-            packActive ? 'flex' : 'flex sm:hidden',
+            'flex sm:hidden',
             'h-8 w-8 items-center justify-center rounded-lg text-content-secondary hover:bg-surface-secondary transition-colors',
           )}
         >
@@ -308,8 +309,8 @@ export function Header({ title, onMenuClick }: HeaderProps) {
             adjacent; Bug + Help sit on the right edge so a user filing a
             report doesn't have to scan past the marketing CTAs. */}
         <NotificationBell />
-        <SupportUsButton condensed={packActive} />
-        <SubscribeButton condensed={packActive} />
+        <SupportUsButton />
+        <SubscribeButton />
         <BugReportMenu />
         <HelpMenu />
 
