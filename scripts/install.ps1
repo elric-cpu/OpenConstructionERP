@@ -1,4 +1,4 @@
-# OpenConstructionERP — One-Line Installer for Windows
+# OpenConstructionERP - One-Line Installer for Windows
 #
 # Usage:
 #   irm https://raw.githubusercontent.com/datadrivenconstruction/OpenConstructionERP/main/scripts/install.ps1 | iex
@@ -262,16 +262,16 @@ Write-Host "  +===============================================+"
 Write-Host ""
 
 if (Test-Docker) {
-    Write-Info "Docker detected — using Docker Compose (recommended)"
+    Write-Info "Docker detected, using Docker Compose (recommended)"
     Install-Docker
 } elseif (Test-Uv) {
-    Write-Info "uv detected — installing as Python tool"
+    Write-Info "uv detected, installing as Python tool"
     Install-Uv
 } elseif (Test-Python312) {
-    Write-Info "Python 3.12+ detected — installing via pip"
+    Write-Info "Python 3.12+ detected, installing via pip"
     Install-Pip
 } else {
-    Write-Info "No Docker or Python found — installing uv first"
+    Write-Info "No Docker or Python found, installing uv first"
     Install-Uv
 }
 

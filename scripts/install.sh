@@ -1,5 +1,5 @@
 #!/bin/bash
-# OpenConstructionERP — One-Line Installer for Linux / macOS
+# OpenConstructionERP - One-Line Installer for Linux / macOS
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/datadrivenconstruction/OpenConstructionERP/main/scripts/install.sh | bash
@@ -75,10 +75,10 @@ install_docker() {
         curl -fsSL "$OE_REPO/raw/v$OE_VERSION/docker-compose.quickstart.yml" -o docker-compose.yml
     fi
 
-    info "Starting OpenEstimate..."
+    info "Starting OpenConstructionERP..."
     docker compose up -d
 
-    ok "OpenEstimate is running at http://localhost:${OE_PORT}"
+    ok "OpenConstructionERP is running at http://localhost:${OE_PORT}"
     echo ""
     echo "Commands:"
     echo "  cd $OE_INSTALL_DIR && docker compose logs -f   # View logs"
@@ -111,8 +111,8 @@ install_uv() {
     fi
 
     echo ""
-    echo "Run: openestimate serve --port $OE_PORT"
-    echo "     openestimate serve --port $OE_PORT --open  # Also opens browser"
+    echo "Run: openconstructionerp serve --port $OE_PORT"
+    echo "     openconstructionerp serve --port $OE_PORT --open  # Also opens browser"
 }
 
 install_pip() {
@@ -167,7 +167,7 @@ SCRIPT
 }
 
 create_systemd_service() {
-    local service_file="$HOME/.config/systemd/user/openestimate.service"
+    local service_file="$HOME/.config/systemd/user/openconstructionerp.service"
     mkdir -p "$(dirname "$service_file")"
 
     local oe_bin
@@ -221,16 +221,16 @@ main() {
             ;;
         auto)
             if has_docker; then
-                info "Docker detected — using Docker Compose (recommended)"
+                info "Docker detected, using Docker Compose (recommended)"
                 install_docker
             elif has_uv; then
-                info "uv detected — installing as Python tool"
+                info "uv detected, installing as Python tool"
                 install_uv
             elif has_python312; then
-                info "Python 3.12+ detected — installing via pip"
+                info "Python 3.12+ detected, installing via pip"
                 install_pip
             else
-                info "No Docker or Python found — installing uv first"
+                info "No Docker or Python found, installing uv first"
                 install_uv
             fi
             ;;
