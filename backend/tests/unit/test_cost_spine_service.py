@@ -203,6 +203,18 @@ class _StubLineRepo:
                 return r
         return None
 
+    async def existing_by_boq_position(self, project_id: uuid.UUID) -> dict[str, Any]:
+        """Mirror the real repo: BOQ-sourced lines keyed by str(boq_position_id)."""
+        out: dict[str, Any] = {}
+        for r in self.rows.values():
+            if r.project_id != project_id or r.boq_position_id is None:
+                continue
+            key = str(r.boq_position_id)
+            existing = out.get(key)
+            if existing is None or r.code < existing.code:
+                out[key] = r
+        return out
+
     async def create(self, line: Any) -> Any:
         if getattr(line, "id", None) is None:
             line.id = uuid.uuid4()
@@ -493,6 +505,59 @@ async def test_generate_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
     lines_after_second, total_after_second = await service.line_repo.list_for_project(project_id)
     assert total_after_second == total_after_first == 2
     assert {line_.id for line_ in lines_after_second} == {line_.id for line_ in lines_after_first}
+    assert len(await service.account_repo.list_for_project(project_id)) == len(accounts_after_first) == 2
+
+
+@pytest.mark.asyncio
+async def test_generate_is_idempotent_without_reference_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A 2nd generate creates 0 lines even when positions have NO reference_code.
+
+    Regression guard for the real idempotency bug: without a ``reference_code``
+    a cost line's code is a random ``CL-XXXX`` regenerated on every run, so
+    deduping on the code never matched the previous line and each re-run created
+    a fresh batch (a real demo BOQ went 129 -> 258 cost lines on the 2nd run).
+    Dedup is now keyed on the stable ``boq_position_id`` instead, so the count
+    stays equal and nothing is duplicated.
+    """
+    project_id = uuid.uuid4()
+    boq_id = uuid.uuid4()
+    positions = [
+        _position(ordinal="01", unit="m3", quantity="10", unit_rate="100", total="1000",
+                  classification={"din276": "330"}, boq_id=boq_id),  # no reference_code
+        _position(ordinal="02", unit="m2", quantity="5", unit_rate="40", total="200",
+                  classification={"din276": "340"}, boq_id=boq_id),  # no reference_code
+    ]
+    assert all(p.reference_code is None for p in positions)
+    service = _make_service(currency="EUR")
+    service._cost_service.pick_default_boq = _async_return(boq_id)  # type: ignore[attr-defined]
+    _patch_boq_generation(monkeypatch, boq_id=boq_id, project_id=project_id, positions=positions)
+    _patch_standard(service, monkeypatch)
+
+    first = await service.generate_from_boq(project_id, boq_id)
+    assert first.cost_lines_created == 2
+    assert first.accounts_created == 2
+    assert first.positions_linked == 2
+
+    lines_after_first, total_after_first = await service.line_repo.list_for_project(project_id)
+    accounts_after_first = await service.account_repo.list_for_project(project_id)
+    # The auto codes are random CL-XXXX (NOT derived from any reference_code).
+    assert total_after_first == 2
+    assert all(line_.code.startswith("CL-") for line_ in lines_after_first)
+    first_line_ids = {line_.id for line_ in lines_after_first}
+    first_codes = {line_.code for line_ in lines_after_first}
+
+    # ── 2nd generate: must be a pure no-op on counts ──
+    second = await service.generate_from_boq(project_id, boq_id)
+    assert second.cost_lines_created == 0, "2nd run duplicated cost lines (the bug)"
+    assert second.accounts_created == 0
+    assert second.positions_linked == 0
+    assert second.budget_lines_linked == 0
+
+    # Count stays EQUAL (not doubled), same rows, same codes.
+    lines_after_second, total_after_second = await service.line_repo.list_for_project(project_id)
+    assert total_after_second == total_after_first == 2
+    assert {line_.id for line_ in lines_after_second} == first_line_ids
+    assert {line_.code for line_ in lines_after_second} == first_codes
     assert len(await service.account_repo.list_for_project(project_id)) == len(accounts_after_first) == 2
 
 

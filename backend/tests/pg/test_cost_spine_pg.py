@@ -381,3 +381,138 @@ async def test_missing_fx_rate_keeps_foreign_units_not_zeroed(pg_session) -> Non
     repo = CostSpineRepository(pg_session)
     agg = await repo.budget_aggregate_by_cost_line(project_id)
     assert agg[str(line.id)]["planned"] == Decimal("750")
+
+
+# ── Idempotency of generate_from_boq on real PostgreSQL ─────────────────────
+
+
+async def _seed_boq_with_unreferenced_positions(pg_session, project_id: uuid.UUID) -> uuid.UUID:
+    """Insert a BOQ + 3 priced positions with reference_code=None, return boq id.
+
+    No ``reference_code`` is the exact trigger for the idempotency bug: the
+    cost-line code falls back to a random ``CL-XXXX`` regenerated every run.
+    """
+    from app.modules.boq.models import BOQ, Position
+
+    boq = BOQ(project_id=project_id, name="PG Unref BOQ")
+    pg_session.add(boq)
+    await pg_session.flush()
+    specs = [
+        ("01.001", "RC wall C30/37", "m3", "10", "100", "1000", {"din276": "330"}),
+        ("01.002", "Formwork", "m2", "5", "40", "200", {"din276": "330"}),
+        ("02.001", "Rebar B500B", "kg", "200", "1.5", "300", {"din276": "340"}),
+    ]
+    for ordinal, desc, unit, qty, rate, total, classification in specs:
+        pg_session.add(
+            Position(
+                boq_id=boq.id,
+                ordinal=ordinal,
+                description=desc,
+                unit=unit,
+                quantity=qty,
+                unit_rate=rate,
+                total=total,
+                classification=classification,
+                reference_code=None,  # the bug trigger
+            )
+        )
+    await pg_session.flush()
+    boq_id = boq.id
+    # Detach the seed rows so the service works off fresh queries only. The
+    # service ``expire_all()``s mid-generation; a lingering expired seed object
+    # would otherwise be lazy-loaded during the next autoflush (MissingGreenlet
+    # under the async session). Same pattern the JSONB tests above use.
+    pg_session.expunge_all()
+    return boq_id
+
+
+async def test_generate_from_boq_idempotent_unreferenced_positions_pg(pg_session) -> None:
+    """A 2nd generate_from_boq on real PG creates 0 lines for unreferenced positions.
+
+    Regression guard for the real bug on the production dialect: without a
+    ``reference_code`` the cost-line code is a random ``CL-XXXX`` regenerated
+    every run, so the prior code-keyed dedup never matched and each re-run
+    duplicated the whole batch (a real demo BOQ went 129 -> 258 cost lines).
+    Dedup is now keyed on the stable ``boq_position_id``; the count must stay
+    equal across runs, with the exact same rows.
+    """
+    from app.modules.costmodel.repository import CostLineRepository
+    from app.modules.costmodel.service import CostSpineService
+
+    project_id = await _seed_project(pg_session, currency="EUR")
+    boq_id = await _seed_boq_with_unreferenced_positions(pg_session, project_id)
+
+    service = CostSpineService(pg_session)
+    line_repo = CostLineRepository(pg_session)
+
+    # ── 1st generate ──
+    first = await service.generate_from_boq(project_id, boq_id)
+    assert first.cost_lines_created == 3
+    assert first.accounts_created == 2  # din276 330 + 340
+    assert first.positions_linked == 3
+
+    lines_after_first, total_after_first = await line_repo.list_for_project(project_id, limit=1000)
+    assert total_after_first == 3
+    # Every code is a random auto CL-XXXX (no reference_code on any position).
+    assert all(line.code.startswith("CL-") for line in lines_after_first)
+    first_ids = {line.id for line in lines_after_first}
+
+    # ── 2nd generate: pure no-op on counts, no duplicate rows ──
+    second = await service.generate_from_boq(project_id, boq_id)
+    assert second.cost_lines_created == 0, "2nd run duplicated cost lines on PG (the bug)"
+    assert second.accounts_created == 0
+    assert second.positions_linked == 0
+    assert second.budget_lines_linked == 0
+
+    lines_after_second, total_after_second = await line_repo.list_for_project(project_id, limit=1000)
+    assert total_after_second == total_after_first == 3, "cost lines doubled on PG"
+    assert {line.id for line in lines_after_second} == first_ids
+
+
+async def test_generate_from_boq_idempotent_referenced_positions_pg(pg_session) -> None:
+    """Referenced positions stay idempotent on PG too (no regression).
+
+    With a stable ``reference_code`` the code-keyed path already worked; this
+    pins that the new position-keyed dedup keeps it a no-op on the 2nd run.
+    """
+    from app.modules.boq.models import BOQ, Position
+    from app.modules.costmodel.repository import CostLineRepository
+    from app.modules.costmodel.service import CostSpineService
+
+    project_id = await _seed_project(pg_session, currency="EUR")
+    boq = BOQ(project_id=project_id, name="PG Ref BOQ")
+    pg_session.add(boq)
+    await pg_session.flush()
+    pg_session.add_all(
+        [
+            Position(
+                boq_id=boq.id, ordinal="01", description="RC wall", unit="m3",
+                quantity="10", unit_rate="100", total="1000",
+                classification={"din276": "330"}, reference_code="P-330-1",
+            ),
+            Position(
+                boq_id=boq.id, ordinal="02", description="Rebar", unit="kg",
+                quantity="200", unit_rate="1.5", total="300",
+                classification={"din276": "340"}, reference_code="P-340-1",
+            ),
+        ]
+    )
+    await pg_session.flush()
+    boq_id = boq.id
+    # Detach seed rows (see _seed_boq_with_unreferenced_positions for why).
+    pg_session.expunge_all()
+
+    service = CostSpineService(pg_session)
+    line_repo = CostLineRepository(pg_session)
+
+    first = await service.generate_from_boq(project_id, boq_id)
+    assert first.cost_lines_created == 2
+    lines_first, total_first = await line_repo.list_for_project(project_id, limit=1000)
+    # Codes come from the reference_code, not the auto CL-XXXX.
+    assert {line.code for line in lines_first} == {"P-330-1", "P-340-1"}
+
+    second = await service.generate_from_boq(project_id, boq_id)
+    assert second.cost_lines_created == 0
+    assert second.accounts_created == 0
+    _lines_second, total_second = await line_repo.list_for_project(project_id, limit=1000)
+    assert total_second == total_first == 2

@@ -643,6 +643,33 @@ class CostLineRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def existing_by_boq_position(self, project_id: uuid.UUID) -> dict[str, CostLine]:
+        """Map ``str(boq_position_id) -> CostLine`` for the project's BOQ-sourced lines.
+
+        Only rows whose ``boq_position_id`` is set are returned, keyed by the
+        position id as a string. This is the stable dedup index used by
+        ``generate_from_boq``: the originating BOQ position is the true
+        invariant (exactly one cost line per position in a project), whereas a
+        line's ``code`` is a random ``CL-XXXX`` when the position has no
+        ``reference_code`` and therefore cannot be matched across runs.
+
+        One query, no N+1. When two rows somehow share a position id (should be
+        impossible given the per-position invariant) the lowest ``code`` wins so
+        the result stays deterministic.
+        """
+        stmt = select(CostLine).where(
+            CostLine.project_id == project_id,
+            CostLine.boq_position_id.is_not(None),
+        )
+        result = await self.session.execute(stmt)
+        out: dict[str, CostLine] = {}
+        for line in result.scalars().all():
+            key = str(line.boq_position_id)
+            existing = out.get(key)
+            if existing is None or line.code < existing.code:
+                out[key] = line
+        return out
+
     async def create(self, line: CostLine) -> CostLine:
         """Insert a new cost line."""
         self.session.add(line)

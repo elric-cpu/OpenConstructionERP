@@ -1633,16 +1633,21 @@ class CostSpineService:
         project_id: uuid.UUID,
         boq_id: uuid.UUID | None = None,
     ) -> SpineGenerationResult:
-        """Build the cost spine from a BOQ (idempotent, fill-nulls-only).
+        """Build the cost spine from a BOQ (idempotent on the BOQ position).
 
         Resolves the BOQ (largest/most-recent when ``boq_id`` is omitted), loads
         its positions, builds a control-account tree from each position's
-        classification, upserts one cost line per position keyed on
-        ``(project_id, code)`` (code from ``reference_code`` or an auto
-        ``CL-XXXXXXXX``), captures the estimate quantity/rate/amount, inherits
-        the project currency, writes ``cost_line_id`` back onto the position, and
-        auto-links any budget line whose ``boq_position_id`` matches. Re-running
-        only fills gaps so it never doubles money or relinks already-wired rows.
+        classification, and upserts exactly one cost line per BOQ position. The
+        dedup key is the STABLE ``boq_position_id`` provenance, not the line
+        ``code``: a position without a ``reference_code`` gets a random
+        ``CL-XXXXXXXX`` code on first create, so keying on the code would never
+        match across runs and would duplicate the whole batch every time. A new
+        line copies the estimate quantity/rate/amount and inherits the project
+        currency; an existing line is reused (its id and code kept) with the
+        estimate refreshed from the current position. The position gets its
+        ``cost_line_id`` written back and any budget line sharing the
+        ``boq_position_id`` is auto-linked. Re-running creates zero new lines and
+        accounts for both referenced and unreferenced positions.
         """
         from app.modules.boq.repository import BOQRepository, PositionRepository
 
@@ -1685,20 +1690,36 @@ class CostSpineService:
         accounts_by_code: dict[str, uuid.UUID] = {
             a.code: a.id for a in await self.account_repo.list_for_project(project_id)
         }
-        # ``lines_by_code`` only needs the identity + linkage columns, so we
-        # snapshot them into plain namespaces up front. Reading the live ORM
-        # objects later in the loop would fault: the first create/update flushes
-        # and ``expire_all()``s the identity map, after which any ORM attribute
-        # access (even on a previously-loaded row) re-issues a sync SELECT and
-        # raises MissingGreenlet under the async session.
-        lines_by_code: dict[str, SimpleNamespace] = {}
-        for line in (await self.line_repo.list_for_project(project_id, limit=100000))[0]:
-            lines_by_code[line.code] = SimpleNamespace(
+        # Existing BOQ-sourced cost lines are deduped by their STABLE
+        # ``boq_position_id`` - the true invariant is exactly one cost line per
+        # BOQ position in a project. Keying on ``code`` was the original bug:
+        # for a position with no ``reference_code`` the code is a random
+        # ``CL-XXXX`` regenerated every run, so the previous line was never
+        # matched and each re-run created a fresh duplicate batch (a real demo
+        # BOQ went 129 -> 258 cost lines on the 2nd run).
+        #
+        # We snapshot only the identity + linkage columns into plain namespaces
+        # up front. Reading the live ORM objects later in the loop would fault:
+        # the first create/update flushes and ``expire_all()``s the identity
+        # map, after which any ORM attribute access (even on a previously-loaded
+        # row) re-issues a sync SELECT and raises MissingGreenlet under the
+        # async session.
+        lines_by_position: dict[str, SimpleNamespace] = {}
+        for key, line in (await self.line_repo.existing_by_boq_position(project_id)).items():
+            lines_by_position[key] = SimpleNamespace(
                 id=line.id,
+                code=line.code,
                 boq_position_id=line.boq_position_id,
                 boq_id=line.boq_id,
                 control_account_id=line.control_account_id,
             )
+        # All cost-line codes already taken in this project, so a freshly
+        # generated ``CL-XXXX`` for an unreferenced position cannot collide with
+        # an existing code (manual lines included). The unique
+        # ``(project_id, code)`` constraint stays the DB-level belt to this.
+        existing_codes: set[str] = {
+            line.code for line in (await self.line_repo.list_for_project(project_id, limit=100000))[0]
+        }
 
         accounts_created = 0
         cost_lines_created = 0
@@ -1754,15 +1775,21 @@ class CostSpineService:
                     accounts_by_code[acct_code] = account_id
                     accounts_created += 1
 
-            # ── Cost line code (reference_code or auto) ──────────────────
-            ref = (pos.reference_code or "").strip()
-            code = ref or f"CL-{uuid.uuid4().hex[:8].upper()}"
-            # Guard against a collision on an auto code (extremely unlikely).
-            while not ref and code in lines_by_code:
-                code = f"CL-{uuid.uuid4().hex[:8].upper()}"
-
-            existing_line = lines_by_code.get(code)
+            # ── Resolve the cost line by STABLE boq_position_id ──────────
+            # Dedup on the position id, NOT the line code: an unreferenced
+            # position has a random ``CL-XXXX`` code each run, so a 2nd
+            # generate must find its line by the invariant provenance or it
+            # would duplicate. A referenced position is matched the same way
+            # once its line is wired (its ``boq_position_id`` is set on first
+            # create), keeping the run idempotent regardless of reference_code.
+            existing_line = lines_by_position.get(str(pos.id))
             if existing_line is None:
+                # New line: code is the reference_code when present, else an
+                # auto ``CL-XXXX`` that does not clash with an existing code.
+                ref = (pos.reference_code or "").strip()
+                code = ref or f"CL-{uuid.uuid4().hex[:8].upper()}"
+                while not ref and code in existing_codes:
+                    code = f"CL-{uuid.uuid4().hex[:8].upper()}"
                 new_line = CostLine(
                     project_id=project_id,
                     control_account_id=account_id,
@@ -1782,28 +1809,32 @@ class CostSpineService:
                 # Capture identity NOW, before the next iteration expires it.
                 view = SimpleNamespace(
                     id=new_line.id,
+                    code=code,
                     boq_position_id=pos.id,
                     boq_id=resolved_boq_id,
                     control_account_id=account_id,
                 )
-                lines_by_code[code] = view
+                lines_by_position[str(pos.id)] = view
+                existing_codes.add(code)
                 cost_lines_created += 1
             else:
+                # Reuse the existing line: keep its id + code, refresh the
+                # estimate from the current BOQ position, and fill any missing
+                # linkage. This keeps exactly one cost line per position and
+                # tracks edits to the BOQ without duplicating rows.
                 view = existing_line
-                # Idempotent fill-nulls-only: attach the originating position /
-                # account when the existing line has none yet, never overwrite.
-                fill: dict[str, object] = {}
-                if view.boq_position_id is None:
-                    fill["boq_position_id"] = pos.id
-                    view.boq_position_id = pos.id
+                fill: dict[str, object] = {
+                    "estimate_quantity": str(pos.quantity or "0"),
+                    "estimate_unit_rate": str(pos.unit_rate or "0"),
+                    "estimate_amount": str(pos.total or "0"),
+                }
                 if view.boq_id is None:
                     fill["boq_id"] = resolved_boq_id
                     view.boq_id = resolved_boq_id
                 if view.control_account_id is None and account_id is not None:
                     fill["control_account_id"] = account_id
                     view.control_account_id = account_id
-                if fill:
-                    await self.line_repo.update_fields(view.id, **fill)
+                await self.line_repo.update_fields(view.id, **fill)
 
             # ── Write cost_line_id back onto the position (fill-only) ────
             if pos.cost_line_id is None:
@@ -1811,9 +1842,9 @@ class CostSpineService:
                 positions_linked += 1
 
         # ── Auto-link budget lines by boq_position_id (fill-nulls-only) ──
-        # ``lines_by_code`` values are plain namespaces (id + linkage cols), so
-        # the autolink pass never touches expired ORM state.
-        budget_lines_linked = await self._autolink_budget_lines(project_id, lines_by_code)
+        # ``lines_by_position`` values are plain namespaces (id + linkage cols),
+        # so the autolink pass never touches expired ORM state.
+        budget_lines_linked = await self._autolink_budget_lines(project_id, lines_by_position)
 
         await _safe_publish(
             "costmodel.spine.generated",
@@ -1865,7 +1896,7 @@ class CostSpineService:
     async def _autolink_budget_lines(
         self,
         project_id: uuid.UUID,
-        lines_by_code: dict[str, SimpleNamespace],
+        lines_by_position: dict[str, SimpleNamespace],
     ) -> int:
         """Link existing budget lines to cost lines by shared ``boq_position_id``.
 
@@ -1873,17 +1904,18 @@ class CostSpineService:
         left untouched. Sets both ``cost_line_id`` and ``control_account_id`` so
         account rollups can group budget without re-joining.
 
-        ``lines_by_code`` values are plain namespaces (id + linkage cols)
-        captured by the generation loop, so this pass never reads an expired
-        ORM attribute. Budget-line fields are likewise snapshotted before the
-        first ``update_fields`` (which ``expire_all()``s) so a multi-row link
-        does not fault on the second iteration.
+        ``lines_by_position`` is keyed by ``str(boq_position_id)`` and its
+        values are plain namespaces (id + linkage cols) captured by the
+        generation loop, so this pass never reads an expired ORM attribute.
+        Budget-line fields are likewise snapshotted before the first
+        ``update_fields`` (which ``expire_all()``s) so a multi-row link does not
+        fault on the second iteration.
         """
-        # Index cost lines by their originating position.
-        by_position: dict[str, SimpleNamespace] = {}
-        for line in lines_by_code.values():
-            if line.boq_position_id is not None:
-                by_position[str(line.boq_position_id)] = line
+        # Cost lines are already keyed by their originating position; keep only
+        # those that actually carry a position id.
+        by_position: dict[str, SimpleNamespace] = {
+            key: line for key, line in lines_by_position.items() if line.boq_position_id is not None
+        }
 
         if not by_position:
             return 0
