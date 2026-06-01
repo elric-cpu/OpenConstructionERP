@@ -318,7 +318,16 @@ function CWICRDatabaseGrid(_props: { onLoadDatabase: (file: File) => void }) {
       void GITHUB_ONLY_DBS; // Referenced in JSX badge
 
       try {
-        const data = await apiPost<Record<string, unknown>>(`/v1/costs/load-cwicr/${db.id}`);
+        // A regional CWICR import reads a ~40 MB parquet, expands 900K rows to
+        // 55K items and bulk-loads them — tens of seconds, well past the 30s
+        // default abort. Opt into the 5-min long-running budget (see api.ts) so
+        // the request waits for the backend instead of aborting mid-import and
+        // showing a false "Request timed out" (GitHub #171).
+        const data = await apiPost<Record<string, unknown>>(
+          `/v1/costs/load-cwicr/${db.id}`,
+          undefined,
+          { longRunning: true },
+        );
 
         setLoaded((prev) => new Set(prev).add(db.id));
         addLoadedDatabase(db.id);

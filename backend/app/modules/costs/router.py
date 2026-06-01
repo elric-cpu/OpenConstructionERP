@@ -3282,71 +3282,47 @@ async def load_cwicr_region(db_id: str, session: AsyncSession) -> dict:
 
 
 def _pg_bulk_insert_cost_rows(sync_url: str, rows: list[tuple]) -> int:
-    """Bulk-insert CWICR cost rows into PostgreSQL, idempotent on (code, region).
+    """Bulk-load CWICR cost rows into PostgreSQL, idempotent on (code, region).
 
-    Mirrors the SQLite ``INSERT OR IGNORE`` fast path: duplicate codes per
-    region are silently skipped via ``ON CONFLICT (code, region) DO NOTHING``
-    against the ``uq_costs_code_region`` unique constraint. Runs on a short-
-    lived sync SQLAlchemy engine built from ``database_sync_url`` so the import
-    writes to the real PostgreSQL database (never a stray local SQLite file).
+    Uses PostgreSQL's native ``COPY`` into a staging table cloned from the target
+    (no indexes), then a single ``INSERT ... SELECT ... ON CONFLICT (code, region)
+    DO NOTHING`` into the live table. A 55K-row regional database loads in a few
+    seconds, matching the SQLite ``INSERT OR IGNORE`` fast path.
+
+    The previous implementation issued one 1000-row multi-VALUES ``INSERT`` per
+    batch. Each statement paid a large SQLAlchemy Core compile (≈16K bind
+    parameters) plus a server-side parse of the same, so a single regional import
+    took roughly three minutes on embedded PostgreSQL versus ~5 seconds on
+    SQLite. The synchronous HTTP request then timed out and the client saw no
+    response -- the user-visible "crash" in issue #171. ``COPY`` skips per-row SQL
+    parsing entirely and closes that gap.
+
+    Duplicate ``(code, region)`` pairs are silently skipped via the
+    ``uq_costs_code_region`` constraint, exactly like the SQLite path. Runs on a
+    short-lived sync engine built from ``database_sync_url`` (falling back to the
+    live ``DATABASE_SYNC_URL`` env var, which embedded PG wires in after the
+    Settings cache is built) so the load always reaches the real cluster.
 
     Args:
         sync_url: Sync SQLAlchemy URL (e.g. ``postgresql+psycopg2://...``).
         rows: Positional tuples in the SQLite column order
             ``(id, code, description, unit, rate, currency, source,
             classification, tags, components, descriptions, is_active,
-            region, metadata)``. JSON columns are pre-serialized strings and
-            are decoded back to Python objects so the JSONB columns store
-            structured values rather than double-encoded text.
+            region, metadata)``. The five JSON columns carry pre-serialized JSON
+            text and stream straight into the ``json`` columns -- no decode /
+            re-encode round-trip.
 
     Returns:
         Number of rows actually inserted (conflicts excluded).
     """
-    import json as _json
+    import csv
+    import io
+    import os as _os
 
     from sqlalchemy import create_engine
-    from sqlalchemy.dialects.postgresql import insert as pg_insert
 
     if not rows:
         return 0
-
-    table = CostItem.__table__
-    cols = (
-        "id",
-        "code",
-        "description",
-        "unit",
-        "rate",
-        "currency",
-        "source",
-        "classification",
-        "tags",
-        "components",
-        "descriptions",
-        "is_active",
-        "region",
-        "metadata",
-    )
-    json_obj_cols = {"classification", "descriptions", "metadata"}
-    json_arr_cols = {"tags", "components"}
-
-    def _to_mapping(row: tuple) -> dict[str, Any]:
-        mapping: dict[str, Any] = {}
-        for key, value in zip(cols, row, strict=True):
-            if key in json_obj_cols and isinstance(value, str):
-                try:
-                    value = _json.loads(value)
-                except (ValueError, TypeError):
-                    value = {}
-            elif key in json_arr_cols and isinstance(value, str):
-                try:
-                    value = _json.loads(value)
-                except (ValueError, TypeError):
-                    value = []
-            elif key == "is_active":
-                value = bool(value)
-            mapping[key] = value
-        return mapping
 
     # Embedded PostgreSQL (the v6 default) wires DATABASE_SYNC_URL into the
     # process env *after* the pydantic Settings cache is built, so a caller may
@@ -3355,22 +3331,60 @@ def _pg_bulk_insert_cost_rows(sync_url: str, rows: list[tuple]) -> int:
     # so the bulk load reaches the real embedded cluster instead of raising
     # "Could not parse SQLAlchemy URL from given URL string".
     if not sync_url:
-        import os as _os
-
         sync_url = _os.environ.get("DATABASE_SYNC_URL", "")
-    engine = create_engine(sync_url, pool_pre_ping=True)
+
+    table = CostItem.__table__.name  # "oe_costs_item"
+    col_list = (
+        "id, code, description, unit, rate, currency, source, "
+        "classification, tags, components, descriptions, is_active, region, metadata"
+    )
+
+    def _row_for_copy(row: tuple) -> list[object]:
+        # ``is_active`` (index 11) is an int flag in the tuple; COPY needs a
+        # boolean literal. Everything else is already text (the JSON columns
+        # carry JSON text, streamed verbatim into the ``json`` columns).
+        out = list(row)
+        out[11] = "true" if row[11] else "false"
+        return out
+
+    engine = create_engine(sync_url)
     inserted = 0
-    batch_size = 1000
+    copy_chunk = 5000  # bound peak memory of the CSV buffer for large JSON rows
+    raw = engine.raw_connection()
     try:
-        with engine.begin() as connection:
-            for i in range(0, len(rows), batch_size):
-                chunk = [_to_mapping(r) for r in rows[i : i + batch_size]]
-                stmt = pg_insert(table).values(chunk).on_conflict_do_nothing(index_elements=["code", "region"])
-                result = connection.execute(stmt)
-                # rowcount excludes conflict-skipped rows on PostgreSQL.
-                if result.rowcount is not None and result.rowcount >= 0:
-                    inserted += result.rowcount
+        cur = raw.cursor()
+        # Staging table cloned from the target: same column types and defaults,
+        # but no indexes or unique constraint, so COPY is maximally fast.
+        # ``INCLUDING DEFAULTS`` lets COPY fill the omitted created_at/updated_at
+        # (NOT NULL) columns with now() instead of failing on a null. The temp
+        # table is dropped automatically when the transaction commits.
+        cur.execute(f"CREATE TEMP TABLE _cwicr_stage (LIKE {table} INCLUDING DEFAULTS) ON COMMIT DROP")  # noqa: S608
+        copy_sql = f"COPY _cwicr_stage ({col_list}) FROM STDIN WITH (FORMAT csv)"  # noqa: S608
+        for i in range(0, len(rows), copy_chunk):
+            buf = io.StringIO()
+            writer = csv.writer(buf, quoting=csv.QUOTE_ALL)
+            for r in rows[i : i + copy_chunk]:
+                writer.writerow(_row_for_copy(r))
+            buf.seek(0)
+            cur.copy_expert(copy_sql, buf)
+        # One idempotent upsert from staging into the indexed live table. The
+        # target's server_default fills created_at/updated_at for the omitted
+        # columns; duplicate (code, region) rows are skipped.
+        cur.execute(  # noqa: S608
+            f"INSERT INTO {table} ({col_list}) "
+            f"SELECT {col_list} FROM _cwicr_stage "
+            f"ON CONFLICT (code, region) DO NOTHING"
+        )
+        inserted = cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+        raw.commit()
+    except Exception:
+        try:
+            raw.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        raise
     finally:
+        raw.close()
         engine.dispose()
     return inserted
 
