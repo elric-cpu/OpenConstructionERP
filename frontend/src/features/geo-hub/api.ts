@@ -452,6 +452,27 @@ export function rasterOverlayImageUrl(id: string): string {
   return `/api${RASTER_BASE}/${id}/raster.png`;
 }
 
+/**
+ * URL Cesium uses to load a tileset artifact (``tileset.json`` or a child
+ * tile such as ``tile_0.b3dm``). The DB stores only a storage key, so the
+ * backend artifact route streams the bytes; Cesium resolves child tiles
+ * relative to the ``tileset.json`` URL, so they hit this same route.
+ */
+export function tilesetArtifactUrl(tilesetId: string, filename = 'tileset.json'): string {
+  return `/api${BASE}/tilesets/${tilesetId}/artifact/${filename}`;
+}
+
+/**
+ * Authorization headers for the requests Cesium issues itself (imagery
+ * overlays and 3D tilesets). Cesium cannot read the api-client interceptor,
+ * so the bearer token is attached to the Cesium ``Resource`` instead. The
+ * geo artifact endpoints are tenant-scoped and 401 without it.
+ */
+export function geoAuthHeaders(): Record<string, string> {
+  const token = useAuthStore.getState().accessToken;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 /* ── Geocode autocomplete + cache admin (Wave 7 depth) ──────────────── */
 
 /**

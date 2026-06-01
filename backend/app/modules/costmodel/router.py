@@ -30,23 +30,37 @@ from app.modules.costmodel.schemas import (
     BudgetSummary,
     CashFlowData,
     CashFlowResponse,
+    ControlAccountCreate,
+    ControlAccountResponse,
+    ControlAccountUpdate,
+    CostLineCreate,
+    CostLineResponse,
+    CostLineRollupResponse,
+    CostLineUpdate,
     DashboardResponse,
     EVMResponse,
     SCurveData,
     SnapshotCreate,
     SnapshotResponse,
     SnapshotUpdate,
+    SpineGenerationResult,
+    SpineLinkRequest,
+    SpineRollupResponse,
     VarianceResponse,
     WhatIfAdjustments,
     WhatIfResult,
 )
-from app.modules.costmodel.service import CostModelService
+from app.modules.costmodel.service import CostModelService, CostSpineService
 
 router = APIRouter(tags=["costmodel"])
 
 
 def _get_service(session: SessionDep) -> CostModelService:
     return CostModelService(session)
+
+
+def _get_spine_service(session: SessionDep) -> CostSpineService:
+    return CostSpineService(session)
 
 
 def _str_to_float(value: object) -> float:
@@ -631,3 +645,256 @@ async def get_variance(
     """Return budget-variance KPI for the Estimation Dashboard."""
     await verify_project_access(project_id, user_id, session)
     return await service.get_variance(project_id)
+
+
+# ── Cost Spine: control accounts ──────────────────────────────────────────────
+
+
+@router.get(
+    "/projects/{project_id}/spine/accounts/",
+    response_model=list[ControlAccountResponse],
+    dependencies=[Depends(RequirePermission("costmodel.read"))],
+)
+async def list_control_accounts(
+    project_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: CostSpineService = Depends(_get_spine_service),
+) -> list[ControlAccountResponse]:
+    """List the project's control accounts, tree-ordered."""
+    await verify_project_access(project_id, user_id, session)
+    return await service.list_accounts(project_id)
+
+
+@router.post(
+    "/projects/{project_id}/spine/accounts/",
+    response_model=ControlAccountResponse,
+    status_code=201,
+    dependencies=[Depends(RequirePermission("costmodel.write"))],
+)
+async def create_control_account(
+    project_id: uuid.UUID,
+    data: ControlAccountCreate,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: CostSpineService = Depends(_get_spine_service),
+) -> ControlAccountResponse:
+    """Create a control account under a project."""
+    await verify_project_access(project_id, user_id, session)
+    data.project_id = project_id
+    return await service.create_account(data)
+
+
+@router.patch(
+    "/spine/accounts/{account_id}",
+    response_model=ControlAccountResponse,
+    dependencies=[Depends(RequirePermission("costmodel.write"))],
+)
+async def update_control_account(
+    account_id: uuid.UUID,
+    data: ControlAccountUpdate,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: CostSpineService = Depends(_get_spine_service),
+) -> ControlAccountResponse:
+    """Update a control account (resolves the row, then verifies project access)."""
+    existing = await service.account_repo.get_by_id(account_id)
+    if existing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Control account not found")
+    await verify_project_access(existing.project_id, user_id, session)
+    return await service.update_account(account_id, data)
+
+
+@router.delete(
+    "/spine/accounts/{account_id}",
+    status_code=204,
+    dependencies=[Depends(RequirePermission("costmodel.manage"))],
+)
+async def delete_control_account(
+    account_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: CostSpineService = Depends(_get_spine_service),
+) -> None:
+    """Delete a control account (409 when cost lines still reference it)."""
+    existing = await service.account_repo.get_by_id(account_id)
+    if existing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Control account not found")
+    await verify_project_access(existing.project_id, user_id, session)
+    await service.delete_account(account_id)
+
+
+# ── Cost Spine: cost lines ────────────────────────────────────────────────────
+
+
+@router.get(
+    "/projects/{project_id}/spine/lines/",
+    response_model=list[CostLineResponse],
+    dependencies=[Depends(RequirePermission("costmodel.read"))],
+)
+async def list_cost_lines(
+    project_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    control_account_id: uuid.UUID | None = Query(default=None, description="Filter by control account"),
+    line_status: str | None = Query(default=None, alias="status", description="Filter by cost-line status"),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+    service: CostSpineService = Depends(_get_spine_service),
+) -> list[CostLineResponse]:
+    """List cost lines for a project, optionally filtered by account/status."""
+    await verify_project_access(project_id, user_id, session)
+    return await service.list_lines(
+        project_id,
+        control_account_id=control_account_id,
+        status=line_status,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@router.post(
+    "/projects/{project_id}/spine/lines/",
+    response_model=CostLineResponse,
+    status_code=201,
+    dependencies=[Depends(RequirePermission("costmodel.write"))],
+)
+async def create_cost_line(
+    project_id: uuid.UUID,
+    data: CostLineCreate,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: CostSpineService = Depends(_get_spine_service),
+) -> CostLineResponse:
+    """Create a cost line under a project."""
+    await verify_project_access(project_id, user_id, session)
+    data.project_id = project_id
+    return await service.create_line(data)
+
+
+@router.patch(
+    "/spine/lines/{line_id}",
+    response_model=CostLineResponse,
+    dependencies=[Depends(RequirePermission("costmodel.write"))],
+)
+async def update_cost_line(
+    line_id: uuid.UUID,
+    data: CostLineUpdate,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: CostSpineService = Depends(_get_spine_service),
+) -> CostLineResponse:
+    """Update a cost line (resolves the row, then verifies project access)."""
+    existing = await service.line_repo.get_by_id(line_id)
+    if existing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cost line not found")
+    await verify_project_access(existing.project_id, user_id, session)
+    return await service.update_line(line_id, data)
+
+
+@router.delete(
+    "/spine/lines/{line_id}",
+    status_code=204,
+    dependencies=[Depends(RequirePermission("costmodel.manage"))],
+)
+async def delete_cost_line(
+    line_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: CostSpineService = Depends(_get_spine_service),
+) -> None:
+    """Delete a cost line (409 with linked counts when references remain)."""
+    existing = await service.line_repo.get_by_id(line_id)
+    if existing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cost line not found")
+    await verify_project_access(existing.project_id, user_id, session)
+    await service.delete_line(line_id)
+
+
+@router.get(
+    "/spine/lines/{line_id}/rollup/",
+    response_model=CostLineRollupResponse,
+    dependencies=[Depends(RequirePermission("costmodel.read"))],
+)
+async def get_cost_line_rollup(
+    line_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: CostSpineService = Depends(_get_spine_service),
+) -> CostLineRollupResponse:
+    """Return the money rollup for a single cost line."""
+    existing = await service.line_repo.get_by_id(line_id)
+    if existing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cost line not found")
+    await verify_project_access(existing.project_id, user_id, session)
+    return await service.rollup_for_line(line_id)
+
+
+@router.post(
+    "/spine/lines/{line_id}/link/",
+    response_model=CostLineRollupResponse,
+    dependencies=[Depends(RequirePermission("costmodel.write"))],
+)
+async def link_cost_line_target(
+    line_id: uuid.UUID,
+    data: SpineLinkRequest,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: CostSpineService = Depends(_get_spine_service),
+) -> CostLineRollupResponse:
+    """Link a downstream entity (BOQ position / budget / PO item / contract line / RFQ)."""
+    existing = await service.line_repo.get_by_id(line_id)
+    if existing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cost line not found")
+    await verify_project_access(existing.project_id, user_id, session)
+    return await service.link_target(line_id, data.target_type, data.target_id)
+
+
+# ── Cost Spine: generation + project rollup ───────────────────────────────────
+
+
+@router.post(
+    "/projects/{project_id}/spine/generate-from-boq/",
+    response_model=SpineGenerationResult,
+    dependencies=[Depends(RequirePermission("costmodel.write"))],
+)
+async def generate_spine_from_boq(
+    project_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    body: dict | None = None,
+    service: CostSpineService = Depends(_get_spine_service),
+) -> SpineGenerationResult:
+    """Generate the cost spine from a BOQ (idempotent).
+
+    Body may contain ``{"boq_id": "<uuid>"}``; when omitted the project's
+    most-recent BOQ is used.
+    """
+    await verify_project_access(project_id, user_id, session)
+    boq_id: uuid.UUID | None = None
+    raw_boq_id = body.get("boq_id") if isinstance(body, dict) else None
+    if raw_boq_id:
+        try:
+            boq_id = uuid.UUID(str(raw_boq_id))
+        except (ValueError, TypeError) as e:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid boq_id: {e}",
+            )
+    return await service.generate_from_boq(project_id, boq_id)
+
+
+@router.get(
+    "/projects/{project_id}/spine/rollup/",
+    response_model=SpineRollupResponse,
+    dependencies=[Depends(RequirePermission("costmodel.read"))],
+)
+async def get_spine_rollup(
+    project_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: CostSpineService = Depends(_get_spine_service),
+) -> SpineRollupResponse:
+    """Return the project-wide Cost Spine rollup (accounts + lines + totals)."""
+    await verify_project_access(project_id, user_id, session)
+    return await service.rollup_for_project(project_id)

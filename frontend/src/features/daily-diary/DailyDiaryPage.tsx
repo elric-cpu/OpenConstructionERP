@@ -21,6 +21,7 @@ import {
   ArrowRight,
   X,
   Globe2,
+  FileDown,
 } from 'lucide-react';
 import {
   Button,
@@ -57,6 +58,7 @@ import {
   listDroneSurveys,
   listRealityCaptures,
   listArchiveSignatures,
+  downloadDiaryPdf,
   type DailyDiary,
   type WeatherRecord,
   type DiaryEntry,
@@ -751,6 +753,16 @@ function TodayTab({
     onSettled: () => confirmCtx.setLoading(false),
   });
 
+  const exportPdfMut = useMutation({
+    mutationFn: (d: DailyDiary) => downloadDiaryPdf(d.id, d.diary_date),
+    onSuccess: () =>
+      addToast({
+        type: 'success',
+        title: t('daily_diary.pdf_downloaded', { defaultValue: 'Diary PDF downloaded' }),
+      }),
+    onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),
+  });
+
   const handleDelete = async () => {
     if (!diary) return;
     const ok = await confirmCtx.confirm({
@@ -822,6 +834,17 @@ function TodayTab({
           )}
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={<FileDown size={14} />}
+            onClick={() => exportPdfMut.mutate(diary)}
+            loading={exportPdfMut.isPending}
+            data-testid="daily-diary-export-pdf"
+            aria-label={t('daily_diary.export_pdf', { defaultValue: 'Export PDF' })}
+          >
+            {t('daily_diary.export_pdf', { defaultValue: 'Export PDF' })}
+          </Button>
           {diary.status === 'open' && (
             <Button
               variant="secondary"

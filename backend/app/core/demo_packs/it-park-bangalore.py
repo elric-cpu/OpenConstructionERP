@@ -21,7 +21,7 @@ from app.core.demo_projects import DemoTemplate
 
 TEMPLATE = DemoTemplate(
     demo_id="it-park-bangalore",
-    project_name="IT Park Campus — Bengaluru (Whitefield)",
+    project_name="IT Park Campus - Bengaluru (Whitefield)",
     project_description=(
         "Development of a Grade-A IT / software campus on the Whitefield "
         "technology corridor, Bengaluru, comprising two 2B+G+12 office "
@@ -53,7 +53,7 @@ TEMPLATE = DemoTemplate(
         "lng": 77.7266,
     },
     validation_rule_sets=["masterformat", "boq_quality", "project_completeness"],
-    boq_name="Bill of Quantities — CPWD DSR 2021 (Bengaluru Civil & Services)",
+    boq_name="Bill of Quantities - CPWD DSR 2021 (Bengaluru Civil & Services)",
     boq_description=(
         "Detailed BoQ prepared on a CPWD Delhi Schedule of Rates 2021 "
         "sub-head structure trued-up to Bengaluru 2026 rates, covering all "
@@ -175,7 +175,7 @@ TEMPLATE = DemoTemplate(
         # ── 2. RCC Substructure — Raft & Basement (CPWD Sub-head 4 & 5) ─────
         (
             "2",
-            "RCC Substructure — Raft, Footings & Basement",
+            "RCC Substructure - Raft, Footings & Basement",
             {"masterformat": "03 30 00", "cpwd": "DSR-5"},
             [
                 (
@@ -247,7 +247,7 @@ TEMPLATE = DemoTemplate(
         # ── 3. RCC Superstructure — Towers & Amenity (CPWD Sub-head 5) ──────
         (
             "3",
-            "RCC Superstructure — Towers & Amenity Block",
+            "RCC Superstructure - Towers & Amenity Block",
             {"masterformat": "03 30 00", "cpwd": "DSR-5"},
             [
                 (
@@ -500,7 +500,7 @@ TEMPLATE = DemoTemplate(
                 ),
                 (
                     "6.8",
-                    "Façade access — building maintenance unit (BMU) / monorail davits per tower",
+                    "Façade access - building maintenance unit (BMU) / monorail davits per tower",
                     "each",
                     2,
                     8500000.00,
@@ -511,7 +511,7 @@ TEMPLATE = DemoTemplate(
         # ── 7. Internal Finishes — Flooring, Plaster, Paint, Ceiling ───────
         (
             "7",
-            "Internal Finishes — Flooring, Plaster, Paint & Ceiling",
+            "Internal Finishes - Flooring, Plaster, Paint & Ceiling",
             {"masterformat": "09 00 00", "cpwd": "DSR-11"},
             [
                 (
@@ -908,7 +908,7 @@ TEMPLATE = DemoTemplate(
                 ),
                 (
                     "10.14",
-                    "Integrated building management system (IBMS) — HVAC, electrical, fire, ELV",
+                    "Integrated building management system (IBMS) - HVAC, electrical, fire, ELV",
                     "lsum",
                     1,
                     18500000.00,
@@ -919,7 +919,7 @@ TEMPLATE = DemoTemplate(
         # ── 11. Vertical Transportation — Lifts & Escalators ───────────────
         (
             "11",
-            "Vertical Transportation — Lifts & Escalators",
+            "Vertical Transportation - Lifts & Escalators",
             {"masterformat": "14 20 00", "cpwd": "DSR-LIFT"},
             [
                 (
@@ -996,7 +996,7 @@ TEMPLATE = DemoTemplate(
                 ),
                 (
                     "12.5",
-                    "Soft landscaping — lawn, native shrubs, trees & drip irrigation (bagwani)",
+                    "Soft landscaping - lawn, native shrubs, trees & drip irrigation (bagwani)",
                     "m2",
                     18500,
                     525.00,
@@ -1004,7 +1004,7 @@ TEMPLATE = DemoTemplate(
                 ),
                 (
                     "12.6",
-                    "Hardscape — granite seating, water bodies & feature plaza at campus core",
+                    "Hardscape - granite seating, water bodies & feature plaza at campus core",
                     "lsum",
                     1,
                     18500000.00,
@@ -1036,7 +1036,7 @@ TEMPLATE = DemoTemplate(
                 ),
                 (
                     "12.10",
-                    "EV charging infrastructure — AC & DC fast chargers in basement & surface",
+                    "EV charging infrastructure - AC & DC fast chargers in basement & surface",
                     "each",
                     60,
                     285000.00,
@@ -1108,7 +1108,7 @@ TEMPLATE = DemoTemplate(
             ],
         ),
         (
-            "MEP — HVAC, Electrical, Plumbing & Firefighting",
+            "MEP - HVAC, Electrical, Plumbing & Firefighting",
             "Chiller plant, AHUs, ductwork, HT/LT, DG, ELV, plumbing, fire systems",
             "evaluating",
             [
@@ -1147,7 +1147,7 @@ TEMPLATE = DemoTemplate(
             ],
         ),
     ],
-    budget_boq_name="Bill of Quantities — CPWD DSR 2021 (Bengaluru Civil & Services)",
+    budget_boq_name="Bill of Quantities - CPWD DSR 2021 (Bengaluru Civil & Services)",
     planned_budget=6_120_000_000.0,
     actual_spend_ratio=0.42,
     spi_override=0.97,

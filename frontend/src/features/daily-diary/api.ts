@@ -4,7 +4,14 @@
  * Backed by /api/v1/daily-diary/ — see backend/app/modules/daily_diary/router.py
  */
 
-import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/lib/api';
+import {
+  apiGet,
+  apiPost,
+  apiPatch,
+  apiDelete,
+  getAuthToken,
+  triggerDownload,
+} from '@/shared/lib/api';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -229,6 +236,39 @@ export function diaryDashboard(projectId: string): Promise<DiaryDashboard> {
   return apiGet<DiaryDashboard>(
     `/v1/daily-diary/dashboard?project_id=${encodeURIComponent(projectId)}`,
   );
+}
+
+/**
+ * Download a diary as a PDF document.
+ *
+ * Hits GET /api/v1/daily-diary/diaries/{id}/pdf (returns application/pdf,
+ * gated by the `daily_diary.read` permission) with the stored bearer token,
+ * then streams the response to the browser as a file download. Mirrors the
+ * blob-download pattern used by the BOQ export.
+ *
+ * @throws Error when the request fails so the caller can surface a toast.
+ */
+export async function downloadDiaryPdf(
+  diaryId: string,
+  diaryDate?: string,
+): Promise<void> {
+  const token = getAuthToken();
+  const res = await fetch(
+    `/api/v1/daily-diary/diaries/${encodeURIComponent(diaryId)}/pdf`,
+    { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+  );
+  if (!res.ok) {
+    let message = `Export failed (${res.status})`;
+    try {
+      const body = await res.json();
+      if (body?.detail) message = String(body.detail);
+    } catch {
+      // Non-JSON error body — keep the status-code message.
+    }
+    throw new Error(message);
+  }
+  const blob = await res.blob();
+  triggerDownload(blob, `diary-${diaryDate || diaryId}.pdf`);
 }
 
 /* ── Weather ───────────────────────────────────────────────────────────── */

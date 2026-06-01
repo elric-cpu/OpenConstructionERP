@@ -31,6 +31,7 @@ import {
   pinTooltipLabel,
   type PinCluster,
 } from './projectPinUtils';
+import { geoAuthHeaders, tilesetArtifactUrl } from './api';
 import type { AnchoredProject, GeoPinBundle, MapConfig } from './types';
 import type { TilesetOverlayState } from './hooks/useTilesetOverlayState';
 
@@ -392,8 +393,15 @@ interface CesiumLike {
   UrlTemplateImageryProvider: new (options: Record<string, unknown>) => unknown;
   ImageryLayer: new (provider: unknown) => unknown;
   Cesium3DTileset: {
-    fromUrl: (url: string) => Promise<unknown>;
+    fromUrl: (url: string | object) => Promise<unknown>;
   };
+  /**
+   * Constructor for a Cesium ``Resource`` - a URL plus request options.
+   * We pass the bearer ``headers`` through it so Cesium's own fetches of
+   * ``tileset.json`` and the derived child tiles carry our auth; the
+   * tileset artifacts are tenant-scoped and served behind a real route.
+   */
+  Resource: new (options: Record<string, unknown>) => object;
   /**
    * Constructor for the styling expression that controls per-tile colour
    * (and thus opacity via the alpha channel). Optional in the shim so
@@ -785,9 +793,17 @@ export function CesiumViewer({
           for (const ts of mapConfig.tilesets) {
             if (ts.status !== 'ready' || !ts.tileset_json_uri) continue;
             try {
-              const tileset = await cesium.Cesium3DTileset.fromUrl(
-                ts.tileset_json_uri,
-              );
+              // Cesium fetches tileset.json and its child tiles itself, so it
+              // must carry our bearer token (the artifacts are tenant-scoped)
+              // and hit a real serving route. ``tileset_json_uri`` is only a
+              // storage key in the DB; the backend artifact route streams the
+              // bytes, and the Resource header propagates to derived child
+              // tile requests.
+              const resource = new cesium.Resource({
+                url: tilesetArtifactUrl(ts.id, 'tileset.json'),
+                headers: geoAuthHeaders(),
+              });
+              const tileset = await cesium.Cesium3DTileset.fromUrl(resource);
               if (disposed) break;
               v.scene.primitives.add(tileset);
               // Record so the focus effect can flyTo() its boundingSphere

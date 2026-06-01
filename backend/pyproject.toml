@@ -1,6 +1,6 @@
 [project]
 name = "openconstructionerp"
-version = "6.3.0"
+version = "6.3.1"
 description = "Open-source construction cost estimation, multi-currency BOQ, AI vector matching, CAD/BIM takeoff without IfcOpenShell, resource-based cost DB import with example templates, 48 regional catalogues, 24 languages. AGPL-3.0. After install, run: openconstructionerp"
 license = "AGPL-3.0-or-later"
 requires-python = ">=3.12"
@@ -64,6 +64,7 @@ dependencies = [
     "httpx>=0.28.0,<1",
     "orjson>=3.10.0",
     "python-dateutil>=2.9.0",
+    "hijridate>=2.5.0",
     "structlog>=24.4.0",
     "pyyaml>=6.0",
     "defusedxml>=0.7.1",
@@ -184,7 +185,7 @@ build-backend = "hatchling.build"
 path = "hatch_build.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["app"]
+packages = ["app", "openconstructionerp"]
 
 # Bundle pre-built frontend into the wheel for pip install
 # Build frontend first: cd frontend && npm run build
@@ -212,9 +213,9 @@ packages = ["app"]
 #      pre-build so hatchling versions that walk the map regardless of the
 #      overrides above still find the path.
 [tool.hatch.build.targets.editable]
-packages = ["app"]
+packages = ["app", "openconstructionerp"]
 dev-mode-dirs = ["."]
-only-include = ["app"]
+only-include = ["app", "openconstructionerp"]
 
 [tool.hatch.build.targets.editable.force-include]
 

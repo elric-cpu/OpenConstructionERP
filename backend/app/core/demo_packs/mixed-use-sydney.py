@@ -14,7 +14,7 @@ from app.core.demo_projects import DemoTemplate
 
 TEMPLATE = DemoTemplate(
     demo_id="mixed-use-sydney",
-    project_name="Green Square Quarter — Mixed-Use Development",
+    project_name="Green Square Quarter - Mixed-Use Development",
     project_description=(
         "New 9-storey mixed-use development at Green Square, Sydney. Two "
         "ground-floor retail tenancies and a residential lobby over 8 upper "
@@ -40,7 +40,7 @@ TEMPLATE = DemoTemplate(
         "lng": 151.2056,
     },
     validation_rule_sets=["nrm", "boq_quality"],
-    boq_name="Elemental Cost Plan — AIQS / NRM Elemental",
+    boq_name="Elemental Cost Plan - AIQS / NRM Elemental",
     boq_description=(
         "Elemental cost plan prepared on the Australian elemental method "
         "(AIQS), aligned to NRM elemental groups, Sydney Q1 2026 rates."
@@ -56,7 +56,7 @@ TEMPLATE = DemoTemplate(
         # ── Preliminaries ────────────────────────────────────────────────
         (
             "0",
-            "0 — Preliminaries (Site establishment & management)",
+            "0 - Preliminaries (Site establishment & management)",
             {"nrm": "0"},
             [
                 ("0.1", "Site establishment, sheds & amenities (Site setup)", "lsum", 1, 420000.00, {"nrm": "0.1"}),
@@ -73,7 +73,7 @@ TEMPLATE = DemoTemplate(
         # ── Substructure ─────────────────────────────────────────────────
         (
             "1",
-            "1 — Substructure (Foundations & basement)",
+            "1 - Substructure (Foundations & basement)",
             {"nrm": "1"},
             [
                 ("1.1", "Bulk excavation basement, rock to spoil (Bulk dig)", "m3", 22000, 58.00, {"nrm": "1.1"}),
@@ -91,7 +91,7 @@ TEMPLATE = DemoTemplate(
         # ── Columns ──────────────────────────────────────────────────────
         (
             "2.1",
-            "2.1 — Columns (Vertical structure)",
+            "2.1 - Columns (Vertical structure)",
             {"nrm": "2.1"},
             [
                 ("2.1.1", "RC columns 600x600 N50 basement/podium (Columns lower)", "m3", 320, 685.00, {"nrm": "2.1"}),
@@ -103,7 +103,7 @@ TEMPLATE = DemoTemplate(
         # ── Upper floors ─────────────────────────────────────────────────
         (
             "2.2",
-            "2.2 — Upper Floors (Suspended slabs & beams)",
+            "2.2 - Upper Floors (Suspended slabs & beams)",
             {"nrm": "2.2"},
             [
                 ("2.2.1", "Post-tensioned suspended slab 220mm N40 (PT slabs)", "m2", 9600, 215.00, {"nrm": "2.2"}),
@@ -117,7 +117,7 @@ TEMPLATE = DemoTemplate(
         # ── Staircases & lift cores ──────────────────────────────────────
         (
             "2.3",
-            "2.3 — Staircases & Lift Cores (Vertical access structure)",
+            "2.3 - Staircases & Lift Cores (Vertical access structure)",
             {"nrm": "2.3"},
             [
                 ("2.3.1", "RC lift & stair core walls 250mm (Core walls)", "m3", 520, 615.00, {"nrm": "2.3"}),
@@ -129,7 +129,7 @@ TEMPLATE = DemoTemplate(
         # ── Roof ─────────────────────────────────────────────────────────
         (
             "2.4",
-            "2.4 — Roof (Roof structure & coverings)",
+            "2.4 - Roof (Roof structure & coverings)",
             {"nrm": "2.4"},
             [
                 ("2.4.1", "Concrete roof slab 200mm with falls (Roof slab)", "m2", 1400, 195.00, {"nrm": "2.4"}),
@@ -143,7 +143,7 @@ TEMPLATE = DemoTemplate(
         # ── External walls, windows & doors ──────────────────────────────
         (
             "2.5",
-            "2.5 — External Walls, Windows & Doors (Facade)",
+            "2.5 - External Walls, Windows & Doors (Facade)",
             {"nrm": "2.5"},
             [
                 ("2.5.1", "Precast concrete facade panels, finished (Precast facade)", "m2", 3200, 425.00, {"nrm": "2.5"}),
@@ -158,7 +158,7 @@ TEMPLATE = DemoTemplate(
         # ── Internal walls & partitions ──────────────────────────────────
         (
             "2.6",
-            "2.6 — Internal Walls & Partitions",
+            "2.6 - Internal Walls & Partitions",
             {"nrm": "2.6"},
             [
                 ("2.6.1", "Inter-tenancy fire/acoustic wall, Rw60 (Party walls)", "m2", 6400, 165.00, {"nrm": "2.6"}),
@@ -172,7 +172,7 @@ TEMPLATE = DemoTemplate(
         # ── Internal finishes ────────────────────────────────────────────
         (
             "3",
-            "3 — Internal Finishes (Floor, wall & ceiling finishes)",
+            "3 - Internal Finishes (Floor, wall & ceiling finishes)",
             {"nrm": "3"},
             [
                 ("3.1", "Engineered timber flooring, living areas (Timber floor)", "m2", 5400, 145.00, {"nrm": "3.1"}),
@@ -189,7 +189,7 @@ TEMPLATE = DemoTemplate(
         # ── Fittings & fixtures ──────────────────────────────────────────
         (
             "4",
-            "4 — Fittings, Furnishings & Equipment",
+            "4 - Fittings, Furnishings & Equipment",
             {"nrm": "4"},
             [
                 ("4.1", "Kitchen joinery & benchtops, stone (Kitchens)", "pcs", 94, 14500.00, {"nrm": "4.1"}),
@@ -204,7 +204,7 @@ TEMPLATE = DemoTemplate(
         # ── Hydraulic services ───────────────────────────────────────────
         (
             "5.1",
-            "5.1 — Services: Hydraulic (Plumbing & drainage)",
+            "5.1 - Services: Hydraulic (Plumbing & drainage)",
             {"nrm": "5.1"},
             [
                 ("5.1.1", "Cold & hot water reticulation, copper/PEX (Water reticulation)", "m", 4800, 58.00, {"nrm": "5.1"}),
@@ -219,7 +219,7 @@ TEMPLATE = DemoTemplate(
         # ── Mechanical services ──────────────────────────────────────────
         (
             "5.2",
-            "5.2 — Services: Mechanical (HVAC & ventilation)",
+            "5.2 - Services: Mechanical (HVAC & ventilation)",
             {"nrm": "5.2"},
             [
                 ("5.2.1", "Split-system air conditioning per apartment (Split AC)", "pcs", 94, 5800.00, {"nrm": "5.2"}),
@@ -233,7 +233,7 @@ TEMPLATE = DemoTemplate(
         # ── Electrical services ──────────────────────────────────────────
         (
             "5.3",
-            "5.3 — Services: Electrical (Power, lighting & comms)",
+            "5.3 - Services: Electrical (Power, lighting & comms)",
             {"nrm": "5.3"},
             [
                 ("5.3.1", "Main switchboard & sub-mains, Ausgrid (Switchboards)", "lsum", 1, 420000.00, {"nrm": "5.3"}),
@@ -249,7 +249,7 @@ TEMPLATE = DemoTemplate(
         # ── Fire services ────────────────────────────────────────────────
         (
             "5.4",
-            "5.4 — Services: Fire (Protection & detection)",
+            "5.4 - Services: Fire (Protection & detection)",
             {"nrm": "5.4"},
             [
                 ("5.4.1", "Sprinkler system to AS 2118, full coverage (Sprinklers)", "m2", 10500, 38.00, {"nrm": "5.4"}),
@@ -262,7 +262,7 @@ TEMPLATE = DemoTemplate(
         # ── Lift / vertical transport ────────────────────────────────────
         (
             "5.5",
-            "5.5 — Services: Lift Installations (Vertical transport)",
+            "5.5 - Services: Lift Installations (Vertical transport)",
             {"nrm": "5.5"},
             [
                 ("5.5.1", "Passenger lifts 13-person, 11 stops MRL (Passenger lifts)", "pcs", 3, 245000.00, {"nrm": "5.5"}),
@@ -273,7 +273,7 @@ TEMPLATE = DemoTemplate(
         # ── External & site works ────────────────────────────────────────
         (
             "6",
-            "6 — External & Site Works (Landscape & infrastructure)",
+            "6 - External & Site Works (Landscape & infrastructure)",
             {"nrm": "6"},
             [
                 ("6.1", "Site demolition & clearance (Demolition)", "lsum", 1, 185000.00, {"nrm": "6.1"}),

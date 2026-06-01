@@ -2255,7 +2255,7 @@ async def list_categories(
     if _region_cache.get(cache_key) is not None and now - _region_cache["ts"] < _CACHE_TTL:
         return _region_cache[cache_key]
 
-    from sqlalchemy import distinct, func, select
+    from sqlalchemy import distinct, select
 
     from app.database import engine as _engine
     from app.modules.costs.models import CostItem
@@ -3161,12 +3161,42 @@ async def load_cwicr_region(db_id: str, session: AsyncSession) -> dict:
     existing_count = (await session.execute(existing_count_stmt)).scalar_one()
     if existing_count > 10:
         duration = round(time.monotonic() - start, 1)
-        logger.info("CWICR %s already loaded (%d items), skipping", db_id, existing_count)
+        # Count the resource components already persisted for this region so the
+        # partner-pack installer reports the embedded resource database on
+        # re-activation, not 0. Each work item carries its labour/material/
+        # equipment breakdown in the ``components`` JSON array; the true count is
+        # the sum of those array lengths, mirroring the fresh-import branch's
+        # ``resource_components = sum(len(v) for v in resources_by_code.values())``.
+        #
+        # Dialect-portable JSON array length: SQLite has ``json_array_length`` and
+        # PostgreSQL (where ``components`` is physically JSONB) has
+        # ``jsonb_array_length``. Detect the dialect from THIS session's bind, not
+        # the global engine, so the PG test lane (global engine still SQLite) does
+        # not emit ``json_array_length(jsonb)`` which PG rejects. Same coalesce as
+        # the costs repository's "has components" predicate.
+        dialect_name = session.bind.dialect.name if session.bind else "sqlite"
+        if dialect_name == "sqlite":
+            _comp_len = func.coalesce(func.json_array_length(CostItem.components), 0)
+        else:
+            _comp_len = func.coalesce(func.jsonb_array_length(CostItem.components), 0)
+        resource_components_stmt = (
+            select(func.coalesce(func.sum(_comp_len), 0))
+            .select_from(CostItem)
+            .where(CostItem.region == db_id, CostItem.is_active.is_(True))
+        )
+        resource_components = int((await session.execute(resource_components_stmt)).scalar_one() or 0)
+        logger.info(
+            "CWICR %s already loaded (%d items, %d resource components), skipping",
+            db_id,
+            existing_count,
+            resource_components,
+        )
         return {
             "imported": 0,
             "skipped": existing_count,
             "region": db_id,
             "total_items": existing_count,
+            "resource_components": resource_components,
             "status": "already_loaded",
             "message": f"Database '{db_id}' is already loaded with {existing_count:,} items. "
             f"To reload, delete the region first.",
@@ -3942,11 +3972,20 @@ def _process_and_insert_cwicr(parquet_path: str, db_id: str, db_file: str) -> di
     elapsed = round(time.monotonic() - start, 1)
     _log.info("CWICR %s: %d imported, %d skipped in %.1fs", db_id, imported, skipped_count, elapsed)
 
+    # Total resource components carried by the imported work items. Each CWICR
+    # work item (rate_code) bundles a labour/material/equipment breakdown in its
+    # ``components`` array (the parquet is literally
+    # ``..._workitems_costs_resources_...``); surfacing the aggregate count lets
+    # the partner-pack installer report the embedded resource database it just
+    # loaded alongside the work catalog.
+    resource_components = sum(len(v) for v in resources_by_code.values())
+
     return {
         "imported": imported,
         "skipped": skipped_count,
         "total_rows": total_rows,
         "unique_items": len(grouped),
+        "resource_components": resource_components,
         "database": db_id,
     }
 

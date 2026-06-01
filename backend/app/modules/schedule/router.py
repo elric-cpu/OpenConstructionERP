@@ -54,6 +54,7 @@ from app.modules.schedule.schemas import (
     ImportResult,
     LaborCostByPhaseResponse,
     LinkPositionRequest,
+    NextMilestone,
     ProgressUpdateCreate,
     ProgressUpdateEdit,
     ProgressUpdateRequest,
@@ -2022,6 +2023,8 @@ async def schedule_stats(
     total_duration = 0
     weighted_progress = 0.0
     total_weight = 0
+    # (date, name) of every unfinished milestone, resolved to one "next" below.
+    milestone_candidates: list[tuple[str, str]] = []
 
     for act in activities:
         dur = act.duration_days or 0
@@ -2054,9 +2057,23 @@ async def schedule_stats(
             in_progress += 1
             on_track += 1
 
+        if act.activity_type == "milestone" and effective_status != "completed" and act.end_date:
+            milestone_candidates.append((str(act.end_date)[:10], act.name))
+
     progress_pct = 0.0
     if total_weight > 0:
         progress_pct = round(weighted_progress / total_weight, 1)
+
+    # The "next" milestone is the earliest unfinished one. Prefer a date still
+    # in the future; if every remaining milestone is already overdue, surface
+    # the most overdue one so the team sees the slip rather than nothing.
+    next_milestone: NextMilestone | None = None
+    if milestone_candidates:
+        milestone_candidates.sort(key=lambda m: m[0])
+        today_iso = today.isoformat()
+        upcoming = [m for m in milestone_candidates if m[0] >= today_iso]
+        chosen = upcoming[0] if upcoming else milestone_candidates[0]
+        next_milestone = NextMilestone(name=chosen[1], date=chosen[0])
 
     return ScheduleStatsResponse(
         total_activities=total,
@@ -2068,6 +2085,7 @@ async def schedule_stats(
         in_progress=in_progress,
         progress_pct=progress_pct,
         total_duration_days=total_duration,
+        next_milestone=next_milestone,
     )
 
 

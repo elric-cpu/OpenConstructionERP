@@ -150,6 +150,11 @@ class Position(Base):
     # that mirrors the master's definition; NULL = standalone.
     link_role: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
+    # ── Cost Spine linkage (v6.4) ────────────────────────────────────────
+    # Additive nullable link to the cost line this position rolls up into.
+    # Written by the spine generator; NULL on positions not yet wired.
+    cost_line_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True, index=True)
+
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         "metadata",
         JSON,

@@ -5,6 +5,29 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.3.1] - 2026-06-01
+
+### Fixed
+
+- The project geo page no longer crashes and 3D geometry renders again. The crash came from a documents response contract mismatch, and the missing geometry from canonical elements that carry a flat bounding box. Both are corrected and pinned by regression tests.
+- The Daily Diary now exports a real PDF instead of a placeholder.
+- Opening a document from Takeoff loads it in the in-app viewer instead of following a broken download link.
+- Docker and nginx packaging were corrected for self-hosting: a non-editable backend install, a larger upload limit, and correct module-script and WebSocket handling.
+- Logging in no longer holds a database write open on a background connection. The login used to record its last-seen timestamp on a separate connection that ran after the response, which collided with the user's next request on the default database and could surface as a locked database with a long stall. The timestamp is now written inside the login request itself, so login stays fast and never contends with the next call.
+- The Documentation link in the top menu opens the official docs site at openconstructionerp.com/docs instead of the raw repository folder.
+
+### Added
+
+- The project dashboard schedule-summary and AI-insights widgets are backed by real endpoints. Schedule summary reports progress, completed and delayed counts and the next milestone. AI insights are distilled from the project's completed agent runs. Empty projects show a clean empty state instead of a gated widget.
+- Quantity matching gained a PDF source for a bill of quantities, an optional AI matcher that falls back to vector search when no key is set, and group split and merge with requests for quotation wired through.
+- Real multi-year holiday calendars (Hijri, equinox-based, and a curated Hindu festival table) replace the earlier approximations.
+- Partner Pack activation now installs the pack's bundled work catalogue and resource database, shown with a live step-by-step progress bar.
+- After a pip install, the app can be started with python -m openconstructionerp. This works from any folder even when pip placed the launcher in a scripts directory that is not on PATH, which is common on Windows.
+
+### Changed
+
+- Removed the coming-soon connector teasers (Microsoft 365, Google Workspace, WhatsApp, and the Procore and MS Project marketplace placeholders) so nothing in the interface is a dead end.
+
 ## [6.3.0] - 2026-06-01
 
 ### Added

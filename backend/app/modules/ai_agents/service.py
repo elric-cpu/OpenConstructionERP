@@ -13,6 +13,7 @@ the bridge via :mod:`app.modules.ai.ai_client`.
 from __future__ import annotations
 
 import datetime as _dt
+import json
 import logging
 import uuid
 from typing import Any
@@ -61,6 +62,69 @@ async def _resolve_production_llm(session: AsyncSession, user_id: uuid.UUID) -> 
     except ValueError:
         return None
     return CallAILLM(provider=provider, api_key=api_key, model=model)
+
+
+def _humanize_agent(name: str) -> str:
+    """Turn an agent slug (``boq_generator``) into a label (``Boq Generator``)."""
+    return name.replace("_", " ").replace("-", " ").strip().title() or "AI agent"
+
+
+def _coerce_confidence(value: Any) -> float | None:
+    """Normalise a confidence to the 0.0-1.0 range the UI expects.
+
+    Agents emit confidence on either a 0-1 or a 0-100 scale; anything above 1
+    is treated as a percentage and divided down. Non-numeric input yields None.
+    """
+    try:
+        conf = float(value)
+    except (TypeError, ValueError):
+        return None
+    if conf > 1.0:
+        conf = conf / 100.0
+    return max(0.0, min(conf, 1.0))
+
+
+def _run_to_insight(run: AgentRun) -> dict[str, Any]:
+    """Distill one completed :class:`AgentRun` into a project-insight card.
+
+    Structured JSON output (``{"title", "summary", "confidence", "severity"}``)
+    is used directly; plain-text output falls back to the agent's humanised name
+    as the title and its first line as the summary. This is real run output, not
+    a placeholder.
+    """
+    raw = (run.final_output or "").strip()
+    title: str | None = None
+    summary: str | None = None
+    confidence: float | None = None
+    severity: str | None = None
+
+    if raw.startswith("{"):
+        try:
+            payload = json.loads(raw)
+        except (ValueError, TypeError):
+            payload = None
+        if isinstance(payload, dict):
+            title = payload.get("title") or payload.get("headline")
+            summary = payload.get("summary") or payload.get("message") or payload.get("recommendation")
+            confidence = _coerce_confidence(payload.get("confidence"))
+            sev = payload.get("severity")
+            severity = str(sev) if sev is not None else None
+
+    if not title:
+        title = _humanize_agent(run.agent_name)
+    if not summary:
+        first_line = next((ln.strip() for ln in raw.splitlines() if ln.strip()), "")
+        summary = (first_line[:200] + "...") if len(first_line) > 200 else (first_line or None)
+    if severity is None:
+        severity = "info"
+
+    return {
+        "id": str(run.id),
+        "title": str(title)[:200],
+        "summary": summary,
+        "confidence": confidence,
+        "severity": severity,
+    }
 
 
 class AgentService:
@@ -207,3 +271,31 @@ class AgentService:
             project_id=project_id,
             limit=limit,
         )
+
+    async def project_insights(
+        self,
+        *,
+        user_id: uuid.UUID,
+        project_id: uuid.UUID,
+        limit: int = 2,
+    ) -> list[dict[str, Any]]:
+        """Return the user's most recent useful AI results for a project.
+
+        Only completed runs that produced output become insights, so we
+        over-fetch recent runs and stop once ``limit`` real insights are
+        collected. Scoped to the caller's own runs, mirroring the privacy
+        model of the run-detail endpoint.
+        """
+        runs = await self.run_repo.list_runs(
+            user_id=user_id,
+            project_id=project_id,
+            limit=max(limit * 5, 10),
+        )
+        insights: list[dict[str, Any]] = []
+        for run in runs:
+            if run.status != "completed" or not (run.final_output or "").strip():
+                continue
+            insights.append(_run_to_insight(run))
+            if len(insights) >= limit:
+                break
+        return insights

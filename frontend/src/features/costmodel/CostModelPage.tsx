@@ -26,6 +26,7 @@ import {
   Trash2,
   AlertTriangle,
   Loader2,
+  Network,
 } from 'lucide-react';
 import { Card, CardHeader, CardContent, Button, Badge, EmptyState, Skeleton, Breadcrumb, InfoHint } from '@/shared/ui';
 import { PlanningCrossLinks } from '@/features/schedule/PlanningCrossLinks';
@@ -39,6 +40,7 @@ import {
   type WhatIfResult,
 } from './api';
 import { CostBenchmark } from './CostBenchmark';
+import { CostSpinePanel } from './CostSpinePanel';
 import { getIntlLocale } from '@/shared/lib/formatters';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
@@ -2360,6 +2362,22 @@ function FiveDDashboard({ project }: { project: Project }) {
       {hasBudget && (
         <SnapshotsList projectId={project.id} currency={currency} />
       )}
+
+      {/* ── Cost Spine ────────────────────────────────────────────────────── */}
+      {/* The spine ties each cost line's estimate to its downstream budget, */}
+      {/* purchase-order, contract and actual figures in one rolled-up grid.  */}
+      <div>
+        <div className="mb-3 flex items-center gap-2">
+          <Network size={16} className="text-oe-blue" />
+          <h2 className="text-base font-semibold text-content-primary">
+            {t('costmodel.spine.section_title', { defaultValue: 'Cost Spine' })}
+          </h2>
+          <span className="rounded-full bg-oe-blue-subtle/60 px-2 py-0.5 text-2xs font-medium text-oe-blue-text">
+            {t('costmodel.spine.section_badge', { defaultValue: 'Estimate to actual' })}
+          </span>
+        </div>
+        <CostSpinePanel projectId={project.id} currency={currency} />
+      </div>
     </div>
   );
 }

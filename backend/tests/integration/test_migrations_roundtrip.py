@@ -60,6 +60,7 @@ ALEMBIC_INI = BACKEND_DIR / "alembic.ini"
 # Recent revisions we want to exercise (the v250+ wave).
 # Listed newest-first so the most recent failures surface first.
 RECENT_REVISIONS: list[str] = [
+    "v3151_cost_spine",
     "v290_dashboards_presets",
     "v280_4d_schedule_eac",
     "v270_position_version_column",
@@ -118,6 +119,7 @@ def _import_all_models() -> None:
     from app.modules.changeorders import models as _co  # noqa: F401
     from app.modules.collaboration import models as _collab  # noqa: F401
     from app.modules.contacts import models as _contacts  # noqa: F401
+    from app.modules.contracts import models as _contracts  # noqa: F401
     from app.modules.correspondence import models as _corresp  # noqa: F401
     from app.modules.costmodel import models as _cm  # noqa: F401
     from app.modules.costs import models as _costs  # noqa: F401
@@ -130,6 +132,11 @@ def _import_all_models() -> None:
     from app.modules.eac import models as _eac  # noqa: F401
     from app.modules.enterprise_workflows import models as _ew  # noqa: F401
     from app.modules.fieldreports import models as _fr  # noqa: F401
+    # ``markups`` (imported below) carries an FK to ``oe_file_version`` /
+    # ``oe_file_comment`` which live in these two modules; import them so the
+    # create_all metadata graph resolves (otherwise NoReferencedTableError).
+    from app.modules.file_comments import models as _fc  # noqa: F401
+    from app.modules.file_versions import models as _fv  # noqa: F401
     from app.modules.finance import models as _fin  # noqa: F401
     from app.modules.full_evm import models as _fe  # noqa: F401
     from app.modules.i18n_foundation import models as _i18n  # noqa: F401

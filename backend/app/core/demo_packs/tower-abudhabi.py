@@ -31,7 +31,7 @@ from app.core.demo_projects import DemoTemplate
 
 TEMPLATE = DemoTemplate(
     demo_id="tower-abudhabi",
-    project_name="Al Maryah Mixed-Use Tower — برج المارية متعدد الاستخدامات",
+    project_name="Al Maryah Mixed-Use Tower - برج المارية متعدد الاستخدامات",
     project_description=(
         "Landmark mixed-use high-rise on Al Maryah Island, Abu Dhabi: 44 "
         "above-grade storeys over a 4-level retail and F&B podium, with 4 "
@@ -67,7 +67,7 @@ TEMPLATE = DemoTemplate(
         "lng": 54.3897,
     },
     validation_rule_sets=["masterformat", "boq_quality"],
-    boq_name="Detailed Cost Estimate — Mixed-Use Tower (MasterFormat)",
+    boq_name="Detailed Cost Estimate - Mixed-Use Tower (MasterFormat)",
     boq_description=(
         "Detailed cost estimate for the Al Maryah mixed-use tower per CSI "
         "MasterFormat, divisions 03 to 33. Direct costs in AED, before 5% VAT."
@@ -135,7 +135,7 @@ TEMPLATE = DemoTemplate(
         # ── 03 Concrete — Substructure, Core & PT Slabs ────────────────
         (
             "03",
-            "Concrete — Substructure, Core & Post-Tensioned Slabs",
+            "Concrete - Substructure, Core & Post-Tensioned Slabs",
             {"masterformat": "03 00 00"},
             [
                 ("03.1", "Blinding concrete C15 below raft", "m3", 1850, 295.00, {"masterformat": "03 30 00"}),
@@ -179,7 +179,7 @@ TEMPLATE = DemoTemplate(
         # ── 05 Metals — Steel Transfer, Outrigger & Misc ───────────────
         (
             "05",
-            "Metals — Steel Transfer, Outrigger & Miscellaneous",
+            "Metals - Steel Transfer, Outrigger & Miscellaneous",
             {"masterformat": "05 00 00"},
             [
                 (
@@ -391,7 +391,7 @@ TEMPLATE = DemoTemplate(
         # ── 14 Conveying — Lifts, Escalators & BMU ─────────────────────
         (
             "14",
-            "Conveying — Lifts, Escalators & BMU",
+            "Conveying - Lifts, Escalators & BMU",
             {"masterformat": "14 00 00"},
             [
                 (
@@ -668,7 +668,7 @@ TEMPLATE = DemoTemplate(
         "architect": "AECOM Middle East",
         "structural_engineer": "WSP Middle East",
         "mep_engineer": "Hilson Moran Gulf",
-        "general_contractor_form": "FIDIC Red Book (1999) — lump-sum contract",
+        "general_contractor_form": "FIDIC Red Book (1999) - lump-sum contract",
         "gfa_above_grade_m2": 118000,
         "gfa_basement_m2": 46000,
         "storeys": 44,
@@ -765,7 +765,7 @@ TEMPLATE = DemoTemplate(
             ],
         ),
     ],
-    budget_boq_name="Al Maryah Mixed-Use Tower — Budget Estimate (AED)",
+    budget_boq_name="Al Maryah Mixed-Use Tower - Budget Estimate (AED)",
     planned_budget=1_850_000_000,
     actual_spend_ratio=0.38,
     spi_override=0.97,

@@ -28,7 +28,7 @@ def get_frontend_dir() -> Path:
     Raises:
         FileNotFoundError: If no frontend build is found.
     """
-    # Option 1: installed as package (pip install openestimate)
+    # Option 1: installed as package (pip install openconstructionerp)
     pkg_dir = Path(__file__).parent / "_frontend_dist"
     if pkg_dir.is_dir() and (pkg_dir / "index.html").exists():
         return pkg_dir

@@ -1552,6 +1552,64 @@ class GeoHubService:
                 detail="raster_missing",
             ) from exc
 
+    async def get_tileset_artifact_bytes(
+        self,
+        tileset_id: uuid.UUID,
+        filename: str,
+        *,
+        payload: dict[str, Any] | None = None,
+    ) -> tuple[bytes, str]:
+        """IDOR-checked fetch of a tileset artifact for ``GET …/artifact/{file}``.
+
+        Cesium loads a 3D model by first fetching ``tileset.json`` and then the
+        relative tile files it references (``tile_0.b3dm`` and friends); both
+        come through here. ``tileset_json_uri`` is stored only as a storage
+        key, so we serve any sibling file from the same prefix. Returns
+        ``(bytes, media_type)``.
+        """
+        # Artifacts are flat files written next to ``tileset.json``; reject any
+        # path-traversal or nested-path attempt before touching storage.
+        if not filename or "/" in filename or "\\" in filename or ".." in filename:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="artifact_missing",
+            )
+
+        obj = await self.get_tileset(tileset_id)
+        await self._verify_project_owner(
+            obj.project_id,
+            payload,
+            not_found_detail="Tileset not found",
+        )
+        if not obj.tileset_json_uri:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="tileset_not_packaged",
+            )
+
+        prefix = obj.tileset_json_uri.rsplit("/", 1)[0]
+        key = f"{prefix}/{filename}"
+        try:
+            from app.core.storage import get_storage_backend
+
+            backend = get_storage_backend()
+            blob = await backend.get(key)
+        except (FileNotFoundError, OSError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="artifact_missing",
+            ) from exc
+
+        lower = filename.lower()
+        if lower.endswith(".json"):
+            media_type = "application/json"
+        elif lower.endswith(".gltf"):
+            media_type = "model/gltf+json"
+        else:
+            # .b3dm / .glb / .cmpt / .pnts / .i3dm and any other tile payload
+            media_type = "application/octet-stream"
+        return blob, media_type
+
     async def _default_corners_for_project(
         self,
         project_id: uuid.UUID,
@@ -1796,7 +1854,14 @@ class GeoHubService:
         """
         import json as _json
 
-        if bim_model.canonical_file_path:
+        # Only attempt to parse ``canonical_file_path`` when it is actually a
+        # canonical JSON export. For most converted models this field points
+        # at the geometry mesh (``geometry.glb`` / ``geometry.dae``), which is
+        # binary/XML - reading and UTF-8 decoding a multi-MB mesh just to throw
+        # a decode error on every placement is wasteful, so we skip straight to
+        # the DB-backed element rows in that case.
+        canon_path = (bim_model.canonical_file_path or "").lower()
+        if canon_path.endswith(".json"):
             try:
                 from app.core.storage import get_storage_backend
 
@@ -2210,6 +2275,21 @@ def _bim_element_to_canonical(element: Any) -> dict[str, Any]:
     if isinstance(bbox, dict):
         min_pt = bbox.get("min") or bbox.get("min_point")
         max_pt = bbox.get("max") or bbox.get("max_point")
+        # The BIM element store persists bounding boxes in a flat
+        # ``{min_x, min_y, min_z, max_x, max_y, max_z}`` shape (see
+        # BIMElement.bounding_box); some older payloads use
+        # ``{min: [x, y, z], max: [x, y, z]}``. Support both. Without the
+        # flat branch the geo tileset builder found zero per-element AABBs
+        # and ``from-canonical`` rejected every placement with
+        # ``canonical_elements_have_no_geometry`` - so no BIM model ever
+        # rendered on the project map.
+        if (
+            min_pt is None
+            and max_pt is None
+            and all(k in bbox for k in ("min_x", "min_y", "min_z", "max_x", "max_y", "max_z"))
+        ):
+            min_pt = [bbox["min_x"], bbox["min_y"], bbox["min_z"]]
+            max_pt = [bbox["max_x"], bbox["max_y"], bbox["max_z"]]
         if (
             isinstance(min_pt, (list, tuple))
             and isinstance(max_pt, (list, tuple))

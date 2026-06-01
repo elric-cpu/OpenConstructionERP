@@ -464,6 +464,13 @@ class GanttSummary(BaseModel):
     not_started: int = 0
 
 
+class NextMilestone(BaseModel):
+    """The next milestone to watch on a project's schedule."""
+
+    name: str
+    date: str = Field(description="ISO planned date (YYYY-MM-DD) of the milestone")
+
+
 class ScheduleStatsResponse(BaseModel):
     """Aggregate schedule statistics for a project's schedules and activities."""
 
@@ -483,6 +490,10 @@ class ScheduleStatsResponse(BaseModel):
     total_duration_days: int = Field(
         default=0,
         description="Sum of all activity durations",
+    )
+    next_milestone: NextMilestone | None = Field(
+        default=None,
+        description="Earliest unfinished milestone (upcoming preferred, else most overdue)",
     )
 
 

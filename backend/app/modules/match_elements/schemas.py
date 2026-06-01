@@ -108,6 +108,15 @@ class SessionCreate(BaseModel):
     # ``MatchSession.metadata_["boq_rows"]`` and read back by
     # :class:`BoqAdapter`. Ignored when ``source != "boq"``.
     boq_rows: list[dict[str, Any]] | None = None
+    # MAPPING_PROCESS.md §4.1.x - line items extracted from a tender PDF
+    # (printed BoQ / priced schedule). Same row shape as ``boq_rows``:
+    # each dict must carry ``description``; recognised keys ``qty/quantity``,
+    # ``unit/uom``, ``code/rate_code``, ``category/section``, ``source_lang``.
+    # Either pre-parse client-side and post here, or upload the PDF via
+    # ``POST /sessions/from-pdf`` and let the backend parse it. Persisted on
+    # ``MatchSession.metadata_["pdf_rows"]`` and read back by
+    # :class:`PdfAdapter`. Ignored when ``source != "pdf"``.
+    pdf_rows: list[dict[str, Any]] | None = None
     # MAPPING_PROCESS.md §3.1 / §4.1.4 — image source binding. Either
     # ``{"path": "<abs>", "mime": "image/jpeg", "filename"?: "..."}``
     # for a file already on the storage backend, or

@@ -37,6 +37,16 @@ class RFQ(Base):
         server_default="[]",
     )
     created_by: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
+    # ── Cost Spine linkage (v6.4) ────────────────────────────────────────
+    # Additive list of cost-line UUIDs (as strings) this RFQ sources. An RFQ
+    # bundles several scope items so the link is many-valued, unlike the
+    # single-FK columns on PO/contract lines.
+    cost_line_ids: Mapped[list] = mapped_column(  # type: ignore[assignment]
+        JSON,
+        nullable=False,
+        default=list,
+        server_default="[]",
+    )
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         "metadata",
         JSON,

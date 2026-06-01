@@ -17,7 +17,7 @@ from app.core.demo_projects import DemoTemplate
 
 TEMPLATE = DemoTemplate(
     demo_id="govt-building-delhi",
-    project_name="Government Office Complex — New Delhi (CPWD)",
+    project_name="Government Office Complex - New Delhi (CPWD)",
     project_description=(
         "Construction of a G+5 reinforced-concrete government office and "
         "administrative block for a Central Ministry at Lodhi Road, New Delhi. "
@@ -43,7 +43,7 @@ TEMPLATE = DemoTemplate(
         "lng": 77.2290,
     },
     validation_rule_sets=["masterformat", "boq_quality", "project_completeness"],
-    boq_name="Bill of Quantities — CPWD DSR 2021 (Civil & Services)",
+    boq_name="Bill of Quantities - CPWD DSR 2021 (Civil & Services)",
     boq_description=(
         "Detailed BoQ prepared on CPWD Delhi Schedule of Rates 2021, "
         "all sub-heads from Earthwork to External Services. Quantities to "
@@ -312,7 +312,7 @@ TEMPLATE = DemoTemplate(
                 ),
                 (
                     "4.4",
-                    "Hardware set per door — mortise lock, hinges, handles, door closer (chitkani)",
+                    "Hardware set per door - mortise lock, hinges, handles, door closer (chitkani)",
                     "each",
                     420,
                     3850.00,
@@ -467,7 +467,7 @@ TEMPLATE = DemoTemplate(
         # ── 7. Finishing — Plaster, Paint, Ceiling (CPWD Sub-head 13) ─
         (
             "7",
-            "Finishing — Plaster, Paint & Ceiling",
+            "Finishing - Plaster, Paint & Ceiling",
             {"masterformat": "09 90 00", "cpwd": "DSR-13"},
             [
                 (
@@ -904,7 +904,7 @@ TEMPLATE = DemoTemplate(
                 ),
                 (
                     "13.5",
-                    "Soft landscaping — lawn, shrubs, trees & drip irrigation (bagwani)",
+                    "Soft landscaping - lawn, shrubs, trees & drip irrigation (bagwani)",
                     "m2",
                     1600,
                     485.00,

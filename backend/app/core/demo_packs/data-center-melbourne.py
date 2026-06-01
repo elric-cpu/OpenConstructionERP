@@ -22,7 +22,7 @@ from app.core.demo_projects import DemoTemplate
 
 TEMPLATE = DemoTemplate(
     demo_id="data-center-melbourne",
-    project_name="Hyperscale Data Centre — Melbourne West (MEL01)",
+    project_name="Hyperscale Data Centre - Melbourne West (MEL01)",
     project_description=(
         "New hyperscale data centre in the Truganina industrial precinct, "
         "west Melbourne. Single building of approx. 18,400 m2 delivering 30 MW "
@@ -56,7 +56,7 @@ TEMPLATE = DemoTemplate(
         "lng": 144.7389,
     },
     validation_rule_sets=["nrm", "boq_quality"],
-    boq_name="Elemental Cost Plan — AIQS / NRM Elemental",
+    boq_name="Elemental Cost Plan - AIQS / NRM Elemental",
     boq_description=(
         "Elemental cost plan prepared on the Australian elemental method "
         "(AIQS), aligned to NRM 1 elemental groups, Melbourne Q1 2026 rates. "
@@ -77,7 +77,7 @@ TEMPLATE = DemoTemplate(
         # ── Preliminaries ────────────────────────────────────────────────
         (
             "0",
-            "0 — Preliminaries (Site establishment & management)",
+            "0 - Preliminaries (Site establishment & management)",
             {"nrm": "0"},
             [
                 ("0.1", "Site establishment, compound, sheds & amenities (Site setup)", "lsum", 1, 2850000.00, {"nrm": "0.1"}),
@@ -95,7 +95,7 @@ TEMPLATE = DemoTemplate(
         # ── Bulk earthworks & substructure ───────────────────────────────
         (
             "1",
-            "1 — Substructure (Bulk earthworks, foundations & slab)",
+            "1 - Substructure (Bulk earthworks, foundations & slab)",
             {"nrm": "1"},
             [
                 ("1.1", "Site clearing, strip topsoil & grub (Site clearing)", "m2", 42000, 6.50, {"nrm": "1.1"}),
@@ -115,7 +115,7 @@ TEMPLATE = DemoTemplate(
         # ── Frame: precast / tilt-up & structural steel ──────────────────
         (
             "2.1",
-            "2.1 — Frame (Precast/tilt-up shell & structural steel)",
+            "2.1 - Frame (Precast/tilt-up shell & structural steel)",
             {"nrm": "2.1"},
             [
                 ("2.1.1", "Tilt-up concrete wall panels, cast & erect (Tilt-up panels)", "m2", 14200, 285.00, {"nrm": "2.1"}),
@@ -132,7 +132,7 @@ TEMPLATE = DemoTemplate(
         # ── Roof & external cladding ─────────────────────────────────────
         (
             "2.4",
-            "2.4 — Roof & External Cladding (Envelope)",
+            "2.4 - Roof & External Cladding (Envelope)",
             {"nrm": "2.4"},
             [
                 ("2.4.1", "Insulated metal roof sheeting, Kliplok concealed-fix (Roof sheeting)", "m2", 17200, 145.00, {"nrm": "2.4"}),
@@ -148,7 +148,7 @@ TEMPLATE = DemoTemplate(
         # ── White-space fit-out (data halls) ─────────────────────────────
         (
             "3",
-            "3 — White Space Fit-out (Data halls & internal finishes)",
+            "3 - White Space Fit-out (Data halls & internal finishes)",
             {"nrm": "3"},
             [
                 ("3.1", "Raised access floor 1200mm, 12 kN/m2, data halls (Raised floor)", "m2", 6400, 285.00, {"nrm": "3.1"}),
@@ -168,7 +168,7 @@ TEMPLATE = DemoTemplate(
         # ── Electrical: HV / transformers / switchgear / UPS / gensets ───
         (
             "5.3",
-            "5.3 — Services: Electrical (HV, UPS, generators & distribution)",
+            "5.3 - Services: Electrical (HV, UPS, generators & distribution)",
             {"nrm": "5.3"},
             [
                 ("5.3.1", "HV intake, zone substation & ring main units 22 kV (HV intake)", "lsum", 1, 6800000.00, {"nrm": "5.3"}),
@@ -190,7 +190,7 @@ TEMPLATE = DemoTemplate(
         # ── Mechanical: cooling, CRAC, chillers, ventilation ─────────────
         (
             "5.2",
-            "5.2 — Services: Mechanical (Cooling, CRAC, chillers & ventilation)",
+            "5.2 - Services: Mechanical (Cooling, CRAC, chillers & ventilation)",
             {"nrm": "5.2"},
             [
                 ("5.2.1", "Air-cooled chillers 1.6 MW, N+1, free-cooling (Chillers)", "pcs", 10, 1250000.00, {"nrm": "5.2"}),
@@ -209,7 +209,7 @@ TEMPLATE = DemoTemplate(
         # ── Hydraulic services ───────────────────────────────────────────
         (
             "5.1",
-            "5.1 — Services: Hydraulic (Plumbing & drainage)",
+            "5.1 - Services: Hydraulic (Plumbing & drainage)",
             {"nrm": "5.1"},
             [
                 ("5.1.1", "Cold & hot water reticulation, copper/PEX (Water reticulation)", "m", 2600, 62.00, {"nrm": "5.1"}),
@@ -224,7 +224,7 @@ TEMPLATE = DemoTemplate(
         # ── Fire suppression & detection (gas / VESDA) ───────────────────
         (
             "5.4",
-            "5.4 — Services: Fire (Gaseous suppression, VESDA & sprinklers)",
+            "5.4 - Services: Fire (Gaseous suppression, VESDA & sprinklers)",
             {"nrm": "5.4"},
             [
                 ("5.4.1", "Inert-gas (IG-541) suppression to data halls ISO 14520 (Gas suppression)", "m2", 6400, 285.00, {"nrm": "5.4"}),
@@ -239,7 +239,7 @@ TEMPLATE = DemoTemplate(
         # ── Security, access control & DCIM ──────────────────────────────
         (
             "5.6",
-            "5.6 — Services: Security, Communications & DCIM",
+            "5.6 - Services: Security, Communications & DCIM",
             {"nrm": "5.6"},
             [
                 ("5.6.1", "Perimeter intrusion detection & PIDS fence (Perimeter security)", "m", 920, 485.00, {"nrm": "5.6"}),
@@ -254,7 +254,7 @@ TEMPLATE = DemoTemplate(
         # ── External & site works ────────────────────────────────────────
         (
             "6",
-            "6 — External & Site Works (Roads, hardstand & landscape)",
+            "6 - External & Site Works (Roads, hardstand & landscape)",
             {"nrm": "6"},
             [
                 ("6.1", "Heavy-duty pavement, roads & loading hardstand (Pavements)", "m2", 14000, 165.00, {"nrm": "6.1"}),
@@ -344,7 +344,7 @@ TEMPLATE = DemoTemplate(
         "site_area_ha": 4.2,
         "critical_it_load_mw": 30,
         "data_halls": 4,
-        "tier": "Uptime Institute Tier III — Concurrently Maintainable",
+        "tier": "Uptime Institute Tier III - Concurrently Maintainable",
         "redundancy": "N+1 (power & cooling)",
         "pue_target": 1.3,
         "structure_system": "Tilt-up / precast concrete shell + long-span structural-steel roof",
@@ -368,7 +368,7 @@ TEMPLATE = DemoTemplate(
         "sustainability": "PUE design target 1.3; air-cooled free-cooling chillers; rainwater reuse; NABERS for Data Centres rating pathway",
         "procurement": "Design & Construct (lump sum)",
     },
-    budget_boq_name="Elemental Cost Plan — AIQS / NRM Elemental",
+    budget_boq_name="Elemental Cost Plan - AIQS / NRM Elemental",
     planned_budget=348000000.00,
     actual_spend_ratio=0.42,
     spi_override=0.97,

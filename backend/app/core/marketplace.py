@@ -832,33 +832,6 @@ MARKETPLACE_MODULES: list[MarketplaceModule] = [
     ),
     # Risk Analysis and GAEB Exchange are now real frontend plugins
     # (installable via Modules page → Installable Plugins section).
-    # ── Integrations ─────────────────────────────────────────────────
-    MarketplaceModule(
-        id="integration-procore",
-        name="Procore Connector",
-        description="Bi-directional sync with Procore. Push estimates to Procore budgets, pull change orders, sync cost items and project data via Procore REST API.",
-        category="integration",
-        icon="Plug",
-        version="1.0.0",
-        size_mb=3.4,
-        author=_OE,
-        tags=["Procore", "Sync", "REST API", "Cloud"],
-        requires=["oe_projects", "oe_boq"],
-        price="Free",
-    ),
-    MarketplaceModule(
-        id="integration-msproject",
-        name="Microsoft Project Sync",
-        description="Import/export Microsoft Project (.mpp) schedules. Link BOQ positions to schedule activities for 4D/5D planning and cash flow forecasting.",
-        category="integration",
-        icon="Plug",
-        version="1.0.0",
-        size_mb=12.7,
-        author=_OE,
-        tags=["Microsoft Project", "MPP", "Schedule", "4D/5D"],
-        requires=["oe_projects", "oe_boq"],
-        price="Free",
-    ),
 ]
 
 # ── Demo Projects ──────────────────────────────────────────────────────────

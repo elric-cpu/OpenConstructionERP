@@ -60,7 +60,7 @@ TEMPLATE = DemoTemplate(
         "lng": 9.1126,
     },
     validation_rule_sets=["din276", "gaeb", "boq_quality"],
-    boq_name="Kostenberechnung Rohbau nach DIN 276 — Schalung/Beton",
+    boq_name="Kostenberechnung Rohbau nach DIN 276 - Schalung/Beton",
     boq_description=(
         "Detaillierte Kostenberechnung Konstruktion gem. DIN 276 mit Schwerpunkt "
         "Schalung, Traggerueste und Ortbeton. Mengen je Schalzyklus / Betonierabschnitt, "
@@ -77,7 +77,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 310 Baugrube / Erdbau ──────────────────────────────────
         (
             "310",
-            "KG 310 — Baugrube / Erdbau",
+            "KG 310 - Baugrube / Erdbau",
             {"din276": "310"},
             [
                 ("310.1", "Baugrundgutachten und Probebelastung (Geotech. survey)", "lsum", 1, 24000.00, {"din276": "310"}),
@@ -95,7 +95,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 322 Flachgruendungen / Bodenplatte ─────────────────────
         (
             "322",
-            "KG 322 — Flachgruendungen / Bodenplatte",
+            "KG 322 - Flachgruendungen / Bodenplatte",
             {"din276": "322"},
             [
                 ("322.1", "Sauberkeitsschicht C8/10, d=8cm (Blinding concrete)", "m2", 5400, 13.50, {"din276": "322"}),
@@ -113,7 +113,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 331 Tragende Aussenwaende — Schalung & Beton ──────────
         (
             "331",
-            "KG 331 — Tragende Aussenwaende (Schalung/Beton)",
+            "KG 331 - Tragende Aussenwaende (Schalung/Beton)",
             {"din276": "331"},
             [
                 ("331.1", "Schalung Aussenwand Rahmenschalung Framax 25cm, beidseitig (Wall framed formwork)", "m2", 9200, 33.50, {"din276": "331"}),
@@ -131,7 +131,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 333 Aussenstuetzen — Schalung & Beton ─────────────────
         (
             "333",
-            "KG 333 — Aussenstuetzen (Schalung/Beton)",
+            "KG 333 - Aussenstuetzen (Schalung/Beton)",
             {"din276": "333"},
             [
                 ("333.1", "Stuetzenschalung Rundstuetze d=40cm, Kartonschalung (Round column formwork)", "m2", 1180, 52.00, {"din276": "333"}),
@@ -146,7 +146,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 341 Tragende Innenwaende / Kerne — Kletterschalung ────
         (
             "341",
-            "KG 341 — Tragende Innenwaende / Kerne (Kletterschalung)",
+            "KG 341 - Tragende Innenwaende / Kerne (Kletterschalung)",
             {"din276": "341"},
             [
                 ("341.1", "Selbstkletterschalung Kerne SKE, Auf-/Abbau + Vorhaltung (Self-climbing formwork cores)", "m2", 3600, 78.00, {"din276": "341"}),
@@ -163,7 +163,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 351 Decken — Deckenschalung & Beton ───────────────────
         (
             "351",
-            "KG 351 — Decken (Deckenschalung/Beton)",
+            "KG 351 - Decken (Deckenschalung/Beton)",
             {"din276": "351"},
             [
                 ("351.1", "Deckenschalung Deckentische Dokadek 30, h bis 3,20m (Slab table formwork)", "m2", 20400, 29.50, {"din276": "351"}),
@@ -182,7 +182,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 352 Traggerueste / Schalungszubehoer ──────────────────
         (
             "352",
-            "KG 352 — Traggerueste / Schalungszubehoer (DIN EN 12812)",
+            "KG 352 - Traggerueste / Schalungszubehoer (DIN EN 12812)",
             {"din276": "352"},
             [
                 ("352.1", "Traggeruest Deckenstuetzen Eurex, Auf-/Abbau (Falsework props erect/strip)", "m2", 25200, 8.50, {"din276": "352"}),
@@ -198,7 +198,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 359 Sonstige Konstruktion / Fugen ─────────────────────
         (
             "359",
-            "KG 359 — Sonstige Konstruktion / Fugen",
+            "KG 359 - Sonstige Konstruktion / Fugen",
             {"din276": "359"},
             [
                 ("359.1", "Dehnfugen Parkdeck mit Fugenprofil (Expansion joints to deck)", "m", 480, 165.00, {"din276": "359"}),
@@ -213,7 +213,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 363 Dachkonstruktion / oberstes Parkdeck ──────────────
         (
             "363",
-            "KG 363 — Dachkonstruktion / oberstes Parkdeck",
+            "KG 363 - Dachkonstruktion / oberstes Parkdeck",
             {"din276": "363"},
             [
                 ("363.1", "Stahlbeton-Dachdecke oberstes Parkdeck C35/45, XF4 (RC top deck XF4)", "m3", 920, 162.00, {"din276": "363"}),
@@ -228,7 +228,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 371 Treppen / Rampen Ortbeton ─────────────────────────
         (
             "371",
-            "KG 371 — Treppen / Rampen (Ortbeton)",
+            "KG 371 - Treppen / Rampen (Ortbeton)",
             {"din276": "371"},
             [
                 ("371.1", "Ortbetontreppe gewendelt, Treppenschalung (In-situ stair + formwork)", "pcs", 14, 6800.00, {"din276": "371"}),
@@ -242,7 +242,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 359 Fertigteil-Ergaenzungen — use KG 379 ──────────────
         (
             "379",
-            "KG 379 — Fertigteil-Ergaenzungen",
+            "KG 379 - Fertigteil-Ergaenzungen",
             {"din276": "379"},
             [
                 ("379.1", "Fertigteil-Stuetzen UG ergaenzend (Precast columns basement)", "pcs", 48, 1450.00, {"din276": "379"}),
@@ -254,7 +254,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 411 Entwaesserung Parkdeck ────────────────────────────
         (
             "411",
-            "KG 411 — Entwaesserung Parkdeck",
+            "KG 411 - Entwaesserung Parkdeck",
             {"din276": "411"},
             [
                 ("411.1", "Bodenablaeufe Parkdeck Edelstahl DN100 (SS deck gullies)", "pcs", 96, 320.00, {"din276": "411"}),
@@ -267,7 +267,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 443 Elektro Rohbau / Erdung ───────────────────────────
         (
             "443",
-            "KG 443 — Elektro Rohbau / Erdung",
+            "KG 443 - Elektro Rohbau / Erdung",
             {"din276": "443"},
             [
                 ("443.1", "Fundamenterder Banderder DIN 18014 (Foundation earth electrode)", "m", 1850, 14.50, {"din276": "443"}),
@@ -279,7 +279,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 538 Aussenanlagen / Baustelleneinrichtung ─────────────
         (
             "538",
-            "KG 538 — Baustelleneinrichtung / Aussenanlagen Konstruktion",
+            "KG 538 - Baustelleneinrichtung / Aussenanlagen Konstruktion",
             {"din276": "538"},
             [
                 ("538.1", "Turmdrehkran 60m, Vorhaltung + Betrieb (Tower crane standing + operation)", "month", 15, 16500.00, {"din276": "538"}),
@@ -328,7 +328,7 @@ TEMPLATE = DemoTemplate(
     tender_packages=[
         (
             "Rohbau Schalung/Beton (RC structure & formwork)",
-            "Schalung, Traggerueste, Bewehrung und Ortbeton — Bodenplatte bis oberstes Parkdeck",
+            "Schalung, Traggerueste, Bewehrung und Ortbeton - Bodenplatte bis oberstes Parkdeck",
             "evaluating",
             [
                 ("Doker Schalungstechnik GmbH", "vergabe@doker.de", 0.99),

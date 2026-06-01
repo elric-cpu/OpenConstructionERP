@@ -22,7 +22,9 @@ from ``_REGION_CURRENCY``); see :func:`resolve_cwicr_db_id`.
 
 from __future__ import annotations
 
+import json
 import logging
+from collections.abc import AsyncIterator
 from typing import Any
 
 from fastapi import FastAPI
@@ -49,6 +51,10 @@ class FullInstallRequest(BaseModel):
     vectorize: bool = Field(
         default=True,
         description="Build the semantic vector DB for the loaded region(s).",
+    )
+    confirm_disables: bool = Field(
+        default=False,
+        description="Allow the apply step to DISABLE modules the pack wants hidden.",
     )
     demo_count: int = Field(
         default=2,
@@ -134,22 +140,30 @@ def resolve_cwicr_db_id(slug: str) -> str | None:
 # ── Orchestrator ─────────────────────────────────────────────────────────────
 
 
-async def _step_apply_pack(slug: str, app: FastAPI | None, actor: str | None) -> StepResult:
+async def _step_apply_pack(
+    slug: str,
+    app: FastAPI | None,
+    actor: str | None,
+    *,
+    confirm_disables: bool = False,
+) -> StepResult:
     """Step 1 — apply the pack (modules + branding + defaults), no demo."""
     from app.core.partner_pack.apply import apply_pack
 
     res = await apply_pack(
         slug,
-        confirm_disables=False,
+        confirm_disables=confirm_disables,
         install_demo=False,  # we install demos ourselves in step 5
         actor=actor,
         app=app,
     )
-    enabled = res.get("effects", {}).get("modules_enabled", []) or []
+    effects = res.get("effects", {})
+    enabled = effects.get("modules_enabled", []) or []
+    disabled = effects.get("modules_disabled", []) or []
     return StepResult(
         step="apply_pack",
         status="ok",
-        detail={"modules_enabled": len(enabled)},
+        detail={"modules_enabled": len(enabled), "modules_disabled": len(disabled)},
     )
 
 
@@ -368,6 +382,228 @@ def _soft(step_name: str, exc: Exception) -> StepResult:
     """
     logger.warning("full-install step %s raised: %s", step_name, exc)
     return StepResult(step=step_name, status="error", detail={"error": str(exc)})
+
+
+# ── Streaming progress orchestrator (Modules-page pack activation) ───────────
+#
+# The batch ``full_install`` above runs every step server-side and returns one
+# response object; the onboarding picker renders that as a checklist after the
+# fact. The Modules page wants a *live* progress bar, so we expose the very same
+# orchestration as an async generator that yields one event per step boundary.
+# Each step reuses the identical ``_step_*`` helpers and per-region loaders, so
+# behaviour (idempotency + fail-soft degradation) is byte-for-byte the same as
+# the batch path; only the reporting changes.
+#
+# The ordered step ids the stream emits. ``resources`` is a reporting-only step:
+# CWICR work items carry their labour/material/equipment breakdown in the same
+# parquet (``..._workitems_costs_resources_...``), so loading the work catalog
+# already loads the resource database in one pass. We surface the embedded
+# resource count as its own progress row (the founder asked for a "Load
+# resources (N)" step) without re-reading the file.
+STREAM_STEPS: list[str] = [
+    "apply_pack",
+    "locale",
+    "cost_db",
+    "resources",
+    "vector_db",
+    "demos",
+]
+
+
+async def _step_cost_db_detailed(slug: str) -> tuple[StepResult, list[str], int]:
+    """Load the CWICR cost DB and also return the embedded resource count.
+
+    Same load path as :func:`_step_cost_db` (one parquet read per resolvable
+    region, idempotent skip when already loaded) but additionally sums the
+    ``resource_components`` each region reports so the streaming installer can
+    render a distinct "Load resources" progress row. Returns
+    ``(step_result, loaded_db_ids, resource_count)``.
+    """
+    from app.core.partner_pack.discovery import get_pack_by_slug
+    from app.database import async_session_factory
+    from app.modules.costs.router import load_cwicr_region
+
+    m = get_pack_by_slug(slug)
+    regions = list(m.cwicr_regions or []) if m else []
+
+    loaded: list[str] = []
+    items = 0
+    resources = 0
+    skipped: list[str] = []
+    errors: list[dict[str, str]] = []
+
+    for region_slug in regions:
+        db_id = resolve_cwicr_db_id(region_slug)
+        if not db_id:
+            skipped.append(region_slug)
+            continue
+        if db_id in loaded:
+            # Two slugs resolving to the same live id (e.g. both UK slugs) — load once.
+            continue
+        try:
+            async with async_session_factory() as session:
+                res = await load_cwicr_region(db_id, session)
+                await session.commit()
+            count = int(res.get("total_items") or res.get("imported") or 0)
+            items += count
+            resources += int(res.get("resource_components") or 0)
+            loaded.append(db_id)
+        except Exception as exc:  # noqa: BLE001 — fail-soft per region
+            logger.warning("full-install cost_db: region %s (%s) failed: %s", region_slug, db_id, exc)
+            errors.append({"region": region_slug, "db_id": db_id, "error": str(exc)})
+
+    detail: dict[str, Any] = {"regions": loaded, "items": items, "resources": resources}
+    if skipped:
+        detail["skipped"] = skipped
+    if errors:
+        detail["errors"] = errors
+
+    if loaded:
+        status = "ok"
+    elif skipped or errors:
+        status = "skipped"
+    else:
+        status = "skipped"
+        detail.setdefault("reason", "no cwicr_regions declared")
+    return StepResult(step="cost_db", status=status, detail=detail), loaded, resources
+
+
+def _sse(event: str, data: dict[str, Any]) -> str:
+    """Format one Server-Sent-Events frame (mirrors erp_chat._sse)."""
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+async def full_install_stream(
+    req: FullInstallRequest,
+    *,
+    app: FastAPI | None = None,
+    actor: str | None = None,
+) -> AsyncIterator[str]:
+    """Yield SSE frames driving a live progress bar for a pack activation.
+
+    Emits, in order:
+        * ``start``         — ``{slug, steps: [{step, label_key, label}], total}``
+        * ``step_start``    — ``{step, index, total}`` before each step runs
+        * ``step_done``     — ``{step, index, total, status, detail}`` after it
+        * ``done``          — ``{slug, ok, steps: [...full StepResult...]}``
+
+    Every step is fail-soft exactly like :func:`full_install`; a step that errors
+    is reported with ``status="error"``/``"skipped"`` and the stream continues,
+    so the bar always reaches ``done``. Steps the pack does not include (no
+    locale, no cwicr_regions, demos disabled) are emitted as ``skipped`` so the
+    frontend can grey them out rather than spin forever.
+    """
+    slug = req.slug
+
+    # Resolve the active step list up front. ``resources`` rides along with
+    # ``cost_db`` (same load); we still announce it so the bar shows both rows.
+    active_steps: list[str] = ["apply_pack"]
+    if req.set_locale:
+        active_steps.append("locale")
+    if req.install_cost_db:
+        active_steps.extend(["cost_db", "resources"])
+    if req.vectorize:
+        active_steps.append("vector_db")
+    active_steps.append("demos")
+    total = len(active_steps)
+
+    # Stable label keys so the frontend can localize; English fallbacks travel
+    # in ``label`` for clients that don't have the key yet.
+    labels: dict[str, tuple[str, str]] = {
+        "apply_pack": ("modules.pp_step_apply", "Apply preset"),
+        "locale": ("modules.pp_step_locale", "Install language"),
+        "cost_db": ("modules.pp_step_cost_db", "Load work catalog"),
+        "resources": ("modules.pp_step_resources", "Load resources"),
+        "vector_db": ("modules.pp_step_vector_db", "Build vector index"),
+        "demos": ("modules.pp_step_demos", "Create demo project"),
+    }
+
+    yield _sse(
+        "start",
+        {
+            "slug": slug,
+            "total": total,
+            "steps": [
+                {"step": s, "label_key": labels[s][0], "label": labels[s][1]}
+                for s in active_steps
+            ],
+        },
+    )
+
+    results: list[StepResult] = []
+    loaded_regions: list[str] = []
+    apply_ok = False
+    cost_resources = 0
+
+    for index, step in enumerate(active_steps):
+        yield _sse("step_start", {"step": step, "index": index, "total": total})
+        try:
+            if step == "apply_pack":
+                result = await _step_apply_pack(slug, app, actor, confirm_disables=req.confirm_disables)
+                apply_ok = result.status == "ok"
+            elif step == "locale":
+                result = _step_locale(slug)
+            elif step == "cost_db":
+                result, loaded_regions, cost_resources = await _step_cost_db_detailed(slug)
+            elif step == "resources":
+                # Reporting-only: resources were imported with the work catalog.
+                if loaded_regions:
+                    result = StepResult(
+                        step="resources",
+                        status="ok",
+                        detail={"resources": cost_resources, "regions": loaded_regions},
+                    )
+                else:
+                    result = StepResult(
+                        step="resources",
+                        status="skipped",
+                        detail={"reason": "no cost database loaded", "resources": 0},
+                    )
+            elif step == "vector_db":
+                result = await _step_vector_db(loaded_regions)
+            elif step == "demos":
+                result = await _step_demos(slug, req.demo_count)
+            else:  # pragma: no cover - defensive; active_steps is closed-set
+                result = StepResult(step=step, status="skipped", detail={})
+        except Exception as exc:  # noqa: BLE001 — per-step fail-soft, never abort the stream
+            result = _soft(step, exc)
+
+        results.append(result)
+        yield _sse(
+            "step_done",
+            {
+                "step": step,
+                "index": index,
+                "total": total,
+                "status": result.status,
+                "detail": result.detail,
+            },
+        )
+
+    # ``ok`` means "everything we attempted succeeded". Unlike the batch
+    # ``full_install`` (which hard-requires a demo), the in-app activate dialog
+    # lets the admin opt out of demos and load packs that ship no cost data, so
+    # a step that was intentionally skipped must not flip the whole run to
+    # "partial". ``ok`` is therefore: apply succeeded AND no step ERRORED. A
+    # gracefully skipped step (no regions, demos disabled, vector backend down)
+    # is fine; only a real ``error`` (or a failed apply) makes it partial.
+    any_error = any(r.status == "error" for r in results)
+    ok = apply_ok and not any_error
+
+    logger.info(
+        "Partner-pack stream-install '%s': ok=%s steps=%s",
+        slug,
+        ok,
+        {r.step: r.status for r in results},
+    )
+    yield _sse(
+        "done",
+        {
+            "slug": slug,
+            "ok": ok,
+            "steps": [{"step": r.step, "status": r.status, "detail": r.detail} for r in results],
+        },
+    )
 
 
 async def full_install(

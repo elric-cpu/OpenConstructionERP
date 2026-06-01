@@ -1290,25 +1290,67 @@ class DailyDiaryService:
             },
         }
 
-    async def generate_pdf_stub(self, diary_id: uuid.UUID) -> dict[str, Any]:
-        """Hook for the future PDF renderer.
+    async def generate_diary_pdf(self, diary_id: uuid.UUID) -> tuple[bytes, str]:
+        """Render a daily diary into a PDF document.
 
-        Generates a deterministic placeholder UUID, stores it on the diary,
-        and returns it. A future PDF service can pick the diary up by this
-        reference.
+        Gathers the diary header, its entries, the day's weather readings,
+        the project name and supervisor name, then renders them into a
+        single PDF via :func:`app.modules.daily_diary.pdf_export.generate_diary_pdf`.
+
+        Args:
+            diary_id: The diary to export.
+
+        Returns:
+            A ``(pdf_bytes, diary_date)`` tuple. ``pdf_bytes`` starts with
+            ``b"%PDF"``; ``diary_date`` is the diary's date string, suitable
+            for the download filename.
         """
+        from app.modules.daily_diary.pdf_export import generate_diary_pdf as render_diary_pdf
+
         diary = await self.get_diary(diary_id)
-        if diary.pdf_export_ref is None:
-            pdf_ref = uuid.uuid4()
-            await self.diary_repo.update_fields(diary_id, pdf_export_ref=pdf_ref)
-            await self.session.refresh(diary)
-        else:
-            pdf_ref = diary.pdf_export_ref
-        return {
-            "diary_id": diary_id,
-            "pdf_export_ref": pdf_ref,
-            "status": "stub",
-        }
+        entries = await self.entry_repo.list_for_diary(diary_id)
+        weather_records = await self.weather_for_day(diary.project_id, diary.diary_date)
+        completeness = compute_diary_completeness(diary, entries)
+
+        # Project name and supervisor name are looked up best-effort: the
+        # PDF must still render if either lookup comes back empty (the
+        # renderer falls back to neutral placeholders).
+        project_name = await self._project_name(diary.project_id)
+        supervisor_name = await self._user_display_name(diary.site_supervisor_id)
+
+        pdf_bytes = render_diary_pdf(
+            diary,
+            project_name=project_name,
+            entries=list(entries),
+            weather_records=list(weather_records),
+            supervisor_name=supervisor_name,
+            completeness=completeness,
+        )
+        return pdf_bytes, diary.diary_date
+
+    async def _project_name(self, project_id: uuid.UUID) -> str:
+        """Best-effort project-name lookup for report headers."""
+        try:
+            from app.modules.projects.repository import ProjectRepository
+
+            project = await ProjectRepository(self.session).get_by_id(project_id)
+        except Exception:  # pragma: no cover - defensive cross-module guard
+            return "Daily Site Diary"
+        return (getattr(project, "name", None) or "Daily Site Diary") if project else "Daily Site Diary"
+
+    async def _user_display_name(self, user_id: uuid.UUID | None) -> str | None:
+        """Best-effort user display-name lookup (full name, else email)."""
+        if user_id is None:
+            return None
+        try:
+            from app.modules.users.repository import UserRepository
+
+            user = await UserRepository(self.session).get_by_id(user_id)
+        except Exception:  # pragma: no cover - defensive cross-module guard
+            return None
+        if user is None:
+            return None
+        return (getattr(user, "full_name", None) or getattr(user, "email", None)) or None
 
     # ── Real weather ingestion ───────────────────────────────────────────
 

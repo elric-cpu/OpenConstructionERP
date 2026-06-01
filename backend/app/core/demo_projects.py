@@ -255,7 +255,7 @@ _BERLIN = DemoTemplate(
         # ── KG 300 Baugrube (Earthworks) ──────────────────────────────
         (
             "300",
-            "KG 300 — Baugrube / Erdbau",
+            "KG 300 - Baugrube / Erdbau",
             {"din276": "300"},
             [
                 ("300.1", "Spundwandverbau Larssen 603 (Sheet piling)", "m2", 1400, 95.00, {"din276": "300"}),
@@ -280,7 +280,7 @@ _BERLIN = DemoTemplate(
         # ── KG 320 Gruendung (Foundation) ─────────────────────────────
         (
             "320",
-            "KG 320 — Gruendung",
+            "KG 320 - Gruendung",
             {"din276": "320"},
             [
                 ("320.1", "Bohrpfaehle d=600mm, L=12m (Bored piles)", "m", 960, 145.00, {"din276": "320"}),
@@ -310,7 +310,7 @@ _BERLIN = DemoTemplate(
         # ── KG 330 Aussenwande (External Walls) ──────────────────────
         (
             "330",
-            "KG 330 — Aussenwande",
+            "KG 330 - Aussenwande",
             {"din276": "330"},
             [
                 ("330.1", "Stahlbetonwaende C30/37, 25cm (RC walls)", "m3", 420, 380.00, {"din276": "330"}),
@@ -336,7 +336,7 @@ _BERLIN = DemoTemplate(
         # ── KG 340 Innenwaende (Internal Walls) ─────────────────────
         (
             "340",
-            "KG 340 — Innenwaende",
+            "KG 340 - Innenwaende",
             {"din276": "340"},
             [
                 ("340.1", "Tragendes Mauerwerk KS 17,5cm (Load-bearing masonry)", "m2", 3200, 68.00, {"din276": "340"}),
@@ -375,7 +375,7 @@ _BERLIN = DemoTemplate(
         # ── KG 350 Decken (Floor Slabs) ──────────────────────────────
         (
             "350",
-            "KG 350 — Decken",
+            "KG 350 - Decken",
             {"din276": "350"},
             [
                 ("350.1", "Stahlbeton-Flachdecke C30/37, 25cm (RC flat slab)", "m3", 1560, 320.00, {"din276": "350"}),
@@ -407,7 +407,7 @@ _BERLIN = DemoTemplate(
         # ── KG 360 Daecher (Roof) ────────────────────────────────────
         (
             "360",
-            "KG 360 — Daecher",
+            "KG 360 - Daecher",
             {"din276": "360"},
             [
                 ("360.1", "Stahlbeton-Dachdecke C30/37 (RC roof slab)", "m3", 195, 340.00, {"din276": "360"}),
@@ -438,7 +438,7 @@ _BERLIN = DemoTemplate(
         # ── KG 370 Baukonstruktive Einbauten ─────────────────────────
         (
             "370",
-            "KG 370 — Baukonstruktive Einbauten",
+            "KG 370 - Baukonstruktive Einbauten",
             {"din276": "370"},
             [
                 ("370.1", "Stahlbetontreppen Fertigteil (RC precast stairs)", "pcs", 15, 4200.00, {"din276": "370"}),
@@ -488,7 +488,7 @@ _BERLIN = DemoTemplate(
         # ── KG 410 Abwasser (Drainage) ───────────────────────────────
         (
             "410",
-            "KG 410 — Abwasser, Wasser, Gas",
+            "KG 410 - Abwasser, Wasser, Gas",
             {"din276": "410"},
             [
                 ("410.1", "Schmutzwasserleitung HDPE DN110 (Soil pipes HDPE)", "m", 1600, 42.00, {"din276": "410"}),
@@ -505,7 +505,7 @@ _BERLIN = DemoTemplate(
         # ── KG 420 Waermeversorgung (Heating) ────────────────────────
         (
             "420",
-            "KG 420 — Waermeversorgung",
+            "KG 420 - Waermeversorgung",
             {"din276": "420"},
             [
                 ("420.1", "Luft-Wasser-Waermepumpe 80kW (Air-source heat pump)", "pcs", 2, 38000.00, {"din276": "420"}),
@@ -528,7 +528,7 @@ _BERLIN = DemoTemplate(
         # ── KG 430 Lueftung (Ventilation) ────────────────────────────
         (
             "430",
-            "KG 430 — Lueftungsanlagen",
+            "KG 430 - Lueftungsanlagen",
             {"din276": "430"},
             [
                 ("430.1", "Wohnraumlueftung KWL mit WRG je WE (MVHR unit)", "pcs", 48, 3200.00, {"din276": "430"}),
@@ -560,7 +560,7 @@ _BERLIN = DemoTemplate(
         # ── KG 440 Elektro (Electrical) ──────────────────────────────
         (
             "440",
-            "KG 440 — Elektrotechnik",
+            "KG 440 - Elektrotechnik",
             {"din276": "440"},
             [
                 ("440.1", "Hauptverteilung NSHV 400A (Main distribution board)", "pcs", 1, 12500.00, {"din276": "440"}),
@@ -602,7 +602,7 @@ _BERLIN = DemoTemplate(
         # ── KG 500 Aufzuege (Elevators) ──────────────────────────────
         (
             "500",
-            "KG 500 — Aufzugsanlagen",
+            "KG 500 - Aufzugsanlagen",
             {"din276": "500"},
             [
                 ("500.1", "Personenaufzug 630kg / 8 Personen (Passenger lift)", "pcs", 3, 85000.00, {"din276": "500"}),
@@ -614,7 +614,7 @@ _BERLIN = DemoTemplate(
         # ── KG 540 Aussenanlagen (External Works) ────────────────────
         (
             "540",
-            "KG 540 — Aussenanlagen",
+            "KG 540 - Aussenanlagen",
             {"din276": "540"},
             [
                 (
@@ -1291,7 +1291,7 @@ _PARIS = DemoTemplate(
         "lng": 2.3844,
     },
     validation_rule_sets=["dpgf", "boq_quality"],
-    boq_name="Estimation Detaillee — Ecole Primaire",
+    boq_name="Estimation Detaillee - Ecole Primaire",
     boq_description="Estimation detaillee des couts pour l'ecole primaire Belleville",
     boq_metadata={
         "standard": "DPGF (France)",
@@ -1557,7 +1557,7 @@ _PARIS = DemoTemplate(
         # ── 05 CVC (HVAC) ────────────────────────────────────────────
         (
             "05",
-            "CVC — Chauffage, Ventilation, Climatisation (HVAC)",
+            "CVC - Chauffage, Ventilation, Climatisation (HVAC)",
             {"dpgf": "05"},
             [
                 (
@@ -1650,7 +1650,7 @@ _PARIS = DemoTemplate(
                 ("06.5", "Eclairage de securite BAES/BAEH (Emergency lighting)", "pcs", 120, 145.00, {"dpgf": "06"}),
                 (
                     "06.6",
-                    "SSI categorie A — detection + alarme (Fire alarm system)",
+                    "SSI categorie A - detection + alarme (Fire alarm system)",
                     "lsum",
                     1,
                     85000.00,
@@ -1886,7 +1886,7 @@ _PARIS = DemoTemplate(
     ],
     project_metadata={
         "address": "Rue de Belleville 120, 75020 Paris",
-        "client": "Mairie de Paris — DASCO",
+        "client": "Mairie de Paris - DASCO",
         "architect": "Atelier du Pont",
         "sdp_m2": 4200,
         "classrooms": 15,
@@ -3684,7 +3684,7 @@ def _generate_module_data(
         rfis.append(
             {
                 "rfi_number": f"RFI-{i + 1:03d}",
-                "subject": f"{trade} — clarification on {item or 'scope'}",
+                "subject": f"{trade} - clarification on {item or 'scope'}",
                 "question": (
                     f"Please clarify the detail for '{item or trade}' in section {code or trade}. "
                     f"Coordination required with {firm} before procurement."
@@ -3739,7 +3739,7 @@ def _generate_module_data(
 
     # ── Safety incidents (3-4) ───────────────────────────────────────────
     incident_seeds = [
-        ("near_miss", "moderate", "Near miss — material fell from height", "Edge protection gap"),
+        ("near_miss", "moderate", "Near miss - material fell from height", "Edge protection gap"),
         ("first_aid", "minor", "Minor hand laceration during handling", "Cut-resistant gloves not worn"),
         ("near_miss", "moderate", "Plant / pedestrian near miss in laydown area", "Segregation not enforced"),
         ("property_damage", "minor", "Temporary services strike during excavation", "Service scan not refreshed"),
@@ -3774,7 +3774,7 @@ def _generate_module_data(
         ("housekeeping", 3, 2, "Access route partially blocked by stored materials"),
         ("unsafe_condition", 4, 3, "Unprotected slab edge at leading edge of works"),
         ("environmental", 2, 3, "Dust generation during dry cutting"),
-        ("positive", 1, 1, "Good practice — full PPE and clean work area observed"),
+        ("positive", 1, 1, "Good practice - full PPE and clean work area observed"),
     ]
     safety_observations: list[dict] = []
     for i, (otype, sev, lik, desc) in enumerate(obs_seeds):
@@ -3844,10 +3844,10 @@ def _generate_module_data(
                 "due_date": _d(60 + i * 25),
                 "currency_code": cur,
                 "status": status,
-                "notes": f"{firm} — interim valuation, {trade}",
+                "notes": f"{firm} - interim valuation, {trade}",
                 "line_items": [
                     {
-                        "description": f"{item or trade} — works to date",
+                        "description": f"{item or trade} - works to date",
                         "quantity": "1",
                         "unit": "lsum",
                         "unit_rate": f"{amount:.2f}",
@@ -3890,10 +3890,10 @@ def _generate_module_data(
         ("Sealant defect at junction to be redone", "medium", "facade"),
         ("Minor crack to be monitored / filled", "medium", "structural"),
         ("Service penetration not fully sealed", "high", "fire_protection"),
-        ("Fixing/bracket missing — to be installed", "medium", "mep"),
+        ("Fixing/bracket missing - to be installed", "medium", "mep"),
         ("Damaged finish to be replaced", "low", "finishes"),
-        ("Snag — door/ironmongery adjustment", "low", "joinery"),
-        ("Leak at connection — retighten and test", "medium", "mep"),
+        ("Snag - door/ironmongery adjustment", "low", "joinery"),
+        ("Leak at connection - retighten and test", "medium", "mep"),
         ("Alignment/level out of tolerance", "medium", "structural"),
         ("Cleaning required before handover", "low", "general"),
         ("Paint defect on wall surface", "low", "finishes"),
@@ -3909,7 +3909,7 @@ def _generate_module_data(
         punchlist.append(
             {
                 "title": title,
-                "description": f"{title} — {trade}.",
+                "description": f"{title} - {trade}.",
                 "priority": prio,
                 "status": status,
                 "category": cat,
@@ -3940,7 +3940,7 @@ def _generate_module_data(
                     {"trade": "General labor", "headcount": 4, "hours": "8"},
                 ],
                 "equipment_on_site": ["Tower crane", "Telehandler", "Excavator"],
-                "delays": "Weather delay — works paused" if delay else None,
+                "delays": "Weather delay - works paused" if delay else None,
                 "delay_hours": 3.0 if delay else 0.0,
                 "status": "approved",
             }
@@ -3957,7 +3957,7 @@ def _generate_module_data(
         submittals.append(
             {
                 "submittal_number": f"SUB-{i + 1:03d}",
-                "title": f"{item or trade} — {firm}",
+                "title": f"{item or trade} - {firm}",
                 "spec_section": code or trade,
                 "submittal_type": sub_types[i % len(sub_types)],
                 "status": "approved" if approved else "under_review",
@@ -3984,7 +3984,7 @@ def _generate_module_data(
         ncrs.append(
             {
                 "ncr_number": f"NCR-{i + 1:03d}",
-                "title": f"{trade} non-conformance — {item or 'workmanship'}",
+                "title": f"{trade} non-conformance - {item or 'workmanship'}",
                 "description": f"{desc} for {item or trade} (section {code or trade}).",
                 "ncr_type": ntype,
                 "severity": sev,
@@ -4028,7 +4028,7 @@ def _generate_module_data(
                 "correspondence_type": ctype,
                 "date_sent": _d(day) if direction == "outgoing" else None,
                 "date_received": _d(day) if direction == "incoming" else None,
-                "notes": f"{subject} — {proj}.",
+                "notes": f"{subject} - {proj}.",
             }
         )
 
@@ -4042,7 +4042,7 @@ def _generate_module_data(
         variations.append(
             {
                 "code": f"VO-{i + 1:03d}",
-                "title": f"Variation — {trade}: {item or 'additional works'}",
+                "title": f"Variation - {trade}: {item or 'additional works'}",
                 "final_cost_impact": f"{amount}",
                 "final_schedule_days": 2 + (i % 4),
                 "currency": cur,
@@ -4118,10 +4118,10 @@ def _generate_module_data(
                 "delivery_date": _d(48 + i * 14),
                 "currency_code": cur,
                 "status": ("issued", "approved", "draft")[i % 3],
-                "notes": f"{firm} — supply for {trade}",
+                "notes": f"{firm} - supply for {trade}",
                 "items": [
                     {
-                        "description": f"{item or trade} — supply",
+                        "description": f"{item or trade} - supply",
                         "quantity": "1",
                         "unit": "lsum",
                         "unit_rate": f"{amount:.2f}",
@@ -4138,7 +4138,7 @@ def _generate_module_data(
     contracts.append(
         {
             "code": f"{demo_id}-MAIN",
-            "title": f"Main construction contract — {proj}",
+            "title": f"Main construction contract - {proj}",
             "contract_type": "lump_sum",
             "counterparty_type": "contractor",
             "total_value": f"{round(contract_total, 2)}",
@@ -4154,7 +4154,7 @@ def _generate_module_data(
         contracts.append(
             {
                 "code": f"{demo_id}-SUB-{i + 1:02d}",
-                "title": f"Subcontract — {trade} ({company})",
+                "title": f"Subcontract - {trade} ({company})",
                 "contract_type": "remeasurement",
                 "counterparty_type": "subcontractor",
                 "total_value": f"{sub_value}",
@@ -4222,7 +4222,7 @@ def _generate_module_data(
         )
     requirements: list[dict] = [
         {
-            "name": f"{template.classification_standard.upper() or 'Project'} requirements — {proj}",
+            "name": f"{template.classification_standard.upper() or 'Project'} requirements - {proj}",
             "description": f"Employer information and technical requirements for {proj}.",
             "source_type": "manual",
             "status": "active",
@@ -4673,7 +4673,7 @@ async def _seed_module_data(
                 "description": "Choose between Sto StoTherm Classic vs Caparol Dalmatiner",
                 "status": "completed",
                 "priority": "normal",
-                "result": "Sto StoTherm Classic selected — better thermal performance",
+                "result": "Sto StoTherm Classic selected - better thermal performance",
             },
             {
                 "task_type": "topic",
@@ -4720,7 +4720,7 @@ async def _seed_module_data(
             },
             {
                 "task_type": "decision",
-                "title": "Core strategy — steel vs concrete",
+                "title": "Core strategy - steel vs concrete",
                 "description": "Finalise core construction methodology",
                 "status": "completed",
                 "priority": "high",
@@ -4749,7 +4749,7 @@ async def _seed_module_data(
                 "status": "completed",
                 "priority": "high",
                 "due_date": (base - timedelta(days=60)).strftime("%Y-%m-%d"),
-                "result": "Complete — GI report issued by Arup",
+                "result": "Complete - GI report issued by Arup",
             },
             {
                 "task_type": "task",
@@ -4775,7 +4775,7 @@ async def _seed_module_data(
                 "description": "Decide between ground floor vs basement for 3T MRI suite",
                 "status": "completed",
                 "priority": "high",
-                "result": "Ground floor selected — easier equipment delivery and vibration isolation",
+                "result": "Ground floor selected - easier equipment delivery and vibration isolation",
             },
             {
                 "task_type": "task",
@@ -4784,7 +4784,7 @@ async def _seed_module_data(
                 "status": "completed",
                 "priority": "high",
                 "due_date": (base - timedelta(days=14)).strftime("%Y-%m-%d"),
-                "result": "Approved with minor comments — addressed",
+                "result": "Approved with minor comments - addressed",
             },
             {
                 "task_type": "topic",
@@ -4827,7 +4827,7 @@ async def _seed_module_data(
                 "status": "completed",
                 "priority": "high",
                 "due_date": (base - timedelta(days=45)).strftime("%Y-%m-%d"),
-                "result": "No asbestos detected — demolition cleared",
+                "result": "No asbestos detected - demolition cleared",
             },
             {
                 "task_type": "decision",
@@ -4835,11 +4835,11 @@ async def _seed_module_data(
                 "description": "Final decision on CLT timber vs reinforced concrete for superstructure",
                 "status": "completed",
                 "priority": "high",
-                "result": "CLT hybrid selected — meets RE 2020 carbon targets",
+                "result": "CLT hybrid selected - meets RE 2020 carbon targets",
             },
             {
                 "task_type": "topic",
-                "title": "Reunion mairie — planning site",
+                "title": "Reunion mairie - planning site",
                 "description": "Meeting with Mairie to discuss construction phase site logistics",
                 "status": "in_progress",
                 "priority": "normal",
@@ -4856,7 +4856,7 @@ async def _seed_module_data(
             {
                 "task_type": "task",
                 "title": "Etude acoustique gymnase",
-                "description": "Acoustic study for gymnasium — ensure NRA compliance",
+                "description": "Acoustic study for gymnasium - ensure NRA compliance",
                 "status": "in_progress",
                 "priority": "normal",
                 "due_date": (base + timedelta(days=45)).strftime("%Y-%m-%d"),
@@ -4867,7 +4867,7 @@ async def _seed_module_data(
                 "description": "Size rooftop PV array for 120 kWc target",
                 "status": "completed",
                 "priority": "normal",
-                "result": "320 panels on south-facing roof — 125 kWc achieved",
+                "result": "320 panels on south-facing roof - 125 kWc achieved",
             },
         ],
         "warehouse-dubai": [
@@ -4878,7 +4878,7 @@ async def _seed_module_data(
                 "status": "completed",
                 "priority": "high",
                 "due_date": (base - timedelta(days=60)).strftime("%Y-%m-%d"),
-                "result": "NOC approved — valid for 24 months",
+                "result": "NOC approved - valid for 24 months",
             },
             {
                 "task_type": "decision",
@@ -4886,7 +4886,7 @@ async def _seed_module_data(
                 "description": "Select insulated panel system for -25C cold storage zone",
                 "status": "completed",
                 "priority": "high",
-                "result": "Kingspan QuadCore KS1000 selected — best U-value",
+                "result": "Kingspan QuadCore KS1000 selected - best U-value",
             },
             {
                 "task_type": "topic",
@@ -4961,7 +4961,7 @@ async def _seed_module_data(
             },
             {
                 "rfi_number": "RFI-002",
-                "subject": "Fire protection upgrade — stairwell pressurisation",
+                "subject": "Fire protection upgrade - stairwell pressurisation",
                 "question": "Fire authority comments require smoke pressurisation in stairwells 2 and 3. "
                 "Current design shows natural ventilation only. Is redesign required?",
                 "status": "answered",
@@ -4973,7 +4973,7 @@ async def _seed_module_data(
             },
             {
                 "rfi_number": "RFI-003",
-                "subject": "Balcony railing design — glass vs steel",
+                "subject": "Balcony railing design - glass vs steel",
                 "question": "Architect's drawing shows frameless glass balustrade but specification "
                 "section calls for steel railings. Which applies?",
                 "status": "open",
@@ -4993,7 +4993,7 @@ async def _seed_module_data(
         "office-london": [
             {
                 "rfi_number": "RFI-001",
-                "subject": "Cladding specification — unitised panel size",
+                "subject": "Cladding specification - unitised panel size",
                 "question": "Curtain wall specification states 1500mm module width but floor-to-floor "
                 "varies between 3.6m and 4.2m on mezzanine level. Confirm panel heights.",
                 "status": "answered",
@@ -5005,7 +5005,7 @@ async def _seed_module_data(
             },
             {
                 "rfi_number": "RFI-002",
-                "subject": "Server room cooling — redundancy requirement",
+                "subject": "Server room cooling - redundancy requirement",
                 "question": "Client IT brief requests N+1 cooling redundancy for comms rooms on each "
                 "floor. Current design shows single DX unit. Please confirm requirement.",
                 "status": "open",
@@ -5014,7 +5014,7 @@ async def _seed_module_data(
             },
             {
                 "rfi_number": "RFI-003",
-                "subject": "Access floor loading — trading floor",
+                "subject": "Access floor loading - trading floor",
                 "question": "Trading floor Level 3 requires 6kPa imposed load for equipment. "
                 "Standard floor design is 3.5kPa. Structural upgrade needed?",
                 "status": "answered",
@@ -5041,7 +5041,7 @@ async def _seed_module_data(
             },
             {
                 "rfi_number": "RFI-002",
-                "subject": "Radiation shielding — CT room adjacent to corridor",
+                "subject": "Radiation shielding - CT room adjacent to corridor",
                 "question": "CT room 2-104 shares wall with public corridor. Shielding calculations "
                 "show 2mm lead equivalent needed. Confirm wall construction.",
                 "status": "open",
@@ -5072,7 +5072,7 @@ async def _seed_module_data(
         "school-paris": [
             {
                 "rfi_number": "RFI-001",
-                "subject": "CLT panel junction — fire compartmentation detail",
+                "subject": "CLT panel junction - fire compartmentation detail",
                 "question": "Connection detail between CLT floor panels and concrete core wall "
                 "not shown. Clarify fire stopping requirement at junction.",
                 "status": "answered",
@@ -5091,7 +5091,7 @@ async def _seed_module_data(
             },
             {
                 "rfi_number": "RFI-003",
-                "subject": "Canteen kitchen ventilation — grease extract",
+                "subject": "Canteen kitchen ventilation - grease extract",
                 "question": "Kitchen extract ductwork route conflicts with CLT beams at roof level. "
                 "Alternative routing required.",
                 "status": "answered",
@@ -5104,7 +5104,7 @@ async def _seed_module_data(
         "warehouse-dubai": [
             {
                 "rfi_number": "RFI-001",
-                "subject": "Steel portal frame — wind load design",
+                "subject": "Steel portal frame - wind load design",
                 "question": "Design wind speed 45 m/s per Dubai Municipality Code. Structural "
                 "report references 40 m/s. Confirm design wind speed.",
                 "status": "answered",
@@ -5116,7 +5116,7 @@ async def _seed_module_data(
             },
             {
                 "rfi_number": "RFI-002",
-                "subject": "Cold storage floor insulation — vapor barrier",
+                "subject": "Cold storage floor insulation - vapor barrier",
                 "question": "Floor insulation for -25C cold store requires vapor barrier below slab. "
                 "Current detail shows insulation above slab only.",
                 "status": "open",
@@ -5135,7 +5135,7 @@ async def _seed_module_data(
             },
             {
                 "rfi_number": "RFI-004",
-                "subject": "External cladding color — client approval",
+                "subject": "External cladding color - client approval",
                 "question": "Client requested RAL 9010 white but JAFZA zone requires earth tones. "
                 "Confirm approved color range.",
                 "status": "open",
@@ -5225,7 +5225,7 @@ async def _seed_module_data(
                     {"name": "Juergen Braun", "company": "Imtech", "status": "present"},
                 ],
                 "agenda_items": [
-                    {"number": "1", "topic": "Earthworks progress — 60% complete", "notes": "On programme"},
+                    {"number": "1", "topic": "Earthworks progress - 60% complete", "notes": "On programme"},
                     {"number": "2", "topic": "Dewatering pump issue", "notes": "Pump replaced, running OK"},
                 ],
                 "action_items": [
@@ -5317,7 +5317,7 @@ async def _seed_module_data(
             {
                 "meeting_number": "MTG-001",
                 "meeting_type": "design",
-                "title": "Clinical User Group — Surgical Suite",
+                "title": "Clinical User Group - Surgical Suite",
                 "meeting_date": (base - timedelta(days=7)).strftime("%Y-%m-%d"),
                 "location": "Downtown Health Board Room",
                 "status": "completed",
@@ -5329,7 +5329,7 @@ async def _seed_module_data(
                 "agenda_items": [
                     {
                         "number": "1",
-                        "topic": "OR layout review — 8 rooms",
+                        "topic": "OR layout review - 8 rooms",
                         "notes": "Layout approved with minor changes",
                     },
                     {"number": "2", "topic": "Medical gas requirements", "notes": "Confirmed per NFPA 99"},
@@ -5381,9 +5381,9 @@ async def _seed_module_data(
                     {"name": "Frederic Chartier", "company": "Chartier Dalix", "status": "present"},
                 ],
                 "agenda_items": [
-                    {"number": "1", "topic": "Installation chantier — 90% complete", "notes": "Hoarding installed"},
+                    {"number": "1", "topic": "Installation chantier - 90% complete", "notes": "Hoarding installed"},
                     {"number": "2", "topic": "Demolition programme", "notes": "Start Monday"},
-                    {"number": "3", "topic": "Riverains — noise mitigation plan", "notes": "Approved by mairie"},
+                    {"number": "3", "topic": "Riverains - noise mitigation plan", "notes": "Approved by mairie"},
                 ],
                 "action_items": [
                     {
@@ -5402,7 +5402,7 @@ async def _seed_module_data(
             {
                 "meeting_number": "MTG-002",
                 "meeting_type": "design",
-                "title": "Revue technique CLT — BET structure",
+                "title": "Revue technique CLT - BET structure",
                 "meeting_date": (base + timedelta(days=14)).strftime("%Y-%m-%d"),
                 "location": "Agence Chartier Dalix",
                 "status": "scheduled",
@@ -5432,7 +5432,7 @@ async def _seed_module_data(
                     {"name": "George Palmer", "company": "RBG", "status": "present"},
                 ],
                 "agenda_items": [
-                    {"number": "1", "topic": "Programme overview — 12 months", "notes": "Handover March 2027"},
+                    {"number": "1", "topic": "Programme overview - 12 months", "notes": "Handover March 2027"},
                     {"number": "2", "topic": "Steel procurement lead time", "notes": "16 weeks from China"},
                     {"number": "3", "topic": "JAFZA NOC status", "notes": "Approved"},
                     {"number": "4", "topic": "Summer working hours plan", "notes": "Midday ban 15 Jun-15 Sep"},
@@ -5501,7 +5501,7 @@ async def _seed_module_data(
         "residential-berlin": [
             {
                 "incident_number": "INC-001",
-                "title": "Near miss — unsecured scaffold plank",
+                "title": "Near miss - unsecured scaffold plank",
                 "incident_date": (base + timedelta(days=12)).strftime("%Y-%m-%d"),
                 "location": "Level 2, Grid C-D / 4-5",
                 "incident_type": "near_miss",
@@ -5526,7 +5526,7 @@ async def _seed_module_data(
             },
             {
                 "incident_number": "INC-002",
-                "title": "Minor hand injury — rebar handling",
+                "title": "Minor hand injury - rebar handling",
                 "incident_date": (base + timedelta(days=35)).strftime("%Y-%m-%d"),
                 "location": "Foundation zone, Grid A-B / 1-3",
                 "incident_type": "first_aid",
@@ -5549,13 +5549,13 @@ async def _seed_module_data(
         "office-london": [
             {
                 "incident_number": "INC-001",
-                "title": "Near miss — dropped bolt during steel erection",
+                "title": "Near miss - dropped bolt during steel erection",
                 "incident_date": (base + timedelta(days=60)).strftime("%Y-%m-%d"),
                 "location": "Level 5, perimeter zone",
                 "incident_type": "near_miss",
                 "severity": "serious",
                 "description": "M24 bolt dropped from Level 5 during steel erection. "
-                "Landed in exclusion zone — no one injured.",
+                "Landed in exclusion zone - no one injured.",
                 "root_cause": "Tool tether not attached to impact wrench",
                 "corrective_actions": [
                     {
@@ -5576,7 +5576,7 @@ async def _seed_module_data(
         "medical-us": [
             {
                 "incident_number": "INC-001",
-                "title": "ICRA barrier breach — surgical wing",
+                "title": "ICRA barrier breach - surgical wing",
                 "incident_date": (base + timedelta(days=45)).strftime("%Y-%m-%d"),
                 "location": "Level 2, Surgical Suite corridor",
                 "incident_type": "environmental",
@@ -5607,7 +5607,7 @@ async def _seed_module_data(
             },
             {
                 "incident_number": "INC-002",
-                "title": "Slip and fall — wet concrete pour area",
+                "title": "Slip and fall - wet concrete pour area",
                 "incident_date": (base + timedelta(days=25)).strftime("%Y-%m-%d"),
                 "location": "Level 1, ED wing foundation",
                 "incident_type": "recordable",
@@ -5616,7 +5616,7 @@ async def _seed_module_data(
                 "returned to work next day.",
                 "treatment_type": "first_aid",
                 "injured_person_details": {"role": "Laborer", "company": "Turner Construction"},
-                "root_cause": "Inadequate housekeeping — water not channeled away from work path",
+                "root_cause": "Inadequate housekeeping - water not channeled away from work path",
                 "corrective_actions": [
                     {
                         "description": "Install drainage channels around active pour areas",
@@ -5631,13 +5631,13 @@ async def _seed_module_data(
         "school-paris": [
             {
                 "incident_number": "INC-001",
-                "title": "Chute de materiel — panneau CLT",
+                "title": "Chute de materiel - panneau CLT",
                 "incident_date": (base + timedelta(days=50)).strftime("%Y-%m-%d"),
                 "location": "Zone de stockage, aire nord",
                 "incident_type": "near_miss",
                 "severity": "serious",
                 "description": "CLT panel slipped from storage rack due to improper bracing. "
-                "No injuries — area was cordoned off.",
+                "No injuries - area was cordoned off.",
                 "root_cause": "Storage rack not rated for CLT panel weight. Wind loading not considered.",
                 "corrective_actions": [
                     {
@@ -5658,7 +5658,7 @@ async def _seed_module_data(
         "warehouse-dubai": [
             {
                 "incident_number": "INC-001",
-                "title": "Heat exhaustion — steel erector",
+                "title": "Heat exhaustion - steel erector",
                 "incident_date": (base + timedelta(days=75)).strftime("%Y-%m-%d"),
                 "location": "Warehouse bay 3, roof level",
                 "incident_type": "recordable",
@@ -5685,7 +5685,7 @@ async def _seed_module_data(
             },
             {
                 "incident_number": "INC-002",
-                "title": "Near miss — crane outrigger on soft ground",
+                "title": "Near miss - crane outrigger on soft ground",
                 "incident_date": (base + timedelta(days=30)).strftime("%Y-%m-%d"),
                 "location": "Eastern yard, crane pad area",
                 "incident_type": "near_miss",
@@ -5817,7 +5817,7 @@ async def _seed_module_data(
             {
                 "observation_number": "OBS-001",
                 "observation_type": "unsafe_condition",
-                "description": "ICRA negative air machine filter indicator showing red — filter change overdue.",
+                "description": "ICRA negative air machine filter indicator showing red - filter change overdue.",
                 "location": "Level 2, surgical wing barrier",
                 "severity": 4,
                 "likelihood": 4,
@@ -5850,7 +5850,7 @@ async def _seed_module_data(
             {
                 "observation_number": "OBS-004",
                 "observation_type": "positive",
-                "description": "Excellent silica dust control during concrete cutting — wet saw and "
+                "description": "Excellent silica dust control during concrete cutting - wet saw and "
                 "vacuum extraction in use, all workers with P100 respirators.",
                 "location": "Level 1, radiology suite",
                 "severity": 1,
@@ -5862,7 +5862,7 @@ async def _seed_module_data(
             {
                 "observation_number": "OBS-001",
                 "observation_type": "unsafe_condition",
-                "description": "Tranchee ouverte sans protection — open trench without barrier "
+                "description": "Tranchee ouverte sans protection - open trench without barrier "
                 "near school entrance area.",
                 "location": "Acces principal, cote rue",
                 "severity": 4,
@@ -5886,7 +5886,7 @@ async def _seed_module_data(
             {
                 "observation_number": "OBS-003",
                 "observation_type": "housekeeping",
-                "description": "Stockage CLT non bache — CLT panels stored without weather protection.",
+                "description": "Stockage CLT non bache - CLT panels stored without weather protection.",
                 "location": "Zone de stockage nord",
                 "severity": 3,
                 "likelihood": 4,
@@ -5910,7 +5910,7 @@ async def _seed_module_data(
             {
                 "observation_number": "OBS-002",
                 "observation_type": "unsafe_condition",
-                "description": "Sandstorm warning issued — temporary materials not secured.",
+                "description": "Sandstorm warning issued - temporary materials not secured.",
                 "location": "External laydown area",
                 "severity": 3,
                 "likelihood": 3,
@@ -5932,7 +5932,7 @@ async def _seed_module_data(
             {
                 "observation_number": "OBS-004",
                 "observation_type": "positive",
-                "description": "Good practice — all workers observed wearing high-viz vests and "
+                "description": "Good practice - all workers observed wearing high-viz vests and "
                 "hard hats in extreme heat conditions without complaint.",
                 "location": "General site",
                 "severity": 1,
@@ -5975,7 +5975,7 @@ async def _seed_module_data(
             {
                 "inspection_number": "INS-001",
                 "inspection_type": "concrete",
-                "title": "Bodenplatte Betonage — Slab Pour Inspection",
+                "title": "Bodenplatte Betonage - Slab Pour Inspection",
                 "description": "Inspection of foundation slab concrete pour C30/37",
                 "location": "Foundation zone, full area",
                 "status": "completed",
@@ -6016,7 +6016,7 @@ async def _seed_module_data(
             {
                 "inspection_number": "INS-002",
                 "inspection_type": "waterproofing",
-                "title": "Kellerabdichtung — Basement Waterproofing",
+                "title": "Kellerabdichtung - Basement Waterproofing",
                 "description": "Inspection of KMB waterproofing membrane to basement walls",
                 "location": "Basement walls, south and east",
                 "status": "completed",
@@ -6044,7 +6044,7 @@ async def _seed_module_data(
             {
                 "inspection_number": "INS-003",
                 "inspection_type": "fire_stopping",
-                "title": "Brandschutz Durchfuehrungen — Fire Stopping",
+                "title": "Brandschutz Durchfuehrungen - Fire Stopping",
                 "description": "Inspection of fire stopping at service penetrations Level 1-2",
                 "location": "Levels 1-2, all risers",
                 "status": "completed",
@@ -6077,7 +6077,7 @@ async def _seed_module_data(
             {
                 "inspection_number": "INS-004",
                 "inspection_type": "structural",
-                "title": "Rohbau Abnahme OG 2 — Structural Inspection Level 2",
+                "title": "Rohbau Abnahme OG 2 - Structural Inspection Level 2",
                 "description": "Structural inspection of completed RC frame Level 2",
                 "location": "Level 2, full floor",
                 "status": "completed",
@@ -6106,7 +6106,7 @@ async def _seed_module_data(
             {
                 "inspection_number": "INS-001",
                 "inspection_type": "structural",
-                "title": "Steel Frame Erection — Level 3-4",
+                "title": "Steel Frame Erection - Level 3-4",
                 "description": "Inspection of structural steelwork erection levels 3-4",
                 "location": "Levels 3-4, full floor plate",
                 "status": "completed",
@@ -6138,7 +6138,7 @@ async def _seed_module_data(
             {
                 "inspection_number": "INS-002",
                 "inspection_type": "waterproofing",
-                "title": "Basement Waterproofing — Type A Cavity Drain",
+                "title": "Basement Waterproofing - Type A Cavity Drain",
                 "description": "Inspection of cavity drain membrane installation",
                 "location": "Basement levels -1 and -2",
                 "status": "completed",
@@ -6194,7 +6194,7 @@ async def _seed_module_data(
             {
                 "inspection_number": "INS-001",
                 "inspection_type": "concrete",
-                "title": "Foundation Mat Pour — ED Wing",
+                "title": "Foundation Mat Pour - ED Wing",
                 "description": "Inspection of mass concrete mat foundation pour",
                 "location": "ED wing foundation",
                 "status": "completed",
@@ -6221,7 +6221,7 @@ async def _seed_module_data(
             {
                 "inspection_number": "INS-002",
                 "inspection_type": "mep",
-                "title": "Medical Gas Rough-in — Surgical Suite",
+                "title": "Medical Gas Rough-in - Surgical Suite",
                 "description": "Inspection of medical gas piping installation",
                 "location": "Level 2, Surgical suite",
                 "status": "completed",
@@ -6276,7 +6276,7 @@ async def _seed_module_data(
             {
                 "inspection_number": "INS-001",
                 "inspection_type": "structural",
-                "title": "CLT Panel Installation — Level 1",
+                "title": "CLT Panel Installation - Level 1",
                 "description": "Inspection of CLT panel erection and connections",
                 "location": "Level 1, full floor",
                 "status": "completed",
@@ -6359,7 +6359,7 @@ async def _seed_module_data(
             {
                 "inspection_number": "INS-001",
                 "inspection_type": "structural",
-                "title": "Steel Portal Frame — Bay 1-3 Erection",
+                "title": "Steel Portal Frame - Bay 1-3 Erection",
                 "description": "Structural inspection of portal frame erection first 3 bays",
                 "location": "Bays 1-3, full height",
                 "status": "completed",
@@ -6385,7 +6385,7 @@ async def _seed_module_data(
             {
                 "inspection_number": "INS-002",
                 "inspection_type": "fire_protection",
-                "title": "ESFR Sprinkler Installation — Zone 1",
+                "title": "ESFR Sprinkler Installation - Zone 1",
                 "description": "Inspection of ESFR sprinkler system installation",
                 "location": "Warehouse Zone 1",
                 "status": "completed",
@@ -6463,7 +6463,7 @@ async def _seed_module_data(
                 "due_date": (base + timedelta(days=60)).strftime("%Y-%m-%d"),
                 "currency_code": "EUR",
                 "status": "paid",
-                "notes": "Hochtief — 1. Abschlagsrechnung Erdarbeiten",
+                "notes": "Hochtief - 1. Abschlagsrechnung Erdarbeiten",
                 "line_items": [
                     {
                         "description": "Aushub Baugrube 2500 m3",
@@ -6488,7 +6488,7 @@ async def _seed_module_data(
                 "due_date": (base + timedelta(days=90)).strftime("%Y-%m-%d"),
                 "currency_code": "EUR",
                 "status": "approved",
-                "notes": "Hochtief — 2. Abschlagsrechnung Gruendung",
+                "notes": "Hochtief - 2. Abschlagsrechnung Gruendung",
                 "line_items": [
                     {
                         "description": "Bohrpfaehle d=600mm 480 m",
@@ -6513,7 +6513,7 @@ async def _seed_module_data(
                 "due_date": (base + timedelta(days=120)).strftime("%Y-%m-%d"),
                 "currency_code": "EUR",
                 "status": "submitted",
-                "notes": "Sto SE — 1. Abschlagsrechnung Fassade WDVS",
+                "notes": "Sto SE - 1. Abschlagsrechnung Fassade WDVS",
                 "line_items": [
                     {
                         "description": "WDVS Mineralwolle 160mm 2400 m2",
@@ -6533,7 +6533,7 @@ async def _seed_module_data(
                 "due_date": (base + timedelta(days=75)).strftime("%Y-%m-%d"),
                 "currency_code": "GBP",
                 "status": "paid",
-                "notes": "Severfield — Valuation 1 — Steel erection Levels 1-3",
+                "notes": "Severfield - Valuation 1 - Steel erection Levels 1-3",
                 "line_items": [
                     {
                         "description": "Structural steel columns 160t",
@@ -6558,10 +6558,10 @@ async def _seed_module_data(
                 "due_date": (base + timedelta(days=105)).strftime("%Y-%m-%d"),
                 "currency_code": "GBP",
                 "status": "approved",
-                "notes": "Permasteelisa — Advance payment for curtain wall fabrication",
+                "notes": "Permasteelisa - Advance payment for curtain wall fabrication",
                 "line_items": [
                     {
-                        "description": "Curtain wall advance — 30% of contract",
+                        "description": "Curtain wall advance - 30% of contract",
                         "quantity": "1",
                         "unit": "lsum",
                         "unit_rate": "1716000.00",
@@ -6579,7 +6579,7 @@ async def _seed_module_data(
                 "notes": "Client interim payment certificate 1",
                 "line_items": [
                     {
-                        "description": "Works to date — Certificate 1",
+                        "description": "Works to date - Certificate 1",
                         "quantity": "1",
                         "unit": "lsum",
                         "unit_rate": "2850000.00",
@@ -6596,7 +6596,7 @@ async def _seed_module_data(
                 "due_date": (base + timedelta(days=60)).strftime("%Y-%m-%d"),
                 "currency_code": "USD",
                 "status": "paid",
-                "notes": "Turner — Pay application #1 — Foundation & site work",
+                "notes": "Turner - Pay application #1 - Foundation & site work",
                 "line_items": [
                     {
                         "description": "Site preparation and earthwork",
@@ -6606,7 +6606,7 @@ async def _seed_module_data(
                         "amount": "485000.00",
                     },
                     {
-                        "description": "Foundation mat pour — ED wing",
+                        "description": "Foundation mat pour - ED wing",
                         "quantity": "1",
                         "unit": "lsum",
                         "unit_rate": "312000.00",
@@ -6621,7 +6621,7 @@ async def _seed_module_data(
                 "due_date": (base + timedelta(days=90)).strftime("%Y-%m-%d"),
                 "currency_code": "USD",
                 "status": "approved",
-                "notes": "Southland Industries — MEP rough-in progress billing",
+                "notes": "Southland Industries - MEP rough-in progress billing",
                 "line_items": [
                     {
                         "description": "Underground utilities 60%",
@@ -6646,10 +6646,10 @@ async def _seed_module_data(
                 "due_date": (base + timedelta(days=120)).strftime("%Y-%m-%d"),
                 "currency_code": "USD",
                 "status": "submitted",
-                "notes": "Siemens Healthineers — 3T MRI equipment deposit",
+                "notes": "Siemens Healthineers - 3T MRI equipment deposit",
                 "line_items": [
                     {
-                        "description": "Siemens MAGNETOM Vida 3T — 50% deposit",
+                        "description": "Siemens MAGNETOM Vida 3T - 50% deposit",
                         "quantity": "1",
                         "unit": "pcs",
                         "unit_rate": "1250000.00",
@@ -6666,7 +6666,7 @@ async def _seed_module_data(
                 "due_date": (base + timedelta(days=75)).strftime("%Y-%m-%d"),
                 "currency_code": "EUR",
                 "status": "paid",
-                "notes": "Eiffage — Situation 1 — Terrassement et fondations",
+                "notes": "Eiffage - Situation 1 - Terrassement et fondations",
                 "line_items": [
                     {
                         "description": "Terrassement general 1200 m3",
@@ -6691,10 +6691,10 @@ async def _seed_module_data(
                 "due_date": (base + timedelta(days=105)).strftime("%Y-%m-%d"),
                 "currency_code": "EUR",
                 "status": "approved",
-                "notes": "Arbonis — Acompte panneaux CLT",
+                "notes": "Arbonis - Acompte panneaux CLT",
                 "line_items": [
                     {
-                        "description": "CLT panels — 40% advance on fabrication",
+                        "description": "CLT panels - 40% advance on fabrication",
                         "quantity": "1",
                         "unit": "lsum",
                         "unit_rate": "380000.00",
@@ -6711,7 +6711,7 @@ async def _seed_module_data(
                 "due_date": (base + timedelta(days=60)).strftime("%Y-%m-%d"),
                 "currency_code": "AED",
                 "status": "paid",
-                "notes": "Al Jaber — IPC 1 — Earthworks and foundations",
+                "notes": "Al Jaber - IPC 1 - Earthworks and foundations",
                 "line_items": [
                     {
                         "description": "Earthworks and grading 45000 m2",
@@ -6736,10 +6736,10 @@ async def _seed_module_data(
                 "due_date": (base + timedelta(days=90)).strftime("%Y-%m-%d"),
                 "currency_code": "AED",
                 "status": "approved",
-                "notes": "Al Jaber — IPC 2 — Steel structure fabrication deposit",
+                "notes": "Al Jaber - IPC 2 - Steel structure fabrication deposit",
                 "line_items": [
                     {
-                        "description": "Portal frame steel — 40% fabrication advance",
+                        "description": "Portal frame steel - 40% fabrication advance",
                         "quantity": "1",
                         "unit": "lsum",
                         "unit_rate": "1850000.00",
@@ -6754,10 +6754,10 @@ async def _seed_module_data(
                 "due_date": (base + timedelta(days=120)).strftime("%Y-%m-%d"),
                 "currency_code": "AED",
                 "status": "submitted",
-                "notes": "EFFE — Fire protection system advance",
+                "notes": "EFFE - Fire protection system advance",
                 "line_items": [
                     {
-                        "description": "ESFR sprinkler system — 30% advance",
+                        "description": "ESFR sprinkler system - 30% advance",
                         "quantity": "1",
                         "unit": "lsum",
                         "unit_rate": "420000.00",
@@ -7077,7 +7077,7 @@ async def _seed_module_data(
         ],
         "office-london": [
             {
-                "title": "Curtain wall water ingress — Level 5 transom",
+                "title": "Curtain wall water ingress - Level 5 transom",
                 "description": (
                     "Water staining at transom-mullion junction Level 5, south elevation (per INS-003 mock-up failure)."
                 ),
@@ -7087,7 +7087,7 @@ async def _seed_module_data(
                 "trade": "Curtain wall",
             },
             {
-                "title": "Missing fire stopping — riser 2, Level 6",
+                "title": "Missing fire stopping - riser 2, Level 6",
                 "description": "Fire stopping incomplete at 4 cable tray penetrations in riser 2.",
                 "priority": "high",
                 "status": "in_progress",
@@ -7095,7 +7095,7 @@ async def _seed_module_data(
                 "trade": "Fire stopping",
             },
             {
-                "title": "Access floor tile damaged — Level 3 NE corner",
+                "title": "Access floor tile damaged - Level 3 NE corner",
                 "description": "Cracked access floor tile from equipment delivery.",
                 "priority": "low",
                 "status": "open",
@@ -7122,7 +7122,7 @@ async def _seed_module_data(
                 "trade": "Ceiling",
             },
             {
-                "title": "Medical gas outlet — wrong gas at 2-305",
+                "title": "Medical gas outlet - wrong gas at 2-305",
                 "description": "Nitrogen outlet installed where oxygen should be in Room 2-305.",
                 "priority": "critical",
                 "status": "in_progress",
@@ -7148,7 +7148,7 @@ async def _seed_module_data(
                 "resolution_notes": "Debris removed, screen installed to prevent recurrence",
             },
             {
-                "title": "Handrail loose — main stairwell Level 2-3",
+                "title": "Handrail loose - main stairwell Level 2-3",
                 "description": "Stainless steel handrail bracket loose at Level 2-3 landing.",
                 "priority": "low",
                 "status": "open",
@@ -7158,7 +7158,7 @@ async def _seed_module_data(
         ],
         "school-paris": [
             {
-                "title": "Joint CLT visible — salle de classe 1.02",
+                "title": "Joint CLT visible - salle de classe 1.02",
                 "description": "CLT panel joint visible and not flush in classroom 1.02. Needs filling and sanding.",
                 "priority": "medium",
                 "status": "open",
@@ -7166,7 +7166,7 @@ async def _seed_module_data(
                 "trade": "CLT/Timber",
             },
             {
-                "title": "Porte coupe-feu gymnase — ferme-porte defectueux",
+                "title": "Porte coupe-feu gymnase - ferme-porte defectueux",
                 "description": "Gymnasium fire door closer not achieving full closure.",
                 "priority": "high",
                 "status": "in_progress",
@@ -7175,7 +7175,7 @@ async def _seed_module_data(
             },
             {
                 "title": "Peinture ecaillee hall entree",
-                "description": "Paint peeling in entrance hall near external door — moisture ingress suspected.",
+                "description": "Paint peeling in entrance hall near external door - moisture ingress suspected.",
                 "priority": "medium",
                 "status": "open",
                 "category": "finishes",
@@ -7201,7 +7201,7 @@ async def _seed_module_data(
                 "resolution_notes": "Additional heads being installed to meet FM Global spacing",
             },
             {
-                "title": "Cold store insulated panel gap — Door 3",
+                "title": "Cold store insulated panel gap - Door 3",
                 "description": "5mm gap at insulated panel junction near cold store Door 3.",
                 "priority": "medium",
                 "status": "open",
@@ -7209,7 +7209,7 @@ async def _seed_module_data(
                 "trade": "Cold storage panels",
             },
             {
-                "title": "Dock leveller hydraulic leak — Dock 5",
+                "title": "Dock leveller hydraulic leak - Dock 5",
                 "description": (
                     "Hydraulic fluid leak on dock leveller 5. Leveller operational but needs seal replacement."
                 ),
@@ -7270,7 +7270,7 @@ async def _seed_module_data(
                 "temperature_c": 8.0,
                 "work_performed": "Excavation paused due to heavy rain. Dewatering pumps running at full capacity. "
                 "Formwork preparation in covered area.",
-                "delays": "Heavy rain — excavation paused for 4 hours",
+                "delays": "Heavy rain - excavation paused for 4 hours",
                 "delay_hours": 4.0,
                 "workforce": [{"trade": "General labor", "headcount": 4, "hours": "4"}],
                 "status": "approved",
@@ -7282,7 +7282,7 @@ async def _seed_module_data(
                 "report_type": "daily",
                 "weather_condition": "overcast",
                 "temperature_c": 14.0,
-                "work_performed": "Piled foundation CFA installation — 12 piles completed. "
+                "work_performed": "Piled foundation CFA installation - 12 piles completed. "
                 "Steel delivery for erection next week.",
                 "workforce": [
                     {"trade": "Piling crew", "headcount": 10, "hours": "10"},
@@ -7298,7 +7298,7 @@ async def _seed_module_data(
                 "report_type": "daily",
                 "weather_condition": "clear",
                 "temperature_c": 22.0,
-                "work_performed": "Foundation mat pour ED wing — 285 CY placed. "
+                "work_performed": "Foundation mat pour ED wing - 285 CY placed. "
                 "Thermocouples installed for mass concrete temperature monitoring. "
                 "ICRA barriers in place for adjacent occupied area.",
                 "workforce": [
@@ -7307,7 +7307,7 @@ async def _seed_module_data(
                     {"trade": "Finishers", "headcount": 6, "hours": "10"},
                 ],
                 "equipment_on_site": ["Concrete pump 42m boom", "Vibrators x6", "Laser screed"],
-                "visitors": "County building inspector — foundation observation",
+                "visitors": "County building inspector - foundation observation",
                 "status": "approved",
             },
         ],
@@ -7396,7 +7396,7 @@ async def _seed_module_data(
         "residential-berlin": [
             {
                 "submittal_number": "SUB-001",
-                "title": "WDVS Sto StoTherm Classic — product data",
+                "title": "WDVS Sto StoTherm Classic - product data",
                 "spec_section": "KG 330",
                 "submittal_type": "product_data",
                 "status": "approved",
@@ -7414,7 +7414,7 @@ async def _seed_module_data(
             },
             {
                 "submittal_number": "SUB-003",
-                "title": "Aufzug KONE MonoSpace — Werkplanung",
+                "title": "Aufzug KONE MonoSpace - Werkplanung",
                 "spec_section": "KG 500",
                 "submittal_type": "shop_drawing",
                 "status": "under_review",
@@ -7424,7 +7424,7 @@ async def _seed_module_data(
         "office-london": [
             {
                 "submittal_number": "SUB-001",
-                "title": "Structural steel — fabrication drawings Level 1-4",
+                "title": "Structural steel - fabrication drawings Level 1-4",
                 "spec_section": "NRM 2.1",
                 "submittal_type": "shop_drawing",
                 "status": "approved",
@@ -7433,7 +7433,7 @@ async def _seed_module_data(
             },
             {
                 "submittal_number": "SUB-002",
-                "title": "Curtain wall mock-up — test results",
+                "title": "Curtain wall mock-up - test results",
                 "spec_section": "NRM 5.1",
                 "submittal_type": "test_report",
                 "status": "rejected",
@@ -7442,7 +7442,7 @@ async def _seed_module_data(
             },
             {
                 "submittal_number": "SUB-003",
-                "title": "Fire protection intumescent — product data",
+                "title": "Fire protection intumescent - product data",
                 "spec_section": "NRM 2.4",
                 "submittal_type": "product_data",
                 "status": "approved",
@@ -7453,7 +7453,7 @@ async def _seed_module_data(
         "medical-us": [
             {
                 "submittal_number": "SUB-001",
-                "title": "Medical gas piping — Type L copper shop drawings",
+                "title": "Medical gas piping - Type L copper shop drawings",
                 "spec_section": "23 52 00",
                 "submittal_type": "shop_drawing",
                 "status": "approved",
@@ -7462,7 +7462,7 @@ async def _seed_module_data(
             },
             {
                 "submittal_number": "SUB-002",
-                "title": "RF shielding copper room — fabrication details",
+                "title": "RF shielding copper room - fabrication details",
                 "spec_section": "13 49 00",
                 "submittal_type": "shop_drawing",
                 "status": "under_review",
@@ -7470,7 +7470,7 @@ async def _seed_module_data(
             },
             {
                 "submittal_number": "SUB-003",
-                "title": "HVAC air handling units — product data",
+                "title": "HVAC air handling units - product data",
                 "spec_section": "23 73 00",
                 "submittal_type": "product_data",
                 "status": "approved",
@@ -7481,7 +7481,7 @@ async def _seed_module_data(
         "school-paris": [
             {
                 "submittal_number": "SUB-001",
-                "title": "Panneaux CLT — plans de fabrication",
+                "title": "Panneaux CLT - plans de fabrication",
                 "spec_section": "Lot 2",
                 "submittal_type": "shop_drawing",
                 "status": "approved",
@@ -7490,7 +7490,7 @@ async def _seed_module_data(
             },
             {
                 "submittal_number": "SUB-002",
-                "title": "Menuiserie exterieure alu — fiches techniques",
+                "title": "Menuiserie exterieure alu - fiches techniques",
                 "spec_section": "Lot 5",
                 "submittal_type": "product_data",
                 "status": "under_review",
@@ -7500,7 +7500,7 @@ async def _seed_module_data(
         "warehouse-dubai": [
             {
                 "submittal_number": "SUB-001",
-                "title": "Portal frame steel — shop drawings",
+                "title": "Portal frame steel - shop drawings",
                 "spec_section": "05 12 00",
                 "submittal_type": "shop_drawing",
                 "status": "approved",
@@ -7509,7 +7509,7 @@ async def _seed_module_data(
             },
             {
                 "submittal_number": "SUB-002",
-                "title": "ESFR sprinkler system — hydraulic calculations",
+                "title": "ESFR sprinkler system - hydraulic calculations",
                 "spec_section": "21 13 00",
                 "submittal_type": "calculation",
                 "status": "under_review",
@@ -7517,7 +7517,7 @@ async def _seed_module_data(
             },
             {
                 "submittal_number": "SUB-003",
-                "title": "Insulated panels — cold store specification",
+                "title": "Insulated panels - cold store specification",
                 "spec_section": "07 42 00",
                 "submittal_type": "product_data",
                 "status": "approved",
@@ -7586,7 +7586,7 @@ async def _seed_module_data(
         "medical-us": [
             {
                 "ncr_number": "NCR-001",
-                "title": "Wrong medical gas outlet installed — Room 2-305",
+                "title": "Wrong medical gas outlet installed - Room 2-305",
                 "description": "Nitrogen outlet installed at oxygen position in patient room 2-305.",
                 "ncr_type": "workmanship",
                 "severity": "critical",
@@ -7602,7 +7602,7 @@ async def _seed_module_data(
         "school-paris": [
             {
                 "ncr_number": "NCR-001",
-                "title": "CLT panel surface defect — salle 1.02",
+                "title": "CLT panel surface defect - salle 1.02",
                 "description": "Visible joint gap in CLT panel in classroom 1.02. Not meeting exposed finish spec.",
                 "ncr_type": "material",
                 "severity": "minor",
@@ -7673,7 +7673,7 @@ async def _seed_module_data(
             {
                 "reference_number": "IN-2026-001",
                 "direction": "incoming",
-                "subject": "Brandschutzauflagen — Stellungnahme Feuerwehr",
+                "subject": "Brandschutzauflagen - Stellungnahme Feuerwehr",
                 "correspondence_type": "letter",
                 "date_received": (base + timedelta(days=21)).strftime("%Y-%m-%d"),
                 "notes": "Fire authority comments on smoke extract and pressurisation",
@@ -7694,7 +7694,7 @@ async def _seed_module_data(
                 "subject": "Building control initial inspection report",
                 "correspondence_type": "report",
                 "date_received": (base + timedelta(days=14)).strftime("%Y-%m-%d"),
-                "notes": "Approved Inspectors initial inspection — no issues",
+                "notes": "Approved Inspectors initial inspection - no issues",
             },
         ],
         "medical-us": [
@@ -7712,7 +7712,7 @@ async def _seed_module_data(
                 "subject": "JCAHO compliance pre-assessment report",
                 "correspondence_type": "report",
                 "date_received": (base - timedelta(days=30)).strftime("%Y-%m-%d"),
-                "notes": "Joint Commission pre-assessment — 3 observations to address",
+                "notes": "Joint Commission pre-assessment - 3 observations to address",
             },
         ],
         "school-paris": [
@@ -7737,7 +7737,7 @@ async def _seed_module_data(
             {
                 "reference_number": "IN-2026-001",
                 "direction": "incoming",
-                "subject": "Dubai Civil Defence approval — fire protection design",
+                "subject": "Dubai Civil Defence approval - fire protection design",
                 "correspondence_type": "letter",
                 "date_received": (base - timedelta(days=14)).strftime("%Y-%m-%d"),
                 "notes": "Fire protection design approved with conditions",
@@ -8241,7 +8241,7 @@ async def install_demo_project(
                 boq_id=budget_boq_id,
                 parent_id=b_sec.id,
                 ordinal=f"{sec.ordinal}.01",
-                description=f"{sec.description} — Lump Sum",
+                description=f"{sec.description} - Lump Sum",
                 unit="LS",
                 quantity=1.0,
                 unit_rate=round(sec_total, 2),
@@ -8441,7 +8441,7 @@ async def install_demo_project(
                     currency=template.currency,
                     submitted_at=datetime.now(UTC).isoformat(),
                     status="submitted",
-                    notes=f"Tender — {co} — {pkg_name}",
+                    notes=f"Tender - {co} - {pkg_name}",
                     line_items=[],
                     metadata_={},
                 )
@@ -8472,7 +8472,7 @@ async def install_demo_project(
                 currency=template.currency,
                 submitted_at=datetime.now(UTC).isoformat(),
                 status="submitted",
-                notes=f"Tender — {co}",
+                notes=f"Tender - {co}",
                 line_items=[],
                 metadata_={},
             )

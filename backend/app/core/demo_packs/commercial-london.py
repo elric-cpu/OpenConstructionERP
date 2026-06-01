@@ -55,14 +55,14 @@ TEMPLATE = DemoTemplate(
         "lng": -0.0759,
     },
     validation_rule_sets=["nrm", "boq_quality"],
-    boq_name="Elemental Cost Plan — RICS NRM (Detailed)",
+    boq_name="Elemental Cost Plan - RICS NRM (Detailed)",
     boq_description=(
         "Detailed elemental cost plan measured to RICS NRM 2 and structured to "
         "the NRM 1 element groups; BCIS London Q1 2026 base, JCT D&B 2024"
     ),
     boq_metadata={
         "standard": "RICS NRM 2 (measurement) / NRM 1 (elemental groups)",
-        "phase": "RIBA Stage 4 — Technical Design Cost Plan",
+        "phase": "RIBA Stage 4 - Technical Design Cost Plan",
         "base_date": "2026-Q1",
         "price_level": "London 2026 (GBP, VAT excl.)",
         "tender_price_index": "BCIS TPI 198 (London, 2026 Q1)",
@@ -71,7 +71,7 @@ TEMPLATE = DemoTemplate(
         # -- 0. Facilitating Works -------------------------------------------
         (
             "0",
-            "0 — Facilitating Works",
+            "0 - Facilitating Works",
             {"nrm": "0"},
             [
                 ("0.1", "Site clearance and removal of redundant slabs (Site clearance)", "m2", 1450, 22.00, {"nrm": "0.1"}),
@@ -79,7 +79,7 @@ TEMPLATE = DemoTemplate(
                 ("0.3", "Asbestos survey and licensed removal (Asbestos removal)", "lsum", 1, 165000.00, {"nrm": "0.3"}),
                 ("0.4", "Intrusive ground investigation and contamination survey (Ground investigation)", "lsum", 1, 92000.00, {"nrm": "0.4"}),
                 ("0.5", "Remediation of contaminated made ground (Remediation)", "m3", 3200, 48.00, {"nrm": "0.5"}),
-                ("0.6", "Temporary works — propping to retained party walls (Temporary works)", "lsum", 1, 285000.00, {"nrm": "0.6"}),
+                ("0.6", "Temporary works - propping to retained party walls (Temporary works)", "lsum", 1, 285000.00, {"nrm": "0.6"}),
                 ("0.7", "Archaeological watching brief, City of London (Archaeology)", "lsum", 1, 78000.00, {"nrm": "0.3"}),
                 ("0.8", "Diversion of statutory utilities (Utility diversions)", "lsum", 1, 220000.00, {"nrm": "0.7"}),
             ],
@@ -87,7 +87,7 @@ TEMPLATE = DemoTemplate(
         # -- 1. Substructure --------------------------------------------------
         (
             "1",
-            "1 — Substructure",
+            "1 - Substructure",
             {"nrm": "1"},
             [
                 ("1.1", "Secant piled retaining wall to basement perimeter (Secant wall)", "m2", 2650, 295.00, {"nrm": "1.1.1"}),
@@ -105,7 +105,7 @@ TEMPLATE = DemoTemplate(
         # -- 2.1 Frame --------------------------------------------------------
         (
             "2.1",
-            "2.1 — Superstructure: Frame",
+            "2.1 - Superstructure: Frame",
             {"nrm": "2.1"},
             [
                 ("2.1.1", "Reinforced-concrete columns C40/50 to BS 8500 (RC columns)", "m3", 1450, 425.00, {"nrm": "2.1"}),
@@ -118,7 +118,7 @@ TEMPLATE = DemoTemplate(
         # -- 2.2 Upper Floors -------------------------------------------------
         (
             "2.2",
-            "2.2 — Superstructure: Upper Floors",
+            "2.2 - Superstructure: Upper Floors",
             {"nrm": "2.2"},
             [
                 ("2.2.1", "Reinforced-concrete flat slab 300mm to office floors (RC flat slab)", "m2", 9450, 165.00, {"nrm": "2.2"}),
@@ -130,7 +130,7 @@ TEMPLATE = DemoTemplate(
         # -- 2.3 Roof ---------------------------------------------------------
         (
             "2.3",
-            "2.3 — Superstructure: Roof",
+            "2.3 - Superstructure: Roof",
             {"nrm": "2.3"},
             [
                 ("2.3.1", "Warm-roof build-up, single-ply membrane, BS 6229 (Roof covering)", "m2", 1100, 145.00, {"nrm": "2.3"}),
@@ -145,7 +145,7 @@ TEMPLATE = DemoTemplate(
         # -- 2.4 Stairs and Ramps --------------------------------------------
         (
             "2.4",
-            "2.4 — Superstructure: Stairs and Ramps",
+            "2.4 - Superstructure: Stairs and Ramps",
             {"nrm": "2.4"},
             [
                 ("2.4.1", "Reinforced-concrete escape stairs to cores (RC stairs)", "m", 220, 1250.00, {"nrm": "2.4"}),
@@ -157,7 +157,7 @@ TEMPLATE = DemoTemplate(
         # -- 2.5 External Walls, Windows and Doors ---------------------------
         (
             "2.5",
-            "2.5 — Superstructure: External Walls, Windows and Doors",
+            "2.5 - Superstructure: External Walls, Windows and Doors",
             {"nrm": "2.5"},
             [
                 ("2.5.1", "Unitised aluminium curtain walling, Ucw 1.2 W/m2K (Unitised CWG)", "m2", 8200, 695.00, {"nrm": "2.5"}),
@@ -175,7 +175,7 @@ TEMPLATE = DemoTemplate(
         # -- 2.6 Internal Walls and Partitions -------------------------------
         (
             "2.6",
-            "2.6 — Superstructure: Internal Walls and Partitions",
+            "2.6 - Superstructure: Internal Walls and Partitions",
             {"nrm": "2.7"},
             [
                 ("2.6.1", "Reinforced-concrete / blockwork core walls (Core walls)", "m2", 3400, 95.00, {"nrm": "2.7"}),
@@ -189,7 +189,7 @@ TEMPLATE = DemoTemplate(
         # -- 3. Internal Finishes --------------------------------------------
         (
             "3",
-            "3 — Internal Finishes",
+            "3 - Internal Finishes",
             {"nrm": "3"},
             [
                 ("3.1", "Raised access floor 200mm, medium grade (Raised floor)", "m2", 8400, 78.00, {"nrm": "3.2"}),
@@ -207,7 +207,7 @@ TEMPLATE = DemoTemplate(
         # -- 4. Fittings, Furnishings and Equipment --------------------------
         (
             "4",
-            "4 — Fittings, Furnishings and Equipment",
+            "4 - Fittings, Furnishings and Equipment",
             {"nrm": "4"},
             [
                 ("4.1", "Reception desk and feature joinery (Reception joinery)", "lsum", 1, 165000.00, {"nrm": "4"}),
@@ -222,7 +222,7 @@ TEMPLATE = DemoTemplate(
         # -- 5.1 Mechanical Services -----------------------------------------
         (
             "5.1",
-            "5.1 — Services: Mechanical, Heating, Cooling and Ventilation",
+            "5.1 - Services: Mechanical, Heating, Cooling and Ventilation",
             {"nrm": "5"},
             [
                 ("5.1.1", "Air-source heat pumps, roof plant, all-electric (ASHP plant)", "pcs", 6, 165000.00, {"nrm": "5.7"}),
@@ -238,7 +238,7 @@ TEMPLATE = DemoTemplate(
         # -- 5.2 Public Health and Fire Services -----------------------------
         (
             "5.2",
-            "5.2 — Services: Public Health and Fire Protection",
+            "5.2 - Services: Public Health and Fire Protection",
             {"nrm": "5"},
             [
                 ("5.2.1", "Hot and cold water services and risers (Water services)", "m", 4200, 65.00, {"nrm": "5.3"}),
@@ -253,7 +253,7 @@ TEMPLATE = DemoTemplate(
         # -- 5.3 Electrical and Lift Services --------------------------------
         (
             "5.3",
-            "5.3 — Services: Electrical, Lifts and Communications",
+            "5.3 - Services: Electrical, Lifts and Communications",
             {"nrm": "5"},
             [
                 ("5.3.1", "LV switchgear, main panels and sub-mains (LV distribution)", "lsum", 1, 685000.00, {"nrm": "5.8"}),
@@ -273,7 +273,7 @@ TEMPLATE = DemoTemplate(
         # -- 6. External Works ------------------------------------------------
         (
             "6",
-            "6 — External Works",
+            "6 - External Works",
             {"nrm": "8"},
             [
                 ("6.1", "Hard landscaping, York-stone paving to public realm (Hard landscaping)", "m2", 1850, 185.00, {"nrm": "8.2"}),
@@ -288,7 +288,7 @@ TEMPLATE = DemoTemplate(
         # -- 8. Risk and Project / Design Team Fees --------------------------
         (
             "8",
-            "8 — Risk Allowances and Project / Design Fees",
+            "8 - Risk Allowances and Project / Design Fees",
             {"nrm": "8"},
             [
                 ("8.1", "Design-development risk allowance (Design risk)", "lsum", 1, 850000.00, {"nrm": "11.2"}),
@@ -307,7 +307,7 @@ TEMPLATE = DemoTemplate(
         ("VAT", 20.0, "tax", "cumulative"),
     ],
     total_months=30,
-    tender_name="Main Contract — JCT Design and Build 2024 (Two-Stage)",
+    tender_name="Main Contract - JCT Design and Build 2024 (Two-Stage)",
     tender_companies=[
         ("Mace Group", "tenders@macegroup.co.uk", 0.98),
         ("Multiplex Construction Europe", "bids@multiplex.co.uk", 1.06),
@@ -328,10 +328,10 @@ TEMPLATE = DemoTemplate(
         "storeys": 10,
         "basement_levels": 1,
         "measurement_standard": "RICS NRM 2 (detailed) / NRM 1 (elemental groups) / NRM 3 (maintenance)",
-        "cost_data": "BCIS — Building Cost Information Service (London 2026)",
+        "cost_data": "BCIS - Building Cost Information Service (London 2026)",
         "structural_standards": "Eurocodes BS EN 1990-1998, BS 8500 (concrete), BS 8102 (tanking)",
         "building_regulations": "Building Regulations Approved Documents A-S",
-        "building_safety": "Building Safety Act 2022 — higher-risk building, BSR Gateways 1-3, golden thread",
+        "building_safety": "Building Safety Act 2022 - higher-risk building, BSR Gateways 1-3, golden thread",
         "health_and_safety": "CDM 2015 (Construction Design and Management Regulations)",
         "fire_strategy": "Approved Document B; BS 9999; sprinklers to BS EN 12845",
         "contract": "JCT Design and Build 2024 (two-stage)",
@@ -342,7 +342,7 @@ TEMPLATE = DemoTemplate(
     },
     tender_packages=[
         (
-            "Main Contract — Design and Build (JCT 2024)",
+            "Main Contract - Design and Build (JCT 2024)",
             "Two-stage design-and-build delivery, GMP confirmed at Stage 2",
             "evaluating",
             [
@@ -362,7 +362,7 @@ TEMPLATE = DemoTemplate(
             ],
         ),
         (
-            "Facade — Unitised Curtain Walling",
+            "Facade - Unitised Curtain Walling",
             "Unitised aluminium CWG, double-skin facade and entrance glazing",
             "evaluating",
             [

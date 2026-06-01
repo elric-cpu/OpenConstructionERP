@@ -19,7 +19,7 @@ from app.core.demo_projects import DemoTemplate
 
 TEMPLATE = DemoTemplate(
     demo_id="office-rio",
-    project_name="Edificio Comercial Corporativo — Rio de Janeiro (Porto Maravilha)",
+    project_name="Edificio Comercial Corporativo - Rio de Janeiro (Porto Maravilha)",
     project_description=(
         "Construcao de torre comercial corporativa (edificio de escritorios "
         "classe AAA) em concreto armado, 22 pavimentos-tipo de lajes "
@@ -49,7 +49,7 @@ TEMPLATE = DemoTemplate(
         "lng": -43.1862,
     },
     validation_rule_sets=["boq_quality", "project_completeness"],
-    boq_name="Orcamento Sintetico Corporativo — Padrao SINAPI",
+    boq_name="Orcamento Sintetico Corporativo - Padrao SINAPI",
     boq_description=(
         "Orcamento sintetico por etapas conforme pratica brasileira para "
         "edificio comercial corporativo, composicoes referenciadas ao SINAPI "
@@ -58,9 +58,9 @@ TEMPLATE = DemoTemplate(
     ),
     boq_metadata={
         "standard": "SINAPI / NBR (orcamento sintetico)",
-        "phase": "Projeto executivo — orcamento de obra",
+        "phase": "Projeto executivo - orcamento de obra",
         "base_date": "2026-01",
-        "price_level": "Rio de Janeiro (RJ) 2026 — SINAPI Desonerado",
+        "price_level": "Rio de Janeiro (RJ) 2026 - SINAPI Desonerado",
     },
     sections=[
         # ── 01 Servicos preliminares e canteiro (Preliminaries / site) ───
@@ -78,7 +78,7 @@ TEMPLATE = DemoTemplate(
                 ("01.007", "Mobilizacao e desmobilizacao de equipamentos (Mob/demob)", "vb", 1, 185000.00, {"sinapi": "ADMIN"}),
                 ("01.008", "Limpeza permanente da obra (Continuous site cleaning)", "mes", 32, 12500.00, {"sinapi": "97644"}),
                 ("01.009", "Equipamento de protecao coletiva conforme NR-18 (Collective safety/NR-18)", "vb", 1, 320000.00, {"nbr": "NR-18"}),
-                ("01.010", "Grua fixa torre de grande capacidade — locacao mensal (Tower crane rental)", "mes", 26, 64000.00, {"sinapi": "EQUIP"}),
+                ("01.010", "Grua fixa torre de grande capacidade - locacao mensal (Tower crane rental)", "mes", 26, 64000.00, {"sinapi": "EQUIP"}),
                 ("01.011", "Plano de gerenciamento de residuos da construcao civil PGRCC (Waste mgmt plan)", "vb", 1, 95000.00, {"nbr": "NBR 15112"}),
             ],
         ),
@@ -101,7 +101,7 @@ TEMPLATE = DemoTemplate(
         # ── 03 Fundacoes (Foundations) — NBR 6122 ────────────────────────
         (
             "03",
-            "Fundacoes (Foundations) — NBR 6122",
+            "Fundacoes (Foundations) - NBR 6122",
             {"nbr": "NBR 6122"},
             [
                 ("03.001", "Estaca raiz / hidraulica d=80cm sob torre (Bored/root pile)", "m", 6800, 285.00, {"nbr": "NBR 6122"}),
@@ -119,18 +119,18 @@ TEMPLATE = DemoTemplate(
         # ── 04 Estrutura de concreto armado (RC superstructure) ──────────
         (
             "04",
-            "Estrutura de Concreto Armado (RC structure) — NBR 6118",
+            "Estrutura de Concreto Armado (RC structure) - NBR 6118",
             {"nbr": "NBR 6118"},
             [
-                ("04.001", "Concreto usinado fck 50 MPa bombeado — pilares/nucleo (Pumped concrete)", "m3", 9800, 695.00, {"nbr": "NBR 6118"}),
-                ("04.002", "Concreto usinado fck 40 MPa bombeado — vigas (Beam concrete)", "m3", 6400, 648.00, {"nbr": "NBR 6118"}),
-                ("04.003", "Concreto usinado fck 35 MPa bombeado — lajes (Slab concrete)", "m3", 14500, 615.00, {"nbr": "NBR 6118"}),
-                ("04.004", "Forma de madeira compensada plastificada — lajes/vigas (Plywood formwork)", "m2", 96000, 98.00, {"sinapi": "92433"}),
+                ("04.001", "Concreto usinado fck 50 MPa bombeado - pilares/nucleo (Pumped concrete)", "m3", 9800, 695.00, {"nbr": "NBR 6118"}),
+                ("04.002", "Concreto usinado fck 40 MPa bombeado - vigas (Beam concrete)", "m3", 6400, 648.00, {"nbr": "NBR 6118"}),
+                ("04.003", "Concreto usinado fck 35 MPa bombeado - lajes (Slab concrete)", "m3", 14500, 615.00, {"nbr": "NBR 6118"}),
+                ("04.004", "Forma de madeira compensada plastificada - lajes/vigas (Plywood formwork)", "m2", 96000, 98.00, {"sinapi": "92433"}),
                 ("04.005", "Forma metalica reaproveitavel de pilar e nucleo (Steel column/core forms)", "m2", 18500, 128.00, {"sinapi": "92444"}),
-                ("04.006", "Armadura aco CA-50 — pilares, vigas e lajes (Reinforcing steel CA-50)", "kg", 1850000, 13.40, {"nbr": "NBR 7480"}),
+                ("04.006", "Armadura aco CA-50 - pilares, vigas e lajes (Reinforcing steel CA-50)", "kg", 1850000, 13.40, {"nbr": "NBR 7480"}),
                 ("04.007", "Armadura aco CA-60 telas e estribos (Steel CA-60 mesh/stirrups)", "kg", 420000, 13.90, {"nbr": "NBR 7480"}),
-                ("04.008", "Cordoalha de protensao nao aderente CP-190 — lajes (Unbonded PT tendons)", "kg", 165000, 22.50, {"nbr": "NBR 6118"}),
-                ("04.009", "Escoramento metalico de lajes — locacao (Slab shoring rental)", "m2", 96000, 42.00, {"sinapi": "ESCORA"}),
+                ("04.008", "Cordoalha de protensao nao aderente CP-190 - lajes (Unbonded PT tendons)", "kg", 165000, 22.50, {"nbr": "NBR 6118"}),
+                ("04.009", "Escoramento metalico de lajes - locacao (Slab shoring rental)", "m2", 96000, 42.00, {"sinapi": "ESCORA"}),
                 ("04.010", "Concreto fck 30 MPa escadas e patamares (Stairs concrete)", "m3", 480, 648.00, {"nbr": "NBR 6118"}),
                 ("04.011", "Tratamento e cura controlada do concreto (Concrete curing)", "m2", 110000, 4.80, {"nbr": "NBR 14931"}),
                 ("04.012", "Reservatorio inferior e superior em concreto armado (RC water tanks)", "m3", 620, 760.00, {"nbr": "NBR 6118"}),
@@ -156,7 +156,7 @@ TEMPLATE = DemoTemplate(
             "Fachada Cortina e Esquadrias (Curtain wall and openings)",
             {"nbr": "NBR 10821"},
             [
-                ("06.001", "Fachada cortina unitizada pele de vidro — alu e vidro insulado (Unitized curtain wall)", "m2", 22500, 1850.00, {"nbr": "NBR 10821"}),
+                ("06.001", "Fachada cortina unitizada pele de vidro - alu e vidro insulado (Unitized curtain wall)", "m2", 22500, 1850.00, {"nbr": "NBR 10821"}),
                 ("06.002", "Vidro insulado de controle solar low-e (Solar-control IGU)", "m2", 4200, 685.00, {"nbr": "NBR 7199"}),
                 ("06.003", "Brise metalico horizontal de sombreamento (Metal sun-shading brise)", "m2", 3800, 480.00, {"nbr": "NBR 10821"}),
                 ("06.004", "Porta giratoria automatica de entrada do lobby (Automatic revolving entrance)", "un", 3, 145000.00, {"nbr": "NBR 10821"}),
@@ -164,7 +164,7 @@ TEMPLATE = DemoTemplate(
                 ("06.006", "Porta corta-fogo P90 escadas e halls (Fire door P90)", "un", 280, 2150.00, {"nbr": "NBR 11742"}),
                 ("06.007", "Porta de madeira semi-oca com batente areas internas (Internal timber door)", "un", 640, 720.00, {"sinapi": "90843"}),
                 ("06.008", "Guarda-corpo em vidro temperado e inox (Glass/steel balustrade)", "m", 1850, 580.00, {"nbr": "NBR 14718"}),
-                ("06.009", "Corrimao metalico em escadas — NBR 9050 (Handrails)", "m", 1480, 175.00, {"nbr": "NBR 9050"}),
+                ("06.009", "Corrimao metalico em escadas - NBR 9050 (Handrails)", "m", 1480, 175.00, {"nbr": "NBR 9050"}),
                 ("06.010", "Porta de enrolar automatizada acesso de garagem (Roller garage gate)", "un", 4, 22500.00, {"sinapi": "PORTAO"}),
             ],
         ),
@@ -199,13 +199,13 @@ TEMPLATE = DemoTemplate(
                 ("08.008", "Forro em gesso acartonado areas comuns (Plasterboard ceiling)", "m2", 9800, 78.00, {"nbr": "NBR 14715"}),
                 ("08.009", "Piso de alta resistencia nos subsolos com endurecedor (Garage floor)", "m2", 38000, 72.00, {"sinapi": "PISO IND"}),
                 ("08.010", "Soleira, peitoril e bancada em granito (Granite thresholds/countertops)", "m2", 1850, 580.00, {"sinapi": "98674"}),
-                ("08.011", "Piso tatil de alerta e direcional — acessibilidade (Tactile paving)", "m2", 680, 165.00, {"nbr": "NBR 9050"}),
+                ("08.011", "Piso tatil de alerta e direcional - acessibilidade (Tactile paving)", "m2", 680, 165.00, {"nbr": "NBR 9050"}),
             ],
         ),
         # ── 09 Instalacoes hidrossanitarias e incendio (Plumbing/fire) ───
         (
             "09",
-            "Instalacoes Hidrossanitarias e Incendio (Plumbing / fire) — NBR 5626",
+            "Instalacoes Hidrossanitarias e Incendio (Plumbing / fire) - NBR 5626",
             {"nbr": "NBR 5626"},
             [
                 ("09.001", "Tubulacao de agua fria PVC/PPR soldavel (Cold water piping)", "m", 14500, 32.00, {"nbr": "NBR 5626"}),
@@ -225,7 +225,7 @@ TEMPLATE = DemoTemplate(
         # ── 10 Instalacoes eletricas, telecom e SPDA (Electrical) ────────
         (
             "10",
-            "Instalacoes Eletricas, Telecom e SPDA (Electrical / lightning) — NBR 5410",
+            "Instalacoes Eletricas, Telecom e SPDA (Electrical / lightning) - NBR 5410",
             {"nbr": "NBR 5410"},
             [
                 ("10.001", "Subestacao abrigada com transformadores 2x1500kVA (Substation/transformers)", "vb", 1, 1850000.00, {"nbr": "NBR 14039"}),
@@ -247,7 +247,7 @@ TEMPLATE = DemoTemplate(
         # ── 11 Climatizacao AVAC e elevadores (HVAC / lifts) ─────────────
         (
             "11",
-            "Climatizacao (AVAC) e Elevadores (HVAC and lifts) — NBR 16401",
+            "Climatizacao (AVAC) e Elevadores (HVAC and lifts) - NBR 16401",
             {"nbr": "NBR 16401"},
             [
                 ("11.001", "Central de agua gelada com chiller centrifugo 800TR (Centrifugal chiller)", "un", 2, 1850000.00, {"nbr": "NBR 16401"}),
@@ -407,7 +407,7 @@ TEMPLATE = DemoTemplate(
             ],
         ),
     ],
-    budget_boq_name="Orcamento Sintetico Corporativo — Padrao SINAPI",
+    budget_boq_name="Orcamento Sintetico Corporativo - Padrao SINAPI",
     planned_budget=420000000.00,
     actual_spend_ratio=0.42,
     spi_override=0.97,

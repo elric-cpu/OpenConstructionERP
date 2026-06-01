@@ -977,13 +977,91 @@ async def test_immutable_payload_hash_returns_64_hex() -> None:
 
 
 @pytest.mark.asyncio
-async def test_pdf_stub_is_idempotent() -> None:
+async def test_generate_diary_pdf_returns_pdf_bytes() -> None:
+    """The service renders a real PDF (magic bytes ``%PDF``) for a diary."""
     svc = _make_service()
     diary = await svc.create_diary(_diary_payload(), user_id="u")
-    a = await svc.generate_pdf_stub(diary.id)
-    b = await svc.generate_pdf_stub(diary.id)
-    assert a["pdf_export_ref"] == b["pdf_export_ref"]
-    assert a["status"] == "stub"
+    # A couple of entries across types so the grouped sections render.
+    await svc.create_entry(
+        DiaryEntryCreate(
+            diary_id=diary.id,
+            entry_type="completion",
+            entry_time=datetime(2026, 4, 10, 9, 0, tzinfo=UTC),
+            title="Poured slab B",
+            description="Concrete C30/37, 40 m3 placed and vibrated.",
+        )
+    )
+    await svc.create_entry(
+        DiaryEntryCreate(
+            diary_id=diary.id,
+            entry_type="visitor",
+            entry_time=datetime(2026, 4, 10, 14, 0, tzinfo=UTC),
+            title="Client walkthrough",
+        )
+    )
+    await svc.create_weather(
+        WeatherRecordCreate(
+            project_id=PROJECT_ID,
+            captured_at=datetime(2026, 4, 10, 8, 0, tzinfo=UTC),
+            source="open_meteo",
+            temperature_c=Decimal("17.5"),
+            wind_speed_kmh=Decimal("12.0"),
+            precipitation_mm=Decimal("0.0"),
+            conditions_text="Clear sky",
+        )
+    )
+
+    pdf_bytes, diary_date = await svc.generate_diary_pdf(diary.id)
+    assert isinstance(pdf_bytes, bytes)
+    assert pdf_bytes.startswith(b"%PDF")
+    assert len(pdf_bytes) > 1000
+    assert diary_date == "2026-04-10"
+
+
+@pytest.mark.asyncio
+async def test_generate_diary_pdf_handles_empty_diary() -> None:
+    """A diary with no entries / weather still renders a valid PDF."""
+    svc = _make_service()
+    diary = await svc.create_diary(
+        _diary_payload(notes=None, weather_summary={}),
+        user_id="u",
+    )
+    pdf_bytes, _ = await svc.generate_diary_pdf(diary.id)
+    assert pdf_bytes.startswith(b"%PDF")
+
+
+@pytest.mark.asyncio
+async def test_diary_pdf_endpoint_streams_application_pdf() -> None:
+    """The /diaries/{id}/pdf endpoint returns 200 + application/pdf body."""
+    from app.modules.daily_diary import router as diary_router
+
+    svc = _make_service()
+    diary = await svc.create_diary(_diary_payload(), user_id="u")
+
+    async def _allow_access(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    with patch.object(diary_router, "verify_project_access", _allow_access):
+        response = await diary_router.diary_pdf(
+            diary_id=diary.id,
+            session=_StubSession(),
+            user_id="u",
+            _perm=None,
+            service=svc,
+        )
+
+    assert response.status_code == 200
+    assert response.media_type == "application/pdf"
+    disposition = response.headers["content-disposition"]
+    assert "attachment" in disposition
+    assert "diary-2026-04-10.pdf" in disposition
+
+    # Drain the streaming body and confirm the PDF magic bytes.
+    chunks: list[bytes] = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk if isinstance(chunk, bytes) else chunk.encode())
+    body = b"".join(chunks)
+    assert body.startswith(b"%PDF")
 
 
 # ── Permissions ──────────────────────────────────────────────────────────

@@ -147,31 +147,6 @@ def generate_api_key() -> tuple[str, str, str]:
     return full_key, key_hash, key_prefix
 
 
-# ── Audit helpers ─────────────────────────────────────────────────────────
-
-
-async def _audit_last_login(settings: Settings, user_id: uuid.UUID, when: datetime, *, label: str) -> None:
-    """Fire-and-forget UPDATE of ``oe_users_user.last_login_at``.
-
-    Runs in a detached session so the user's login response never waits on
-    SQLite write contention (the busy-wait is at C level in aiosqlite and
-    asyncio cancellation can't break it). Any failure is logged but the
-    user has already been issued tokens — losing one timestamp is fine.
-    """
-    from app.database import async_session_factory
-
-    try:
-        async with async_session_factory() as session:
-            await session.execute(update(User).where(User.id == user_id).values(last_login_at=when))
-            await session.commit()
-    except Exception as exc:  # noqa: BLE001 - any failure is acceptable
-        logger.warning(
-            "last_login_at audit write skipped for %s (%s)",
-            label,
-            type(exc).__name__,
-        )
-
-
 # ── Service class ──────────────────────────────────────────────────────────
 
 
@@ -450,8 +425,17 @@ class UserService:
             skip_write = (now - prior).total_seconds() < 60.0
 
         if not skip_write:
-            # Fire-and-forget audit update — see demo_login() rationale.
-            asyncio.create_task(_audit_last_login(self.settings, user_id, now, label=user_email))
+            # Bump last_login_at inside this request's own session so it commits
+            # with the rest of the login, before the response. A detached task
+            # here opened a SECOND database connection that wrote concurrently
+            # with the user's next request; on SQLite (still the test and VPS
+            # database) the second writer hit "database is locked", and on
+            # PostgreSQL it was a stray connection that could outlive the
+            # request. In-session it is one indexed primary-key UPDATE, so login
+            # latency is unaffected on either backend.
+            await self.session.execute(
+                update(User).where(User.id == user_id).values(last_login_at=now)
+            )
 
         access_token = create_access_token(user, self.settings)
         refresh_token = create_refresh_token(user, self.settings)
@@ -517,15 +501,14 @@ class UserService:
             if prior.tzinfo is None:
                 prior = prior.replace(tzinfo=UTC)
             skip_write = (now - prior).total_seconds() < 60.0
-        # Schedule the audit-only ``last_login_at`` write as fire-and-
-        # forget so user-facing latency is decoupled from SQLite write
-        # contention. The aiosqlite driver's busy-wait is at C level and
-        # asyncio.wait_for can't cancel it, so we instead let the UPDATE
-        # run on a detached session in the background. If it fails under
-        # contention, that's logged but never reaches the user. On
-        # Postgres this is a no-op (writes are fast).
+        # Bump last_login_at in this request's own session (same 60s throttle
+        # as login()). The previous detached-task write opened a second
+        # connection that raced the caller's next request and locked SQLite;
+        # in-session it commits with the login and never contends.
         if not skip_write:
-            asyncio.create_task(_audit_last_login(self.settings, user_id, now, label=f"demo:{email}"))
+            await self.session.execute(
+                update(User).where(User.id == user_id).values(last_login_at=now)
+            )
 
         access_token = create_access_token(user, self.settings)
         refresh_token = create_refresh_token(user, self.settings)

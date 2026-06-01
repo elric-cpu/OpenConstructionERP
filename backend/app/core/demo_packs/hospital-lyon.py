@@ -24,14 +24,14 @@ from app.core.demo_projects import DemoTemplate
 
 TEMPLATE = DemoTemplate(
     demo_id="hospital-lyon",
-    project_name="Centre Hospitalier — Lyon Confluence",
+    project_name="Centre Hospitalier - Lyon Confluence",
     project_description=(
         "Construction neuve d'un centre hospitalier MCO (medecine, chirurgie, "
         "obstetrique) de 320 lits sur le campus sante de Lyon Confluence. "
         "7 niveaux hors sol + 1 sous-sol (logistique, locaux techniques, "
         "archives). Surface de plancher env. 38 500 m2. "
         "Structure en beton arme (Eurocode 2) avec systeme primaire "
-        "parasismique calcule selon l'Eurocode 8 — Lyon en zone de sismicite "
+        "parasismique calcule selon l'Eurocode 8 - Lyon en zone de sismicite "
         "3 (modere) au titre du zonage sismique francais (decret 2010-1255). "
         "Enveloppe conforme a la RE 2020 (seuils tertiaire) et aux exigences "
         "acoustiques NRA. Etages techniques interstitiels au-dessus des blocs "
@@ -60,7 +60,7 @@ TEMPLATE = DemoTemplate(
         "lng": 4.8161,
     },
     validation_rule_sets=["dpgf", "boq_quality"],
-    boq_name="Estimation Detaillee — DPGF Centre Hospitalier",
+    boq_name="Estimation Detaillee - DPGF Centre Hospitalier",
     boq_description=(
         "Decomposition du prix global et forfaitaire (DPGF) par lots, "
         "phase PRO/DCE, pour le centre hospitalier de Lyon Confluence. "
@@ -319,15 +319,15 @@ TEMPLATE = DemoTemplate(
         "basement_levels": 1,
         "structure_system": "Beton arme contrevente (Eurocode 2 / Eurocode 8)",
         "codes": [
-            "Eurocode 2 (NF EN 1992) — structures en beton",
-            "Eurocode 8 (NF EN 1998) — calcul parasismique, zone 3 (modere)",
-            "Decret 2010-1255 — zonage sismique de la France",
-            "RE 2020 — reglementation environnementale (tertiaire)",
-            "EN ISO 7396-1 — systemes de distribution de gaz medicaux",
-            "NF C 15-211 — installations electriques a usage medical",
-            "NF C 15-160 — protection contre les rayonnements ionisants",
-            "ISO 14644 — salles propres (blocs operatoires ISO 5)",
-            "Reglement de securite incendie ERP — type U (etablissements de soins)",
+            "Eurocode 2 (NF EN 1992) - structures en beton",
+            "Eurocode 8 (NF EN 1998) - calcul parasismique, zone 3 (modere)",
+            "Decret 2010-1255 - zonage sismique de la France",
+            "RE 2020 - reglementation environnementale (tertiaire)",
+            "EN ISO 7396-1 - systemes de distribution de gaz medicaux",
+            "NF C 15-211 - installations electriques a usage medical",
+            "NF C 15-160 - protection contre les rayonnements ionisants",
+            "ISO 14644 - salles propres (blocs operatoires ISO 5)",
+            "Reglement de securite incendie ERP - type U (etablissements de soins)",
         ],
         "permits": (
             "Permis de construire Ville de Lyon (ZAC Lyon Confluence); "
@@ -336,7 +336,7 @@ TEMPLATE = DemoTemplate(
             "de radiologie; dossier loi sur l'eau (bassin de retention)."
         ),
         "sustainability": "Cible HQE Batiment Durable niveau Excellent; RE 2020 tertiaire",
-        "seismic": "Eurocode 8 — Lyon zone de sismicite 3 (modere), categorie d'importance IV",
+        "seismic": "Eurocode 8 - Lyon zone de sismicite 3 (modere), categorie d'importance IV",
         "taxes_note": (
             "TVA au taux normal de 20 % applicable en sus des couts indiques. "
             "Les positions sont exprimees en couts directs hors taxes."
@@ -414,7 +414,7 @@ TEMPLATE = DemoTemplate(
             ],
         ),
     ],
-    budget_boq_name="Centre Hospitalier Lyon Confluence — Budget de Controle",
+    budget_boq_name="Centre Hospitalier Lyon Confluence - Budget de Controle",
     planned_budget=118_000_000,
     actual_spend_ratio=0.42,
     spi_override=0.96,

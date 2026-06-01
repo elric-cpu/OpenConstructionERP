@@ -20,7 +20,7 @@ from app.core.demo_projects import DemoTemplate
 
 TEMPLATE = DemoTemplate(
     demo_id="office-montreal",
-    project_name="Édifice de bureaux Montréal — Griffintown",
+    project_name="Édifice de bureaux Montréal - Griffintown",
     project_description=(
         "Immeuble de bureaux commercial de catégorie A, 8 étages hors sol + "
         "2 niveaux de sous-sol (stationnement et locaux techniques). "
@@ -49,7 +49,7 @@ TEMPLATE = DemoTemplate(
         "lng": -73.5610,
     },
     validation_rule_sets=["masterformat", "boq_quality"],
-    boq_name="Estimation détaillée — MasterFormat 2020",
+    boq_name="Estimation détaillée - MasterFormat 2020",
     boq_description=(
         "Estimation détaillée de classe B (devis préliminaire) selon "
         "MasterFormat 2020, divisions 03 à 32. Coûts directs en CAD."
@@ -64,7 +64,7 @@ TEMPLATE = DemoTemplate(
         # ── Division 31 — Travaux de terrassement (Earthwork) ──────────
         (
             "31",
-            "Division 31 — Terrassement (Earthwork)",
+            "Division 31 - Terrassement (Earthwork)",
             {"masterformat": "31 00 00"},
             [
                 ("31.1", "Démolition et préparation du site (Site clearing)", "lsum", 1, 95000.00, {"masterformat": "31 10 00"}),
@@ -82,7 +82,7 @@ TEMPLATE = DemoTemplate(
         # ── Division 03 — Béton (Concrete) ─────────────────────────────
         (
             "03",
-            "Division 03 — Béton (Concrete)",
+            "Division 03 - Béton (Concrete)",
             {"masterformat": "03 00 00"},
             [
                 ("03.1", "Béton de propreté 15 MPa (Blinding concrete)", "m3", 320, 215.00, {"masterformat": "03 30 00"}),
@@ -104,7 +104,7 @@ TEMPLATE = DemoTemplate(
         # ── Division 04 — Maçonnerie (Masonry) ─────────────────────────
         (
             "04",
-            "Division 04 — Maçonnerie (Masonry)",
+            "Division 04 - Maçonnerie (Masonry)",
             {"masterformat": "04 00 00"},
             [
                 ("04.1", "Blocs de béton 200 mm cages d'escalier (CMU stair walls)", "m2", 3400, 165.00, {"masterformat": "04 22 00"}),
@@ -118,7 +118,7 @@ TEMPLATE = DemoTemplate(
         # ── Division 05 — Métaux (Metals) ──────────────────────────────
         (
             "05",
-            "Division 05 — Métaux (Metals)",
+            "Division 05 - Métaux (Metals)",
             {"masterformat": "05 00 00"},
             [
                 ("05.1", "Charpente d'acier poutres/poutrelles (Structural steel framing)", "t", 580, 5200.00, {"masterformat": "05 12 00"}),
@@ -135,7 +135,7 @@ TEMPLATE = DemoTemplate(
         # ── Division 07 — Isolation et étanchéité (Thermal/Moisture) ───
         (
             "07",
-            "Division 07 — Isolation et étanchéité (Thermal & Moisture)",
+            "Division 07 - Isolation et étanchéité (Thermal & Moisture)",
             {"masterformat": "07 00 00"},
             [
                 ("07.1", "Imperméabilisation bentonite sous-sol (Bentonite waterproofing)", "m2", 5600, 58.00, {"masterformat": "07 13 00"}),
@@ -153,7 +153,7 @@ TEMPLATE = DemoTemplate(
         # ── Division 08 — Ouvertures (Openings) ────────────────────────
         (
             "08",
-            "Division 08 — Ouvertures (Openings)",
+            "Division 08 - Ouvertures (Openings)",
             {"masterformat": "08 00 00"},
             [
                 ("08.1", "Mur-rideau verre-alu unitisé (Unitized curtain wall)", "m2", 8900, 685.00, {"masterformat": "08 44 00"}),
@@ -171,7 +171,7 @@ TEMPLATE = DemoTemplate(
         # ── Division 09 — Finitions (Finishes) ─────────────────────────
         (
             "09",
-            "Division 09 — Finitions (Finishes)",
+            "Division 09 - Finitions (Finishes)",
             {"masterformat": "09 00 00"},
             [
                 ("09.1", "Ossature métallique cloisons (Metal stud framing)", "m2", 18600, 38.00, {"masterformat": "09 22 16"}),
@@ -192,7 +192,7 @@ TEMPLATE = DemoTemplate(
         # ── Division 14 — Appareils de levage (Conveying) ──────────────
         (
             "14",
-            "Division 14 — Appareils de levage (Conveying)",
+            "Division 14 - Appareils de levage (Conveying)",
             {"masterformat": "14 00 00"},
             [
                 ("14.1", "Ascenseur passagers 1600 kg, 10 arrêts (Passenger elevator)", "pcs", 4, 285000.00, {"masterformat": "14 21 00"}),
@@ -204,7 +204,7 @@ TEMPLATE = DemoTemplate(
         # ── Division 21 — Protection incendie (Fire Suppression) ───────
         (
             "21",
-            "Division 21 — Protection incendie (Fire Suppression)",
+            "Division 21 - Protection incendie (Fire Suppression)",
             {"masterformat": "21 00 00"},
             [
                 ("21.1", "Réseau de gicleurs automatiques (Automatic sprinkler system)", "m2", 16200, 24.50, {"masterformat": "21 13 00"}),
@@ -217,7 +217,7 @@ TEMPLATE = DemoTemplate(
         # ── Division 22 — Plomberie (Plumbing) ─────────────────────────
         (
             "22",
-            "Division 22 — Plomberie (Plumbing)",
+            "Division 22 - Plomberie (Plumbing)",
             {"masterformat": "22 00 00"},
             [
                 ("22.1", "Réseau d'évacuation et ventilation fonte/PVC (Sanitary/vent)", "m", 2400, 78.00, {"masterformat": "22 13 00"}),
@@ -233,7 +233,7 @@ TEMPLATE = DemoTemplate(
         # ── Division 23 — CVCA (HVAC) ──────────────────────────────────
         (
             "23",
-            "Division 23 — Chauffage, ventilation, climatisation (HVAC)",
+            "Division 23 - Chauffage, ventilation, climatisation (HVAC)",
             {"masterformat": "23 00 00"},
             [
                 ("23.1", "Unités de traitement d'air avec récup. (AHU with heat recovery)", "pcs", 6, 145000.00, {"masterformat": "23 73 00"}),
@@ -254,7 +254,7 @@ TEMPLATE = DemoTemplate(
         # ── Division 26 — Électricité (Electrical) ─────────────────────
         (
             "26",
-            "Division 26 — Électricité (Electrical)",
+            "Division 26 - Électricité (Electrical)",
             {"masterformat": "26 00 00"},
             [
                 ("26.1", "Entrée électrique 2000 A, 600 V (Main service 2000A)", "lsum", 1, 285000.00, {"masterformat": "26 24 00"}),
@@ -274,7 +274,7 @@ TEMPLATE = DemoTemplate(
         # ── Division 27 — Communications (Comms) ───────────────────────
         (
             "27",
-            "Division 27 — Communications (Comms)",
+            "Division 27 - Communications (Comms)",
             {"masterformat": "27 00 00"},
             [
                 ("27.1", "Câblage structuré cat. 6A (Structured cabling cat.6A)", "m", 48000, 4.80, {"masterformat": "27 15 00"}),
@@ -288,7 +288,7 @@ TEMPLATE = DemoTemplate(
         # ── Division 32 — Aménagement extérieur (Exterior Improvements) ─
         (
             "32",
-            "Division 32 — Aménagement extérieur (Exterior Improvements)",
+            "Division 32 - Aménagement extérieur (Exterior Improvements)",
             {"masterformat": "32 00 00"},
             [
                 ("32.1", "Pavage asphalte accès et quai (Asphalt paving)", "m2", 1800, 58.00, {"masterformat": "32 12 00"}),
@@ -320,7 +320,7 @@ TEMPLATE = DemoTemplate(
         "client": "BatimaTech Développement Immobilier inc.",
         "architect": "Lemay + Provencher Roy",
         "structural_engineer": "WSP Canada",
-        "general_contractor_form": "CCDC 2 (2020) — contrat à forfait",
+        "general_contractor_form": "CCDC 2 (2020) - contrat à forfait",
         "gfa_above_grade_m2": 12400,
         "gfa_basement_m2": 3800,
         "storeys": 8,
@@ -328,19 +328,19 @@ TEMPLATE = DemoTemplate(
         "parking_spaces": 165,
         "structure_system": "Béton armé coulé en place + planchers mixtes acier-béton",
         "codes": [
-            "Code national du bâtiment — Canada (CNB) 2020",
+            "Code national du bâtiment - Canada (CNB) 2020",
             "Code de construction du Québec (CCQ), chapitre I Bâtiment",
-            "CSA A23.1/A23.3 — béton et calcul des structures en béton",
-            "CSA S16 — règles de calcul des charpentes en acier",
-            "CNB 2020 — exigences sismiques (Montréal, catégorie de sol C)",
+            "CSA A23.1/A23.3 - béton et calcul des structures en béton",
+            "CSA S16 - règles de calcul des charpentes en acier",
+            "CNB 2020 - exigences sismiques (Montréal, catégorie de sol C)",
         ],
         "permits": (
             "Permis de construction Ville de Montréal (arrondissement "
             "Le Sud-Ouest); approbation RBQ; PIIA Griffintown; "
             "autorisation MELCCFP gestion des sols excavés."
         ),
-        "sustainability": "Cible LEED v4 BD+C: Core & Shell — niveau Or; Novoclimat commercial",
-        "seismic": "CNB 2020, zone sismique élevée — Montréal, Site Class C, SFRS noyau en béton",
+        "sustainability": "Cible LEED v4 BD+C: Core & Shell - niveau Or; Novoclimat commercial",
+        "seismic": "CNB 2020, zone sismique élevée - Montréal, Site Class C, SFRS noyau en béton",
         "taxes_note": (
             "Taxes applicables en sus des coûts indiqués: TPS (GST) 5 % + "
             "TVQ (QST) 9,975 %, soit ~14,975 % cumulé. Les taxes ne sont "

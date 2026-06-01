@@ -26,12 +26,21 @@ openconstructionerp
 
 This single command:
 
-1. Creates a local SQLite database in your home data folder
+1. Starts an embedded PostgreSQL database in your home data folder (no Docker, nothing to install)
 2. Seeds demo data (projects, BOQs, cost catalogues)
 3. Starts the API + UI at **http://127.0.0.1:8080**
 4. Prints demo login credentials
 
 No config files. No environment variables. It just works.
+
+> **If `openconstructionerp` is not found** right after install, pip most likely
+> put the launcher in a Scripts folder that is not on your PATH (this is common
+> on Windows). Run it through Python instead. This works from any folder and is
+> the exact same app:
+>
+> ```bash
+> python -m openconstructionerp
+> ```
 
 ## Subsequent runs
 

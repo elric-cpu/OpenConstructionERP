@@ -705,19 +705,13 @@ async def test_run_match_lexical_no_match_returns_empty(
     http_client,
     two_tenants,
 ):
-    """A lexical query that does not ILIKE-match any catalogue row must
-    return zero candidates — NOT an alphabetical fallback. This pins the
-    fix recorded in ``LexicalMatcher.rank`` (return [] when prefilter
-    yields zero rows).
-
-    The lexical matcher reads ``is_active=True AND source='cwicr'`` rows
-    globally; other tests in this module leave seeded rows behind, so
-    we deactivate everything in the catalogue first, then seed a single
-    "UNRELATED" row whose description carries none of the BIM-derived
-    tokens. The query envelope for our wall/slab elements lexes into
-    {"wall", "concrete", "thickness", "240mm", "slab", ...} — none of
-    which appear in the seeded "Asphalt pavement repair" row, so the
-    matcher must return an empty list.
+    """The standalone lexical matcher was removed in v3: sparse matching is
+    now fused into the vector matcher (BAAI/bge-m3 sparse vector + RRF
+    re-ranking). The "lexical" literal is still accepted by the request
+    schema for back-compat with stored MatchSession rows, but running it
+    must fail fast with a clean 501 that points the caller at
+    method="vector", never a silent empty result and never a 500. The
+    session scaffolding below is retained from the original test.
     """
     a = two_tenants["a"]
 
@@ -801,14 +795,15 @@ async def test_run_match_lexical_no_match_returns_empty(
         json={"method": "lexical", "max_groups": 5, "top_k": 5},
         headers=a["headers"],
     )
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    # No active CWICR row matches → suggested_code on every group is
-    # null/empty.
-    for g in body:
-        assert g["suggested_code"] in (None, ""), (
-            f"unexpected lexical fallback: group {g['group_key']!r} got code={g['suggested_code']!r}"
-        )
+    # The standalone lexical matcher was removed in v3 (sparse matching is
+    # fused into the vector matcher). The "lexical" literal is still accepted
+    # by the request schema for back-compat, but running it must fail fast
+    # with a clean 501 that points the caller at method="vector", never a
+    # silent empty result and never a 500.
+    assert resp.status_code == 501, resp.text
+    detail = resp.json()["detail"].lower()
+    assert "lexical" in detail
+    assert "vector" in detail
 
     # Re-activate so later tests still see catalogue rows.
     async with async_session_factory() as s:

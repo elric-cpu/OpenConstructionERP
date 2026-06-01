@@ -93,6 +93,9 @@ class PurchaseOrderItem(Base):
     amount: Mapped[str] = mapped_column(String(50), nullable=False, default="0")
     wbs_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     cost_category: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # ── Cost Spine linkage (v6.4) ────────────────────────────────────────
+    # Additive nullable link to the cost line this PO item commits against.
+    cost_line_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True, index=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     # Relationship
@@ -237,6 +240,9 @@ class MaterialRequisitionItem(Base):
     unit_cost: Mapped[Decimal] = mapped_column(MoneyType(), nullable=False, default=Decimal("0"))
     extended_cost: Mapped[Decimal] = mapped_column(MoneyType(), nullable=False, default=Decimal("0"))
     currency_code: Mapped[str] = mapped_column(String(10), nullable=False, default="")
+    # ── Cost Spine linkage (v6.4) ────────────────────────────────────────
+    # Additive nullable link to the cost line this requisition item maps to.
+    cost_line_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True, index=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     # Relationship

@@ -16,7 +16,13 @@ from decimal import Decimal, InvalidOperation
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.costmodel.models import BudgetLine, CashFlow, CostSnapshot
+from app.modules.costmodel.models import (
+    BudgetLine,
+    CashFlow,
+    ControlAccount,
+    CostLine,
+    CostSnapshot,
+)
 
 # ── Currency conversion helper (R5 audit, May 2026) ─────────────────────
 
@@ -485,3 +491,354 @@ class CashFlowRepository:
         stmt = delete(CashFlow).where(CashFlow.project_id == project_id)
         await self.session.execute(stmt)
         return total
+
+
+# ── Cost Spine repositories (v6.4) ────────────────────────────────────────────
+
+
+class ControlAccountRepository:
+    """Data access for ControlAccount (Cost Breakdown Structure tree)."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def get_by_id(self, account_id: uuid.UUID) -> ControlAccount | None:
+        """Get a control account by ID."""
+        return await self.session.get(ControlAccount, account_id)
+
+    async def list_for_project(self, project_id: uuid.UUID) -> list[ControlAccount]:
+        """Return every control account for a project, tree-ordered.
+
+        Ordered depth-first by ``(sort_order, code)`` within each parent so a
+        flat list renders as a stable indented tree without a second pass.
+        """
+        stmt = select(ControlAccount).where(ControlAccount.project_id == project_id)
+        result = await self.session.execute(stmt)
+        accounts = list(result.scalars().all())
+
+        # Build a parent -> children map then walk depth-first. Doing the
+        # ordering in Python (rather than a recursive CTE) keeps this
+        # identical on SQLite and PostgreSQL.
+        children: dict[uuid.UUID | None, list[ControlAccount]] = {}
+        for acct in accounts:
+            children.setdefault(acct.parent_id, []).append(acct)
+        for bucket in children.values():
+            bucket.sort(key=lambda a: (a.sort_order, a.code))
+
+        ordered: list[ControlAccount] = []
+
+        def _walk(parent_key: uuid.UUID | None) -> None:
+            for child in children.get(parent_key, []):
+                ordered.append(child)
+                _walk(child.id)
+
+        # Roots are nodes whose parent is None OR whose parent is not in this
+        # project (orphan after a SET NULL); start from None, then sweep any
+        # accounts not yet emitted so nothing is silently dropped.
+        _walk(None)
+        if len(ordered) != len(accounts):
+            seen = {a.id for a in ordered}
+            for acct in sorted(accounts, key=lambda a: (a.sort_order, a.code)):
+                if acct.id not in seen:
+                    ordered.append(acct)
+        return ordered
+
+    async def get_by_project_code(self, project_id: uuid.UUID, code: str) -> ControlAccount | None:
+        """Look up a control account by its project-unique code."""
+        stmt = (
+            select(ControlAccount)
+            .where(
+                ControlAccount.project_id == project_id,
+                ControlAccount.code == code,
+            )
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+
+    async def create(self, account: ControlAccount) -> ControlAccount:
+        """Insert a new control account."""
+        self.session.add(account)
+        await self.session.flush()
+        return account
+
+    async def update_fields(self, account_id: uuid.UUID, **fields: object) -> None:
+        """Update specific fields on a control account."""
+        stmt = update(ControlAccount).where(ControlAccount.id == account_id).values(**fields)
+        await self.session.execute(stmt)
+        await self.session.flush()
+        self.session.expire_all()
+
+    async def delete(self, account_id: uuid.UUID) -> None:
+        """Delete a control account."""
+        stmt = delete(ControlAccount).where(ControlAccount.id == account_id)
+        await self.session.execute(stmt)
+
+    async def count_lines_referencing(self, account_id: uuid.UUID) -> int:
+        """Count cost lines pointing at this control account.
+
+        Used to block deletion (409) while lines still reference the account.
+        """
+        stmt = select(func.count()).where(CostLine.control_account_id == account_id)
+        return (await self.session.execute(stmt)).scalar_one()
+
+
+class CostLineRepository:
+    """Data access for CostLine (the canonical scope item)."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def get_by_id(self, line_id: uuid.UUID) -> CostLine | None:
+        """Get a cost line by ID."""
+        return await self.session.get(CostLine, line_id)
+
+    async def list_for_project(
+        self,
+        project_id: uuid.UUID,
+        *,
+        control_account_id: uuid.UUID | None = None,
+        status: str | None = None,
+        offset: int = 0,
+        limit: int = 200,
+    ) -> tuple[list[CostLine], int]:
+        """List cost lines for a project with optional account/status filters.
+
+        Returns a ``(lines, total_count)`` tuple where ``total_count`` reflects
+        the filter set, not the page.
+        """
+        base = select(CostLine).where(CostLine.project_id == project_id)
+        if control_account_id is not None:
+            base = base.where(CostLine.control_account_id == control_account_id)
+        if status is not None:
+            base = base.where(CostLine.status == status)
+
+        count_stmt = select(func.count()).select_from(base.subquery())
+        total = (await self.session.execute(count_stmt)).scalar_one()
+
+        stmt = base.order_by(CostLine.code, CostLine.created_at).offset(offset).limit(limit)
+        result = await self.session.execute(stmt)
+        lines = list(result.scalars().all())
+        return lines, total
+
+    async def get_by_project_code(self, project_id: uuid.UUID, code: str) -> CostLine | None:
+        """Look up a cost line by its project-unique code."""
+        stmt = (
+            select(CostLine)
+            .where(
+                CostLine.project_id == project_id,
+                CostLine.code == code,
+            )
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+
+    async def list_by_boq(self, project_id: uuid.UUID, boq_id: uuid.UUID) -> list[CostLine]:
+        """Return every cost line generated from a given BOQ."""
+        stmt = select(CostLine).where(
+            CostLine.project_id == project_id,
+            CostLine.boq_id == boq_id,
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def create(self, line: CostLine) -> CostLine:
+        """Insert a new cost line."""
+        self.session.add(line)
+        await self.session.flush()
+        return line
+
+    async def bulk_create(self, lines: list[CostLine]) -> list[CostLine]:
+        """Insert multiple cost lines at once."""
+        self.session.add_all(lines)
+        await self.session.flush()
+        return lines
+
+    async def update_fields(self, line_id: uuid.UUID, **fields: object) -> None:
+        """Update specific fields on a cost line."""
+        stmt = update(CostLine).where(CostLine.id == line_id).values(**fields)
+        await self.session.execute(stmt)
+        await self.session.flush()
+        self.session.expire_all()
+
+    async def delete(self, line_id: uuid.UUID) -> None:
+        """Delete a cost line."""
+        stmt = delete(CostLine).where(CostLine.id == line_id)
+        await self.session.execute(stmt)
+
+
+class CostSpineRepository:
+    """Currency-aware grouped aggregates for the Cost Spine rollup.
+
+    Every aggregate is computed from ONE grouped/scanned query per source and
+    converted to the project base currency in Python (the FX conversion is
+    per-row because a forgotten rate must surface visibly rather than zero out,
+    matching ``BudgetLineRepository``). The result is keyed by cost-line id so
+    the service can assemble a per-line and project-wide rollup without N+1.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+        # ``_project_fx_context`` lives on BudgetLineRepository; hold an
+        # instance and reuse it so FX semantics stay in one place.
+        self._budget_repo = BudgetLineRepository(session)
+
+    async def _fx_context(self, project_id: uuid.UUID) -> tuple[str, dict[str, str]]:
+        return await self._budget_repo._project_fx_context(project_id)
+
+    async def budget_aggregate_by_cost_line(self, project_id: uuid.UUID) -> dict[str, dict[str, Decimal]]:
+        """Planned / committed / actual per cost line, FX-converted.
+
+        One scan of the project's budget lines (only those carrying a
+        ``cost_line_id``); converted via ``_amount_in_base`` and the project
+        fx context, then summed in Python keyed by cost-line id string.
+        """
+        base, fx = await self._fx_context(project_id)
+        stmt = select(
+            BudgetLine.cost_line_id,
+            BudgetLine.planned_amount,
+            BudgetLine.committed_amount,
+            BudgetLine.actual_amount,
+            BudgetLine.currency,
+        ).where(
+            BudgetLine.project_id == project_id,
+            BudgetLine.cost_line_id.is_not(None),
+        )
+        result = await self.session.execute(stmt)
+
+        out: dict[str, dict[str, Decimal]] = {}
+        for cost_line_id, planned, committed, actual, currency in result.all():
+            key = str(cost_line_id)
+            line_ccy = (currency or "").strip().upper()
+            bucket = out.setdefault(
+                key,
+                {"planned": Decimal("0"), "committed": Decimal("0"), "actual": Decimal("0")},
+            )
+            bucket["planned"] += _amount_in_base(planned, line_ccy, base, fx)
+            bucket["committed"] += _amount_in_base(committed, line_ccy, base, fx)
+            bucket["actual"] += _amount_in_base(actual, line_ccy, base, fx)
+        return out
+
+    async def po_committed_by_cost_line(self, project_id: uuid.UUID) -> dict[str, Decimal]:
+        """Committed PO value per cost line, FX-converted by PO currency.
+
+        Joins ``PurchaseOrderItem`` to its parent ``PurchaseOrder`` (one query)
+        and counts only POs whose status is genuinely committed
+        (issued / partially_received / completed). Each item amount is
+        converted using the PARENT PO currency, since the item carries no
+        currency of its own.
+        """
+        from app.modules.procurement.models import PurchaseOrder, PurchaseOrderItem
+
+        base, fx = await self._fx_context(project_id)
+        committed_statuses = ("issued", "partially_received", "completed")
+        stmt = (
+            select(
+                PurchaseOrderItem.cost_line_id,
+                PurchaseOrderItem.amount,
+                PurchaseOrder.currency_code,
+            )
+            .join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderItem.po_id)
+            .where(
+                PurchaseOrder.project_id == project_id,
+                PurchaseOrder.status.in_(committed_statuses),
+                PurchaseOrderItem.cost_line_id.is_not(None),
+            )
+        )
+        result = await self.session.execute(stmt)
+
+        out: dict[str, Decimal] = {}
+        for cost_line_id, amount, po_currency in result.all():
+            key = str(cost_line_id)
+            po_ccy = (po_currency or "").strip().upper()
+            out[key] = out.get(key, Decimal("0")) + _amount_in_base(amount, po_ccy, base, fx)
+        return out
+
+    async def contract_value_by_cost_line(self, project_id: uuid.UUID) -> dict[str, Decimal]:
+        """Contracted SoV value per cost line, FX-converted by contract currency.
+
+        Joins ``ContractLine`` to its parent ``Contract`` (one query). Contract
+        money is ``Numeric`` (Decimal), so each ``total_value`` is coerced to a
+        string before passing through ``_amount_in_base`` (which expects the
+        stored money-string convention). Contract currency is upper-normalized.
+        """
+        from app.modules.contracts.models import Contract, ContractLine
+
+        base, fx = await self._fx_context(project_id)
+        stmt = (
+            select(
+                ContractLine.cost_line_id,
+                ContractLine.total_value,
+                Contract.currency,
+            )
+            .join(Contract, Contract.id == ContractLine.contract_id)
+            .where(
+                Contract.project_id == project_id,
+                ContractLine.cost_line_id.is_not(None),
+            )
+        )
+        result = await self.session.execute(stmt)
+
+        out: dict[str, Decimal] = {}
+        for cost_line_id, total_value, contract_currency in result.all():
+            key = str(cost_line_id)
+            ccy = (contract_currency or "").strip().upper()
+            raw = str(total_value) if total_value is not None else "0"
+            out[key] = out.get(key, Decimal("0")) + _amount_in_base(raw, ccy, base, fx)
+        return out
+
+    async def claimed_to_date_by_cost_line(self, project_id: uuid.UUID) -> dict[str, Decimal]:
+        """Cumulative claimed value per cost line, FX-converted.
+
+        For each contract line linked to a cost line, takes the latest progress
+        claim line's ``cumulative_completed_value`` (the running total already
+        nets prior claims). Joined in one query: ProgressClaimLine ->
+        ContractLine -> Contract, plus ProgressClaim for the parent currency.
+        Numeric money is coerced to string before conversion.
+        """
+        from app.modules.contracts.models import (
+            Contract,
+            ContractLine,
+            ProgressClaim,
+            ProgressClaimLine,
+        )
+
+        base, fx = await self._fx_context(project_id)
+        stmt = (
+            select(
+                ContractLine.cost_line_id,
+                ProgressClaimLine.cumulative_completed_value,
+                ProgressClaim.currency,
+                ProgressClaimLine.contract_line_id,
+                ProgressClaim.claim_number,
+            )
+            .join(ContractLine, ContractLine.id == ProgressClaimLine.contract_line_id)
+            .join(Contract, Contract.id == ContractLine.contract_id)
+            .join(ProgressClaim, ProgressClaim.id == ProgressClaimLine.progress_claim_id)
+            .where(
+                Contract.project_id == project_id,
+                ContractLine.cost_line_id.is_not(None),
+            )
+        )
+        result = await self.session.execute(stmt)
+
+        # cumulative_completed_value already running-totals prior claims, so
+        # per (cost_line, contract_line) we keep the MAX cumulative seen and
+        # sum those maxima across contract lines that share a cost line. This
+        # avoids double-counting earlier interim claims for the same SoV line.
+        per_line_max: dict[tuple[str, str], tuple[Decimal, str]] = {}
+        for cost_line_id, cumulative, claim_ccy, contract_line_id, _claim_no in result.all():
+            cost_key = str(cost_line_id)
+            cl_key = str(contract_line_id)
+            ccy = (claim_ccy or "").strip().upper()
+            raw = str(cumulative) if cumulative is not None else "0"
+            value = _amount_in_base(raw, ccy, base, fx)
+            existing = per_line_max.get((cost_key, cl_key))
+            if existing is None or value > existing[0]:
+                per_line_max[(cost_key, cl_key)] = (value, ccy)
+
+        out: dict[str, Decimal] = {}
+        for (cost_key, _cl_key), (value, _ccy) in per_line_max.items():
+            out[cost_key] = out.get(cost_key, Decimal("0")) + value
+        return out

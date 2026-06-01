@@ -53,7 +53,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 310 Baugrube / Erdbau ─────────────────────────────────
         (
             "310",
-            "KG 310 — Baugrube / Erdbau",
+            "KG 310 - Baugrube / Erdbau",
             {"din276": "310"},
             [
                 ("310.1", "Baugrundgutachten + Baugrunderkundung (Geotechnical survey)", "lsum", 1, 42000.00, {"din276": "311"}),
@@ -71,7 +71,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 320 Gruendung, Unterbau ───────────────────────────────
         (
             "320",
-            "KG 320 — Gruendung, Unterbau",
+            "KG 320 - Gruendung, Unterbau",
             {"din276": "320"},
             [
                 ("320.1", "Sauberkeitsschicht C12/15 (Blinding concrete)", "m2", 3600, 13.50, {"din276": "322"}),
@@ -87,7 +87,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 330 Aussenwaende / Vertikale Baukonstruktionen ────────
         (
             "330",
-            "KG 330 — Aussenwaende / vertikale Baukonstruktionen, aussen",
+            "KG 330 - Aussenwaende / vertikale Baukonstruktionen, aussen",
             {"din276": "330"},
             [
                 ("330.1", "Kelleraussenwand WU-Beton C30/37, d=40cm (Basement RC wall)", "m3", 1180, 245.00, {"din276": "331"}),
@@ -108,7 +108,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 340 Innenwaende / Vertikale Baukonstruktionen, innen ──
         (
             "340",
-            "KG 340 — Innenwaende / vertikale Baukonstruktionen, innen",
+            "KG 340 - Innenwaende / vertikale Baukonstruktionen, innen",
             {"din276": "340"},
             [
                 ("340.1", "Stahlbetonkerne C35/45 Treppen/Aufzug (RC cores)", "m3", 1240, 395.00, {"din276": "341"}),
@@ -128,7 +128,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 350 Decken / Horizontale Baukonstruktionen ────────────
         (
             "350",
-            "KG 350 — Decken / horizontale Baukonstruktionen",
+            "KG 350 - Decken / horizontale Baukonstruktionen",
             {"din276": "350"},
             [
                 ("350.1", "Stahlbeton-Flachdecke C30/37, d=32cm (RC flat slab)", "m3", 4480, 335.00, {"din276": "351"}),
@@ -149,7 +149,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 360 Daecher ───────────────────────────────────────────
         (
             "360",
-            "KG 360 — Daecher",
+            "KG 360 - Daecher",
             {"din276": "360"},
             [
                 ("360.1", "Stahlbeton-Dachdecke C30/37, d=30cm (RC roof slab)", "m3", 540, 345.00, {"din276": "361"}),
@@ -166,7 +166,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 370 Infrastrukturanlagen / sonst. Baukonstruktionen ───
         (
             "370",
-            "KG 370 — Baukonstruktive Einbauten",
+            "KG 370 - Baukonstruktive Einbauten",
             {"din276": "370"},
             [
                 ("370.1", "Stahlbeton-Fertigteiltreppen (RC precast stairs)", "pcs", 36, 5200.00, {"din276": "379"}),
@@ -180,7 +180,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 390 Sonstige Massnahmen Baukonstruktionen ─────────────
         (
             "390",
-            "KG 390 — Sonstige Massnahmen fuer Baukonstruktionen",
+            "KG 390 - Sonstige Massnahmen fuer Baukonstruktionen",
             {"din276": "390"},
             [
                 ("390.1", "Baustelleneinrichtung Grossbaustelle (Site setup/establishment)", "lsum", 1, 420000.00, {"din276": "391"}),
@@ -193,7 +193,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 410 Abwasser, Wasser, Gas ─────────────────────────────
         (
             "410",
-            "KG 410 — Abwasser-, Wasser-, Gasanlagen",
+            "KG 410 - Abwasser-, Wasser-, Gasanlagen",
             {"din276": "410"},
             [
                 ("410.1", "Grundleitungen SML/PE DN100-DN200 (Below-ground drainage)", "m", 1600, 58.00, {"din276": "411"}),
@@ -209,7 +209,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 420 Waermeversorgungsanlagen ──────────────────────────
         (
             "420",
-            "KG 420 — Waermeversorgungsanlagen",
+            "KG 420 - Waermeversorgungsanlagen",
             {"din276": "420"},
             [
                 ("420.1", "Fernwaerme-Uebergabestation 900 kW (District heating substation)", "pcs", 1, 92000.00, {"din276": "421"}),
@@ -224,7 +224,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 430 Raumlufttechnische Anlagen ────────────────────────
         (
             "430",
-            "KG 430 — Raumlufttechnische Anlagen",
+            "KG 430 - Raumlufttechnische Anlagen",
             {"din276": "430"},
             [
                 ("430.1", "RLT-Zentralgeraet mit WRG 60.000 m3/h (AHU with heat recovery)", "pcs", 4, 92000.00, {"din276": "431"}),
@@ -240,7 +240,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 440 Elektrische Anlagen ───────────────────────────────
         (
             "440",
-            "KG 440 — Elektrische Anlagen, Starkstrom",
+            "KG 440 - Elektrische Anlagen, Starkstrom",
             {"din276": "440"},
             [
                 ("440.1", "Mittelspannungsuebergabe + Trafostation 2x1000 kVA (MV/transformer station)", "lsum", 1, 285000.00, {"din276": "441"}),
@@ -259,7 +259,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 450 Kommunikations-/sicherheitstechnische Anlagen ─────
         (
             "450",
-            "KG 450 — Kommunikations-, sicherheits- u. informationstechn. Anlagen",
+            "KG 450 - Kommunikations-, sicherheits- u. informationstechn. Anlagen",
             {"din276": "450"},
             [
                 ("450.1", "Strukturierte Verkabelung Cat.7 / LWL (Structured cabling)", "m2", 11000, 32.00, {"din276": "456"}),
@@ -273,7 +273,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 460 Foerderanlagen ────────────────────────────────────
         (
             "460",
-            "KG 460 — Foerderanlagen",
+            "KG 460 - Foerderanlagen",
             {"din276": "460"},
             [
                 ("460.1", "Personenaufzug 1600 kg / 21 Pers., 11 Haltestellen (Passenger lift)", "pcs", 4, 165000.00, {"din276": "461"}),
@@ -284,7 +284,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 480 Gebaeude- und Anlagenautomation ───────────────────
         (
             "480",
-            "KG 480 — Gebaeudeautomation (GA/MSR)",
+            "KG 480 - Gebaeudeautomation (GA/MSR)",
             {"din276": "480"},
             [
                 ("480.1", "GLT Managementebene + Server (BMS management/server)", "lsum", 1, 165000.00, {"din276": "481"}),
@@ -297,7 +297,7 @@ TEMPLATE = DemoTemplate(
         # ── KG 500 Aussenanlagen und Freiflaechen ────────────────────
         (
             "500",
-            "KG 500 — Aussenanlagen und Freiflaechen",
+            "KG 500 - Aussenanlagen und Freiflaechen",
             {"din276": "500"},
             [
                 ("500.1", "Erdarbeiten Aussenanlagen / Oberboden (Earthworks external)", "m3", 2200, 22.00, {"din276": "510"}),

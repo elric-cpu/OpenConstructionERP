@@ -60,7 +60,7 @@ TEMPLATE = DemoTemplate(
         "lng": 4.8946,
     },
     validation_rule_sets=["nrm", "boq_quality"],
-    boq_name="Offsite Cost Plan — NRM 1 (Factory + Site)",
+    boq_name="Offsite Cost Plan - NRM 1 (Factory + Site)",
     boq_description=(
         "Elemental cost plan per NRM 1 (3rd Edition) for a volumetric modular "
         "housing scheme, split into FACTORY (offsite module fabrication) and SITE "
@@ -83,7 +83,7 @@ TEMPLATE = DemoTemplate(
         # -- F1 Factory mobilisation, engineering & QC ----------------------
         (
             "F1",
-            "FACTORY — F1 Engineering, Production Engineering & QC",
+            "FACTORY - F1 Engineering, Production Engineering & QC",
             {"nrm": "0"},
             [
                 ("F1.1", "DfMA design & module production drawings (offsite engineering)", "lsum", 1, 285000.00, {"nrm": "0.4"}),
@@ -97,7 +97,7 @@ TEMPLATE = DemoTemplate(
         # -- F2 Structural chassis (light-gauge steel volumetric frame) -----
         (
             "F2",
-            "FACTORY — F2 Structural Chassis (steel volumetric frame)",
+            "FACTORY - F2 Structural Chassis (steel volumetric frame)",
             {"nrm": "2"},
             [
                 ("F2.1", "Light-gauge steel module chassis fabrication (cold-formed sections)", "t", 1170, 2850.00, {"nrm": "2.1"}),
@@ -112,7 +112,7 @@ TEMPLATE = DemoTemplate(
         # -- F3 Module envelope (factory-applied) ---------------------------
         (
             "F3",
-            "FACTORY — F3 Module Envelope (factory-applied)",
+            "FACTORY - F3 Module Envelope (factory-applied)",
             {"nrm": "5"},
             [
                 ("F3.1", "External wall panel build-up (SFS + sheathing + breather)", "m2", 8900, 96.00, {"nrm": "5.1"}),
@@ -126,7 +126,7 @@ TEMPLATE = DemoTemplate(
         # -- F4 MEP first-fix (in-module) -----------------------------------
         (
             "F4",
-            "FACTORY — F4 MEP First-Fix (in-module)",
+            "FACTORY - F4 MEP First-Fix (in-module)",
             {"nrm": "8"},
             [
                 ("F4.1", "In-module electrical first-fix (containment, wiring, back-boxes)", "pcs", 234, 3650.00, {"nrm": "8.2"}),
@@ -142,13 +142,13 @@ TEMPLATE = DemoTemplate(
         # -- F5 Internal finishes (factory) ---------------------------------
         (
             "F5",
-            "FACTORY — F5 Internal Finishes (factory)",
+            "FACTORY - F5 Internal Finishes (factory)",
             {"nrm": "9"},
             [
                 ("F5.1", "Internal partition linings & plasterboard (taped & jointed)", "m2", 14800, 31.00, {"nrm": "7.1"}),
                 ("F5.2", "Wall & ceiling decoration (factory paint, 2 coats)", "m2", 22200, 9.50, {"nrm": "9.2"}),
-                ("F5.3", "Floor finish — LVT to living / hall / kitchen", "m2", 4440, 38.00, {"nrm": "9.1"}),
-                ("F5.4", "Floor finish — carpet to bedrooms", "m2", 2220, 26.00, {"nrm": "9.1"}),
+                ("F5.3", "Floor finish - LVT to living / hall / kitchen", "m2", 4440, 38.00, {"nrm": "9.1"}),
+                ("F5.4", "Floor finish - carpet to bedrooms", "m2", 2220, 26.00, {"nrm": "9.1"}),
                 ("F5.5", "Fitted kitchen (units, worktop, integrated appliances) per dwelling", "pcs", 120, 5400.00, {"nrm": "9.3"}),
                 ("F5.6", "Internal doors, ironmongery & architraves (per module)", "pcs", 234, 1250.00, {"nrm": "9.3"}),
                 ("F5.7", "Skirtings, trims & second-fix joinery (per module)", "pcs", 234, 680.00, {"nrm": "9.3"}),
@@ -158,7 +158,7 @@ TEMPLATE = DemoTemplate(
         # -- F6 Factory testing & dispatch ----------------------------------
         (
             "F6",
-            "FACTORY — F6 Pre-Dispatch Testing & Sign-off",
+            "FACTORY - F6 Pre-Dispatch Testing & Sign-off",
             {"nrm": "8"},
             [
                 ("F6.1", "Module electrical test & certification (per module)", "pcs", 234, 320.00, {"nrm": "8.2"}),
@@ -173,7 +173,7 @@ TEMPLATE = DemoTemplate(
         # -- S1 Site preliminaries & enabling -------------------------------
         (
             "S1",
-            "SITE — S1 Enabling & Facilitating Works",
+            "SITE - S1 Enabling & Facilitating Works",
             {"nrm": "0"},
             [
                 ("S1.1", "Site clearance & demolition of existing hardstanding", "m2", 4200, 18.00, {"nrm": "0.1"}),
@@ -186,7 +186,7 @@ TEMPLATE = DemoTemplate(
         # -- S2 Substructure & podium ---------------------------------------
         (
             "S2",
-            "SITE — S2 Substructure & Transfer Podium",
+            "SITE - S2 Substructure & Transfer Podium",
             {"nrm": "1"},
             [
                 ("S2.1", "CFA piling 600 mm to module grid", "m", 3600, 118.00, {"nrm": "1.1"}),
@@ -200,7 +200,7 @@ TEMPLATE = DemoTemplate(
         # -- S3 Logistics, transport & craneage -----------------------------
         (
             "S3",
-            "SITE — S3 Transport, Logistics & Craneage",
+            "SITE - S3 Transport, Logistics & Craneage",
             {"nrm": "0"},
             [
                 ("S3.1", "Abnormal-load module transport factory-to-site (per module)", "pcs", 234, 1450.00, {"nrm": "0.1"}),
@@ -214,7 +214,7 @@ TEMPLATE = DemoTemplate(
         # -- S4 Module installation & inter-module connection ---------------
         (
             "S4",
-            "SITE — S4 Module Installation & Inter-Module Connection",
+            "SITE - S4 Module Installation & Inter-Module Connection",
             {"nrm": "2"},
             [
                 ("S4.1", "Module set, plumb & align (craned lift + landing, per module)", "pcs", 234, 1850.00, {"nrm": "2.3"}),
@@ -228,7 +228,7 @@ TEMPLATE = DemoTemplate(
         # -- S5 Weathering, roof & facade -----------------------------------
         (
             "S5",
-            "SITE — S5 Weathering, Roof & Facade",
+            "SITE - S5 Weathering, Roof & Facade",
             {"nrm": "5"},
             [
                 ("S5.1", "Inter-module joint weather-sealing & gasket make-good", "m", 4680, 28.00, {"nrm": "5.1"}),
@@ -243,10 +243,10 @@ TEMPLATE = DemoTemplate(
         # -- S6 MEP stitching & central plant -------------------------------
         (
             "S6",
-            "SITE — S6 MEP Stitching & Central Plant",
+            "SITE - S6 MEP Stitching & Central Plant",
             {"nrm": "8"},
             [
-                ("S6.1", "Riser stitching — connect module MEP to vertical risers", "pcs", 234, 680.00, {"nrm": "8.2"}),
+                ("S6.1", "Riser stitching - connect module MEP to vertical risers", "pcs", 234, 680.00, {"nrm": "8.2"}),
                 ("S6.2", "Central air-source heat-pump energy centre (cascade)", "lsum", 1, 420000.00, {"nrm": "8.1"}),
                 ("S6.3", "Communal heat network distribution & HIUs per dwelling", "pcs", 120, 1650.00, {"nrm": "8.1"}),
                 ("S6.4", "Incoming LV switchgear & landlord distribution", "lsum", 1, 185000.00, {"nrm": "8.2"}),
@@ -259,10 +259,10 @@ TEMPLATE = DemoTemplate(
         # -- S7 External works ----------------------------------------------
         (
             "S7",
-            "SITE — S7 External Works & Landscaping",
+            "SITE - S7 External Works & Landscaping",
             {"nrm": "9"},
             [
-                ("S7.1", "Hard landscaping — paving, podium courtyard", "m2", 1600, 105.00, {"nrm": "9.1"}),
+                ("S7.1", "Hard landscaping - paving, podium courtyard", "m2", 1600, 105.00, {"nrm": "9.1"}),
                 ("S7.2", "Soft landscaping, biodiverse roof & SuDS planting", "m2", 1200, 58.00, {"nrm": "9.2"}),
                 ("S7.3", "Cycle store, bin store & substation enclosure", "lsum", 1, 145000.00, {"nrm": "9.1"}),
                 ("S7.4", "External lighting, EV charge points & site services", "lsum", 1, 168000.00, {"nrm": "9.4"}),
@@ -272,7 +272,7 @@ TEMPLATE = DemoTemplate(
         # -- S8 Testing, commissioning & handover ---------------------------
         (
             "S8",
-            "SITE — S8 Testing, Commissioning & Handover",
+            "SITE - S8 Testing, Commissioning & Handover",
             {"nrm": "8"},
             [
                 ("S8.1", "Whole-building air-tightness testing (sample dwellings)", "pcs", 24, 850.00, {"nrm": "8.1"}),

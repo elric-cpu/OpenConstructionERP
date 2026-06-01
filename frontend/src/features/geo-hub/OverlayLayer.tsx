@@ -29,6 +29,7 @@ import { useToastStore } from '@/stores/useToastStore';
 import { getErrorMessage } from '@/shared/lib/api';
 
 import {
+  geoAuthHeaders,
   listAnchors,
   listRasterOverlays,
   rasterOverlayImageUrl,
@@ -273,7 +274,13 @@ export function OverlayLayer({
       if (!layer) {
         try {
           const provider = new c.SingleTileImageryProvider({
-            url: rasterOverlayImageUrl(o.id),
+            // Cesium fetches the raster itself, so attach the bearer token via
+            // a Resource; the raster.png endpoint is tenant-scoped and 401s
+            // without it.
+            url: new c.Resource({
+              url: rasterOverlayImageUrl(o.id),
+              headers: geoAuthHeaders(),
+            }),
             rectangle: rect,
           });
           layer = imageryLayers.addImageryProvider(provider);

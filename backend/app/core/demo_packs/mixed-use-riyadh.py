@@ -54,7 +54,7 @@ TEMPLATE = DemoTemplate(
         "lng": 46.6853,
     },
     validation_rule_sets=["masterformat", "boq_quality"],
-    boq_name="جدول الكميات - كود البناء السعودي SBC 2018 (BOQ — Saudi Building Code SBC 2018)",
+    boq_name="جدول الكميات - كود البناء السعودي SBC 2018 (BOQ - Saudi Building Code SBC 2018)",
     boq_description=(
         "جدول كميات تفصيلي وفق تصنيف MasterFormat مع مراجع كود البناء السعودي. "
         "(Detailed BOQ per MasterFormat with Saudi Building Code references.)"
@@ -69,7 +69,7 @@ TEMPLATE = DemoTemplate(
         # ── 02 — Existing Conditions / Site Prep (أعمال الموقع) ───────────
         (
             "02",
-            "02 — أعمال الموقع والحفر (Existing Conditions & Earthworks)",
+            "02 - أعمال الموقع والحفر (Existing Conditions & Earthworks)",
             {"masterformat": "02", "sbc": "SBC 201"},
             [
                 ("02.01", "تجهيز الموقع وإزالة العوائق (Site clearance & grubbing)", "m2", 4200, 18.00, {"masterformat": "02 41 00", "sbc": "SBC 201"}),
@@ -85,7 +85,7 @@ TEMPLATE = DemoTemplate(
         # ── 03 — Concrete (الأعمال الخرسانية) ────────────────────────────
         (
             "03",
-            "03 — الأعمال الخرسانية المسلحة (Concrete — SBC 304)",
+            "03 - الأعمال الخرسانية المسلحة (Concrete - SBC 304)",
             {"masterformat": "03", "sbc": "SBC 304"},
             [
                 ("03.01", "خرسانة نظافة C15 تحت الأساسات (Blinding concrete C15)", "m3", 620, 290.00, {"masterformat": "03 30 00", "sbc": "SBC 304"}),
@@ -105,7 +105,7 @@ TEMPLATE = DemoTemplate(
         # ── 04 — Masonry / Blockwork (أعمال البلوك) ──────────────────────
         (
             "04",
-            "04 — أعمال البلوك والمباني (Masonry & Blockwork)",
+            "04 - أعمال البلوك والمباني (Masonry & Blockwork)",
             {"masterformat": "04", "sbc": "SBC 201"},
             [
                 ("04.01", "بلوك أسمنتي للجدران الخارجية 200مم (External concrete block 200mm)", "m2", 11500, 92.00, {"masterformat": "04 22 00", "sbc": "SBC 201"}),
@@ -118,10 +118,10 @@ TEMPLATE = DemoTemplate(
         # ── 05 — Metals (الأعمال المعدنية) ───────────────────────────────
         (
             "05",
-            "05 — الأعمال المعدنية الإنشائية (Metals)",
+            "05 - الأعمال المعدنية الإنشائية (Metals)",
             {"masterformat": "05", "sbc": "SBC 306"},
             [
-                ("05.01", "هيكل معدني لمظلة المدخل والأتريوم (Structural steel — atrium/canopy)", "t", 220, 12500.00, {"masterformat": "05 12 00", "sbc": "SBC 306"}),
+                ("05.01", "هيكل معدني لمظلة المدخل والأتريوم (Structural steel - atrium/canopy)", "t", 220, 12500.00, {"masterformat": "05 12 00", "sbc": "SBC 306"}),
                 ("05.02", "درج معدني للهروب من الحريق (Steel fire-escape stairs)", "pcs", 6, 68000.00, {"masterformat": "05 51 00", "sbc": "SBC 801"}),
                 ("05.03", "دهان منتفخ مقاوم للحريق للهيكل المعدني (Intumescent fire protection to steel)", "m2", 3800, 95.00, {"masterformat": "05 05 23", "sbc": "SBC 801"}),
                 ("05.04", "أعمال معدنية متنوعة ودرابزين (Miscellaneous metals & handrails)", "lsum", 1, 480000.00, {"masterformat": "05 50 00", "sbc": "SBC 306"}),
@@ -130,7 +130,7 @@ TEMPLATE = DemoTemplate(
         # ── 07 — Waterproofing & Insulation (العزل) — heavy for climate ──
         (
             "07",
-            "07 — أعمال العزل المائي والحراري (Waterproofing & Thermal — SBC 601)",
+            "07 - أعمال العزل المائي والحراري (Waterproofing & Thermal - SBC 601)",
             {"masterformat": "07", "sbc": "SBC 601"},
             [
                 ("07.01", "عزل مائي للبشة والجدران أسفل المنسوب (Tanking to raft & retaining walls)", "m2", 9200, 88.00, {"masterformat": "07 13 00", "sbc": "SBC 601"}),
@@ -146,7 +146,7 @@ TEMPLATE = DemoTemplate(
         # ── 08 — Openings: Facade / Glazing (الواجهات والزجاج) ───────────
         (
             "08",
-            "08 — الواجهات والزجاج بحماية شمسية (Facade & Solar-Control Glazing)",
+            "08 - الواجهات والزجاج بحماية شمسية (Facade & Solar-Control Glazing)",
             {"masterformat": "08", "sbc": "SBC 601"},
             [
                 ("08.01", "حائط ستائري وحدات بزجاج عاكس مزدوج (Unitised curtain wall, double low-E glazing)", "m2", 7800, 1450.00, {"masterformat": "08 44 00", "sbc": "SBC 601"}),
@@ -162,7 +162,7 @@ TEMPLATE = DemoTemplate(
         # ── 09 — Finishes (التشطيبات) ───────────────────────────────────
         (
             "09",
-            "09 — أعمال التشطيبات (Finishes)",
+            "09 - أعمال التشطيبات (Finishes)",
             {"masterformat": "09", "sbc": "SBC 201"},
             [
                 ("09.01", "لياسة أسمنتية للجدران الداخلية (Cement plaster to internal walls)", "m2", 52000, 38.00, {"masterformat": "09 24 00", "sbc": "SBC 201"}),
@@ -180,7 +180,7 @@ TEMPLATE = DemoTemplate(
         # ── 11/12 — Equipment & Furnishings (التجهيزات) ─────────────────
         (
             "11",
-            "11 — التجهيزات الثابتة (Equipment & Furnishings)",
+            "11 - التجهيزات الثابتة (Equipment & Furnishings)",
             {"masterformat": "11", "sbc": "SBC 201"},
             [
                 ("11.01", "مطابخ مجهزة للشقق الفندقية (Fitted kitchens, serviced apartments)", "pcs", 96, 18500.00, {"masterformat": "11 31 00", "sbc": "SBC 201"}),
@@ -192,7 +192,7 @@ TEMPLATE = DemoTemplate(
         # ── 14 — Conveying / Vertical Transport (المصاعد) ───────────────
         (
             "14",
-            "14 — المصاعد والسلالم الكهربائية (Conveying Systems)",
+            "14 - المصاعد والسلالم الكهربائية (Conveying Systems)",
             {"masterformat": "14", "sbc": "SBC 201"},
             [
                 ("14.01", "مصاعد ركاب عالية السرعة 1600كجم للبرج (High-speed passenger lifts 1600kg)", "pcs", 6, 580000.00, {"masterformat": "14 21 00", "sbc": "SBC 201"}),
@@ -203,10 +203,10 @@ TEMPLATE = DemoTemplate(
         # ── 23 — HVAC / District Cooling (التكييف) — large cooling load ─
         (
             "23",
-            "23 — التكييف والتهوية وتبريد المناطق (HVAC & District Cooling — SBC 501)",
+            "23 - التكييف والتهوية وتبريد المناطق (HVAC & District Cooling - SBC 501)",
             {"masterformat": "23", "sbc": "SBC 501"},
             [
-                ("23.01", "محطة تبريد مناطق وحدات تبريد (Chiller plant, district cooling — 3500 TR)", "lsum", 1, 14500000.00, {"masterformat": "23 64 00", "sbc": "SBC 501"}),
+                ("23.01", "محطة تبريد مناطق وحدات تبريد (Chiller plant, district cooling - 3500 TR)", "lsum", 1, 14500000.00, {"masterformat": "23 64 00", "sbc": "SBC 501"}),
                 ("23.02", "وحدات مناولة الهواء AHU (Air-handling units AHU)", "pcs", 38, 68000.00, {"masterformat": "23 73 00", "sbc": "SBC 501"}),
                 ("23.03", "وحدات ملف المروحة FCU للشقق والمكاتب (Fan-coil units FCU)", "pcs", 620, 4200.00, {"masterformat": "23 82 19", "sbc": "SBC 501"}),
                 ("23.04", "شبكة مجاري الهواء المعزولة (Insulated GI ductwork)", "kg", 185000, 32.00, {"masterformat": "23 31 00", "sbc": "SBC 501"}),
@@ -220,7 +220,7 @@ TEMPLATE = DemoTemplate(
         # ── 22 — Plumbing (السباكة) ─────────────────────────────────────
         (
             "22",
-            "22 — أعمال السباكة والصرف (Plumbing & Drainage)",
+            "22 - أعمال السباكة والصرف (Plumbing & Drainage)",
             {"masterformat": "22", "sbc": "SBC 701"},
             [
                 ("22.01", "شبكة تغذية مياه باردة PPR (Cold-water supply, PPR)", "m", 8600, 78.00, {"masterformat": "22 11 16", "sbc": "SBC 701"}),
@@ -236,7 +236,7 @@ TEMPLATE = DemoTemplate(
         # ── 26 — Electrical (الكهرباء) ──────────────────────────────────
         (
             "26",
-            "26 — الأعمال الكهربائية (Electrical)",
+            "26 - الأعمال الكهربائية (Electrical)",
             {"masterformat": "26", "sbc": "SBC 401"},
             [
                 ("26.01", "غرفة محولات وتوصيلة الشركة السعودية للكهرباء (HV substation & SEC connection)", "lsum", 1, 3200000.00, {"masterformat": "26 11 00", "sbc": "SBC 401"}),
@@ -245,7 +245,7 @@ TEMPLATE = DemoTemplate(
                 ("26.04", "مولد احتياطي ديزل 1500kVA (Standby diesel generator 1500kVA)", "pcs", 2, 1250000.00, {"masterformat": "26 32 13", "sbc": "SBC 401"}),
                 ("26.05", "كيبلات ومسارات كيبلات نحاسية (Copper cabling & cable trays)", "m", 96000, 42.00, {"masterformat": "26 05 19", "sbc": "SBC 401"}),
                 ("26.06", "نقاط إنارة ومفاتيح وأفياش (Lighting points, switches & sockets)", "pcs", 18500, 185.00, {"masterformat": "26 27 26", "sbc": "SBC 401"}),
-                ("26.07", "إنارة LED موفرة للطاقة (Energy-efficient LED luminaires — SBC 601)", "pcs", 12800, 145.00, {"masterformat": "26 51 00", "sbc": "SBC 601"}),
+                ("26.07", "إنارة LED موفرة للطاقة (Energy-efficient LED luminaires - SBC 601)", "pcs", 12800, 145.00, {"masterformat": "26 51 00", "sbc": "SBC 601"}),
                 ("26.08", "نظام التأريض ومانعة الصواعق (Earthing & lightning protection)", "lsum", 1, 420000.00, {"masterformat": "26 41 00", "sbc": "SBC 401"}),
                 ("26.09", "محطة شحن السيارات الكهربائية 22kW (EV charging stations 22kW)", "pcs", 40, 32000.00, {"masterformat": "26 56 00", "sbc": "SBC 401"}),
                 ("26.10", "نظام طاقة شمسية على السطح 250kWp (Rooftop solar PV 250kWp)", "lsum", 1, 1850000.00, {"masterformat": "48 14 00", "sbc": "SBC 601"}),
@@ -254,7 +254,7 @@ TEMPLATE = DemoTemplate(
         # ── 27/28 — ICT, Fire Alarm & Safety (الأنظمة المنخفضة والحريق) ──
         (
             "28",
-            "28 — أنظمة السلامة والإنذار والأمن (Fire, Life-Safety & Security — SBC 801)",
+            "28 - أنظمة السلامة والإنذار والأمن (Fire, Life-Safety & Security - SBC 801)",
             {"masterformat": "28", "sbc": "SBC 801"},
             [
                 ("28.01", "نظام إنذار الحريق المعنون (Addressable fire-alarm system)", "lsum", 1, 1450000.00, {"masterformat": "28 31 00", "sbc": "SBC 801"}),
@@ -268,7 +268,7 @@ TEMPLATE = DemoTemplate(
         # ── 31/32 — External Works & Landscaping (الأعمال الخارجية) ─────
         (
             "32",
-            "32 — الأعمال الخارجية وتنسيق الموقع (External Works & Landscaping)",
+            "32 - الأعمال الخارجية وتنسيق الموقع (External Works & Landscaping)",
             {"masterformat": "32", "sbc": "SBC 201"},
             [
                 ("32.01", "أعمال أسفلت للطرق والمداخل (Asphalt to access roads)", "m2", 4200, 95.00, {"masterformat": "32 12 16", "sbc": "SBC 201"}),
@@ -307,13 +307,13 @@ TEMPLATE = DemoTemplate(
         "structure": "Reinforced concrete frame with post-tensioned flat slabs (tower)",
         "building_code": "Saudi Building Code SBC 2018",
         "code_parts": "SBC 201 (general), SBC 301 (structural loads), SBC 304 (concrete), SBC 501 (mechanical/HVAC), SBC 601 (energy conservation), SBC 801 (fire protection)",
-        "energy_standard": "SBC 601 — hot-climate energy conservation (district cooling, low-E glazing, rooftop PV 250kWp)",
+        "energy_standard": "SBC 601 - hot-climate energy conservation (district cooling, low-E glazing, rooftop PV 250kWp)",
         "cooling": "Campus district-cooling plant, ~3,500 TR connected load",
         "seismic": "Riyadh is a low-seismicity zone; structure designed per SBC 301 with standard ductility detailing",
-        "bim_standard": "ISO 19650-1/2 — BIM execution plan, LOD 350 at tender",
+        "bim_standard": "ISO 19650-1/2 - BIM execution plan, LOD 350 at tender",
         "aramco_standards": "Aramco SAES/SAMSS referenced for fire-water, generator fuel storage and HV switchgear where applicable",
         "vat_note": "All BOQ rates are exclusive of VAT. KSA VAT of 15% (ZATCA) is applied as a separate markup line.",
-        "saudization_note": "Project subject to Nitaqat Saudization quotas (MHRSD); contractor and subcontractors must maintain a Green/Platinum band — local-workforce ratios priced into preliminaries.",
+        "saudization_note": "Project subject to Nitaqat Saudization quotas (MHRSD); contractor and subcontractors must maintain a Green/Platinum band - local-workforce ratios priced into preliminaries.",
         "regulator": "Riyadh Municipality (Amanah) building permit; Saudi Civil Defense fire approval; SEC power connection; permits per SBC 2018",
     },
 )

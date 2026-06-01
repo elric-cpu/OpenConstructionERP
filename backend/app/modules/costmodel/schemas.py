@@ -496,3 +496,232 @@ class VarianceResponse(BaseModel):
     @field_serializer("budget", "variance_abs", when_used="json")
     def _ser_money(self, v: Decimal) -> str | None:
         return _serialise_money(v)
+
+
+# ── Cost Spine (v6.4) ─────────────────────────────────────────────────────────
+
+
+class ControlAccountCreate(BaseModel):
+    """Create a control account in the Cost Breakdown Structure."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    project_id: UUID | None = None  # Set from URL path
+    parent_id: UUID | None = None
+    code: str = Field(..., min_length=1, max_length=80)
+    name: str = Field(..., min_length=1, max_length=255)
+    classification_standard: str = Field(default="", max_length=40)
+    status: str = Field(default="open", max_length=40)
+    sort_order: int = 0
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ControlAccountUpdate(BaseModel):
+    """Partial update for a control account."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    parent_id: UUID | None = None
+    code: str | None = Field(default=None, min_length=1, max_length=80)
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    classification_standard: str | None = Field(default=None, max_length=40)
+    status: str | None = Field(default=None, max_length=40)
+    sort_order: int | None = None
+    metadata: dict[str, Any] | None = None
+
+
+class ControlAccountResponse(BaseModel):
+    """Control account returned from the API."""
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    project_id: UUID
+    parent_id: UUID | None
+    code: str
+    name: str
+    classification_standard: str
+    status: str
+    sort_order: int
+    metadata: dict[str, Any] = Field(default_factory=dict, alias="metadata_")
+    created_at: datetime
+    updated_at: datetime
+
+
+class CostLineCreate(BaseModel):
+    """Create a cost line in the Cost Spine.
+
+    v3 §10 - ``estimate_*`` money/quantity fields are Decimal-as-string in JSON.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    project_id: UUID | None = None  # Set from URL path
+    control_account_id: UUID | None = None
+    code: str | None = Field(
+        default=None,
+        max_length=80,
+        description="Unique within the project. Auto-generated when omitted.",
+    )
+    description: str = Field(default="", max_length=2000)
+    unit: str | None = Field(default=None, max_length=20)
+    source: str = Field(default="manual", max_length=40)
+    boq_position_id: UUID | None = None
+    boq_id: UUID | None = None
+    estimate_quantity: Decimal = Decimal("0")
+    estimate_unit_rate: Decimal = Decimal("0")
+    estimate_amount: Decimal = Decimal("0")
+    currency: str = Field(default="", max_length=10)
+    status: str = Field(default="active", max_length=40)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_serializer("estimate_quantity", "estimate_unit_rate", "estimate_amount", when_used="json")
+    def _ser_money(self, v: Decimal) -> str | None:
+        return _serialise_money(v)
+
+
+class CostLineUpdate(BaseModel):
+    """Partial update for a cost line."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    control_account_id: UUID | None = None
+    code: str | None = Field(default=None, min_length=1, max_length=80)
+    description: str | None = Field(default=None, max_length=2000)
+    unit: str | None = Field(default=None, max_length=20)
+    source: str | None = Field(default=None, max_length=40)
+    boq_position_id: UUID | None = None
+    boq_id: UUID | None = None
+    estimate_quantity: Decimal | None = None
+    estimate_unit_rate: Decimal | None = None
+    estimate_amount: Decimal | None = None
+    currency: str | None = Field(default=None, max_length=10)
+    status: str | None = Field(default=None, max_length=40)
+    metadata: dict[str, Any] | None = None
+
+    @field_serializer("estimate_quantity", "estimate_unit_rate", "estimate_amount", when_used="json")
+    def _ser_money(self, v: Decimal | None) -> str | None:
+        return _serialise_money(v)
+
+
+class CostLineResponse(BaseModel):
+    """Cost line returned from the API.
+
+    v3 §10 - money/quantity fields are Decimal-as-string in JSON.
+    """
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    project_id: UUID
+    control_account_id: UUID | None
+    code: str
+    description: str
+    unit: str | None
+    source: str
+    boq_position_id: UUID | None
+    boq_id: UUID | None
+    estimate_quantity: Decimal = Decimal("0")
+    estimate_unit_rate: Decimal = Decimal("0")
+    estimate_amount: Decimal = Decimal("0")
+    currency: str
+    status: str
+    metadata: dict[str, Any] = Field(default_factory=dict, alias="metadata_")
+    created_at: datetime
+    updated_at: datetime
+
+    @field_serializer("estimate_quantity", "estimate_unit_rate", "estimate_amount", when_used="json")
+    def _ser_money(self, v: Decimal) -> str | None:
+        return _serialise_money(v)
+
+
+class CostLineLinks(BaseModel):
+    """Every cross-module reference pointing at one cost line."""
+
+    boq_position_ids: list[str] = Field(default_factory=list)
+    budget_line_ids: list[str] = Field(default_factory=list)
+    po_item_ids: list[str] = Field(default_factory=list)
+    contract_line_ids: list[str] = Field(default_factory=list)
+    rfq_ids: list[str] = Field(default_factory=list)
+
+
+class CostLineRollupResponse(BaseModel):
+    """Single cost line with its money rolled up across every linked entity.
+
+    All money values are FX-converted into the cost line currency (the project
+    base when blank) and emitted as Decimal-as-string in JSON.
+    """
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    cost_line_id: UUID
+    code: str
+    control_account_id: UUID | None = None
+    description: str = ""
+    currency: str = ""
+    estimate_amount: Decimal = Decimal("0")
+    budget_planned: Decimal = Decimal("0")
+    budget_committed: Decimal = Decimal("0")
+    budget_actual: Decimal = Decimal("0")
+    po_committed: Decimal = Decimal("0")
+    contracted_value: Decimal = Decimal("0")
+    claimed_to_date: Decimal = Decimal("0")
+    variance_estimate_vs_budget: Decimal = Decimal("0")
+    links: CostLineLinks = Field(default_factory=CostLineLinks)
+
+    @field_serializer(
+        "estimate_amount",
+        "budget_planned",
+        "budget_committed",
+        "budget_actual",
+        "po_committed",
+        "contracted_value",
+        "claimed_to_date",
+        "variance_estimate_vs_budget",
+        when_used="json",
+    )
+    def _ser_money(self, v: Decimal) -> str | None:
+        return _serialise_money(v)
+
+
+class SpineRollupResponse(BaseModel):
+    """Project-wide Cost Spine rollup.
+
+    ``mixed_currency`` follows the existing flag convention: it is True when
+    the linked rows carry more than one distinct ISO currency (so summing may
+    have crossed missing fx_rates) and the client should warn rather than
+    treat the totals as clean.
+    """
+
+    currency: str = ""
+    mixed_currency: bool = False
+    accounts: list[ControlAccountResponse] = Field(default_factory=list)
+    lines: list[CostLineRollupResponse] = Field(default_factory=list)
+    totals: dict[str, str] = Field(default_factory=dict)
+
+
+class SpineGenerationResult(BaseModel):
+    """Outcome of generating the spine from a BOQ.
+
+    Idempotent: re-running only fills gaps, so the counters report what was
+    newly created or wired on this call.
+    """
+
+    project_id: UUID
+    boq_id: UUID
+    accounts_created: int = 0
+    cost_lines_created: int = 0
+    positions_linked: int = 0
+    budget_lines_linked: int = 0
+
+
+class SpineLinkRequest(BaseModel):
+    """Link or unlink a downstream entity to a cost line."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    target_type: str = Field(
+        ...,
+        description="One of: boq_position, budget_line, po_item, contract_line, rfq",
+    )
+    target_id: UUID

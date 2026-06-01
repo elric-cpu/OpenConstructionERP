@@ -146,11 +146,28 @@ export async function deletePhoto(id: string): Promise<void> {
 export interface DocumentItem {
   id: string;
   project_id: string;
-  filename: string;
-  size_bytes: number;
-  mime_type: string | null;
+  /** Original filename, e.g. "A_book_of_house_plans.pdf". The backend
+   *  serialises this as ``name`` (CDE document model); it is NOT ``filename``.
+   *  An earlier version of this type guessed ``filename``/``size_bytes`` and
+   *  every read came back undefined, which crashed the Geo "Place on map"
+   *  picker on ``name.toLowerCase()``. Keep these aligned to the API. */
+  name: string;
+  description: string | null;
   category: string;
-  created_by: string | null;
+  file_size: number;
+  mime_type: string | null;
+  version: number;
+  is_current_revision: boolean;
+  parent_document_id: string | null;
+  drawing_number?: string | null;
+  revision_code?: string | null;
+  discipline?: string | null;
+  suitability_code?: string | null;
+  cde_state?: string | null;
+  security_classification?: string | null;
+  tags?: string[];
+  metadata?: Record<string, unknown>;
+  uploaded_by: string | null;
   created_at: string;
   updated_at: string;
 }

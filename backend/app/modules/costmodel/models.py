@@ -4,11 +4,13 @@ Tables:
     oe_costmodel_snapshot — monthly EVM snapshots (planned, earned, actual)
     oe_costmodel_budget_line — budget tracking per BOQ position or category
     oe_costmodel_cash_flow — monthly cash flow entries
+    oe_costmodel_control_account - Cost Spine control accounts (CBS tree)
+    oe_costmodel_cost_line - Cost Spine cost lines (one row per scope item)
 """
 
 import uuid
 
-from sqlalchemy import JSON, ForeignKey, String, Text
+from sqlalchemy import JSON, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import GUID, Base
@@ -81,6 +83,13 @@ class BudgetLine(Base):
     )
     boq_position_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True, index=True)
     activity_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True, doc="Link to 4D schedule activity")
+    # ── Cost Spine linkage (v6.4) ────────────────────────────────────────
+    # Additive nullable links to the cost spine. ``cost_line_id`` ties this
+    # budget row to its CostLine; ``control_account_id`` mirrors the cost
+    # line's account so account-level rollups can group budget without a
+    # second join. Both stay NULL on legacy rows written before the spine.
+    cost_line_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True, index=True)
+    control_account_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True, index=True)
     category: Mapped[str] = mapped_column(
         String(100),
         nullable=False,
@@ -140,3 +149,105 @@ class CashFlow(Base):
 
     def __repr__(self) -> str:
         return f"<CashFlow project={self.project_id} period={self.period}>"
+
+
+# ── Cost Spine (v6.4) ─────────────────────────────────────────────────────────
+
+
+class ControlAccount(Base):
+    """‌⁠‍A control account in the project Cost Breakdown Structure (CBS).
+
+    Control accounts form a tree (``parent_id`` self-reference) that mirrors
+    the chosen classification standard (DIN 276 cost groups, NRM elements,
+    MasterFormat divisions, ...). Cost lines hang off the leaves. The account
+    code is unique within a project so the spine generator can upsert
+    accounts idempotently while building the tree from BOQ classifications.
+    """
+
+    __tablename__ = "oe_costmodel_control_account"
+    __table_args__ = (
+        UniqueConstraint("project_id", "code", name="uq_costmodel_ctrl_acct_project_code"),
+        Index("ix_costmodel_ctrl_acct_project_parent", "project_id", "parent_id"),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_projects_project.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(),
+        ForeignKey("oe_costmodel_control_account.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    code: Mapped[str] = mapped_column(String(80), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    classification_standard: Mapped[str] = mapped_column(String(40), nullable=False, server_default="")
+    status: Mapped[str] = mapped_column(String(40), nullable=False, server_default="open", index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        "metadata",
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
+
+    def __repr__(self) -> str:
+        return f"<ControlAccount {self.code} ({self.name})>"
+
+
+class CostLine(Base):
+    """‌⁠‍A single cost line in the Cost Spine - the canonical scope item.
+
+    Each cost line is the single source of truth a BOQ position, budget line,
+    purchase-order item, contract line, and RFQ all point at, so estimate,
+    budget, committed, actual and claimed money roll up against one row. A
+    cost line may originate from the BOQ (``source='boq'`` with
+    ``boq_position_id`` / ``boq_id`` set) or be entered manually. ``code`` is
+    unique within a project so generation can upsert deterministically.
+    """
+
+    __tablename__ = "oe_costmodel_cost_line"
+    __table_args__ = (
+        UniqueConstraint("project_id", "code", name="uq_costmodel_cost_line_project_code"),
+        Index("ix_costmodel_cost_line_proj_acct", "project_id", "control_account_id"),
+    )
+
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_projects_project.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    control_account_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(),
+        ForeignKey("oe_costmodel_control_account.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    code: Mapped[str] = mapped_column(String(80), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    unit: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    source: Mapped[str] = mapped_column(String(40), nullable=False, server_default="manual", index=True)
+    # Plain UUID (no FK) - the originating BOQ position may be deleted while
+    # the cost line and its committed/actual history survive.
+    boq_position_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True, index=True)
+    boq_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True, index=True)
+    estimate_quantity: Mapped[str] = mapped_column(String(50), nullable=False, server_default="0")
+    estimate_unit_rate: Mapped[str] = mapped_column(String(50), nullable=False, server_default="0")
+    estimate_amount: Mapped[str] = mapped_column(String(50), nullable=False, server_default="0")
+    currency: Mapped[str] = mapped_column(String(10), nullable=False, server_default="")
+    status: Mapped[str] = mapped_column(String(40), nullable=False, server_default="active", index=True)
+    metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        "metadata",
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
+
+    def __repr__(self) -> str:
+        return f"<CostLine {self.code} ({self.source})>"

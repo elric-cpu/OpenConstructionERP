@@ -124,8 +124,15 @@ async def _create_bim_model_with_elements(
     project_id: str,
     *,
     with_elements: bool = True,
+    flat_bbox: bool = False,
 ) -> uuid.UUID:
-    """Insert a BIMModel + a few canonical-shaped BIMElement rows."""
+    """Insert a BIMModel + a few canonical-shaped BIMElement rows.
+
+    ``flat_bbox`` switches the bounding box from the nested
+    ``{"min": [...], "max": [...]}`` shape to the flat
+    ``{"min_x": ..., "max_z": ...}`` shape that the BIM parser actually
+    persists. Both must yield real per-element geometry.
+    """
     from app.database import async_session_factory
     from app.modules.bim_hub.models import BIMElement, BIMModel
 
@@ -142,6 +149,20 @@ async def _create_bim_model_with_elements(
         await s.flush()
         if with_elements:
             for i in range(3):
+                if flat_bbox:
+                    bbox = {
+                        "min_x": i * 5.0,
+                        "min_y": 0.0,
+                        "min_z": 0.0,
+                        "max_x": i * 5.0 + 4.5,
+                        "max_y": 0.3,
+                        "max_z": 3.0,
+                    }
+                else:
+                    bbox = {
+                        "min": [i * 5.0, 0.0, 0.0],
+                        "max": [i * 5.0 + 4.5, 0.3, 3.0],
+                    }
                 s.add(
                     BIMElement(
                         model_id=model.id,
@@ -154,10 +175,7 @@ async def _create_bim_model_with_elements(
                             "length_m": 5.0,
                             "height_m": 3.0,
                         },
-                        bounding_box={
-                            "min": [i * 5.0, 0.0, 0.0],
-                            "max": [i * 5.0 + 4.5, 0.3, 3.0],
-                        },
+                        bounding_box=bbox,
                     )
                 )
         await s.commit()
@@ -219,6 +237,39 @@ class TestFromCanonical:
         )
         assert listed.status_code == 200
         assert any(t["id"] == body["id"] for t in listed.json())
+
+    @pytest.mark.asyncio
+    async def test_flat_bounding_box_format_packs_real_geometry(
+        self,
+        http_client,
+        tenant_a,
+    ):
+        """Elements whose bounding_box is the flat {min_x..max_z} shape must
+        produce a real per-element tileset, not a degenerate one.
+
+        The BIM parser stores AABBs flat; an earlier version of the
+        canonical converter only understood the nested {"min","max"}
+        shape, so every flat-bbox model collapsed to feature_count=0 and
+        the placement failed with 422 (the "3D geometry never shows" bug).
+        """
+        await _create_anchor(http_client, tenant_a)
+        model_id = await _create_bim_model_with_elements(
+            tenant_a["project_id"],
+            flat_bbox=True,
+        )
+
+        res = await http_client.post(
+            f"/api/v1/geo-hub/from-canonical/{model_id}",
+            json={"name": "Flat-bbox Tower"},
+            headers=tenant_a["headers"],
+        )
+        assert res.status_code == 200, res.text
+        body = res.json()
+        assert body["status"] == "ready"
+        assert body["total_bytes"] > 0
+        meta = body.get("metadata") or body.get("metadata_") or {}
+        # All three flat-bbox elements must survive geometry extraction.
+        assert meta.get("feature_count") == 3
 
     @pytest.mark.asyncio
     async def test_missing_anchor_returns_422(self, http_client, tenant_b):

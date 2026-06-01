@@ -138,12 +138,18 @@ def downgrade() -> None:
     inspector = sa.inspect(bind)
     if not inspector.has_table(TABLE):
         return
-    op.drop_index(
+    # Drop only indexes that actually exist. On the create_all path the unique
+    # key is materialised from the model's ``UniqueConstraint`` as a table-level
+    # ``UNIQUE`` clause (SQLite emits an internal ``sqlite_autoindex_*``), NOT a
+    # named index, so an unconditional
+    # ``drop_index("uq_oe_geo_hub_geocode_cache_query_hash")`` raised
+    # "no such index" when an unrelated downgrade walked back through this
+    # revision. Guarding mirrors the defensive style used by later migrations.
+    existing = {ix["name"] for ix in inspector.get_indexes(TABLE)}
+    for index_name in (
         "ix_oe_geo_hub_geocode_cache_cached_at",
-        table_name=TABLE,
-    )
-    op.drop_index(
         "uq_oe_geo_hub_geocode_cache_query_hash",
-        table_name=TABLE,
-    )
+    ):
+        if index_name in existing:
+            op.drop_index(index_name, table_name=TABLE)
     op.drop_table(TABLE)

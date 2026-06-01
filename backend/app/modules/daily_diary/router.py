@@ -12,6 +12,7 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 
 from app.core.file_signature import (
     ALLOWED_PHOTO_TYPES,
@@ -21,6 +22,7 @@ from app.core.file_signature import (
 from app.core.file_signature import (
     require as require_signature,
 )
+from app.core.http_headers import content_disposition_attachment
 from app.core.i18n import get_locale
 from app.core.validation.messages import translate
 from app.dependencies import (
@@ -42,7 +44,6 @@ from app.modules.daily_diary.schemas import (
     DiaryEntryResponse,
     DiaryEntryUpdate,
     DiaryImmutablePayloadHashResponse,
-    DiaryPdfStubResponse,
     DiaryPhotoCreate,
     DiaryPhotoResponse,
     DiaryPhotoUpdate,
@@ -287,22 +288,29 @@ async def immutable_payload_hash(
     return DiaryImmutablePayloadHashResponse(**data)
 
 
-@router.get(
-    "/diaries/{diary_id}/pdf-stub",
-    response_model=DiaryPdfStubResponse,
-)
-async def diary_pdf_stub(
+@router.get("/diaries/{diary_id}/pdf")
+async def diary_pdf(
     diary_id: uuid.UUID,
     session: SessionDep,
     user_id: CurrentUserId = None,  # type: ignore[assignment]
     _perm: None = Depends(RequirePermission("daily_diary.read")),
     service: DailyDiaryService = Depends(_get_service),
-) -> DiaryPdfStubResponse:
-    """Placeholder hook for the future PDF renderer."""
+) -> StreamingResponse:
+    """Export a daily site diary as a PDF document.
+
+    Renders the diary header, its entries, the day's weather, the
+    project and supervisor names, and the notes into a single PDF and
+    streams it back as an attachment named ``diary-<date>.pdf``.
+    """
     diary = await service.get_diary(diary_id)
     await verify_project_access(diary.project_id, user_id, session)
-    data = await service.generate_pdf_stub(diary_id)
-    return DiaryPdfStubResponse(**data)
+    pdf_bytes, diary_date = await service.generate_diary_pdf(diary_id)
+    filename = f"diary-{diary_date or diary_id}.pdf"
+    return StreamingResponse(
+        iter([pdf_bytes]),
+        media_type="application/pdf",
+        headers={"Content-Disposition": content_disposition_attachment(filename)},
+    )
 
 
 # ── Weather ──────────────────────────────────────────────────────────────

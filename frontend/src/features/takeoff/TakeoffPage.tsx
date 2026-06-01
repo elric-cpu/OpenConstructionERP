@@ -345,6 +345,7 @@ function DocumentCard({
   onSelectAll,
   onDeselectAll,
   onAddToBOQ,
+  onView,
   boqSelected,
 }: {
   doc: UploadedDocument;
@@ -355,6 +356,7 @@ function DocumentCard({
   onSelectAll: (docId: string) => void;
   onDeselectAll: (docId: string) => void;
   onAddToBOQ: (docId: string) => void;
+  onView: (docId: string) => void;
   boqSelected: boolean;
 }) {
   const { t } = useTranslation();
@@ -470,14 +472,7 @@ function DocumentCard({
             defaultValue: 'View {{name}}',
             name: doc.filename,
           })}
-          onClick={() => {
-            // Open in a new tab; fall back to same-tab nav if the browser
-            // blocks `window.open` (popup blocker) so the user still sees
-            // their document instead of a no-op click.
-            const url = `/api/v1/takeoff/documents/${doc.id}/download`;
-            const w = window.open(url, '_blank', 'noopener,noreferrer');
-            if (!w) window.location.href = url;
-          }}
+          onClick={() => onView(doc.id)}
         >
           {t('takeoff.view', 'View')}
         </Button>
@@ -1979,6 +1974,7 @@ export function TakeoffPage() {
                     onSelectAll={handleSelectAll}
                     onDeselectAll={handleDeselectAll}
                     onAddToBOQ={handleAddToBOQ}
+                    onView={handleOpenDocInViewer}
                     boqSelected={hasBoqSelected}
                   />
                 ))}

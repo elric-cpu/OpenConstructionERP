@@ -530,6 +530,47 @@ export const matchElementsApi = {
     return (await res.json()) as MatchSession;
   },
 
+  /** Upload a tender PDF and create a 'pdf' source session in one call.
+   *  The backend extracts one line item per table row (or text line) via
+   *  the shared PDF parser; see backend pdf_import for the strategy. */
+  createSessionFromPdf: async (
+    spec: {
+      project_id: string;
+      file: File;
+      name?: string;
+      catalogue_id?: string | null;
+      construction_stage?: ConstructionStage | null;
+    },
+  ): Promise<MatchSession> => {
+    const token = useAuthStore.getState().accessToken;
+    const fd = new FormData();
+    fd.append('project_id', spec.project_id);
+    fd.append('file', spec.file);
+    if (spec.name) fd.append('name', spec.name);
+    if (spec.catalogue_id) fd.append('catalogue_id', spec.catalogue_id);
+    if (spec.construction_stage)
+      fd.append('construction_stage', spec.construction_stage);
+    const res = await fetch(`${PREFIX}/sessions/from-pdf`, {
+      method: 'POST',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        Accept: 'application/json',
+      },
+      body: fd,
+    });
+    if (!res.ok) {
+      let detail = res.statusText;
+      try {
+        const body = await res.json();
+        detail = formatErrorDetail(body) || res.statusText;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(`${res.status} ${detail}`);
+    }
+    return (await res.json()) as MatchSession;
+  },
+
   listSessions: (
     projectId: string,
     params?: { include_archived?: boolean; limit?: number },

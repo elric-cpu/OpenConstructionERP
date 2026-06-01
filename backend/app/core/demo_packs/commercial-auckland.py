@@ -48,7 +48,7 @@ TEMPLATE = DemoTemplate(
         "lng": 174.9089,
     },
     validation_rule_sets=["nrm", "boq_quality"],
-    boq_name="Elemental Cost Plan — NRM 1 (NZ)",
+    boq_name="Elemental Cost Plan - NRM 1 (NZ)",
     boq_description=(
         "Elemental cost plan to NRM 1 conventions (NZIQS practice), measured "
         "trades; NZ Building Code compliant, NZS 3910:2023 contract"
@@ -63,7 +63,7 @@ TEMPLATE = DemoTemplate(
         # -- 1. Preliminaries & General -------------------------------------
         (
             "1",
-            "1 — Preliminaries & General (P&G)",
+            "1 - Preliminaries & General (P&G)",
             {"nrm": "0"},
             [
                 ("1.1", "Site establishment and disestablishment (Site set-up)", "lsum", 1, 185000.00, {"nrm": "0.1"}),
@@ -83,7 +83,7 @@ TEMPLATE = DemoTemplate(
         # -- 2. Site Preparation & Earthworks -------------------------------
         (
             "2",
-            "2 — Site Preparation & Earthworks",
+            "2 - Site Preparation & Earthworks",
             {"nrm": "0"},
             [
                 ("2.1", "Geotechnical investigation and report (Ground investigation)", "lsum", 1, 42000.00, {"nrm": "0.3"}),
@@ -99,7 +99,7 @@ TEMPLATE = DemoTemplate(
         # -- 3. Substructure ------------------------------------------------
         (
             "3",
-            "3 — Substructure (NZS 3101 / NZS 1170)",
+            "3 - Substructure (NZS 3101 / NZS 1170)",
             {"nrm": "1"},
             [
                 ("3.1", "Mass excavation to foundations (Foundation excavation)", "m3", 2400, 24.00, {"nrm": "1.1"}),
@@ -117,7 +117,7 @@ TEMPLATE = DemoTemplate(
         # -- 4. Structural Frame --------------------------------------------
         (
             "4",
-            "4 — Frame (NZS 3404 steel)",
+            "4 - Frame (NZS 3404 steel)",
             {"nrm": "2"},
             [
                 ("4.1", "Structural steel portal frames fabricated (Portal frames)", "t", 320, 5650.00, {"nrm": "2.1"}),
@@ -134,7 +134,7 @@ TEMPLATE = DemoTemplate(
         # -- 5. Upper Floors, Stairs & Roof Structure -----------------------
         (
             "5",
-            "5 — Upper Floors, Stairs & Roof Structure",
+            "5 - Upper Floors, Stairs & Roof Structure",
             {"nrm": "2"},
             [
                 ("5.1", "Steel stairs and landings to office (Internal stairs)", "pcs", 3, 28500.00, {"nrm": "2.4"}),
@@ -149,7 +149,7 @@ TEMPLATE = DemoTemplate(
         # -- 6. External Envelope -------------------------------------------
         (
             "6",
-            "6 — Envelope (External Walls, Cladding, Roof)",
+            "6 - Envelope (External Walls, Cladding, Roof)",
             {"nrm": "5"},
             [
                 ("6.1", "Precast tilt-up concrete panels 180mm (Tilt panels)", "m2", 3400, 295.00, {"nrm": "5.1"}),
@@ -168,7 +168,7 @@ TEMPLATE = DemoTemplate(
         # -- 7. External Doors & Glazing ------------------------------------
         (
             "7",
-            "7 — External Doors, Windows & Louvres",
+            "7 - External Doors, Windows & Louvres",
             {"nrm": "6"},
             [
                 ("7.1", "Glazed automatic entrance doors (Auto entrance)", "pcs", 2, 24500.00, {"nrm": "6.1"}),
@@ -181,7 +181,7 @@ TEMPLATE = DemoTemplate(
         # -- 8. Internal Walls, Partitions & Doors --------------------------
         (
             "8",
-            "8 — Internal Walls, Partitions & Doors",
+            "8 - Internal Walls, Partitions & Doors",
             {"nrm": "7"},
             [
                 ("8.1", "Steel-stud GIB partitions to office (Internal partitions)", "m2", 3800, 138.00, {"nrm": "7.1"}),
@@ -195,7 +195,7 @@ TEMPLATE = DemoTemplate(
         # -- 9. Internal Finishes -------------------------------------------
         (
             "9",
-            "9 — Internal Finishes",
+            "9 - Internal Finishes",
             {"nrm": "8"},
             [
                 ("9.1", "Floor levelling and screed to office (Floor screed)", "m2", 2600, 42.00, {"nrm": "8.1"}),
@@ -212,7 +212,7 @@ TEMPLATE = DemoTemplate(
         # -- 10. Fittings, Furnishings & Equipment --------------------------
         (
             "10",
-            "10 — Fittings, Furnishings & Equipment (FF&E)",
+            "10 - Fittings, Furnishings & Equipment (FF&E)",
             {"nrm": "8"},
             [
                 ("10.1", "Kitchen / staff breakout joinery (Kitchen joinery)", "m", 48, 1250.00, {"nrm": "8.4"}),
@@ -226,7 +226,7 @@ TEMPLATE = DemoTemplate(
         # -- 11. Mechanical Services (HVAC) ---------------------------------
         (
             "11",
-            "11 — Mechanical Services (HVAC)",
+            "11 - Mechanical Services (HVAC)",
             {"nrm": "8"},
             [
                 ("11.1", "VRF heat-pump air conditioning to office (VRF system)", "m2", 2600, 320.00, {"nrm": "8.1"}),
@@ -241,7 +241,7 @@ TEMPLATE = DemoTemplate(
         # -- 12. Hydraulic & Fire Services ----------------------------------
         (
             "12",
-            "12 — Hydraulic & Fire Services",
+            "12 - Hydraulic & Fire Services",
             {"nrm": "8"},
             [
                 ("12.1", "Sanitary plumbing and drainage internal (Internal plumbing)", "m", 1200, 92.00, {"nrm": "8.1"}),
@@ -257,7 +257,7 @@ TEMPLATE = DemoTemplate(
         # -- 13. Electrical & Communications --------------------------------
         (
             "13",
-            "13 — Electrical & Communications",
+            "13 - Electrical & Communications",
             {"nrm": "8"},
             [
                 ("13.1", "Mains supply, switchboards and distribution (Switchboards)", "lsum", 1, 285000.00, {"nrm": "8.1"}),
@@ -274,7 +274,7 @@ TEMPLATE = DemoTemplate(
         # -- 14. External Works & Landscaping -------------------------------
         (
             "14",
-            "14 — Siteworks & External Works",
+            "14 - Siteworks & External Works",
             {"nrm": "9"},
             [
                 ("14.1", "Heavy-duty concrete hardstand to yard (Hardstand)", "m2", 3800, 135.00, {"nrm": "9.1"}),
@@ -296,7 +296,7 @@ TEMPLATE = DemoTemplate(
         ("GST", 15.0, "tax", "cumulative"),
     ],
     total_months=16,
-    tender_name="Main Contract — Design & Build",
+    tender_name="Main Contract - Design & Build",
     tender_companies=[
         ("Naylor Love Construction", "tenders@naylorlove.co.nz", 0.98),
         ("Hawkins (Downer)", "bids@hawkins.co.nz", 1.05),
@@ -325,7 +325,7 @@ TEMPLATE = DemoTemplate(
     },
     tender_packages=[
         (
-            "Main Contract — Design & Build",
+            "Main Contract - Design & Build",
             "Full design-and-build delivery under NZS 3910:2023",
             "evaluating",
             [

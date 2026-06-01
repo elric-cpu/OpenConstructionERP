@@ -75,11 +75,15 @@ interface PlaceOnMapPickerProps {
   onPlaced?: (modelId: string | null) => void;
 }
 
-function isPdfDocument(doc: DocumentItem): boolean {
+/** Classify a document as a PDF for the place-on-map flow. Reads the
+ *  document's ``name``/``mime_type`` defensively: the CDE document model
+ *  carries ``name`` (not ``filename``), and either field may be missing,
+ *  so neither is dereferenced without a guard. Exported for unit testing. */
+export function isPdfDocument(doc: DocumentItem): boolean {
   if (doc.mime_type && doc.mime_type.toLowerCase() === 'application/pdf') {
     return true;
   }
-  return doc.filename.toLowerCase().endsWith('.pdf');
+  return (doc.name ?? '').toLowerCase().endsWith('.pdf');
 }
 
 function modelFormatOf(model: BIMModelData): string {
@@ -235,10 +239,10 @@ export function PlaceOnMapPicker({
       setBusyId(doc.id);
       try {
         const blob = await downloadDocumentBlob(doc.id);
-        const file = new File([blob], doc.filename, {
+        const file = new File([blob], doc.name, {
           type: 'application/pdf',
         });
-        await uploadPdfRasterOverlay(projectId, file, { name: doc.filename });
+        await uploadPdfRasterOverlay(projectId, file, { name: doc.name });
         addToast({
           type: 'success',
           title: t('geo_hub.place.placed_pdf_title', {
@@ -247,7 +251,7 @@ export function PlaceOnMapPicker({
           message: t('geo_hub.place.placed_pdf_message', {
             defaultValue:
               '{{name}} was added as an overlay. Drag its corners to position it.',
-            name: doc.filename,
+            name: doc.name,
           }),
         });
         await queryClient.invalidateQueries({
@@ -466,7 +470,7 @@ export function PlaceOnMapPicker({
               </h4>
               <ul className="divide-y divide-border-light overflow-hidden rounded-lg border border-border-light">
                 {pdfs.map((doc) => {
-                  const placed = placedPdfNames.has(doc.filename);
+                  const placed = placedPdfNames.has(doc.name);
                   const busy = busyId === doc.id;
                   return (
                     <li
@@ -478,10 +482,10 @@ export function PlaceOnMapPicker({
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-content-primary">
-                          {doc.filename}
+                          {doc.name}
                         </p>
                         <p className="text-xs text-content-tertiary">
-                          {(doc.size_bytes / 1024 / 1024).toFixed(1)} MB
+                          {((doc.file_size ?? 0) / 1024 / 1024).toFixed(1)} MB
                         </p>
                       </div>
                       {placed ? (

@@ -50,7 +50,7 @@ TEMPLATE = DemoTemplate(
         "lng": -104.9942,
     },
     validation_rule_sets=["masterformat", "boq_quality"],
-    boq_name="Larimer & 18th — Schematic Cost Estimate (CSI MasterFormat)",
+    boq_name="Larimer & 18th - Schematic Cost Estimate (CSI MasterFormat)",
     boq_description=(
         "Detailed core-and-shell + spec fit-out cost estimate to CSI "
         "MasterFormat 2020 divisions, RSMeans Denver 2026 pricing, IBC 2021."
@@ -65,7 +65,7 @@ TEMPLATE = DemoTemplate(
         # -- 01 General Requirements -------------------------------------------
         (
             "01",
-            "01 — General Requirements",
+            "01 - General Requirements",
             {"masterformat": "01"},
             [
                 ("01.010", "General conditions & project management staff (General conditions)", "month", 20, 78000.00, {"masterformat": "01 31 00"}),
@@ -76,13 +76,13 @@ TEMPLATE = DemoTemplate(
                 ("01.060", "Surveying & layout control (Survey/layout)", "lsum", 1, 95000.00, {"masterformat": "01 71 23"}),
                 ("01.070", "Construction waste management & recycling (Waste mgmt)", "lsum", 1, 88000.00, {"masterformat": "01 74 19"}),
                 ("01.080", "Final cleaning (Final cleaning)", "m2", 12200, 6.50, {"masterformat": "01 74 23"}),
-                ("01.090", "Commissioning (Cx) authority — LEED v4 (Commissioning)", "lsum", 1, 145000.00, {"masterformat": "01 91 00"}),
+                ("01.090", "Commissioning (Cx) authority - LEED v4 (Commissioning)", "lsum", 1, 145000.00, {"masterformat": "01 91 00"}),
             ],
         ),
         # -- 03 Concrete -------------------------------------------------------
         (
             "03",
-            "03 — Concrete (ACI 318-19)",
+            "03 - Concrete (ACI 318-19)",
             {"masterformat": "03"},
             [
                 ("03.010", "Spread & continuous footings, f'c 4000 psi (Footings)", "m3", 620, 295.00, {"masterformat": "03 30 00"}),
@@ -100,7 +100,7 @@ TEMPLATE = DemoTemplate(
         # -- 04 Masonry --------------------------------------------------------
         (
             "04",
-            "04 — Masonry",
+            "04 - Masonry",
             {"masterformat": "04"},
             [
                 ("04.010", "CMU 200mm load-bearing, stair/elevator cores (CMU walls)", "m2", 2400, 115.00, {"masterformat": "04 22 00"}),
@@ -113,7 +113,7 @@ TEMPLATE = DemoTemplate(
         # -- 05 Metals (AISC 360-16) -------------------------------------------
         (
             "05",
-            "05 — Metals (AISC 360-16)",
+            "05 - Metals (AISC 360-16)",
             {"masterformat": "05"},
             [
                 ("05.010", "Structural steel frame, W-shapes ASTM A992 (Steel frame)", "t", 720, 4250.00, {"masterformat": "05 12 00"}),
@@ -129,7 +129,7 @@ TEMPLATE = DemoTemplate(
         # -- 06 Wood, Plastics & Composites ------------------------------------
         (
             "06",
-            "06 — Wood, Plastics & Composites",
+            "06 - Wood, Plastics & Composites",
             {"masterformat": "06"},
             [
                 ("06.010", "Rough carpentry, blocking & nailers (Rough carpentry)", "lsum", 1, 68000.00, {"masterformat": "06 10 00"}),
@@ -141,7 +141,7 @@ TEMPLATE = DemoTemplate(
         # -- 07 Thermal & Moisture Protection ----------------------------------
         (
             "07",
-            "07 — Thermal & Moisture Protection",
+            "07 - Thermal & Moisture Protection",
             {"masterformat": "07"},
             [
                 ("07.010", "Below-grade waterproofing, sheet membrane (Waterproofing)", "m2", 2600, 52.00, {"masterformat": "07 13 00"}),
@@ -158,7 +158,7 @@ TEMPLATE = DemoTemplate(
         # -- 08 Openings -------------------------------------------------------
         (
             "08",
-            "08 — Openings",
+            "08 - Openings",
             {"masterformat": "08"},
             [
                 ("08.010", "Unitised aluminium curtain wall, thermally broken (Curtain wall)", "m2", 5600, 685.00, {"masterformat": "08 44 13"}),
@@ -175,7 +175,7 @@ TEMPLATE = DemoTemplate(
         # -- 09 Finishes -------------------------------------------------------
         (
             "09",
-            "09 — Finishes",
+            "09 - Finishes",
             {"masterformat": "09"},
             [
                 ("09.010", "Metal-stud & gypsum board partitions (GWB partitions)", "m2", 14500, 62.00, {"masterformat": "09 21 16"}),
@@ -193,7 +193,7 @@ TEMPLATE = DemoTemplate(
         # -- 10 Specialties ----------------------------------------------------
         (
             "10",
-            "10 — Specialties",
+            "10 - Specialties",
             {"masterformat": "10"},
             [
                 ("10.010", "Toilet partitions, solid phenolic (Toilet partitions)", "pcs", 64, 1250.00, {"masterformat": "10 21 13"}),
@@ -207,7 +207,7 @@ TEMPLATE = DemoTemplate(
         # -- 14 Conveying Equipment --------------------------------------------
         (
             "14",
-            "14 — Conveying Equipment",
+            "14 - Conveying Equipment",
             {"masterformat": "14"},
             [
                 ("14.010", "Passenger elevators, MRL gearless 1600kg/7-stop (Passenger lifts)", "pcs", 3, 215000.00, {"masterformat": "14 21 00"}),
@@ -218,7 +218,7 @@ TEMPLATE = DemoTemplate(
         # -- 21 Fire Suppression -----------------------------------------------
         (
             "21",
-            "21 — Fire Suppression (NFPA 13)",
+            "21 - Fire Suppression (NFPA 13)",
             {"masterformat": "21"},
             [
                 ("21.010", "Wet-pipe sprinkler system, full coverage (Sprinklers)", "m2", 12200, 34.00, {"masterformat": "21 13 13"}),
@@ -230,7 +230,7 @@ TEMPLATE = DemoTemplate(
         # -- 22 Plumbing -------------------------------------------------------
         (
             "22",
-            "22 — Plumbing",
+            "22 - Plumbing",
             {"masterformat": "22"},
             [
                 ("22.010", "Domestic water distribution, copper/PEX (Domestic water)", "m2", 12200, 28.00, {"masterformat": "22 11 00"}),
@@ -244,7 +244,7 @@ TEMPLATE = DemoTemplate(
         # -- 23 HVAC -----------------------------------------------------------
         (
             "23",
-            "23 — HVAC",
+            "23 - HVAC",
             {"masterformat": "23"},
             [
                 ("23.010", "Rooftop VAV air-handling units, 100% OA economizer (RTU/AHU)", "pcs", 6, 165000.00, {"masterformat": "23 74 13"}),
@@ -262,7 +262,7 @@ TEMPLATE = DemoTemplate(
         # -- 26 Electrical (NEC 2023) ------------------------------------------
         (
             "26",
-            "26 — Electrical (NEC 2023)",
+            "26 - Electrical (NEC 2023)",
             {"masterformat": "26"},
             [
                 ("26.010", "Utility service, 2500A 480/277V switchgear (Service/switchgear)", "lsum", 1, 485000.00, {"masterformat": "26 24 13"}),
@@ -279,7 +279,7 @@ TEMPLATE = DemoTemplate(
         # -- 27 Communications -------------------------------------------------
         (
             "27",
-            "27 — Communications",
+            "27 - Communications",
             {"masterformat": "27"},
             [
                 ("27.010", "Structured cabling, Cat 6A backbone & horizontal (Structured cabling)", "m2", 12200, 22.00, {"masterformat": "27 10 00"}),
@@ -292,7 +292,7 @@ TEMPLATE = DemoTemplate(
         # -- 31 Earthwork ------------------------------------------------------
         (
             "31",
-            "31 — Earthwork",
+            "31 - Earthwork",
             {"masterformat": "31"},
             [
                 ("31.010", "Clearing, grubbing & demolition of existing (Site clearing)", "m2", 4200, 12.00, {"masterformat": "31 10 00"}),
@@ -307,7 +307,7 @@ TEMPLATE = DemoTemplate(
         # -- 32 Exterior Improvements ------------------------------------------
         (
             "32",
-            "32 — Exterior Improvements",
+            "32 - Exterior Improvements",
             {"masterformat": "32"},
             [
                 ("32.010", "Asphalt paving, service drive (Asphalt paving)", "m2", 1200, 58.00, {"masterformat": "32 12 16"}),
@@ -418,7 +418,7 @@ TEMPLATE = DemoTemplate(
         ("Commissioning & TAB", "2027-11-01", "2028-01-31"),
         ("Substantial Completion & Turnover", "2027-12-01", "2028-02-28"),
     ],
-    budget_boq_name="Larimer & 18th — Control Budget",
+    budget_boq_name="Larimer & 18th - Control Budget",
     planned_budget=36_500_000,
     actual_spend_ratio=0.31,
     spi_override=1.01,

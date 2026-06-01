@@ -778,13 +778,11 @@ function HelpMenu() {
           role="menu"
           className="absolute right-0 top-full mt-1.5 w-60 rounded-xl border border-border-light bg-surface-elevated shadow-lg animate-scale-in py-1 z-40"
         >
-          {/* External resources. Documentation points at the repository's
-              docs/ folder on GitHub (the marketing-site docs.html 404s), a
-              real browsable destination on the same repo the GitHub item
-              below links to. */}
+          {/* External resources. Documentation points at the official docs
+              site so users land on the maintained guides, not the raw repo. */}
           <a
             role="menuitem"
-            href="https://github.com/datadrivenconstruction/OpenConstructionERP/tree/main/docs"
+            href="https://openconstructionerp.com/docs"
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => setOpen(false)}

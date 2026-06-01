@@ -671,14 +671,6 @@ class DiaryImmutablePayloadHashResponse(BaseModel):
     payload_preview: dict[str, Any] = Field(default_factory=dict)
 
 
-class DiaryPdfStubResponse(BaseModel):
-    """Placeholder response for the PDF-renderer hook."""
-
-    diary_id: UUID
-    pdf_export_ref: UUID
-    status: str = "stub"
-
-
 # ── Sign / close / archive ────────────────────────────────────────────────
 
 

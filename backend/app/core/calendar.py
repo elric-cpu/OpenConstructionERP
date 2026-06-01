@@ -8,9 +8,13 @@ Per-country rules are defined inline (public holidays and working weeks) and
 drawn from the regional-pack ``holidays`` config keys.
 
 Easter computation uses ``dateutil.easter`` (already a project dependency).
-Lunar holidays (Eid al-Fitr, Eid al-Adha, Diwali, Holi, Carnaval) are
-approximated — see in-code TODO comments.  Real lunar-calendar support is a
-separate epic requiring Hijri / Hindu calendar libraries.
+Hijri (Islamic) holidays use the maintained ``hijridate`` library to convert
+Eid al-Fitr (1 Shawwal) and Eid al-Adha (10 Dhu al-Hijjah) to Gregorian for
+any requested year.  Japanese equinoxes use the standard integer
+approximation valid for 1980-2099.  Hindu holidays (Diwali, Holi) have no
+reliable lightweight panchang library, so they are served from a curated
+multi-year lookup table; years outside the table skip those holidays rather
+than crash.  Carnaval (Brazil) is derived from Easter.
 
 Sources:
 - DE: Bundesgesetzblatt, 2026 federal holidays for all states' common days
@@ -30,6 +34,7 @@ from datetime import date, timedelta
 from typing import Any
 
 from dateutil.easter import easter  # type: ignore[import]
+from hijridate import Gregorian, Hijri  # type: ignore[import]
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +68,95 @@ def _nth_weekday(year: int, month: int, weekday: int, n: int) -> date:
     diff = (last_of_month.weekday() - weekday) % 7
     last_occurrence = last_of_month - timedelta(days=diff)
     return last_occurrence + timedelta(weeks=n + 1)
+
+
+def _hijri_dates_in_gregorian_year(month: int, day: int, year: int) -> list[date]:
+    """Return every Gregorian date matching a fixed Hijri month/day in ``year``.
+
+    Converts the given Islamic-calendar day (e.g. 1 Shawwal for Eid al-Fitr,
+    10 Dhu al-Hijjah for Eid al-Adha) to Gregorian for each Hijri year that
+    can overlap the requested Gregorian year.
+
+    Because the Islamic (lunar) year is about 11 days shorter than the
+    Gregorian year, a single Islamic date can land in the requested Gregorian
+    year zero times, once, or twice (the latter near the start/end of a year,
+    e.g. Eid al-Fitr falls in both January and December of 2033). All matches
+    are returned so callers can mark each one.
+
+    Args:
+        month: Hijri month (1-12), e.g. ``10`` for Shawwal.
+        day:   Hijri day of month (1-30), e.g. ``1`` for the 1st.
+        year:  Gregorian year to search.
+
+    Returns:
+        list[date] - Gregorian dates landing in ``year``; empty if the year is
+        outside the converter's supported range or no match exists.
+    """
+    candidate_hijri_years: set[int] = set()
+    for boundary in (date(year, 1, 1), date(year, 12, 31)):
+        try:
+            hijri_year = Gregorian(boundary.year, boundary.month, boundary.day).to_hijri().year
+            candidate_hijri_years.update({hijri_year - 1, hijri_year, hijri_year + 1})
+        except (OverflowError, ValueError):
+            # Gregorian boundary outside the converter's supported range.
+            continue
+
+    matches: list[date] = []
+    for hijri_year in sorted(candidate_hijri_years):
+        try:
+            g = Hijri(hijri_year, month, day).to_gregorian()
+        except (OverflowError, ValueError):
+            continue
+        converted = date(g.year, g.month, g.day)
+        if converted.year == year:
+            matches.append(converted)
+    return matches
+
+
+def _equinox_day(year: int, *, spring: bool) -> int:
+    """Return the day-of-month of the Japanese spring or autumn equinox.
+
+    Uses the well-known integer approximation that is accurate for the years
+    1980-2099 (the range Japan's holiday law is published against):
+
+        spring = floor(20.8431 + 0.242194 * (year - 1980) - floor((year - 1980) / 4))
+        autumn = floor(23.2488 + 0.242194 * (year - 1980) - floor((year - 1980) / 4))
+
+    The equinox months are fixed: March for spring, September for autumn.
+
+    Args:
+        year:   Gregorian year (intended range 1980-2099).
+        spring: True for the vernal (March) equinox, False for the autumnal
+                (September) equinox.
+
+    Returns:
+        int - The day of the month on which the equinox falls.
+    """
+    base = 20.8431 if spring else 23.2488
+    offset = year - 1980
+    return int(base + 0.242194 * offset - offset // 4)
+
+
+# Curated Hindu festival dates (Gregorian). There is no reliable lightweight
+# panchang library, so these are taken from widely published almanac dates for
+# India. Holi is the day of Holika Dahan's following morning (Phalguna
+# Purnima); Diwali is the main Lakshmi Puja day (Kartik Amavasya). Years
+# outside this table skip the holiday rather than guessing. Extend the table as
+# authoritative dates are published.
+_HINDU_HOLIDAYS: dict[int, dict[str, tuple[int, int]]] = {
+    2024: {"holi": (3, 25), "diwali": (11, 1)},
+    2025: {"holi": (3, 14), "diwali": (10, 21)},
+    2026: {"holi": (3, 4), "diwali": (11, 8)},
+    2027: {"holi": (3, 22), "diwali": (10, 29)},
+    2028: {"holi": (3, 11), "diwali": (10, 17)},
+    2029: {"holi": (3, 1), "diwali": (11, 5)},
+    2030: {"holi": (3, 20), "diwali": (10, 26)},
+    2031: {"holi": (3, 9), "diwali": (11, 14)},
+    2032: {"holi": (3, 27), "diwali": (11, 2)},
+    2033: {"holi": (3, 16), "diwali": (10, 22)},
+    2034: {"holi": (3, 5), "diwali": (11, 10)},
+    2035: {"holi": (3, 24), "diwali": (10, 30)},
+}
 
 
 # ── Per-country holiday calculators ──────────────────────────────────────────
@@ -150,40 +244,44 @@ def _holidays_us(year: int) -> set[date]:
 def _holidays_me(year: int) -> set[date]:
     """GCC/Middle-East public holidays (UAE federal, Saudi national).
 
-    Working week is Sunday–Thursday (weekdays 6, 0, 1, 2, 3).
-    Eid al-Fitr and Eid al-Adha are lunar-calendar events.
-    TODO: Replace stub with a proper Hijri→Gregorian converter when the
-          lunar-calendar epic is implemented.  Stub conservatively marks
-          the approximate window as non-working.
+    Working week is Sunday-Thursday (weekdays 6, 0, 1, 2, 3).
+
+    Eid al-Fitr (1 Shawwal) and Eid al-Adha (10 Dhu al-Hijjah) are lunar
+    events converted from the Islamic calendar via ``hijridate``. The public
+    holiday in the UAE/Saudi runs for several days from each Eid, so a fixed
+    span is marked from each converted start date:
+
+    * Eid al-Fitr: 3 days (1-3 Shawwal).
+    * Eid al-Adha: 4 days (10-13 Dhu al-Hijjah, including Arafat eve overlap).
+
+    Both Eids can occur zero, one, or two times within a single Gregorian year
+    (the Islamic year is ~11 days shorter), so every converted occurrence is
+    expanded.
     """
     holidays: set[date] = {
         date(year, 1, 1),  # New Year's Day (Gregorian)
         date(year, 12, 2),  # UAE National Day
         date(year, 12, 3),  # UAE National Day (2nd day)
     }
-    # Eid al-Fitr stub (end of Ramadan): approximately late March / early April
-    # in 2026 the lunar calendar places it around ~March 30.
-    # TODO: Use a Hijri library for accurate calculation.
-    holidays.add(date(year, 3, 30))  # Eid al-Fitr approx Day 1
-    holidays.add(date(year, 3, 31))  # Eid al-Fitr approx Day 2
-    holidays.add(date(year, 4, 1))  # Eid al-Fitr approx Day 3
-
-    # Eid al-Adha stub: approximately early June 2026.
-    # TODO: Use a Hijri library for accurate calculation.
-    holidays.add(date(year, 6, 6))  # Eid al-Adha approx Day 1
-    holidays.add(date(year, 6, 7))  # Eid al-Adha approx Day 2
-    holidays.add(date(year, 6, 8))  # Eid al-Adha approx Day 3
-    holidays.add(date(year, 6, 9))  # Eid al-Adha approx Day 4
+    # Eid al-Fitr: 1 Shawwal (Hijri month 10, day 1), observed for 3 days.
+    for start in _hijri_dates_in_gregorian_year(10, 1, year):
+        for offset in range(3):
+            holidays.add(start + timedelta(days=offset))
+    # Eid al-Adha: 10 Dhu al-Hijjah (Hijri month 12, day 10), observed 4 days.
+    for start in _hijri_dates_in_gregorian_year(12, 10, year):
+        for offset in range(4):
+            holidays.add(start + timedelta(days=offset))
 
     return holidays
 
 
 def _holidays_in(year: int) -> set[date]:
-    """India gazetted national holidays (Central Government — Gazette of India).
+    """India gazetted national holidays (Central Government - Gazette of India).
 
-    Regional state holidays are excluded (too many variations).
-    Diwali and Holi are lunar/lunisolar — approximate dates used.
-    TODO: Replace stubs with a proper Hindu panchang calculation.
+    Regional state holidays are excluded (too many variations). Diwali and
+    Holi are lunisolar; their Gregorian dates are served from the curated
+    ``_HINDU_HOLIDAYS`` table. Years outside the table simply omit those two
+    festivals rather than guessing an incorrect date.
     """
     holidays: set[date] = {
         date(year, 1, 26),  # Republic Day
@@ -191,13 +289,12 @@ def _holidays_in(year: int) -> set[date]:
         date(year, 10, 2),  # Gandhi Jayanti
         date(year, 12, 25),  # Christmas Day
     }
-    # Holi stub: ~approx March 13 for 2026 (Phalgun Purnima)
-    # TODO: Replace with Hindu calendar computation.
-    holidays.add(date(year, 3, 13))  # Holi (approx)
-
-    # Diwali stub: ~approx Oct 20 for 2026 (Karthik Amavasya)
-    # TODO: Replace with Hindu calendar computation.
-    holidays.add(date(year, 10, 20))  # Diwali (approx)
+    hindu = _HINDU_HOLIDAYS.get(year)
+    if hindu is not None:
+        holidays.add(date(year, *hindu["holi"]))  # Holi (Phalguna Purnima)
+        holidays.add(date(year, *hindu["diwali"]))  # Diwali (Kartik Amavasya)
+    else:
+        logger.info("No curated Hindu holiday dates for %d; Holi/Diwali omitted", year)
 
     return holidays
 
@@ -233,11 +330,10 @@ def _holidays_jp(year: int) -> set[date]:
         date(year, 11, 23),  # Labour Thanksgiving Day (勤労感謝の日)
     ]:
         days |= _sub(d)
-    # Autumnal Equinox (秋分の日): approx Sep 22-23 — use 23 as a reasonable stub
-    # TODO: Precise equinox calculation
-    days |= _sub(date(year, 9, 22))
-    # Vernal Equinox (春分の日): approx Mar 20
-    days |= _sub(date(year, 3, 20))
+    # Vernal Equinox (春分の日) and Autumnal Equinox (秋分の日): computed via the
+    # standard integer approximation (accurate for 1980-2099). See _equinox_day.
+    days |= _sub(date(year, 3, _equinox_day(year, spring=True)))
+    days |= _sub(date(year, 9, _equinox_day(year, spring=False)))
     return days
 
 

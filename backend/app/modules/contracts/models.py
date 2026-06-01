@@ -153,6 +153,10 @@ class ContractLine(Base):
         nullable=False,
         default=Decimal("0"),
     )
+    # ── Cost Spine linkage (v6.4) ────────────────────────────────────────
+    # Additive nullable link to the cost line this SoV line is contracted
+    # against, so contracted value and claimed-to-date roll up by cost line.
+    cost_line_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True, index=True)
     order_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         "metadata",

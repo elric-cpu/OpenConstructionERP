@@ -48,6 +48,7 @@ import {
 } from 'lucide-react';
 import { Card, Skeleton, Badge } from '@/shared/ui';
 import { apiGet, ApiError } from '@/shared/lib/api';
+import { getPhotoThumbUrl } from '@/features/documents/api';
 import { useProjectWidgetsRollup } from '../hooks/useProjectWidgetsRollup';
 import type {
   ProjectBudgetBurnPayload,
@@ -741,6 +742,8 @@ interface AIInsight {
 export function AIInsightsWidget({ projectId }: { projectId: string }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  // Recent AI insights distilled from the agent runs the user executed
+  // against this project. Empty (not an error) when none have run yet.
   const { data, isLoading } = useGracefulQuery<AIInsight[]>(
     ['proj-widget-ai', projectId],
     `/v1/ai-agents/insights?project_id=${projectId}&limit=2`,
@@ -808,9 +811,10 @@ export function AIInsightsWidget({ projectId }: { projectId: string }) {
 
 interface FileItem {
   id: string;
-  filename: string;
-  size?: number;
-  uploaded_at?: string;
+  // The documents API serialises the original filename as ``name`` and the
+  // byte size as ``file_size`` (CDE document model) - not ``filename``/``size``.
+  name: string;
+  file_size?: number;
   mime_type?: string;
 }
 
@@ -826,7 +830,7 @@ export function RecentFilesWidget({ projectId }: { projectId: string }) {
   const navigate = useNavigate();
   const { data, isLoading } = useGracefulQuery<FileItem[]>(
     ['proj-widget-files', projectId],
-    `/v1/files/?project_id=${projectId}&limit=5`,
+    `/v1/documents/?project_id=${projectId}`,
   );
 
   const title = t('project.widget.recent-files.title', { defaultValue: 'Recent files' });
@@ -858,10 +862,10 @@ export function RecentFilesWidget({ projectId }: { projectId: string }) {
             >
               <FolderOpen size={12} className="text-content-quaternary shrink-0" />
               <span className="flex-1 truncate text-content-primary">
-                {file.filename}
+                {file.name}
               </span>
               <span className="text-content-tertiary tabular-nums shrink-0">
-                {fmtBytes(file.size)}
+                {fmtBytes(file.file_size)}
               </span>
             </li>
           ))}
@@ -885,7 +889,7 @@ export function PhotoStripWidget({ projectId }: { projectId: string }) {
   const navigate = useNavigate();
   const { data, isLoading } = useGracefulQuery<PhotoItem[]>(
     ['proj-widget-photos', projectId],
-    `/v1/projects/${projectId}/photos?limit=6`,
+    `/v1/documents/photos/?project_id=${projectId}`,
   );
 
   const title = t('project.widget.photo-strip.title', { defaultValue: 'Photo strip' });
@@ -921,18 +925,12 @@ export function PhotoStripWidget({ projectId }: { projectId: string }) {
               onClick={() => navigate(`/projects/${projectId}?tab=photos`)}
               className="aspect-square overflow-hidden rounded-md border border-border-light bg-surface-secondary hover:border-oe-blue/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
             >
-              {photo.thumbnail_url || photo.url ? (
-                <img
-                  src={photo.thumbnail_url ?? photo.url}
-                  alt=""
-                  className="h-full w-full object-cover"
-                  loading="lazy"
-                />
-              ) : (
-                <span className="flex h-full w-full items-center justify-center text-content-quaternary">
-                  <ImageIcon size={14} />
-                </span>
-              )}
+              <img
+                src={getPhotoThumbUrl(photo.id)}
+                alt=""
+                className="h-full w-full object-cover"
+                loading="lazy"
+              />
             </button>
           ))}
         </div>
@@ -1350,9 +1348,11 @@ interface ScheduleSummary {
 export function ScheduleStripWidget({ projectId }: { projectId: string }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  // Project-wide schedule rollup (progress, completed/delayed counts, next
+  // milestone) computed across all of the project's schedules.
   const { data, isLoading } = useGracefulQuery<ScheduleSummary>(
     ['proj-widget-schedule', projectId],
-    `/v1/schedule/projects/${projectId}/summary`,
+    `/v1/schedule/stats/?project_id=${projectId}`,
   );
 
   const title = t('project.widget.schedule-strip.title', {
@@ -1376,10 +1376,10 @@ export function ScheduleStripWidget({ projectId }: { projectId: string }) {
     <WidgetShell icon={icon} title={title} subtitle={subtitle} cta={cta}>
       {isLoading ? (
         <WidgetSkeleton rows={2} />
-      ) : !data ? (
+      ) : !data || !data.total_activities ? (
         <WidgetEmpty
           message={t('project.widget.schedule-strip.empty', {
-            defaultValue: 'No schedule data — create your first schedule.',
+            defaultValue: 'No schedule data yet. Create your first schedule.',
           })}
         />
       ) : (

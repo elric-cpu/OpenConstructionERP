@@ -14,7 +14,7 @@
  * rendered as plain ``<img src>``.
  */
 
-import { apiGet, apiPost, API_BASE } from '@/shared/lib/api';
+import { apiGet, apiPost, API_BASE, getAuthToken } from '@/shared/lib/api';
 
 // ── Installed packs ──────────────────────────────────────────────────────────
 
@@ -140,6 +140,134 @@ export const FULL_INSTALL_STEPS: FullInstallStepName[] = [
   'vector_db',
   'demos',
 ];
+
+// ── Streaming full install (live per-step progress over SSE) ─────────────────
+
+/**
+ * The step ids the streaming installer emits. Superset of
+ * {@link FullInstallStepName}: the stream additionally announces a dedicated
+ * ``resources`` row (CWICR work items bundle their labour/material/equipment
+ * breakdown in the same load, so loading the work catalog loads the resource
+ * database in one pass; the stream surfaces the embedded resource count as its
+ * own progress row for clarity).
+ */
+export type StreamStepName =
+  | 'apply_pack'
+  | 'locale'
+  | 'cost_db'
+  | 'resources'
+  | 'vector_db'
+  | 'demos';
+
+/** A step descriptor from the stream's opening ``start`` event. */
+export interface StreamStepDescriptor {
+  step: StreamStepName;
+  /** i18next key the frontend can localize. */
+  label_key: string;
+  /** English fallback label (use as ``defaultValue``). */
+  label: string;
+}
+
+/** Discriminated union of the SSE frames the installer emits. */
+export type StreamInstallEvent =
+  | { type: 'start'; slug: string; total: number; steps: StreamStepDescriptor[] }
+  | { type: 'step_start'; step: StreamStepName; index: number; total: number }
+  | {
+      type: 'step_done';
+      step: StreamStepName;
+      index: number;
+      total: number;
+      status: FullInstallStepStatus;
+      detail: Record<string, unknown>;
+    }
+  | { type: 'done'; slug: string; ok: boolean; steps: FullInstallStep[] };
+
+/**
+ * Activate a partner pack with live per-step progress.
+ *
+ * Calls ``POST /api/v1/partner-pack/full-install-stream`` (Server-Sent Events)
+ * and invokes ``onEvent`` for every ``start`` / ``step_start`` / ``step_done`` /
+ * ``done`` frame, so the caller can drive a determinate progress bar + a named
+ * step checklist as each step actually runs server-side (apply preset, install
+ * language, load the work catalog and its resource database, build the vector
+ * index, create the demo projects).
+ *
+ * The endpoint is fail-soft: every step reports ``ok`` / ``skipped`` / ``error``
+ * and the stream always reaches a ``done`` frame, so a single failed step never
+ * throws here. Only a transport failure (network / auth / abort) rejects.
+ *
+ * Uses raw ``fetch`` + a ``ReadableStream`` reader (not the native
+ * ``EventSource``, which cannot send the ``Authorization`` header) - the same
+ * pattern the ERP chat stream uses.
+ */
+export async function fullInstallPackStream(
+  slug: string,
+  onEvent: (event: StreamInstallEvent) => void,
+  opts: { demoCount?: number; confirmDisables?: boolean; signal?: AbortSignal } = {},
+): Promise<void> {
+  const { demoCount = 2, confirmDisables = false, signal } = opts;
+  const token = getAuthToken();
+  const response = await fetch(`${API_BASE}/v1/partner-pack/full-install-stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      slug,
+      set_locale: true,
+      install_cost_db: true,
+      vectorize: true,
+      confirm_disables: confirmDisables,
+      demo_count: demoCount,
+    }),
+    signal,
+  });
+
+  if (!response.ok || !response.body) {
+    const detail = await response.text().catch(() => '');
+    throw new Error(detail || `Activation failed (HTTP ${response.status})`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let currentEvent = '';
+
+  // Parse standard SSE frames: ``event:`` line names the frame, the following
+  // ``data:`` line carries the JSON payload, a blank line terminates the frame.
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+    for (const rawLine of lines) {
+      const line = rawLine.replace(/\r$/, '');
+      if (line.trim() === '') {
+        currentEvent = '';
+        continue;
+      }
+      if (line.startsWith('event:')) {
+        currentEvent = line.slice(6).trim();
+        continue;
+      }
+      if (!line.startsWith('data:')) continue;
+      const jsonStr = line.slice(5).trim();
+      if (!jsonStr) continue;
+      let payload: Record<string, unknown>;
+      try {
+        payload = JSON.parse(jsonStr) as Record<string, unknown>;
+      } catch {
+        continue;
+      }
+      if (currentEvent === 'start' || currentEvent === 'step_start' || currentEvent === 'step_done' || currentEvent === 'done') {
+        onEvent({ type: currentEvent, ...payload } as StreamInstallEvent);
+      }
+    }
+  }
+}
 
 /**
  * Derive an ISO-3166 alpha-2 country code for a pack.

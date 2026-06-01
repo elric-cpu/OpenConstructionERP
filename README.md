@@ -789,7 +789,7 @@ That's it. The single wheel ships the backend plus the pre-built React frontend.
 > ```
 > Or run it straight through Python without changing anything. This works from any folder and starts the exact same app:
 > ```bash
-> python -m app.cli
+> python -m openconstructionerp
 > ```
 
 > **Ubuntu / Debian users:** on Ubuntu 23.04+ (including Ubuntu 26) and Debian 12+, `pip install` into the system Python fails with `error: externally-managed-environment` (PEP 668). The simplest fix is pipx (above), which is built for exactly this. If you prefer a venv:
@@ -800,7 +800,7 @@ That's it. The single wheel ships the backend plus the pre-built React frontend.
 > ```
 > Full Linux guide with system deps and troubleshooting: [docs/INSTALL_LINUX.md](docs/INSTALL_LINUX.md).
 
-If something looks off, run `openconstructionerp doctor` (or `python -m app.cli doctor`) for a per-check OK/WARN/ERROR report.
+If something looks off, run `openconstructionerp doctor` (or `python -m openconstructionerp doctor`) for a per-check OK/WARN/ERROR report.
 
 ### Alternative 1: One-line installer (handles PATH for you)
 

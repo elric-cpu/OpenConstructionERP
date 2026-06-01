@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 from importlib import resources
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.core.partner_pack.apply import (
@@ -27,6 +29,7 @@ from app.core.partner_pack.full_install import (
     FullInstallRequest,
     FullInstallResponse,
     full_install,
+    full_install_stream,
 )
 from app.dependencies import RequirePermission
 
@@ -135,6 +138,43 @@ async def full_install_pack(body: FullInstallRequest, request: Request) -> FullI
     a single ``apply_pack`` step with ``status="error"``.
     """
     return await full_install(body, app=request.app)
+
+
+@router.post(
+    "/full-install-stream",
+    summary="One-click install a pack's workspace with live SSE progress (admin)",
+    dependencies=[Depends(RequirePermission("admin"))],
+)
+async def full_install_pack_stream(body: FullInstallRequest, request: Request) -> StreamingResponse:
+    """Stream a pack activation step-by-step as Server-Sent Events.
+
+    Same orchestration as ``POST /full-install`` (apply preset, install language,
+    load the work catalog + its embedded resource database, build the vector
+    index, create demo projects) but emits one ``start`` / ``step_start`` /
+    ``step_done`` / ``done`` frame per step so the Modules-page activate dialog
+    can render a live, determinate progress bar with named steps and item counts.
+    Every step is fail-soft; the stream always reaches ``done``.
+
+    The generator opens its own DB sessions (the ``_step_*`` helpers do). It does
+    NOT depend on the request-scoped session: Starlette's BaseHTTPMiddleware
+    cancels that session between streamed chunks, which would kill the loaders
+    mid-import (see the same note on ``erp_chat.stream_chat``).
+    """
+    app = request.app
+
+    async def _gen() -> AsyncIterator[str]:
+        async for frame in full_install_stream(body, app=app):
+            yield frame
+
+    return StreamingResponse(
+        _gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post(

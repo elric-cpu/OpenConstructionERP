@@ -6,17 +6,21 @@ The service stitches together the source adapters and matchers behind
 a single API surface the router calls. Stateless: every method takes
 the AsyncSession explicitly so tests can pass a transactional session.
 
-Implemented in this revision:
+Implemented:
     create_session, get_session, update_session
     rebuild_groups, list_groups, get_group_detail
-    run_match (single method, with auto-confirm above threshold)
+    run_match (vector / resources / llm, with auto-confirm above threshold)
     confirm, bulk_confirm
+    split_group, merge_groups, skip_group
+    apply_to_boq (writes BOQ positions + scaled resource sub-rows)
+    no_match (custom / tbd / rfq - rfq creates a real draft RFQ)
     list_templates, lookup_templates, delete_template
 
-Stubbed — Phase A.5b / A.9 / A.10:
-    split_group, merge_groups, skip_group
-    apply_to_boq
-    no_match
+Sources: bim, dwg, text, boq, image/photo, pdf.
+Matchers: vector (dense+sparse fuse), resources (fuzzy catalogue), llm
+    (AI re-rank over the vector shortlist; degrades to vector when no
+    AI key is configured). The legacy "lexical" literal is rejected with
+    a clear error - sparse matching is fused into the vector matcher.
 """
 
 from __future__ import annotations
@@ -44,14 +48,15 @@ from app.core.match_service.envelope import (
 )
 from app.core.validation.messages import translate
 from app.modules.match_elements import ifc_labels, schemas, signature
+from app.modules.match_elements.matchers.llm import LLMMatcher
 from app.modules.match_elements.matchers.resources import ResourcesMatcher
 
-# LexicalMatcher was removed in v3 — sparse matching is handled natively
+# LexicalMatcher was removed in v3 - sparse matching is handled natively
 # inside the Qdrant ranker (BAAI/bge-m3 sparse vector + RRF fusion). The
 # "lexical" method literal is still accepted by the API for back-compat
-# with stored MatchSession rows, but ``_matcher("lexical")`` now raises
-# NotImplementedError so callers get a clean error instead of silently
-# routing into dead code.
+# with stored MatchSession rows, but ``_matcher("lexical")`` raises
+# NotImplementedError so callers get a clean error and switch to
+# method="vector" (which already carries the fused sparse signal).
 from app.modules.match_elements.matchers.vector import VectorMatcher
 from app.modules.match_elements.models import (
     MatchGroup,
@@ -64,6 +69,7 @@ from app.modules.match_elements.sources.bim_adapter import BIMSourceAdapter
 from app.modules.match_elements.sources.boq_adapter import BoqAdapter
 from app.modules.match_elements.sources.dwg_adapter import DwgAdapter
 from app.modules.match_elements.sources.image_adapter import ImageSourceAdapter
+from app.modules.match_elements.sources.pdf_adapter import PdfAdapter
 from app.modules.match_elements.sources.text_adapter import TextAdapter
 
 logger = logging.getLogger(__name__)
@@ -1346,10 +1352,15 @@ class MatchElementsService:
             return TextAdapter(db, match_session)
         if source == "boq":
             return BoqAdapter(db, match_session)
-        if source == "image":
+        if source in ("image", "photo"):
+            # ``photo`` is the public synonym for a single uploaded image;
+            # both route to the same vision-LLM adapter.
             return ImageSourceAdapter(db, match_session)
-        raise NotImplementedError(
-            f"Source '{source}' not yet supported (BIM/DWG/Text/BoQ/Image live; PDF still pending)."
+        if source == "pdf":
+            return PdfAdapter(db, match_session)
+        raise ValueError(
+            f"Source '{source}' is not a recognised match-elements source "
+            "(expected one of: bim, dwg, text, boq, image, photo, pdf)."
         )
 
     def _matcher(self, name: str, db: AsyncSession):
@@ -1359,13 +1370,16 @@ class MatchElementsService:
             raise NotImplementedError(
                 "The standalone lexical matcher was removed in v3. Sparse "
                 "matching is now fused into the vector matcher via the "
-                "BAAI/bge-m3 sparse vector and RRF re-ranking — call with "
+                "BAAI/bge-m3 sparse vector and RRF re-ranking - call with "
                 'method="vector" instead.'
             )
         if name == "resources":
             return ResourcesMatcher(db)
         if name == "llm":
-            raise NotImplementedError('LLM matcher deferred to Phase A.5+ — use method="vector".')
+            # AI-assisted re-rank over a vector-prefiltered shortlist.
+            # Degrades to the vector matcher (with a logged note) when no
+            # AI provider key is configured - never raises NotImplemented.
+            return LLMMatcher(db)
         raise ValueError(f"Unknown matcher: {name}")
 
     # ── Sessions ──────────────────────────────────────────────────────
@@ -1430,7 +1444,11 @@ class MatchElementsService:
             metadata["text_inputs"] = list(spec.text_inputs)
         elif spec.source == "boq" and spec.boq_rows:
             metadata["boq_rows"] = list(spec.boq_rows)
-        elif spec.source == "image" and spec.image:
+        elif spec.source == "pdf" and spec.pdf_rows:
+            # §4.1.x - line items extracted from a tender PDF at
+            # session-creation time. Read back by :class:`PdfAdapter`.
+            metadata["pdf_rows"] = list(spec.pdf_rows)
+        elif spec.source in ("image", "photo") and spec.image:
             # MAPPING_PROCESS.md §3.1/§4.1.4 — single uploaded photo or
             # drawing snapshot. Persist as ``{"path"|"data_b64", "mime",
             # "filename"?, "image_id"?}``; the ImageSourceAdapter reads
@@ -2742,7 +2760,56 @@ class MatchElementsService:
             delete(MatchTemplate).where(MatchTemplate.id == template_id),
         )
 
-    # ── Stubs (Phase A.5b/A.9/A.12) ───────────────────────────────────
+    # ── Group operations (split / merge / skip) ──────────────────────
+
+    async def _source_elements_by_id(
+        self,
+        db: AsyncSession,
+        sess: MatchSession,
+    ) -> dict[str, SourceElement]:
+        """Load the session's source elements keyed by element id.
+
+        Used by split/merge to recompute a group's rolled-up quantities
+        and representative signature from the live source after its
+        membership changes. Mirrors the element fetch in ``run_match`` -
+        same adapter, same scope filters - so a split/merge sees exactly
+        the rows the rest of the pipeline does.
+        """
+        adapter = self._adapter(sess.source, db, sess)
+        elements = await adapter.iter_elements(
+            project_id=sess.project_id,
+            bim_model_id=sess.bim_model_id,
+            filters=sess.filters or None,
+            excluded_categories=sess.excluded_categories or None,
+            use_net_quantities=sess.use_net_quantities,
+        )
+        return {e.id: e for e in elements}
+
+    def _reaggregate_group(
+        self,
+        row: MatchGroup,
+        element_ids: list[str],
+        by_id: dict[str, SourceElement],
+        group_by: list[str],
+    ) -> None:
+        """Recompute a group's membership-derived fields in place.
+
+        Sets ``element_ids`` / ``element_count`` / ``quantities`` /
+        ``signature`` and refreshes ``chosen_unit`` from the new
+        membership. The caller is responsible for flushing. Elements not
+        present in ``by_id`` (e.g. a stale id from a previous import)
+        still count toward ``element_ids`` but contribute no quantities -
+        consistent with how ``run_match`` skips unknown ids.
+        """
+        members = [by_id[eid] for eid in element_ids if eid in by_id]
+        row.element_ids = list(element_ids)
+        row.element_count = len(element_ids)
+        qty = _aggregate_quantities(members)
+        row.quantities = qty
+        sample_values = members[0].attributes if members else {}
+        _label, sig = signature.normalize_signature(group_by, sample_values)
+        row.signature = sig
+        row.chosen_unit = _pick_unit(qty, ifc_class=_ifc_class_from_group_key(row.group_key))
 
     async def split_group(
         self,
@@ -2751,7 +2818,100 @@ class MatchElementsService:
         group_key: str,
         spec: schemas.GroupSplitRequest,
     ) -> schemas.GroupDetail:
-        raise NotImplementedError("split_group — Phase A.5b")
+        """Split a subset of elements out of a group into a new group.
+
+        The elements in ``spec.element_ids`` move into a brand-new group
+        keyed ``spec.new_group_key`` (status ``unmatched`` - a fresh
+        group needs its own match). The remaining elements stay in the
+        original group, whose rolled-up quantities, element count and
+        signature are recomputed so the session totals stay consistent.
+
+        The original group keeps its chosen match and status when it
+        still has members; only its aggregates shrink. Splitting out
+        *every* element is rejected - that would leave an empty husk and
+        is better expressed as a rename.
+        """
+        from fastapi import HTTPException
+
+        sess = await db.get(MatchSession, session_id)
+        if sess is None:
+            raise HTTPException(status_code=404, detail=translate("errors.session_not_found", locale=get_locale()))
+
+        src = (
+            await db.execute(
+                select(MatchGroup).where(
+                    MatchGroup.session_id == session_id,
+                    MatchGroup.group_key == group_key,
+                )
+            )
+        ).scalar_one_or_none()
+        if src is None:
+            raise HTTPException(status_code=404, detail=translate("errors.group_not_found", locale=get_locale()))
+
+        new_key = (spec.new_group_key or "").strip()
+        if not new_key:
+            raise HTTPException(status_code=422, detail="new_group_key must not be blank.")
+        if new_key == group_key:
+            raise HTTPException(status_code=422, detail="new_group_key must differ from the source group key.")
+
+        current_ids = list(src.element_ids or [])
+        move_ids = [str(e) for e in (spec.element_ids or [])]
+        move_set = set(move_ids)
+        # Every id to move must currently belong to the source group.
+        unknown = move_set - set(current_ids)
+        if unknown:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{len(unknown)} element id(s) are not in group '{group_key}'.",
+            )
+        if not move_set:
+            raise HTTPException(status_code=422, detail="element_ids must list at least one element to split out.")
+        remaining_ids = [eid for eid in current_ids if eid not in move_set]
+        if not remaining_ids:
+            raise HTTPException(
+                status_code=422,
+                detail="Cannot split out every element - that would empty the source group. Rename it instead.",
+            )
+
+        # A target with new_key must not already exist (the UNIQUE
+        # (session_id, group_key) constraint would otherwise blow up on
+        # flush; surface a clean 409 instead).
+        existing_target = (
+            await db.execute(
+                select(func.count(MatchGroup.id)).where(
+                    MatchGroup.session_id == session_id,
+                    MatchGroup.group_key == new_key,
+                )
+            )
+        ).scalar_one()
+        if existing_target:
+            raise HTTPException(status_code=409, detail=f"A group keyed '{new_key}' already exists in this session.")
+
+        by_id = await self._source_elements_by_id(db, sess)
+        group_by = list(sess.group_by or [])
+
+        # New group for the split-out subset.
+        new_members = [by_id[eid] for eid in move_ids if eid in by_id]
+        new_qty = _aggregate_quantities(new_members)
+        new_sample = new_members[0].attributes if new_members else {}
+        _new_label, new_sig = signature.normalize_signature(group_by, new_sample)
+        new_group = MatchGroup(
+            session_id=session_id,
+            group_key=new_key,
+            signature=new_sig,
+            element_ids=list(move_ids),
+            element_count=len(move_ids),
+            quantities=new_qty,
+            chosen_unit=_pick_unit(new_qty, ifc_class=_ifc_class_from_group_key(new_key)),
+            methods={},
+            status="unmatched",
+        )
+        db.add(new_group)
+
+        # Shrink the source group to its remaining members.
+        self._reaggregate_group(src, remaining_ids, by_id, group_by)
+        await db.flush()
+        return await self.get_group_detail(db, session_id, new_key)
 
     async def merge_groups(
         self,
@@ -2760,7 +2920,108 @@ class MatchElementsService:
         group_key: str,
         spec: schemas.GroupMergeRequest,
     ) -> schemas.GroupDetail:
-        raise NotImplementedError("merge_groups — Phase A.5b")
+        """Merge one or more other groups into the target group.
+
+        All elements from ``spec.other_group_key`` (a single key or a
+        comma-separated list) are re-pointed into the target ``group_key``;
+        the source groups are then deleted. The target's rolled-up
+        quantities, element count and signature are recomputed from the
+        combined membership so the session totals stay consistent.
+
+        ``spec.new_group_key`` optionally renames the merged result - when
+        omitted the target keeps its own key. The target's chosen match /
+        status are preserved (merging more elements into an already-matched
+        group does not unmatch it; the user can re-run match if the larger
+        group warrants a different rate).
+        """
+        from fastapi import HTTPException
+
+        sess = await db.get(MatchSession, session_id)
+        if sess is None:
+            raise HTTPException(status_code=404, detail=translate("errors.session_not_found", locale=get_locale()))
+
+        target = (
+            await db.execute(
+                select(MatchGroup).where(
+                    MatchGroup.session_id == session_id,
+                    MatchGroup.group_key == group_key,
+                )
+            )
+        ).scalar_one_or_none()
+        if target is None:
+            raise HTTPException(status_code=404, detail=translate("errors.group_not_found", locale=get_locale()))
+
+        # Accept either a single other-group key or a comma-separated list
+        # so the UI can fold several small groups into one in a single call.
+        other_keys = [k.strip() for k in (spec.other_group_key or "").split(",") if k.strip()]
+        if not other_keys:
+            raise HTTPException(status_code=422, detail="other_group_key must name at least one group to merge.")
+        if group_key in other_keys:
+            raise HTTPException(status_code=422, detail="A group cannot be merged into itself.")
+
+        others = list(
+            (
+                await db.execute(
+                    select(MatchGroup).where(
+                        MatchGroup.session_id == session_id,
+                        MatchGroup.group_key.in_(other_keys),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        found_keys = {g.group_key for g in others}
+        missing = [k for k in other_keys if k not in found_keys]
+        if missing:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Group(s) not found in this session: {', '.join(missing)}.",
+            )
+
+        new_key = (spec.new_group_key or "").strip() or group_key
+        # When renaming to a key that is neither the target's nor one of
+        # the soon-to-be-deleted others, it must be free.
+        if new_key != group_key and new_key not in found_keys:
+            clash = (
+                await db.execute(
+                    select(func.count(MatchGroup.id)).where(
+                        MatchGroup.session_id == session_id,
+                        MatchGroup.group_key == new_key,
+                    )
+                )
+            ).scalar_one()
+            if clash:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"A group keyed '{new_key}' already exists in this session.",
+                )
+
+        # Union element ids, target first, de-duplicated while preserving
+        # order so re-aggregation is deterministic.
+        merged_ids: list[str] = list(target.element_ids or [])
+        seen = set(merged_ids)
+        for other in others:
+            for eid in other.element_ids or []:
+                if eid not in seen:
+                    seen.add(eid)
+                    merged_ids.append(eid)
+
+        by_id = await self._source_elements_by_id(db, sess)
+        group_by = list(sess.group_by or [])
+
+        # Delete the merged-away source groups BEFORE renaming/flushing so
+        # a rename onto a freed key cannot collide with a row pending
+        # deletion under the UNIQUE (session_id, group_key) constraint.
+        for other in others:
+            await db.delete(other)
+        await db.flush()
+
+        if new_key != target.group_key:
+            target.group_key = new_key
+        self._reaggregate_group(target, merged_ids, by_id, group_by)
+        await db.flush()
+        return await self.get_group_detail(db, session_id, target.group_key)
 
     async def skip_group(
         self,
@@ -3089,11 +3350,98 @@ class MatchElementsService:
                 "custom_position": spec.model_dump(mode="json"),
             }
         elif spec.action == "rfq":
-            # Phase A.12 — wire to procurement RFQ creation.
-            row.status = "tbd"
-            row.notes = "Sent to RFQ (procurement integration pending)"
+            await self._raise_rfq_for_group(db, session_id, row, spec)
         await db.flush()
         return await self.get_group_detail(db, session_id, spec.group_key)
+
+    async def _raise_rfq_for_group(
+        self,
+        db: AsyncSession,
+        session_id: uuid.UUID,
+        row: MatchGroup,
+        spec: schemas.NoMatchRequest,
+    ) -> None:
+        """Create a draft RFQ for a group the estimator wants to tender.
+
+        Wires the ``no_match`` "rfq" action into the ``rfq_bidding``
+        module: a draft :class:`RFQ` is created for the session's
+        project, scoped to this group's work, with the picked suppliers
+        as ``issued_to_contacts``. The group is flagged ``tbd`` (its rate
+        comes from the awarded bid later, not from CWICR) and the real
+        RFQ number is written into ``notes`` plus the rfq id into
+        ``metadata_`` so the UI can deep-link to it.
+
+        The whole thing is best-effort: if the ``rfq_bidding`` module is
+        unavailable or RFQ creation fails, the group is still flagged
+        ``tbd`` and ``notes`` states honestly that no RFQ was created and
+        why - never a misleading "integration pending" placeholder.
+        """
+        from app.modules.projects.models import Project  # noqa: PLC0415
+
+        sess = await db.get(MatchSession, session_id)
+        project = await db.get(Project, sess.project_id) if sess else None
+
+        # Currency for the RFQ - project currency, else region default,
+        # else a safe ISO fallback (the RFQ schema validates the shape).
+        currency = ""
+        if project and getattr(project, "currency", None):
+            currency = str(project.currency).upper()
+        if not currency and project is not None:
+            try:
+                from app.modules.costs.router import _REGION_CURRENCY  # noqa: PLC0415
+
+                region = (getattr(project, "region", "") or "").strip().upper()
+                currency = _REGION_CURRENCY.get(region, "")
+            except Exception:  # noqa: BLE001 - best-effort
+                currency = ""
+        if len(currency) != 3:
+            currency = "USD"
+
+        label = _human_group_label(row.group_key, None) or row.group_key
+        suppliers = [str(s) for s in (spec.rfq_supplier_ids or [])]
+
+        try:
+            from app.modules.rfq_bidding.schemas import RFQCreate  # noqa: PLC0415
+            from app.modules.rfq_bidding.service import RFQService  # noqa: PLC0415
+
+            rfq_service = RFQService(db)
+            rfq = await rfq_service.create_rfq(
+                RFQCreate(
+                    project_id=sess.project_id,
+                    title=f"RFQ - {label}"[:500],
+                    description=(
+                        f"Auto-created from Match Elements (session {str(session_id)[:8]}). "
+                        f"No catalogue rate matched this group; tendering to suppliers."
+                    ),
+                    scope_of_work=label,
+                    currency_code=currency,
+                    status="draft",
+                    issued_to_contacts=suppliers,
+                    metadata={
+                        "match_session_id": str(session_id),
+                        "match_group_key": row.group_key,
+                    },
+                ),
+                user_id=str(row.confirmed_by) if row.confirmed_by else None,
+            )
+        except Exception as exc:  # noqa: BLE001 - RFQ module is optional
+            logger.warning(
+                "match_elements.no_match: RFQ creation failed for group %s: %s",
+                row.group_key,
+                exc,
+            )
+            row.status = "tbd"
+            row.notes = "Flagged for RFQ - RFQ could not be created automatically (procurement module unavailable)."
+            return
+
+        row.status = "tbd"
+        supplier_note = f" to {len(suppliers)} supplier(s)" if suppliers else ""
+        row.notes = f"Tendered via RFQ {rfq.rfq_number}{supplier_note}."
+        row.metadata_ = {
+            **(row.metadata_ or {}),
+            "rfq_id": str(rfq.id),
+            "rfq_number": rfq.rfq_number,
+        }
 
 
 _service_singleton: MatchElementsService | None = None

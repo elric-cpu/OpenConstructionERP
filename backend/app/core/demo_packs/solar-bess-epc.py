@@ -46,7 +46,7 @@ TEMPLATE = DemoTemplate(
         "lng": 12.4940,
     },
     validation_rule_sets=["masterformat", "boq_quality"],
-    boq_name="Solar PV + BESS EPC — Cost Estimate",
+    boq_name="Solar PV + BESS EPC - Cost Estimate",
     boq_description=(
         "Detailed turnkey EPC cost estimate for a 50 MWp PV + 20 MWh BESS plant, "
         "MasterFormat utility divisions (26/33/34/48), EU 2026 price level."
@@ -61,7 +61,7 @@ TEMPLATE = DemoTemplate(
         # -- 01 General Requirements (EPC indirects) ---------------------------
         (
             "01",
-            "01 — General Requirements / EPC Indirects",
+            "01 - General Requirements / EPC Indirects",
             {"masterformat": "01"},
             [
                 ("01.001", "Project management & site supervision (EPC team)", "month", 18, 42000.00, {"masterformat": "01 31 00"}),
@@ -77,7 +77,7 @@ TEMPLATE = DemoTemplate(
         # -- 31 Earthwork ------------------------------------------------------
         (
             "31",
-            "31 — Site Civil & Earthworks",
+            "31 - Site Civil & Earthworks",
             {"masterformat": "31"},
             [
                 ("31.001", "Topographic & geotechnical survey, pull-out tests", "lsum", 1, 68000.00, {"masterformat": "31 09 00"}),
@@ -94,7 +94,7 @@ TEMPLATE = DemoTemplate(
         # -- 32 Exterior Improvements (roads, fencing) -------------------------
         (
             "32",
-            "32 — Access Roads, Fencing & Security",
+            "32 - Access Roads, Fencing & Security",
             {"masterformat": "32"},
             [
                 ("32.001", "Permanent access road, granular pavement 5 m", "m2", 24000, 36.00, {"masterformat": "32 11 23"}),
@@ -110,7 +110,7 @@ TEMPLATE = DemoTemplate(
         # -- 26 Earthing & LV/aux power ----------------------------------------
         (
             "26",
-            "26 — Earthing, Lightning & Auxiliary Power",
+            "26 - Earthing, Lightning & Auxiliary Power",
             {"masterformat": "26"},
             [
                 ("26.001", "Bare copper earthing conductor 70 mm2 (EN 50522)", "m", 16000, 7.80, {"masterformat": "26 05 26"}),
@@ -126,7 +126,7 @@ TEMPLATE = DemoTemplate(
         # -- 34.1 Mounting structures / trackers -------------------------------
         (
             "34A",
-            "34 — Mounting Structures & Single-Axis Trackers",
+            "34 - Mounting Structures & Single-Axis Trackers",
             {"masterformat": "34"},
             [
                 ("34A.001", "Driven steel pile foundations (ramming)", "pcs", 22000, 38.00, {"masterformat": "34 71 00"}),
@@ -141,7 +141,7 @@ TEMPLATE = DemoTemplate(
         # -- 48.1 PV modules ---------------------------------------------------
         (
             "48A",
-            "48 — PV Modules (IEC 61215 / 61730)",
+            "48 - PV Modules (IEC 61215 / 61730)",
             {"masterformat": "48"},
             [
                 ("48A.001", "Bifacial mono PERC module 580 Wp (IEC 61215)", "pcs", 86200, 118.00, {"masterformat": "48 14 00"}),
@@ -153,7 +153,7 @@ TEMPLATE = DemoTemplate(
         # -- 48.2 Inverters ----------------------------------------------------
         (
             "48B",
-            "48 — Inverters & Conversion (IEC 62109)",
+            "48 - Inverters & Conversion (IEC 62109)",
             {"masterformat": "48"},
             [
                 ("48B.001", "String inverter 350 kVA, 1500 V DC (IEC 62109)", "pcs", 108, 9800.00, {"masterformat": "48 15 00"}),
@@ -165,7 +165,7 @@ TEMPLATE = DemoTemplate(
         # -- 48.3 DC system ----------------------------------------------------
         (
             "48C",
-            "48 — DC Cabling, Combiners & Array (IEC 62548)",
+            "48 - DC Cabling, Combiners & Array (IEC 62548)",
             {"masterformat": "48"},
             [
                 ("48C.001", "DC string cable 6 mm2 solar (PV1-F), incl. MC4", "m", 420000, 1.95, {"masterformat": "48 14 00"}),
@@ -179,7 +179,7 @@ TEMPLATE = DemoTemplate(
         # -- 48.4 AC collector system ------------------------------------------
         (
             "48D",
-            "48 — AC Collector System & Transformers",
+            "48 - AC Collector System & Transformers",
             {"masterformat": "48"},
             [
                 ("48D.001", "AC LV cable inverter-to-RMU, Al XLPE 0.4 kV", "m", 14000, 11.50, {"masterformat": "48 13 00"}),
@@ -193,7 +193,7 @@ TEMPLATE = DemoTemplate(
         # -- 48.5 BESS ---------------------------------------------------------
         (
             "48E",
-            "48 — BESS Containers & PCS (NFPA 855 / IEC 62619)",
+            "48 - BESS Containers & PCS (NFPA 855 / IEC 62619)",
             {"masterformat": "48"},
             [
                 ("48E.001", "LFP battery containers 5 MWh, liquid-cooled", "pcs", 4, 1180000.00, {"masterformat": "48 17 00"}),
@@ -209,7 +209,7 @@ TEMPLATE = DemoTemplate(
         # -- 33 Utility substation & grid connection ---------------------------
         (
             "33",
-            "33 — MV/HV Substation & Grid Connection",
+            "33 - MV/HV Substation & Grid Connection",
             {"masterformat": "33"},
             [
                 ("33.001", "Main power transformer 50 MVA 33/110 kV", "pcs", 1, 1480000.00, {"masterformat": "33 71 00"}),
@@ -227,7 +227,7 @@ TEMPLATE = DemoTemplate(
         # -- 25 SCADA & monitoring ---------------------------------------------
         (
             "25",
-            "25 — SCADA, Monitoring & Communications",
+            "25 - SCADA, Monitoring & Communications",
             {"masterformat": "25"},
             [
                 ("25.001", "Plant SCADA system & control room HMI", "lsum", 1, 285000.00, {"masterformat": "25 35 00"}),
@@ -242,7 +242,7 @@ TEMPLATE = DemoTemplate(
         # -- 48.6 Commissioning & testing --------------------------------------
         (
             "48F",
-            "48 — Commissioning, Testing & Energisation",
+            "48 - Commissioning, Testing & Energisation",
             {"masterformat": "48"},
             [
                 ("48F.001", "DC & AC system testing (IEC 62446 incl. IV curves)", "lsum", 1, 142000.00, {"masterformat": "48 19 00"}),
@@ -256,7 +256,7 @@ TEMPLATE = DemoTemplate(
         # -- 01.9 Environmental & permitting -----------------------------------
         (
             "01E",
-            "01 — Environmental, Permitting & Compliance",
+            "01 - Environmental, Permitting & Compliance",
             {"masterformat": "01"},
             [
                 ("01E.001", "Environmental impact assessment & ecology surveys", "lsum", 1, 165000.00, {"masterformat": "01 57 00"}),

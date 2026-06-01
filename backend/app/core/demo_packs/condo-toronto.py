@@ -24,7 +24,7 @@ from app.core.demo_projects import DemoTemplate
 
 TEMPLATE = DemoTemplate(
     demo_id="condo-toronto",
-    project_name="Condominium Tower — Toronto, King West",
+    project_name="Condominium Tower - Toronto, King West",
     project_description=(
         "Market residential high-rise condominium, 45 storeys above a "
         "6-storey podium, with 412 suites, ground-floor retail and a "
@@ -56,7 +56,7 @@ TEMPLATE = DemoTemplate(
         "lng": -79.4019,
     },
     validation_rule_sets=["masterformat", "boq_quality"],
-    boq_name="Detailed Estimate — MasterFormat 2020",
+    boq_name="Detailed Estimate - MasterFormat 2020",
     boq_description=(
         "Class B elemental/trade estimate to MasterFormat 2020, divisions "
         "03 through 32. Direct costs in CAD, Toronto 2026 price level, "
@@ -73,7 +73,7 @@ TEMPLATE = DemoTemplate(
         # ── Division 31 — Earthwork & Shoring ──────────────────────────
         (
             "31",
-            "Division 31 — Earthwork & Shoring",
+            "Division 31 - Earthwork & Shoring",
             {"masterformat": "31 00 00"},
             [
                 ("31.1", "Site clearing and grubbing", "lsum", 1, 165000.00, {"masterformat": "31 10 00"}),
@@ -93,7 +93,7 @@ TEMPLATE = DemoTemplate(
         # ── Division 03 — Concrete ─────────────────────────────────────
         (
             "03",
-            "Division 03 — Concrete",
+            "Division 03 - Concrete",
             {"masterformat": "03 00 00"},
             [
                 ("03.1", "Blinding concrete, 15 MPa", "m3", 980, 225.00, {"masterformat": "03 30 00"}),
@@ -118,7 +118,7 @@ TEMPLATE = DemoTemplate(
         # ── Division 04 — Masonry ──────────────────────────────────────
         (
             "04",
-            "Division 04 — Masonry",
+            "Division 04 - Masonry",
             {"masterformat": "04 00 00"},
             [
                 ("04.1", "Concrete block 190 mm, stair and service shafts", "m2", 14800, 158.00, {"masterformat": "04 22 00"}),
@@ -132,7 +132,7 @@ TEMPLATE = DemoTemplate(
         # ── Division 05 — Metals ───────────────────────────────────────
         (
             "05",
-            "Division 05 — Metals",
+            "Division 05 - Metals",
             {"masterformat": "05 00 00"},
             [
                 ("05.1", "Structural steel, podium retail and canopy framing", "t", 320, 5400.00, {"masterformat": "05 12 00"}),
@@ -148,7 +148,7 @@ TEMPLATE = DemoTemplate(
         # ── Division 07 — Thermal & Moisture / Window-Wall ─────────────
         (
             "07",
-            "Division 07 — Thermal & Moisture Protection",
+            "Division 07 - Thermal & Moisture Protection",
             {"masterformat": "07 00 00"},
             [
                 ("07.1", "Bentonite waterproofing, below-grade walls", "m2", 11200, 62.00, {"masterformat": "07 13 00"}),
@@ -169,7 +169,7 @@ TEMPLATE = DemoTemplate(
         # ── Division 08 — Openings (incl. Window-Wall) ─────────────────
         (
             "08",
-            "Division 08 — Openings",
+            "Division 08 - Openings",
             {"masterformat": "08 00 00"},
             [
                 ("08.1", "Window-wall system, tower (slab-edge, operable vent)", "m2", 34000, 565.00, {"masterformat": "08 43 00"}),
@@ -189,7 +189,7 @@ TEMPLATE = DemoTemplate(
         # ── Division 09 — Finishes ─────────────────────────────────────
         (
             "09",
-            "Division 09 — Finishes",
+            "Division 09 - Finishes",
             {"masterformat": "09 00 00"},
             [
                 ("09.1", "Metal stud framing, suite partitions", "m2", 96000, 36.00, {"masterformat": "09 22 16"}),
@@ -214,7 +214,7 @@ TEMPLATE = DemoTemplate(
         # ── Division 14 — Conveying Systems (Elevators) ────────────────
         (
             "14",
-            "Division 14 — Conveying Systems",
+            "Division 14 - Conveying Systems",
             {"masterformat": "14 00 00"},
             [
                 ("14.1", "Gearless MRL passenger elevator, 1600 kg, high-rise", "pcs", 5, 425000.00, {"masterformat": "14 21 00"}),
@@ -227,7 +227,7 @@ TEMPLATE = DemoTemplate(
         # ── Division 21 — Fire Suppression ─────────────────────────────
         (
             "21",
-            "Division 21 — Fire Suppression",
+            "Division 21 - Fire Suppression",
             {"masterformat": "21 00 00"},
             [
                 ("21.1", "Automatic wet sprinkler system, full building", "m2", 52800, 26.50, {"masterformat": "21 13 00"}),
@@ -239,7 +239,7 @@ TEMPLATE = DemoTemplate(
         # ── Division 22 — Plumbing ─────────────────────────────────────
         (
             "22",
-            "Division 22 — Plumbing",
+            "Division 22 - Plumbing",
             {"masterformat": "22 00 00"},
             [
                 ("22.1", "Sanitary and venting risers/branches, suites", "m", 9600, 76.00, {"masterformat": "22 13 00"}),
@@ -257,7 +257,7 @@ TEMPLATE = DemoTemplate(
         # ── Division 23 — HVAC ─────────────────────────────────────────
         (
             "23",
-            "Division 23 — Heating, Ventilation & Air Conditioning",
+            "Division 23 - Heating, Ventilation & Air Conditioning",
             {"masterformat": "23 00 00"},
             [
                 ("23.1", "Suite heat-pump / fan-coil units, four-pipe", "suite", 412, 7800.00, {"masterformat": "23 82 19"}),
@@ -278,7 +278,7 @@ TEMPLATE = DemoTemplate(
         # ── Division 26 — Electrical ───────────────────────────────────
         (
             "26",
-            "Division 26 — Electrical",
+            "Division 26 - Electrical",
             {"masterformat": "26 00 00"},
             [
                 ("26.1", "Main electrical service, 4000 A, 600 V", "lsum", 1, 485000.00, {"masterformat": "26 24 00"}),
@@ -301,7 +301,7 @@ TEMPLATE = DemoTemplate(
         # ── Division 32 — Exterior Improvements (Sitework) ─────────────
         (
             "32",
-            "Division 32 — Exterior Improvements",
+            "Division 32 - Exterior Improvements",
             {"masterformat": "32 00 00"},
             [
                 ("32.1", "Reinforced-concrete parking ramp and apron", "m2", 1600, 285.00, {"masterformat": "03 30 00"}),
@@ -335,7 +335,7 @@ TEMPLATE = DemoTemplate(
         "client": "Tridel Builders Inc.",
         "architect": "BDP Quadrangle",
         "structural_engineer": "Jablonsky, Ast and Partners",
-        "general_contractor_form": "CCDC 2 (2020) — stipulated price",
+        "general_contractor_form": "CCDC 2 (2020) - stipulated price",
         "gfa_above_grade_m2": 38600,
         "gfa_below_grade_m2": 14200,
         "storeys_tower": 45,
@@ -349,8 +349,8 @@ TEMPLATE = DemoTemplate(
         "codes": [
             "National Building Code of Canada (NBC) 2020",
             "Ontario Building Code (OBC), O. Reg. 332/12",
-            "CSA A23.1/A23.3 — concrete materials and design of concrete structures",
-            "CSA S16 — design of steel structures",
+            "CSA A23.1/A23.3 - concrete materials and design of concrete structures",
+            "CSA S16 - design of steel structures",
             "NBC 2020 seismic provisions (Toronto, Site Class D)",
         ],
         "permits": (
@@ -359,7 +359,7 @@ TEMPLATE = DemoTemplate(
             "performance; MECP Excess Soil registration; TRCA review."
         ),
         "sustainability": "Toronto Green Standard Version 4, Tier 1; ENERGY STAR appliances; EV-ready",
-        "seismic": "NBC 2020, Toronto region — Site Class D, SFRS reinforced-concrete shear-wall core",
+        "seismic": "NBC 2020, Toronto region - Site Class D, SFRS reinforced-concrete shear-wall core",
         "taxes_note": (
             "HST at 13% applies in Ontario. The HST markup line is shown for "
             "illustration; position unit rates are direct costs before HST."
@@ -426,7 +426,7 @@ TEMPLATE = DemoTemplate(
             ],
         ),
     ],
-    budget_boq_name="Detailed Estimate — MasterFormat 2020",
+    budget_boq_name="Detailed Estimate - MasterFormat 2020",
     planned_budget=228000000.0,
     actual_spend_ratio=0.42,
     spi_override=0.97,

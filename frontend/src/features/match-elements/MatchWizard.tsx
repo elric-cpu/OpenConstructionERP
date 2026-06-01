@@ -35,6 +35,7 @@ import {
   Download,
   FileSpreadsheet,
   FileText,
+  FileType,
   Hammer,
   Layers,
   Loader2,
@@ -66,6 +67,7 @@ import { unwrapCataloguesPayload } from './catalogues-payload';
 type Source =
   | { kind: 'bim'; modelId: string; modelName: string }
   | { kind: 'excel'; file: File }
+  | { kind: 'pdf'; file: File }
   | { kind: 'text'; lines: string[] };
 
 interface CatalogueRow {
@@ -918,7 +920,7 @@ function SourceStep({
   onPick: (s: Source | null) => void;
 }) {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<'bim' | 'excel' | 'text'>(selected?.kind ?? 'bim');
+  const [tab, setTab] = useState<'bim' | 'excel' | 'pdf' | 'text'>(selected?.kind ?? 'bim');
   const [textValue, setTextValue] = useState(
     selected?.kind === 'text' ? selected.lines.join('\n') : '',
   );
@@ -932,6 +934,7 @@ function SourceStep({
   const tabs = [
     { id: 'bim' as const, icon: Building2, label: t('match_wizard.tab_bim', 'BIM model') },
     { id: 'excel' as const, icon: FileSpreadsheet, label: t('match_wizard.tab_excel', 'Excel BoQ') },
+    { id: 'pdf' as const, icon: FileType, label: t('match_wizard.tab_pdf', { defaultValue: 'PDF BoQ' }) },
     { id: 'text' as const, icon: FileText, label: t('match_wizard.tab_text', 'Pasted text') },
   ];
 
@@ -1059,6 +1062,50 @@ function SourceStep({
         </div>
       )}
 
+      {tab === 'pdf' && (
+        <div>
+          <label className="block">
+            <span className="block text-sm text-content-secondary mb-2.5">
+              {t('match_wizard.pdf_label', { defaultValue: 'Upload a tender PDF (printed bill of quantities)' })}
+            </span>
+            <div className="relative rounded-2xl border-2 border-dashed border-border bg-surface-secondary/40 hover:border-indigo-400 dark:hover:border-indigo-700 transition-colors p-8 text-center">
+              <input
+                type="file"
+                accept=".pdf,application/pdf"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) onPick({ kind: 'pdf', file: f });
+                }}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              />
+              <FileType className="w-8 h-8 mx-auto text-content-tertiary mb-2" />
+              <div className="text-sm text-content-secondary">
+                {selected?.kind === 'pdf' ? (
+                  <span className="inline-flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300 font-medium">
+                    <Check className="w-4 h-4" strokeWidth={3} />
+                    {selected.file.name}{' '}
+                    <span className="text-content-quaternary font-normal">
+                      ({Math.round(selected.file.size / 1024)} KB)
+                    </span>
+                  </span>
+                ) : (
+                  <>
+                    <span className="font-medium text-content-primary">
+                      {t('match_wizard.pdf_drop', { defaultValue: 'Click or drop a PDF file' })}
+                    </span>
+                    <div className="text-xs text-content-tertiary mt-0.5">
+                      {t('match_wizard.pdf_hint', {
+                        defaultValue: 'Line items are extracted from tables or text - needs a text layer (not a scan)',
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </label>
+        </div>
+      )}
+
       {tab === 'text' && (
         <div>
           <label className="block">
@@ -1115,7 +1162,7 @@ function ReviewStep({
   const sourceLabel = (() => {
     if (!source) return t('match_wizard.review_no_source', 'No source picked');
     if (source.kind === 'bim') return source.modelName;
-    if (source.kind === 'excel') return source.file.name;
+    if (source.kind === 'excel' || source.kind === 'pdf') return source.file.name;
     return t('match_wizard.review_text_lines', '{{n}} lines pasted', {
       n: source.lines.length,
     });
@@ -1138,6 +1185,8 @@ function ReviewStep({
       icon:
         source?.kind === 'excel'
           ? FileSpreadsheet
+          : source?.kind === 'pdf'
+          ? FileType
           : source?.kind === 'text'
           ? FileText
           : Building2,
@@ -1214,6 +1263,15 @@ export function MatchWizard({
       const stagePayload = stage === '' ? null : stage;
       if (source.kind === 'excel') {
         const session = await matchElementsApi.createSessionFromExcel({
+          project_id: projectId,
+          file: source.file,
+          catalogue_id: catalogueId,
+          construction_stage: stagePayload,
+        });
+        return session.id;
+      }
+      if (source.kind === 'pdf') {
+        const session = await matchElementsApi.createSessionFromPdf({
           project_id: projectId,
           file: source.file,
           catalogue_id: catalogueId,

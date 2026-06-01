@@ -12,8 +12,8 @@ Endpoints (auto-mounted at /api/v1/match_elements/ by the module loader):
 
     GET    /sessions/{id}/groups           Paginated list with summary counters
     GET    /sessions/{id}/group?group_key= Detailed group + matcher candidates
-    POST   /sessions/{id}/groups/split     (Phase A.5b stub)
-    POST   /sessions/{id}/groups/merge     (Phase A.5b stub)
+    POST   /sessions/{id}/groups/split     Split a group (per-item or by subset)
+    POST   /sessions/{id}/groups/merge     Merge another group into this one
 
     POST   /sessions/{id}/match            Run vector / lexical / resources matcher
     POST   /sessions/{id}/confirm          Confirm a candidate as the chosen match
@@ -46,6 +46,7 @@ from app.modules.match_elements import pipeline, schemas
 from app.modules.match_elements.analytics import compute_match_analytics
 from app.modules.match_elements.excel_import import parse_boq_xlsx
 from app.modules.match_elements.models import MatchPromptTemplate, MatchSession
+from app.modules.match_elements.pdf_import import parse_boq_pdf
 from app.modules.match_elements.service import get_service
 
 router = APIRouter(tags=["match_elements"])
@@ -162,6 +163,86 @@ async def create_session_from_excel(
         catalogue_id=catalogue_id,
         construction_stage=construction_stage,  # type: ignore[arg-type]
         boq_rows=rows,
+    )
+
+    try:
+        return await get_service().create_session(
+            session,
+            spec,
+            _u(current_user_id),
+        )
+    except NotImplementedError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
+
+
+@router.post(
+    "/sessions/from-pdf",
+    response_model=schemas.SessionRead,
+    status_code=201,
+    summary="Create a BoQ match session by uploading a PDF file",
+)
+async def create_session_from_pdf(
+    session: SessionDep,
+    current_user_id: CurrentUserId,
+    project_id: uuid.UUID = Form(...),
+    file: UploadFile = File(..., description="Tender PDF (printed bill of quantities / priced schedule)"),
+    name: str | None = Form(None),
+    # Region id ("DE_BERLIN", ...) or a legacy UUID - the service routes
+    # each kind to its own storage slot (mirrors the Excel endpoint).
+    catalogue_id: str | None = Form(None),
+    construction_stage: str | None = Form(None),
+) -> schemas.SessionRead:
+    """‌⁠‍Upload a tender PDF and create a match session in one round-trip.
+
+    The backend extracts one line item per table row (preferred) or per
+    text line (fallback) using the libraries already shipped with the
+    platform; see :mod:`match_elements.pdf_import` for the extraction
+    strategy. Caller-side parsing is still supported via the regular
+    ``POST /sessions`` endpoint with ``pdf_rows`` populated - this route
+    is the convenience path for end users.
+    """
+    await verify_project_access(project_id, current_user_id, session)
+
+    filename = (file.filename or "").lower()
+    if not filename.endswith(".pdf"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only .pdf files are supported. Upload the tender PDF (not an image or Office file).",
+        )
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+    # Magic-byte gate - reject anything that is not actually a PDF before
+    # handing it to the parser (mirrors the takeoff upload guard).
+    if content[:5] != b"%PDF-":
+        raise HTTPException(
+            status_code=400,
+            detail="The uploaded file is not a valid PDF (missing %PDF- header). Re-export and try again.",
+        )
+
+    try:
+        rows = parse_boq_pdf(content)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if not rows:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "No line items could be extracted from this PDF. It may be a "
+                "scanned image with no text layer - run OCR first, or paste the "
+                "items via the Text source."
+            ),
+        )
+
+    spec = schemas.SessionCreate(
+        project_id=project_id,
+        source="pdf",
+        name=name or (file.filename or "PDF Import"),
+        catalogue_id=catalogue_id,
+        construction_stage=construction_stage,  # type: ignore[arg-type]
+        pdf_rows=rows,
     )
 
     try:

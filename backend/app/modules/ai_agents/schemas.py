@@ -92,6 +92,22 @@ class AgentRunListItem(BaseModel):
     updated_at: datetime
 
 
+class AgentInsightResponse(BaseModel):
+    """One AI insight for a project, distilled from a completed agent run.
+
+    Surfaced by ``GET /ai-agents/insights`` on the project dashboard. There is
+    no separate "insight" table: each insight is the result of a real agent run
+    the user executed against the project, so the widget reflects actual AI
+    output rather than a placeholder.
+    """
+
+    id: str
+    title: str
+    summary: str | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    severity: str | None = None
+
+
 # ── Health ──────────────────────────────────────────────────────────────────
 
 

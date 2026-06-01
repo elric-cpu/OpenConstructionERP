@@ -37,7 +37,7 @@ from app.core.demo_projects import DemoTemplate
 
 TEMPLATE = DemoTemplate(
     demo_id="school-christchurch",
-    project_name="Secondary School — Christchurch (Waitaha College)",
+    project_name="Secondary School - Christchurch (Waitaha College)",
     project_description=(
         "New 1,100-roll co-educational secondary school (Years 9-13) on a 4.2 ha "
         "greenfield platform at Wigram, Christchurch, delivered as part of the "
@@ -70,7 +70,7 @@ TEMPLATE = DemoTemplate(
         "lng": 172.5419,
     },
     validation_rule_sets=["nrm", "boq_quality"],
-    boq_name="Elemental Cost Plan — NRM 1 (NZ)",
+    boq_name="Elemental Cost Plan - NRM 1 (NZ)",
     boq_description=(
         "Elemental cost plan to NRM 1 conventions (NZIQS practice), measured "
         "trades; NZ Building Code compliant, MoE property standards, base "
@@ -86,7 +86,7 @@ TEMPLATE = DemoTemplate(
         # -- 1. Preliminaries & General -------------------------------------
         (
             "1",
-            "1 — Preliminaries & General (P&G)",
+            "1 - Preliminaries & General (P&G)",
             {"nrm": "0"},
             [
                 ("1.1", "Site establishment and disestablishment (Site set-up)", "lsum", 1, 285000.00, {"nrm": "0.1"}),
@@ -104,7 +104,7 @@ TEMPLATE = DemoTemplate(
         # -- 2. Site Preparation & Earthworks -------------------------------
         (
             "2",
-            "2 — Site Preparation & Earthworks",
+            "2 - Site Preparation & Earthworks",
             {"nrm": "0"},
             [
                 ("2.1", "Geotechnical investigation, CPT and liquefaction report (Ground investigation)", "lsum", 1, 96000.00, {"nrm": "0.3"}),
@@ -120,7 +120,7 @@ TEMPLATE = DemoTemplate(
         # -- 3. Substructure, Foundations & Base Isolation ------------------
         (
             "3",
-            "3 — Substructure, Foundations & Base Isolation (NZS 3101 / NZS 1170.5)",
+            "3 - Substructure, Foundations & Base Isolation (NZS 3101 / NZS 1170.5)",
             {"nrm": "1"},
             [
                 ("3.1", "Mass excavation to foundation diaphragm and pits (Foundation excavation)", "m3", 9800, 26.00, {"nrm": "1.1"}),
@@ -142,7 +142,7 @@ TEMPLATE = DemoTemplate(
         # -- 4. Structural Frame, Upper Floors & Roof (Engineered Timber + Steel)
         (
             "4",
-            "4 — Frame, Upper Floors & Roof Structure (LVL / CLT timber + NZS 3404 steel)",
+            "4 - Frame, Upper Floors & Roof Structure (LVL / CLT timber + NZS 3404 steel)",
             {"nrm": "2"},
             [
                 ("4.1", "LVL moment-resisting portal frames, supply and install (LVL portals)", "m3", 920, 3850.00, {"nrm": "2.1"}),
@@ -162,7 +162,7 @@ TEMPLATE = DemoTemplate(
         # -- 5. External Envelope (Walls, Cladding, Roof, Openings) ---------
         (
             "5",
-            "5 — Envelope (External Walls, Cladding, Roof, Windows & Doors)",
+            "5 - Envelope (External Walls, Cladding, Roof, Windows & Doors)",
             {"nrm": "5"},
             [
                 ("5.1", "Light-timber-frame external walls to NZS 3604 (Timber-frame walls)", "m2", 6800, 165.00, {"nrm": "5.1"}),
@@ -182,7 +182,7 @@ TEMPLATE = DemoTemplate(
         # -- 6. Internal Walls, Partitions & Doors --------------------------
         (
             "6",
-            "6 — Internal Walls, Partitions & Doors",
+            "6 - Internal Walls, Partitions & Doors",
             {"nrm": "7"},
             [
                 ("6.1", "Steel-stud GIB partitions to learning spaces (Internal partitions)", "m2", 8600, 142.00, {"nrm": "7.1"}),
@@ -197,7 +197,7 @@ TEMPLATE = DemoTemplate(
         # -- 7. Internal Finishes -------------------------------------------
         (
             "7",
-            "7 — Internal Finishes",
+            "7 - Internal Finishes",
             {"nrm": "8"},
             [
                 ("7.1", "Floor levelling and screed to learning spaces (Floor screed)", "m2", 8200, 44.00, {"nrm": "8.1"}),
@@ -215,7 +215,7 @@ TEMPLATE = DemoTemplate(
         # -- 8. Fittings, Furnishings & Equipment ---------------------------
         (
             "8",
-            "8 — Fittings, Furnishings & Equipment (FF&E)",
+            "8 - Fittings, Furnishings & Equipment (FF&E)",
             {"nrm": "8"},
             [
                 ("8.1", "Classroom and ILE built-in joinery, walls of storage (Learning-space joinery)", "m", 720, 1180.00, {"nrm": "8.4"}),
@@ -230,7 +230,7 @@ TEMPLATE = DemoTemplate(
         # -- 9. Specialist: Science Labs, Gymnasium, Hall & Performing Arts --
         (
             "9",
-            "9 — Specialist: Science Labs, Gymnasium, Hall & Performing Arts",
+            "9 - Specialist: Science Labs, Gymnasium, Hall & Performing Arts",
             {"nrm": "8"},
             [
                 ("9.1", "Science laboratory benches and fume cupboards (Lab fitout)", "pcs", 12, 38500.00, {"nrm": "8.4"}),
@@ -247,7 +247,7 @@ TEMPLATE = DemoTemplate(
         # -- 10. Mechanical, Hydraulic & Fire Services ----------------------
         (
             "10",
-            "10 — Mechanical (HVAC / IAQ), Hydraulic & Fire Services",
+            "10 - Mechanical (HVAC / IAQ), Hydraulic & Fire Services",
             {"nrm": "8"},
             [
                 ("10.1", "VRF heat-pump heating and cooling to learning spaces (VRF system)", "m2", 8200, 345.00, {"nrm": "8.1"}),
@@ -265,7 +265,7 @@ TEMPLATE = DemoTemplate(
         # -- 11. Electrical, Data & Communications --------------------------
         (
             "11",
-            "11 — Electrical, Data & Communications",
+            "11 - Electrical, Data & Communications",
             {"nrm": "8"},
             [
                 ("11.1", "Mains supply, main switchboard and distribution (Switchboards)", "lsum", 1, 345000.00, {"nrm": "8.1"}),
@@ -283,7 +283,7 @@ TEMPLATE = DemoTemplate(
         # -- 12. Siteworks, Courts & External Works -------------------------
         (
             "12",
-            "12 — Siteworks, Courts & External Works",
+            "12 - Siteworks, Courts & External Works",
             {"nrm": "9"},
             [
                 ("12.1", "Asphalt access roads, bus bay and car parks (Asphalt paving)", "m2", 8600, 78.00, {"nrm": "9.1"}),
@@ -307,7 +307,7 @@ TEMPLATE = DemoTemplate(
         ("GST", 15.0, "tax", "cumulative"),
     ],
     total_months=24,
-    tender_name="Main Contract — ECI / Construct (NZS 3910:2023)",
+    tender_name="Main Contract - ECI / Construct (NZS 3910:2023)",
     tender_companies=[
         ("Fletcher Construction", "tenders@fletcherconstruction.co.nz", 0.99),
         ("Naylor Love Construction", "tenders@naylorlove.co.nz", 0.97),
@@ -316,7 +316,7 @@ TEMPLATE = DemoTemplate(
     ],
     project_metadata={
         "address": "120 Awatea Road, Wigram, Christchurch 8042",
-        "client": "Ministry of Education — Te Tāhuhu o te Mātauranga",
+        "client": "Ministry of Education - Te Tāhuhu o te Mātauranga",
         "architect": "Jasmax",
         "quantity_surveyor": "Rider Levett Bucknall (RLB)",
         "structural_engineer": "Holmes Consulting",
@@ -333,8 +333,8 @@ TEMPLATE = DemoTemplate(
         "loading_standard": "NZS 1170 / NZS 1170.5 (seismic & loads)",
         "moe_standards": "Designing Schools in New Zealand; DQLS; MoE Acoustic & Indoor Air Quality guidelines",
         "contract": "NZS 3910:2023 (ECI then construct)",
-        "importance_level": "IL3 (gym & hall detailed to IL4 — Civil Defence shelter)",
-        "seismic_system": "Base isolation — lead-rubber bearings + flat sliders; LVL/CLT Pres-Lam rocking frames with UFP dampers",
+        "importance_level": "IL3 (gym & hall detailed to IL4 - Civil Defence shelter)",
+        "seismic_system": "Base isolation - lead-rubber bearings + flat sliders; LVL/CLT Pres-Lam rocking frames with UFP dampers",
         "seismic_zone": "Christchurch (Canterbury), Z=0.30, soil Class D",
         "wind_region": "A6",
         "sustainability_target": "Green Star 5 Star Education (NZGBC)",
@@ -342,7 +342,7 @@ TEMPLATE = DemoTemplate(
     },
     tender_packages=[
         (
-            "Main Contract — ECI / Construct (NZS 3910:2023)",
+            "Main Contract - ECI / Construct (NZS 3910:2023)",
             "Early-contractor-involvement then construct delivery of all blocks and site",
             "evaluating",
             [
@@ -393,7 +393,7 @@ TEMPLATE = DemoTemplate(
             ],
         ),
     ],
-    budget_boq_name="Elemental Cost Plan — NRM 1 (NZ)",
+    budget_boq_name="Elemental Cost Plan - NRM 1 (NZ)",
     planned_budget=72000000.0,
     actual_spend_ratio=0.42,
     spi_override=0.97,

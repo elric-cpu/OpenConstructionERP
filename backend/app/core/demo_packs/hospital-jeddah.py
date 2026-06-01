@@ -72,7 +72,7 @@ TEMPLATE = DemoTemplate(
     validation_rule_sets=["masterformat", "boq_quality"],
     boq_name=(
         "جدول الكميات - مستشفى عام وفق SBC 2018 ومعايير وزارة الصحة "
-        "(BOQ — General Hospital, SBC 2018 & MOH Standards)"
+        "(BOQ - General Hospital, SBC 2018 & MOH Standards)"
     ),
     boq_description=(
         "جدول كميات تفصيلي وفق تصنيف MasterFormat مع مراجع كود البناء السعودي "
@@ -91,7 +91,7 @@ TEMPLATE = DemoTemplate(
         # ── 02/31 — Earthworks, Piling & Foundations (الحفر والأساسات) ───
         (
             "02",
-            "02 — أعمال الموقع والحفر والأساسات الخازوقية (Earthworks & Piled Foundations)",
+            "02 - أعمال الموقع والحفر والأساسات الخازوقية (Earthworks & Piled Foundations)",
             {"masterformat": "02", "sbc": "SBC 301"},
             [
                 ("02.01", "تجهيز الموقع وإزالة العوائق (Site clearance & grubbing)", "m2", 38000, 16.00, {"masterformat": "02 41 00", "sbc": "SBC 201"}),
@@ -109,7 +109,7 @@ TEMPLATE = DemoTemplate(
         # ── 03 — Concrete Structure (الأعمال الخرسانية) ──────────────────
         (
             "03",
-            "03 — الهيكل الخرساني المسلح (Reinforced Concrete Structure — SBC 304)",
+            "03 - الهيكل الخرساني المسلح (Reinforced Concrete Structure - SBC 304)",
             {"masterformat": "03", "sbc": "SBC 304"},
             [
                 ("03.01", "خرسانة نظافة C15 تحت الأساسات (Blinding concrete C15)", "m3", 1850, 290.00, {"masterformat": "03 30 00", "sbc": "SBC 304"}),
@@ -129,7 +129,7 @@ TEMPLATE = DemoTemplate(
         # ── 04 — Masonry / Blockwork (أعمال البلوك) ──────────────────────
         (
             "04",
-            "04 — أعمال البلوك والمباني (Masonry & Blockwork)",
+            "04 - أعمال البلوك والمباني (Masonry & Blockwork)",
             {"masterformat": "04", "sbc": "SBC 201"},
             [
                 ("04.01", "بلوك أسمنتي للجدران الخارجية 200مم (External concrete block 200mm)", "m2", 24000, 92.00, {"masterformat": "04 22 00", "sbc": "SBC 201"}),
@@ -143,7 +143,7 @@ TEMPLATE = DemoTemplate(
         # ── 07 — Façade, Waterproofing & Insulation (الواجهات والعزل) ────
         (
             "07",
-            "07 — الواجهات والعزل المائي والحراري (Façade, Waterproofing & Thermal — SBC 601)",
+            "07 - الواجهات والعزل المائي والحراري (Façade, Waterproofing & Thermal - SBC 601)",
             {"masterformat": "07", "sbc": "SBC 601"},
             [
                 ("07.01", "حائط ستائري وحدات بزجاج عاكس مزدوج (Unitised curtain wall, double low-E)", "m2", 9800, 1480.00, {"masterformat": "08 44 00", "sbc": "SBC 601"}),
@@ -161,7 +161,7 @@ TEMPLATE = DemoTemplate(
         # ── 08 — Openings: Doors & Glazing (الأبواب والزجاج) ─────────────
         (
             "08",
-            "08 — الأبواب والزجاج الداخلي (Openings — Doors & Interior Glazing)",
+            "08 - الأبواب والزجاج الداخلي (Openings - Doors & Interior Glazing)",
             {"masterformat": "08", "sbc": "SBC 801"},
             [
                 ("08.01", "أبواب أوتوماتيكية منزلقة هرمسية للعمليات (Hermetic sliding OT doors)", "pcs", 22, 38000.00, {"masterformat": "08 34 16", "sbc": "SBC 501"}),
@@ -177,7 +177,7 @@ TEMPLATE = DemoTemplate(
         # ── 09 — Internal Finishes incl. Antimicrobial (التشطيبات) ───────
         (
             "09",
-            "09 — التشطيبات الداخلية بالمواصفات الصحية (Internal Finishes — Healthcare-Grade)",
+            "09 - التشطيبات الداخلية بالمواصفات الصحية (Internal Finishes - Healthcare-Grade)",
             {"masterformat": "09", "sbc": "SBC 201"},
             [
                 ("09.01", "لياسة أسمنتية للجدران الداخلية (Cement plaster to internal walls)", "m2", 118000, 38.00, {"masterformat": "09 24 00", "sbc": "SBC 201"}),
@@ -197,7 +197,7 @@ TEMPLATE = DemoTemplate(
         # ── 13 — Specialty: Operating Theatres & Clean Rooms (الغرف النظيفة) ─
         (
             "13",
-            "13 — الإنشاءات الخاصة: غرف العمليات والغرف النظيفة (Operating Theatres & Clean Rooms)",
+            "13 - الإنشاءات الخاصة: غرف العمليات والغرف النظيفة (Operating Theatres & Clean Rooms)",
             {"masterformat": "13", "sbc": "SBC 501"},
             [
                 ("13.01", "غرف عمليات معيارية مسبقة الصنع كاملة (Modular prefabricated operating theatres)", "pcs", 14, 2350000.00, {"masterformat": "13 49 00", "sbc": "SBC 501"}),
@@ -213,10 +213,10 @@ TEMPLATE = DemoTemplate(
         # ── 23 — Medical-Grade HVAC (التكييف الطبي) — large critical load ─
         (
             "23",
-            "23 — التكييف والتهوية بالمواصفات الطبية (Medical-Grade HVAC — SBC 501 / MOH)",
+            "23 - التكييف والتهوية بالمواصفات الطبية (Medical-Grade HVAC - SBC 501 / MOH)",
             {"masterformat": "23", "sbc": "SBC 501"},
             [
-                ("23.01", "محطة تبريد مركزية وحدات تبريد (Central chiller plant — 6000 TR)", "lsum", 1, 28500000.00, {"masterformat": "23 64 00", "sbc": "SBC 501"}),
+                ("23.01", "محطة تبريد مركزية وحدات تبريد (Central chiller plant - 6000 TR)", "lsum", 1, 28500000.00, {"masterformat": "23 64 00", "sbc": "SBC 501"}),
                 ("23.02", "وحدات مناولة هواء بفلاتر HEPA للمناطق الحرجة (HEPA-filtered AHUs, critical)", "pcs", 48, 185000.00, {"masterformat": "23 73 13", "sbc": "SBC 501"}),
                 ("23.03", "وحدات مناولة هواء عامة للأجنحة (General AHUs, wards/support)", "pcs", 64, 78000.00, {"masterformat": "23 73 00", "sbc": "SBC 501"}),
                 ("23.04", "وحدات ملف المروحة FCU للمكاتب والعيادات (Fan-coil units FCU)", "pcs", 980, 4200.00, {"masterformat": "23 82 19", "sbc": "SBC 501"}),
@@ -234,7 +234,7 @@ TEMPLATE = DemoTemplate(
         # ── 22 — Plumbing & Medical Gases (السباكة والغازات الطبية) ──────
         (
             "22",
-            "22 — السباكة والصرف والغازات الطبية (Plumbing, Drainage & Medical Gases)",
+            "22 - السباكة والصرف والغازات الطبية (Plumbing, Drainage & Medical Gases)",
             {"masterformat": "22", "sbc": "SBC 701"},
             [
                 ("22.01", "شبكة تغذية مياه باردة نحاس/PPR (Cold-water supply, copper/PPR)", "m", 24000, 82.00, {"masterformat": "22 11 16", "sbc": "SBC 701"}),
@@ -255,7 +255,7 @@ TEMPLATE = DemoTemplate(
         # ── 26 — Electrical, ELV & Nurse-Call (الكهرباء وأنظمة الجهد المنخفض) ─
         (
             "26",
-            "26 — الأعمال الكهربائية والجهد المنخفض ونداء الممرضات (Electrical, ELV & Nurse-Call)",
+            "26 - الأعمال الكهربائية والجهد المنخفض ونداء الممرضات (Electrical, ELV & Nurse-Call)",
             {"masterformat": "26", "sbc": "SBC 401"},
             [
                 ("26.01", "غرف محولات وتوصيلة الشركة السعودية للكهرباء (HV substations & SEC connection)", "lsum", 1, 6800000.00, {"masterformat": "26 11 00", "sbc": "SBC 401"}),
@@ -279,7 +279,7 @@ TEMPLATE = DemoTemplate(
         # ── 14 — Vertical Transport & Logistics (المصاعد والنقل الداخلي) ─
         (
             "14",
-            "14 — المصاعد والنقل الداخلي اللوجستي (Vertical Transport & Logistics)",
+            "14 - المصاعد والنقل الداخلي اللوجستي (Vertical Transport & Logistics)",
             {"masterformat": "14", "sbc": "SBC 201"},
             [
                 ("14.01", "مصاعد أسرّة للمرضى 2500كجم (Bed/patient lifts 2500kg)", "pcs", 10, 720000.00, {"masterformat": "14 21 00", "sbc": "SBC 201"}),
@@ -292,7 +292,7 @@ TEMPLATE = DemoTemplate(
         # ── 11 — Medical & Laboratory Equipment (التجهيزات الطبية) ──────
         (
             "11",
-            "11 — التجهيزات الطبية والمخبرية والإشعاعية (Medical, Laboratory & Imaging Equipment)",
+            "11 - التجهيزات الطبية والمخبرية والإشعاعية (Medical, Laboratory & Imaging Equipment)",
             {"masterformat": "11", "sbc": "SBC 501"},
             [
                 ("11.01", "جهاز تصوير مقطعي CT 128 شريحة (CT scanner, 128-slice)", "pcs", 3, 6800000.00, {"masterformat": "11 71 16", "sbc": "SBC 501"}),
@@ -312,7 +312,7 @@ TEMPLATE = DemoTemplate(
         # ── 32 — External Works & Helipad (الأعمال الخارجية والمهبط) ─────
         (
             "32",
-            "32 — الأعمال الخارجية وتنسيق الموقع ومهبط الطوارئ (External Works & Helipad)",
+            "32 - الأعمال الخارجية وتنسيق الموقع ومهبط الطوارئ (External Works & Helipad)",
             {"masterformat": "32", "sbc": "SBC 201"},
             [
                 ("32.01", "أعمال أسفلت للطرق ومدخل الطوارئ (Asphalt to roads & ambulance approach)", "m2", 18500, 95.00, {"masterformat": "32 12 16", "sbc": "SBC 201"}),
@@ -346,7 +346,7 @@ TEMPLATE = DemoTemplate(
     ],
     project_metadata={
         "address": "Haramain Expressway, Ash Shati District, Jeddah 23612, Saudi Arabia",
-        "client": "Ministry of Health (MOH) — Jeddah Health Cluster",
+        "client": "Ministry of Health (MOH) - Jeddah Health Cluster",
         "operator": "Jeddah Second Health Cluster",
         "architect": "Zuhair Fayez Partnership (ZFP)",
         "main_consultant": "Dar Al-Handasah (Shair & Partners)",
@@ -379,7 +379,7 @@ TEMPLATE = DemoTemplate(
         ),
         "medical_gases": (
             "Medical gas pipeline system (MGPS): liquid-oxygen VIE plant, "
-            "medical air and vacuum plant, nitrous oxide, with area alarms — "
+            "medical air and vacuum plant, nitrous oxide, with area alarms - "
             "per HTM 02-01 / ISO 7396-1 referenced in MOH standards"
         ),
         "radiation_protection": (
@@ -388,17 +388,17 @@ TEMPLATE = DemoTemplate(
             "Saudi Nuclear and Radiological Regulatory Commission (NRRC)"
         ),
         "energy_standard": (
-            "SBC 601 — hot-climate energy conservation (high-efficiency chiller "
+            "SBC 601 - hot-climate energy conservation (high-efficiency chiller "
             "plant, low-E glazing, heat recovery, rooftop PV 500kWp)"
         ),
         "cooling": "Central chiller plant, ~6,000 TR connected load, N+1 redundancy",
         "resilience": "Standby diesel generators (N+1), central UPS to critical care, dual SEC feeds",
         "seismic": "Jeddah is a low-to-moderate seismicity zone; structure designed per SBC 301",
-        "bim_standard": "ISO 19650-1/2 — BIM execution plan, LOD 350 at tender",
+        "bim_standard": "ISO 19650-1/2 - BIM execution plan, LOD 350 at tender",
         "vat_note": "All BOQ rates are exclusive of VAT. KSA VAT of 15% (ZATCA) is applied as a separate markup line.",
         "saudization_note": (
             "Project subject to Nitaqat Saudization quotas (MHRSD); contractor and "
-            "subcontractors must maintain a Green/Platinum band — local-workforce "
+            "subcontractors must maintain a Green/Platinum band - local-workforce "
             "ratios priced into preliminaries"
         ),
         "regulator": (
@@ -408,7 +408,7 @@ TEMPLATE = DemoTemplate(
         ),
     },
     budget_boq_name=(
-        "موازنة 5D - مستشفى جدة العام (5D Budget — Jeddah General Hospital)"
+        "موازنة 5D - مستشفى جدة العام (5D Budget - Jeddah General Hospital)"
     ),
     planned_budget=1_050_000_000.0,
     actual_spend_ratio=0.42,

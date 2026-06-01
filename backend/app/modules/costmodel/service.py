@@ -11,15 +11,25 @@ Stateless service layer.  Handles:
 import logging
 import uuid
 from decimal import Decimal
+from types import SimpleNamespace
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
-from app.modules.costmodel.models import BudgetLine, CashFlow, CostSnapshot
+from app.modules.costmodel.models import (
+    BudgetLine,
+    CashFlow,
+    ControlAccount,
+    CostLine,
+    CostSnapshot,
+)
 from app.modules.costmodel.repository import (
     BudgetLineRepository,
     CashFlowRepository,
+    ControlAccountRepository,
+    CostLineRepository,
+    CostSpineRepository,
     SnapshotRepository,
 )
 from app.modules.costmodel.schemas import (
@@ -30,12 +40,22 @@ from app.modules.costmodel.schemas import (
     CashFlowCreate,
     CashFlowData,
     CashFlowPeriod,
+    ControlAccountCreate,
+    ControlAccountResponse,
+    ControlAccountUpdate,
+    CostLineCreate,
+    CostLineLinks,
+    CostLineResponse,
+    CostLineRollupResponse,
+    CostLineUpdate,
     DashboardResponse,
     EVMResponse,
     SCurveData,
     SCurvePeriod,
     SnapshotCreate,
     SnapshotUpdate,
+    SpineGenerationResult,
+    SpineRollupResponse,
     WhatIfAdjustments,
     WhatIfResult,
 )
@@ -1274,3 +1294,968 @@ def _month_range(start: str, end: str) -> list[str]:
             break
 
     return months
+
+
+# ── Cost Spine service (v6.4) ─────────────────────────────────────────────────
+
+
+def _control_account_to_response(account: ControlAccount) -> ControlAccountResponse:
+    """Convert a ControlAccount ORM row to its response schema."""
+    return ControlAccountResponse.model_validate(account)
+
+
+def _cost_line_to_response(line: CostLine) -> CostLineResponse:
+    """Convert a CostLine ORM row to its response schema, money as Decimal."""
+    return CostLineResponse(
+        id=line.id,
+        project_id=line.project_id,
+        control_account_id=line.control_account_id,
+        code=line.code,
+        description=line.description,
+        unit=line.unit,
+        source=line.source,
+        boq_position_id=line.boq_position_id,
+        boq_id=line.boq_id,
+        estimate_quantity=Decimal(str(line.estimate_quantity or "0")),
+        estimate_unit_rate=Decimal(str(line.estimate_unit_rate or "0")),
+        estimate_amount=Decimal(str(line.estimate_amount or "0")),
+        currency=line.currency,
+        status=line.status,
+        metadata_=line.metadata_,
+        created_at=line.created_at,
+        updated_at=line.updated_at,
+    )
+
+
+def _account_code_from_classification(classification: object, standard: str) -> tuple[str, str] | None:
+    """Derive ``(code, name)`` for a control account from a position classification.
+
+    ``classification`` is the BOQ position JSONB, e.g.
+    ``{"din276": "330", "masterformat": "04 20 00"}``. We pick the value for the
+    requested ``standard`` (falling back to the first present standard) and use
+    it as both the account code and a human label. Returns None when the
+    position carries no usable classification so the caller can skip building an
+    account for it.
+    """
+    if not isinstance(classification, dict) or not classification:
+        return None
+    # Prefer the configured standard, else the first non-empty entry.
+    code = None
+    if standard:
+        raw = classification.get(standard)
+        if raw not in (None, ""):
+            code = str(raw).strip()
+    if code is None:
+        for value in classification.values():
+            if value not in (None, ""):
+                code = str(value).strip()
+                break
+    if not code:
+        return None
+    return code, code
+
+
+class CostSpineService:
+    """Business logic for the Cost Spine: control accounts, cost lines, rollups.
+
+    Owns its own repositories and reuses the existing project-currency and
+    event-publish helpers so FX and event semantics stay identical to the rest
+    of the cost-model module.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+        self.account_repo = ControlAccountRepository(session)
+        self.line_repo = CostLineRepository(session)
+        self.spine_repo = CostSpineRepository(session)
+        self.budget_repo = BudgetLineRepository(session)
+        # Reuse CostModelService helpers (project currency, default BOQ pick).
+        self._cost_service = CostModelService(session)
+
+    async def _get_project_currency(self, project_id: uuid.UUID) -> str:
+        return await self._cost_service._get_project_currency(project_id)
+
+    # ── Control accounts ────────────────────────────────────────────────────
+
+    async def list_accounts(self, project_id: uuid.UUID) -> list[ControlAccountResponse]:
+        """Return the project's control accounts as a tree-ordered list."""
+        accounts = await self.account_repo.list_for_project(project_id)
+        return [_control_account_to_response(a) for a in accounts]
+
+    async def create_account(self, data: ControlAccountCreate) -> ControlAccountResponse:
+        """Create a control account, rejecting a duplicate project+code (409)."""
+        if data.project_id is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="project_id is required")
+        existing = await self.account_repo.get_by_project_code(data.project_id, data.code)
+        if existing is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Control account code '{data.code}' already exists in this project.",
+            )
+        if data.parent_id is not None:
+            parent = await self.account_repo.get_by_id(data.parent_id)
+            if parent is None or parent.project_id != data.project_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="parent_id does not reference a control account in this project.",
+                )
+        account = ControlAccount(
+            project_id=data.project_id,
+            parent_id=data.parent_id,
+            code=data.code,
+            name=data.name,
+            classification_standard=data.classification_standard,
+            status=data.status,
+            sort_order=data.sort_order,
+            metadata_=data.metadata,
+        )
+        account = await self.account_repo.create(account)
+        await _safe_publish(
+            "costmodel.spine.account_created",
+            {"account_id": str(account.id), "project_id": str(data.project_id), "code": data.code},
+            source_module="oe_costmodel",
+        )
+        return _control_account_to_response(account)
+
+    async def update_account(self, account_id: uuid.UUID, data: ControlAccountUpdate) -> ControlAccountResponse:
+        """Update a control account. Raises 404 if missing, 409 on code clash."""
+        account = await self.account_repo.get_by_id(account_id)
+        if account is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Control account not found")
+
+        project_id = account.project_id
+        fields = data.model_dump(exclude_unset=True)
+
+        if "code" in fields and fields["code"] != account.code:
+            clash = await self.account_repo.get_by_project_code(project_id, fields["code"])
+            if clash is not None and clash.id != account_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Control account code '{fields['code']}' already exists in this project.",
+                )
+        if fields.get("parent_id") is not None:
+            if fields["parent_id"] == account_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="A control account cannot be its own parent.",
+                )
+            parent = await self.account_repo.get_by_id(fields["parent_id"])
+            if parent is None or parent.project_id != project_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="parent_id does not reference a control account in this project.",
+                )
+        if "metadata" in fields:
+            fields["metadata_"] = fields.pop("metadata")
+
+        if fields:
+            await self.account_repo.update_fields(account_id, **fields)
+        updated = await self.account_repo.get_by_id(account_id)
+        if updated is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Control account not found after update")
+        return _control_account_to_response(updated)
+
+    async def delete_account(self, account_id: uuid.UUID) -> None:
+        """Delete a control account. Raises 404 if missing, 409 if lines reference it."""
+        account = await self.account_repo.get_by_id(account_id)
+        if account is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Control account not found")
+        referencing = await self.account_repo.count_lines_referencing(account_id)
+        if referencing > 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Control account is referenced by {referencing} cost line(s). "
+                    "Reassign or delete those lines first."
+                ),
+            )
+        project_id = str(account.project_id)
+        await self.account_repo.delete(account_id)
+        await _safe_publish(
+            "costmodel.spine.account_deleted",
+            {"account_id": str(account_id), "project_id": project_id},
+            source_module="oe_costmodel",
+        )
+
+    # ── Cost lines ──────────────────────────────────────────────────────────
+
+    async def list_lines(
+        self,
+        project_id: uuid.UUID,
+        *,
+        control_account_id: uuid.UUID | None = None,
+        status: str | None = None,
+        offset: int = 0,
+        limit: int = 200,
+    ) -> list[CostLineResponse]:
+        """List cost lines for a project with optional account/status filters."""
+        lines, _ = await self.line_repo.list_for_project(
+            project_id,
+            control_account_id=control_account_id,
+            status=status,
+            offset=offset,
+            limit=limit,
+        )
+        return [_cost_line_to_response(line) for line in lines]
+
+    async def create_line(self, data: CostLineCreate) -> CostLineResponse:
+        """Create a cost line, auto-generating a code when omitted (409 on clash)."""
+        if data.project_id is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="project_id is required")
+
+        code = (data.code or "").strip() or f"CL-{uuid.uuid4().hex[:8].upper()}"
+        existing = await self.line_repo.get_by_project_code(data.project_id, code)
+        if existing is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Cost line code '{code}' already exists in this project.",
+            )
+        if data.control_account_id is not None:
+            account = await self.account_repo.get_by_id(data.control_account_id)
+            if account is None or account.project_id != data.project_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="control_account_id does not reference a control account in this project.",
+                )
+        currency = data.currency or await self._get_project_currency(data.project_id)
+        line = CostLine(
+            project_id=data.project_id,
+            control_account_id=data.control_account_id,
+            code=code,
+            description=data.description,
+            unit=data.unit,
+            source=data.source,
+            boq_position_id=data.boq_position_id,
+            boq_id=data.boq_id,
+            estimate_quantity=str(data.estimate_quantity),
+            estimate_unit_rate=str(data.estimate_unit_rate),
+            estimate_amount=str(data.estimate_amount),
+            currency=currency,
+            status=data.status,
+            metadata_=data.metadata,
+        )
+        line = await self.line_repo.create(line)
+        await _safe_publish(
+            "costmodel.spine.cost_line_created",
+            {"cost_line_id": str(line.id), "project_id": str(data.project_id), "code": code},
+            source_module="oe_costmodel",
+        )
+        return _cost_line_to_response(line)
+
+    async def update_line(self, line_id: uuid.UUID, data: CostLineUpdate) -> CostLineResponse:
+        """Update a cost line. Raises 404 if missing, 409 on code clash."""
+        line = await self.line_repo.get_by_id(line_id)
+        if line is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cost line not found")
+
+        project_id = line.project_id
+        fields = data.model_dump(exclude_unset=True)
+
+        if "code" in fields and fields["code"] != line.code:
+            clash = await self.line_repo.get_by_project_code(project_id, fields["code"])
+            if clash is not None and clash.id != line_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Cost line code '{fields['code']}' already exists in this project.",
+                )
+        if fields.get("control_account_id") is not None:
+            account = await self.account_repo.get_by_id(fields["control_account_id"])
+            if account is None or account.project_id != project_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="control_account_id does not reference a control account in this project.",
+                )
+        for key in ("estimate_quantity", "estimate_unit_rate", "estimate_amount"):
+            if key in fields and fields[key] is not None:
+                fields[key] = str(fields[key])
+        if "metadata" in fields:
+            fields["metadata_"] = fields.pop("metadata")
+
+        if fields:
+            await self.line_repo.update_fields(line_id, **fields)
+        updated = await self.line_repo.get_by_id(line_id)
+        if updated is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cost line not found after update")
+        return _cost_line_to_response(updated)
+
+    async def delete_line(self, line_id: uuid.UUID) -> None:
+        """Delete a cost line. Raises 404 if missing, 409 if anything links to it."""
+        line = await self.line_repo.get_by_id(line_id)
+        if line is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cost line not found")
+
+        project_id = str(line.project_id)
+        counts = await self._linked_counts(line_id, line.project_id)
+        total_links = sum(counts.values())
+        if total_links > 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "message": "Cost line is still linked to downstream records. Unlink them first.",
+                    "linked": counts,
+                },
+            )
+        await self.line_repo.delete(line_id)
+        await _safe_publish(
+            "costmodel.spine.cost_line_deleted",
+            {"cost_line_id": str(line_id), "project_id": project_id},
+            source_module="oe_costmodel",
+        )
+
+    async def _linked_counts(self, line_id: uuid.UUID, project_id: uuid.UUID) -> dict[str, int]:
+        """Count downstream rows linked to a cost line (for delete-guard 409)."""
+        from sqlalchemy import func, select
+
+        from app.modules.boq.models import Position
+        from app.modules.contracts.models import ContractLine
+        from app.modules.procurement.models import MaterialRequisitionItem, PurchaseOrderItem
+
+        async def _count(stmt: object) -> int:
+            return (await self.session.execute(stmt)).scalar_one()
+
+        budget = await _count(select(func.count()).where(BudgetLine.cost_line_id == line_id))
+        positions = await _count(select(func.count()).where(Position.cost_line_id == line_id))
+        po_items = await _count(select(func.count()).where(PurchaseOrderItem.cost_line_id == line_id))
+        req_items = await _count(select(func.count()).where(MaterialRequisitionItem.cost_line_id == line_id))
+        contract_lines = await _count(select(func.count()).where(ContractLine.cost_line_id == line_id))
+        return {
+            "budget_lines": budget,
+            "boq_positions": positions,
+            "po_items": po_items,
+            "req_items": req_items,
+            "contract_lines": contract_lines,
+        }
+
+    # ── Generation from BOQ ─────────────────────────────────────────────────
+
+    async def generate_from_boq(
+        self,
+        project_id: uuid.UUID,
+        boq_id: uuid.UUID | None = None,
+    ) -> SpineGenerationResult:
+        """Build the cost spine from a BOQ (idempotent, fill-nulls-only).
+
+        Resolves the BOQ (largest/most-recent when ``boq_id`` is omitted), loads
+        its positions, builds a control-account tree from each position's
+        classification, upserts one cost line per position keyed on
+        ``(project_id, code)`` (code from ``reference_code`` or an auto
+        ``CL-XXXXXXXX``), captures the estimate quantity/rate/amount, inherits
+        the project currency, writes ``cost_line_id`` back onto the position, and
+        auto-links any budget line whose ``boq_position_id`` matches. Re-running
+        only fills gaps so it never doubles money or relinks already-wired rows.
+        """
+        from app.modules.boq.repository import BOQRepository, PositionRepository
+
+        resolved_boq_id = boq_id
+        if resolved_boq_id is None:
+            resolved_boq_id = await self._cost_service.pick_default_boq(project_id)
+            if resolved_boq_id is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No BOQ found for this project - create one first.",
+                )
+
+        # Confirm the BOQ belongs to this project (IDOR + correctness).
+        boq = await BOQRepository(self.session).get_by_id(resolved_boq_id)
+        if boq is None or boq.project_id != project_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="BOQ not found for this project",
+            )
+
+        position_repo = PositionRepository(self.session)
+        positions, _ = await position_repo.list_for_boq(resolved_boq_id, limit=100000)
+        if not positions:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No positions found in the specified BOQ",
+            )
+
+        project_currency = await self._get_project_currency(project_id)
+
+        # Resolve the classification standard once from the project config when
+        # available; default to DIN 276 which is the most common in the seed set.
+        standard = await self._resolve_classification_standard(project_id)
+
+        # Cache existing accounts + lines so the whole generation is one pass.
+        # Store only the account *id* (a plain UUID): the ORM object would be
+        # expired by the first create/update inside the loop, and accessing
+        # ``account.id`` afterwards would re-issue a sync SELECT and raise
+        # MissingGreenlet under the async session.
+        accounts_by_code: dict[str, uuid.UUID] = {
+            a.code: a.id for a in await self.account_repo.list_for_project(project_id)
+        }
+        # ``lines_by_code`` only needs the identity + linkage columns, so we
+        # snapshot them into plain namespaces up front. Reading the live ORM
+        # objects later in the loop would fault: the first create/update flushes
+        # and ``expire_all()``s the identity map, after which any ORM attribute
+        # access (even on a previously-loaded row) re-issues a sync SELECT and
+        # raises MissingGreenlet under the async session.
+        lines_by_code: dict[str, SimpleNamespace] = {}
+        for line in (await self.line_repo.list_for_project(project_id, limit=100000))[0]:
+            lines_by_code[line.code] = SimpleNamespace(
+                id=line.id,
+                boq_position_id=line.boq_position_id,
+                boq_id=line.boq_id,
+                control_account_id=line.control_account_id,
+            )
+
+        accounts_created = 0
+        cost_lines_created = 0
+        positions_linked = 0
+
+        # Snapshot every position attribute the loop needs BEFORE we mutate
+        # anything. The first ``position_repo.update_fields`` / ``*_repo.create``
+        # call inside the loop flushes and ``expire_all()``s the identity map;
+        # without this snapshot the next iteration's ``pos.unit`` access would
+        # trigger a sync lazy-load of an expired column and raise MissingGreenlet
+        # under the async session. Reading the columns up front keeps generation
+        # a single pass with no mid-loop expired-attribute IO.
+        pos_views = [
+            SimpleNamespace(
+                id=pos.id,
+                unit=pos.unit,
+                classification=pos.classification,
+                reference_code=getattr(pos, "reference_code", None),
+                description=pos.description,
+                quantity=pos.quantity,
+                unit_rate=pos.unit_rate,
+                total=pos.total,
+                cost_line_id=getattr(pos, "cost_line_id", None),
+            )
+            for pos in positions
+        ]
+
+        for pos in pos_views:
+            # Skip section headers (empty unit) - mirrors generate_budget_from_boq.
+            if not pos.unit:
+                continue
+
+            # ── Control account from classification ──────────────────────
+            account_id: uuid.UUID | None = None
+            account_info = _account_code_from_classification(pos.classification, standard)
+            if account_info is not None:
+                acct_code, acct_name = account_info
+                account_id = accounts_by_code.get(acct_code)
+                if account_id is None:
+                    account = ControlAccount(
+                        project_id=project_id,
+                        parent_id=None,
+                        code=acct_code,
+                        name=acct_name,
+                        classification_standard=standard,
+                        status="open",
+                        sort_order=0,
+                    )
+                    account = await self.account_repo.create(account)
+                    # Capture the id immediately; the ORM object expires on the
+                    # next create/update inside this loop.
+                    account_id = account.id
+                    accounts_by_code[acct_code] = account_id
+                    accounts_created += 1
+
+            # ── Cost line code (reference_code or auto) ──────────────────
+            ref = (pos.reference_code or "").strip()
+            code = ref or f"CL-{uuid.uuid4().hex[:8].upper()}"
+            # Guard against a collision on an auto code (extremely unlikely).
+            while not ref and code in lines_by_code:
+                code = f"CL-{uuid.uuid4().hex[:8].upper()}"
+
+            existing_line = lines_by_code.get(code)
+            if existing_line is None:
+                new_line = CostLine(
+                    project_id=project_id,
+                    control_account_id=account_id,
+                    code=code,
+                    description=(pos.description or "")[:2000],
+                    unit=pos.unit,
+                    source="boq",
+                    boq_position_id=pos.id,
+                    boq_id=resolved_boq_id,
+                    estimate_quantity=str(pos.quantity or "0"),
+                    estimate_unit_rate=str(pos.unit_rate or "0"),
+                    estimate_amount=str(pos.total or "0"),
+                    currency=project_currency,
+                    status="active",
+                )
+                new_line = await self.line_repo.create(new_line)
+                # Capture identity NOW, before the next iteration expires it.
+                view = SimpleNamespace(
+                    id=new_line.id,
+                    boq_position_id=pos.id,
+                    boq_id=resolved_boq_id,
+                    control_account_id=account_id,
+                )
+                lines_by_code[code] = view
+                cost_lines_created += 1
+            else:
+                view = existing_line
+                # Idempotent fill-nulls-only: attach the originating position /
+                # account when the existing line has none yet, never overwrite.
+                fill: dict[str, object] = {}
+                if view.boq_position_id is None:
+                    fill["boq_position_id"] = pos.id
+                    view.boq_position_id = pos.id
+                if view.boq_id is None:
+                    fill["boq_id"] = resolved_boq_id
+                    view.boq_id = resolved_boq_id
+                if view.control_account_id is None and account_id is not None:
+                    fill["control_account_id"] = account_id
+                    view.control_account_id = account_id
+                if fill:
+                    await self.line_repo.update_fields(view.id, **fill)
+
+            # ── Write cost_line_id back onto the position (fill-only) ────
+            if pos.cost_line_id is None:
+                await position_repo.update_fields(pos.id, cost_line_id=view.id)
+                positions_linked += 1
+
+        # ── Auto-link budget lines by boq_position_id (fill-nulls-only) ──
+        # ``lines_by_code`` values are plain namespaces (id + linkage cols), so
+        # the autolink pass never touches expired ORM state.
+        budget_lines_linked = await self._autolink_budget_lines(project_id, lines_by_code)
+
+        await _safe_publish(
+            "costmodel.spine.generated",
+            {
+                "project_id": str(project_id),
+                "boq_id": str(resolved_boq_id),
+                "accounts_created": accounts_created,
+                "cost_lines_created": cost_lines_created,
+                "positions_linked": positions_linked,
+                "budget_lines_linked": budget_lines_linked,
+            },
+            source_module="oe_costmodel",
+        )
+        logger.info(
+            "Cost spine generated: project=%s boq=%s accounts=+%d lines=+%d positions_linked=%d budget_linked=%d",
+            project_id,
+            resolved_boq_id,
+            accounts_created,
+            cost_lines_created,
+            positions_linked,
+            budget_lines_linked,
+        )
+        return SpineGenerationResult(
+            project_id=project_id,
+            boq_id=resolved_boq_id,
+            accounts_created=accounts_created,
+            cost_lines_created=cost_lines_created,
+            positions_linked=positions_linked,
+            budget_lines_linked=budget_lines_linked,
+        )
+
+    async def _resolve_classification_standard(self, project_id: uuid.UUID) -> str:
+        """Best-effort project classification standard, defaulting to ``din276``."""
+        try:
+            from app.modules.projects.repository import ProjectRepository
+
+            project = await ProjectRepository(self.session).get_by_id(project_id)
+        except Exception:
+            return "din276"
+        if project is None:
+            return "din276"
+        cfg = getattr(project, "config", None) or getattr(project, "settings", None)
+        if isinstance(cfg, dict):
+            std = str(cfg.get("classification_standard") or "").strip()
+            if std:
+                return std
+        return "din276"
+
+    async def _autolink_budget_lines(
+        self,
+        project_id: uuid.UUID,
+        lines_by_code: dict[str, SimpleNamespace],
+    ) -> int:
+        """Link existing budget lines to cost lines by shared ``boq_position_id``.
+
+        Fill-nulls-only: a budget line already carrying a ``cost_line_id`` is
+        left untouched. Sets both ``cost_line_id`` and ``control_account_id`` so
+        account rollups can group budget without re-joining.
+
+        ``lines_by_code`` values are plain namespaces (id + linkage cols)
+        captured by the generation loop, so this pass never reads an expired
+        ORM attribute. Budget-line fields are likewise snapshotted before the
+        first ``update_fields`` (which ``expire_all()``s) so a multi-row link
+        does not fault on the second iteration.
+        """
+        # Index cost lines by their originating position.
+        by_position: dict[str, SimpleNamespace] = {}
+        for line in lines_by_code.values():
+            if line.boq_position_id is not None:
+                by_position[str(line.boq_position_id)] = line
+
+        if not by_position:
+            return 0
+
+        budget_lines, _ = await self.budget_repo.list_for_project(project_id, limit=100000)
+        # Snapshot the columns we branch on up front (see docstring).
+        bl_views = [
+            SimpleNamespace(
+                id=bl.id,
+                cost_line_id=bl.cost_line_id,
+                boq_position_id=bl.boq_position_id,
+            )
+            for bl in budget_lines
+        ]
+        linked = 0
+        for bl in bl_views:
+            if bl.cost_line_id is not None or bl.boq_position_id is None:
+                continue
+            target = by_position.get(str(bl.boq_position_id))
+            if target is None:
+                continue
+            await self.budget_repo.update_fields(
+                bl.id,
+                cost_line_id=target.id,
+                control_account_id=target.control_account_id,
+            )
+            linked += 1
+        return linked
+
+    # ── Rollup ──────────────────────────────────────────────────────────────
+
+    async def _build_links(self, project_id: uuid.UUID) -> dict[str, CostLineLinks]:
+        """Collect every downstream reference per cost line in one sweep each.
+
+        Returns a dict keyed by cost-line id string. Five scans (budget, BOQ
+        positions, PO items, contract lines, RFQs) - no per-line queries.
+        """
+        from sqlalchemy import select
+
+        from app.modules.boq.models import Position
+        from app.modules.contracts.models import Contract, ContractLine
+        from app.modules.procurement.models import PurchaseOrder, PurchaseOrderItem
+        from app.modules.rfq_bidding.models import RFQ
+
+        links: dict[str, CostLineLinks] = {}
+
+        def _bucket(key: str) -> CostLineLinks:
+            return links.setdefault(key, CostLineLinks())
+
+        # Budget lines.
+        stmt = select(BudgetLine.cost_line_id, BudgetLine.id).where(
+            BudgetLine.project_id == project_id,
+            BudgetLine.cost_line_id.is_not(None),
+        )
+        for cost_line_id, bl_id in (await self.session.execute(stmt)).all():
+            _bucket(str(cost_line_id)).budget_line_ids.append(str(bl_id))
+
+        # BOQ positions.
+        stmt = select(Position.cost_line_id, Position.id).where(Position.cost_line_id.is_not(None))
+        for cost_line_id, pos_id in (await self.session.execute(stmt)).all():
+            _bucket(str(cost_line_id)).boq_position_ids.append(str(pos_id))
+
+        # PO items (scoped to project via the parent PO).
+        stmt = (
+            select(PurchaseOrderItem.cost_line_id, PurchaseOrderItem.id)
+            .join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderItem.po_id)
+            .where(
+                PurchaseOrder.project_id == project_id,
+                PurchaseOrderItem.cost_line_id.is_not(None),
+            )
+        )
+        for cost_line_id, item_id in (await self.session.execute(stmt)).all():
+            _bucket(str(cost_line_id)).po_item_ids.append(str(item_id))
+
+        # Contract lines (scoped to project via the parent contract).
+        stmt = (
+            select(ContractLine.cost_line_id, ContractLine.id)
+            .join(Contract, Contract.id == ContractLine.contract_id)
+            .where(
+                Contract.project_id == project_id,
+                ContractLine.cost_line_id.is_not(None),
+            )
+        )
+        for cost_line_id, cl_id in (await self.session.execute(stmt)).all():
+            _bucket(str(cost_line_id)).contract_line_ids.append(str(cl_id))
+
+        # RFQs carry a JSON array of cost-line ids.
+        stmt = select(RFQ.id, RFQ.cost_line_ids).where(RFQ.project_id == project_id)
+        for rfq_id, cost_line_ids in (await self.session.execute(stmt)).all():
+            if isinstance(cost_line_ids, list):
+                for raw in cost_line_ids:
+                    if raw:
+                        _bucket(str(raw)).rfq_ids.append(str(rfq_id))
+
+        return links
+
+    def _assemble_line_rollup(
+        self,
+        line: CostLine,
+        *,
+        budget: dict[str, dict[str, Decimal]],
+        po: dict[str, Decimal],
+        contracted: dict[str, Decimal],
+        claimed: dict[str, Decimal],
+        links: dict[str, CostLineLinks],
+    ) -> CostLineRollupResponse:
+        """Assemble one cost line's rollup from the pre-computed aggregate maps."""
+        key = str(line.id)
+        b = budget.get(key, {})
+        budget_planned = b.get("planned", Decimal("0"))
+        estimate_amount = Decimal(str(line.estimate_amount or "0"))
+        return CostLineRollupResponse(
+            cost_line_id=line.id,
+            code=line.code,
+            control_account_id=line.control_account_id,
+            description=line.description,
+            currency=line.currency,
+            estimate_amount=estimate_amount,
+            budget_planned=budget_planned,
+            budget_committed=b.get("committed", Decimal("0")),
+            budget_actual=b.get("actual", Decimal("0")),
+            po_committed=po.get(key, Decimal("0")),
+            contracted_value=contracted.get(key, Decimal("0")),
+            claimed_to_date=claimed.get(key, Decimal("0")),
+            variance_estimate_vs_budget=estimate_amount - budget_planned,
+            links=links.get(key, CostLineLinks()),
+        )
+
+    async def _distinct_link_currencies(self, project_id: uuid.UUID) -> set[str]:
+        """Distinct non-blank currencies across the linked cost-domain rows.
+
+        Mirrors the existing ``_distinct_budget_currencies`` flag pattern but
+        spans every spine source (budget lines, PO currency, contract currency,
+        cost-line currency) so ``mixed_currency`` is True whenever a sum may
+        have crossed a missing fx rate.
+        """
+        from sqlalchemy import select
+
+        from app.modules.contracts.models import Contract, ContractLine
+        from app.modules.procurement.models import PurchaseOrder, PurchaseOrderItem
+
+        codes: set[str] = set()
+
+        stmt = select(CostLine.currency).where(CostLine.project_id == project_id).distinct()
+        for (raw,) in (await self.session.execute(stmt)).all():
+            if (raw or "").strip():
+                codes.add(raw.strip().upper())
+
+        stmt = (
+            select(BudgetLine.currency)
+            .where(BudgetLine.project_id == project_id, BudgetLine.cost_line_id.is_not(None))
+            .distinct()
+        )
+        for (raw,) in (await self.session.execute(stmt)).all():
+            if (raw or "").strip():
+                codes.add(raw.strip().upper())
+
+        stmt = (
+            select(PurchaseOrder.currency_code)
+            .join(PurchaseOrderItem, PurchaseOrderItem.po_id == PurchaseOrder.id)
+            .where(PurchaseOrder.project_id == project_id, PurchaseOrderItem.cost_line_id.is_not(None))
+            .distinct()
+        )
+        for (raw,) in (await self.session.execute(stmt)).all():
+            if (raw or "").strip():
+                codes.add(raw.strip().upper())
+
+        stmt = (
+            select(Contract.currency)
+            .join(ContractLine, ContractLine.contract_id == Contract.id)
+            .where(Contract.project_id == project_id, ContractLine.cost_line_id.is_not(None))
+            .distinct()
+        )
+        for (raw,) in (await self.session.execute(stmt)).all():
+            if (raw or "").strip():
+                codes.add(raw.strip().upper())
+
+        return codes
+
+    async def rollup_for_project(self, project_id: uuid.UUID) -> SpineRollupResponse:
+        """Assemble the project-wide Cost Spine rollup from grouped aggregates."""
+        accounts = await self.account_repo.list_for_project(project_id)
+        lines, _ = await self.line_repo.list_for_project(project_id, limit=100000)
+
+        budget = await self.spine_repo.budget_aggregate_by_cost_line(project_id)
+        po = await self.spine_repo.po_committed_by_cost_line(project_id)
+        contracted = await self.spine_repo.contract_value_by_cost_line(project_id)
+        claimed = await self.spine_repo.claimed_to_date_by_cost_line(project_id)
+        links = await self._build_links(project_id)
+
+        line_rollups = [
+            self._assemble_line_rollup(
+                line,
+                budget=budget,
+                po=po,
+                contracted=contracted,
+                claimed=claimed,
+                links=links,
+            )
+            for line in lines
+        ]
+
+        totals = {
+            "estimate_amount": Decimal("0"),
+            "budget_planned": Decimal("0"),
+            "budget_committed": Decimal("0"),
+            "budget_actual": Decimal("0"),
+            "po_committed": Decimal("0"),
+            "contracted_value": Decimal("0"),
+            "claimed_to_date": Decimal("0"),
+        }
+        for r in line_rollups:
+            totals["estimate_amount"] += r.estimate_amount
+            totals["budget_planned"] += r.budget_planned
+            totals["budget_committed"] += r.budget_committed
+            totals["budget_actual"] += r.budget_actual
+            totals["po_committed"] += r.po_committed
+            totals["contracted_value"] += r.contracted_value
+            totals["claimed_to_date"] += r.claimed_to_date
+        totals_str = {k: str(v) for k, v in totals.items()}
+        totals_str["variance_estimate_vs_budget"] = str(totals["estimate_amount"] - totals["budget_planned"])
+
+        currency = await self._get_project_currency(project_id)
+        mixed = len(await self._distinct_link_currencies(project_id)) > 1
+
+        return SpineRollupResponse(
+            currency=currency,
+            mixed_currency=mixed,
+            accounts=[_control_account_to_response(a) for a in accounts],
+            lines=line_rollups,
+            totals=totals_str,
+        )
+
+    async def rollup_for_line(self, line_id: uuid.UUID) -> CostLineRollupResponse:
+        """Assemble the rollup for a single cost line. Raises 404 if missing."""
+        line = await self.line_repo.get_by_id(line_id)
+        if line is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cost line not found")
+
+        project_id = line.project_id
+        budget = await self.spine_repo.budget_aggregate_by_cost_line(project_id)
+        po = await self.spine_repo.po_committed_by_cost_line(project_id)
+        contracted = await self.spine_repo.contract_value_by_cost_line(project_id)
+        claimed = await self.spine_repo.claimed_to_date_by_cost_line(project_id)
+        links = await self._build_links(project_id)
+
+        return self._assemble_line_rollup(
+            line,
+            budget=budget,
+            po=po,
+            contracted=contracted,
+            claimed=claimed,
+            links=links,
+        )
+
+    # ── Link / unlink a downstream target ─────────────────────────────────────
+
+    async def link_target(
+        self,
+        line_id: uuid.UUID,
+        target_type: str,
+        target_id: uuid.UUID,
+    ) -> CostLineRollupResponse:
+        """Link a downstream entity to a cost line, then return its rollup.
+
+        ``target_type`` is one of ``boq_position`` / ``budget_line`` /
+        ``po_item`` / ``contract_line`` / ``rfq``. The target must belong to the
+        same project as the cost line (404 on a cross-project / missing target).
+        """
+        line = await self.line_repo.get_by_id(line_id)
+        if line is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cost line not found")
+        await self._apply_link(line, target_type, target_id, link=True)
+        return await self.rollup_for_line(line_id)
+
+    async def unlink_target(
+        self,
+        line_id: uuid.UUID,
+        target_type: str,
+        target_id: uuid.UUID,
+    ) -> CostLineRollupResponse:
+        """Detach a downstream entity from a cost line, then return its rollup."""
+        line = await self.line_repo.get_by_id(line_id)
+        if line is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cost line not found")
+        await self._apply_link(line, target_type, target_id, link=False)
+        return await self.rollup_for_line(line_id)
+
+    async def _apply_link(
+        self,
+        line: CostLine,
+        target_type: str,
+        target_id: uuid.UUID,
+        *,
+        link: bool,
+    ) -> None:
+        """Set or clear ``cost_line_id`` on the target row after a project check."""
+        from sqlalchemy import update
+
+        from app.modules.boq.models import BOQ, Position
+        from app.modules.contracts.models import Contract, ContractLine
+        from app.modules.procurement.models import PurchaseOrder, PurchaseOrderItem
+        from app.modules.rfq_bidding.models import RFQ
+
+        project_id = line.project_id
+        new_value = line.id if link else None
+        normalized = (target_type or "").strip().lower()
+
+        if normalized == "boq_position":
+            pos = await self.session.get(Position, target_id)
+            if pos is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
+            boq = await self.session.get(BOQ, pos.boq_id)
+            if boq is None or boq.project_id != project_id:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
+            await self.session.execute(update(Position).where(Position.id == target_id).values(cost_line_id=new_value))
+
+        elif normalized == "budget_line":
+            bl = await self.session.get(BudgetLine, target_id)
+            if bl is None or bl.project_id != project_id:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
+            await self.budget_repo.update_fields(
+                target_id,
+                cost_line_id=new_value,
+                control_account_id=(line.control_account_id if link else None),
+            )
+
+        elif normalized == "po_item":
+            item = await self.session.get(PurchaseOrderItem, target_id)
+            if item is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
+            po = await self.session.get(PurchaseOrder, item.po_id)
+            if po is None or po.project_id != project_id:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
+            await self.session.execute(
+                update(PurchaseOrderItem).where(PurchaseOrderItem.id == target_id).values(cost_line_id=new_value)
+            )
+
+        elif normalized == "contract_line":
+            cl = await self.session.get(ContractLine, target_id)
+            if cl is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
+            contract = await self.session.get(Contract, cl.contract_id)
+            if contract is None or contract.project_id != project_id:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
+            await self.session.execute(
+                update(ContractLine).where(ContractLine.id == target_id).values(cost_line_id=new_value)
+            )
+
+        elif normalized == "rfq":
+            rfq = await self.session.get(RFQ, target_id)
+            if rfq is None or rfq.project_id != project_id:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Target not found")
+            current = list(rfq.cost_line_ids or [])
+            line_id_str = str(line.id)
+            if link:
+                if line_id_str not in {str(c) for c in current}:
+                    current.append(line_id_str)
+            else:
+                current = [c for c in current if str(c) != line_id_str]
+            await self.session.execute(update(RFQ).where(RFQ.id == target_id).values(cost_line_ids=current))
+            await self.session.flush()
+            self.session.expire_all()
+
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "Invalid target_type. Expected one of: boq_position, budget_line, "
+                    "po_item, contract_line, rfq."
+                ),
+            )
+
+        await self.session.flush()
+        self.session.expire_all()

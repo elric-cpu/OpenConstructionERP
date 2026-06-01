@@ -1042,6 +1042,353 @@ def cmd_seed(args: argparse.Namespace) -> None:
     asyncio.run(_run_seed())
 
 
+# ── Module management (install / list / uninstall) ─────────────────────────
+# A module is a Python package under ``app/modules/`` that carries a
+# ``manifest.py`` exposing a module-level ``manifest = ModuleManifest(...)``.
+# The loader (``app.core.module_loader``) discovers modules by scanning that
+# directory for ``manifest.py`` and registers each by ``manifest.name`` (e.g.
+# ``oe_boq``). The on-disk directory name is ``manifest.name`` with the
+# ``oe_`` prefix stripped (``oe_boq`` -> ``boq``), which is the convention
+# ``_load_module`` uses to resolve the importable package path. These commands
+# extract / remove modules into exactly that directory so the loader picks
+# them up on the next server start.
+
+
+def _modules_dir() -> Path:
+    """Return the directory the module loader scans for modules.
+
+    Imports the loader so we always agree with it on the location, instead of
+    re-deriving the path here and risking drift.
+    """
+    from app.core.module_loader import MODULES_DIR
+
+    return MODULES_DIR
+
+
+def _module_dir_name(manifest_name: str) -> str:
+    """Map a manifest name to its on-disk package directory name.
+
+    Mirrors ``ModuleLoader._load_module`` (``dir_name = name.removeprefix('oe_')``).
+    """
+    return manifest_name.removeprefix("oe_")
+
+
+def _read_manifest_name(source: str) -> str | None:
+    """Extract ``manifest.name`` from a ``manifest.py`` source string.
+
+    Parsed statically with ``ast`` rather than imported, so installing a module
+    never executes untrusted code just to learn its name. Looks for a top-level
+    assignment ``<target> = ModuleManifest(... name="...", ...)`` and returns the
+    literal ``name`` keyword. Returns ``None`` if it cannot be found.
+    """
+    import ast
+
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return None
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        callee = (
+            func.id
+            if isinstance(func, ast.Name)
+            else func.attr
+            if isinstance(func, ast.Attribute)
+            else None
+        )
+        if callee != "ModuleManifest":
+            continue
+        for kw in node.keywords:
+            if kw.arg == "name" and isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                return kw.value.value
+    return None
+
+
+def _is_unsafe_zip_member(info: object) -> str | None:
+    """Return a human-readable reason if a zip member is unsafe, else None.
+
+    Rejects:
+      * absolute POSIX paths (``/etc/passwd``)
+      * parent-directory traversal (any ``..`` path segment)
+      * Windows drive letters / backslash separators (``C:\\evil``, ``a\\b``)
+      * symlinks (encoded in the Unix mode bits of ``external_attr``)
+    """
+    import stat
+
+    name = getattr(info, "filename", "")
+
+    # Windows drive letter, e.g. "C:..." — also catches "C:\\..." once \\ -> /.
+    if len(name) >= 2 and name[1] == ":":
+        return f"drive-letter path: {name!r}"
+
+    # Normalise backslashes so a Windows-authored archive can't smuggle
+    # traversal past the POSIX checks below.
+    if "\\" in name:
+        return f"backslash separator in path: {name!r}"
+
+    if name.startswith("/"):
+        return f"absolute path: {name!r}"
+
+    parts = name.split("/")
+    if ".." in parts:
+        return f"parent-directory traversal: {name!r}"
+
+    # Symlink detection: the high 16 bits of external_attr hold the Unix mode.
+    external_attr = getattr(info, "external_attr", 0)
+    mode = external_attr >> 16
+    if mode and stat.S_ISLNK(mode):
+        return f"symlink member: {name!r}"
+
+    return None
+
+
+def cmd_module_install(args: argparse.Namespace) -> None:
+    """Install a module from a .zip archive into the modules directory."""
+    import zipfile
+
+    zip_path = Path(args.zip).expanduser().resolve()
+
+    if not zip_path.exists():
+        print(_red(f"Archive not found: {zip_path}"))
+        sys.exit(1)
+
+    if not zipfile.is_zipfile(zip_path):
+        print(_red(f"Not a valid zip archive: {zip_path}"))
+        sys.exit(1)
+
+    with zipfile.ZipFile(zip_path) as zf:
+        infos = zf.infolist()
+        if not infos:
+            print(_red("Archive is empty."))
+            sys.exit(1)
+
+        # 1. Reject any unsafe member before touching the filesystem.
+        for info in infos:
+            reason = _is_unsafe_zip_member(info)
+            if reason is not None:
+                print(_red(f"Refusing to install — unsafe archive member ({reason})."))
+                sys.exit(1)
+
+        # 2. Require exactly one top-level package directory. Every member must
+        #    live under it (a flat archive with files at the root is rejected).
+        top_levels: set[str] = set()
+        for info in infos:
+            first = info.filename.split("/", 1)[0]
+            if first:
+                top_levels.add(first)
+        if len(top_levels) != 1:
+            print(
+                _red(
+                    "Archive must contain exactly one top-level package directory "
+                    f"(found {len(top_levels)}: {', '.join(sorted(top_levels)) or 'none'})."
+                )
+            )
+            sys.exit(1)
+        top = next(iter(top_levels))
+
+        # 3. The top-level entry must be a directory, not a single file.
+        if not any(i.filename.rstrip("/") != top for i in infos):
+            print(_red(f"Top-level entry {top!r} is a file, not a package directory."))
+            sys.exit(1)
+
+        # 4. Locate the manifest at the top level: ``<top>/manifest.py``.
+        manifest_arcname = f"{top}/manifest.py"
+        names = {i.filename for i in infos}
+        if manifest_arcname not in names:
+            print(
+                _red(
+                    f"No manifest found at {manifest_arcname!r}. "
+                    "A module package must contain a top-level manifest.py."
+                )
+            )
+            sys.exit(1)
+
+        # 5. Read the module name from the manifest (static parse, no exec).
+        try:
+            manifest_src = zf.read(manifest_arcname).decode("utf-8")
+        except (KeyError, UnicodeDecodeError) as exc:
+            print(_red(f"Could not read {manifest_arcname}: {exc}"))
+            sys.exit(1)
+
+        module_name = _read_manifest_name(manifest_src)
+        if not module_name:
+            print(
+                _red(
+                    "Could not determine the module name from manifest.py "
+                    "(expected ModuleManifest(name=\"...\", ...))."
+                )
+            )
+            sys.exit(1)
+
+        # 6. Resolve the canonical on-disk directory name and target path.
+        dir_name = _module_dir_name(module_name)
+        modules_dir = _modules_dir()
+        target = modules_dir / dir_name
+
+        if target.exists():
+            if not args.force:
+                print(
+                    _red(f"Module '{module_name}' already installed at {target}.")
+                    + _dim(" Use --force to overwrite.")
+                )
+                sys.exit(1)
+            import shutil
+
+            shutil.rmtree(target)
+
+        # 7. Safe extraction into a temp staging dir, then atomically move the
+        #    package into place under its canonical directory name. Staging
+        #    first means a mid-extract failure never leaves a half-written
+        #    module in the loader's scan path. Re-validate each member name at
+        #    extraction time (defence in depth against a member that slipped
+        #    through, e.g. via a crafted ZipInfo).
+        import shutil
+        import tempfile
+
+        modules_dir.mkdir(parents=True, exist_ok=True)
+        staging = Path(tempfile.mkdtemp(prefix="oe_module_install_"))
+        try:
+            staged_root = staging.resolve()
+            for info in infos:
+                # Skip directory entries — created implicitly by file writes.
+                if info.filename.endswith("/"):
+                    continue
+                dest = (staging / info.filename).resolve()
+                if not str(dest).startswith(str(staged_root) + os.sep) and dest != staged_root:
+                    print(_red(f"Refusing to install — member escapes staging dir: {info.filename!r}."))
+                    sys.exit(1)
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                with zf.open(info) as src, open(dest, "wb") as out:
+                    shutil.copyfileobj(src, out)
+
+            staged_pkg = staging / top
+            if not staged_pkg.is_dir():
+                print(_red("Extraction did not produce the expected package directory."))
+                sys.exit(1)
+
+            shutil.move(str(staged_pkg), str(target))
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+
+    print(_green(_bold(f"Installed module: {module_name}")) + _dim(f"  ({target})"))
+    print("Restart the server to load the module.")
+
+
+def _discover_manifests() -> dict[str, object]:
+    """Discover all module manifests via the real loader, return name -> manifest.
+
+    Uses a fresh ``ModuleLoader`` (not the global singleton) so a CLI ``list``
+    never mutates shared process state.
+    """
+    from app.core.module_loader import ModuleLoader
+
+    loader = ModuleLoader()
+    loader.discover()
+    return dict(loader._manifests)
+
+
+def cmd_module_list(_args: argparse.Namespace) -> None:
+    """List discovered modules with version and enabled/core status."""
+    from app.core.module_state import load_module_states
+
+    manifests = _discover_manifests()
+    if not manifests:
+        print(_dim("No modules found."))
+        return
+
+    states = load_module_states()
+
+    rows: list[tuple[str, str, str, str]] = []
+    for name in sorted(manifests):
+        manifest = manifests[name]
+        version = getattr(manifest, "version", "?")
+        category = getattr(manifest, "category", "")
+        is_core = category == "core"
+        # A non-core module is disabled only if persisted state says so.
+        state = states.get(name)
+        enabled = True if state is None else state.enabled
+        if is_core:
+            status = "core"
+        else:
+            status = "enabled" if enabled else "disabled"
+        rows.append((name, version, category, status))
+
+    name_w = max((len(r[0]) for r in rows), default=4)
+    ver_w = max((len(r[1]) for r in rows), default=7)
+    cat_w = max((len(r[2]) for r in rows), default=8)
+
+    header = f"  {'NAME'.ljust(name_w)}  {'VERSION'.ljust(ver_w)}  {'CATEGORY'.ljust(cat_w)}  STATUS"
+    print(_bold(header))
+    for name, version, category, status in rows:
+        if status == "core":
+            badge = _dim("core")
+        elif status == "enabled":
+            badge = _green("enabled")
+        else:
+            badge = _yellow("disabled")
+        print(f"  {name.ljust(name_w)}  {version.ljust(ver_w)}  {category.ljust(cat_w)}  {badge}")
+
+    print()
+    print(_dim(f"{len(rows)} module(s) in {_modules_dir()}"))
+
+
+def cmd_module_uninstall(args: argparse.Namespace) -> None:
+    """Remove an installed module's package directory."""
+    import shutil
+
+    requested = args.name
+    manifests = _discover_manifests()
+
+    # Accept either the manifest name (oe_foo) or the directory name (foo).
+    manifest = manifests.get(requested)
+    if manifest is None:
+        manifest = manifests.get(f"oe_{requested}")
+
+    if manifest is None:
+        print(_red(f"Module '{requested}' is not installed."))
+        print(_dim("Run 'openconstructionerp module list' to see installed modules."))
+        sys.exit(1)
+
+    manifest_name = getattr(manifest, "name", requested)
+    is_core = getattr(manifest, "category", "") == "core"
+    auto_install = bool(getattr(manifest, "auto_install", False))
+
+    if (is_core or auto_install) and not args.force:
+        kind = "core" if is_core else "auto-install"
+        print(
+            _red(f"Refusing to uninstall '{manifest_name}' — it is a {kind} module.")
+            + _dim(" Use --force to remove it anyway.")
+        )
+        sys.exit(1)
+
+    dir_name = _module_dir_name(manifest_name)
+    target = _modules_dir() / dir_name
+    if not target.exists():
+        print(_red(f"Module directory not found: {target}"))
+        sys.exit(1)
+
+    shutil.rmtree(target)
+    print(_green(_bold(f"Uninstalled module: {manifest_name}")) + _dim(f"  ({target})"))
+    print("Restart the server to apply the change.")
+
+
+def cmd_module(args: argparse.Namespace) -> None:
+    """Dispatch ``module`` sub-actions; print help when none is given."""
+    action = getattr(args, "module_action", None)
+    if action == "install":
+        cmd_module_install(args)
+    elif action == "list":
+        cmd_module_list(args)
+    elif action == "uninstall":
+        cmd_module_uninstall(args)
+    else:
+        # No sub-action: print the module group's help.
+        args._module_parser.print_help()
+
+
 # ── Arg parser ────────────────────────────────────────────────────────────
 def _add_common_server_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--host", default=DEFAULT_HOST, help=f"Bind host (default: {DEFAULT_HOST})")
@@ -1149,7 +1496,46 @@ def main() -> None:
         help=f"Data directory (default: {DEFAULT_DATA_DIR})",
     )
 
+    # module — install / list / uninstall business modules
+    module_p = subparsers.add_parser(
+        "module",
+        help="Install, list, or uninstall modules",
+        description=(
+            "Manage OpenConstructionERP modules.\n\n"
+            "    openconstructionerp module install <archive.zip> [--force]\n"
+            "    openconstructionerp module list\n"
+            "    openconstructionerp module uninstall <name> [--force]\n\n"
+            "A module is a Python package with a manifest.py. Install extracts it\n"
+            "into the modules directory; restart the server to load it."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    module_sub = module_p.add_subparsers(dest="module_action")
+
+    module_install_p = module_sub.add_parser("install", help="Install a module from a .zip archive")
+    module_install_p.add_argument("zip", help="Path to the module .zip archive")
+    module_install_p.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite an existing module of the same name",
+    )
+
+    module_sub.add_parser("list", help="List discovered modules (name, version, status)")
+
+    module_uninstall_p = module_sub.add_parser("uninstall", help="Remove an installed module")
+    module_uninstall_p.add_argument("name", help="Module name (oe_foo) or directory name (foo)")
+    module_uninstall_p.add_argument(
+        "--force",
+        action="store_true",
+        help="Remove even core / auto-install modules",
+    )
+
     args = parser.parse_args()
+
+    # Make the module group's parser reachable from cmd_module so it can print
+    # help when invoked with no sub-action (``openconstructionerp module``).
+    if args.command == "module":
+        args._module_parser = module_p
 
     # Embedded PostgreSQL is the default (see embedded_pg.is_requested). The
     # flags are explicit overrides mapped to the same env vars _setup_env reads
@@ -1173,6 +1559,8 @@ def main() -> None:
         cmd_upgrade(args)
     elif args.command == "seed":
         cmd_seed(args)
+    elif args.command == "module":
+        cmd_module(args)
     elif args.command in ("welcome", "hello"):
         cmd_welcome(args)
     elif args.command is None:

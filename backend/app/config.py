@@ -392,8 +392,9 @@ class Settings(BaseSettings):
     frontend_url: str = ""
 
     # ── External Services ────────────────────────────────────────────────
-    cad_converter_url: str | None = "http://localhost:8001"
-    cv_pipeline_url: str | None = "http://localhost:8002"
+    # Note: CAD/CV conversion runs in-process via the bundled DDC converters
+    # (invoked as a subprocess), not via a separate HTTP microservice, so no
+    # converter/pipeline service URL is needed here.
     openweathermap_api_key: str = ""
 
     # ── Rate Limiting ────────────────────────────────────────────────────

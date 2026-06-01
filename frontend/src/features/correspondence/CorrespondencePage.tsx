@@ -12,7 +12,6 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   FileText,
-  Cloud,
   Webhook,
   Info,
   X,
@@ -1012,18 +1011,6 @@ export function CorrespondencePage() {
           icon={Mail}
           description={t('correspondence.connector_email_desc', { defaultValue: 'Auto-import incoming/outgoing project emails' })}
           onSetup={() => navigate('/integrations')}
-        />
-        <ConnectorCard
-          name={t('correspondence.connector_m365', { defaultValue: 'Microsoft 365' })}
-          status="coming_soon"
-          icon={Cloud}
-          description={t('correspondence.connector_m365_desc', { defaultValue: 'Outlook emails & Teams messages' })}
-        />
-        <ConnectorCard
-          name={t('correspondence.connector_google', { defaultValue: 'Google Workspace' })}
-          status="coming_soon"
-          icon={Cloud}
-          description={t('correspondence.connector_google_desc', { defaultValue: 'Gmail & Google Chat' })}
         />
         <ConnectorCard
           name={t('correspondence.connector_webhook', { defaultValue: 'API Webhook' })}

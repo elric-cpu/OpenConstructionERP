@@ -957,6 +957,38 @@ async def get_raster_overlay_image(
     )
 
 
+@router.get(
+    "/tilesets/{tileset_id}/artifact/{filename}",
+    responses={200: {"content": {"application/octet-stream": {}}}},
+)
+async def get_tileset_artifact(
+    tileset_id: uuid.UUID,
+    filename: str,
+    service: GeoHubService = Depends(_svc),
+    payload: CurrentUserPayload = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("geo_hub.read")),
+) -> Response:
+    """Stream a tileset's ``tileset.json`` and tile blobs from storage.
+
+    The DB stores only a storage key for a packaged tileset, so Cesium has
+    nothing HTTP-reachable to load (the bare key fell through to the SPA
+    catch-all and came back as index.html, which Cesium could not parse).
+    This serves the artifacts, tenant-scoped behind ``geo_hub.read``; the
+    frontend points Cesium at ``…/tilesets/{id}/artifact/tileset.json`` and
+    its relative child-tile requests resolve back to this same route.
+    """
+    blob, media_type = await service.get_tileset_artifact_bytes(
+        tileset_id,
+        filename,
+        payload=payload,
+    )
+    return Response(
+        content=blob,
+        media_type=media_type,
+        headers={"Cache-Control": "private, max-age=300"},
+    )
+
+
 # ── Anchored projects (Global map pin layer) ────────────────────────────
 
 
