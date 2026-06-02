@@ -280,8 +280,8 @@ describe('CesiumViewer', () => {
     // url is our tenant-scoped artifact route keyed by the tileset id. The
     // draft tileset (no uri) must not be requested.
     expect(stub.Resource).toHaveBeenCalledTimes(1);
-    const resourceArg = stub.Resource.mock.calls[0][0];
-    expect(resourceArg.url).toContain('/tilesets/t1/artifact/tileset.json');
+    const resourceArg = stub.Resource.mock.calls[0]?.[0];
+    expect(resourceArg?.url).toContain('/tilesets/t1/artifact/tileset.json');
   });
 
   it('destroys the viewer on unmount', async () => {
