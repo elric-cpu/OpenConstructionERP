@@ -661,6 +661,34 @@ async def _seed_demo_account() -> None:
                 await session.execute(select(func.count()).select_from(Project).where(Project.owner_id == demo.id))
             ).scalar() or 0
 
+            # The two headline demo accounts (demo@ admin and manager@) are the
+            # ones shown in the account switcher, so they should always display
+            # every menu, regardless of any company-profile gating a tester
+            # applied in the browser. Company-profile choices live in the user's
+            # module_preferences, and that server map wins over the browser's
+            # localStorage on sync, so writing the full_enterprise map here
+            # forces all menus on for them on every login. Idempotent: it is
+            # re-applied on each startup, which also backfills accounts that
+            # were created before this.
+            from app.core.onboarding_presets import get_preset, modules_for
+
+            _full_preset = get_preset("full_enterprise")
+            if _full_preset is not None:
+                _full_modules = list(_full_preset.enabled_modules)
+                _full_prefs = modules_for(_full_modules)
+                for _u in (demo, manager_user):
+                    if _u is None:
+                        continue
+                    _md = dict(_u.metadata_ or {})
+                    _md["module_preferences"] = _full_prefs
+                    _md["onboarding"] = {
+                        "completed": True,
+                        "company_type": "full_enterprise",
+                        "enabled_modules": _full_modules,
+                        "interface_mode": "advanced",
+                    }
+                    _u.metadata_ = _md
+
             # Persist the demo users now so the showcase snapshot loader
             # (a separate sqlite3 connection) does not contend for a
             # write lock with this async session.
