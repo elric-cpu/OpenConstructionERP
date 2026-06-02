@@ -98,13 +98,17 @@ export function ConverterInstallProgressBar({
       ? t('bim.converter_progress_listing', {
           defaultValue: 'Fetching file list…',
         })
-      : stage === 'verifying'
-        ? t('bim.converter_progress_verifying', {
-            defaultValue: 'Running smoke test…',
+      : stage === 'extracting'
+        ? t('bim.converter_progress_extracting', {
+            defaultValue: 'Extracting…',
           })
-        : t('bim.converter_progress_downloading', {
-            defaultValue: 'Downloading',
-          });
+        : stage === 'verifying'
+          ? t('bim.converter_progress_verifying', {
+              defaultValue: 'Running smoke test…',
+            })
+          : t('bim.converter_progress_downloading', {
+              defaultValue: 'Downloading',
+            });
 
   const trackBg =
     variant === 'dark'
@@ -156,7 +160,9 @@ export function ConverterInstallProgressBar({
       >
         <span className="truncate">
           {stageLabel}
-          {total > 0 && stage === 'downloading' && ` · ${current}/${total}`}
+          {total > 0 &&
+            (stage === 'downloading' || stage === 'extracting') &&
+            ` · ${current}/${total}`}
           {progress?.file && ` · ${progress.file}`}
         </span>
         <span className="shrink-0 font-mono">

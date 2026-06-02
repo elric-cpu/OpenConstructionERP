@@ -2,8 +2,8 @@
 
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { Download, Mail, FolderOpen, Copy, X, FileText, Image as ImageIcon, Layout, Box, Pencil, File, PenTool, FileBarChart, Tag, ExternalLink, Activity, Share2, Lock, Send, ClipboardCheck, CheckCircle2, Link as LinkIcon, History, RotateCcw, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { Download, Mail, FolderOpen, Copy, X, FileText, Image as ImageIcon, Layout, Box, Pencil, File, PenTool, FileBarChart, Tag, ExternalLink, Activity, Share2, Lock, Send, ClipboardCheck, CheckCircle2, Link as LinkIcon, History, RotateCcw, Loader2, Check, ChevronDown } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { useToastStore } from '@/stores/useToastStore';
@@ -13,6 +13,9 @@ import { apiGet } from '@/shared/lib/api';
 import type { FileRow, FileKind } from '../types';
 import { isTauri, openInOSFinder, copyToClipboard } from '../lib/tauri';
 import { modulesForKind, primaryModule } from '../kindModule';
+import { useSetDocumentCdeState } from '../hooks';
+import type { CdeState } from '../api';
+import { CDE_BADGE } from './CDEBadge';
 import { ActivityDrawer } from './ActivityDrawer';
 import { VersionDropdown } from '@/features/file-versions/VersionDropdown';
 import { useFileVersions, useRestoreVersion } from '@/features/file-versions/hooks';
@@ -301,6 +304,25 @@ export function FilePreviewPane({ row, onClose, onEmail, onShare, onManageAccess
             </span>
             <VersionDropdown fileId={row.id} kind={row.kind} />
           </div>
+          {/* Document lifecycle (CDE) status. Set WIP / Shared / Published /
+              Archived inline via PATCH /v1/documents/{id}. Only documents are
+              backed by that table, so the control is gated to that kind. */}
+          {row.kind === 'document' && (
+            <div className="flex items-center justify-between gap-2 px-1 py-1 border-b border-border-light/60">
+              <span className="text-[10px] uppercase tracking-wider text-content-tertiary font-medium">
+                {t('files.status.label', { defaultValue: 'Status' })}
+              </span>
+              <CdeStatusControl
+                projectId={row.project_id}
+                documentId={row.id}
+                current={
+                  typeof row.extra?.cde_state === 'string'
+                    ? (row.extra.cde_state as string)
+                    : null
+                }
+              />
+            </div>
+          )}
           <button
             type="button"
             onClick={() => onEmail(row)}
@@ -816,6 +838,151 @@ function VersionHistorySection({
             </li>
           ))}
         </ol>
+      )}
+    </div>
+  );
+}
+
+/* ── CDE lifecycle status control ──────────────────────────────────────
+   A compact dropdown that promotes / demotes a document's ISO 19650 CDE
+   state (WIP → Shared → Published → Archived). Backed by
+   PATCH /v1/documents/{id} with a ``cde_state`` body. Optimism is handled
+   by the hook's query invalidation: once the patch lands, the file list +
+   tree refetch and every badge re-renders with the new value. While the
+   request is in flight we render a spinner and disable the trigger. */
+const CDE_ORDER: CdeState[] = ['wip', 'shared', 'published', 'archived'];
+
+function CdeStatusControl({
+  projectId,
+  documentId,
+  current,
+}: {
+  projectId: string;
+  documentId: string;
+  current: string | null;
+}) {
+  const { t } = useTranslation();
+  const addToast = useToastStore((s) => s.addToast);
+  const setState = useSetDocumentCdeState(projectId);
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const activeKey = current && CDE_BADGE[current] ? current : null;
+  const activeCfg = activeKey ? CDE_BADGE[activeKey] : null;
+
+  const handlePick = (next: CdeState) => {
+    setOpen(false);
+    if (next === current) return;
+    setState.mutate(
+      { documentId, cdeState: next },
+      {
+        onSuccess: () => {
+          addToast({
+            type: 'success',
+            title: t('files.status.changed', {
+              defaultValue: 'Status set to {{state}}',
+              state: t(`files.status.state.${next}`, {
+                defaultValue: CDE_BADGE[next]?.label ?? next,
+              }),
+            }),
+          });
+        },
+        onError: (err: unknown) => {
+          addToast({
+            type: 'error',
+            title: t('files.status.change_failed', {
+              defaultValue: 'Could not change status',
+            }),
+            message: err instanceof Error ? err.message : String(err),
+          });
+        },
+      },
+    );
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((p) => !p)}
+        disabled={setState.isPending}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={clsx(
+          'inline-flex items-center gap-1.5 h-6 px-1.5 rounded-md text-[10px] font-medium transition-colors',
+          'border border-border-light hover:border-oe-blue/40 hover:bg-surface-secondary',
+          'focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40',
+          'disabled:opacity-60 disabled:cursor-wait',
+        )}
+        title={t('files.status.set_hint', {
+          defaultValue: 'Set the CDE lifecycle status',
+        })}
+      >
+        {setState.isPending ? (
+          <Loader2 size={11} className="animate-spin" />
+        ) : activeCfg ? (
+          <span
+            className={clsx(
+              'inline-flex items-center rounded px-1 py-px text-[9px] font-medium uppercase tracking-wider',
+              activeCfg.cls,
+            )}
+          >
+            {activeCfg.label}
+          </span>
+        ) : (
+          <span className="text-content-tertiary uppercase tracking-wider">
+            {t('files.status.unset', { defaultValue: 'Set status' })}
+          </span>
+        )}
+        <ChevronDown size={11} className={clsx('transition-transform', open && 'rotate-180')} />
+      </button>
+      {open && (
+        <div
+          role="listbox"
+          className="absolute right-0 top-full mt-1 w-40 rounded-lg border border-border-light bg-surface-elevated shadow-lg z-20 overflow-hidden"
+        >
+          {CDE_ORDER.map((key) => {
+            const cfg = CDE_BADGE[key]!;
+            const isActive = key === current;
+            return (
+              <button
+                key={key}
+                type="button"
+                role="option"
+                aria-selected={isActive}
+                onClick={() => handlePick(key)}
+                className={clsx(
+                  'flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left text-[11px] transition-colors',
+                  isActive
+                    ? 'bg-oe-blue/10 text-oe-blue font-medium'
+                    : 'text-content-secondary hover:bg-surface-secondary',
+                )}
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <span
+                    className={clsx(
+                      'inline-flex items-center rounded px-1 py-px text-[9px] font-medium uppercase tracking-wider',
+                      cfg.cls,
+                    )}
+                  >
+                    {cfg.label}
+                  </span>
+                  {t(`files.status.state.${key}`, { defaultValue: cfg.label })}
+                </span>
+                {isActive && <Check size={12} className="shrink-0" />}
+              </button>
+            );
+          })}
+        </div>
       )}
     </div>
   );

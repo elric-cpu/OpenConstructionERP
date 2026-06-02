@@ -41,6 +41,21 @@ function fmtBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
+/* Render the document version as ``V01`` / ``V12``. ``extra.version`` is the
+   integer the documents table stores (1-based). Coerces stringified ints
+   that may arrive through the JSONB ``extra`` blob and falls back to a dash
+   placeholder when there is nothing meaningful to show. */
+function versionLabel(raw: unknown): string {
+  const n =
+    typeof raw === 'number'
+      ? raw
+      : typeof raw === 'string' && raw.trim() !== ''
+        ? Number(raw)
+        : NaN;
+  if (!Number.isFinite(n) || n < 1) return '—';
+  return `V${String(Math.trunc(n)).padStart(2, '0')}`;
+}
+
 
 type SortKey = NonNullable<FileFilters['sort']>;
 
@@ -86,6 +101,12 @@ export function FileList({
             {showStar && <th className="w-9 px-2 py-2" aria-hidden="true" />}
             <Header field="name" label={t('files.col.name', { defaultValue: 'Name' })} />
             <Header field="kind" label={t('files.col.kind', { defaultValue: 'Type' })} />
+            <th className="px-3 py-2 text-2xs font-medium uppercase tracking-wider text-content-tertiary text-center">
+              {t('files.col.status', { defaultValue: 'Status' })}
+            </th>
+            <th className="px-3 py-2 text-2xs font-medium uppercase tracking-wider text-content-tertiary text-center">
+              {t('files.col.version', { defaultValue: 'Ver.' })}
+            </th>
             <Header field="size" label={t('files.col.size', { defaultValue: 'Size' })} align="right" />
             <Header field="modified" label={t('files.col.modified', { defaultValue: 'Modified' })} align="right" />
             <th className="px-3 py-2 text-2xs font-medium uppercase tracking-wider text-content-tertiary">
@@ -100,7 +121,7 @@ export function FileList({
           {isLoading && items.length === 0 ? (
             Array.from({ length: 6 }).map((_, i) => (
               <tr key={i} className="border-b border-border-light">
-                {Array.from({ length: 5 }).map((_, j) => (
+                {Array.from({ length: showStar ? 9 : 8 }).map((_, j) => (
                   <td key={j} className="px-3 py-2">
                     <div className="h-3 rounded bg-surface-secondary animate-pulse" />
                   </td>
@@ -109,7 +130,7 @@ export function FileList({
             ))
           ) : items.length === 0 ? (
             <tr>
-              <td colSpan={showStar ? 7 : 6} className="px-3 py-12 text-center text-sm text-content-tertiary">
+              <td colSpan={showStar ? 9 : 8} className="px-3 py-12 text-center text-sm text-content-tertiary">
                 {t('files.empty', { defaultValue: 'No files match your filters.' })}
               </td>
             </tr>
@@ -181,11 +202,21 @@ export function FileList({
                           Rev {row.extra.revision_code}
                         </span>
                       )}
-                      <CDEBadge state={row.extra?.cde_state as string | undefined} />
+                      {/* CDE state moved to its own dedicated Status column. */}
                     </div>
                   </td>
                   <td className="px-3 py-2 text-content-secondary text-xs">
                     {t(`files.category.${row.kind}`, { defaultValue: row.kind })}
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    {typeof row.extra?.cde_state === 'string' && row.extra.cde_state ? (
+                      <CDEBadge state={row.extra.cde_state} />
+                    ) : (
+                      <span className="text-content-quaternary text-xs">—</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-center text-content-secondary tabular-nums text-xs">
+                    {versionLabel(row.extra?.version)}
                   </td>
                   <td className="px-3 py-2 text-right text-content-secondary tabular-nums text-xs">
                     {fmtBytes(row.size_bytes)}

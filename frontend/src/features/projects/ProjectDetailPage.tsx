@@ -36,6 +36,7 @@ import {
   Calendar,
   Image as ImageIcon,
   LayoutGrid,
+  Receipt,
 } from 'lucide-react';
 import {
   Button, Card, CardHeader, CardContent, Badge, Skeleton, EmptyState, Breadcrumb,
@@ -713,6 +714,52 @@ function SummaryCard({
         </div>
       </div>
     </Card>
+  );
+}
+
+/**
+ * WidgetSection — a labelled group of project-overview cards.
+ *
+ * The /projects/:id pulse widgets used to render in one flat 4-column grid
+ * where a few cards forced ``col-span-2`` / full-row spans. That left ragged
+ * rows with big empty cells and made the page feel sparse. We now bucket the
+ * cards into a handful of themed sections (Commercial, Field, Quality and
+ * compliance, Planning, Activity and files) and give each section its own
+ * tight responsive grid. ``auto-rows-fr`` keeps the cards in a row the same
+ * height so the block reads as a clean, even mosaic instead of a stack.
+ *
+ * Sections self-hide when they have no visible children (every widget in the
+ * group is toggled off in the layout manager), so the header never dangles
+ * above an empty grid.
+ */
+function WidgetSection({
+  icon,
+  title,
+  children,
+  className,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  /** Tailwind grid-template-columns classes for this section's card grid. */
+  className: string;
+  children: React.ReactNode;
+}) {
+  // Drop sections whose every child rendered ``false`` (all widgets hidden).
+  const visible = React.Children.toArray(children).filter(Boolean);
+  if (visible.length === 0) return null;
+  return (
+    <section className="mb-5">
+      <div className="mb-2 flex items-center gap-2">
+        <span className="text-content-tertiary">{icon}</span>
+        <h2 className="text-2xs font-semibold uppercase tracking-wider text-content-tertiary">
+          {title}
+        </h2>
+        <div className="h-px flex-1 bg-border-light" aria-hidden="true" />
+      </div>
+      <div className={clsx('grid gap-3 items-stretch auto-rows-fr', className)}>
+        {visible}
+      </div>
+    </section>
   );
 }
 
@@ -1600,70 +1647,109 @@ export function ProjectDetailPage() {
         <ProjectPhaseRibbon phase={project.phase ?? null} />
       )}
 
-      {/* ── New widgets — interleaved between built-in sections ──────── */}
-      {/* W23 P0: the provider fires ONE rollup request that feeds 8 of
+      {/* ── New widgets — grouped pulse sections ───────────────────────
+          Cards are bucketed into themed sections (Commercial, Field,
+          Quality and compliance, Planning, Activity and files), each with
+          its own tight equal-height grid. This replaces the old flat
+          4-column grid where a few cards forced col-span-2 / full-row
+          spans and left ragged rows with big empty cells. Every section
+          self-hides when all of its widgets are toggled off in the layout
+          manager.
+
+          W23 P0: the provider fires ONE rollup request that feeds 8 of
           the 13 widgets below. The 5 widgets whose endpoints don't yet
           exist on the backend (photo strip, activity feed, schedule
           strip, AI insights, recent files) keep their own
           ``useGracefulQuery`` — adding them to the rollup would require
           new backend endpoints. */}
       <ProjectWidgetsRollupProvider projectId={projectId!}>
-        {/* Responsive widget grid: 1 col mobile, 2 cols sm, 3 cols lg,
-            4 cols xl. ``auto-rows-max`` keeps empty/short cards from
-            stretching to match a tall neighbour, so the block stays dense.
-            Wide widgets (schedule strip, budget burn, photo strip) span 2
-            cells on lg+ and the activity feed spans the full row, because
-            their content (timeline, history bars, photo carousel, log
-            feed) reads poorly cramped into a single column. */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 mb-4 items-start auto-rows-max">
+        {/* Commercial: requests, change orders, variations. */}
+        <WidgetSection
+          icon={<Receipt size={14} />}
+          title={t('project.section.commercial', { defaultValue: 'Commercial' })}
+          className="grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+        >
           {!isWidgetHidden('rfi-inbox') && (
             <RFIInboxWidget projectId={projectId!} />
           )}
           {!isWidgetHidden('change-orders') && (
             <ChangeOrdersPulseWidget projectId={projectId!} currency={currency ?? 'EUR'} />
           )}
+          {!isWidgetHidden('variations') && (
+            <VariationsWidget projectId={projectId!} currency={currency ?? 'EUR'} />
+          )}
+        </WidgetSection>
+
+        {/* Field: what's happening on site today. */}
+        <WidgetSection
+          icon={<HardHat size={14} />}
+          title={t('project.section.field', { defaultValue: 'Field' })}
+          className="grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+        >
           {!isWidgetHidden('daily-diary') && (
             <DailyDiaryWidget projectId={projectId!} />
           )}
           {!isWidgetHidden('hse-incidents') && (
             <HSEIncidentsWidget projectId={projectId!} />
           )}
-          {!isWidgetHidden('variations') && (
-            <VariationsWidget projectId={projectId!} currency={currency ?? 'EUR'} />
+          {!isWidgetHidden('photo-strip') && (
+            <PhotoStripWidget projectId={projectId!} />
           )}
+        </WidgetSection>
+
+        {/* Quality and compliance: two-up counters. */}
+        <WidgetSection
+          icon={<ShieldCheck size={14} />}
+          title={t('project.section.quality_compliance', {
+            defaultValue: 'Quality & compliance',
+          })}
+          className="grid-cols-1 lg:grid-cols-2"
+        >
           {!isWidgetHidden('quality-ncr') && (
             <QualityNCRWidget projectId={projectId!} />
           )}
           {!isWidgetHidden('compliance-summary') && (
             <ComplianceSummaryWidget projectId={projectId!} />
           )}
+        </WidgetSection>
+
+        {/* Planning and cost: schedule progress + budget burn, side by
+            side so the timeline and the spend history each get the width
+            they need to read well. */}
+        <WidgetSection
+          icon={<CalendarClock size={14} />}
+          title={t('project.section.planning_cost', {
+            defaultValue: 'Planning & cost',
+          })}
+          className="grid-cols-1 lg:grid-cols-2"
+        >
           {!isWidgetHidden('schedule-strip') && (
-            <div className="lg:col-span-2 xl:col-span-2">
-              <ScheduleStripWidget projectId={projectId!} />
-            </div>
+            <ScheduleStripWidget projectId={projectId!} />
           )}
           {!isWidgetHidden('budget-burn') && (
-            <div className="lg:col-span-2 xl:col-span-2">
-              <BudgetBurnWidget projectId={projectId!} currency={currency ?? 'EUR'} />
-            </div>
+            <BudgetBurnWidget projectId={projectId!} currency={currency ?? 'EUR'} />
           )}
+        </WidgetSection>
+
+        {/* Activity, files and AI: the cross-module event stream gets the
+            widest column so its log doesn't cramp. */}
+        <WidgetSection
+          icon={<Activity size={14} />}
+          title={t('project.section.activity_files', {
+            defaultValue: 'Activity, files & AI',
+          })}
+          className="grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+        >
           {!isWidgetHidden('recent-files') && (
             <RecentFilesWidget projectId={projectId!} />
-          )}
-          {!isWidgetHidden('photo-strip') && (
-            <div className="lg:col-span-2 xl:col-span-2">
-              <PhotoStripWidget projectId={projectId!} />
-            </div>
           )}
           {!isWidgetHidden('ai-insights') && (
             <AIInsightsWidget projectId={projectId!} />
           )}
           {!isWidgetHidden('activity-feed') && (
-            <div className="sm:col-span-2 lg:col-span-3 xl:col-span-4">
-              <ActivityFeedWidget projectId={projectId!} />
-            </div>
+            <ActivityFeedWidget projectId={projectId!} />
           )}
-        </div>
+        </WidgetSection>
       </ProjectWidgetsRollupProvider>
       {/* ``weather-alerts`` is a thin pointer to ProjectWeather (already
           rendered inside the location panel) — no separate render needed

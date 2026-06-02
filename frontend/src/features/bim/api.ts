@@ -327,7 +327,11 @@ export async function installBIMConverter(
  *  the install mutation is pending. */
 export interface BIMConverterInstallProgress {
   active: boolean;
-  stage?: 'listing' | 'downloading' | 'verifying';
+  /** Backend stages, in order: ``listing`` (resolving the file/package
+   *  set) → ``downloading`` (fetching files) → ``extracting`` (Windows
+   *  has none; Linux unpacks .deb archives here) → ``verifying`` (post
+   *  -install smoke test). */
+  stage?: 'listing' | 'downloading' | 'extracting' | 'verifying';
   current?: number;
   total?: number;
   bytes_done?: number;

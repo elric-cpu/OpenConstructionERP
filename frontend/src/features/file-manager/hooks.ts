@@ -15,8 +15,10 @@ import {
   fetchFileTree,
   fetchStorageLocations,
   listFolderPermissions,
+  setDocumentCdeState,
   starFile,
   unstarFile,
+  type CdeState,
 } from './api';
 import {
   favoriteKey,
@@ -167,6 +169,28 @@ export function useToggleFavorite(projectId: string | null | undefined) {
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey });
+    },
+  });
+}
+
+/* ── Document lifecycle (CDE) state ────────────────────────────────── */
+
+/**
+ * Promote / demote a document's CDE lifecycle state via
+ * ``PATCH /v1/documents/{id}``. On success we invalidate the file list +
+ * tree for the project so the new state badge re-renders everywhere
+ * (grid tiles, list rows, preview pane). The caller is responsible for
+ * guarding on ``kind === 'document'``. Only that kind is backed by the
+ * documents table that owns the ``cde_state`` column.
+ */
+export function useSetDocumentCdeState(projectId: string | null | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { documentId: string; cdeState: CdeState }) =>
+      setDocumentCdeState(vars.documentId, vars.cdeState),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [KEY_LIST, projectId] });
+      qc.invalidateQueries({ queryKey: [KEY_TREE, projectId] });
     },
   });
 }

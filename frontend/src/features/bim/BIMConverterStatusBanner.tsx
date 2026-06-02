@@ -37,7 +37,6 @@ import {
 } from 'lucide-react';
 
 import {
-  fetchBIMConverterInstallProgress,
   fetchBIMConverters,
   fetchConverterVersionCheck,
   installBIMConverter,
@@ -45,10 +44,10 @@ import {
   type BIMConverterAction,
   type BIMConverterHealth,
   type BIMConverterInfo,
-  type BIMConverterInstallProgress,
   type BIMConvertersResponse,
   type ConverterVersionCheck,
 } from './api';
+import { ConverterInstallProgressBar } from './ConverterInstallProgressBar';
 import { useToastStore } from '@/stores/useToastStore';
 
 /** Ids of converters surfaced on the BIM page. IFC was previously missing
@@ -433,48 +432,39 @@ export function BIMConverterStatusBanner({
     }
   }, [dismissed, dismissedVersionSig, currentVersionSig]);
 
-  // A *blocking* signal is one the user must act on for BIM upload to work
-  // at all — a missing or broken converter binary. These always override a
-  // prior dismissal: silencing a broken converter would leave the user
-  // unable to load models with no on-screen explanation.
-  const hasBlockingSignal = (data?.converters ?? []).some(
-    (c) => !c.installed || c.health === 'failed' || c.health === 'not_installed',
-  );
-
-  // An "update available" signal is informational, not blocking — the
-  // converters still work. The previous code treated it as actionable and
-  // unconditionally re-showed the panel, so on the very state the user
-  // complained about ("4/4 working · update available") the panel's "X"
-  // appeared to do nothing.
+  // The "X" must always close the panel. The previous build let a
+  // *blocking* signal (a missing/broken converter) override a dismissal so
+  // the panel re-appeared on the very next render. That is the reported
+  // "the close button does not dismiss the panel" bug. Closing is now an
+  // explicit, honoured user choice: once the user presses X the panel
+  // stays hidden.
   //
-  // Root cause of the "X does nothing / reappears forever" bug: the
+  // The one case where a dismissed panel is allowed to re-surface is a
+  // genuinely *newer* upstream converter build, so the user still learns
+  // about future updates instead of an X click silencing the panel
+  // forever. We detect that purely from the version signature: the panel
+  // re-surfaces only when a *concretely different, fully-resolved*
+  // signature appears (``currentVersionSig`` non-empty AND different from
+  // the one captured at dismissal time).
+  //
+  // Root cause of the original "X reappears forever" variant: the
   // ``['bim-converters-version-check']`` query has a 30 min staleTime and
-  // is briefly ``undefined`` on every fresh mount/navigation, **and** the
+  // is briefly ``undefined`` on every fresh mount/navigation, and the
   // collapsed-strip / mini-icon render paths expose the X before that
   // query has resolved. ``setDismissedPersist`` therefore persisted an
   // *empty* ``currentVersionSig``; once the version-check resolved with a
-  // real outdated SHA the recomputed ``currentVersionSig`` became
-  // non-empty, so ``dismissedVersionSig('') === currentVersionSig('rvt:…')``
-  // was false on every subsequent render — the dismissal silently expired
-  // and the panel re-surfaced permanently.
-  //
-  // Fix: an explicit dismissal of this *informational* notice stays in
-  // effect unless a *concretely different, fully-resolved* signature
-  // appears. An empty ``currentVersionSig`` means "version-check not yet
-  // settled" — that is "no new information", so it must NOT re-surface a
-  // panel the user already dismissed. A genuinely newer upstream build
-  // produces a different non-empty signature and still re-surfaces it, so
-  // future updates are never silently missed.
+  // real SHA the recomputed ``currentVersionSig`` became non-empty, so
+  // ``dismissedVersionSig('') === currentVersionSig('rvt:..')`` was false on
+  // every subsequent render and the dismissal silently expired. An empty
+  // ``currentVersionSig`` means "version-check not yet settled", i.e.
+  // "no new information", so it must NOT re-surface a dismissed panel.
   const versionSigResolved = currentVersionSig !== '';
-  const updateSignalSuppressed =
-    dismissed &&
-    (!versionSigResolved || dismissedVersionSig === currentVersionSig);
+  const newerVersionSinceDismissal =
+    Boolean(versionCheck?.any_outdated) &&
+    versionSigResolved &&
+    dismissedVersionSig !== currentVersionSig;
 
-  const hasActionableSignal =
-    hasBlockingSignal ||
-    (Boolean(versionCheck?.any_outdated) && !updateSignalSuppressed);
-
-  if (dismissible && dismissed && !hasActionableSignal) return null;
+  if (dismissible && dismissed && !newerVersionSinceDismissal) return null;
   if (isLoading || !data) return null;
 
   // Pull the converters we care about, preserving the canonical order.
@@ -922,20 +912,6 @@ function ConverterRow({
   const actions: BIMConverterAction[] = conv.suggested_actions ?? [];
   const updateAvailable = !!versionEntry?.is_outdated;
 
-  // Live install progress — polls /install-progress every 500 ms only
-  // while the install mutation is in flight. When idle this query is
-  // disabled and no network traffic happens.
-  const progressQuery = useQuery<BIMConverterInstallProgress>({
-    queryKey: ['bim-converter-install-progress', conv.id],
-    queryFn: () => fetchBIMConverterInstallProgress(conv.id),
-    enabled: installing,
-    refetchInterval: installing ? 500 : false,
-    refetchIntervalInBackground: false,
-    staleTime: 0,
-    gcTime: 0,
-  });
-  const progress = progressQuery.data;
-
   // Choose icon + tone purely from health so the same "broken" tone shows
   // for both "not installed" and "installed but broken" — but the action
   // set differs.
@@ -1238,67 +1214,27 @@ function ConverterRow({
               </button>
             )}
           </div>
-          {installing && progress?.active && (
-            <InstallProgressBar progress={progress} sizeMb={conv.size_mb} />
-          )}
+        </div>
+      )}
+
+      {/* Live download/update progress, rendered for ANY in-flight install,
+          including the "Update" action on a healthy (health === 'ok') row,
+          which previously fell outside the failed/not_installed block and so
+          showed only a bare "Updating..." spinner with no progress bar. The
+          shared ConverterInstallProgressBar polls /install-progress/ itself
+          and shows an indeterminate bar immediately (before the first poll
+          lands), then a determinate file-count bar plus stage/file/MB
+          microcopy once the backend reports totals. */}
+      {installing && (
+        <div className="ms-5 mt-1.5">
+          <ConverterInstallProgressBar
+            converterId={conv.id}
+            installing={installing}
+            sizeMb={conv.size_mb}
+          />
         </div>
       )}
     </li>
-  );
-}
-
-/** Two-line progress strip rendered below the install button while
- *  ``/install-progress/`` reports ``active: true``. Shows a
- *  ``<progress>`` bar (file-count based — the most reliable signal we
- *  have during a 175-file install) plus stage + current file + MB
- *  microcopy on the line below. */
-function InstallProgressBar({
-  progress,
-  sizeMb,
-}: {
-  progress: BIMConverterInstallProgress;
-  sizeMb?: number;
-}): JSX.Element {
-  const { t } = useTranslation();
-  const stage = progress.stage ?? 'listing';
-  const current = progress.current ?? 0;
-  const total = progress.total ?? 0;
-  const bytesDone = progress.bytes_done ?? 0;
-  const mbDone = bytesDone / (1024 * 1024);
-  const expectedMb = sizeMb && sizeMb > 0 ? sizeMb : 0;
-  // Indeterminate while listing (no total yet); otherwise file-count ratio.
-  const percent = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : null;
-  const stageLabel =
-    stage === 'listing'
-      ? t('bim.converter_progress_listing', { defaultValue: 'Fetching file list…' })
-      : stage === 'verifying'
-        ? t('bim.converter_progress_verifying', { defaultValue: 'Running smoke test…' })
-        : t('bim.converter_progress_downloading', { defaultValue: 'Downloading' });
-  return (
-    <div className="mt-1.5 space-y-1">
-      <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
-        {percent === null ? (
-          <div className="absolute inset-y-0 left-0 w-1/3 animate-pulse bg-sky-500 dark:bg-sky-400" />
-        ) : (
-          <div
-            className="h-full bg-sky-500 dark:bg-sky-400 transition-all duration-300"
-            style={{ width: `${percent}%` }}
-          />
-        )}
-      </div>
-      <div className="flex items-center justify-between gap-2 text-[10px] tabular-nums text-content-secondary">
-        <span className="truncate">
-          {stageLabel}
-          {total > 0 && stage === 'downloading' && ` · ${current}/${total}`}
-          {progress.file && ` · ${progress.file}`}
-        </span>
-        <span className="shrink-0 font-mono">
-          {expectedMb > 0
-            ? `${mbDone.toFixed(1)} / ${expectedMb} MB`
-            : `${mbDone.toFixed(1)} MB`}
-        </span>
-      </div>
-    </div>
   );
 }
 

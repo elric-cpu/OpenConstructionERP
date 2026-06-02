@@ -1,6 +1,6 @@
 /** API client for the project file manager (Issue #109). */
 
-import { apiDelete, apiGet, apiPost, extractErrorMessageFromBody } from '@/shared/lib/api';
+import { apiDelete, apiGet, apiPatch, apiPost, extractErrorMessageFromBody } from '@/shared/lib/api';
 import { useAuthStore } from '@/stores/useAuthStore';
 import type {
   EmailLinkResponse,
@@ -336,6 +336,37 @@ export async function unstarFile(
     file_id: fileId,
   });
   await apiDelete(`${FAVORITES_BASE}/?${params.toString()}`);
+}
+
+/* ── Document lifecycle (CDE) state ──────────────────────────────────── */
+
+/** The ISO 19650 / BS 1192 lifecycle states a document can be set to. */
+export type CdeState = 'wip' | 'shared' | 'published' | 'archived';
+
+/** Subset of the document response we care about after a metadata patch. */
+export interface DocumentPatchResponse {
+  id: string;
+  cde_state: CdeState | null;
+  category: string | null;
+  name: string;
+}
+
+/** Promote / demote a document's CDE lifecycle state.
+ *
+ * Backed by ``PATCH /v1/documents/{id}``. The documents module already
+ * accepts a ``cde_state`` of wip / shared / published / archived. Only the
+ * ``document`` kind is backed by that table, so callers must guard on kind
+ * before invoking. The file manager rows surface the current value via
+ * ``row.extra.cde_state``.
+ */
+export async function setDocumentCdeState(
+  documentId: string,
+  cdeState: CdeState,
+): Promise<DocumentPatchResponse> {
+  return apiPatch<DocumentPatchResponse, { cde_state: CdeState }>(
+    `${DOCUMENTS_BASE}/${documentId}`,
+    { cde_state: cdeState },
+  );
 }
 
 /* ── Per-kind delete helpers (bulk-delete dispatcher) ────────────────── */

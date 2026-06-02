@@ -27,6 +27,7 @@
  * that don't yet exist.
  */
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
+import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -169,7 +170,7 @@ function WidgetShell({
   className,
 }: WidgetShellProps) {
   return (
-    <Card padding="sm" className={className}>
+    <Card padding="sm" className={clsx('flex h-full flex-col', className)}>
       <div className="mb-2 flex items-start justify-between gap-3">
         <div className="flex items-start gap-2 min-w-0 flex-1">
           <span className="mt-0.5 shrink-0 text-content-tertiary">{icon}</span>

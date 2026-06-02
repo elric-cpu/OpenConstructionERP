@@ -10,14 +10,17 @@
  * were deleted, and — on partial failure — which kinds had errors so the
  * user can retry just those.
  *
- * Other bulk operations (classify, export-selection) are TODO — once
- * file_manager exposes them, wire them through this same bar.
+ * Bulk download fans each selected row's existing ``download_url`` out to
+ * the browser (staggered so the burst isn't throttled) - no new endpoint
+ * needed. Bulk tag + transmittal are wired through the tag and transmittal
+ * modules. Bulk move / reclassify is not yet possible because the file
+ * manager exposes no cross-kind move endpoint.
  */
 
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
-import { Trash2, X, Loader2, Tag, Send } from 'lucide-react';
+import { Trash2, X, Loader2, Tag, Send, Download } from 'lucide-react';
 import { useToastStore } from '@/stores/useToastStore';
 import { fileManagerKeys } from '../hooks';
 import { bulkDeleteDocuments, deleteByKind } from '../api';
@@ -194,6 +197,44 @@ export async function dispatchHardBulkDelete(rows: FileRow[]): Promise<DispatchS
   return { total, deleted, failed, perKind, trashIds: [] };
 }
 
+/** Small delay between sequential downloads. Browsers throttle / drop
+ *  rapid-fire programmatic downloads, so we pace them out. */
+const DOWNLOAD_STAGGER_MS = 350;
+
+/** Trigger a browser download for one URL via a hidden ``<a download>``.
+ *  Mirrors the single-file download anchor the preview pane already relies
+ *  on (same auth path), so it works without any new endpoint. */
+function clickDownload(url: string, filename: string): void {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.rel = 'noopener';
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    a.remove();
+  }, 1000);
+}
+
+/** Download every selected row that carries an addressable ``download_url``,
+ *  staggered so the browser doesn't drop the burst. Returns how many were
+ *  dispatched and how many had no URL to download. */
+export async function dispatchBulkDownload(
+  rows: FileRow[],
+): Promise<{ dispatched: number; skipped: number }> {
+  const downloadable = rows.filter((r) => Boolean(r.download_url));
+  const skipped = rows.length - downloadable.length;
+  for (let i = 0; i < downloadable.length; i += 1) {
+    const row = downloadable[i]!;
+    clickDownload(row.download_url as string, row.name);
+    if (i < downloadable.length - 1) {
+      await new Promise((resolve) => setTimeout(resolve, DOWNLOAD_STAGGER_MS));
+    }
+  }
+  return { dispatched: downloadable.length, skipped };
+}
+
 export function BulkActionsBar({ selectedRows, projectId, onClear }: BulkActionsBarProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -201,6 +242,7 @@ export function BulkActionsBar({ selectedRows, projectId, onClear }: BulkActions
   const [confirming, setConfirming] = useState(false);
   const [tagDrawerOpen, setTagDrawerOpen] = useState(false);
   const [transmittalOpen, setTransmittalOpen] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   // Restore-from-trash mutation feeds the Undo toast.
   const restoreMutation = useRestoreFromTrash(projectId);
@@ -277,6 +319,46 @@ export function BulkActionsBar({ selectedRows, projectId, onClear }: BulkActions
     },
   });
 
+  // Count how many of the selected rows actually have a download URL so the
+  // button can disable + the toast can report what was skipped.
+  const downloadableCount = selectedRows.filter((r) => Boolean(r.download_url)).length;
+
+  const handleBulkDownload = async () => {
+    if (downloading || downloadableCount === 0) return;
+    setDownloading(true);
+    try {
+      const { dispatched, skipped } = await dispatchBulkDownload(selectedRows);
+      if (dispatched === 0) {
+        addToast({
+          type: 'warning',
+          title: t('files.bulk.download_none', {
+            defaultValue: 'Nothing to download',
+          }),
+          message: t('files.bulk.download_none_detail', {
+            defaultValue: 'None of the selected files expose a downloadable file.',
+          }),
+        });
+      } else {
+        addToast({
+          type: 'success',
+          title: t('files.bulk.download_started', {
+            defaultValue: 'Downloading {{count}} file(s)',
+            count: dispatched,
+          }),
+          message:
+            skipped > 0
+              ? t('files.bulk.download_skipped', {
+                  defaultValue: '{{count}} file(s) had nothing to download and were skipped.',
+                  count: skipped,
+                })
+              : undefined,
+        });
+      }
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   if (selectedRows.length === 0) return null;
 
   return (
@@ -297,6 +379,26 @@ export function BulkActionsBar({ selectedRows, projectId, onClear }: BulkActions
       </button>
 
       <div className="ms-auto flex items-center gap-2">
+        {/* Bulk download: fans each selected file's download URL out to the
+            browser, staggered so the burst isn't throttled. */}
+        <button
+          type="button"
+          onClick={handleBulkDownload}
+          disabled={downloading || downloadableCount === 0}
+          className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium border border-border-light text-content-secondary hover:bg-surface-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+          title={
+            downloadableCount === 0
+              ? t('files.bulk.download_none', { defaultValue: 'Nothing to download' })
+              : t('files.bulk.download', { defaultValue: 'Download' })
+          }
+        >
+          {downloading ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+          {t('files.bulk.download', { defaultValue: 'Download' })}
+          {downloadableCount > 0 && downloadableCount !== selectedRows.length && (
+            <span className="tabular-nums opacity-70">{downloadableCount}</span>
+          )}
+        </button>
+
         {/* W4 — bulk-tag selected files. */}
         <button
           type="button"
