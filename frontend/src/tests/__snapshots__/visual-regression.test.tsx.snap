@@ -3,7 +3,7 @@
 exports[`Visual Regression — Badge > blue badge with dot 1`] = `
 <div>
   <span
-    class="inline-flex items-center rounded-full font-medium whitespace-nowrap animate-scale-in transition-colors duration-fast ease-oe bg-oe-blue-subtle text-oe-blue h-6 px-2 text-xs gap-1.5"
+    class="inline-flex items-center rounded-full font-medium whitespace-nowrap animate-scale-in transition-colors duration-fast ease-oe bg-oe-blue-subtle text-oe-blue-text h-6 px-2 text-xs gap-1.5"
   >
     <span
       class="h-1.5 w-1.5 rounded-full shrink-0 bg-oe-blue"
@@ -728,15 +728,376 @@ exports[`Visual Regression — DashboardPage > renders loading/skeleton state 1`
     class="space-y-5 animate-fade-in"
   >
     <div
+      aria-label="What's new in v{{version}}"
+      class="relative overflow-visible rounded-xl border ring-1 border-sky-400/50 ring-sky-500/10 dark:border-sky-500/40 dark:ring-sky-400/10 bg-gradient-to-br from-sky-50/90 via-blue-50/85 to-cyan-50/80 dark:from-sky-950/40 dark:via-blue-950/30 dark:to-cyan-950/20 backdrop-blur-md shadow-md shadow-sky-500/10 transition-all duration-300 ease-out opacity-0 -translate-y-2"
+      role="region"
+    >
+      <div
+        class="flex flex-wrap items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5"
+      >
+        <div
+          class="relative shrink-0"
+        >
+          <span
+            aria-hidden="true"
+            class="absolute inset-0 rounded-lg bg-sky-500/30 animate-ping"
+          />
+          <div
+            class="relative flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-blue-600 text-white shadow-sm shadow-blue-500/30"
+          >
+            <svg
+              class="lucide lucide-sparkles"
+              fill="none"
+              height="13"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2.5"
+              viewBox="0 0 24 24"
+              width="13"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"
+              />
+              <path
+                d="M20 3v4"
+              />
+              <path
+                d="M22 5h-4"
+              />
+              <path
+                d="M4 17v2"
+              />
+              <path
+                d="M5 18H3"
+              />
+            </svg>
+          </div>
+        </div>
+        <div
+          class="flex min-w-0 items-baseline gap-2"
+        >
+          <h2
+            class="truncate text-[13px] sm:text-sm font-semibold text-blue-900 dark:text-sky-100 leading-tight"
+          >
+            What's new in v{{version}}
+          </h2>
+          <span
+            class="hidden md:inline truncate text-[12px] text-blue-700/75 dark:text-sky-300/70"
+          >
+            Tap a chip for details.
+          </span>
+        </div>
+        <div
+          class="flex flex-1 flex-wrap items-center gap-1.5 min-w-0"
+        >
+          <button
+            aria-controls="whatsnew-chip-propdev-popover"
+            aria-expanded="false"
+            class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
+            title="Property Development reborn"
+            type="button"
+          >
+            <svg
+              class="lucide lucide-house"
+              fill="none"
+              height="11"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2.25"
+              viewBox="0 0 24 24"
+              width="11"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"
+              />
+              <path
+                d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
+              />
+            </svg>
+            <span>
+              PropDev
+            </span>
+          </button>
+          <button
+            aria-controls="whatsnew-chip-geo-popover"
+            aria-expanded="false"
+            class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
+            title="Geo Hub with live HUD"
+            type="button"
+          >
+            <svg
+              class="lucide lucide-map"
+              fill="none"
+              height="11"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2.25"
+              viewBox="0 0 24 24"
+              width="11"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"
+              />
+              <path
+                d="M15 5.764v15"
+              />
+              <path
+                d="M9 3.236v15"
+              />
+            </svg>
+            <span>
+              Geo Hub
+            </span>
+          </button>
+          <button
+            aria-controls="whatsnew-chip-bim-popover"
+            aria-expanded="false"
+            class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
+            title="BIM 3D viewer upgrades"
+            type="button"
+          >
+            <svg
+              class="lucide lucide-box"
+              fill="none"
+              height="11"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2.25"
+              viewBox="0 0 24 24"
+              width="11"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"
+              />
+              <path
+                d="m3.3 7 8.7 5 8.7-5"
+              />
+              <path
+                d="M12 22V12"
+              />
+            </svg>
+            <span>
+              BIM viewer
+            </span>
+          </button>
+          <button
+            aria-controls="whatsnew-chip-housetypes-popover"
+            aria-expanded="false"
+            class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
+            title="House Type Catalogue"
+            type="button"
+          >
+            <svg
+              class="lucide lucide-list"
+              fill="none"
+              height="11"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2.25"
+              viewBox="0 0 24 24"
+              width="11"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M3 12h.01"
+              />
+              <path
+                d="M3 18h.01"
+              />
+              <path
+                d="M3 6h.01"
+              />
+              <path
+                d="M8 12h13"
+              />
+              <path
+                d="M8 18h13"
+              />
+              <path
+                d="M8 6h13"
+              />
+            </svg>
+            <span>
+              House types
+            </span>
+          </button>
+          <button
+            aria-controls="whatsnew-chip-installer-popover"
+            aria-expanded="false"
+            class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
+            title="Installer reliability"
+            type="button"
+          >
+            <svg
+              class="lucide lucide-wrench"
+              fill="none"
+              height="11"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2.25"
+              viewBox="0 0 24 24"
+              width="11"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"
+              />
+            </svg>
+            <span>
+              Installer
+            </span>
+          </button>
+          <button
+            aria-controls="whatsnew-chip-fixes-popover"
+            aria-expanded="false"
+            class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
+            title="20+ correctness fixes"
+            type="button"
+          >
+            <svg
+              class="lucide lucide-circle-check-big"
+              fill="none"
+              height="11"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2.25"
+              viewBox="0 0 24 24"
+              width="11"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M21.801 10A10 10 0 1 1 17 3.335"
+              />
+              <path
+                d="m9 11 3 3L22 4"
+              />
+            </svg>
+            <span>
+              Fixes
+            </span>
+          </button>
+        </div>
+        <div
+          class="flex shrink-0 items-center gap-1.5"
+        >
+          <button
+            class="inline-flex items-center gap-1 rounded-full bg-gradient-to-br from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 px-2.5 py-1 text-[11px] font-semibold text-white shadow-sm shadow-blue-500/30 ring-1 ring-blue-500/20 transition-all"
+            type="button"
+          >
+            <svg
+              class="lucide lucide-sparkles"
+              fill="none"
+              height="11"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              viewBox="0 0 24 24"
+              width="11"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"
+              />
+              <path
+                d="M20 3v4"
+              />
+              <path
+                d="M22 5h-4"
+              />
+              <path
+                d="M4 17v2"
+              />
+              <path
+                d="M5 18H3"
+              />
+            </svg>
+            <span
+              class="hidden sm:inline"
+            >
+              Take a quick tour
+            </span>
+            <span
+              class="sm:hidden"
+            >
+              Tour
+            </span>
+          </button>
+          <button
+            class="hidden sm:inline-flex items-center gap-0.5 rounded-full px-2 py-1 text-[11px] font-medium text-blue-700 hover:text-blue-800 dark:text-sky-300 dark:hover:text-sky-200 hover:bg-sky-500/10 dark:hover:bg-sky-400/10 transition-colors"
+            type="button"
+          >
+            Full release notes
+            <svg
+              class="lucide lucide-arrow-right"
+              fill="none"
+              height="11"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              viewBox="0 0 24 24"
+              width="11"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M5 12h14"
+              />
+              <path
+                d="m12 5 7 7-7 7"
+              />
+            </svg>
+          </button>
+          <button
+            aria-label="Dismiss"
+            class="flex h-7 w-7 items-center justify-center rounded-md text-sky-600/70 hover:text-blue-700 hover:bg-sky-500/10 dark:text-sky-300/70 dark:hover:text-sky-100 dark:hover:bg-sky-400/10 transition-colors"
+            type="button"
+          >
+            <svg
+              class="lucide lucide-x"
+              fill="none"
+              height="14"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              viewBox="0 0 24 24"
+              width="14"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M18 6 6 18"
+              />
+              <path
+                d="m6 6 12 12"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div
       class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between animate-card-in"
     >
       <h1
         class="text-2xl font-semibold tracking-tight gradient-text pl-2"
       >
-        Good morning
+        Good morning, Test
       </h1>
       <div
         class="flex items-center gap-2 flex-wrap animate-stagger-in"
+        data-testid="dashboard-tour-hero-actions"
         style="animation-delay: 100ms;"
       >
         <button
@@ -859,6 +1220,100 @@ exports[`Visual Regression — DashboardPage > renders loading/skeleton state 1`
             class="inline-flex items-center"
           >
             Quick Start
+          </span>
+        </button>
+        <button
+          aria-pressed="false"
+          class="inline-flex items-center justify-center font-medium whitespace-nowrap select-none transition-all duration-normal ease-oe transform-gpu will-change-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue focus-visible:ring-offset-2 bg-transparent text-content-secondary hover:bg-surface-secondary active:bg-surface-tertiary border border-transparent active:scale-[0.98] h-8 px-3.5 text-sm gap-1.5 rounded-lg"
+          data-testid="dashboard-tour-customize-button"
+          title="Reorder, show or hide dashboard sections"
+        >
+          <span
+            class="shrink-0"
+          >
+            <svg
+              class="lucide lucide-layout-grid"
+              fill="none"
+              height="15"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              viewBox="0 0 24 24"
+              width="15"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <rect
+                height="7"
+                rx="1"
+                width="7"
+                x="3"
+                y="3"
+              />
+              <rect
+                height="7"
+                rx="1"
+                width="7"
+                x="14"
+                y="3"
+              />
+              <rect
+                height="7"
+                rx="1"
+                width="7"
+                x="14"
+                y="14"
+              />
+              <rect
+                height="7"
+                rx="1"
+                width="7"
+                x="3"
+                y="14"
+              />
+            </svg>
+          </span>
+          <span
+            class="inline-flex items-center"
+          >
+            Customize
+          </span>
+        </button>
+        <button
+          aria-label="Start guided tour for this module"
+          class="inline-flex items-center gap-1.5 rounded-full border border-oe-blue/30 bg-oe-blue/5 hover:bg-oe-blue/10 px-2.5 h-7 text-xs font-medium text-oe-blue transition-colors focus:outline-none focus:ring-2 focus:ring-oe-blue/40"
+          data-testid="module-help-button-dashboard"
+          title="Start guided tour for this module"
+          type="button"
+        >
+          <svg
+            class="lucide lucide-circle-help"
+            fill="none"
+            height="13"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="13"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <circle
+              cx="12"
+              cy="12"
+              r="10"
+            />
+            <path
+              d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"
+            />
+            <path
+              d="M12 17h.01"
+            />
+          </svg>
+          <span
+            class="hidden sm:inline"
+          >
+            Tour
           </span>
         </button>
       </div>
@@ -1153,6 +1608,7 @@ exports[`Visual Regression — DashboardPage > renders loading/skeleton state 1`
     </div>
     <div
       class="mb-8 grid grid-cols-2 gap-3 lg:grid-cols-4 animate-card-in"
+      data-testid="dashboard-tour-kpi-ribbon"
       style="animation-delay: 50ms;"
     >
       <div
@@ -1642,7 +2098,7 @@ exports[`Visual Regression — DashboardPage > renders loading/skeleton state 1`
             type="file"
           />
           <div
-            class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-oe-blue-subtle text-oe-blue"
+            class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-oe-blue-subtle text-oe-blue-text"
           >
             <svg
               class="lucide lucide-upload"
@@ -1687,7 +2143,7 @@ exports[`Visual Regression — DashboardPage > renders loading/skeleton state 1`
               class="mt-2 flex items-center gap-3 text-2xs text-content-tertiary"
             >
               <button
-                class="inline-flex items-center gap-1 text-oe-blue hover:text-oe-blue-dark transition-colors"
+                class="inline-flex items-center gap-1 text-oe-blue hover:text-oe-blue-text transition-colors"
                 disabled=""
                 type="button"
               >
@@ -1805,7 +2261,7 @@ exports[`Visual Regression — DashboardPage > renders loading/skeleton state 1`
             Getting Started
           </h2>
           <span
-            class="inline-flex items-center rounded-full font-medium whitespace-nowrap animate-scale-in transition-colors duration-fast ease-oe bg-oe-blue-subtle text-oe-blue h-5 px-1.5 text-2xs gap-1"
+            class="inline-flex items-center rounded-full font-medium whitespace-nowrap animate-scale-in transition-colors duration-fast ease-oe bg-oe-blue-subtle text-oe-blue-text h-5 px-1.5 text-2xs gap-1"
           >
             0
             /
@@ -1843,7 +2299,7 @@ exports[`Visual Regression — DashboardPage > renders loading/skeleton state 1`
                 class="mb-4 flex items-center gap-3"
               >
                 <div
-                  class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold bg-oe-blue-subtle text-oe-blue"
+                  class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold bg-oe-blue-subtle text-oe-blue-text"
                 >
                   1
                 </div>
@@ -1944,7 +2400,7 @@ exports[`Visual Regression — DashboardPage > renders loading/skeleton state 1`
                 class="mb-4 flex items-center gap-3"
               >
                 <div
-                  class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold bg-oe-blue-subtle text-oe-blue"
+                  class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold bg-oe-blue-subtle text-oe-blue-text"
                 >
                   2
                 </div>
@@ -2049,7 +2505,7 @@ exports[`Visual Regression — DashboardPage > renders loading/skeleton state 1`
                 class="mb-4 flex items-center gap-3"
               >
                 <div
-                  class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold bg-oe-blue-subtle text-oe-blue"
+                  class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold bg-oe-blue-subtle text-oe-blue-text"
                 >
                   3
                 </div>
@@ -2176,7 +2632,7 @@ exports[`Visual Regression — DashboardPage > renders loading/skeleton state 1`
                 class="mb-4 flex items-center gap-3"
               >
                 <div
-                  class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold bg-oe-blue-subtle text-oe-blue"
+                  class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold bg-oe-blue-subtle text-oe-blue-text"
                 >
                   4
                 </div>
@@ -2317,7 +2773,7 @@ exports[`Visual Regression — DashboardPage > renders loading/skeleton state 1`
                 class="mb-4 flex items-center gap-3"
               >
                 <div
-                  class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold bg-oe-blue-subtle text-oe-blue"
+                  class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold bg-oe-blue-subtle text-oe-blue-text"
                 >
                   5
                 </div>
@@ -2425,7 +2881,7 @@ exports[`Visual Regression — DashboardPage > renders loading/skeleton state 1`
                 class="mb-4 flex items-center gap-3"
               >
                 <div
-                  class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold bg-oe-blue-subtle text-oe-blue"
+                  class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold bg-oe-blue-subtle text-oe-blue-text"
                 >
                   6
                 </div>
@@ -3015,6 +3471,82 @@ exports[`Visual Regression — DashboardPage > renders loading/skeleton state 1`
                 </span>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div
+      class="animate-card-in"
+      style="animation-delay: 160ms;"
+    >
+      <div
+        class="rounded-xl border border-border-light bg-surface-elevated shadow-xs transition-all duration-normal ease-oe transform-gpu p-6"
+      >
+        <div
+          class="px-4 pt-3 pb-1"
+        >
+          <h3
+            class="text-sm font-semibold text-content-primary"
+          >
+            Operations snapshot
+          </h3>
+          <p
+            class="text-2xs text-content-tertiary"
+          >
+            Health across nine operations modules — empty tiles light up as data lands.
+          </p>
+        </div>
+        <div
+          class="mt-4"
+        >
+          <div
+            class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2"
+          >
+            <div
+              aria-hidden="true"
+              class="animate-shimmer bg-gradient-to-r from-surface-secondary via-surface-tertiary to-surface-secondary bg-[length:200%_100%] rounded-lg"
+              style="height: 56px;"
+            />
+            <div
+              aria-hidden="true"
+              class="animate-shimmer bg-gradient-to-r from-surface-secondary via-surface-tertiary to-surface-secondary bg-[length:200%_100%] rounded-lg"
+              style="height: 56px;"
+            />
+            <div
+              aria-hidden="true"
+              class="animate-shimmer bg-gradient-to-r from-surface-secondary via-surface-tertiary to-surface-secondary bg-[length:200%_100%] rounded-lg"
+              style="height: 56px;"
+            />
+            <div
+              aria-hidden="true"
+              class="animate-shimmer bg-gradient-to-r from-surface-secondary via-surface-tertiary to-surface-secondary bg-[length:200%_100%] rounded-lg"
+              style="height: 56px;"
+            />
+            <div
+              aria-hidden="true"
+              class="animate-shimmer bg-gradient-to-r from-surface-secondary via-surface-tertiary to-surface-secondary bg-[length:200%_100%] rounded-lg"
+              style="height: 56px;"
+            />
+            <div
+              aria-hidden="true"
+              class="animate-shimmer bg-gradient-to-r from-surface-secondary via-surface-tertiary to-surface-secondary bg-[length:200%_100%] rounded-lg"
+              style="height: 56px;"
+            />
+            <div
+              aria-hidden="true"
+              class="animate-shimmer bg-gradient-to-r from-surface-secondary via-surface-tertiary to-surface-secondary bg-[length:200%_100%] rounded-lg"
+              style="height: 56px;"
+            />
+            <div
+              aria-hidden="true"
+              class="animate-shimmer bg-gradient-to-r from-surface-secondary via-surface-tertiary to-surface-secondary bg-[length:200%_100%] rounded-lg"
+              style="height: 56px;"
+            />
+            <div
+              aria-hidden="true"
+              class="animate-shimmer bg-gradient-to-r from-surface-secondary via-surface-tertiary to-surface-secondary bg-[length:200%_100%] rounded-lg"
+              style="height: 56px;"
+            />
           </div>
         </div>
       </div>

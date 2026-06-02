@@ -23,7 +23,21 @@ function makeCesiumStub() {
   const flyTo = vi.fn();
   const destroy = vi.fn();
   const add = vi.fn();
-  const fromUrl = vi.fn(async (url: string) => ({ url }));
+  // ``fromUrl`` now receives a Cesium ``Resource`` (so child-tile requests
+  // carry our bearer token), not the raw uri string. Accept either shape.
+  const fromUrl = vi.fn(async (urlOrResource: { url?: string } | string) => ({
+    url: typeof urlOrResource === 'string' ? urlOrResource : urlOrResource?.url,
+    boundingSphere: null,
+  }));
+  // Constructor for a Cesium ``Resource`` — records the url + headers the
+  // viewer attaches so the tileset test can assert on the resolved route.
+  const Resource = vi.fn().mockImplementation(
+    (opts: { url?: string; headers?: Record<string, string> }) => ({
+      url: opts?.url,
+      headers: opts?.headers,
+      _isResource: true,
+    }),
+  );
   // Minimal canvas + camera-event stubs so the live-HUD wiring exercises
   // its setInputAction / camera.changed branches without throwing.
   // Listeners are kept in arrays so individual tests can introspect or
@@ -42,6 +56,7 @@ function makeCesiumStub() {
     destroy,
     add,
     fromUrl,
+    Resource,
     canvas,
     inputActions,
     cameraListeners,
@@ -110,8 +125,26 @@ function makeCesiumStub() {
       // silence the watermark. Stub it so the assignment is a no-op.
       Ion: { defaultAccessToken: '' },
       Cesium3DTileset: { fromUrl },
+      // Cesium fetches tileset.json + its child tiles itself, so the viewer
+      // wraps the artifact route in a Resource that carries the bearer token.
+      Resource,
+      // Per-tile colour/opacity styling — feature-detected by the viewer.
+      Cesium3DTileStyle: vi
+        .fn()
+        .mockImplementation((opts: Record<string, unknown>) => ({ ...opts })),
+      // Sphere math for the "Fit to data" auto-zoom.
+      BoundingSphere: {
+        fromPoints: vi.fn(() => ({ center: { x: 0, y: 0, z: 0 }, radius: 100 })),
+        fromBoundingSpheres: vi.fn(() => ({
+          center: { x: 0, y: 0, z: 0 },
+          radius: 100,
+        })),
+      },
       ScreenSpaceEventHandler,
-      ScreenSpaceEventType: { MOUSE_MOVE: 15 },
+      ScreenSpaceEventType: { MOUSE_MOVE: 15, LEFT_CLICK: 2 },
+      // SceneMode enum — read at viewer init to honour the saved projection
+      // preference; a missing export here throws before ``new Viewer``.
+      SceneMode: { MORPHING: 0, COLUMBUS_VIEW: 1, SCENE2D: 2, SCENE3D: 3 },
       Math: {
         toDegrees: (r: number) => (r * 180) / Math.PI,
         TWO_PI: Math.PI * 2,
@@ -134,7 +167,13 @@ describe('CesiumViewer', () => {
   });
 
   it('shows install hint when cesium import fails', async () => {
-    // No vi.doMock — the missing import triggers the absent branch.
+    // Force the absent branch deterministically: an empty module has no
+    // ``Viewer`` export, so ``loadCesium`` returns null and the install
+    // hint renders. Relying on cesium being physically absent is flaky —
+    // it is a real dependency that CI installs, in which case the import
+    // resolves and ``new Viewer()`` throws under jsdom (init_failed) rather
+    // than going absent.
+    vi.doMock('cesium', () => ({}));
     render(<CesiumViewer mode="global" />);
     // After the visual elevation pass the absent state shows both a
     // heading and a paragraph mentioning Cesium, so target the
@@ -234,12 +273,15 @@ describe('CesiumViewer', () => {
     };
     render(<CesiumViewer mode="project" mapConfig={cfg} />);
     await waitFor(() => {
-      expect(stub.fromUrl).toHaveBeenCalledWith(
-        'https://x/t1/tileset.json',
-      );
+      expect(stub.fromUrl).toHaveBeenCalledTimes(1);
     });
-    // The draft tileset (no URI) must not be requested.
-    expect(stub.fromUrl).toHaveBeenCalledTimes(1);
+    // ``fromUrl`` now receives a Cesium ``Resource`` (so the bearer token
+    // rides along to the child-tile requests), not the raw storage uri. The
+    // url is our tenant-scoped artifact route keyed by the tileset id. The
+    // draft tileset (no uri) must not be requested.
+    expect(stub.Resource).toHaveBeenCalledTimes(1);
+    const resourceArg = stub.Resource.mock.calls[0][0];
+    expect(resourceArg.url).toContain('/tilesets/t1/artifact/tileset.json');
   });
 
   it('destroys the viewer on unmount', async () => {

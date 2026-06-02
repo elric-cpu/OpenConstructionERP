@@ -101,6 +101,9 @@ vi.mock('react-i18next', () => ({
     },
     i18n: { language: 'en' },
   }),
+  // ``src/app/i18n.ts`` is pulled in transitively and calls
+  // ``.use(initReactI18next)`` at module load — expose the noop plugin.
+  initReactI18next: { type: '3rdParty', init: () => {} },
 }));
 
 import { NewTransmittalWizard } from '../NewTransmittalWizard';

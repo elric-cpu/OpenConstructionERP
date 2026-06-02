@@ -10,7 +10,7 @@
  * Update snapshots:  npx vitest run src/tests/visual-regression.test.tsx -u
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import React from 'react';
@@ -586,6 +586,21 @@ describe('Visual Regression — LoginPage', () => {
 ═══════════════════════════════════════════════════════════════════════ */
 
 describe('Visual Regression — DashboardPage', () => {
+  // The hero greeting is time-of-day dependent (DashboardPage reads
+  // `new Date().getHours()` → "Good morning" / "Good afternoon" /
+  // "Good evening" / "Welcome back"). Pin the clock to a fixed morning
+  // instant so the snapshot is reproducible regardless of when CI runs.
+  // We fake ONLY Date — setTimeout/Promise/microtasks stay real so the
+  // lazy `await import` and React effects below still resolve normally.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-01-01T09:00:00'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   // 60s timeout: DashboardPage pulls in many lazy chunks (charts, maps, weather);
   // under full-suite parallel load 15s isn't enough. Solo run takes ~4s.
   it('renders loading/skeleton state', async () => {

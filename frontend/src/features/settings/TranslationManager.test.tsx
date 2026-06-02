@@ -59,6 +59,9 @@ vi.mock('react-i18next', () => ({
     },
   }),
   Trans: ({ children }: { children: React.ReactNode }) => children,
+  // ``src/app/i18n.ts`` is pulled in transitively and calls
+  // ``.use(initReactI18next)`` at module load — expose the noop plugin.
+  initReactI18next: { type: '3rdParty', init: () => {} },
 }));
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

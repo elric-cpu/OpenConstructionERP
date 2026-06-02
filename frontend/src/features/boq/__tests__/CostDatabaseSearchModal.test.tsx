@@ -243,6 +243,19 @@ describe('CostDatabaseSearchModal — paginated catalog', () => {
     renderModal();
     await waitFor(() => expect(fetchCategoryTree).toHaveBeenCalled());
 
+    // Wait for the on-mount region auto-default (region='' → first country DB)
+    // to settle before interacting. Until it does, the search query key is
+    // mid-flip and a `selectedPath` change can race the region change, so the
+    // last `fetchCostSearch` call momentarily carries no `classification_path`.
+    // Settling first means the "Buildings" click produces exactly one clean
+    // path-scoped fetch.
+    await waitFor(() => {
+      const last = (fetchCostSearch as unknown as ReturnType<typeof vi.fn>).mock.calls.at(
+        -1,
+      )?.[0];
+      expect(last?.region).toBe('DE_BERLIN');
+    });
+
     // Select "Buildings" so we have a non-empty path.
     fireEvent.click(await screen.findByText('Buildings'));
     await waitFor(() => {
@@ -274,16 +287,31 @@ describe('CostDatabaseSearchModal — paginated catalog', () => {
   });
 
   it('shows the inline retry CTA when the category tree fails', async () => {
-    // mockRejectedValue (not Once) so React's StrictMode double-mount + any
-    // internal react-query refetch all hit the rejection path. Without this
-    // the second call returns the default success and the error UI never
-    // renders.
+    // mockRejectedValue (not Once) because the tree query is region-scoped and
+    // fires twice on mount: once for region='' and again after the auto-default
+    // flips region to the first country DB. Both must reject, otherwise the
+    // second (DE_BERLIN) call returns the default success and the error UI
+    // never settles.
     (fetchCategoryTree as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(
       new Error('boom'),
     );
 
     renderModal();
     const sidebar = await screen.findByTestId('cost-modal-sidebar');
+
+    // The tree query key is region-scoped (['cost-tree', region, 2]). On mount
+    // the region auto-defaults from '' to the first country DB, which swaps the
+    // key and briefly resets `treeError` to false (the fresh key starts in its
+    // loading state) before the second rejection re-renders the error. Wait for
+    // that auto-default to settle so we assert against the steady error state on
+    // the final key, not the transient loading flicker mid-swap.
+    await waitFor(() => {
+      const last = (fetchCostSearch as unknown as ReturnType<typeof vi.fn>).mock.calls.at(
+        -1,
+      )?.[0];
+      expect(last?.region).toBe('DE_BERLIN');
+    });
+
     // Regex matchers tolerate identity-marker ZWJ/ZWNJ trailing the visible text.
     expect(
       await within(sidebar).findByText(/Could not load categories/),

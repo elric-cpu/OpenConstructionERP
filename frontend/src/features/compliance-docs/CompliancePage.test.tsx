@@ -112,8 +112,15 @@ describe('CompliancePage', () => {
       expect(screen.getByTestId('compliance-empty-cta')).toBeInTheDocument(),
     );
     fireEvent.click(screen.getByTestId('compliance-empty-cta'));
+    // The create flow mounts CreateComplianceDocModal, which renders through
+    // the shared WideModal as a role="dialog" labelled by its title and
+    // exposes the form fields (e.g. the name input). Assert on the real
+    // a11y contract rather than a testid the modal never set.
     await waitFor(() =>
-      expect(screen.getByTestId('create-compliance-modal')).toBeInTheDocument(),
+      expect(
+        screen.getByRole('dialog', { name: /new compliance document/i }),
+      ).toBeInTheDocument(),
     );
+    expect(screen.getByTestId('compliance-field-name')).toBeInTheDocument();
   });
 });
