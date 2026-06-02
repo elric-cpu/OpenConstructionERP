@@ -112,17 +112,39 @@ def _normalise_band(base: float, lo: float, hi: float) -> tuple[float, float, fl
 
 # ── Region-to-GitHub mapping ─────────────────────────────────────────────
 
+# All 30 regional catalogs published in the DDC CWICR repository. Each key is
+# the metro-coded region id that names the catalog CSV
+# (DDC_CWICR_<region>_Catalog.csv), the value is the repo folder that holds it.
 REGION_MAP: dict[str, str] = {
     "AR_DUBAI": "AR___DDC_CWICR",
+    "AU_SYDNEY": "AU___DDC_CWICR",
+    "BG_SOFIA": "BG___DDC_CWICR",
+    "CS_PRAGUE": "CS___DDC_CWICR",
     "DE_BERLIN": "DE___DDC_CWICR",
     "ENG_TORONTO": "EN___DDC_CWICR",
     "SP_BARCELONA": "ES___DDC_CWICR",
     "FR_PARIS": "FR___DDC_CWICR",
     "HI_MUMBAI": "HI___DDC_CWICR",
+    "HR_ZAGREB": "HR___DDC_CWICR",
+    "ID_JAKARTA": "ID___DDC_CWICR",
+    "IT_ROME": "IT___DDC_CWICR",
+    "JA_TOKYO": "JA___DDC_CWICR",
+    "KO_SEOUL": "KO___DDC_CWICR",
+    "MX_MEXICOCITY": "MX___DDC_CWICR",
+    "NG_LAGOS": "NG___DDC_CWICR",
+    "NL_AMSTERDAM": "NL___DDC_CWICR",
+    "NZ_AUCKLAND": "NZ___DDC_CWICR",
+    "PL_WARSAW": "PL___DDC_CWICR",
     "PT_SAOPAULO": "PT___DDC_CWICR",
+    "RO_BUCHAREST": "RO___DDC_CWICR",
     "RU_STPETERSBURG": "RU___DDC_CWICR",
+    "SV_STOCKHOLM": "SV___DDC_CWICR",
+    "TH_BANGKOK": "TH___DDC_CWICR",
+    "TR_ISTANBUL": "TR___DDC_CWICR",
     "UK_GBP": "UK___DDC_CWICR",
     "USA_USD": "US___DDC_CWICR",
+    "VI_HANOI": "VI___DDC_CWICR",
+    "ZA_JOHANNESBURG": "ZA___DDC_CWICR",
     "ZH_SHANGHAI": "ZH___DDC_CWICR",
 }
 
@@ -141,8 +163,13 @@ async def import_catalog_from_github(
 ) -> dict[str, Any]:
     """‌⁠‍Download resource catalog CSV from GitHub and import into DB.
 
-    Regions: AR_DUBAI, DE_BERLIN, ENG_TORONTO, SP_BARCELONA, FR_PARIS,
-             HI_MUMBAI, PT_SAOPAULO, RU_STPETERSBURG, UK_GBP, USA_USD, ZH_SHANGHAI
+    Accepts any of the 30 region ids in ``REGION_MAP`` (one metro per CWICR
+    locale: AR_DUBAI, AU_SYDNEY, BG_SOFIA, CS_PRAGUE, DE_BERLIN, ENG_TORONTO,
+    SP_BARCELONA, FR_PARIS, HI_MUMBAI, HR_ZAGREB, ID_JAKARTA, IT_ROME,
+    JA_TOKYO, KO_SEOUL, MX_MEXICOCITY, NG_LAGOS, NL_AMSTERDAM, NZ_AUCKLAND,
+    PL_WARSAW, PT_SAOPAULO, RO_BUCHAREST, RU_STPETERSBURG, SV_STOCKHOLM,
+    TH_BANGKOK, TR_ISTANBUL, UK_GBP, USA_USD, VI_HANOI, ZA_JOHANNESBURG,
+    ZH_SHANGHAI).
     """
     import csv
     import io

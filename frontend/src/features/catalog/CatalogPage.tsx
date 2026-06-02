@@ -129,6 +129,9 @@ interface CWICRRegionInfo {
   currency: string;
 }
 
+// All 30 CWICR regional catalogs published in the DDC CWICR repository, one
+// metro per locale. Keep this list in sync with REGION_MAP in
+// backend/app/modules/catalog/router.py (same region ids).
 const CWICR_REGIONS: CWICRRegionInfo[] = [
   { id: 'USA_USD', name: 'United States', flagId: 'us', currency: 'USD' },
   { id: 'UK_GBP', name: 'United Kingdom', flagId: 'gb', currency: 'GBP' },
@@ -136,11 +139,30 @@ const CWICR_REGIONS: CWICRRegionInfo[] = [
   { id: 'ENG_TORONTO', name: 'Canada', flagId: 'ca', currency: 'CAD' },
   { id: 'FR_PARIS', name: 'France', flagId: 'fr', currency: 'EUR' },
   { id: 'SP_BARCELONA', name: 'Spain', flagId: 'es', currency: 'EUR' },
+  { id: 'IT_ROME', name: 'Italy', flagId: 'it', currency: 'EUR' },
+  { id: 'NL_AMSTERDAM', name: 'Netherlands', flagId: 'nl', currency: 'EUR' },
   { id: 'PT_SAOPAULO', name: 'Brazil', flagId: 'br', currency: 'BRL' },
+  { id: 'MX_MEXICOCITY', name: 'Mexico', flagId: 'mx', currency: 'MXN' },
   { id: 'RU_STPETERSBURG', name: 'Russia / CIS', flagId: 'ru', currency: 'RUB' },
+  { id: 'PL_WARSAW', name: 'Poland', flagId: 'pl', currency: 'PLN' },
+  { id: 'CS_PRAGUE', name: 'Czech Republic', flagId: 'cz', currency: 'CZK' },
+  { id: 'RO_BUCHAREST', name: 'Romania', flagId: 'ro', currency: 'RON' },
+  { id: 'BG_SOFIA', name: 'Bulgaria', flagId: 'bg', currency: 'BGN' },
+  { id: 'HR_ZAGREB', name: 'Croatia', flagId: 'hr', currency: 'EUR' },
+  { id: 'SV_STOCKHOLM', name: 'Sweden', flagId: 'se', currency: 'SEK' },
+  { id: 'TR_ISTANBUL', name: 'Turkey', flagId: 'tr', currency: 'TRY' },
   { id: 'AR_DUBAI', name: 'Middle East', flagId: 'ae', currency: 'AED' },
+  { id: 'ZA_JOHANNESBURG', name: 'South Africa', flagId: 'za', currency: 'ZAR' },
+  { id: 'NG_LAGOS', name: 'Nigeria', flagId: 'ng', currency: 'NGN' },
   { id: 'ZH_SHANGHAI', name: 'China', flagId: 'cn', currency: 'CNY' },
+  { id: 'JA_TOKYO', name: 'Japan', flagId: 'jp', currency: 'JPY' },
+  { id: 'KO_SEOUL', name: 'South Korea', flagId: 'kr', currency: 'KRW' },
   { id: 'HI_MUMBAI', name: 'India', flagId: 'in', currency: 'INR' },
+  { id: 'TH_BANGKOK', name: 'Thailand', flagId: 'th', currency: 'THB' },
+  { id: 'VI_HANOI', name: 'Vietnam', flagId: 'vn', currency: 'VND' },
+  { id: 'ID_JAKARTA', name: 'Indonesia', flagId: 'id', currency: 'IDR' },
+  { id: 'AU_SYDNEY', name: 'Australia', flagId: 'au', currency: 'AUD' },
+  { id: 'NZ_AUCKLAND', name: 'New Zealand', flagId: 'nz', currency: 'NZD' },
 ];
 
 /* ── API helpers ───────────────────────────────────────────────────────── */
