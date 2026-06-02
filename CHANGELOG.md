@@ -5,6 +5,12 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.4.1] - 2026-06-02
+
+### Fixed
+
+- Backend lint and formatting are clean again. Cleared every ruff check and ruff format issue across the backend and pinned the ruff version so the formatter gives the same result in CI and on a developer machine. The hand-written demo pack cost tables stay out of the formatter so they keep their readable one-line-per-item layout. This is build and lint hygiene only, with no change to how the app runs.
+
 ## [6.4.0] - 2026-06-02
 
 ### Added
