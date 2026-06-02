@@ -57,7 +57,12 @@ class DDCFingerprintMiddleware(BaseHTTPMiddleware):
         # author e-mail without requiring source-code access.
         response.headers["X-DDC-Origin"] = "DataDrivenConstruction/OpenConstructionERP/CWICR"
         response.headers["X-DDC-Author"] = "Artem Boiko <info@datadrivenconstruction.io>"
-        response.headers["X-DDC-License"] = "AGPL-3.0-or-later · DDC-CWICR-OE-2026"
+        # ASCII-only value: HTTP header values are latin-1/ASCII, and
+        # Starlette's TestClient decodes them as UTF-8. A non-ASCII byte
+        # (the old "·" = U+00B7 = 0xB7) made every TestClient-based test
+        # that goes through the full app stack crash with UnicodeDecodeError
+        # in TestClient.send. Use a plain hyphen separator instead.
+        response.headers["X-DDC-License"] = "AGPL-3.0-or-later - DDC-CWICR-OE-2026"
         if not self._production:
             response.headers["X-DDC-Build"] = _INSTANCE_HASH
             response.headers["Server-Timing"] = f'ddc;desc="DDC-CWICR-OE";dur={hash("ddc-2026") % 1000}'
