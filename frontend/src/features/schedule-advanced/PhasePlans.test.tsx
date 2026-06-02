@@ -95,8 +95,9 @@ function renderPage() {
 }
 
 async function gotoPhasesTab() {
-  // Wait for tabs to render
-  const tab = await screen.findByRole('button', { name: /phase plans/i });
+  // Wait for tabs to render. The tab nav renders <button role="tab"> inside a
+  // role="tablist" (correct ARIA), so query the "tab" role, not "button".
+  const tab = await screen.findByRole('tab', { name: /phase plans/i });
   fireEvent.click(tab);
 }
 
@@ -152,8 +153,10 @@ describe('PhasePlans tab', () => {
     expect(await screen.findByText('Foundation')).toBeInTheDocument();
     expect(screen.getByText('Structure')).toBeInTheDocument();
     expect(screen.getByText('Finishes')).toBeInTheDocument();
-    // All / In planning / Pulled / Active / Completed chips
-    expect(screen.getByRole('button', { name: /^all/i })).toBeInTheDocument();
+    // Status filter chips render. "All" appears twice (status filter chip plus
+    // the look-ahead horizon row), so assert at least one; "In planning" is
+    // unique to the status filter.
+    expect(screen.getAllByRole('button', { name: /^all/i }).length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /^in planning/i })).toBeInTheDocument();
   });
 
