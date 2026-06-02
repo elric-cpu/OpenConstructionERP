@@ -75,7 +75,7 @@ async def _activate_user(email: str) -> None:
 
 async def _register_and_login(client: AsyncClient, suffix: str) -> tuple[str, dict[str, str]]:
     """Register a fresh user, activate, login. Returns (user_id, auth_headers)."""
-    email = f"user-{suffix}-{uuid.uuid4().hex[:6]}@team-access.test"
+    email = f"user-{suffix}-{uuid.uuid4().hex[:6]}@team-access.io"
     password = f"TeamAccess{uuid.uuid4().hex[:6]}9!"
 
     reg = await client.post(

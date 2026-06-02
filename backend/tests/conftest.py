@@ -61,6 +61,15 @@ os.environ.setdefault("AI_RATE_LIMIT", "10000")
 # test_register_bootstrap) set the mode themselves and are unaffected.
 os.environ.setdefault("REGISTRATION_MODE", "open")
 
+# ── Skip demo account seeding for tests ───────────────────────────────────
+# The startup lifespan creates demo@openconstructionerp.com (and two sibling
+# accounts) every time create_app() boots. Although has_admin() is designed
+# to exclude those demo emails from the bootstrap check, the seeding still
+# costs time and writes rows that can interact with per-module auth fixtures.
+# test_demo_login_endpoint.py sets SEED_DEMO=true inside its own fixture and
+# is unaffected. All other suites work without the demo accounts.
+os.environ.setdefault("SEED_DEMO", "false")
+
 # ── Fast app startup for tests ─────────────────────────────────────────────
 # Each integration module stands up its own FastAPI app via create_app() and
 # runs the full lifespan. In production that lifespan connects to the vector

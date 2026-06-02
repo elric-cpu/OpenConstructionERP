@@ -328,6 +328,7 @@ testpaths = ["tests"]
 # package, never a stale ``pip install openconstructionerp`` in site-packages.
 pythonpath = ["."]
 asyncio_mode = "auto"
+addopts = ["-n", "auto", "--dist", "loadfile"]
 filterwarnings = [
     "ignore::DeprecationWarning",
 ]

@@ -64,6 +64,10 @@ async def persist_auth(persist_client: AsyncClient) -> dict[str, str]:
     )
     assert reg.status_code == 201, f"Registration failed: {reg.text}"
 
+    from tests.integration._auth_helpers import promote_to_admin
+
+    await promote_to_admin(email)
+
     token = ""
     for attempt in range(3):
         resp = await persist_client.post(

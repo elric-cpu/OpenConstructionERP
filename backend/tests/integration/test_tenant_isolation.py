@@ -159,9 +159,7 @@ async def _promote_to_admin(email: str) -> None:
     from app.modules.users.models import User
 
     async with async_session_factory() as session:
-        await session.execute(
-            update(User).where(User.email == email.lower()).values(role="admin", is_active=True)
-        )
+        await session.execute(update(User).where(User.email == email.lower()).values(role="admin", is_active=True))
         await session.commit()
 
 
@@ -180,9 +178,7 @@ async def _activate_user(email: str) -> None:
     from app.modules.users.models import User
 
     async with async_session_factory() as session:
-        await session.execute(
-            update(User).where(User.email == email.lower()).values(is_active=True)
-        )
+        await session.execute(update(User).where(User.email == email.lower()).values(is_active=True))
         await session.commit()
 
 
