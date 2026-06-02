@@ -1792,17 +1792,29 @@ export function CesiumViewer({
     if (points.length === 0 && spheres.length === 0) return false;
 
     try {
-      // Compose: points → one BoundingSphere, then union with tileset
-      // spheres via fromBoundingSpheres.
+      // Choose what to frame. A loaded 3D model is the primary content the
+      // user came to see, so when any tileset bounding sphere is present we
+      // frame the tileset(s) ALONE and ignore the project anchor and pins.
+      //
+      // Why: the b3dm models can be georeferenced with a large vertical
+      // offset (hundreds of metres to several km above the ellipsoid). The
+      // project anchor sits at altitude 0, so unioning it with a high model
+      // gave a bounding sphere whose radius spanned that whole vertical gap,
+      // and flyToBoundingSphere then parked the eye kilometres out with the
+      // building a distant speck (the "3D model not visible" report). Framing
+      // the tileset sphere on its own puts the camera a few hundred metres
+      // from the model regardless of its absolute height.
       let aggregate: unknown = null;
-      if (points.length > 0) {
+      if (spheres.length > 0) {
+        if (spheres.length === 1) {
+          aggregate = spheres[0];
+        } else if (typeof cesium.BoundingSphere.fromBoundingSpheres === 'function') {
+          aggregate = cesium.BoundingSphere.fromBoundingSpheres(spheres);
+        } else {
+          aggregate = spheres[0];
+        }
+      } else if (points.length > 0) {
         aggregate = cesium.BoundingSphere.fromPoints(points);
-      }
-      if (spheres.length > 0 && typeof cesium.BoundingSphere.fromBoundingSpheres === 'function') {
-        const allSpheres = aggregate ? [aggregate, ...spheres] : spheres;
-        aggregate = cesium.BoundingSphere.fromBoundingSpheres(allSpheres);
-      } else if (!aggregate && spheres.length === 1) {
-        aggregate = spheres[0];
       }
       if (!aggregate) return false;
       if (typeof v.camera.flyToBoundingSphere === 'function') {
@@ -1843,20 +1855,56 @@ export function CesiumViewer({
     // run at viewer init has already framed it. Calling fitToData here
     // would build a bounding sphere from a single point (radius 0), which
     // Cesium's flyToBoundingSphere reads as "drop the camera onto that
-    // exact spot" — a jarring second camera move right after first paint,
+    // exact spot", a jarring second camera move right after first paint,
     // sometimes ending at ground level. Mark auto-zoom done and bail.
     if (tilesetCount === 0 && pinDataLen === 0 && !searchPin) {
       hasAutoZoomedRef.current = true;
       return;
     }
-    // Wait briefly so tilesets that are still resolving have a chance to
-    // register in ``loadedTilesetsRef`` and populate ``boundingSphere``.
-    const handle = window.setTimeout(() => {
-      if (hasAutoZoomedRef.current) return;
+
+    // With no tilesets to wait on, pins and address-search hits are already
+    // in hand, so a short settle delay is all the fit needs.
+    if (tilesetCount === 0) {
+      const handle = window.setTimeout(() => {
+        if (hasAutoZoomedRef.current) return;
+        const flew = fitToData();
+        if (flew) hasAutoZoomedRef.current = true;
+      }, 200);
+      return () => window.clearTimeout(handle);
+    }
+
+    // Tilesets present: a fixed timeout races the b3dm fetch and parse. A
+    // large model whose ``boundingSphere`` has not populated yet would leave
+    // the camera parked over the anchor with the building a distant speck
+    // (the recurring "3D model not visible" report). Instead wait for the
+    // loaded tilesets to register and their root tile to become ready, the
+    // same approach the focused-tileset flyTo uses, then fit. The deadline
+    // stops a tileset that never loads from holding the camera hostage.
+    let cancelled = false;
+    (async () => {
+      const deadline = Date.now() + 8000;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const loaded = (): any[] => [...loadedTilesetsRef.current.values()];
+      while (loaded().length === 0 && Date.now() < deadline && !cancelled) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      for (const tileset of loaded()) {
+        if (cancelled) return;
+        try {
+          if (tileset?.readyPromise && typeof tileset.readyPromise.then === 'function') {
+            await tileset.readyPromise;
+          }
+        } catch {
+          /* tileset never became ready - degrade silently */
+        }
+      }
+      if (cancelled || hasAutoZoomedRef.current) return;
       const flew = fitToData();
       if (flew) hasAutoZoomedRef.current = true;
-    }, tilesetCount > 0 ? 800 : 200);
-    return () => window.clearTimeout(handle);
+    })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cesiumStatus, pinDataLen, tilesetCount, searchPin?.lat, searchPin?.lon]);
 

@@ -5,6 +5,19 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.4.0] - 2026-06-02
+
+### Added
+
+- Cost spine. Estimate, BOQ, budget, purchase orders, contracts and bid packages now hang off one stable cost line, so a number entered once carries through the whole project. A control-account tree groups the lines, and each line opens a rollup that puts its estimate, budget, committed, contracted and actual figures side by side together with every linked record. Amounts are converted inside a project through its own exchange rates and grouped by currency across projects, never blended, and a mixed-currency rollup says so plainly. Generating the spine from a BOQ is idempotent, so running it a second time never duplicates lines.
+- Partner Packs install from the command line. New "module install", "module list" and "module uninstall" commands take a packaged module folder or archive, check its manifest, and move it into place, rejecting path-traversal and bad-layout archives.
+
+### Fixed
+
+- The 3D model now frames itself when you open a project map. The viewer waits for the model to finish loading before flying the camera to it, instead of giving up after a fixed delay and leaving the building as a distant speck.
+- The cost database region loader reports the real number of resource components it already holds instead of zero on a reload.
+- Developer guide text and the bundled partner packs were tidied up, including the partner-pack entry-point name and a sweep of stray long dashes.
+
 ## [6.3.1] - 2026-06-01
 
 ### Fixed
