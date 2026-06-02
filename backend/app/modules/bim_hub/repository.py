@@ -11,6 +11,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import noload
 
+from app.core.sql_json import json_path_text
 from app.modules.bim_hub.models import (
     BIMElement,
     BIMFederation,
@@ -21,8 +22,6 @@ from app.modules.bim_hub.models import (
     BOQElementLink,
 )
 
-
-from app.core.sql_json import json_path_text
 
 class BIMModelRepository:
     """‌⁠‍Data access for BIMModel."""

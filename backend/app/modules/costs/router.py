@@ -49,12 +49,12 @@ from app.dependencies import (
     SessionDep,
     verify_project_access,
 )
+from app.modules.costs.cwicr_v3_catalogue import CWICR_V3_CATALOGUES
 from app.modules.costs.intelligence import (
     CostCertaintyService,
     CostUsageRecorder,
     RegionalIndexService,
 )
-from app.modules.costs.cwicr_v3_catalogue import CWICR_V3_CATALOGUES
 from app.modules.costs.matcher import (
     MatchResult,
     match_cwicr_for_position,

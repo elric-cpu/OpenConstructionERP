@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.database import Base
+from app.modules.projects.models import Project
 from app.modules.qms.models import (
     QMSNCR,
     ITPItem,
@@ -60,7 +61,6 @@ from app.modules.qms.schemas import (
     PunchItemUpdate,
 )
 from app.modules.qms.service import QMSService
-from app.modules.projects.models import Project
 from app.modules.users.models import User
 from app.modules.variations.models import (
     Notice,

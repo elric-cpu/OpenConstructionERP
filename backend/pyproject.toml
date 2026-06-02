@@ -298,6 +298,13 @@ ignore = [
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
 
+[tool.ruff.lint.per-file-ignores]
+# Demo pack template files use hyphenated, slug-style names
+# (e.g. "commercial-auckland.py") and are loaded dynamically by slug via
+# importlib, never imported by module path, so the invalid-module-name rule
+# (N999) does not apply to them.
+"app/core/demo_packs/*.py" = ["N999"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Prepend the backend source dir so tests always import the local ``app``

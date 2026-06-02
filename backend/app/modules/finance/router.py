@@ -1059,7 +1059,8 @@ async def export_budgets(
         # BUG-069: use Decimal (not float) so large construction-budget values
         # (e.g. 123456789.99) don't suffer IEEE-754 rounding when Excel reads
         # them back — openpyxl stores Decimal natively as a NUMERIC cell.
-        from decimal import Decimal as _Dec, InvalidOperation as _IOp
+        from decimal import Decimal as _Dec
+        from decimal import InvalidOperation as _IOp
 
         def _bd(raw: Any) -> _Dec:
             if raw is None or raw == "":

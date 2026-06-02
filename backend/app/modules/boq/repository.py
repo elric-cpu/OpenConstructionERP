@@ -90,7 +90,6 @@ class BOQRepository:
 
         from decimal import Decimal
 
-        from sqlalchemy import Float, cast
 
         # Step 1: sum direct cost (position totals) per BOQ
         pos_stmt = (

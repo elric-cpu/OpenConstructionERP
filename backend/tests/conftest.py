@@ -19,8 +19,6 @@ etc.) are still fine — they overwrite this with their own temp file.
 """
 
 import os
-import tempfile
-from pathlib import Path
 
 # ── Windows asyncpg event-loop policy ──────────────────────────────────────
 # On Windows the default ProactorEventLoop leaves asyncpg socket transports to
@@ -29,6 +27,8 @@ from pathlib import Path
 # policy (the default on Linux/macOS) closes them deterministically. Harmless
 # for the aiosqlite lane. Must run before any event loop is created.
 import sys as _sys  # noqa: E402
+import tempfile
+from pathlib import Path
 
 if _sys.platform == "win32":
     import asyncio as _asyncio

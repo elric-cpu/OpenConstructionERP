@@ -33,6 +33,7 @@ _CLASSIFICATION_DEPTHS: tuple[str, ...] = (
 
 from app.core.sql_json import json_path_text
 
+
 def _split_classification_path(path: str) -> list[str | None]:
     """‌⁠‍Split a slash-delimited prefix path into per-depth filters.
 

@@ -123,7 +123,7 @@ async def pg_engine(pg_async_url):
 
 
 @pytest_asyncio.fixture
-async def pg_session(pg_engine) -> "AsyncGenerator":
+async def pg_session(pg_engine) -> AsyncGenerator:
     """Per-test session with outer-transaction + savepoint rollback isolation."""
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 

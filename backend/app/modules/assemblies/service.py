@@ -1510,7 +1510,8 @@ class AssemblyService:
             from sqlalchemy import String, or_
             from sqlalchemy import select as sa_select
 
-            from app.modules.boq.models import BOQ, Position as BOQPosition
+            from app.modules.boq.models import BOQ
+            from app.modules.boq.models import Position as BOQPosition
 
             # Pre-filter in SQL: only assembly-sourced positions whose
             # serialised metadata mentions at least one of the requested

@@ -347,11 +347,11 @@ async def test_circuit_open_skips_delivery_for_high_failure_count(session) -> No
     We drive the internal helper directly rather than a full HTTP POST so we
     can assert skipping without needing an external server.
     """
+    from app.core.events import Event
     from app.modules.notifications.dispatcher import (
         _CIRCUIT_OPEN_THRESHOLD,
         _on_dispatch_webhook,
     )
-    from app.core.events import Event
 
     target = WebhookTarget(
         name="circuit-open-target",
@@ -393,7 +393,6 @@ async def test_circuit_open_skips_delivery_for_high_failure_count(session) -> No
         async def __aexit__(self, *_: object) -> None:
             pass
 
-    import httpx
     import unittest.mock
 
     with unittest.mock.patch.object(disp_mod, "async_session_factory", return_value=_CM()):

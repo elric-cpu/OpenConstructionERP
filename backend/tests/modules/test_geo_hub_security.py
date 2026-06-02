@@ -563,7 +563,6 @@ async def test_editor_cannot_delete_raster_overlay_requires_delete_perm(
     and tileset delete endpoints.
     """
     # Create a tiny PNG as a raster overlay under tenant A.
-    import base64
     import struct
     import zlib
 

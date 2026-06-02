@@ -132,6 +132,7 @@ def _import_all_models() -> None:
     from app.modules.eac import models as _eac  # noqa: F401
     from app.modules.enterprise_workflows import models as _ew  # noqa: F401
     from app.modules.fieldreports import models as _fr  # noqa: F401
+
     # ``markups`` (imported below) carries an FK to ``oe_file_version`` /
     # ``oe_file_comment`` which live in these two modules; import them so the
     # create_all metadata graph resolves (otherwise NoReferencedTableError).

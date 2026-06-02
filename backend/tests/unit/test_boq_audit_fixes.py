@@ -20,13 +20,12 @@ from __future__ import annotations
 
 import uuid
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from app.modules.boq.repository import PositionRepository
 from app.modules.boq.service import _quantize_money
-
 
 # ── IDOR-REORDER: repository.reorder must filter by boq_id ──────────────────
 
@@ -132,6 +131,7 @@ def test_bulk_rate_factor_float_comparison_demonstrates_loss() -> None:
 def test_duplicate_boq_endpoint_has_user_id_param() -> None:
     """duplicate_boq must declare CurrentUserId (user_id) parameter."""
     import inspect
+
     from app.modules.boq.router import duplicate_boq
 
     sig = inspect.signature(duplicate_boq)
@@ -143,6 +143,7 @@ def test_duplicate_boq_endpoint_has_user_id_param() -> None:
 def test_duplicate_position_endpoint_has_user_id_param() -> None:
     """duplicate_position must declare CurrentUserId (user_id) parameter."""
     import inspect
+
     from app.modules.boq.router import duplicate_position
 
     sig = inspect.signature(duplicate_position)
@@ -154,6 +155,7 @@ def test_duplicate_position_endpoint_has_user_id_param() -> None:
 def test_duplicate_position_endpoint_has_session_param() -> None:
     """duplicate_position must accept session so _verify_boq_owner can query."""
     import inspect
+
     from app.modules.boq.router import duplicate_position
 
     sig = inspect.signature(duplicate_position)

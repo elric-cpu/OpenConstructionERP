@@ -29,8 +29,8 @@ pytestmark = pytest.mark.asyncio
 
 async def _seed_project(pg_session, *, currency: str = "EUR", fx_rates: list | None = None) -> uuid.UUID:
     """Insert a project with optional fx_rates and return its id."""
-    from app.modules.users.models import User
     from app.modules.projects.models import Project
+    from app.modules.users.models import User
 
     owner = User(
         id=uuid.uuid4(),

@@ -38,7 +38,6 @@ from sqlalchemy.exc import IntegrityError
 from app.modules.bid_management.schemas import BidInvitationResponse
 from app.modules.bid_management.service import BidManagementService
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 

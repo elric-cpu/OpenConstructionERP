@@ -2203,7 +2203,7 @@ def _catalog_entry_from_template(template: DemoTemplate) -> dict:
     }
 
 
-def register_pack_templates(templates: "list[DemoTemplate]") -> None:
+def register_pack_templates(templates: list[DemoTemplate]) -> None:
     """Merge partner-pack demo templates into the registry and catalog.
 
     Called by :mod:`app.core.demo_packs` once it has loaded its ``TEMPLATE``

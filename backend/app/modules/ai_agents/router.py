@@ -57,7 +57,7 @@ IDEMPOTENCY_TTL_SECONDS = 600  # 10 minutes
 IDEMPOTENCY_MAX_ENTRIES = 10_000
 # ``OrderedDict`` keeps insertion order so we can drop the oldest entries
 # in O(1) when the hard cap is hit (FIFO eviction).
-_IDEMPOTENCY_CACHE: "OrderedDict[tuple[str, str], tuple[uuid.UUID, float]]" = OrderedDict()
+_IDEMPOTENCY_CACHE: OrderedDict[tuple[str, str], tuple[uuid.UUID, float]] = OrderedDict()
 
 
 def _sweep_stale(now: float) -> None:
