@@ -43,7 +43,7 @@ classifiers = [
 dependencies = [
     "fastapi>=0.116.0,<1",
     "uvicorn[standard]>=0.32.0,<1",
-    "python-multipart>=0.0.26",
+    "python-multipart>=0.0.27",
     "sqlalchemy[asyncio]>=2.0.36,<2.1",
     "aiosqlite>=0.20.0",
     # Embedded PostgreSQL 16 is the default runtime (v6.0.0): a real in-process
@@ -69,11 +69,16 @@ dependencies = [
     "pyyaml>=6.0",
     "defusedxml>=0.7.1",
     "pandas>=2.2.0,<4",
-    "pyarrow>=18.0.0,<25",
+    "pyarrow>=23.0.1,<25",
     "trimesh>=4.0.0",
     "ezdxf>=0.18.0",
     "duckdb>=1.2.0,<2",
     "rapidfuzz>=3.0.0",
+    # Imported at module load by the smart_views (signed share links) and eac
+    # (safe expression evaluation) modules, so they must be base dependencies;
+    # a clean install otherwise cannot import those modules.
+    "itsdangerous>=2.1.0",
+    "simpleeval>=0.9.13",
 ]
 [project.scripts]
 openestimate = "app.cli:main"
