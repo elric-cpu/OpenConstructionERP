@@ -13,6 +13,15 @@ from pathlib import Path
 
 import pytest
 
+# ``scripts/build_enriched_snapshot.py`` does a top-level ``sys.exit(2)`` when
+# ``qdrant_client`` is not importable. ``qdrant_client`` lives in the optional
+# ``[semantic]`` extra, so a ``[dev]``-only install (the CI test job) does NOT
+# have it, and importing the script during collection would raise
+# ``SystemExit`` straight into pytest's collector, which reports it as an
+# INTERNALERROR and aborts the WHOLE run with exit code 3 (no tests run).
+# Skip the module cleanly when the dependency is absent instead.
+pytest.importorskip("qdrant_client", reason="scripts/build_enriched_snapshot.py needs the [semantic] extra")
+
 # Inject the scripts/ directory so we can import build_enriched_snapshot.
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _SCRIPTS = _REPO_ROOT / "scripts"
