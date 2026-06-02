@@ -206,6 +206,22 @@ class Agent:
     llm_step_timeout: float = DEFAULT_LLM_STEP_TIMEOUT
     max_observation_chars: int = DEFAULT_MAX_OBSERVATION_CHARS
 
+    # ── Presentation metadata (purely for the UI catalogue) ─────────────────
+    # These never affect the loop — they let the frontend render a rich,
+    # grouped, self-explanatory agent gallery instead of a flat list of
+    # slugs. ``display_name`` falls back to a humanised ``name`` when blank.
+    display_name: str = ""
+    # Coarse grouping for the catalogue, e.g. "estimating", "quality",
+    # "documents", "analytics", "planning". The UI buckets cards by this.
+    category: str = "general"
+    # Lucide icon name the frontend maps to a glyph (e.g. "calculator").
+    icon: str = "bot"
+    # One-line "what you get" promise shown under the title.
+    tagline: str = ""
+    # Ready-to-run example prompts; clicking one fills the run input so a
+    # first-time user never faces an empty box.
+    example_prompts: list[str] = field(default_factory=list)
+
 
 # Agents registry (separate from tools) so the UI can list "available agents".
 _agents: dict[str, Agent] = {}

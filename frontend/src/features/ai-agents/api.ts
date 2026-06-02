@@ -8,6 +8,12 @@ export interface AgentDescriptor {
   system_prompt?: string;
   max_iterations: number;
   allowed_tools: string[];
+  // Presentation metadata (see backend base.Agent).
+  display_name?: string;
+  category?: string;
+  icon?: string;
+  tagline?: string;
+  example_prompts?: string[];
 }
 
 export type AgentStepRole =

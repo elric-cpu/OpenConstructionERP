@@ -286,10 +286,23 @@ def register_boq_drafter() -> None:
     register_agent(
         Agent(
             name="boq_drafter",
+            display_name="BOQ Drafter",
+            category="estimating",
+            icon="calculator",
+            tagline="Turn a scope brief into priced BOQ positions",
             description=(
                 "Drafts BOQ positions from a free-form brief, grounding rates "
                 "in the cost database and suggesting reusable assemblies."
             ),
+            example_prompts=[
+                "Draft BOQ positions for a 120 m2 single-storey extension: "
+                "strip foundations, C30/37 ground slab, blockwork walls and a "
+                "timber pitched roof.",
+                "Price the groundworks for a 500 m2 warehouse slab including "
+                "excavation, hardcore, DPM and a power-floated concrete floor.",
+                "Draft the finishes for an office fit-out: suspended ceilings, "
+                "carpet tiles and painted plasterboard partitions over 300 m2.",
+            ],
             system_prompt=SYSTEM_PROMPT,
             max_iterations=8,
             allowed_tools=["search_costs", "suggest_assembly", "create_position"],

@@ -149,6 +149,11 @@ async def list_agents_endpoint(
             system_prompt=a.system_prompt,
             max_iterations=a.max_iterations,
             allowed_tools=a.allowed_tools,
+            display_name=a.display_name,
+            category=a.category,
+            icon=a.icon,
+            tagline=a.tagline,
+            example_prompts=a.example_prompts,
         )
         for a in service.list_registered_agents()
     ]

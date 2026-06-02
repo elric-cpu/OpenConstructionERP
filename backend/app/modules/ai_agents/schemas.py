@@ -18,6 +18,13 @@ class AgentDescriptor(BaseModel):
     max_iterations: int = 8
     allowed_tools: list[str] = Field(default_factory=list)
 
+    # Presentation metadata for the catalogue UI (see base.Agent).
+    display_name: str = ""
+    category: str = "general"
+    icon: str = "bot"
+    tagline: str = ""
+    example_prompts: list[str] = Field(default_factory=list)
+
 
 class ToolDescriptor(BaseModel):
     """A tool the agent runner can dispatch to."""
