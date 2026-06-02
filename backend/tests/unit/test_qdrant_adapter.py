@@ -266,11 +266,16 @@ def _conditions_by_key(qdrant_filter: object) -> dict[str, object]:
 
 def test_build_filter_returns_none_for_empty_dict() -> None:
     assert _build_filter({}) is None
+    # A non-empty dict (even of unknown keys) walks past the early return into
+    # the qdrant_client import, so guard the optional [semantic] extra.
+    pytest.importorskip("qdrant_client")
     assert _build_filter({"unknown_key": "ignored"}) is None
 
 
 def test_build_filter_drops_none_values() -> None:
     """``None`` means "no preference", not "match null"."""
+    # Non-empty dict reaches the qdrant_client import inside _build_filter.
+    pytest.importorskip("qdrant_client")
     assert _build_filter({"ifc_class": None, "ost_category": None}) is None
 
 
@@ -290,7 +295,9 @@ def test_build_filter_drops_none_values() -> None:
 )
 def test_build_filter_recognises_all_nine_boolean_payload_fields(bool_key: str) -> None:
     """Every Pset-derived boolean from §2.2 must produce a MatchValue(bool)."""
-    from qdrant_client.http.models import MatchValue
+    # _build_filter constructs qdrant_client model objects, so this path needs
+    # the optional [semantic] extra. Skip cleanly when it is absent.
+    MatchValue = pytest.importorskip("qdrant_client.http.models").MatchValue
 
     qf = _build_filter({bool_key: True})
     by_key = _conditions_by_key(qf)
@@ -314,7 +321,7 @@ def test_build_filter_recognises_all_nine_boolean_payload_fields(bool_key: str) 
 def test_build_filter_coerces_boolean_inputs_with_python_bool(raw: object, expected: bool) -> None:
     """Defensive coercion: stray "1" / 0.0 from JSON should not become a
     type-mismatched MatchValue that Qdrant silently rejects."""
-    from qdrant_client.http.models import MatchValue
+    MatchValue = pytest.importorskip("qdrant_client.http.models").MatchValue
 
     qf = _build_filter({"is_abstract": raw})
     by_key = _conditions_by_key(qf)
@@ -350,7 +357,7 @@ def test_build_filter_coerces_boolean_inputs_with_python_bool(raw: object, expec
 )
 def test_build_filter_recognises_all_22_scalar_payload_fields(scalar_key: str, value: object) -> None:
     """All scalar fields from §2.2 must produce MatchValue(value) predicates."""
-    from qdrant_client.http.models import MatchValue
+    MatchValue = pytest.importorskip("qdrant_client.http.models").MatchValue
 
     qf = _build_filter({scalar_key: value})
     by_key = _conditions_by_key(qf)
@@ -362,7 +369,7 @@ def test_build_filter_recognises_all_22_scalar_payload_fields(scalar_key: str, v
 def test_build_filter_routes_collections_to_match_any(collection_type: type) -> None:
     """List/tuple/set values become OR-of-values via MatchAny — required
     for trade-bucket filters like ``department_code IN (330, 340)``."""
-    from qdrant_client.http.models import MatchAny
+    MatchAny = pytest.importorskip("qdrant_client.http.models").MatchAny
 
     raw = collection_type(["330", "340", "350"])
     qf = _build_filter({"department_code": raw})
@@ -376,6 +383,8 @@ def test_build_filter_combines_boolean_and_scalar_predicates() -> None:
     """Realistic SearchPlan call — IfcWall + structural + concrete + cubic
     metres + DE country + non-abstract — must produce one Filter with all
     six predicates in ``must``."""
+    # _build_filter builds qdrant_client Filter objects (optional [semantic]).
+    pytest.importorskip("qdrant_client")
     qf = _build_filter(
         {
             "is_abstract": False,
@@ -440,6 +449,8 @@ def test_build_filter_preserves_v3_field_count_invariant() -> None:
         "rate_code",
         "nominal_size_mm",
     }
+    # _build_filter builds qdrant_client Filter objects (optional [semantic]).
+    pytest.importorskip("qdrant_client")
     payload = {key: (False if key.startswith("is_") else "x") for key in expected_known}
     qf = _build_filter(payload)
     assert set(_conditions_by_key(qf).keys()) == expected_known
@@ -1107,6 +1118,10 @@ async def test_cross_lang_lookup_returns_target_lang_rate_code(
 ) -> None:
     """EN code → RU code translation: base_code strips the EN+unit
     suffix, scroll on cwicr_ru_v3 finds the matching RU variant."""
+    # cross_lang_lookup builds a qdrant_client Filter before calling scroll, so
+    # the happy path needs the optional [semantic] extra. (The None-returning
+    # tests below pass regardless, since a missing dep just yields None too.)
+    pytest.importorskip("qdrant_client")
     fake = _FakeQdrantClient([_FakeScrollPoint("03.330.10.ru.m3")])
     monkeypatch.setattr(
         "app.modules.costs.qdrant_adapter._get_client",
@@ -1178,6 +1193,8 @@ async def test_cross_lang_lookup_pins_country_for_multi_region_languages(
     """ES collection mixes ES + MX + AR rates — when caller targets
     MX_MEXICO the scroll filter must include a country=MX predicate so
     the Mexican variant is returned, not a Spanish one."""
+    # cross_lang_lookup builds a qdrant_client Filter before calling scroll.
+    pytest.importorskip("qdrant_client")
     fake = _FakeQdrantClient([_FakeScrollPoint("03.330.10.es.m3")])
     monkeypatch.setattr(
         "app.modules.costs.qdrant_adapter._get_client",

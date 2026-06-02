@@ -11,12 +11,19 @@ Acceptance per RFC 35 EAC-1.2:
 """
 
 import pytest
-from jsonschema import Draft202012Validator
-from jsonschema.exceptions import ValidationError
 
-from app.modules.eac.schema import load_rule_definition_schema
+# jsonschema is a test-only dependency that is not declared in pyproject's
+# base/[dev] extras, so it is absent in Backend CI. Skip cleanly there rather
+# than crashing collection. (See also test_sarif_exporter.py / test_bcf_schema
+# which guard the same dep family.)
+pytest.importorskip("jsonschema")
 
-from ._fixtures import invalid_fixtures, valid_fixtures
+from jsonschema import Draft202012Validator  # noqa: E402
+from jsonschema.exceptions import ValidationError  # noqa: E402
+
+from app.modules.eac.schema import load_rule_definition_schema  # noqa: E402
+
+from ._fixtures import invalid_fixtures, valid_fixtures  # noqa: E402
 
 
 @pytest.fixture(scope="module")

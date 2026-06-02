@@ -20,10 +20,16 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.core.job_run import JobRun
-from app.core.job_runner import register_handler, submit_job, unregister_handler
-from app.core.jobs import get_celery_app
-from app.database import Base
+# Celery is an optional dependency (the ``server`` extra, not ``dev``). This
+# whole module exercises the Celery transport (get_celery_app, eager dispatch,
+# task registration) and cannot run without it, so skip cleanly when the dep
+# is absent rather than crashing collection.
+pytest.importorskip("celery")
+
+from app.core.job_run import JobRun  # noqa: E402
+from app.core.job_runner import register_handler, submit_job, unregister_handler  # noqa: E402
+from app.core.jobs import get_celery_app  # noqa: E402
+from app.database import Base  # noqa: E402
 
 
 @pytest.fixture

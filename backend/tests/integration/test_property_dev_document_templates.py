@@ -37,6 +37,12 @@ os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_TMP_DB.as_posix()}"
 os.environ["DATABASE_SYNC_URL"] = f"sqlite:///{_TMP_DB.as_posix()}"
 
 import pytest  # noqa: E402
+
+# pypdf is a test-only dependency (used to parse the generated PDFs) that is not
+# declared in pyproject's base/[dev] extras, so it is absent in Backend CI. Skip
+# cleanly there rather than crashing collection.
+pytest.importorskip("pypdf")
+
 import pytest_asyncio  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 from pypdf import PdfReader  # noqa: E402

@@ -17,12 +17,18 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.core.job_run import JobRun
-from app.core.job_runner import register_handler, submit_job, unregister_handler
-from app.core.jobs import get_celery_app
-from app.database import Base
-from app.dependencies import get_current_user_id
-from app.modules.jobs.router import router as jobs_router
+# Celery is an optional dependency (the ``server`` extra, not ``dev``). The
+# eager-dispatch fixtures here drive the Celery transport via get_celery_app /
+# submit_job, so skip cleanly when the dep is absent rather than crashing
+# collection.
+pytest.importorskip("celery")
+
+from app.core.job_run import JobRun  # noqa: E402
+from app.core.job_runner import register_handler, submit_job, unregister_handler  # noqa: E402
+from app.core.jobs import get_celery_app  # noqa: E402
+from app.database import Base  # noqa: E402
+from app.dependencies import get_current_user_id  # noqa: E402
+from app.modules.jobs.router import router as jobs_router  # noqa: E402
 
 
 @pytest_asyncio.fixture
