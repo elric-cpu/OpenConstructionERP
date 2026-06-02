@@ -35,6 +35,14 @@ import uuid
 from contextlib import asynccontextmanager
 
 import pytest
+
+# simpleeval (the sandboxed formula evaluator) is not declared in pyproject and
+# is not a transitive of any base/dev dependency, so a [dev]-only install (the
+# CI test job) does not have it. The eac safe_eval module imports it at module
+# top, so guard the whole module so it skips cleanly instead of erroring during
+# collection.
+pytest.importorskip("simpleeval", reason="simpleeval is not in the [dev] install")
+
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select

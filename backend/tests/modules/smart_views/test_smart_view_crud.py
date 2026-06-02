@@ -20,6 +20,14 @@ import uuid
 from pathlib import Path
 
 import pytest
+
+# itsdangerous (share-link token signing) is not in the base or [dev]
+# dependency closure, only arriving via fastapi[all]/starlette[full]. The
+# smart_views service imports it at module top, so guard the whole module so a
+# [dev]-only install (the CI test job) skips it cleanly instead of erroring
+# during collection.
+pytest.importorskip("itsdangerous", reason="itsdangerous is not in the [dev] install")
+
 import pytest_asyncio
 from fastapi import HTTPException
 from sqlalchemy import select

@@ -26,6 +26,14 @@ import uuid
 from pathlib import Path
 
 import pytest
+
+# itsdangerous (token signing for share links) is not in the base or [dev]
+# dependency closure, only arriving via fastapi[all]/starlette[full]. The
+# CI test job installs [dev] only, so guard the whole module: the smart_views
+# service imports itsdangerous at module top, so collection would fail without
+# this skip.
+pytest.importorskip("itsdangerous", reason="itsdangerous is not in the [dev] install")
+
 import pytest_asyncio
 from fastapi import HTTPException
 from itsdangerous import URLSafeSerializer
