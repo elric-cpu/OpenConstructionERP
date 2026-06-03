@@ -10,8 +10,6 @@ Professional BOQ, 4D scheduling, 5D cost model, and tendering - all in one open-
 
 [▶ Watch the 12-min walkthrough](https://www.youtube.com/watch?v=X06cIaroAeI) · [Demo](https://openconstructionerp.com) · [Documentation](https://openconstructionerp.com/docs) · [Discussions](https://t.me/datadrivenconstruction) · [Report Bug](https://github.com/datadrivenconstruction/OpenConstructionERP/issues)
 
-**Download the desktop app** (no Python, no Docker, nothing to set up): **[Windows, macOS and Linux installers](https://github.com/datadrivenconstruction/OpenConstructionERP/releases/latest)** &nbsp;·&nbsp; or let [openconstructionerp.com/download](https://openconstructionerp.com/download) pick the right file for your system. Prefer the command line? `pip install openconstructionerp` or Docker, see [Quick Start](#quick-start) below.
-
 [![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 [![Version](https://img.shields.io/github/v/release/datadrivenconstruction/OpenConstructionERP?label=version&color=green&v=6.7.0)](https://github.com/datadrivenconstruction/OpenConstructionERP/releases/latest)
 [![PyPI](https://img.shields.io/pypi/v/openconstructionerp?color=informational&label=pypi&v=6.7.0)](https://pypi.org/project/openconstructionerp/)
@@ -29,6 +27,22 @@ Professional BOQ, 4D scheduling, 5D cost model, and tendering - all in one open-
 </video>
 
 <sub><picture><source media="(prefers-color-scheme: dark)" srcset="docs/readme-icons/device-camera-video-dark.svg"><img src="docs/readme-icons/device-camera-video-light.svg" width="14" align="center" alt=""></picture> <b>1-minute teaser above</b> · for the full 12-minute walkthrough → <a href="https://www.youtube.com/watch?v=X06cIaroAeI"><b>watch on YouTube</b></a> · onboarding → BoQ → BIM → DWG → PDF → AI → dashboard</sub>
+
+<br/><br/>
+
+### Download the free desktop app
+
+<sub>No Python, no Docker, nothing to set up. Pick your system and run it.</sub>
+
+<a href="https://github.com/datadrivenconstruction/OpenConstructionERP/releases/latest"><img src="https://img.shields.io/badge/Windows-Download%20.exe-0078D6?style=for-the-badge&logo=windows11&logoColor=white" alt="Download OpenConstructionERP for Windows" height="46"></a>
+&nbsp;&nbsp;
+<a href="https://github.com/datadrivenconstruction/OpenConstructionERP/releases/latest"><img src="https://img.shields.io/badge/macOS-Download%20.dmg-111111?style=for-the-badge&logo=apple&logoColor=white" alt="Download OpenConstructionERP for macOS" height="46"></a>
+&nbsp;&nbsp;
+<a href="https://github.com/datadrivenconstruction/OpenConstructionERP/releases/latest"><img src="https://img.shields.io/badge/Linux-.deb%20%2F%20.AppImage-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Download OpenConstructionERP for Linux" height="46"></a>
+
+<sub>Not sure which file? <a href="https://openconstructionerp.com/download"><b>openconstructionerp.com/download</b></a> picks the right one for you automatically. Prefer the terminal? <code>pip install openconstructionerp</code> or Docker, see <a href="#quick-start">Quick Start</a> below.</sub>
+
+<br/>
 
 <table>
 <tr>
