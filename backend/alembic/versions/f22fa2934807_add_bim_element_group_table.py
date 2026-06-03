@@ -76,7 +76,7 @@ def upgrade() -> None:
         ),
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("description", sa.Text, nullable=True),
-        sa.Column("is_dynamic", sa.Boolean, nullable=False, server_default="1"),
+        sa.Column("is_dynamic", sa.Boolean, nullable=False, server_default=sa.text("true")),
         sa.Column("filter_criteria", sa.JSON, nullable=False, server_default="{}"),
         sa.Column("element_ids", sa.JSON, nullable=False, server_default="[]"),
         sa.Column("element_count", sa.Integer, nullable=False, server_default="0"),

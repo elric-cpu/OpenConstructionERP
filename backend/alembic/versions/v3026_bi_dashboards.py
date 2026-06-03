@@ -86,7 +86,7 @@ def upgrade() -> None:
             sa.Column("target_default", sa.Numeric(20, 6), nullable=True),
             sa.Column("aggregation", sa.String(16), nullable=False, server_default="last"),
             sa.Column("category", sa.String(32), nullable=False, server_default="operational"),
-            sa.Column("is_system", sa.Boolean(), nullable=False, server_default="0"),
+            sa.Column("is_system", sa.Boolean(), nullable=False, server_default=sa.text("false")),
         )
 
     # ── Dashboard ─────────────────────────────────────────────────
@@ -102,7 +102,7 @@ def upgrade() -> None:
             sa.Column("role_ref", sa.String(64), nullable=True),
             sa.Column("project_id", guid_type, nullable=True),
             sa.Column("layout_json", sa.JSON(), nullable=False, server_default="{}"),
-            sa.Column("is_default", sa.Boolean(), nullable=False, server_default="0"),
+            sa.Column("is_default", sa.Boolean(), nullable=False, server_default=sa.text("false")),
             sa.Column("refresh_interval_seconds", sa.Integer(), nullable=False, server_default="300"),
         )
 
@@ -183,7 +183,7 @@ def upgrade() -> None:
             sa.Column("time_of_day", sa.String(5), nullable=False, server_default="08:00"),
             sa.Column("timezone", sa.String(64), nullable=False, server_default="UTC"),
             sa.Column("recipients_json", sa.JSON(), nullable=False, server_default="[]"),
-            sa.Column("enabled", sa.Boolean(), nullable=False, server_default="1"),
+            sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.text("true")),
             sa.Column("last_run_at", sa.DateTime(timezone=True), nullable=True),
             sa.Column("next_run_at", sa.DateTime(timezone=True), nullable=True),
             sa.Column("filter_overrides_json", sa.JSON(), nullable=False, server_default="{}"),
@@ -206,7 +206,7 @@ def upgrade() -> None:
             sa.Column("channels_json", sa.JSON(), nullable=False, server_default="[]"),
             sa.Column("throttle_seconds", sa.Integer(), nullable=False, server_default="3600"),
             sa.Column("last_triggered_at", sa.DateTime(timezone=True), nullable=True),
-            sa.Column("enabled", sa.Boolean(), nullable=False, server_default="1"),
+            sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.text("true")),
         )
 
     # ── Saved Filter ─────────────────────────────────────────────
@@ -220,7 +220,7 @@ def upgrade() -> None:
             sa.Column("scope", sa.String(16), nullable=False, server_default="personal"),
             sa.Column("module", sa.String(64), nullable=False),
             sa.Column("filter_json", sa.JSON(), nullable=False, server_default="{}"),
-            sa.Column("is_default", sa.Boolean(), nullable=False, server_default="0"),
+            sa.Column("is_default", sa.Boolean(), nullable=False, server_default=sa.text("false")),
         )
 
     # ── KPI Value (history) ──────────────────────────────────────

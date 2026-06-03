@@ -72,7 +72,7 @@ def upgrade() -> None:
         sa.Column("context", sa.JSON, nullable=True),
         sa.Column("source_format", sa.String(50), nullable=False, server_default=""),
         sa.Column("source_ref", sa.Text, nullable=False, server_default=""),
-        sa.Column("is_active", sa.Boolean, nullable=False, server_default="1"),
+        sa.Column("is_active", sa.Boolean, nullable=False, server_default=sa.text("true")),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),

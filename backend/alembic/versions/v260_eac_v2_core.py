@@ -184,7 +184,7 @@ def upgrade() -> None:
                 server_default="[]",
             ),
             sa.Column("version", sa.Integer, nullable=False, server_default="1"),
-            sa.Column("is_active", sa.Boolean, nullable=False, server_default="1"),
+            sa.Column("is_active", sa.Boolean, nullable=False, server_default=sa.text("true")),
             sa.Column("tenant_id", sa.String(length=36), nullable=False),
             sa.Column("project_id", sa.String(length=36), nullable=True),
             sa.Column("created_by_user_id", sa.String(length=36), nullable=True),
@@ -350,7 +350,7 @@ def upgrade() -> None:
                 server_default="{}",
             ),
             sa.Column("description", sa.Text, nullable=True),
-            sa.Column("is_locked", sa.Boolean, nullable=False, server_default="0"),
+            sa.Column("is_locked", sa.Boolean, nullable=False, server_default=sa.text("false")),
             sa.Column("tenant_id", sa.String(length=36), nullable=False),
             sa.Column(
                 "created_at",
