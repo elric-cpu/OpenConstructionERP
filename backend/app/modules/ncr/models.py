@@ -38,6 +38,11 @@ class NCR(Base):
     location_description: Mapped[str | None] = mapped_column(String(500), nullable=True)
     linked_inspection_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     change_order_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # When an NCR is auto-raised from a critical clash, this carries the
+    # originating ``ClashResult.id`` so the rows stay traceable and the
+    # auto-creation is idempotent on the same clash. Nullable + no
+    # server_default: absent means "not clash-sourced".
+    clash_result_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         "metadata",

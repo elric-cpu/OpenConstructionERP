@@ -24,7 +24,9 @@ Usage:
     available = await manager.list_available()
 """
 
+import importlib.util
 import logging
+import re
 import shutil
 import zipfile
 from dataclasses import dataclass, field
@@ -35,6 +37,22 @@ from typing import Any
 import httpx
 
 logger = logging.getLogger(__name__)
+
+# Leading numeric "release" segment of a version, e.g. "1.2.0" from "1.2.0-rc1".
+_VERSION_RELEASE_RE = re.compile(r"^\s*v?(\d+(?:\.\d+)*)")
+
+
+def _version_key(version: str) -> tuple[int, ...]:
+    """Parse a version string into a comparable tuple of release integers.
+
+    Tolerates a leading ``v``, pre-release/build suffixes (``1.2.0-rc1``), and
+    non-numeric junk by extracting only the leading dotted-integer release
+    segment. An unparseable string yields an empty tuple, which sorts lowest.
+    """
+    match = _VERSION_RELEASE_RE.match(version or "")
+    if not match:
+        return ()
+    return tuple(int(part) for part in match.group(1).split("."))
 
 # Default community module registry
 DEFAULT_REGISTRY_URL = "https://registry.openestimate.io/api/v1"
@@ -131,16 +149,69 @@ class ModulePluginManager:
         zf.extractall(self.modules_dir)
         logger.info("Extracted module to %s", target)
 
-        # Read manifest to return info
-        # (We can't import it directly, so we read basic info)
+        # Read the extracted manifest to return real metadata. The manifest
+        # defines a ``manifest = ModuleManifest(...)`` module-level variable
+        # (same contract as ModuleLoader.discover). Load it from the extracted
+        # file rather than guessing, so the returned ModuleInfo carries the
+        # real version / display_name / dependencies.
+        manifest_file = target / "manifest.py"
+        try:
+            manifest = self._load_manifest(manifest_file)
+        except Exception as exc:
+            # Roll back the extraction so a broken zip never leaves a partially
+            # installed module behind, then restore the backup if there was one.
+            shutil.rmtree(target, ignore_errors=True)
+            backup = target.with_suffix(".bak")
+            if backup.exists():
+                backup.rename(target)
+                logger.info("Restored backup after failed install: %s", target)
+            raise ValueError(f"Invalid module manifest in {top_dir}: {exc}") from exc
+
         info = ModuleInfo(
-            name=top_dir,
-            display_name=top_dir.replace("_", " ").replace("-", " ").title(),
-            version="unknown",
+            name=manifest.name,
+            display_name=manifest.display_name,
+            version=manifest.version,
+            description=manifest.description,
+            author=manifest.author,
+            category=manifest.category,
+            depends=list(manifest.depends),
         )
 
-        logger.info("Module installed: %s", info.name)
+        logger.info("Module installed: %s v%s", info.name, info.version)
         return info
+
+    @staticmethod
+    def _load_manifest(manifest_file: Path) -> Any:
+        """Safely load the ``manifest`` object from an extracted manifest.py.
+
+        Args:
+            manifest_file: Path to the module's extracted ``manifest.py``.
+
+        Returns:
+            The ``ModuleManifest`` instance defined in the file.
+
+        Raises:
+            ValueError: If the file is missing or defines no valid manifest.
+        """
+        from app.core.module_loader import ModuleManifest
+
+        if not manifest_file.is_file():
+            raise ValueError("manifest.py not found")
+
+        spec = importlib.util.spec_from_file_location(
+            f"_oe_plugin_manifest_{manifest_file.parent.name}",
+            manifest_file,
+        )
+        if spec is None or spec.loader is None:
+            raise ValueError("could not load manifest.py")
+
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        manifest = getattr(module, "manifest", None)
+        if not isinstance(manifest, ModuleManifest):
+            raise ValueError("manifest.py does not define a ModuleManifest named 'manifest'")
+        return manifest
 
     # ── Uninstall ───────────────────────────────────────────────────────
 
@@ -190,10 +261,12 @@ class ModulePluginManager:
         for d in sorted(self.modules_dir.iterdir()):
             if not d.is_dir() or d.name.startswith(("_", ".")):
                 continue
-            manifest = d / "manifest.py"
+            manifest_file = d / "manifest.py"
+            manifest = self._read_installed_manifest(manifest_file)
             info = {
-                "name": d.name,
-                "has_manifest": manifest.exists(),
+                "name": manifest.name if manifest else d.name,
+                "version": manifest.version if manifest else None,
+                "has_manifest": manifest_file.exists(),
                 "has_locales": (d / "locales").is_dir(),
                 "has_models": (d / "models.py").is_file(),
                 "has_router": (d / "router.py").is_file(),
@@ -201,10 +274,76 @@ class ModulePluginManager:
             installed.append(info)
         return installed
 
+    def _read_installed_manifest(self, manifest_file: Path) -> Any | None:
+        """Load an installed manifest, swallowing errors (best-effort metadata).
+
+        Returns:
+            The ``ModuleManifest`` instance, or ``None`` if it could not be read.
+        """
+        if not manifest_file.is_file():
+            return None
+        try:
+            return self._load_manifest(manifest_file)
+        except Exception:
+            logger.debug("Could not read manifest at %s", manifest_file)
+            return None
+
+    @staticmethod
+    def _is_newer(available: str, installed: str) -> bool:
+        """Return True if ``available`` is a newer version than ``installed``.
+
+        Compares the leading numeric release segments (semver-style). When both
+        sides are unparseable (no numeric release), falls back to a
+        case-insensitive string inequality so a differing tag still flags an
+        update rather than silently hiding it.
+        """
+        avail_key = _version_key(available)
+        inst_key = _version_key(installed)
+        if avail_key and inst_key:
+            return avail_key > inst_key
+        if avail_key and not inst_key:
+            # Installed version is junk but a clean release is offered → upgrade.
+            return True
+        return available.strip().lower() != installed.strip().lower()
+
     async def check_updates(self) -> list[dict[str, Any]]:
-        """Check which installed modules have updates available."""
-        # TODO: compare installed versions with registry
-        return []
+        """Check which installed modules have a newer version in the registry.
+
+        Compares each locally installed module's manifest version against the
+        version advertised by the registry (via :meth:`list_available`). Modules
+        with no manifest version, no registry entry, or an up-to-date version are
+        skipped. Returns one entry per upgradable module.
+
+        Returns:
+            A list of ``{name, installed_version, available_version}`` dicts for
+            modules where the registry offers a newer version. Empty when offline
+            or when everything is current.
+        """
+        available = await self.list_available()
+        if not available:
+            return []
+
+        latest: dict[str, ModuleInfo] = {}
+        for remote in available:
+            existing = latest.get(remote.name)
+            if existing is None or self._is_newer(remote.version, existing.version):
+                latest[remote.name] = remote
+
+        updates: list[dict[str, Any]] = []
+        for local in await self.list_installed():
+            installed_version = local.get("version")
+            if not installed_version:
+                continue
+            remote = latest.get(local["name"])
+            if remote and remote.version and self._is_newer(remote.version, installed_version):
+                updates.append(
+                    {
+                        "name": local["name"],
+                        "installed_version": installed_version,
+                        "available_version": remote.version,
+                    }
+                )
+        return updates
 
     async def _fetch_module_info(
         self,

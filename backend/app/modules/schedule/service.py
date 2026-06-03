@@ -52,9 +52,10 @@ def _normalize_deps(deps: list | None) -> list[dict]:
     return result
 
 
-from app.modules.schedule.models import Activity, Schedule, WorkOrder
+from app.modules.schedule.models import Activity, Schedule, ScheduleRelationship, WorkOrder
 from app.modules.schedule.repository import (
     ActivityRepository,
+    RelationshipRepository,
     ScheduleRepository,
     WorkOrderRepository,
 )
@@ -330,6 +331,7 @@ class ScheduleService:
         self.schedule_repo = ScheduleRepository(session)
         self.activity_repo = ActivityRepository(session)
         self.work_order_repo = WorkOrderRepository(session)
+        self.relationship_repo = RelationshipRepository(session)
 
     # ── Schedule operations ────────────────────────────────────────────────
 
@@ -507,11 +509,25 @@ class ScheduleService:
             metadata_=data.metadata,
         )
         activity = await self.activity_repo.create(activity)
+        activity_id = activity.id  # snapshot before update_fields() expires the instance
+
+        # Project the JSON dependency payload into the canonical
+        # ScheduleRelationship table, then rebuild Activity.dependencies from
+        # those rows so the JSON stays a faithful mirror of the authority. This
+        # closes the historical split-brain where create wrote only the JSON.
+        if dependencies_data:
+            await self._project_dependencies_to_relationships(
+                successor_id=activity_id,
+                schedule_id=data.schedule_id,
+                deps_json=dependencies_data,
+            )
+            derived = await self._derive_dependencies_json(activity_id)
+            await self.activity_repo.update_fields(activity_id, dependencies=derived)
 
         await _safe_publish(
             "schedule.activity.created",
             {
-                "activity_id": str(activity.id),
+                "activity_id": str(activity_id),
                 "schedule_id": str(data.schedule_id),
                 "wbs_code": data.wbs_code,
             },
@@ -519,7 +535,7 @@ class ScheduleService:
         )
 
         logger.info("Activity added: %s to schedule %s", data.name, data.schedule_id)
-        return activity
+        return await self.get_activity(activity_id)
 
     async def get_activity(self, activity_id: uuid.UUID) -> Activity:
         """Get activity by ID. Raises 404 if not found."""
@@ -613,6 +629,218 @@ class ScheduleService:
                     ),
                 )
 
+    # ── Canonical dependency store (ScheduleRelationship) ───────────────────
+    # ScheduleRelationship is the SINGLE source of truth for dependency edges.
+    # Activity.dependencies (JSON) is a DERIVED mirror, always rebuilt from the
+    # canonical rows. The three helpers below keep the two in lock-step inside
+    # the calling transaction:
+    #   * _project_dependencies_to_relationships — write a JSON edge payload
+    #     into the canonical table (create / update / delete rows to match).
+    #   * _derive_dependencies_json — read the canonical rows for one activity
+    #     and produce the JSON mirror shape stored on Activity.dependencies.
+    #   * _assert_predecessors_complete — completion guard, reads canonical
+    #     predecessors only.
+
+    @staticmethod
+    def _edge_payload_from_json(deps: list[dict] | None) -> dict[uuid.UUID, tuple[str, int]]:
+        """Map a JSON dependency payload to ``predecessor_id -> (type, lag)``.
+
+        ``deps`` is the activity-embedded predecessor list. Entries that are
+        not valid UUIDs are skipped. The last occurrence of a duplicate
+        predecessor wins, matching the unique (predecessor, successor) DB
+        constraint on :class:`ScheduleRelationship`.
+        """
+        edges: dict[uuid.UUID, tuple[str, int]] = {}
+        for dep in deps or []:
+            if not isinstance(dep, dict):
+                continue
+            try:
+                pred_id = uuid.UUID(str(dep.get("activity_id")))
+            except (TypeError, ValueError):
+                continue
+            dep_type = str(dep.get("type") or "FS").upper()
+            try:
+                lag = int(dep.get("lag_days") or 0)
+            except (TypeError, ValueError):
+                lag = 0
+            edges[pred_id] = (dep_type, lag)
+        return edges
+
+    async def _project_dependencies_to_relationships(
+        self,
+        *,
+        successor_id: uuid.UUID,
+        schedule_id: uuid.UUID,
+        deps_json: list[dict] | None,
+    ) -> None:
+        """Project an activity's JSON dependency payload into the canonical table.
+
+        Creates rows for new predecessors, updates type/lag on changed ones,
+        and deletes rows for predecessors no longer present so a removed edge
+        truly disappears from CPM. Idempotent: re-projecting the same payload
+        leaves the table unchanged.
+
+        Args:
+            successor_id: The activity these edges point *into*.
+            schedule_id: The owning schedule (stamped on each new row).
+            deps_json: The activity-embedded predecessor list (each entry is an
+                edge ``predecessor -> successor_id``). ``None`` is treated as an
+                empty set, which clears all inbound canonical edges.
+        """
+        desired = self._edge_payload_from_json(deps_json)
+
+        existing = await self.relationship_repo.list_predecessors(successor_id)
+        existing_by_pred: dict[uuid.UUID, ScheduleRelationship] = {r.predecessor_id: r for r in existing}
+
+        # Delete edges that are no longer desired.
+        stale = [pred for pred in existing_by_pred if pred not in desired]
+        await self.relationship_repo.delete_edges(successor_id, stale)
+
+        # Create or update the remaining desired edges.
+        for pred_id, (dep_type, lag) in desired.items():
+            row = existing_by_pred.get(pred_id)
+            if row is None:
+                await self.relationship_repo.create(
+                    ScheduleRelationship(
+                        schedule_id=schedule_id,
+                        predecessor_id=pred_id,
+                        successor_id=successor_id,
+                        relationship_type=dep_type,
+                        lag_days=lag,
+                    )
+                )
+            elif (row.relationship_type or "FS").upper() != dep_type or (row.lag_days or 0) != lag:
+                await self.relationship_repo.update_edge(
+                    row.id,
+                    relationship_type=dep_type,
+                    lag_days=lag,
+                )
+
+    async def _derive_dependencies_json(self, successor_id: uuid.UUID) -> list[dict]:
+        """Rebuild the derived JSON mirror from the canonical relationship rows.
+
+        Returns the ``Activity.dependencies`` shape (``[{activity_id, type,
+        lag_days}, ...]``) sourced from :class:`ScheduleRelationship` so the
+        convenience field always agrees with the authority.
+        """
+        rows = await self.relationship_repo.list_predecessors(successor_id)
+        return [
+            {
+                "activity_id": str(r.predecessor_id),
+                "type": (r.relationship_type or "FS").upper(),
+                "lag_days": r.lag_days or 0,
+            }
+            for r in rows
+        ]
+
+    async def _assert_predecessors_complete(self, activity_id: uuid.UUID) -> None:
+        """Reject completing an activity while a predecessor is still open.
+
+        Mirrors the dependency guard ``tasks.complete_task`` enforces: reads the
+        canonical predecessor edges of ``activity_id`` and raises HTTP 409 with
+        a message naming every blocking (not-yet-completed) predecessor.
+
+        Args:
+            activity_id: The activity being marked completed.
+
+        Raises:
+            HTTPException 409 if any predecessor activity is not completed.
+        """
+        rows = await self.relationship_repo.list_predecessors(activity_id)
+        if not rows:
+            return
+
+        pred_ids = {r.predecessor_id for r in rows}
+        pred_stmt = select(Activity).where(Activity.id.in_(pred_ids))
+        result = await self.session.execute(pred_stmt)
+        predecessors = list(result.scalars().all())
+
+        blocking: list[str] = []
+        for pred in predecessors:
+            progress = _str_to_float(pred.progress_pct)
+            if pred.status != "completed" and progress < 100.0:
+                blocking.append(pred.name or str(pred.id))
+
+        if blocking:
+            names = ", ".join(f"'{name}'" for name in sorted(blocking))
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Cannot complete: blocked by {len(blocking)} predecessor "
+                    f"activity(ies) that are not yet completed: {names}. Complete them first."
+                ),
+            )
+
+    async def reconcile_dependency_sources(self, schedule_id: uuid.UUID) -> dict[str, int]:
+        """Reconcile the split-brain dependency stores for a schedule.
+
+        Backfill / repair helper. Historically dependency edges were written to
+        either ``Activity.dependencies`` (JSON) OR :class:`ScheduleRelationship`
+        (table) depending on which endpoint was used, so the two can drift. This
+        unifies them around the canonical table:
+
+          1. Every JSON edge that has no canonical row is inserted into the
+             table (the JSON copy is preserved as the seed of truth on first
+             run, since it was historically the only writer for PATCH activity).
+          2. Each activity's ``dependencies`` JSON is then rebuilt from the
+             (now unified) canonical rows so the mirror is byte-consistent.
+
+        The central migration calls this once per existing schedule. It is
+        idempotent: a second run makes no changes.
+
+        Args:
+            schedule_id: Schedule to reconcile.
+
+        Returns:
+            Counts ``{"edges_created": int, "activities_resynced": int}``.
+        """
+        activities, _ = await self.activity_repo.list_for_schedule(schedule_id, limit=10_000)
+        active_ids = {a.id for a in activities}
+
+        existing_rels = await self.relationship_repo.list_for_schedule(schedule_id)
+        canonical_pairs: set[tuple[uuid.UUID, uuid.UUID]] = {
+            (r.predecessor_id, r.successor_id) for r in existing_rels
+        }
+
+        edges_created = 0
+        # 1. Promote orphan JSON edges into the canonical table.
+        for act in activities:
+            for pred_id, (dep_type, lag) in self._edge_payload_from_json(act.dependencies).items():
+                if pred_id not in active_ids:
+                    continue  # dangling reference to a deleted activity — drop
+                pair = (pred_id, act.id)
+                if pair in canonical_pairs:
+                    continue
+                await self.relationship_repo.create(
+                    ScheduleRelationship(
+                        schedule_id=schedule_id,
+                        predecessor_id=pred_id,
+                        successor_id=act.id,
+                        relationship_type=dep_type,
+                        lag_days=lag,
+                    )
+                )
+                canonical_pairs.add(pair)
+                edges_created += 1
+
+        # 2. Rebuild every activity's JSON mirror from the unified canonical set.
+        activities_resynced = 0
+        for act in activities:
+            derived = await self._derive_dependencies_json(act.id)
+            current = self._edge_payload_from_json(act.dependencies)
+            desired = self._edge_payload_from_json(derived)
+            if current != desired:
+                await self.activity_repo.update_fields(act.id, dependencies=derived)
+                activities_resynced += 1
+
+        logger.info(
+            "Reconciled dependency sources for schedule %s: edges_created=%d, activities_resynced=%d",
+            schedule_id,
+            edges_created,
+            activities_resynced,
+        )
+        return {"edges_created": edges_created, "activities_resynced": activities_resynced}
+
     async def update_activity(self, activity_id: uuid.UUID, data: ActivityUpdate) -> Activity:
         """Update an activity and recalculate duration if dates changed.
 
@@ -631,7 +859,10 @@ class ScheduleService:
         # Capture schedule_id before update_fields() calls expire_all(),
         # which would invalidate the ORM object and trigger a sync lazy-load
         # (MissingGreenlet) when accessing activity.schedule_id afterwards.
-        schedule_id_str = str(activity.schedule_id)
+        schedule_id = activity.schedule_id
+        schedule_id_str = str(schedule_id)
+        current_progress = _str_to_float(activity.progress_pct)
+        current_status = activity.status
 
         fields = data.model_dump(exclude_unset=True)
 
@@ -639,7 +870,18 @@ class ScheduleService:
         if "progress_pct" in fields:
             fields["progress_pct"] = str(fields["progress_pct"])
 
-        # Serialize nested models
+        # Track whether this update transitions the activity to completed so we
+        # can enforce the predecessor-completion guard before persisting.
+        new_progress = float(fields["progress_pct"]) if "progress_pct" in fields else current_progress
+        new_status = fields.get("status", current_status)
+        becomes_completed = new_status == "completed" or new_progress >= 100.0
+        was_completed = current_status == "completed" or current_progress >= 100.0
+
+        # Serialize nested models. ``dependencies`` is projected into the
+        # canonical ScheduleRelationship table after the field write; the JSON
+        # value here is recomputed from the canonical rows afterwards so it
+        # never becomes a competing authority.
+        deps_payload: list[dict] | None = None
         if "dependencies" in fields and fields["dependencies"] is not None:
             deps = fields["dependencies"]
             serialized = []
@@ -648,6 +890,7 @@ class ScheduleService:
                 d["activity_id"] = str(d["activity_id"])
                 serialized.append(d)
             fields["dependencies"] = serialized
+            deps_payload = serialized
 
             # Reject self-references and circular dependencies before write.
             # ``ScheduleRelationship.create_relationship`` enforces this for
@@ -656,7 +899,7 @@ class ScheduleService:
             # apply the same guard or one path becomes a back door.
             await self._reject_dependency_cycles(
                 activity_id=activity_id,
-                schedule_id=activity.schedule_id,
+                schedule_id=schedule_id,
                 proposed_predecessors=[uuid.UUID(d["activity_id"]) for d in serialized],
             )
 
@@ -677,6 +920,13 @@ class ScheduleService:
         if "start_date" in fields or "end_date" in fields:
             fields["duration_days"] = compute_duration(new_start, new_end)
 
+        # Completion guard (mirrors tasks.complete_task): reject the transition
+        # to completed while any canonical predecessor is still open. Skipped
+        # when the activity was already completed (idempotent re-saves) so we
+        # never block a no-op edit of a finished activity. Run before write.
+        if becomes_completed and not was_completed:
+            await self._assert_predecessors_complete(activity_id)
+
         if fields:
             await self.activity_repo.update_fields(activity_id, **fields)
 
@@ -689,6 +939,18 @@ class ScheduleService:
                 },
                 source_module="oe_schedule",
             )
+
+        # Project the (validated) dependency payload into the canonical store,
+        # then rebuild the JSON mirror from those rows. Done after the field
+        # write so a deleted edge truly disappears from CPM.
+        if deps_payload is not None:
+            await self._project_dependencies_to_relationships(
+                successor_id=activity_id,
+                schedule_id=schedule_id,
+                deps_json=deps_payload,
+            )
+            derived = await self._derive_dependencies_json(activity_id)
+            await self.activity_repo.update_fields(activity_id, dependencies=derived)
 
         # Re-fetch to return fresh data
         return await self.get_activity(activity_id)
@@ -830,8 +1092,10 @@ class ScheduleService:
 
         Raises:
             HTTPException 404 if activity not found.
+            HTTPException 409 if completing while a predecessor is still open.
         """
-        await self.get_activity(activity_id)
+        activity = await self.get_activity(activity_id)
+        was_completed = activity.status == "completed" or _str_to_float(activity.progress_pct) >= 100.0
 
         # Determine status from progress
         if progress_pct >= 100.0:
@@ -840,6 +1104,12 @@ class ScheduleService:
             new_status = "in_progress"
         else:
             new_status = "not_started"
+
+        # Completion guard (mirrors tasks.complete_task): block reaching 100 %
+        # while any canonical predecessor is still open. Skipped when already
+        # completed so re-saving a finished activity is a no-op, not a 409.
+        if new_status == "completed" and not was_completed:
+            await self._assert_predecessors_complete(activity_id)
 
         await self.activity_repo.update_fields(
             activity_id,
@@ -1730,6 +2000,13 @@ class ScheduleService:
             # Always set start_date (schedule object may be expired by now)
             await self.schedule_repo.update_fields(schedule_id, start_date=schedule_start.isoformat())
 
+        # Generation writes dependency edges directly into each activity's JSON
+        # ``dependencies`` field. Promote them into the canonical
+        # ScheduleRelationship table (and resync the JSON mirror) so the
+        # generated schedule has the same single source of truth as one built
+        # edge-by-edge through the relationship endpoints.
+        await self.reconcile_dependency_sources(schedule_id)
+
         await _safe_publish(
             "schedule.generated_from_boq",
             {
@@ -1801,31 +2078,38 @@ class ScheduleService:
         # Parse dependencies: map activity_id -> list of (predecessor_id, type, lag)
         deps: dict[str, list[tuple[str, str, int]]] = {d["id"]: [] for d in act_data}
 
-        # 1. Load explicit ScheduleRelationship records from the database
-        from sqlalchemy import select
-
-        from app.modules.schedule.models import ScheduleRelationship
-
-        rel_stmt = select(ScheduleRelationship).where(ScheduleRelationship.schedule_id == schedule_id)
-        rel_result = await self.session.execute(rel_stmt)
+        # ScheduleRelationship is the SINGLE source of truth for edges. CPM reads
+        # ONLY the canonical table so a relationship the user deleted truly
+        # disappears from the network (the historical bug: a deleted row left a
+        # JSON copy that kept blocking CPM because the two were additively
+        # merged). All writers project the JSON into this table, so it is
+        # authoritative.
+        canonical_rows = await self.relationship_repo.list_for_schedule(schedule_id)
         seen_pairs: set[tuple[str, str]] = set()
-        for r in rel_result.scalars().all():
+        for r in canonical_rows:
             pred_id = str(r.predecessor_id)
             succ_id = str(r.successor_id)
             if pred_id in active_ids and succ_id in active_ids:
-                deps[succ_id].append((pred_id, r.relationship_type or "FS", r.lag_days or 0))
+                deps[succ_id].append((pred_id, (r.relationship_type or "FS").upper(), r.lag_days or 0))
                 seen_pairs.add((pred_id, succ_id))
 
-        # 2. Inline JSON dependencies from each activity (deduplicate against DB)
-        for ad in act_data:
-            act_id = ad["id"]
-            for dep in ad["dependencies"]:
-                pred_id = str(dep.get("activity_id", ""))
-                dep_type = dep.get("type", "FS")
-                lag = dep.get("lag_days", 0)
-                if pred_id in active_ids and (pred_id, act_id) not in seen_pairs:
-                    deps[act_id].append((pred_id, dep_type, lag))
-                    seen_pairs.add((pred_id, act_id))
+        # Legacy fallback: only when the canonical table is EMPTY for this
+        # schedule do we read the activity-embedded JSON, so un-reconciled
+        # historical schedules (edges written only to the JSON before the
+        # unification) still compute. As soon as any canonical row exists the
+        # table is the sole authority and the JSON is ignored. The central
+        # migration's reconciliation removes the need for this path on
+        # production data; it is a safety net, never a competing source.
+        if not canonical_rows:
+            for ad in act_data:
+                act_id = ad["id"]
+                for dep in ad["dependencies"]:
+                    pred_id = str(dep.get("activity_id", ""))
+                    dep_type = dep.get("type", "FS")
+                    lag = dep.get("lag_days", 0)
+                    if pred_id in active_ids and (pred_id, act_id) not in seen_pairs:
+                        deps[act_id].append((pred_id, dep_type, lag))
+                        seen_pairs.add((pred_id, act_id))
 
         # --- Topological sort (Kahn's algorithm) ---
         # The forward/backward passes must visit each activity AFTER all of its

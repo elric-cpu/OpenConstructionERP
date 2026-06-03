@@ -10,7 +10,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import noload
 
-from app.modules.schedule.models import Activity, Schedule, WorkOrder
+from app.modules.schedule.models import Activity, Schedule, ScheduleRelationship, WorkOrder
 
 
 class ScheduleRepository:
@@ -253,3 +253,78 @@ class WorkOrderRepository:
         """Delete a work order."""
         stmt = delete(WorkOrder).where(WorkOrder.id == work_order_id)
         await self.session.execute(stmt)
+
+
+class RelationshipRepository:
+    """Data access for :class:`ScheduleRelationship` — the canonical edge store.
+
+    :class:`ScheduleRelationship` is the single source of truth for schedule
+    dependency edges. Activity-embedded ``dependencies`` JSON is a derived
+    mirror that the service rebuilds from these rows. All reads and writes of
+    the canonical edge set go through this layer so the projection / CPM /
+    completion-guard paths share one query surface.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def list_for_schedule(self, schedule_id: uuid.UUID) -> list[ScheduleRelationship]:
+        """Return every relationship row of a schedule (unbounded — CPM needs all)."""
+        stmt = select(ScheduleRelationship).where(ScheduleRelationship.schedule_id == schedule_id)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_predecessors(self, successor_id: uuid.UUID) -> list[ScheduleRelationship]:
+        """Return all relationship rows whose successor is ``successor_id``.
+
+        These are the inbound predecessor edges of a single activity — used by
+        the completion guard and the derived-JSON mirror rebuild.
+        """
+        stmt = select(ScheduleRelationship).where(ScheduleRelationship.successor_id == successor_id)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def create(self, relationship: ScheduleRelationship) -> ScheduleRelationship:
+        """Insert a new relationship row."""
+        self.session.add(relationship)
+        await self.session.flush()
+        return relationship
+
+    async def delete_by_id(self, relationship_id: uuid.UUID) -> None:
+        """Delete a single relationship by primary key."""
+        stmt = delete(ScheduleRelationship).where(ScheduleRelationship.id == relationship_id)
+        await self.session.execute(stmt)
+
+    async def delete_edges(
+        self,
+        successor_id: uuid.UUID,
+        predecessor_ids: list[uuid.UUID],
+    ) -> None:
+        """Delete the inbound edges of ``successor_id`` for the given predecessors.
+
+        No-op when ``predecessor_ids`` is empty.
+        """
+        if not predecessor_ids:
+            return
+        stmt = delete(ScheduleRelationship).where(
+            ScheduleRelationship.successor_id == successor_id,
+            ScheduleRelationship.predecessor_id.in_(predecessor_ids),
+        )
+        await self.session.execute(stmt)
+        await self.session.flush()
+
+    async def update_edge(
+        self,
+        relationship_id: uuid.UUID,
+        *,
+        relationship_type: str,
+        lag_days: int,
+    ) -> None:
+        """Update the type / lag of an existing relationship row."""
+        stmt = (
+            update(ScheduleRelationship)
+            .where(ScheduleRelationship.id == relationship_id)
+            .values(relationship_type=relationship_type, lag_days=lag_days)
+        )
+        await self.session.execute(stmt)
+        await self.session.flush()

@@ -784,15 +784,35 @@ async def create_relationship(
             if neighbor not in visited:
                 queue.append(neighbor)
 
-    rel = ScheduleRelationship(
-        schedule_id=schedule_id,
-        predecessor_id=data.predecessor_id,
-        successor_id=data.successor_id,
-        relationship_type=data.relationship_type,
-        lag_days=data.lag_days,
+    # Idempotent upsert against the unique (predecessor, successor) constraint:
+    # if the edge already exists, update its type/lag instead of raising an
+    # IntegrityError. ScheduleRelationship is the canonical store, so a repeat
+    # create is a "set this edge" operation.
+    dup = next(
+        (r for r in existing_rels if r.predecessor_id == data.predecessor_id and r.successor_id == data.successor_id),
+        None,
     )
-    session.add(rel)
-    await session.flush()
+    if dup is not None:
+        dup.relationship_type = data.relationship_type
+        dup.lag_days = data.lag_days
+        await session.flush()
+        rel = dup
+    else:
+        rel = ScheduleRelationship(
+            schedule_id=schedule_id,
+            predecessor_id=data.predecessor_id,
+            successor_id=data.successor_id,
+            relationship_type=data.relationship_type,
+            lag_days=data.lag_days,
+        )
+        session.add(rel)
+        await session.flush()
+
+    # Rebuild the successor activity's derived ``dependencies`` JSON mirror from
+    # the canonical rows so the convenience field never drifts from the table.
+    derived = await service._derive_dependencies_json(data.successor_id)
+    await service.activity_repo.update_fields(data.successor_id, dependencies=derived)
+
     return RelationshipResponse.model_validate(rel)
 
 
@@ -859,12 +879,17 @@ async def delete_relationship(
     relationship_id: uuid.UUID,
     session: SessionDep,
     user_id: CurrentUserId,
+    service: ScheduleService = Depends(_get_service),
 ) -> None:
     """Delete a schedule relationship.
 
     Guard against cross-project sabotage: non-admin users must own the
     parent project or the request is rejected with 404 (404 instead of
     403 so we don't leak existence of unknown relationship ids).
+
+    Deletes the canonical edge, then rebuilds the successor activity's derived
+    ``dependencies`` JSON mirror so the removed edge truly disappears from CPM
+    (the historical bug left a lingering JSON copy that kept blocking).
     """
     from sqlalchemy import delete, select
 
@@ -881,8 +906,13 @@ async def delete_relationship(
 
     await verify_project_access(sched.project_id, user_id, session)
 
+    successor_id = rel.successor_id
     stmt = delete(ScheduleRelationship).where(ScheduleRelationship.id == relationship_id)
     await session.execute(stmt)
+    await session.flush()
+
+    derived = await service._derive_dependencies_json(successor_id)
+    await service.activity_repo.update_fields(successor_id, dependencies=derived)
 
 
 # ── CPM Calculation (Phase 13 — uses core/cpm.py engine) ────────────────────
@@ -937,13 +967,17 @@ async def calculate_cpm_full(
             }
         )
 
-    # Collect relationships from both ScheduleRelationship table and inline deps
+    # Build the edge set from the canonical ScheduleRelationship store ONLY.
+    # The table is the single source of truth; Activity.dependencies JSON is a
+    # derived mirror. Reading the table alone means a relationship the user
+    # deleted truly disappears from CPM instead of being re-introduced by a
+    # lingering JSON copy.
     rel_dicts: list[dict] = []
 
-    # 1. Explicit ScheduleRelationship records
     rel_stmt = select(ScheduleRelationship).where(ScheduleRelationship.schedule_id == schedule_id)
     rel_result = await session.execute(rel_stmt)
-    for r in rel_result.scalars().all():
+    canonical_rows = list(rel_result.scalars().all())
+    for r in canonical_rows:
         rel_dicts.append(
             {
                 "predecessor_id": str(r.predecessor_id),
@@ -953,29 +987,32 @@ async def calculate_cpm_full(
             }
         )
 
-    # 2. Inline JSON dependencies from each activity
-    for act in activities:
-        deps = act.dependencies or []
-        for dep in deps:
-            if isinstance(dep, dict):
-                pred_id = dep.get("activity_id", "")
-                rel_dicts.append(
-                    {
-                        "predecessor_id": str(pred_id),
-                        "successor_id": str(act.id),
-                        "type": dep.get("type", "FS"),
-                        "lag": dep.get("lag_days", 0),
-                    }
-                )
-            elif isinstance(dep, str):
-                rel_dicts.append(
-                    {
-                        "predecessor_id": dep,
-                        "successor_id": str(act.id),
-                        "type": "FS",
-                        "lag": 0,
-                    }
-                )
+    # Legacy fallback: only when no canonical rows exist for this schedule do
+    # we read the inline JSON, so un-reconciled historical schedules still
+    # compute. Once the table holds any edge it is the sole authority.
+    if not canonical_rows:
+        for act in activities:
+            deps = act.dependencies or []
+            for dep in deps:
+                if isinstance(dep, dict):
+                    pred_id = dep.get("activity_id", "")
+                    rel_dicts.append(
+                        {
+                            "predecessor_id": str(pred_id),
+                            "successor_id": str(act.id),
+                            "type": dep.get("type", "FS"),
+                            "lag": dep.get("lag_days", 0),
+                        }
+                    )
+                elif isinstance(dep, str):
+                    rel_dicts.append(
+                        {
+                            "predecessor_id": dep,
+                            "successor_id": str(act.id),
+                            "type": "FS",
+                            "lag": 0,
+                        }
+                    )
 
     # Deduplicate relationships by (pred, succ)
     seen: set[tuple[str, str]] = set()

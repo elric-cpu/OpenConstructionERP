@@ -875,6 +875,22 @@ async def import_schedule_csv(
             activity.dependencies = deps
 
     await session.flush()
+
+    # The rest of the app writes dependency edges through ScheduleService, which
+    # keeps the canonical ScheduleRelationship table as the single source of
+    # truth. The CSV import above is the one writer that only touched the JSON
+    # mirror, so project those edges into the canonical store now - otherwise
+    # CPM (it falls back to JSON only when canonical is empty) and the
+    # predecessor-completion guard would not see CSV-imported edges. Best-effort:
+    # a reconcile failure must never fail the import.
+    if pending_predecessors:
+        try:
+            from app.modules.schedule.service import ScheduleService
+
+            await ScheduleService(session).reconcile_dependency_sources(schedule_id)
+        except Exception:  # noqa: BLE001
+            logger.debug("import_schedule_csv: dependency reconcile skipped", exc_info=True)
+
     return result
 
 

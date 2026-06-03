@@ -105,6 +105,14 @@ _TEMPLATES: dict[str, str] = {
     # ── Clash coordination ───────────────────────────────────────────
     "notifications.clash.high_severity.title": "High-severity clash detected",
     "notifications.clash.high_severity.body": "{severity} clash: {a_name} vs {b_name}",
+    # ── Validation reports ───────────────────────────────────────────
+    "notifications.validation.report.title": "Validation found issues",
+    "notifications.validation.report.body": (
+        "{error_count} error(s) and {warning_count} warning(s) on this {target_type}."
+    ),
+    # ── Punch list (auto-created from clash / inspection) ─────────────
+    "notifications.punchlist.auto_created.title": "Punch item created",
+    "notifications.punchlist.auto_created.body": "{title}",
     # ── Digests (Epic B / B3) ────────────────────────────────────────
     "notifications.digest.title": "Notification digest",
     "notifications.digest.body": "You have {count} new updates on the {channel} channel.",
@@ -145,6 +153,9 @@ _TYPE_TO_ICON: dict[str, str] = {
     "file_comment_mention": "info",
     # Clash coordination — a serious interference needs attention
     "clash_high_severity": "warning",
+    # Validation reports — errors are blocking, warnings are advisory
+    "validation_errors": "error",
+    "validation_warnings": "warning",
 }
 
 

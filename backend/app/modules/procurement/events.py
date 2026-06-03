@@ -1,27 +1,42 @@
-"""‌⁠‍Procurement event handlers — auto-create PO from awarded tender.
+"""‌⁠‍Procurement event handlers — auto-create PO from awarded tender / bid.
 
-Subscribes to ``tendering.package.awarded`` and creates a draft Purchase
-Order pre-populated from the winning bid's line items, supplier
-identity, and total. Closes the long-standing workflow gap where a
-tender award updated the BOQ unit rates (via :func:`apply_winner`) but
-left procurement empty — the PM had to retype the supplier and every
-line item by hand.
+Subscribes to BOTH award events emitted by the two sister tendering
+modules and creates a draft Purchase Order pre-populated from the winner:
+
+* ``tendering.package.awarded`` (oe_tendering) — see
+  :func:`_create_po_from_award`.
+* ``bid_management.package.awarded`` (oe_bid_management) — see
+  :func:`_create_po_from_bid_award`.
+
+Both close the long-standing workflow gap where an award updated the BOQ
+unit rates but left procurement empty, forcing the PM to retype the
+supplier and every line item by hand.
 
 Module is auto-imported by the module loader when ``oe_procurement`` is
 loaded (see ``module_loader._load_module`` → ``events.py``).
 
-Idempotency
------------
-Each generated PO carries ``metadata.tender_package_id``. Before creating
-a new PO the handler queries for any existing row with the same value and
-short-circuits if found. This makes re-firing the event (event bus retry,
-manual replay during testing) safe.
+Idempotency & reconciliation
+----------------------------
+Each generated PO carries deterministic keys in ``metadata``:
+
+* tender awards write ``tender_package_id``;
+* bid_management awards write ``bid_package_id`` AND, when the bid
+  package is linked to a tendering package (``BidPackage.tender_id``),
+  the same ``tender_package_id`` value the tender path would use.
+
+Before creating a PO each handler scans existing project POs and
+short-circuits if any of these keys already match. Because the two paths
+share the ``tender_package_id`` key whenever a bid package is linked to a
+tender, a project that runs BOTH modules for the same logical award never
+ends up with two purchase orders — whichever fires first wins, the second
+is an idempotent skip. Re-firing the same event (bus retry, manual
+replay) is likewise a no-op.
 
 Failure mode
 ------------
-Errors are logged and swallowed — the tender award itself must never be
-blocked because procurement wiring choked. The PO can always be created
-manually from the UI.
+Errors are logged and swallowed — the award itself must never be blocked
+because procurement wiring choked. The PO can always be created manually
+from the UI.
 """
 
 from __future__ import annotations
@@ -31,9 +46,16 @@ import uuid
 from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import Event, _log_failures, event_bus
 from app.database import async_session_factory
+from app.modules.bid_management.models import (
+    Bidder,
+    BidPackage,
+    BidSubmission,
+    BidSubmissionLine,
+)
 from app.modules.procurement.models import PurchaseOrder, PurchaseOrderItem
 from app.modules.procurement.repository import (
     POItemRepository,
@@ -52,6 +74,46 @@ def _to_decimal(value: object) -> Decimal:
         return Decimal(str(value))
     except (InvalidOperation, ValueError):
         return Decimal("0")
+
+
+async def _find_existing_po(
+    session: AsyncSession,
+    project_id: uuid.UUID,
+    *,
+    keys: dict[str, str | None],
+) -> PurchaseOrder | None:
+    """Return the first project PO whose metadata matches any reconciliation key.
+
+    ``keys`` maps a metadata field name to the value that identifies an
+    auto-created PO for this logical award (e.g.
+    ``{"bid_package_id": "...", "tender_package_id": "..."}``). A match on
+    *any* non-empty key short-circuits creation, which is what makes the
+    tender and bid_management paths converge on a single PO when they both
+    reference the same tendering package.
+
+    Args:
+        session: Active async session.
+        project_id: Project to scope the scan to.
+        keys: Metadata field -> expected value pairs; ``None`` values are
+            ignored so callers can pass an absent ``tender_package_id``.
+
+    Returns:
+        The matching :class:`PurchaseOrder`, or ``None`` if none exists.
+    """
+    wanted = {field: value for field, value in keys.items() if value}
+    if not wanted:
+        return None
+    rows = (
+        (await session.execute(select(PurchaseOrder).where(PurchaseOrder.project_id == project_id)))
+        .scalars()
+        .all()
+    )
+    for po in rows:
+        md = po.metadata_ if isinstance(po.metadata_, dict) else {}
+        for field, value in wanted.items():
+            if md.get(field) == value:
+                return po
+    return None
 
 
 async def _on_tender_awarded(event: Event) -> None:
@@ -109,24 +171,38 @@ async def _create_po_from_award(event: Event) -> None:
                 )
                 return
 
-            # Idempotency — search for any existing PO created from this
-            # tender package. JSON path query works on both PG (JSON_EXTRACT)
-            # and SQLite (JSON1 extension).
+            # Idempotency + cross-module reconciliation. Skip if a PO
+            # already exists for this tender package (re-fire / replay) OR
+            # if a *bid_management* award for a bid package linked to this
+            # tender already produced one. Both paths stamp the shared
+            # ``tender_package_id`` key, so a single metadata scan covers
+            # the symmetric case; we additionally resolve any linked bid
+            # package id so the reverse direction (bid keyed only on
+            # ``bid_package_id`` because it carried no tender link) is also
+            # caught.
             po_repo = PurchaseOrderRepository(session)
-            existing_pos = (
-                (await session.execute(select(PurchaseOrder).where(PurchaseOrder.project_id == package.project_id)))
-                .scalars()
-                .all()
-            )
-            for po in existing_pos:
-                md = po.metadata_ if isinstance(po.metadata_, dict) else {}
-                if md.get("tender_package_id") == str(package_id):
-                    logger.info(
-                        "tender.awarded: PO %s already exists for package %s (idempotent skip)",
-                        po.po_number,
-                        package_id,
+            linked_bid_package_id = (
+                (
+                    await session.execute(
+                        select(BidPackage.id).where(BidPackage.tender_id == package_id)
                     )
-                    return
+                ).scalar_one_or_none()
+            )
+            existing = await _find_existing_po(
+                session,
+                package.project_id,
+                keys={
+                    "tender_package_id": str(package_id),
+                    "bid_package_id": str(linked_bid_package_id) if linked_bid_package_id else None,
+                },
+            )
+            if existing is not None:
+                logger.info(
+                    "tender.awarded: PO %s already exists for package %s (idempotent skip)",
+                    existing.po_number,
+                    package_id,
+                )
+                return
 
             # Build line items from bid.line_items. The bid carries dicts
             # with description / unit / quantity / unit_rate / position_id.
@@ -218,6 +294,247 @@ async def _create_po_from_award(event: Event) -> None:
         )
 
 
+async def _on_bid_management_awarded(event: Event) -> None:
+    """‌⁠‍Schedule auto-PO creation from a bid_management award (detached).
+
+    Mirrors :func:`_on_tender_awarded`. ``bid_management.service.award_package``
+    publishes ``bid_management.package.awarded`` via ``publish_detached``
+    while its request transaction is still open, so we detach here too:
+    opening a second async session synchronously would contend with the
+    publishing writer. Detaching lets the award transaction commit before
+    we read the winning submission and write the PO.
+    """
+    _log_failures(
+        _create_po_from_bid_award(event),
+        name="procurement.auto_po_from_bid_award",
+    )
+
+
+async def _create_po_from_bid_award(event: Event) -> None:
+    """Create a draft PO from a bid_management package award.
+
+    The award event carries only identifiers (``package_id``,
+    ``project_id``, ``awarded_bidder_id``, ``awarded_amount``,
+    ``currency``); the supplier is the winning :class:`Bidder` and the
+    line items come from that bidder's valid :class:`BidSubmission` and
+    its :class:`BidSubmissionLine` rows. ``metadata.bid_package_id`` is the
+    primary idempotency key; when the bid package is linked to a tendering
+    package we also stamp ``tender_package_id`` so this PO reconciles with
+    one a tender award would create for the same logical award.
+    """
+    data = event.data or {}
+    package_id_raw = data.get("package_id")
+    bidder_id_raw = data.get("awarded_bidder_id")
+    if not package_id_raw or not bidder_id_raw:
+        return
+
+    try:
+        package_id = uuid.UUID(str(package_id_raw))
+        bidder_id = uuid.UUID(str(bidder_id_raw))
+    except (ValueError, AttributeError):
+        return
+
+    try:
+        async with async_session_factory() as session:
+            package = (
+                await session.execute(select(BidPackage).where(BidPackage.id == package_id))
+            ).scalar_one_or_none()
+            bidder = (
+                await session.execute(select(Bidder).where(Bidder.id == bidder_id))
+            ).scalar_one_or_none()
+
+            if package is None or bidder is None:
+                logger.warning(
+                    "bid_management.awarded handler: package=%s or bidder=%s not found",
+                    package_id,
+                    bidder_id,
+                )
+                return
+
+            # Idempotency + reconciliation. Skip if a PO already exists for
+            # this bid package OR for the tendering package it is linked to
+            # (the tender award path may have fired first).
+            po_repo = PurchaseOrderRepository(session)
+            tender_package_id = str(package.tender_id) if package.tender_id else None
+            existing = await _find_existing_po(
+                session,
+                package.project_id,
+                keys={
+                    "bid_package_id": str(package_id),
+                    "tender_package_id": tender_package_id,
+                },
+            )
+            if existing is not None:
+                logger.info(
+                    "bid_management.awarded: PO %s already exists for package %s (idempotent skip)",
+                    existing.po_number,
+                    package_id,
+                )
+                return
+
+            # Resolve the winning bidder's valid submission. A bidder may in
+            # theory have multiple submission rows over time; prefer the
+            # newest valid one (suppliers can resubmit before close).
+            submissions = (
+                (
+                    await session.execute(
+                        select(BidSubmission)
+                        .where(BidSubmission.bidder_id == bidder_id)
+                        .order_by(BidSubmission.created_at.desc())
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            winning_submission = next((s for s in submissions if s.is_valid), None)
+            if winning_submission is None and submissions:
+                # Fall back to the newest submission even if the validity
+                # flag was never set — the award itself already vetted it.
+                winning_submission = submissions[0]
+
+            # Map the priced submission lines to PO items, joining each line
+            # back to its package line for description/unit/quantity.
+            po_items: list[PurchaseOrderItem] = []
+            running_subtotal = Decimal("0")
+            if winning_submission is not None:
+                sub_lines = (
+                    (
+                        await session.execute(
+                            select(BidSubmissionLine)
+                            .where(BidSubmissionLine.submission_id == winning_submission.id)
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                line_meta = await _bid_line_lookup(session, package_id)
+                for idx, line in enumerate(sub_lines):
+                    meta = line_meta.get(line.line_item_id, {})
+                    qty = _to_decimal(line.quantity_priced) or _to_decimal(meta.get("quantity"))
+                    rate = _to_decimal(line.unit_price)
+                    amount = _to_decimal(line.total_price)
+                    if amount == 0:
+                        amount = qty * rate
+                    running_subtotal += amount
+                    desc = str(meta.get("description") or meta.get("code") or "(no description)")[:500]
+                    unit = (str(meta.get("unit") or "")[:20]) or None
+                    po_items.append(
+                        PurchaseOrderItem(
+                            description=desc,
+                            quantity=str(qty),
+                            unit=unit,
+                            unit_rate=str(rate),
+                            amount=str(amount),
+                            wbs_id=None,
+                            cost_category=None,
+                            sort_order=idx,
+                        )
+                    )
+
+            # Award amount is the authoritative committed total; fall back to
+            # the submission envelope total if the award amount is missing.
+            award_amount = _to_decimal(data.get("awarded_amount"))
+            submission_total = (
+                _to_decimal(winning_submission.total_amount) if winning_submission is not None else Decimal("0")
+            )
+            if award_amount > 0:
+                subtotal = award_amount
+            elif running_subtotal > 0:
+                subtotal = running_subtotal
+            else:
+                subtotal = submission_total
+
+            currency = (
+                str(data.get("currency") or "")
+                or (winning_submission.currency if winning_submission is not None else "")
+                or package.currency
+                or ""
+            )
+
+            po_number = await po_repo.next_po_number(package.project_id)
+
+            po = PurchaseOrder(
+                project_id=package.project_id,
+                vendor_contact_id=None,  # bidder is a denormalised snapshot; no FK
+                po_number=po_number,
+                po_type="standard",
+                issue_date=None,
+                delivery_date=None,
+                currency_code=currency,
+                amount_subtotal=str(subtotal),
+                tax_amount="0",
+                amount_total=str(subtotal),
+                status="draft",
+                payment_terms=None,
+                notes=(
+                    f"Auto-created from awarded bid package: {package.title or package.code} "
+                    f"— bid by {bidder.company_name}"
+                )[:5000],
+                created_by=None,
+                metadata_={
+                    "bid_package_id": str(package_id),
+                    "bid_package_code": package.code,
+                    "bid_award_bidder_id": str(bidder_id),
+                    "tender_package_id": tender_package_id,
+                    "supplier_name": bidder.company_name,
+                    "supplier_contact_email": bidder.contact_email,
+                    "origin": "bid_management_award",
+                },
+            )
+            po = await po_repo.create(po)
+
+            item_repo = POItemRepository(session)
+            for item in po_items:
+                item.po_id = po.id
+                await item_repo.create(item)
+
+            await session.commit()
+            logger.info(
+                "Auto-PO created from bid_management award: po=%s package=%s bidder=%s items=%d subtotal=%s %s",
+                po.po_number,
+                package_id,
+                bidder_id,
+                len(po_items),
+                subtotal,
+                currency,
+            )
+    except Exception:
+        logger.exception(
+            "bid_management.awarded auto-PO failed for package=%s bidder=%s — the award itself was unaffected",
+            package_id,
+            bidder_id,
+        )
+
+
+async def _bid_line_lookup(session: AsyncSession, package_id: uuid.UUID) -> dict[uuid.UUID, dict[str, object]]:
+    """Map a package's line-item ids to their scope description/unit/quantity.
+
+    Submission lines reference ``line_item_id`` (the package line) but carry
+    no human description of their own, so we resolve it here once to label
+    each generated PO item.
+    """
+    from app.modules.bid_management.models import BidPackageLineItem
+
+    rows = (
+        (
+            await session.execute(
+                select(BidPackageLineItem).where(BidPackageLineItem.package_id == package_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {
+        row.id: {
+            "code": row.code,
+            "description": row.description,
+            "unit": row.unit,
+            "quantity": row.quantity,
+        }
+        for row in rows
+    }
+
+
 async def _on_supplier_rating_update(event: Event) -> None:
     """‌⁠‍``procurement.supplier_rating_update`` → adjust supplier scorecard.
 
@@ -252,6 +569,7 @@ async def _on_supplier_rating_update(event: Event) -> None:
 # Register subscribers at module import — module_loader picks this up
 # automatically when ``oe_procurement`` is loaded.
 event_bus.subscribe("tendering.package.awarded", _on_tender_awarded)
+event_bus.subscribe("bid_management.package.awarded", _on_bid_management_awarded)
 event_bus.subscribe(
     "procurement.supplier_rating_update",
     _on_supplier_rating_update,

@@ -11,6 +11,11 @@ Subscriptions:
   QMS audit appear on the project NCR dashboard. Idempotent via the
   ``source_finding_id`` marker stored in ``NCR.metadata_``.
 
+* ``clash.high_severity.detected`` for a CRITICAL (or reviewer-confirmed)
+  clash → raise an NCR so the design/coordination non-conformance enters
+  the formal NCR workflow (root cause, corrective action, sign-off).
+  Idempotent on ``NCR.clash_result_id``.
+
 * ``ncr.closed_with_cost_impact`` → publish ``moc.candidate_from_ncr`` so
   the MoC module (or any subscriber) can auto-propose a Management-of-
   Change entry for scope-affecting NCRs. Cheap fan-out — no DB write here.
@@ -145,6 +150,117 @@ async def _on_qms_finding_raised(event: Event) -> None:
         logger.debug("ncr: _on_qms_finding_raised failed", exc_info=True)
 
 
+# ── clash.high_severity.detected → standalone-NCR row ───────────────────
+
+
+async def _on_clash_high_severity(event: Event) -> None:
+    """``clash.high_severity.detected`` → raise an NCR for serious clashes.
+
+    A high-severity clash is a coordination finding; a *critical* one (or a
+    reviewer who confirms a clash) is a formal non-conformance that belongs
+    in the NCR workflow. We therefore only materialise an NCR when the
+    severity is ``critical`` or the trigger is ``confirmed`` — routine high
+    clashes stay on the clash board (and become a punch item via the
+    punchlist bridge) to avoid NCR-dashboard noise.
+
+    Idempotent on ``NCR.clash_result_id`` so a re-published or re-confirmed
+    event for the same clash never raises a second NCR.
+    """
+    if not await _can_open_isolated_session():
+        return
+    data = event.data or {}
+    result_id = data.get("result_id")
+    project_id_raw = data.get("project_id")
+    if not (result_id and project_id_raw):
+        return
+
+    severity = str(data.get("severity") or "").lower()
+    trigger = str(data.get("trigger") or "").lower()
+    if severity != "critical" and trigger != "confirmed":
+        return
+
+    try:
+        project_id = uuid.UUID(str(project_id_raw))
+    except (ValueError, TypeError):
+        return
+
+    result_id_s = str(result_id)
+    try:
+        async with async_session_factory() as session:
+            # Idempotency — bail if an NCR already links this clash.
+            existing = (
+                await session.execute(
+                    select(NCR.id).where(
+                        NCR.project_id == project_id,
+                        NCR.clash_result_id == result_id_s,
+                    )
+                )
+            ).first()
+            if existing is not None:
+                return
+
+            a_name = str(data.get("a_name") or "").strip()
+            b_name = str(data.get("b_name") or "").strip()
+            clash_type = str(data.get("clash_type") or "clash").strip() or "clash"
+            elements = f"{a_name or '?'} vs {b_name or '?'}"
+            title = f"Clash NCR: {elements}"[:500]
+            description = (
+                f"Auto-raised from a {severity or 'high'}-severity clash "
+                f"(trigger: {trigger or 'detected'}).\n"
+                f"Elements: {elements}\n"
+                f"Clash type: {clash_type}\n"
+                f"Clash result: {result_id_s}"
+            )[:10000]
+
+            from app.modules.ncr.repository import NCRRepository
+
+            repo = NCRRepository(session)
+            ncr_number = await repo.next_ncr_number(project_id)
+            ncr = NCR(
+                project_id=project_id,
+                ncr_number=ncr_number,
+                title=title,
+                description=description,
+                ncr_type="design",
+                severity="critical" if severity == "critical" else "major",
+                status="identified",
+                location_description=elements[:500],
+                clash_result_id=result_id_s,
+                metadata_={
+                    "source": "clash",
+                    "source_event": "clash.high_severity.detected",
+                    "result_id": result_id_s,
+                    "run_id": str(data.get("run_id") or ""),
+                    "severity": severity,
+                    "trigger": trigger,
+                    "clash_type": clash_type,
+                },
+            )
+            session.add(ncr)
+            await session.commit()
+            logger.info(
+                "ncr: auto-raised NCR %s (%s) from clash %s (%s/%s)",
+                ncr.id,
+                ncr_number,
+                result_id_s,
+                severity,
+                trigger,
+            )
+            event_bus.publish_detached(
+                "ncr.created_from_clash",
+                {
+                    "ncr_id": str(ncr.id),
+                    "ncr_number": ncr_number,
+                    "project_id": str(project_id),
+                    "result_id": result_id_s,
+                    "severity": severity,
+                },
+                source_module="ncr",
+            )
+    except Exception:
+        logger.debug("ncr: _on_clash_high_severity failed", exc_info=True)
+
+
 # ── ncr.closed_with_cost_impact → MoC candidate fan-out ─────────────────
 
 
@@ -199,6 +315,7 @@ def register_subscribers() -> None:
     if getattr(event_bus, _SUBSCRIBED_FLAG, False):
         return
     event_bus.subscribe("qms.audit.finding_raised", _on_qms_finding_raised)
+    event_bus.subscribe("clash.high_severity.detected", _on_clash_high_severity)
     event_bus.subscribe("ncr.closed_with_cost_impact", _on_ncr_closed_with_cost_impact)
     setattr(event_bus, _SUBSCRIBED_FLAG, True)
-    logger.info("NCR: 2 cross-module subscriber(s) registered")
+    logger.info("NCR: 3 cross-module subscriber(s) registered")

@@ -66,6 +66,14 @@ class PunchItem(Base):
     rework_cost: Mapped[str | None] = mapped_column(String(40), nullable=True)
     rework_cost_currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD", server_default="USD")
 
+    # ── Clash linkage (cross-module) ──────────────────────────────────────
+    # When a punch item is auto-created from a high/critical clash, this
+    # column carries the originating ``ClashResult.id`` so the two rows stay
+    # traceable and the auto-creation stays idempotent (a duplicate event
+    # for the same clash must never spawn a second punch item). Nullable +
+    # no server_default: absent means "not clash-sourced", not "0".
+    clash_result_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+
     # ── Geo binding (cross-module) ────────────────────────────────────────
     # In addition to the sheet-pinned (page, location_x, location_y) drawing
     # coordinate, punch items can carry a world-space WGS84 pin so they

@@ -570,6 +570,84 @@ async def _on_file_comment_mention(event: Event) -> None:
         logger.debug("notifications: _on_file_comment_mention failed", exc_info=True)
 
 
+async def _on_validation_report_created(event: Event) -> None:
+    """``validation.report.created`` → one summary alert per failing report.
+
+    Fires after a validation run is persisted. We deliberately roll the
+    whole report up into a SINGLE notification (with the error/warning
+    counts in the body) rather than one-per-rule, so a report with 40
+    failing rules does not bury the bell.
+
+    Recipients:
+
+    * the project owner (so they always see the project's data-quality
+      regressions), and
+    * the user who ran the validation (``ValidationReport.created_by``),
+      so the person who triggered it gets the result back.
+
+    Only reports whose status is ``errors`` (or ``warnings``) notify;
+    clean ``passed`` reports stay quiet. Best-effort and isolated:
+    any failure is logged at debug and swallowed.
+    """
+    if not await _can_open_isolated_session():
+        return
+    data = event.data or {}
+    report_id = data.get("report_id")
+    if not report_id:
+        return
+    try:
+        from app.modules.validation.models import ValidationReport
+
+        async with async_session_factory() as session:
+            report = await session.get(ValidationReport, uuid_from_str(str(report_id)))
+            if report is None:
+                return
+            status = str(report.status or "").strip()
+            # Only surface reports that actually need attention. A clean
+            # pass produces no notification noise.
+            if status not in {"errors", "warnings"}:
+                return
+
+            targets: set[str] = set()
+            if report.project_id:
+                owner_id = await _resolve_project_owner(session, str(report.project_id))
+                if owner_id:
+                    targets.add(owner_id)
+            if report.created_by:
+                targets.add(str(report.created_by))
+            if not targets:
+                return
+
+            notification_type = "validation_errors" if status == "errors" else "validation_warnings"
+            svc = NotificationService(session)
+            await svc.notify_users(
+                list(targets),
+                notification_type=notification_type,
+                title_key="notifications.validation.report.title",
+                body_key="notifications.validation.report.body",
+                body_context={
+                    "status": status,
+                    "error_count": report.error_count,
+                    "warning_count": report.warning_count,
+                    "target_type": report.target_type or "",
+                },
+                entity_type="validation_report",
+                entity_id=str(report.id),
+                action_url=f"/validation?report={report.id}",
+                metadata={
+                    "project_id": str(report.project_id or ""),
+                    "target_type": report.target_type or "",
+                    "target_id": report.target_id or "",
+                    "status": status,
+                    "error_count": report.error_count,
+                    "warning_count": report.warning_count,
+                },
+            )
+            await session.commit()
+    except Exception:
+        logger.debug("notifications: _on_validation_report_created failed", exc_info=True)
+
+
 async def _on_clash_high_severity(event: Event) -> None:
     """``clash.high_severity.detected`` → alert the relevant users.
 
@@ -661,6 +739,8 @@ _SUBSCRIPTIONS: list[tuple[str, callable]] = [  # type: ignore[type-arg]
     ("file_comments.mention.created", _on_file_comment_mention),
     # Clash coordination: alert relevant users on a high/critical clash
     ("clash.high_severity.detected", _on_clash_high_severity),
+    # Validation: roll a failing validation report up into one alert
+    ("validation.report.created", _on_validation_report_created),
 ]
 
 
