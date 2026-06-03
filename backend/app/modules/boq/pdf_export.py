@@ -46,6 +46,12 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from app.core.pdf_fonts import BODY_FONT, BOLD_FONT, register_pdf_fonts
+
+# Register the bundled Unicode (DejaVu) faces with reportlab. Idempotent and
+# safe at import time because reportlab is imported at module level here.
+register_pdf_fonts()
+
 # Page dimensions
 PAGE_WIDTH, PAGE_HEIGHT = A4
 MARGIN_LEFT = 20 * mm
@@ -127,7 +133,7 @@ def _build_styles() -> dict[str, ParagraphStyle]:
         "brand": ParagraphStyle(
             "Brand",
             parent=base["Normal"],
-            fontName="Helvetica-Bold",
+            fontName=BOLD_FONT,
             fontSize=22,
             alignment=TA_CENTER,
             textColor=colors.HexColor("#1a1a2e"),
@@ -136,7 +142,7 @@ def _build_styles() -> dict[str, ParagraphStyle]:
         "title": ParagraphStyle(
             "CoverTitle",
             parent=base["Normal"],
-            fontName="Helvetica-Bold",
+            fontName=BOLD_FONT,
             fontSize=18,
             alignment=TA_CENTER,
             textColor=colors.HexColor("#16213e"),
@@ -145,7 +151,7 @@ def _build_styles() -> dict[str, ParagraphStyle]:
         "subtitle": ParagraphStyle(
             "CoverSubtitle",
             parent=base["Normal"],
-            fontName="Helvetica",
+            fontName=BODY_FONT,
             fontSize=12,
             alignment=TA_CENTER,
             textColor=colors.HexColor("#333333"),
@@ -154,7 +160,7 @@ def _build_styles() -> dict[str, ParagraphStyle]:
         "info_label": ParagraphStyle(
             "InfoLabel",
             parent=base["Normal"],
-            fontName="Helvetica",
+            fontName=BODY_FONT,
             fontSize=10,
             textColor=colors.HexColor("#666666"),
             alignment=TA_LEFT,
@@ -162,7 +168,7 @@ def _build_styles() -> dict[str, ParagraphStyle]:
         "info_value": ParagraphStyle(
             "InfoValue",
             parent=base["Normal"],
-            fontName="Helvetica-Bold",
+            fontName=BOLD_FONT,
             fontSize=10,
             textColor=colors.HexColor("#1a1a2e"),
             alignment=TA_LEFT,
@@ -170,7 +176,7 @@ def _build_styles() -> dict[str, ParagraphStyle]:
         "summary_label": ParagraphStyle(
             "SummaryLabel",
             parent=base["Normal"],
-            fontName="Helvetica",
+            fontName=BODY_FONT,
             fontSize=11,
             textColor=colors.HexColor("#333333"),
             alignment=TA_LEFT,
@@ -178,7 +184,7 @@ def _build_styles() -> dict[str, ParagraphStyle]:
         "summary_value": ParagraphStyle(
             "SummaryValue",
             parent=base["Normal"],
-            fontName="Helvetica-Bold",
+            fontName=BOLD_FONT,
             fontSize=11,
             textColor=colors.HexColor("#1a1a2e"),
             alignment=TA_RIGHT,
@@ -186,7 +192,7 @@ def _build_styles() -> dict[str, ParagraphStyle]:
         "summary_total_label": ParagraphStyle(
             "SummaryTotalLabel",
             parent=base["Normal"],
-            fontName="Helvetica-Bold",
+            fontName=BOLD_FONT,
             fontSize=12,
             textColor=colors.HexColor("#1a1a2e"),
             alignment=TA_LEFT,
@@ -194,7 +200,7 @@ def _build_styles() -> dict[str, ParagraphStyle]:
         "summary_total_value": ParagraphStyle(
             "SummaryTotalValue",
             parent=base["Normal"],
-            fontName="Helvetica-Bold",
+            fontName=BOLD_FONT,
             fontSize=12,
             textColor=colors.HexColor("#1a1a2e"),
             alignment=TA_RIGHT,
@@ -202,14 +208,14 @@ def _build_styles() -> dict[str, ParagraphStyle]:
         "section_header": ParagraphStyle(
             "SectionHeader",
             parent=base["Normal"],
-            fontName="Helvetica-Bold",
+            fontName=BOLD_FONT,
             fontSize=9,
             textColor=colors.HexColor("#1a1a2e"),
         ),
         "cell": ParagraphStyle(
             "Cell",
             parent=base["Normal"],
-            fontName="Helvetica",
+            fontName=BODY_FONT,
             fontSize=8,
             textColor=colors.HexColor("#333333"),
             leading=10,
@@ -217,7 +223,7 @@ def _build_styles() -> dict[str, ParagraphStyle]:
         "cell_right": ParagraphStyle(
             "CellRight",
             parent=base["Normal"],
-            fontName="Helvetica",
+            fontName=BODY_FONT,
             fontSize=8,
             textColor=colors.HexColor("#333333"),
             alignment=TA_RIGHT,
@@ -226,7 +232,7 @@ def _build_styles() -> dict[str, ParagraphStyle]:
         "cell_bold_right": ParagraphStyle(
             "CellBoldRight",
             parent=base["Normal"],
-            fontName="Helvetica-Bold",
+            fontName=BOLD_FONT,
             fontSize=8,
             textColor=colors.HexColor("#333333"),
             alignment=TA_RIGHT,
@@ -235,7 +241,7 @@ def _build_styles() -> dict[str, ParagraphStyle]:
         "subtotal_label": ParagraphStyle(
             "SubtotalLabel",
             parent=base["Normal"],
-            fontName="Helvetica-Oblique",
+            fontName=BODY_FONT,
             fontSize=8,
             textColor=colors.HexColor("#444444"),
             alignment=TA_RIGHT,
@@ -244,7 +250,7 @@ def _build_styles() -> dict[str, ParagraphStyle]:
         "subtotal_value": ParagraphStyle(
             "SubtotalValue",
             parent=base["Normal"],
-            fontName="Helvetica-BoldOblique",
+            fontName=BOLD_FONT,
             fontSize=8,
             textColor=colors.HexColor("#333333"),
             alignment=TA_RIGHT,
@@ -253,7 +259,7 @@ def _build_styles() -> dict[str, ParagraphStyle]:
         "footer": ParagraphStyle(
             "Footer",
             parent=base["Normal"],
-            fontName="Helvetica",
+            fontName=BODY_FONT,
             fontSize=7,
             textColor=colors.HexColor("#999999"),
         ),
@@ -273,7 +279,7 @@ def _make_header_footer(
 
     def _header(canvas: Any, _doc: Any) -> None:
         canvas.saveState()
-        canvas.setFont("Helvetica", 8)
+        canvas.setFont(BODY_FONT, 8)
         canvas.setFillColor(colors.HexColor("#666666"))
         text = f"{project_name}  \u2014  {boq_name}"
         canvas.drawString(MARGIN_LEFT, PAGE_HEIGHT - 15 * mm, text)
@@ -287,7 +293,7 @@ def _make_header_footer(
     def _footer(canvas: Any, doc: Any) -> None:
         canvas.saveState()
         # Left side: brand
-        canvas.setFont("Helvetica", 7)
+        canvas.setFont(BODY_FONT, 7)
         canvas.setFillColor(colors.HexColor("#999999"))
         canvas.drawString(MARGIN_LEFT, 10 * mm, f"OpenConstructionERP  |  Generated: {generated_date}")
         # Right side: page number
@@ -745,7 +751,7 @@ def _build_boq_table(
         # Header row
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a1a2e")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTNAME", (0, 0), (-1, 0), BOLD_FONT),
         ("FONTSIZE", (0, 0), (-1, 0), 9),
         # Global
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -1054,7 +1060,7 @@ def generate_boq_pdf_simple(
     summary_style_commands: list[Any] = [
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a1a2e")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTNAME", (0, 0), (-1, 0), BOLD_FONT),
         ("FONTSIZE", (0, 0), (-1, 0), 9),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("TOPPADDING", (0, 0), (-1, -1), 2 * mm),

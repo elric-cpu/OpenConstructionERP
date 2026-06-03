@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
 from app.core.i18n import get_locale
+from app.core.pdf_fonts import BODY_FONT, BOLD_FONT, register_pdf_fonts
 from app.core.validation.messages import translate
 from app.modules.property_dev.models import (
     Block,
@@ -5643,6 +5644,8 @@ def _render_regulator_pdf(
         TableStyle,
     )
 
+    register_pdf_fonts()
+
     buf = BytesIO()
     doc = SimpleDocTemplate(
         buf,
@@ -5655,6 +5658,9 @@ def _render_regulator_pdf(
         author="OpenConstructionERP / DataDrivenConstruction",
     )
     styles = getSampleStyleSheet()
+    styles["Title"].fontName = BOLD_FONT
+    styles["Normal"].fontName = BODY_FONT
+    styles["Italic"].fontName = BODY_FONT
     story = [
         Paragraph(
             f"<b>{regulator} — Quarterly Disclosure ({quarter})</b>",
@@ -5662,7 +5668,7 @@ def _render_regulator_pdf(
         ),
         Spacer(1, 0.6 * cm),
         Paragraph(
-            f"<b>Development:</b> {development_name} (<font face='Courier'>{development_code}</font>)",
+            f"<b>Development:</b> {development_name} (<font face='{BODY_FONT}'>{development_code}</font>)",
             styles["Normal"],
         ),
         Paragraph(
@@ -5684,7 +5690,7 @@ def _render_regulator_pdf(
             [
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f2937")),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTNAME", (0, 0), (-1, 0), BOLD_FONT),
                 ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
                 ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.HexColor("#f3f4f6"), colors.white]),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),

@@ -111,6 +111,8 @@ def _build_cover_pdf(transmittal: FileTransmittal) -> bytes | None:
             Table,
             TableStyle,
         )
+
+        from app.core.pdf_fonts import BODY_FONT, BOLD_FONT, register_pdf_fonts
     except Exception:  # noqa: BLE001 — optional dep
         logger.debug(
             "reportlab unavailable; transmittal cover will be TXT",
@@ -119,6 +121,7 @@ def _build_cover_pdf(transmittal: FileTransmittal) -> bytes | None:
         return None
 
     try:
+        register_pdf_fonts()
         buf = BytesIO()
         doc = SimpleDocTemplate(
             buf,
@@ -131,6 +134,9 @@ def _build_cover_pdf(transmittal: FileTransmittal) -> bytes | None:
             author="OpenConstructionERP",
         )
         styles = getSampleStyleSheet()
+        styles["Title"].fontName = BOLD_FONT
+        styles["Heading3"].fontName = BOLD_FONT
+        styles["BodyText"].fontName = BODY_FONT
         story: list = []
         story.append(
             Paragraph(
@@ -152,8 +158,8 @@ def _build_cover_pdf(transmittal: FileTransmittal) -> bytes | None:
         tbl.setStyle(
             TableStyle(
                 [
-                    ("FONT", (0, 0), (-1, -1), "Helvetica", 9),
-                    ("FONT", (0, 0), (0, -1), "Helvetica-Bold", 9),
+                    ("FONT", (0, 0), (-1, -1), BODY_FONT, 9),
+                    ("FONT", (0, 0), (0, -1), BOLD_FONT, 9),
                     ("VALIGN", (0, 0), (-1, -1), "TOP"),
                     (
                         "LINEBELOW",
@@ -189,8 +195,8 @@ def _build_cover_pdf(transmittal: FileTransmittal) -> bytes | None:
             items_tbl.setStyle(
                 TableStyle(
                     [
-                        ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 9),
-                        ("FONT", (0, 1), (-1, -1), "Helvetica", 9),
+                        ("FONT", (0, 0), (-1, 0), BOLD_FONT, 9),
+                        ("FONT", (0, 1), (-1, -1), BODY_FONT, 9),
                         ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
                         (
                             "GRID",
@@ -220,8 +226,8 @@ def _build_cover_pdf(transmittal: FileTransmittal) -> bytes | None:
             r_tbl.setStyle(
                 TableStyle(
                     [
-                        ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 9),
-                        ("FONT", (0, 1), (-1, -1), "Helvetica", 9),
+                        ("FONT", (0, 0), (-1, 0), BOLD_FONT, 9),
+                        ("FONT", (0, 1), (-1, -1), BODY_FONT, 9),
                         ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
                         (
                             "GRID",

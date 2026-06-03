@@ -42,6 +42,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.pdf_fonts import BODY_FONT, BOLD_FONT, register_pdf_fonts
 from app.modules.property_dev.models import (
     Buyer,
     Development,
@@ -353,6 +354,8 @@ def _render_pdf(
         )
         return marker.encode("utf-8")
 
+    register_pdf_fonts()
+
     buf = BytesIO()
     doc = SimpleDocTemplate(
         buf,
@@ -364,6 +367,10 @@ def _render_pdf(
         title=title,
     )
     styles = getSampleStyleSheet()
+    styles["Title"].fontName = BOLD_FONT
+    styles["Heading2"].fontName = BOLD_FONT
+    styles["Heading3"].fontName = BOLD_FONT
+    styles["BodyText"].fontName = BODY_FONT
     story: list[Any] = [
         Paragraph(title, styles["Title"]),
         Paragraph(subtitle, styles["Heading2"]),
@@ -386,7 +393,8 @@ def _render_pdf(
                 [
                     ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f2937")),
                     ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTNAME", (0, 0), (-1, 0), BOLD_FONT),
+                    ("FONTNAME", (0, 1), (-1, -1), BODY_FONT),
                     ("FONTSIZE", (0, 0), (-1, -1), 9),
                     ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
                     ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#f3f4f6")),
@@ -412,6 +420,7 @@ def _render_pdf(
         TableStyle(
             [
                 ("LINEBELOW", (0, 0), (-1, 0), 0.5, colors.black),
+                ("FONTNAME", (0, 0), (-1, -1), BODY_FONT),
                 ("FONTSIZE", (0, 0), (-1, -1), 9),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ],

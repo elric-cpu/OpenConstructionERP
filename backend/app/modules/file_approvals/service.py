@@ -72,12 +72,16 @@ def _burn_pdf_stamp(
         from reportlab.lib.colors import HexColor
         from reportlab.lib.pagesizes import LETTER
         from reportlab.pdfgen import canvas
+
+        from app.core.pdf_fonts import BODY_FONT, BOLD_FONT, register_pdf_fonts
     except Exception:  # noqa: BLE001 — optional deps
         logger.debug(
             "pypdf / reportlab unavailable; sidecar fallback for stamp",
             exc_info=True,
         )
         return None
+
+    register_pdf_fonts()
 
     try:
         reader = PdfReader(BytesIO(pdf_bytes))
@@ -108,9 +112,9 @@ def _burn_pdf_stamp(
         x0 = max(page_w - stamp_w - 36, 24)
         y0 = max(page_h - stamp_h - 36, 24)
         c.rect(x0, y0, stamp_w, stamp_h, stroke=1, fill=0)
-        c.setFont("Helvetica-Bold", 14)
+        c.setFont(BOLD_FONT, 14)
         c.drawString(x0 + 12, y0 + stamp_h - 22, template_text[:40])
-        c.setFont("Helvetica", 9)
+        c.setFont(BODY_FONT, 9)
         c.drawString(x0 + 12, y0 + stamp_h - 42, f"Approved by {approver[:32]}")
         c.drawString(x0 + 12, y0 + stamp_h - 58, decision_date)
         c.showPage()

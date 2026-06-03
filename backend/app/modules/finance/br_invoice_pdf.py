@@ -57,6 +57,10 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from app.core.pdf_fonts import BODY_FONT, BOLD_FONT, register_pdf_fonts
+
+register_pdf_fonts()
+
 PAGE_WIDTH, PAGE_HEIGHT = A4
 MARGIN_LEFT = 18 * mm
 MARGIN_RIGHT = 18 * mm
@@ -140,7 +144,7 @@ def _build_styles() -> dict[str, ParagraphStyle]:
         "title": ParagraphStyle(
             "BRTitle",
             parent=base["Normal"],
-            fontName="Helvetica-Bold",
+            fontName=BOLD_FONT,
             fontSize=16,
             alignment=TA_CENTER,
             textColor=colors.HexColor("#1a1a2e"),
@@ -149,7 +153,7 @@ def _build_styles() -> dict[str, ParagraphStyle]:
         "subtitle": ParagraphStyle(
             "BRSubtitle",
             parent=base["Normal"],
-            fontName="Helvetica",
+            fontName=BODY_FONT,
             fontSize=9,
             alignment=TA_CENTER,
             textColor=colors.HexColor("#666666"),
@@ -158,7 +162,7 @@ def _build_styles() -> dict[str, ParagraphStyle]:
         "section": ParagraphStyle(
             "BRSection",
             parent=base["Normal"],
-            fontName="Helvetica-Bold",
+            fontName=BOLD_FONT,
             fontSize=10,
             textColor=colors.HexColor("#1a1a2e"),
             spaceBefore=3 * mm,
@@ -167,21 +171,21 @@ def _build_styles() -> dict[str, ParagraphStyle]:
         "label": ParagraphStyle(
             "BRLabel",
             parent=base["Normal"],
-            fontName="Helvetica",
+            fontName=BODY_FONT,
             fontSize=8,
             textColor=colors.HexColor("#666666"),
         ),
         "value": ParagraphStyle(
             "BRValue",
             parent=base["Normal"],
-            fontName="Helvetica-Bold",
+            fontName=BOLD_FONT,
             fontSize=9,
             textColor=colors.HexColor("#1a1a2e"),
         ),
         "cell": ParagraphStyle(
             "BRCell",
             parent=base["Normal"],
-            fontName="Helvetica",
+            fontName=BODY_FONT,
             fontSize=8,
             textColor=colors.HexColor("#222222"),
             alignment=TA_LEFT,
@@ -189,7 +193,7 @@ def _build_styles() -> dict[str, ParagraphStyle]:
         "cell_right": ParagraphStyle(
             "BRCellRight",
             parent=base["Normal"],
-            fontName="Helvetica",
+            fontName=BODY_FONT,
             fontSize=8,
             textColor=colors.HexColor("#222222"),
             alignment=TA_RIGHT,
@@ -197,7 +201,7 @@ def _build_styles() -> dict[str, ParagraphStyle]:
         "disclaimer": ParagraphStyle(
             "BRDisclaimer",
             parent=base["Normal"],
-            fontName="Helvetica-Oblique",
+            fontName=BODY_FONT,
             fontSize=7,
             textColor=colors.HexColor("#888888"),
             alignment=TA_CENTER,

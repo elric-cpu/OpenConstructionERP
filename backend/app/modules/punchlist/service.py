@@ -899,6 +899,10 @@ def _build_reportlab_pdf(project_id: uuid.UUID, items: list[PunchItem]) -> bytes
         TableStyle,
     )
 
+    from app.core.pdf_fonts import BODY_FONT, BOLD_FONT, register_pdf_fonts
+
+    register_pdf_fonts()
+
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -912,8 +916,11 @@ def _build_reportlab_pdf(project_id: uuid.UUID, items: list[PunchItem]) -> bytes
 
     styles = getSampleStyleSheet()
     h1 = styles["Heading1"]
+    h1.fontName = BOLD_FONT
     h2 = styles["Heading2"]
+    h2.fontName = BOLD_FONT
     body = styles["BodyText"]
+    body.fontName = BODY_FONT
     small = ParagraphStyle(
         "punch_small",
         parent=body,
@@ -973,9 +980,9 @@ def _build_reportlab_pdf(project_id: uuid.UUID, items: list[PunchItem]) -> bytes
         meta_table.setStyle(
             TableStyle(
                 [
-                    ("FONT", (0, 0), (-1, -1), "Helvetica", 9),
-                    ("FONT", (0, 0), (0, -1), "Helvetica-Bold", 9),
-                    ("FONT", (2, 0), (2, -1), "Helvetica-Bold", 9),
+                    ("FONT", (0, 0), (-1, -1), BODY_FONT, 9),
+                    ("FONT", (0, 0), (0, -1), BOLD_FONT, 9),
+                    ("FONT", (2, 0), (2, -1), BOLD_FONT, 9),
                     ("TEXTCOLOR", (0, 0), (0, -1), colors.HexColor("#444444")),
                     ("TEXTCOLOR", (2, 0), (2, -1), colors.HexColor("#444444")),
                     ("BOTTOMPADDING", (0, 0), (-1, -1), 3),

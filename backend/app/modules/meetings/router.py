@@ -1391,8 +1391,11 @@ async def export_meeting_pdf(
     )
     from sqlalchemy import select
 
+    from app.core.pdf_fonts import BODY_FONT, BOLD_FONT, register_pdf_fonts
     from app.modules.meetings.models import Meeting
     from app.modules.projects.models import Project
+
+    register_pdf_fonts()
 
     result = await session.execute(select(Meeting).where(Meeting.id == meeting_id))
     meeting = result.scalar_one_or_none()
@@ -1413,7 +1416,7 @@ async def export_meeting_pdf(
     style_title = ParagraphStyle(
         "MeetingTitle",
         parent=styles["Normal"],
-        fontName="Helvetica-Bold",
+        fontName=BOLD_FONT,
         fontSize=16,
         alignment=TA_CENTER,
         spaceAfter=4 * mm,
@@ -1421,7 +1424,7 @@ async def export_meeting_pdf(
     style_subtitle = ParagraphStyle(
         "MeetingSubtitle",
         parent=styles["Normal"],
-        fontName="Helvetica",
+        fontName=BODY_FONT,
         fontSize=10,
         alignment=TA_CENTER,
         textColor=colors.HexColor("#555555"),
@@ -1430,7 +1433,7 @@ async def export_meeting_pdf(
     style_heading = ParagraphStyle(
         "SectionHeading",
         parent=styles["Normal"],
-        fontName="Helvetica-Bold",
+        fontName=BOLD_FONT,
         fontSize=12,
         spaceBefore=6 * mm,
         spaceAfter=3 * mm,
@@ -1438,7 +1441,7 @@ async def export_meeting_pdf(
     style_body = ParagraphStyle(
         "Body",
         parent=styles["Normal"],
-        fontName="Helvetica",
+        fontName=BODY_FONT,
         fontSize=9,
         leading=12,
         alignment=TA_LEFT,
@@ -1446,7 +1449,7 @@ async def export_meeting_pdf(
     style_small = ParagraphStyle(
         "Small",
         parent=styles["Normal"],
-        fontName="Helvetica",
+        fontName=BODY_FONT,
         fontSize=8,
         textColor=colors.HexColor("#777777"),
     )
@@ -1470,8 +1473,8 @@ async def export_meeting_pdf(
     info_table.setStyle(
         TableStyle(
             [
-                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-                ("FONTNAME", (1, 0), (1, -1), "Helvetica"),
+                ("FONTNAME", (0, 0), (0, -1), BOLD_FONT),
+                ("FONTNAME", (1, 0), (1, -1), BODY_FONT),
                 ("FONTSIZE", (0, 0), (-1, -1), 9),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
@@ -1504,7 +1507,7 @@ async def export_meeting_pdf(
             TableStyle(
                 [
                     ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f0f0f0")),
-                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTNAME", (0, 0), (-1, 0), BOLD_FONT),
                     ("FONTSIZE", (0, 0), (-1, -1), 9),
                     ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
                     ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -1565,7 +1568,7 @@ async def export_meeting_pdf(
             TableStyle(
                 [
                     ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f0f0f0")),
-                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTNAME", (0, 0), (-1, 0), BOLD_FONT),
                     ("FONTSIZE", (0, 0), (-1, -1), 9),
                     ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
                     ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -1587,7 +1590,7 @@ async def export_meeting_pdf(
 
     def _header_footer(canvas_obj, doc):  # type: ignore[no-untyped-def]
         canvas_obj.saveState()
-        canvas_obj.setFont("Helvetica", 7)
+        canvas_obj.setFont(BODY_FONT, 7)
         canvas_obj.setFillColor(colors.HexColor("#999999"))
         canvas_obj.drawString(MARGIN, PAGE_HEIGHT - 12 * mm, f"{project_name} — {meeting.title}")
         canvas_obj.drawRightString(

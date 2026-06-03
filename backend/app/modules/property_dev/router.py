@@ -35,6 +35,7 @@ from app.core.file_signature import (
     require as require_signature,
 )
 from app.core.i18n import get_locale
+from app.core.pdf_fonts import BODY_FONT, register_pdf_fonts
 from app.core.validation.messages import translate
 from app.dependencies import CurrentUserPayload, RequirePermission, SessionDep
 from app.modules.portal.dependencies import RequirePortalSession
@@ -1555,16 +1556,17 @@ async def warranty_claim_pdf(
         from reportlab.lib.pagesizes import A4
         from reportlab.pdfgen import canvas as _canvas
 
+        register_pdf_fonts()
         buf = BytesIO()
         c = _canvas.Canvas(buf, pagesize=A4)
-        c.setFont("Helvetica", 10)
+        c.setFont(BODY_FONT, 10)
         y = 800
         for ln in body.splitlines():
             c.drawString(50, y, ln[:110])
             y -= 14
             if y < 50:
                 c.showPage()
-                c.setFont("Helvetica", 10)
+                c.setFont(BODY_FONT, 10)
                 y = 800
         c.save()
         pdf_bytes = buf.getvalue()

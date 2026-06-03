@@ -73,6 +73,14 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from app.core.pdf_fonts import BODY_FONT, BOLD_FONT, register_pdf_fonts
+
+# These property documents (contracts, receipts, certificates) ship in every
+# locale, including Cyrillic (ru/bg/uk). reportlab's built-in Helvetica is
+# Latin-1 only and would render those as empty boxes, so swap in the bundled
+# DejaVu Sans Unicode faces. Registration is idempotent and runs once.
+register_pdf_fonts()
+
 # ── Constants ───────────────────────────────────────────────────────────
 
 #: All locales offered in the document-templates UI picker. Locales
@@ -391,7 +399,7 @@ def _styles(locale: str) -> dict[str, ParagraphStyle]:
     title = ParagraphStyle(
         "OE_Title",
         parent=base["Title"],
-        fontName="Helvetica-Bold",
+        fontName=BOLD_FONT,
         fontSize=20,
         leading=24,
         alignment=TA_CENTER,
@@ -401,7 +409,7 @@ def _styles(locale: str) -> dict[str, ParagraphStyle]:
     subtitle = ParagraphStyle(
         "OE_Subtitle",
         parent=base["Heading2"],
-        fontName="Helvetica",
+        fontName=BODY_FONT,
         fontSize=12,
         leading=16,
         alignment=TA_CENTER,
@@ -411,7 +419,7 @@ def _styles(locale: str) -> dict[str, ParagraphStyle]:
     heading = ParagraphStyle(
         "OE_Heading",
         parent=base["Heading3"],
-        fontName="Helvetica-Bold",
+        fontName=BOLD_FONT,
         fontSize=12,
         leading=15,
         alignment=align_body,
@@ -423,7 +431,7 @@ def _styles(locale: str) -> dict[str, ParagraphStyle]:
     body = ParagraphStyle(
         "OE_Body",
         parent=base["Normal"],
-        fontName="Helvetica",
+        fontName=BODY_FONT,
         fontSize=10,
         leading=14,
         alignment=align_body,
@@ -440,7 +448,7 @@ def _styles(locale: str) -> dict[str, ParagraphStyle]:
     label = ParagraphStyle(
         "OE_Label",
         parent=body,
-        fontName="Helvetica-Bold",
+        fontName=BOLD_FONT,
         textColor=colors.HexColor("#374151"),
     )
     clause = ParagraphStyle(
@@ -503,7 +511,7 @@ def _build_page_handler(ctx: _PageContext):
         canvas.saveState()
 
         # Header — developer + unit code top-right.
-        canvas.setFont("Helvetica-Bold", 14)
+        canvas.setFont(BOLD_FONT, 14)
         canvas.setFillColor(colors.HexColor("#111827"))
         canvas.drawString(
             PAGE_MARGIN_MM * mm,
@@ -512,7 +520,7 @@ def _build_page_handler(ctx: _PageContext):
         )
 
         if ctx.unit_code:
-            canvas.setFont("Helvetica", 10)
+            canvas.setFont(BODY_FONT, 10)
             canvas.setFillColor(colors.HexColor("#374151"))
             canvas.drawRightString(
                 A4[0] - PAGE_MARGIN_MM * mm,
@@ -535,14 +543,14 @@ def _build_page_handler(ctx: _PageContext):
             canvas.saveState()
             canvas.translate(A4[0] / 2, A4[1] / 2)
             canvas.rotate(45)
-            canvas.setFont("Helvetica-Bold", 96)
+            canvas.setFont(BOLD_FONT, 96)
             canvas.setFillColor(colors.Color(0.78, 0.27, 0.27, alpha=0.18))
             text = _t(ctx.locale, "common.watermark_draft", "DRAFT")
             canvas.drawCentredString(0, 0, text)
             canvas.restoreState()
 
         # Footer — doc ref + page X (real count appended by NumberedCanvas)
-        canvas.setFont("Helvetica", 8)
+        canvas.setFont(BODY_FONT, 8)
         canvas.setFillColor(colors.HexColor("#6b7280"))
         gen_str = _t(ctx.locale, "common.generated_at", "Generated {timestamp} UTC").replace(
             "{timestamp}", ctx.generated_at
@@ -589,7 +597,7 @@ class _NumberedCanvas(Canvas):
 
     def _draw_page_number(self, n_pages: int) -> None:
         self.saveState()
-        self.setFont("Helvetica", 8)
+        self.setFont(BODY_FONT, 8)
         self.setFillColor(colors.HexColor("#6b7280"))
         template = _t(self._locale, "common.page_of", "Page {page} of {total}")
         label = template.replace("{page}", str(self._pageNumber)).replace("{total}", str(n_pages))
@@ -739,8 +747,8 @@ def _render(
 def _kv_table_style() -> TableStyle:
     return TableStyle(
         [
-            ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-            ("FONTNAME", (1, 0), (1, -1), "Helvetica"),
+            ("FONTNAME", (0, 0), (0, -1), BOLD_FONT),
+            ("FONTNAME", (1, 0), (1, -1), BODY_FONT),
             ("FONTSIZE", (0, 0), (-1, -1), 10),
             ("TEXTCOLOR", (0, 0), (0, -1), colors.HexColor("#374151")),
             ("TEXTCOLOR", (1, 0), (1, -1), colors.HexColor("#111827")),
@@ -759,7 +767,7 @@ def _grid_table_style() -> TableStyle:
         [
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f2937")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTNAME", (0, 0), (-1, 0), BOLD_FONT),
             ("FONTSIZE", (0, 0), (-1, -1), 9),
             ("ALIGN", (0, 0), (-1, 0), "LEFT"),
             ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#d1d5db")),

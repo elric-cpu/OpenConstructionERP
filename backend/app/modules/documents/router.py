@@ -1483,19 +1483,23 @@ def _materialize_demo_pdf_placeholder(target: Path, name: str, demo_id: str | No
     from reportlab.lib.pagesizes import A4  # type: ignore[import-untyped]
     from reportlab.pdfgen import canvas as pdf_canvas  # type: ignore[import-untyped]
 
+    from app.core.pdf_fonts import BODY_FONT, BOLD_FONT, register_pdf_fonts
+
+    register_pdf_fonts()
+
     width, height = A4
     c = pdf_canvas.Canvas(str(target), pagesize=A4)
     c.setTitle(name)
-    c.setFont("Helvetica-Bold", 18)
+    c.setFont(BOLD_FONT, 18)
     c.drawString(72, height - 90, name[:90])
-    c.setFont("Helvetica", 11)
+    c.setFont(BODY_FONT, 11)
     c.drawString(72, height - 130, "Demo placeholder document")
     if demo_id:
         c.drawString(72, height - 150, f"Project: {demo_id}")
-    c.setFont("Helvetica", 10)
+    c.setFont(BODY_FONT, 10)
     c.drawString(72, height - 200, "This file is auto-generated for the demo project.")
     c.drawString(72, height - 215, "Upload your own document to replace it.")
-    c.setFont("Helvetica-Oblique", 9)
+    c.setFont(BODY_FONT, 9)
     c.drawString(72, 60, "OpenConstructionERP — open-source construction cost platform")
     c.showPage()
     c.save()

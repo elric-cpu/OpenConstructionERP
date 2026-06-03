@@ -22,6 +22,8 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
+from app.core.pdf_fonts import BODY_FONT, BOLD_FONT, register_pdf_fonts
+
 logger = logging.getLogger(__name__)
 
 
@@ -110,6 +112,10 @@ def build_pdf_report(
             fh.write(b"%PDF-1.4\n% reportlab missing - see logs\n")
         return path, os.path.getsize(path)
 
+    # Register the bundled Unicode (DejaVu) faces so Cyrillic / Greek / accented
+    # Latin text renders instead of tofu boxes. Idempotent; safe to call here.
+    register_pdf_fonts()
+
     doc = SimpleDocTemplate(
         path,
         pagesize=landscape(A4),
@@ -120,6 +126,10 @@ def build_pdf_report(
         title=report_name,
     )
     styles = getSampleStyleSheet()
+    # The base styles default to Helvetica (Latin-1 only); point them at the
+    # registered Unicode faces so all rendered text uses them.
+    styles["Title"].fontName = BOLD_FONT
+    styles["BodyText"].fontName = BODY_FONT
     story: list[Any] = []
     story.append(Paragraph(report_name, styles["Title"]))
     if description:
@@ -154,7 +164,7 @@ def build_pdf_report(
             [
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f2937")),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTNAME", (0, 0), (-1, 0), BOLD_FONT),
                 ("FONTSIZE", (0, 0), (-1, -1), 8),
                 ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
                 ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#f3f4f6")),
