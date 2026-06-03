@@ -28,7 +28,7 @@ const EXPECTED_TRANSLATIONS: Record<string, Record<string, string>> = {
   hi: { material: 'सामग्री', labor: 'श्रम', equipment: 'उपकरण', operator: 'ऑपरेटर', subcontractor: 'उप-ठेकेदार', electricity: 'बिजली', composite: 'संयुक्त', other: 'अन्य' },
   tr: { material: 'Malzeme', labor: 'İşçilik', equipment: 'Ekipman', operator: 'Operatör', subcontractor: 'Taşeron', electricity: 'Elektrik', composite: 'Bileşik', other: 'Diğer' },
   it: { material: 'Materiale', labor: 'Manodopera', equipment: 'Attrezzatura', operator: 'Operatore', subcontractor: 'Subappaltatore', electricity: 'Elettricità', composite: 'Composto', other: 'Altro' },
-  nl: { material: 'Materiaal', labor: 'Arbeid', equipment: 'Materieel', operator: 'Operator', subcontractor: 'Onderaannemer', electricity: 'Elektriciteit', composite: 'Samengesteld', other: 'Overig' },
+  nl: { material: 'Materiaal', labor: 'Arbeid', equipment: 'Materieel', operator: 'Machinist', subcontractor: 'Onderaannemer', electricity: 'Elektriciteit', composite: 'Samengesteld', other: 'Overig' },
   pl: { material: 'Materiał', labor: 'Robocizna', equipment: 'Sprzęt', operator: 'Operator', subcontractor: 'Podwykonawca', electricity: 'Energia elektryczna', composite: 'Złożony', other: 'Inne' },
   cs: { material: 'Materiál', labor: 'Práce', equipment: 'Vybavení', operator: 'Obsluha', subcontractor: 'Subdodavatel', electricity: 'Elektřina', composite: 'Složená', other: 'Ostatní' },
   ja: { material: '資材', labor: '労務', equipment: '機械', operator: 'オペレーター', subcontractor: '下請', electricity: '電力', composite: '複合', other: 'その他' },
