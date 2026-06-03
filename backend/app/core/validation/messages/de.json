@@ -272,6 +272,7 @@
     "vendor_not_found": "Lieferant nicht gefunden",
     "template_not_found": "Vorlage nicht gefunden",
     "position_not_found": "Position nicht gefunden",
+    "boq_not_found": "Leistungsverzeichnis nicht gefunden",
     "session_not_found": "Sitzung nicht gefunden",
     "document_not_found": "Dokument nicht gefunden",
     "invitation_not_found": "Einladung nicht gefunden",

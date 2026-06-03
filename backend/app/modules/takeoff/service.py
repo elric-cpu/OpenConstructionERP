@@ -1174,7 +1174,12 @@ class TakeoffService:
             effective_scale = (
                 fields.get("scale_pixels_per_unit") if "scale_pixels_per_unit" in fields else item.scale_pixels_per_unit
             )
-            effective_depth = fields.get("depth") if "depth" in fields else item.depth
+            # A client sending ``depth: null`` would otherwise null the
+            # effective depth, force ``recompute_volume_value`` into its
+            # client-trust fallback, and slip an arbitrary ``volume`` into a
+            # BOQ quantity. Treat a ``None`` depth as "not provided" and fall
+            # back to the stored value so server volume validation still runs.
+            effective_depth = fields.get("depth") if fields.get("depth") is not None else item.depth
             client_volume = fields.get("volume", item.volume)
             fields["volume"] = recompute_volume_value(
                 measurement_type=effective_type,

@@ -22,7 +22,9 @@ async def on_startup() -> None:
     from app.modules.notifications.dispatcher import register_dispatchers
     from app.modules.notifications.events import register_notification_subscribers
     from app.modules.notifications.notification_worker import start_scheduler
+    from app.modules.notifications.permissions import register_notification_permissions
 
+    register_notification_permissions()
     register_notification_subscribers()
     register_dispatchers()
     try:

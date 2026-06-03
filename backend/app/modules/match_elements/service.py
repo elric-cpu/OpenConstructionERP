@@ -3091,6 +3091,19 @@ class MatchElementsService:
 
         # ── 1. Resolve target BOQ ────────────────────────────────────
         boq_id = spec.target_boq_id
+        if boq_id is not None:
+            # Cross-tenant guard: the caller-supplied ``target_boq_id`` must
+            # belong to THIS session's project. The router already verified
+            # the caller has access to the session's project, but without
+            # this check a caller could redirect the apply into another
+            # tenant's BOQ by passing its id. Reject the mismatch as 404 so
+            # we don't leak whether the foreign BOQ exists.
+            target_boq = await db.get(BOQ, boq_id)
+            if target_boq is None or target_boq.project_id != sess.project_id:
+                raise HTTPException(
+                    status_code=404,
+                    detail=translate("errors.boq_not_found", locale=get_locale()),
+                )
         if boq_id is None:
             stmt = select(BOQ).where(BOQ.project_id == sess.project_id).order_by(BOQ.created_at.asc())
             existing_boq = (await db.execute(stmt)).scalars().first()

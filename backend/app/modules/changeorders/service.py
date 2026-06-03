@@ -1064,10 +1064,37 @@ class ChangeOrderService:
         logger.info("Item deleted from change order %s: %s", order_code, item_id)
 
     async def _recalculate_cost_impact(self, order_id: uuid.UUID) -> None:
-        """Recalculate the total cost impact from all items."""
+        """Recalculate the total cost impact from all items.
+
+        Re-entrancy safe: the expected ``cost_impact`` is computed in a
+        single pass over ``sum(items.cost_delta)`` and only persisted when it
+        differs from the value already stored, so a concurrent retry that
+        sees the items already settled becomes a no-op rather than
+        re-running the writeback. On a flush failure the in-flight item
+        change is rolled back so a retry cannot double-count.
+        """
         items = await self.repo.list_items_for_order(order_id)
-        total = sum((_dec(item.cost_delta) for item in items), Decimal("0"))
-        await self.repo.update_fields(order_id, cost_impact=str(_round2(total)))
+        total = _round2(sum((_dec(item.cost_delta) for item in items), Decimal("0")))
+        expected = str(total)
+
+        order = await self.repo.get_by_id(order_id)
+        current = (order.cost_impact if order is not None else None) or "0"
+        # Compare on rounded Decimal so a "12.30" vs "12.3" representation
+        # difference does not trigger a spurious write. When the stored value
+        # already equals the recomputed total this is a no-op, which keeps a
+        # concurrent retry from re-running the budget writeback downstream.
+        if _round2(_dec(current)) == total:
+            return
+
+        try:
+            await self.repo.update_fields(order_id, cost_impact=expected)
+        except Exception:
+            # The caller has already added/deleted the line item that drove
+            # this recalculation; rolling back here unwinds that change too
+            # so a retried request re-derives the total from a clean slate
+            # rather than double-counting a partially applied delta.
+            await self.session.rollback()
+            raise
 
     # ── T3: Procore-style multi-step approval chain ──────────────────────
 

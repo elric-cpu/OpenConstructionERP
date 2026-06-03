@@ -43,6 +43,7 @@ from app.config import get_settings
 from app.dependencies import (
     CurrentUserId,
     CurrentUserPayload,
+    RequirePermission,
     SessionDep,
     decode_access_token,
 )
@@ -396,6 +397,7 @@ async def create_webhook_target(
     body: WebhookTargetCreate,
     payload: CurrentUserPayload,
     session: SessionDep,
+    _perm: None = Depends(RequirePermission("notifications.admin.webhooks")),
 ) -> WebhookTargetResponse:
     """‌⁠‍Admin-only: register a new webhook target."""
     _require_admin(payload)
@@ -418,6 +420,7 @@ async def update_webhook_target(
     body: WebhookTargetUpdate,
     payload: CurrentUserPayload,
     session: SessionDep,
+    _perm: None = Depends(RequirePermission("notifications.admin.webhooks")),
 ) -> WebhookTargetResponse:
     """‌⁠‍Admin-only: partial update on an existing webhook target."""
     _require_admin(payload)
@@ -453,6 +456,7 @@ async def delete_webhook_target(
     target_id: uuid.UUID,
     payload: CurrentUserPayload,
     session: SessionDep,
+    _perm: None = Depends(RequirePermission("notifications.admin.webhooks")),
 ) -> None:
     """‌⁠‍Admin-only: delete a webhook target."""
     _require_admin(payload)

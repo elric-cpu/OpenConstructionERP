@@ -480,10 +480,21 @@ class SupplierCatalogsService:
         )
         pl = await self.price_lists.create(pl)
 
+        # Batch-load every referenced CatalogItem in ONE query instead of a
+        # per-row get_by_sku (N+1). For a price list with thousands of rows
+        # this collapses thousands of round-trips into a single SELECT.
+        items_by_sku: dict[str, CatalogItem] = {}
+        if seen:
+            from sqlalchemy import select as _select
+
+            sku_stmt = _select(CatalogItem).where(CatalogItem.sku.in_(list(seen.keys())))
+            for found in (await self.session.execute(sku_stmt)).scalars().all():
+                items_by_sku[found.sku] = found
+
         imported = 0
         skipped = 0
         for sku, payload in seen.items():
-            item = await self.items.get_by_sku(sku)
+            item = items_by_sku.get(sku)
             if item is None:
                 errors.append(f"unknown sku '{sku}'")
                 skipped += 1
@@ -966,101 +977,110 @@ class SupplierCatalogsService:
                     ),
                 )
 
-        number = await self.grs.next_number()
-        gr = GoodsReceipt(
-            number=number,
-            po_id=data.po_id,
-            warehouse_id=data.warehouse_id,
-            received_at=data.received_at or _now_iso(),
-            received_by=user_id,
-            status="posted",
-            scan_method=data.scan_method,
-            photos_json=list(data.photos),
-            discrepancy_notes=data.discrepancy_notes,
-        )
-        gr = await self.grs.create(gr)
-
-        # Apply each line
+        # Post the GR header and every line inside ONE savepoint so a
+        # mid-loop failure (a bad stock update, a constraint violation on
+        # line 5 of 10) rolls back the GR header AND every line already
+        # applied, rather than leaving a half-posted GR behind while the PO
+        # status is later advanced. begin_nested() opens a SAVEPOINT inside
+        # the request's already-open transaction; on exit-without-error it
+        # releases the savepoint, on exception it rolls back to it and the
+        # error re-propagates (so the PO-status advance below never runs).
         low_stock_alerts: list[dict[str, Any]] = []
-        for gr_line in data.lines:
-            po_line = po_lines_by_id[gr_line.po_line_id]
-            accepted = (
-                gr_line.accepted_qty
-                if gr_line.accepted_qty is not None
-                else gr_line.received_qty - gr_line.rejected_qty
+        async with self.session.begin_nested():
+            number = await self.grs.next_number()
+            gr = GoodsReceipt(
+                number=number,
+                po_id=data.po_id,
+                warehouse_id=data.warehouse_id,
+                received_at=data.received_at or _now_iso(),
+                received_by=user_id,
+                status="posted",
+                scan_method=data.scan_method,
+                photos_json=list(data.photos),
+                discrepancy_notes=data.discrepancy_notes,
             )
-            if accepted < 0:
-                accepted = Decimal("0")
-            # Persist GR line
-            self.session.add(
-                GRLine(
-                    gr_id=gr.id,
-                    po_line_id=po_line.id,
-                    received_qty=gr_line.received_qty,
-                    accepted_qty=accepted,
-                    rejected_qty=gr_line.rejected_qty,
-                    batch_lot=gr_line.batch_lot,
-                    serial_numbers_json=(list(gr_line.serial_numbers) if gr_line.serial_numbers else None),
-                    notes=gr_line.notes,
+            gr = await self.grs.create(gr)
+
+            # Apply each line
+            for gr_line in data.lines:
+                po_line = po_lines_by_id[gr_line.po_line_id]
+                accepted = (
+                    gr_line.accepted_qty
+                    if gr_line.accepted_qty is not None
+                    else gr_line.received_qty - gr_line.rejected_qty
                 )
-            )
-            # Advance PO line counter
-            await self.pos.update_line(
-                po_line.id,
-                received_qty=po_line.received_qty + accepted,
-            )
-            # Update stock balance for accepted_qty only
-            if accepted > 0 and po_line.catalog_item_id is not None:
-                batch = gr_line.batch_lot or ""
-                balance = await self.stock.get_or_create_balance(
-                    warehouse_id=data.warehouse_id,
-                    catalog_item_id=po_line.catalog_item_id,
-                    batch_lot=batch,
-                )
-                # Weighted-average cost
-                prev_qty = balance.quantity_on_hand
-                prev_cost = balance.unit_cost_avg
-                new_qty = prev_qty + accepted
-                if new_qty > 0:
-                    new_cost = ((prev_qty * prev_cost) + (accepted * po_line.unit_price)) / new_qty
-                else:
-                    new_cost = po_line.unit_price
-                await self.stock.update_balance(
-                    balance.id,
-                    quantity_on_hand=new_qty,
-                    unit_cost_avg=new_cost,
-                    last_movement_at=_now_iso(),
-                )
-                # Movement audit
-                await self.stock.record_movement(
-                    StockMovement(
-                        warehouse_id=data.warehouse_id,
-                        catalog_item_id=po_line.catalog_item_id,
-                        movement_type="in",
-                        quantity=accepted,
-                        unit_cost=po_line.unit_price,
-                        reference_type="gr",
-                        reference_id=str(gr.id),
-                        batch_lot=batch or None,
-                        project_id=po.project_id,
-                        performed_by=user_id,
-                        performed_at=_now_iso(),
+                if accepted < 0:
+                    accepted = Decimal("0")
+                # Persist GR line
+                self.session.add(
+                    GRLine(
+                        gr_id=gr.id,
+                        po_line_id=po_line.id,
+                        received_qty=gr_line.received_qty,
+                        accepted_qty=accepted,
+                        rejected_qty=gr_line.rejected_qty,
+                        batch_lot=gr_line.batch_lot,
+                        serial_numbers_json=(list(gr_line.serial_numbers) if gr_line.serial_numbers else None),
+                        notes=gr_line.notes,
                     )
                 )
-                # Check low-stock threshold
-                catalog_item = await self.items.get(po_line.catalog_item_id)
-                if catalog_item is not None and catalog_item.reorder_point > 0:
-                    available = new_qty - balance.quantity_reserved
-                    if available < catalog_item.reorder_point:
-                        low_stock_alerts.append(
-                            {
-                                "catalog_item_id": str(catalog_item.id),
-                                "sku": catalog_item.sku,
-                                "warehouse_id": str(data.warehouse_id),
-                                "available_qty": str(available),
-                                "reorder_point": str(catalog_item.reorder_point),
-                            }
+                # Advance PO line counter
+                await self.pos.update_line(
+                    po_line.id,
+                    received_qty=po_line.received_qty + accepted,
+                )
+                # Update stock balance for accepted_qty only
+                if accepted > 0 and po_line.catalog_item_id is not None:
+                    batch = gr_line.batch_lot or ""
+                    balance = await self.stock.get_or_create_balance(
+                        warehouse_id=data.warehouse_id,
+                        catalog_item_id=po_line.catalog_item_id,
+                        batch_lot=batch,
+                    )
+                    # Weighted-average cost
+                    prev_qty = balance.quantity_on_hand
+                    prev_cost = balance.unit_cost_avg
+                    new_qty = prev_qty + accepted
+                    if new_qty > 0:
+                        new_cost = ((prev_qty * prev_cost) + (accepted * po_line.unit_price)) / new_qty
+                    else:
+                        new_cost = po_line.unit_price
+                    await self.stock.update_balance(
+                        balance.id,
+                        quantity_on_hand=new_qty,
+                        unit_cost_avg=new_cost,
+                        last_movement_at=_now_iso(),
+                    )
+                    # Movement audit
+                    await self.stock.record_movement(
+                        StockMovement(
+                            warehouse_id=data.warehouse_id,
+                            catalog_item_id=po_line.catalog_item_id,
+                            movement_type="in",
+                            quantity=accepted,
+                            unit_cost=po_line.unit_price,
+                            reference_type="gr",
+                            reference_id=str(gr.id),
+                            batch_lot=batch or None,
+                            project_id=po.project_id,
+                            performed_by=user_id,
+                            performed_at=_now_iso(),
                         )
+                    )
+                    # Check low-stock threshold
+                    catalog_item = await self.items.get(po_line.catalog_item_id)
+                    if catalog_item is not None and catalog_item.reorder_point > 0:
+                        available = new_qty - balance.quantity_reserved
+                        if available < catalog_item.reorder_point:
+                            low_stock_alerts.append(
+                                {
+                                    "catalog_item_id": str(catalog_item.id),
+                                    "sku": catalog_item.sku,
+                                    "warehouse_id": str(data.warehouse_id),
+                                    "available_qty": str(available),
+                                    "reorder_point": str(catalog_item.reorder_point),
+                                }
+                            )
 
         # Advance PO status
         refreshed_po = await self.pos.get(po.id)

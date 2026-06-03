@@ -144,14 +144,28 @@ async def restore_backup(
 
     from app.database import async_session_factory
 
+    # The whole restore runs inside ONE transaction. Either every table is
+    # cleared (replace mode) and re-imported successfully and we commit, or
+    # ANY failure aborts the entire operation with a single rollback so the
+    # DB is never left half-wiped. We deliberately do NOT swallow a clear or
+    # flush error and continue: persisting a partial delete plus a partial
+    # import would corrupt the user's data far worse than a clean abort.
     async with async_session_factory() as session:
         try:
             if mode == "replace":
+                # FK-safe ordering: delete children before parents (reverse
+                # of the import order). A failure to clear any table aborts
+                # the whole restore — a half-wiped DB must never be committed.
                 for backup_key, _table_name, model_cls in reversed(tables):
                     try:
                         await session.execute(delete(model_cls))
                     except Exception as exc:
-                        warnings.append(f"Failed to clear {backup_key}: {exc}")
+                        await session.rollback()
+                        logger.exception("Backup restore failed clearing %s: %s", backup_key, exc)
+                        raise HTTPException(
+                            status_code=500,
+                            detail=("Restore failed while clearing existing data; no changes were applied."),
+                        ) from exc
 
             for backup_key, _table_name, model_cls in tables:
                 records = data.get(backup_key, [])
@@ -197,14 +211,28 @@ async def restore_backup(
                 imported[backup_key] = count_imported
                 skipped[backup_key] = count_skipped
 
+                # Flush per table so we get FK-ordered inserts, but a flush
+                # failure is fatal: abort the whole restore rather than
+                # rolling back this table and committing the rest, which
+                # would leave the DB half-wiped (replace mode already
+                # deleted everything above).
                 try:
                     await session.flush()
                 except Exception as exc:
-                    warnings.append(f"Flush error after {backup_key}: {str(exc)[:200]}")
                     await session.rollback()
-                    warnings.append(f"Rolled back {backup_key} due to error; subsequent tables may also be affected")
+                    logger.exception("Backup restore failed flushing %s: %s", backup_key, exc)
+                    raise HTTPException(
+                        status_code=500,
+                        detail=(
+                            "Restore failed while importing data; no changes "
+                            "were applied. Please check the backup file and try again."
+                        ),
+                    ) from exc
 
             await session.commit()
+        except HTTPException:
+            # Already rolled back at the failure site with a clean 500.
+            raise
         except Exception as exc:
             await session.rollback()
             logger.exception("Backup restore failed: %s", exc)

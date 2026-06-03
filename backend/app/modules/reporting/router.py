@@ -48,6 +48,7 @@ async def get_latest_kpi(
     session: SessionDep,
     project_id: uuid.UUID = Query(...),
     user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("reporting.read")),
     service: ReportingService = Depends(_get_service),
 ) -> KPISnapshotResponse | None:
     """‌⁠‍Get the latest KPI snapshot for a project."""
@@ -65,6 +66,7 @@ async def list_kpi_history(
     user_id: CurrentUserId = None,  # type: ignore[assignment]
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
+    _perm: None = Depends(RequirePermission("reporting.read")),
     service: ReportingService = Depends(_get_service),
 ) -> list[KPISnapshotResponse]:
     """‌⁠‍List KPI snapshots for a project over time."""

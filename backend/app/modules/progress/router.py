@@ -20,7 +20,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.dependencies import CurrentUserId, SessionDep, verify_project_access
+from app.dependencies import CurrentUserId, RequirePermission, SessionDep, verify_project_access
 from app.modules.progress.schemas import (
     CumulativeProgressResponse,
     PositionProgressSummary,
@@ -67,6 +67,7 @@ async def record_entry(
     data: ProgressEntryCreate,
     user_id: CurrentUserId,
     session: SessionDep,
+    _perm: None = Depends(RequirePermission("progress.create")),
     service: ProgressService = Depends(_get_service),
 ) -> ProgressEntryResponse:
     """Record a new percent-complete observation for a BOQ position."""
@@ -198,6 +199,7 @@ async def upsert_plan_point(
     data: ProgressPlanCreate,
     user_id: CurrentUserId,
     session: SessionDep,
+    _perm: None = Depends(RequirePermission("progress.plan_edit")),
     service: ProgressService = Depends(_get_service),
 ) -> ProgressPlanResponse:
     """Create or update a planned S-curve data point for a (project, period)."""

@@ -272,6 +272,7 @@
     "vendor_not_found": "Vendor not found",
     "template_not_found": "Template not found",
     "position_not_found": "Position not found",
+    "boq_not_found": "BOQ not found",
     "session_not_found": "Session not found",
     "document_not_found": "Document not found",
     "invitation_not_found": "Invitation not found",

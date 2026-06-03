@@ -94,6 +94,7 @@ async def get_summary(
     session: SessionDep,
     project_id: uuid.UUID = Query(...),
     user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("punchlist.read")),
     service: PunchListService = Depends(_get_service),
 ) -> PunchListSummary:
     """‌⁠‍Aggregated punch list stats for a project."""

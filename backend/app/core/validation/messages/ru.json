@@ -272,6 +272,7 @@
     "vendor_not_found": "Поставщик не найден",
     "template_not_found": "Шаблон не найден",
     "position_not_found": "Позиция не найдена",
+    "boq_not_found": "Смета не найдена",
     "session_not_found": "Сессия не найдена",
     "document_not_found": "Документ не найден",
     "invitation_not_found": "Приглашение не найдено",
