@@ -451,6 +451,19 @@ class FinanceService:
                 detail="Invoice not found",
             )
         logger.info("Invoice approved (sent): %s", invoice.invoice_number)
+
+        # Emit event so cross-module handlers can react (TOP-30 #4: ERP
+        # connectors configured to auto-push on approval pick this up).
+        event_bus.publish_detached(
+            "invoice.approved",
+            {
+                "project_id": str(invoice.project_id),
+                "invoice_id": str(invoice.id),
+                "amount_total": str(invoice.amount_total),
+                "currency_code": invoice.currency_code or "",
+            },
+            source_module="finance",
+        )
         return updated
 
     async def pay_invoice(

@@ -263,3 +263,14 @@ class LedgerEntry(Base):
 
     def __repr__(self) -> str:
         return f"<LedgerEntry ref={self.transaction_ref} dr={self.debit_amount} cr={self.credit_amount}>"
+
+
+# ── Connector models ───────────────────────────────────────────────────────
+# Re-exported from connector_models so the startup model-discovery (which
+# scans each module's ``models.py``) registers the connector tables for
+# ``Base.metadata.create_all``. Defined in a separate module to keep the
+# connector surface self-contained. See TOP-30 #4.
+from app.modules.finance.connector_models import (  # noqa: E402,F401
+    AccountingConnectorConfig,
+    SyncLog,
+)

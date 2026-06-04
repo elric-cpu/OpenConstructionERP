@@ -47,6 +47,19 @@ from app.core.rate_limiter import approval_limiter
 from app.core.upload_guards import reject_if_xlsx_bomb
 from app.dependencies import CurrentUserId, RequirePermission, SessionDep
 from app.modules.contacts.models import Contact
+from app.modules.finance.connector_schemas import (
+    ConnectorConfigCreate,
+    ConnectorConfigListResponse,
+    ConnectorConfigResponse,
+    ConnectorConfigUpdate,
+    ConnectorTypeInfo,
+    SyncLogListResponse,
+    SyncLogResponse,
+    SyncTriggerRequest,
+    ValidateResponse,
+)
+from app.modules.finance.connector_service import ConnectorService
+from app.modules.finance.connectors.registry import connector_registry
 from app.modules.finance.models import EVMSnapshot, Invoice, Payment, ProjectBudget
 from app.modules.finance.schemas import (
     BudgetCreate,
@@ -1188,6 +1201,230 @@ async def finance_dashboard(
     """
     await _require_project_access(session, project_id, user_id)
     return await service.get_dashboard(project_id=project_id)
+
+
+# ── ERP / accounting connectors (TOP-30 #4) ─────────────────────────────────
+# Fixed-path block: declared BEFORE the parametric /{invoice_id} route so the
+# /connectors/... segments are never parsed as an invoice UUID. Within the
+# block, the literal /connectors/types/ and /connectors/logs/{log_id}/ routes
+# come before /connectors/{config_id}/ for the same reason.
+
+
+def _get_connector_service(session: SessionDep) -> ConnectorService:
+    return ConnectorService(session)
+
+
+@router.get(
+    "/connectors/types/",
+    response_model=list[ConnectorTypeInfo],
+    summary="List available connector types",
+    description="Catalogue of registered ERP / accounting connector types and their config fields.",
+)
+async def list_connector_types(
+    _perm: None = Depends(RequirePermission("finance.connector.read")),
+) -> list[ConnectorTypeInfo]:
+    """Return the connector-type catalogue for the UI form builder."""
+    return [ConnectorTypeInfo(**entry) for entry in connector_registry.list_types()]
+
+
+@router.get(
+    "/connectors/",
+    response_model=ConnectorConfigListResponse,
+    summary="List connectors",
+    description="List configured connectors, optionally scoped to a project (also includes global connectors).",
+)
+async def list_connectors(
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    project_id: uuid.UUID | None = Query(default=None),
+    _perm: None = Depends(RequirePermission("finance.connector.read")),
+    service: ConnectorService = Depends(_get_connector_service),
+) -> ConnectorConfigListResponse:
+    """List connector configs for a project."""
+    await _require_project_access(session, project_id, user_id)
+    items = await service.list_configs(project_id=project_id)
+    return ConnectorConfigListResponse(
+        items=[ConnectorConfigResponse.from_model(c) for c in items],
+        total=len(items),
+    )
+
+
+@router.post(
+    "/connectors/",
+    response_model=ConnectorConfigResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create connector",
+    description="Create a connector config. Credentials are encrypted at rest and never returned. MANAGER-only.",
+)
+async def create_connector(
+    data: ConnectorConfigCreate,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    _perm: None = Depends(RequirePermission("finance.connector.manage")),
+    service: ConnectorService = Depends(_get_connector_service),
+) -> ConnectorConfigResponse:
+    """Create a connector configuration."""
+    await _require_project_access(session, data.project_id, user_id)
+    config = await service.create_config(data, actor_id=str(user_id) if user_id else None)
+    return ConnectorConfigResponse.from_model(config)
+
+
+@router.get(
+    "/connectors/logs/{log_id}/",
+    response_model=SyncLogResponse,
+    summary="Get a sync-log entry",
+    description="Retrieve a single connector sync-log entry by id.",
+)
+async def get_connector_log(
+    log_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("finance.connector.read")),
+    service: ConnectorService = Depends(_get_connector_service),
+) -> SyncLogResponse:
+    """Get a single sync-log entry."""
+    log = await service.get_log(log_id)
+    if log is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sync log not found")
+    await _require_project_access(session, log.project_id, user_id)
+    return SyncLogResponse.from_model(log)
+
+
+@router.get(
+    "/connectors/{config_id}/",
+    response_model=ConnectorConfigResponse,
+    summary="Get connector",
+    description="Retrieve a single connector config by id.",
+)
+async def get_connector(
+    config_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("finance.connector.read")),
+    service: ConnectorService = Depends(_get_connector_service),
+) -> ConnectorConfigResponse:
+    """Get a single connector config."""
+    config = await service.get_config_or_404(config_id)
+    await _require_project_access(session, config.project_id, user_id)
+    return ConnectorConfigResponse.from_model(config)
+
+
+@router.patch(
+    "/connectors/{config_id}/",
+    response_model=ConnectorConfigResponse,
+    summary="Update connector",
+    description="Update a connector config. An absent or null credentials field leaves the stored secret unchanged. MANAGER-only.",
+)
+async def update_connector(
+    config_id: uuid.UUID,
+    data: ConnectorConfigUpdate,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    _perm: None = Depends(RequirePermission("finance.connector.manage")),
+    service: ConnectorService = Depends(_get_connector_service),
+) -> ConnectorConfigResponse:
+    """Update a connector configuration."""
+    config = await service.get_config_or_404(config_id)
+    await _require_project_access(session, config.project_id, user_id)
+    config = await service.update_config(config_id, data)
+    return ConnectorConfigResponse.from_model(config)
+
+
+@router.delete(
+    "/connectors/{config_id}/",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete connector",
+    description="Delete a connector config and its sync history. MANAGER-only.",
+)
+async def delete_connector(
+    config_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    _perm: None = Depends(RequirePermission("finance.connector.manage")),
+    service: ConnectorService = Depends(_get_connector_service),
+) -> None:
+    """Delete a connector configuration."""
+    config = await service.get_config_or_404(config_id)
+    await _require_project_access(session, config.project_id, user_id)
+    await service.delete_config(config_id)
+
+
+@router.post(
+    "/connectors/{config_id}/validate/",
+    response_model=ValidateResponse,
+    summary="Validate connector config",
+    description="Run the connector's config validation and return any problems. No side effects.",
+)
+async def validate_connector(
+    config_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("finance.connector.read")),
+    service: ConnectorService = Depends(_get_connector_service),
+) -> ValidateResponse:
+    """Validate a connector config without running a sync."""
+    config = await service.get_config_or_404(config_id)
+    await _require_project_access(session, config.project_id, user_id)
+    problems = await service.validate_config(config_id)
+    return ValidateResponse(ok=not problems, problems=problems)
+
+
+@router.post(
+    "/connectors/{config_id}/sync/",
+    response_model=SyncLogResponse,
+    summary="Run a connector sync",
+    description="Run a push and/or pull. dry_run=true previews with no side effects. "
+    "A live run (dry_run=false) mutates external files and may write ledger rows. MANAGER-only.",
+)
+async def sync_connector(
+    config_id: uuid.UUID,
+    body: SyncTriggerRequest,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    _perm: None = Depends(RequirePermission("finance.connector.sync")),
+    service: ConnectorService = Depends(_get_connector_service),
+) -> SyncLogResponse:
+    """Trigger a connector sync (manual)."""
+    config = await service.get_config_or_404(config_id)
+    await _require_project_access(session, config.project_id, user_id)
+    # Rate-limit live syncs the same way as approve/pay; dry runs are cheap.
+    if not body.dry_run:
+        allowed, _ = approval_limiter.is_allowed(str(user_id))
+        if not allowed:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many sync requests in a short time. Please wait a moment.",
+            )
+    log = await service.run_sync(
+        config_id,
+        direction=body.direction,
+        dry_run=body.dry_run,
+        actor_id=str(user_id) if user_id else None,
+        trigger="manual",
+    )
+    return SyncLogResponse.from_model(log)
+
+
+@router.get(
+    "/connectors/{config_id}/logs/",
+    response_model=SyncLogListResponse,
+    summary="List sync history",
+    description="List sync-log entries for a connector, newest first.",
+)
+async def list_connector_logs(
+    config_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+    _perm: None = Depends(RequirePermission("finance.connector.read")),
+    service: ConnectorService = Depends(_get_connector_service),
+) -> SyncLogListResponse:
+    """List a connector's sync history."""
+    config = await service.get_config_or_404(config_id)
+    await _require_project_access(session, config.project_id, user_id)
+    items, total = await service.list_logs(config_id=config_id, limit=limit, offset=offset)
+    return SyncLogListResponse(items=[SyncLogResponse.from_model(x) for x in items], total=total)
 
 
 # ── Invoice by ID (parametric routes LAST) ──────────────────────────────────

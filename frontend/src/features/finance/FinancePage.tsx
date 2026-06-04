@@ -26,6 +26,7 @@ import {
   Receipt,
   PiggyBank,
   Pencil,
+  Plug,
 } from 'lucide-react';
 import clsx from 'clsx';
 import {
@@ -55,6 +56,7 @@ import { ContactSearchInput } from '@/shared/ui/ContactSearchInput';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useAuthStore } from '@/stores/useAuthStore';
+import { ConnectorsTab } from './ConnectorsTab';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -193,7 +195,7 @@ interface EVMData {
 
 /* ── Constants ────────────────────────────────────────────────────────── */
 
-type FinanceTab = 'budgets' | 'invoices' | 'payments' | 'evm';
+type FinanceTab = 'budgets' | 'invoices' | 'payments' | 'evm' | 'connectors';
 type InvoiceSubTab = 'payable' | 'receivable';
 
 /** Common currency shortlist for the create/edit selects. NOT a default —
@@ -657,6 +659,11 @@ export function FinancePage() {
       label: t('finance.evm_dashboard', { defaultValue: 'EVM Dashboard' }),
       icon: <BarChart3 size={15} />,
     },
+    {
+      key: 'connectors',
+      label: t('finance.connectors.tab', { defaultValue: 'Connectors' }),
+      icon: <Plug size={15} />,
+    },
   ];
 
   return (
@@ -741,6 +748,7 @@ export function FinancePage() {
               onGoToBudgets={() => setActiveTab('budgets')}
             />
           )}
+          {projectId && activeTab === 'connectors' && <ConnectorsTab projectId={projectId} />}
         </div>
       </RequiresProject>
     </div>

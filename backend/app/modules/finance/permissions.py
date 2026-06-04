@@ -29,5 +29,13 @@ def register_finance_permissions() -> None:
             "finance.approve": Role.MANAGER,
             "finance.pay": Role.MANAGER,
             "finance.record_payment": Role.MANAGER,
+            # TOP-30 #4: ERP / accounting connectors. Reading the catalogue
+            # and sync history is VIEWER; managing configs (which touch
+            # encrypted credentials) and triggering a live sync (which mutates
+            # external systems / writes ledger rows) are MANAGER, consistent
+            # with the R7 escalation above.
+            "finance.connector.read": Role.VIEWER,
+            "finance.connector.manage": Role.MANAGER,
+            "finance.connector.sync": Role.MANAGER,
         },
     )
