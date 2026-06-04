@@ -136,3 +136,31 @@ describe('aggregateEntities — RFC 11 §4.5', () => {
     expect(Math.round(agg.area * 1000)).toBe(agg.area * 1000);
   });
 });
+
+describe('aggregateEntities — effectiveScale (BUG-D-TKC-002 family)', () => {
+  it('defaults to raw units when no scale is given', () => {
+    const agg = aggregateEntities([rect('r1', 10, 5), line('l1', 7)]);
+    expect(agg.area).toBeCloseTo(50, 3);
+    expect(agg.perimeter).toBeCloseTo(30, 3);
+    expect(agg.length).toBeCloseTo(7, 3);
+  });
+
+  it('converts millimetre drawings to metres: linear × scale, area × scale²', () => {
+    // A 10000 mm × 5000 mm rectangle is really 10 m × 5 m = 50 m², 30 m perim.
+    const agg = aggregateEntities([rect('r1', 10_000, 5_000)], 0.001);
+    expect(agg.area).toBeCloseTo(50, 3); // 50_000_000 mm² × 1e-6
+    expect(agg.perimeter).toBeCloseTo(30, 3); // 30_000 mm × 1e-3
+    expect(agg.length).toBe(0);
+  });
+
+  it('scales LINE length and CIRCLE area together', () => {
+    const agg = aggregateEntities([line('l1', 12_500), circle('c1', 1_000)], 0.001);
+    expect(agg.length).toBeCloseTo(12.5, 3); // 12 500 mm -> 12.5 m
+    expect(agg.area).toBeCloseTo(Math.PI, 3); // π·1000² mm² × 1e-6 = π m²
+  });
+
+  it('a 1:50 paper scale multiplies linear measurements by 50', () => {
+    const agg = aggregateEntities([line('l1', 2)], 50);
+    expect(agg.length).toBeCloseTo(100, 3); // 2 paper units × 50
+  });
+});

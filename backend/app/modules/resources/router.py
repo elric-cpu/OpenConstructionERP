@@ -33,6 +33,7 @@ from app.modules.resources.schemas import (
     CertificationUpdate,
     ConflictDetail,
     PortfolioCapacityResponse,
+    PortfolioLevelingResponse,
     ResourceCreate,
     ResourceDashboardResponse,
     ResourceLinkCreate,
@@ -725,6 +726,41 @@ async def portfolio_capacity(
         )
     payload = await service.portfolio_capacity(start, end, bucket=bucket)
     return PortfolioCapacityResponse.model_validate(payload)
+
+
+@router.get("/portfolio/leveling", response_model=PortfolioLevelingResponse)
+async def portfolio_leveling(
+    user_id: CurrentUserId,
+    session: SessionDep,
+    start: datetime = Query(...),
+    end: datetime = Query(...),
+    bucket: str = Query(default="week", pattern=r"^(week|month)$"),
+    project_id: uuid.UUID | None = Query(default=None),
+    _perm: None = Depends(RequirePermission("resources.read")),
+    service: ResourcesService = Depends(_get_service),
+) -> PortfolioLevelingResponse:
+    """Read-only portfolio resource-leveling grid with overload flags + suggestions.
+
+    Aggregates each resource's committed allocation per time bucket across every
+    project (or one project when ``project_id`` is given). A bucket is flagged
+    over-allocated only when the resource's declared ``capacity_percent`` is
+    exceeded; resources with no declared capacity are returned as
+    ``capacity_unknown`` and never as overloaded. For each overloaded bucket a
+    leveling suggestion (shift / spread) is attached. Nothing is moved — the
+    planner confirms each action. The unscoped (portfolio) view is gated by
+    ``resources.read`` like the org-wide dispatcher board; the project-scoped
+    view additionally verifies access to that project so it cannot be used as a
+    cross-tenant oracle.
+    """
+    if end <= start:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="end must be after start",
+        )
+    if project_id is not None:
+        await verify_project_access(project_id, user_id, session)
+    payload = await service.portfolio_leveling(start, end, bucket=bucket, project_id=project_id)
+    return PortfolioLevelingResponse.model_validate(payload)
 
 
 @router.get("/board/conflicts", response_model=list[BoardConflict])

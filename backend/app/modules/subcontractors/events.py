@@ -19,9 +19,13 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import UTC, datetime
+
+from sqlalchemy import select
 
 from app.core.events import Event, event_bus
 from app.database import async_session_factory
+from app.modules.subcontractors.models import Subcontractor
 from app.modules.subcontractors.service import SubcontractorService
 
 logger = logging.getLogger(__name__)
@@ -94,13 +98,61 @@ _SUBSCRIPTIONS: list[tuple[str, object]] = [
 ]
 
 
+async def compute_all_monthly_ratings(period: str | None = None) -> int:
+    """Recompute the monthly rating rollup for every active subcontractor.
+
+    Designed to be driven by a monthly cron / scheduler entry (the same way
+    the audit-prune sweep is). ``period`` defaults to the current ``YYYY-MM``.
+    Opens one short-lived session, iterates the active subcontractors, and
+    calls :meth:`SubcontractorService.compute_monthly_rating` for each so the
+    period's authoritative figures (and the ``subcontractors.rating.updated``
+    event) land even if no live event fired that month.
+
+    Returns the number of subcontractors processed. Per-sub failures are
+    swallowed (logged) so one bad row cannot abort the whole sweep.
+    """
+    period_str = period or datetime.now(UTC).strftime("%Y-%m")
+    processed = 0
+    async with async_session_factory() as session:
+        rows = (
+            (await session.execute(select(Subcontractor.id).where(Subcontractor.is_active.is_(True))))
+            .scalars()
+            .all()
+        )
+        svc = SubcontractorService(session)
+        for sub_id in rows:
+            try:
+                await svc.compute_monthly_rating(sub_id, period_str)
+                await session.commit()
+                processed += 1
+            except Exception:
+                await session.rollback()
+                logger.debug(
+                    "subcontractors: monthly rating compute failed for %s",
+                    sub_id,
+                    exc_info=True,
+                )
+    logger.info(
+        "Subcontractors: computed monthly ratings for %d subcontractor(s) (%s)",
+        processed,
+        period_str,
+    )
+    return processed
+
+
 def register_subcontractor_rating_subscribers() -> None:
     """Wire NCR/HSE/Schedule events into the rating engine.
 
-    Idempotent — :class:`EventBus` deduplicates handlers by identity.
+    Idempotent — re-registering does not stack duplicate handlers. The
+    :class:`EventBus` itself appends blindly (``subscribe`` has no dedup), so
+    a second call (module reload, or the eager import below combined with a
+    loader-driven call) would otherwise double-bind every handler and make
+    each event fire the rating bump twice. We guard by handler identity here.
     """
     for event_name, handler in _SUBSCRIPTIONS:
-        event_bus.subscribe(event_name, handler)  # type: ignore[arg-type]
+        existing = event_bus._handlers.get(event_name, [])  # noqa: SLF001 — identity check
+        if handler not in existing:
+            event_bus.subscribe(event_name, handler)  # type: ignore[arg-type]
     logger.info(
         "Subcontractors: subscribed to %d rating-driving event(s)",
         len(_SUBSCRIPTIONS),

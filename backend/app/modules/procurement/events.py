@@ -566,6 +566,35 @@ async def _on_supplier_rating_update(event: Event) -> None:
     )
 
 
+# ── Published events (declared for discoverability) ───────────────────────────
+#
+# Events this module PUBLISHES (see procurement/service.py):
+#   * procurement.po.created            — new PO row inserted
+#   * procurement.po.updated            — PO fields changed
+#   * procurement.po.approved           — PO transitioned to 'approved'
+#   * procurement.po.issued             — PO transitioned to 'issued'
+#   * procurement.gr.created            — new goods receipt inserted
+#   * procurement.gr.confirmed          — goods receipt confirmed
+#   * procurement.po.retainage_released — withheld retainage released (Gap F)
+#
+# ``procurement.po.retainage_released`` payload:
+#   { po_id, project_id, po_number, release_amount, currency_code,
+#     released_by, release_reason, retainage_released_total }
+# No subscriber is wired yet — retainage release does not re-post to the cost
+# spine (the actual cost already landed on the BudgetLine when the PO/GR was
+# posted; releasing retainage is a payment-timing event, not a new cost). A
+# future Wave 6 item may subscribe to feed a cash-flow / payment-schedule view.
+PUBLISHED_EVENTS = (
+    "procurement.po.created",
+    "procurement.po.updated",
+    "procurement.po.approved",
+    "procurement.po.issued",
+    "procurement.gr.created",
+    "procurement.gr.confirmed",
+    "procurement.po.retainage_released",
+)
+
+
 # Register subscribers at module import — module_loader picks this up
 # automatically when ``oe_procurement`` is loaded.
 event_bus.subscribe("tendering.package.awarded", _on_tender_awarded)

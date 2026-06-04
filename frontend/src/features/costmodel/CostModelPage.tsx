@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect, useRef, memo } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef, memo, Fragment } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -42,6 +42,7 @@ import {
 } from './api';
 import { CostBenchmark } from './CostBenchmark';
 import { CostSpinePanel } from './CostSpinePanel';
+import { BudgetLineThresholdEditor, parseThreshold } from './BudgetLineThresholdEditor';
 import { getIntlLocale } from '@/shared/lib/formatters';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
@@ -1091,7 +1092,8 @@ function BudgetLinesEditor({
 
             if (isEditing && editForm) {
               return (
-                <tr key={line.id} className="bg-oe-blue-subtle/10">
+                <Fragment key={line.id}>
+                <tr className="bg-oe-blue-subtle/10">
                   <td className="py-2 pr-4">
                     <input
                       value={editForm.category}
@@ -1177,6 +1179,15 @@ function BudgetLinesEditor({
                     </div>
                   </td>
                 </tr>
+                <tr className="bg-oe-blue-subtle/10">
+                  <td colSpan={7} className="px-4 pb-3">
+                    <BudgetLineThresholdEditor
+                      lineId={line.id}
+                      initialThresholdPct={line.overrun_alert_threshold_pct}
+                    />
+                  </td>
+                </tr>
+                </Fragment>
               );
             }
 
@@ -1187,7 +1198,17 @@ function BudgetLinesEditor({
                 onDoubleClick={() => startEditing(line)}
               >
                 <td className="py-3.5 pr-4 font-medium text-content-primary">
-                  {line.category}
+                  <span className="flex items-center gap-1.5">
+                    {line.category}
+                    {parseThreshold(line.overrun_alert_threshold_pct) > 0 && (
+                      <Badge variant="warning" size="sm">
+                        {t('costmodel.overrun_badge', {
+                          defaultValue: 'Alert @ +{{pct}}%',
+                          pct: parseThreshold(line.overrun_alert_threshold_pct),
+                        })}
+                      </Badge>
+                    )}
+                  </span>
                 </td>
                 <td className="py-3.5 px-4 text-content-secondary text-xs">
                   {line.description || '\u2014'}

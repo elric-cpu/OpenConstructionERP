@@ -266,8 +266,16 @@ const CapacityPlanningPage = lazy(() =>
     default: m.CapacityPlanningPage,
   }))
 );
+const ResourceLevelingPage = lazy(() =>
+  import('@/features/portfolio/ResourceLevelingPage').then((m) => ({
+    default: m.ResourceLevelingPage,
+  }))
+);
 const ContractsPage = lazy(() =>
   import('@/features/contracts').then((m) => ({ default: m.ContractsPage }))
+);
+const ProgressClaimDetailPage = lazy(() =>
+  import('@/features/contracts').then((m) => ({ default: m.ProgressClaimDetailPage }))
 );
 const CRMPage = lazy(() =>
   import('@/features/crm').then((m) => ({ default: m.CRMPage }))
@@ -947,10 +955,12 @@ export default function App() {
         <Route path="/resources" element={<P title="Resources & Crew"><ResourcesPage /></P>} />
         <Route path="/projects/:projectId/resources" element={<P title="Resources & Crew"><ResourcesPage /></P>} />
         <Route path="/portfolio/capacity" element={<P title="Capacity Planning"><CapacityPlanningPage /></P>} />
+        <Route path="/portfolio/leveling" element={<P title="Resource Leveling"><ResourceLevelingPage /></P>} />
 
         {/* 18-Modules Wave — Commercial */}
         <Route path="/contracts" element={<P title="Contracts"><ContractsPage /></P>} />
         <Route path="/projects/:projectId/contracts" element={<P title="Contracts"><ContractsPage /></P>} />
+        <Route path="/projects/:projectId/contracts/claims/:claimId" element={<P title="Progress Claim"><ProgressClaimDetailPage /></P>} />
         <Route path="/subcontractors" element={<P title="Subcontractors"><SubcontractorsPage /></P>} />
         <Route path="/projects/:projectId/subcontractors" element={<P title="Subcontractors"><SubcontractorsPage /></P>} />
         <Route path="/bid-management" element={<P title="Bid Management"><BidManagementPage /></P>} />

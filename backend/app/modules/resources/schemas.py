@@ -25,6 +25,9 @@ class ResourceCreate(BaseModel):
     contact_id: UUID | None = None
     default_cost_rate: Decimal = Field(default=Decimal("0"), ge=0)
     currency: str = Field(default="", max_length=3)
+    # Max concurrent allocation percent the resource can absorb per bucket.
+    # None => capacity unknown (leveling will not flag over-allocation).
+    capacity_percent: int | None = Field(default=None, ge=0, le=10000)
     status: str = Field(
         default="active",
         pattern=r"^(active|inactive|on_leave)$",
@@ -49,6 +52,7 @@ class ResourceUpdate(BaseModel):
     contact_id: UUID | None = None
     default_cost_rate: Decimal | None = Field(default=None, ge=0)
     currency: str | None = Field(default=None, max_length=3)
+    capacity_percent: int | None = Field(default=None, ge=0, le=10000)
     status: str | None = Field(
         default=None,
         pattern=r"^(active|inactive|on_leave)$",
@@ -71,6 +75,7 @@ class ResourceResponse(BaseModel):
     contact_id: UUID | None = None
     default_cost_rate: Decimal = Decimal("0")
     currency: str = ""
+    capacity_percent: int | None = None
     status: str = "active"
     avatar_url: str | None = None
     notes: str = ""
@@ -418,6 +423,94 @@ class PortfolioCapacityResponse(BaseModel):
     total_resources: int
     floating_resources: int
     conflict_resources: int
+
+
+# ── Portfolio resource leveling ─────────────────────────────────────────
+
+
+class LevelingBooking(BaseModel):
+    """A single assignment contributing to an over-allocated bucket.
+
+    Identifies the booking a planner could shift or spread to relieve the
+    overload. Read-only — no mutation is performed by the leveling endpoint.
+    """
+
+    assignment_id: UUID
+    project_id: UUID | None = None
+    project_name: str
+    allocation_percent: int
+    status: str
+    start_at: datetime
+    end_at: datetime
+
+
+class LevelingSuggestion(BaseModel):
+    """A human-confirmed leveling action proposed for one overloaded bucket.
+
+    ``action`` is advisory only:
+        * ``shift``  — move the smallest contributing booking out of the bucket.
+        * ``spread`` — reduce the booking's allocation so the bucket fits capacity.
+    """
+
+    action: str
+    bucket_index: int
+    target_assignment_id: UUID
+    target_project_id: UUID | None = None
+    target_project_name: str
+    overflow_percent: int
+    suggested_allocation_percent: int
+    rationale: str
+
+
+class LevelingCell(BaseModel):
+    """One resource x one bucket in the leveling grid."""
+
+    bucket_index: int
+    allocation_percent: int
+    capacity_percent: int | None = None
+    # True only when capacity is known AND total > capacity.
+    over_allocated: bool = False
+    # True when the resource has no declared capacity for this bucket.
+    capacity_unknown: bool = False
+    cross_project: bool = False
+    bookings: list[LevelingBooking] = Field(default_factory=list)
+
+
+class LevelingResourceRow(BaseModel):
+    """A resource row across all buckets in the leveling grid."""
+
+    resource_id: UUID
+    code: str
+    name: str
+    resource_type: str
+    is_floating: bool
+    capacity_percent: int | None = None
+    capacity_unknown: bool
+    peak_allocation_percent: int
+    overload_bucket_count: int
+    has_overload: bool
+    cells: list[LevelingCell] = Field(default_factory=list)
+    suggestions: list[LevelingSuggestion] = Field(default_factory=list)
+
+
+class PortfolioLevelingResponse(BaseModel):
+    """Org-wide (or project-scoped) resource-leveling grid with overload flags.
+
+    Read-only aggregation. Over-allocation is flagged only against a resource's
+    declared ``capacity_percent``; resources without a capacity are surfaced as
+    ``capacity_unknown`` and are never counted as overloaded.
+    """
+
+    start: datetime
+    end: datetime
+    bucket: str
+    project_id: UUID | None = None
+    buckets: list[PortfolioBucket]
+    resources: list[LevelingResourceRow]
+    total_resources: int
+    overloaded_resources: int
+    capacity_unknown_resources: int
+    total_suggestions: int
 
 
 # ── ResourceRequest ─────────────────────────────────────────────────────

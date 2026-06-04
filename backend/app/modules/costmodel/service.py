@@ -10,7 +10,8 @@ Stateless service layer.  Handles:
 
 import logging
 import uuid
-from decimal import Decimal
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from types import SimpleNamespace
 
 from fastapi import HTTPException, status
@@ -73,6 +74,14 @@ async def _safe_publish(name: str, data: dict, source_module: str = "") -> None:
 
 logger = logging.getLogger(__name__)
 
+# Allowed cost categories for an actual-cost posting (Gap B). Mirrors the
+# BudgetLine.category doc plus the what-if/dashboard category vocabulary. An
+# empty / None category is always allowed (the "uncategorised" sentinel).
+_ACTUAL_COST_CATEGORIES = frozenset({"material", "labor", "equipment", "subcontractor", "overhead", "contingency"})
+
+# metadata.kind marker for budget lines auto-maintained by actual-cost postings.
+_ACTUAL_POSTING_MARKER = "actual_posting_auto"
+
 
 def _str_to_float(value: str | None) -> float:
     """‌⁠‍Convert a string-stored numeric value to float, defaulting to 0.0."""
@@ -111,6 +120,51 @@ def _variance_pct(planned: float, forecast: float) -> float:
     if planned == 0.0:
         return 0.0
     return round((planned - forecast) / planned * 100.0, 2)
+
+
+# ── Cost-overrun alerts (Gap D) ────────────────────────────────────────────────
+
+# Cooldown between two overrun alerts for the same budget line (design §"Idempotent").
+_OVERRUN_COOLDOWN = timedelta(hours=24)
+
+
+def is_budget_line_overrun(planned: object, actual: object, threshold_pct: object) -> bool:
+    """Return whether ``actual`` has breached the overrun threshold of ``planned``.
+
+    Pure decision function (no I/O) so the overrun rule is unit-testable in
+    isolation and reused identically by the subscriber. Money/percentage inputs
+    are the Decimal-as-string column values; they are parsed defensively.
+
+    The breach condition is ``actual >= planned * (1 + threshold_pct / 100)``.
+    Returns ``False`` when:
+        * the threshold is ``<= 0`` (alerting disabled — '0' is the sentinel);
+        * ``planned`` is ``<= 0`` (no baseline to measure an overrun against);
+        * any input fails to parse as a finite number.
+
+    All arithmetic is Decimal so a million-currency baseline does not drift.
+    """
+
+    def _dec(value: object) -> Decimal | None:
+        if value is None:
+            return None
+        try:
+            d = Decimal(str(value))
+        except (InvalidOperation, ValueError, TypeError):
+            return None
+        return d if d.is_finite() else None
+
+    threshold = _dec(threshold_pct)
+    if threshold is None or threshold <= 0:
+        return False
+    planned_d = _dec(planned)
+    if planned_d is None or planned_d <= 0:
+        return False
+    actual_d = _dec(actual)
+    if actual_d is None:
+        return False
+
+    limit = planned_d * (Decimal("1") + threshold / Decimal("100"))
+    return actual_d >= limit
 
 
 class CostModelService:
@@ -670,6 +724,68 @@ class CostModelService:
         )
 
         logger.info("Budget line deleted: %s", line_id)
+
+    async def set_overrun_alert_threshold(self, line_id: uuid.UUID, threshold_pct: float) -> BudgetLine:
+        """Arm (or disable) the cost-overrun alert threshold on a budget line (Gap D).
+
+        ``threshold_pct`` is a percentage in ``[0, 100]``; ``0`` disables
+        alerting. The value is stored as a string (column vocabulary parity with
+        the money columns). Re-publishes ``costmodel.budget_line.updated`` so an
+        already-overrun line fires its alert the moment a threshold is armed,
+        instead of only on the next actual-cost change.
+
+        Args:
+            line_id: Target budget line.
+            threshold_pct: Percentage above planned that arms an alert.
+
+        Returns:
+            The updated budget line.
+
+        Raises:
+            HTTPException: 404 when the line is missing; 400 when the percentage
+                is out of range or not a finite number.
+        """
+        line = await self.budget_repo.get_by_id(line_id)
+        if line is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Budget line not found")
+
+        try:
+            pct = Decimal(str(threshold_pct))
+        except (InvalidOperation, ValueError, TypeError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid threshold: {threshold_pct!r}",
+            ) from exc
+        if not pct.is_finite() or pct < 0 or pct > 100:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="threshold must be a percentage between 0 and 100.",
+            )
+
+        project_id_str = str(line.project_id)
+        # Normalise to a plain decimal string ("10", "12.5"); strips any
+        # exponent form so the column / partial-index comparison stays simple.
+        stored = format(pct.normalize(), "f")
+
+        await self.budget_repo.update_fields(line_id, overrun_alert_threshold_pct=stored)
+
+        await _safe_publish(
+            "costmodel.budget_line.updated",
+            {
+                "line_id": str(line_id),
+                "project_id": project_id_str,
+                "fields": ["overrun_alert_threshold_pct"],
+            },
+            source_module="oe_costmodel",
+        )
+
+        updated = await self.budget_repo.get_by_id(line_id)
+        if updated is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Budget line not found after update",
+            )
+        return updated
 
     # ── EVM Calculations ──────────────────────────────────────────────────
 
@@ -2320,6 +2436,275 @@ class CostSpineService:
         await self.session.flush()
         self.session.expire_all()
 
+    # ── Actual-cost posting (Gap B — shared spine method) ─────────────────────
+
+    async def post_actual_to_budget_line(
+        self,
+        project_id: uuid.UUID,
+        cost_line_id: uuid.UUID | None,
+        cost_category: str | None,
+        amount_base: str,
+        currency: str,
+        source_kind: str,
+        source_ref: str,
+        *,
+        idempotency_key: str,
+    ) -> BudgetLine:
+        """Idempotently upsert ``BudgetLine.actual_amount`` from an actual cost.
+
+        This is the single shared sink for posting realised cost into the cost
+        spine. Finance calls it when an invoice is paid; Gaps A/C/E (labour,
+        equipment, certified-claim receivable) will call it later for their own
+        ``source_kind``. Keeping the posting logic here means every actual lands
+        with identical idempotency, FX-audit and event semantics.
+
+        Semantics:
+            * Resolves (or creates) the budget row matching
+              ``(project_id, cost_line_id, cost_category)``. ``cost_category``
+              ``None`` is stored as ``""`` (the NOT-NULL column sentinel for
+              "uncategorised") so a headerless posting lands on one stable row.
+            * Increments ``actual_amount`` by ``amount_base`` (Decimal end to
+              end; ``amount_base`` is already in the project base currency —
+              the caller is responsible for FX conversion and must NEVER zero a
+              foreign value when a rate is missing).
+            * Idempotent on ``(source_kind, source_ref)``: the posting is
+              recorded in ``metadata.postings``; re-posting the same source is a
+              no-op that returns the row unchanged. ``idempotency_key`` is
+              stored alongside for the caller's own audit/replay correlation.
+            * Emits ``costmodel.budget_line.actual_posted`` on a real change.
+
+        Args:
+            project_id: Owning project (must exist and carry a base currency).
+            cost_line_id: Optional cost-spine link; when set must belong to the
+                project.
+            cost_category: One of the allowed categories, or ``None`` /
+                ``""`` for uncategorised.
+            amount_base: Decimal-as-string amount in the project base currency.
+            currency: Original source-line currency, recorded for audit only.
+            source_kind: Posting source family (e.g. ``"invoice_paid"``).
+            source_ref: Stable unique reference within the source family
+                (e.g. ``"{invoice_id}:{item_id}"``).
+            idempotency_key: Caller-supplied replay token (recorded in the
+                posting trail).
+
+        Returns:
+            The created or updated ``BudgetLine`` row (or the unchanged row when
+            the posting was already applied).
+
+        Raises:
+            HTTPException: 404 when the project / cost line is missing or
+                cross-project; 400 when the project has no base currency, the
+                category is unknown, or the amount is not a finite number.
+        """
+        # ── 1. Validate project + base currency ──────────────────────────
+        base_currency = await self._get_project_currency(project_id)
+        if not base_currency:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "Project has no base currency configured — cannot post an "
+                    "actual cost without a currency to denominate it in."
+                ),
+            )
+
+        # ── 2. Validate cost line belongs to the project (when supplied) ──
+        control_account_id: uuid.UUID | None = None
+        if cost_line_id is not None:
+            cost_line = await self.line_repo.get_by_id(cost_line_id)
+            if cost_line is None or cost_line.project_id != project_id:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="cost_line_id does not reference a cost line in this project.",
+                )
+            control_account_id = cost_line.control_account_id
+
+        # ── 3. Validate category ──────────────────────────────────────────
+        normalized_category = (cost_category or "").strip().lower()
+        if normalized_category and normalized_category not in _ACTUAL_COST_CATEGORIES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Unknown cost_category '{cost_category}'. Allowed: {', '.join(sorted(_ACTUAL_COST_CATEGORIES))}."
+                ),
+            )
+
+        # ── 4. Validate amount ────────────────────────────────────────────
+        try:
+            amount = Decimal(str(amount_base))
+        except (InvalidOperation, ValueError, TypeError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid amount_base: {amount_base!r}",
+            ) from exc
+        if not amount.is_finite():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Non-finite amount_base: {amount_base!r}",
+            )
+
+        # ── 5. Resolve or create the target budget line ───────────────────
+        line = await self.budget_repo.find_for_actual_posting(
+            project_id,
+            cost_line_id=cost_line_id,
+            category=normalized_category,
+        )
+
+        # Quantize to 2dp once so the posting trail amount matches exactly what
+        # is added to actual_amount (no "900.0" vs "900.00" audit mismatch).
+        amount = amount.quantize(Decimal("0.01"))
+        posting_entry = {
+            "source_kind": source_kind,
+            "source_ref": source_ref,
+            "idempotency_key": idempotency_key,
+            "amount": str(amount),
+            "currency": currency or "",
+            "posted_at": datetime.now(UTC).isoformat(),
+        }
+
+        if line is None:
+            # New row: actual_amount = amount, seed the posting trail.
+            line = BudgetLine(
+                project_id=project_id,
+                cost_line_id=cost_line_id,
+                control_account_id=control_account_id,
+                category=normalized_category,
+                description="Actual cost (auto)",
+                planned_amount="0",
+                committed_amount="0",
+                actual_amount=str(amount),
+                forecast_amount="0",
+                currency=base_currency,
+                metadata_={"kind": _ACTUAL_POSTING_MARKER, "postings": [posting_entry]},
+            )
+            line = await self.budget_repo.create(line)
+            # Capture identity/linkage NOW — a later session.expire_all (none
+            # here, but kept for symmetry) must never force a sync lazy-load.
+            await self._publish_actual_posted(
+                budget_line_id=line.id,
+                project_id=project_id,
+                cost_line_id=cost_line_id,
+                category=normalized_category,
+                source_kind=source_kind,
+                source_ref=source_ref,
+                amount=amount,
+            )
+            logger.info(
+                "Actual posted (new line): project=%s line=%s kind=%s ref=%s +%s",
+                project_id,
+                line.id,
+                source_kind,
+                source_ref,
+                amount,
+            )
+            return line
+
+        # ── 6. Existing row: idempotency check on (source_kind, source_ref)
+        # Snapshot every attribute we need BEFORE update_fields() calls
+        # expire_all(): reading line.* afterwards would re-issue a sync SELECT
+        # and raise MissingGreenlet under the async session.
+        line_id = line.id
+        existing_cost_line_id = line.cost_line_id
+        line_category = line.category or ""
+        md = dict(line.metadata_) if isinstance(line.metadata_, dict) else {}
+        postings = md.get("postings")
+        if not isinstance(postings, list):
+            postings = []
+        already = any(
+            isinstance(p, dict) and p.get("source_kind") == source_kind and p.get("source_ref") == source_ref
+            for p in postings
+        )
+        if already:
+            # Replay — return the row unchanged (no event, no double count).
+            logger.info(
+                "Actual posting skipped (already applied): project=%s line=%s kind=%s ref=%s",
+                project_id,
+                line_id,
+                source_kind,
+                source_ref,
+            )
+            refreshed = await self.budget_repo.get_by_id(line_id)
+            return refreshed if refreshed is not None else line
+
+        prior = _str_to_decimal(line.actual_amount)
+        new_actual = (prior + amount).quantize(Decimal("0.01"))
+        postings = [*postings, posting_entry]
+        md["postings"] = postings
+        if md.get("kind") is None:
+            md["kind"] = _ACTUAL_POSTING_MARKER
+
+        # Fill a missing cost-line / account link if this posting carries one
+        # (a budget line created before the spine may now learn its link).
+        fill: dict[str, object] = {"actual_amount": str(new_actual), "metadata_": md}
+        resolved_cost_line_id = existing_cost_line_id
+        if existing_cost_line_id is None and cost_line_id is not None:
+            fill["cost_line_id"] = cost_line_id
+            resolved_cost_line_id = cost_line_id
+            if control_account_id is not None:
+                fill["control_account_id"] = control_account_id
+
+        await self.budget_repo.update_fields(line_id, **fill)
+        await self._publish_actual_posted(
+            budget_line_id=line_id,
+            project_id=project_id,
+            cost_line_id=resolved_cost_line_id,
+            category=line_category,
+            source_kind=source_kind,
+            source_ref=source_ref,
+            amount=amount,
+        )
+        logger.info(
+            "Actual posted (increment): project=%s line=%s kind=%s ref=%s +%s -> %s",
+            project_id,
+            line_id,
+            source_kind,
+            source_ref,
+            amount,
+            new_actual,
+        )
+
+        updated = await self.budget_repo.get_by_id(line_id)
+        if updated is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Budget line not found after posting",
+            )
+        return updated
+
+    @staticmethod
+    async def _publish_actual_posted(
+        *,
+        budget_line_id: uuid.UUID,
+        project_id: uuid.UUID,
+        cost_line_id: uuid.UUID | None,
+        category: str,
+        source_kind: str,
+        source_ref: str,
+        amount: Decimal,
+    ) -> None:
+        """Emit ``costmodel.budget_line.actual_posted`` for downstream consumers.
+
+        Takes only primitives (never an ORM row) so the publish never reads an
+        attribute the surrounding ``update_fields`` / ``expire_all`` may have
+        expired — that would re-issue a sync SELECT and raise MissingGreenlet
+        under the async session. Gap D (cost-overrun alerts) and reporting
+        subscribe here.
+        """
+        from app.modules.costmodel.events import EVENT_BUDGET_LINE_ACTUAL_POSTED
+
+        await _safe_publish(
+            EVENT_BUDGET_LINE_ACTUAL_POSTED,
+            {
+                "project_id": str(project_id),
+                "budget_line_id": str(budget_line_id),
+                "cost_line_id": str(cost_line_id) if cost_line_id else None,
+                "category": category or "",
+                "source_kind": source_kind,
+                "source_ref": source_ref,
+                "amount": str(amount),
+            },
+            source_module="oe_costmodel",
+        )
+
 
 # ── Labour actuals (field labour -> budget) ────────────────────────────────────
 
@@ -2525,3 +2910,166 @@ async def _on_labour_logged(event: object) -> None:
 # against double-registration on repeated imports (test reload, etc.).
 if _on_labour_logged not in event_bus._handlers.get("fieldreports.labour.logged", []):
     event_bus.subscribe("fieldreports.labour.logged", _on_labour_logged)
+
+
+# ── Cost-overrun alerts (Gap D — actual breaches planned + threshold) ─────────
+
+
+class CostOverrunAlertService:
+    """Decide whether a budget line's actual cost has breached its alert
+    threshold, and (when it has) notify the project owner at most once per
+    cooldown window.
+
+    This is the home for Gap D's alerting logic. It lives in the cost-model
+    module (which owns ``BudgetLine`` and the events) and reaches across to the
+    notifications module's :class:`NotificationService` to deliver the in-app
+    notification - mirroring how :class:`LabourActualsService` reaches into
+    resources. The subscriber below opens its own session and calls
+    :meth:`check_and_alert`, swallowing any failure so a notification problem
+    never breaks the foreground cost update.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+        self.budget_repo = BudgetLineRepository(session)
+
+    async def _resolve_owner_id(self, project_id: uuid.UUID) -> uuid.UUID | None:
+        """Return the project owner's user id, or ``None`` when unavailable."""
+        try:
+            from app.modules.projects.repository import ProjectRepository
+
+            project = await ProjectRepository(self.session).get_by_id(project_id)
+        except Exception:
+            return None
+        if project is None:
+            return None
+        return getattr(project, "owner_id", None)
+
+    @staticmethod
+    def _cooldown_active(alerted_at: datetime | None, *, now: datetime) -> bool:
+        """True when an alert was sent within the cooldown window."""
+        if alerted_at is None:
+            return False
+        # Older rows may carry a naive datetime; treat it as UTC so the
+        # comparison never raises on an aware/naive mismatch.
+        if alerted_at.tzinfo is None:
+            alerted_at = alerted_at.replace(tzinfo=UTC)
+        return (now - alerted_at) < _OVERRUN_COOLDOWN
+
+    async def check_and_alert(self, line_id: uuid.UUID, *, now: datetime | None = None) -> bool:
+        """Evaluate one budget line and notify the project owner on a breach.
+
+        Returns ``True`` when a notification was sent (and the cooldown stamp
+        written), ``False`` otherwise (no threshold, not breached, cooldown
+        active, no owner, or line missing). The caller is responsible for
+        committing the session.
+        """
+        now = now or datetime.now(UTC)
+        line = await self.budget_repo.get_by_id(line_id)
+        if line is None:
+            return False
+
+        threshold = getattr(line, "overrun_alert_threshold_pct", "0") or "0"
+        if not is_budget_line_overrun(line.planned_amount, line.actual_amount, threshold):
+            return False
+
+        if self._cooldown_active(getattr(line, "overrun_alerted_at", None), now=now):
+            return False
+
+        # Snapshot everything BEFORE update_fields() expires the ORM row (a
+        # later attribute read would re-issue a sync SELECT -> MissingGreenlet).
+        project_id = line.project_id
+        category = line.category or ""
+        currency = line.currency or ""
+        planned = str(line.planned_amount)
+        actual = str(line.actual_amount)
+        # Threshold rendered for the message (strip a trailing ".0").
+        try:
+            threshold_pct = format(Decimal(str(threshold)).normalize(), "f")
+        except (InvalidOperation, ValueError, TypeError):
+            threshold_pct = str(threshold)
+
+        owner_id = await self._resolve_owner_id(project_id)
+        if owner_id is None:
+            # No recipient — do NOT stamp the cooldown so a later owner
+            # assignment still gets the first alert.
+            return False
+
+        # Deliver the in-app notification (cross-module call, same pattern as
+        # the wave-5 subscribers).
+        from app.modules.notifications.service import NotificationService
+
+        notif = NotificationService(self.session)
+        await notif.create(
+            user_id=owner_id,
+            notification_type="cost_overrun_alert",
+            title_key="notifications.costmodel.overrun_alert.title",
+            body_key="notifications.costmodel.overrun_alert.body",
+            body_context={
+                "category": category or "uncategorised",
+                "threshold_pct": threshold_pct,
+                "planned": planned,
+                "actual": actual,
+                "currency": currency,
+            },
+            entity_type="budget_line",
+            entity_id=str(line_id),
+            action_url=f"/costmodel?line={line_id}",
+        )
+
+        # Stamp the cooldown anchor so a second event inside 24h is a no-op.
+        await self.budget_repo.update_fields(line_id, overrun_alerted_at=now)
+        logger.info(
+            "Cost-overrun alert sent: project=%s line=%s category=%s actual=%s planned=%s @+%s%%",
+            project_id,
+            line_id,
+            category,
+            actual,
+            planned,
+            threshold_pct,
+        )
+        return True
+
+
+def _extract_line_id(event: object) -> uuid.UUID | None:
+    """Pull a ``budget_line_id`` / ``line_id`` out of an event payload."""
+    data = getattr(event, "data", None) or {}
+    raw = data.get("budget_line_id") or data.get("line_id")
+    if not raw:
+        return None
+    try:
+        return uuid.UUID(str(raw))
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
+async def _on_budget_line_changed(event: object) -> None:
+    """Detached subscriber: alert the project owner when a budget line overruns.
+
+    Bound to both ``costmodel.budget_line.updated`` (manual edits + threshold
+    arming) and ``costmodel.budget_line.actual_posted`` (Gap B / labour
+    postings, which increment ``actual_amount`` without emitting ``updated``).
+    Opens its own session because the publisher is still inside its own request
+    transaction, and swallows every exception so an alerting failure never
+    breaks the upstream cost update.
+    """
+    line_id = _extract_line_id(event)
+    if line_id is None:
+        return
+
+    from app.database import async_session_factory
+
+    try:
+        async with async_session_factory() as session:
+            service = CostOverrunAlertService(session)
+            await service.check_and_alert(line_id)
+            await session.commit()
+    except Exception:
+        logger.debug("Cost-overrun alert check failed for line=%s", line_id, exc_info=True)
+
+
+# Bind the overrun subscriber at import time (same rationale as the labour
+# subscriber above). Guard against double-registration on repeated imports.
+for _overrun_event in ("costmodel.budget_line.updated", "costmodel.budget_line.actual_posted"):
+    if _on_budget_line_changed not in event_bus._handlers.get(_overrun_event, []):
+        event_bus.subscribe(_overrun_event, _on_budget_line_changed)

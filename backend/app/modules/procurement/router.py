@@ -16,6 +16,7 @@ NOTE: Fixed-path routes (/goods-receipts) are registered BEFORE the parametric
 
 import uuid
 from collections.abc import Iterable
+from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
@@ -32,6 +33,9 @@ from app.modules.procurement.schemas import (
     POListResponse,
     POMatchStatusResponse,
     POResponse,
+    PORetainageReleaseListResponse,
+    PORetainageReleaseRequest,
+    PORetainageReleaseResponse,
     POUpdate,
     ProcurementStatsResponse,
     SupplierScorecardResponse,
@@ -71,6 +75,11 @@ def _po_to_response(po: PurchaseOrder, vendor_names: dict[str, str]) -> PORespon
     resp = POResponse.model_validate(po)
     if po.vendor_contact_id:
         resp.vendor_name = vendor_names.get(po.vendor_contact_id)
+    # Computed retainage values cannot come through ``model_validate`` (they
+    # are ORM methods, not attributes), so stamp them here. Strings, in the
+    # PO's own currency — never blended.
+    resp.retainage_amount = str(po.retainage_amount())
+    resp.retainage_held = str(po.retainage_held())
     return resp
 
 
@@ -622,3 +631,73 @@ async def issue_purchase_order(
     po = await service.issue_po(po_id)
     vendor_names = await _fetch_vendor_names(service.session, [po.vendor_contact_id])
     return _po_to_response(po, vendor_names)
+
+
+# ── Retainage (Gap F) ────────────────────────────────────────────────────────
+
+
+@router.post(
+    "/{po_id}/release-retainage/",
+    response_model=PORetainageReleaseResponse,
+    status_code=201,
+    dependencies=[Depends(RequirePermission("procurement.approve"))],
+)
+async def release_po_retainage(
+    po_id: uuid.UUID,
+    body: PORetainageReleaseRequest,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: ProcurementService = Depends(_get_service),
+) -> PORetainageReleaseResponse:
+    """Release withheld retainage on a PO (MANAGER only).
+
+    The release amount must be a positive decimal that does not exceed the
+    currently-held balance, and the PO must be issued, partially received or
+    completed. Each release is audit-logged and publishes the
+    ``procurement.po.retainage_released`` event.
+    """
+    existing = await service.get_po(po_id)  # 404 + carries project for IDOR
+    await verify_project_access(existing.project_id, str(user_id), session)
+
+    try:
+        release_amount = Decimal(body.amount)
+    except (InvalidOperation, ValueError, TypeError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid release amount: {body.amount!r}",
+        ) from exc
+
+    record = await service.release_po_retainage(
+        po_id=po_id,
+        release_amount=release_amount,
+        reason=body.reason,
+        user_id=uuid.UUID(str(user_id)) if user_id else None,
+    )
+    return PORetainageReleaseResponse.model_validate(record)
+
+
+@router.get(
+    "/{po_id}/retainage-releases/",
+    response_model=PORetainageReleaseListResponse,
+    dependencies=[Depends(RequirePermission("procurement.read"))],
+)
+async def list_po_retainage_releases(
+    po_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
+    service: ProcurementService = Depends(_get_service),
+) -> PORetainageReleaseListResponse:
+    """List the retainage-release audit log for a PO."""
+    existing = await service.get_po(po_id)  # 404 + carries project for IDOR
+    await verify_project_access(existing.project_id, str(user_id), session)
+    releases, total = await service.get_po_retainage_releases(
+        po_id=po_id,
+        offset=offset,
+        limit=limit,
+    )
+    return PORetainageReleaseListResponse(
+        items=[PORetainageReleaseResponse.model_validate(r) for r in releases],
+        total=total,
+    )

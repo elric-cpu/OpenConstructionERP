@@ -163,6 +163,11 @@ class BudgetLineUpdate(BaseModel):
     period_start: str | None = None
     period_end: str | None = None
     currency: str | None = Field(default=None, max_length=10)
+    # Gap D — the cost-overrun alert threshold (% above planned). Editable via
+    # the dedicated PATCH endpoint, but also accepted here for completeness.
+    # ``'0'`` disables alerting on the line. ``overrun_alerted_at`` is
+    # deliberately NOT updatable through the API — only the subscriber stamps it.
+    overrun_alert_threshold_pct: str | None = Field(default=None, max_length=10)
     metadata: dict[str, Any] | None = None
 
     @field_serializer(
@@ -197,6 +202,11 @@ class BudgetLineResponse(BaseModel):
     period_start: str | None
     period_end: str | None
     currency: str
+    # Gap D — cost-overrun alert configuration. ``overrun_alert_threshold_pct``
+    # is the % above planned that arms an alert ('0' = disabled);
+    # ``overrun_alerted_at`` is the last alert timestamp (null = never).
+    overrun_alert_threshold_pct: str = "0"
+    overrun_alerted_at: datetime | None = None
     metadata: dict[str, Any] = Field(default_factory=dict, alias="metadata_")
     created_at: datetime
     updated_at: datetime

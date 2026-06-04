@@ -10,7 +10,8 @@
     "github": "GitHub",
     "try_demo": "Открыть демо",
     "install": "Установить",
-    "news": "Новости"
+    "news": "Новости",
+    "download": "Загрузка"
   },
   "hero": {
     "version_meta": "выпущено 2026-04-20",

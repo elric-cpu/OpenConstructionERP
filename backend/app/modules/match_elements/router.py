@@ -49,9 +49,13 @@ from app.dependencies import CurrentUserId, SessionDep, verify_project_access
 from app.modules.match_elements import pipeline, schemas
 from app.modules.match_elements.analytics import compute_match_analytics
 from app.modules.match_elements.excel_import import parse_boq_xlsx
-from app.modules.match_elements.models import MatchPromptTemplate, MatchSession
+from app.modules.match_elements.models import MatchGroup, MatchPromptTemplate, MatchSession
 from app.modules.match_elements.pdf_import import parse_boq_pdf
 from app.modules.match_elements.service import get_service
+from app.modules.match_elements.signature_match_service import (
+    descriptor_from_group_row,
+    get_signature_service,
+)
 
 router = APIRouter(tags=["match_elements"])
 
@@ -832,6 +836,101 @@ async def delete_template(
         await get_service().delete_template(session, template_id)
     except NotImplementedError as exc:
         raise HTTPException(status_code=501, detail=str(exc)) from exc
+
+
+# ── Symbol-signature suggestions (item #18) ──────────────────────────────
+
+
+@router.post(
+    "/suggest-symbols",
+    response_model=schemas.SymbolSuggestResponse,
+    summary="Rank symbol suggestions for an element / candidate descriptor",
+)
+async def suggest_symbols(
+    spec: schemas.SymbolSuggestRequest,
+    session: SessionDep,
+    current_user_id: CurrentUserId,
+) -> schemas.SymbolSuggestResponse:
+    """Deterministically rank a descriptor against the symbol library.
+
+    Computes a shape/symbol signature from the descriptor (category +
+    geometry quantities + property fingerprint) and ranks it against a
+    built-in library of known symbol archetypes (door, window, column,
+    beam, wall, pipe, duct, fixture). Each suggestion carries an honest
+    confidence score (0..1) and the contributing factors.
+
+    This is NOT computer vision. Raster CV symbol detection from drawing
+    pixels is the separate cv-pipeline service (YOLO / PaddleOCR, roadmap
+    Phase 3). The recogniser SUGGESTS; the human confirms downstream via
+    the existing confirm/apply path - nothing is auto-applied.
+
+    Provide either an inline descriptor, or a ``session_id`` + ``group_key``
+    pointing at a stored group whose geometry/properties are turned into a
+    descriptor. Group references are authorised first (IDOR -> 404). Inline
+    descriptor fields, when present, override the resolved group fields.
+    """
+    descriptor: dict[str, object] = {
+        "category": spec.category,
+        "quantities": dict(spec.quantities),
+        "properties": dict(spec.properties),
+    }
+
+    # If a stored group is referenced, authorise the owning session
+    # (404 on missing / denied so we never leak ids) and fold its stored
+    # geometry/properties into the descriptor. Inline fields win.
+    if spec.session_id is not None and spec.group_key is not None:
+        await _assert_session_access(session, spec.session_id, current_user_id)
+        row = (
+            await session.execute(
+                select(
+                    MatchGroup.group_key,
+                    MatchGroup.quantities,
+                    MatchGroup.metadata_,
+                ).where(
+                    MatchGroup.session_id == spec.session_id,
+                    MatchGroup.group_key == spec.group_key,
+                ),
+            )
+        ).first()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Match group not found")
+        resolved = descriptor_from_group_row(row[0], row[1], row[2])
+        # Inline overrides: only override category when the caller actually
+        # sent one; merge inline quantities/properties on top of resolved.
+        if not spec.category:
+            descriptor["category"] = resolved.get("category", "")
+        merged_q = dict(resolved.get("quantities") or {})
+        merged_q.update(spec.quantities)
+        descriptor["quantities"] = merged_q
+        merged_p = dict(resolved.get("properties") or {})
+        merged_p.update(spec.properties)
+        descriptor["properties"] = merged_p
+
+    result = get_signature_service().suggest(
+        descriptor,
+        top_k=spec.top_k,
+        min_confidence=spec.min_confidence,
+    )
+
+    return schemas.SymbolSuggestResponse(
+        signature=schemas.SymbolSignatureOut(
+            category=result.signature.category,
+            ratios=result.signature.ratios,
+            property_fingerprint=list(result.signature.property_fingerprint),
+            raw_dimensions=result.signature.raw_dimensions,
+        ),
+        suggestions=[
+            schemas.SymbolSuggestion(
+                symbol=s.symbol,
+                confidence=s.confidence,
+                confidence_band=s.confidence_band,  # type: ignore[arg-type]
+                factors=[schemas.SymbolFactor(**f) for f in s.factors],
+                rank=s.rank,
+            )
+            for s in result.suggestions
+        ],
+        note=result.note,
+    )
 
 
 # ── Visible pipeline (v3034 — 7-stage match wizard) ──────────────────────

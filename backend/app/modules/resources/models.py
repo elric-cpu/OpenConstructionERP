@@ -71,6 +71,13 @@ class Resource(Base):
         Numeric(18, 4), nullable=False, default=Decimal("0"), server_default="0"
     )
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="", server_default="")
+    # Maximum concurrent allocation this resource can absorb in a time bucket,
+    # expressed in the same percent unit as Assignment.allocation_percent. A
+    # single full-time person is 100; a 3-strong crew that can split across
+    # three sites is 300. NULL means the planner has not declared a capacity —
+    # portfolio leveling then reports the bucket as "capacity unknown" and
+    # NEVER as over-allocated, so we never fabricate a ceiling.
+    capacity_percent: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="active", server_default="active", index=True
     )

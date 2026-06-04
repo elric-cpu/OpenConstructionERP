@@ -27,8 +27,31 @@
  * by the QA crawler skill's axe-core integration.
  */
 
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Clock, Camera, Users, User } from 'lucide-react';
+import { registerFieldServiceWorker } from '@/shared/lib/offline';
+import { useFieldSync } from './useFieldSync';
+import { OfflineStatusBadge } from './OfflineStatusBadge';
+
+/**
+ * Auth headers for replayed field writes. The field session token + PIN are
+ * stored in sessionStorage by the (future) PIN-redemption screen
+ * (`FieldAuthPage`); reading them here keeps this offline slice self-contained
+ * and free of a cross-lane store dependency. Returns an empty object when no
+ * session is present, so the queue still drains harmlessly in that state.
+ */
+function fieldAuthHeaders(): Record<string, string> {
+  try {
+    const token = sessionStorage.getItem('oe_field_session_token');
+    const pin = sessionStorage.getItem('oe_field_session_pin');
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (pin) headers['X-Field-PIN'] = pin;
+    return headers;
+  } catch {
+    return {};
+  }
+}
 
 type FieldTab = 'today' | 'capture' | 'crew' | 'profile';
 
@@ -48,6 +71,16 @@ const TABS: readonly FieldTabDef[] = [
 export function FieldShellPage() {
   const [tab, setTab] = useState<FieldTab>('today');
 
+  // Stable headers provider so the queue sender is constructed once.
+  const getHeaders = useCallback(() => fieldAuthHeaders(), []);
+  const { online, pending, syncing, syncNow } = useFieldSync(getHeaders);
+
+  // Register the scoped field service worker so the shell + last-viewed data
+  // load offline. Best-effort: a failure does not affect the IndexedDB queue.
+  useEffect(() => {
+    void registerFieldServiceWorker();
+  }, []);
+
   return (
     <div
       className="flex min-h-screen flex-col bg-white"
@@ -58,19 +91,29 @@ export function FieldShellPage() {
         paddingTop: 'env(safe-area-inset-top)',
       }}
     >
-      {/* Sticky 56 px header — project name placeholder. */}
-      <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4">
-        <span className="truncate text-base font-semibold text-slate-900">
+      {/* Sticky 56 px header — project name placeholder + offline/sync badge. */}
+      <header className="sticky top-0 z-10 flex h-14 items-center justify-between gap-2 border-b border-slate-200 bg-white px-4">
+        <span className="min-w-0 truncate text-base font-semibold text-slate-900">
           {/* TODO pilot: surface caller.active_project.name */}
           Field — Project pending
         </span>
-        <button
-          type="button"
-          aria-label="Help"
-          className="flex h-11 w-11 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"
-        >
-          ?
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <OfflineStatusBadge
+            online={online}
+            pending={pending}
+            syncing={syncing}
+            onSyncNow={() => {
+              void syncNow();
+            }}
+          />
+          <button
+            type="button"
+            aria-label="Help"
+            className="flex h-11 w-11 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"
+          >
+            ?
+          </button>
+        </div>
       </header>
 
       {/* Tab body — empty until pilot endpoints land. */}

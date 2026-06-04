@@ -42,8 +42,15 @@ const EMPTY_AGGREGATE: GroupAggregate = Object.freeze({
  *   - ARC / ELLIPSE / HATCH / TEXT / INSERT / POINT → no quantitative
  *     contribution for now. Still counted in ``byType`` so the UI can
  *     show "3 walls, 1 ARC, 2 HATCH" even if it only sums the walls.
+ *
+ * ``scale`` is the effective scale (drawing-scale ratio × unit-factor, e.g.
+ * ``0.001`` for a millimetre drawing) that converts raw DXF units to real
+ * metres. Linear sums are multiplied by ``scale`` and areal sums by
+ * ``scale²`` so the totals match the per-measurement labels the canvas
+ * renders. Defaults to ``1`` (raw units) so callers and tests that don't
+ * care about real-world units are unaffected.
  */
-export function aggregateEntities(entities: DxfEntity[]): GroupAggregate {
+export function aggregateEntities(entities: DxfEntity[], scale = 1): GroupAggregate {
   if (entities.length === 0) return { ...EMPTY_AGGREGATE, byType: {} };
 
   let area = 0;
@@ -73,10 +80,11 @@ export function aggregateEntities(entities: DxfEntity[]): GroupAggregate {
     }
   }
 
+  const areaScale = scale * scale;
   return {
-    area: Math.round(area * 1000) / 1000,
-    perimeter: Math.round(perimeter * 1000) / 1000,
-    length: Math.round(length * 1000) / 1000,
+    area: Math.round(area * areaScale * 1000) / 1000,
+    perimeter: Math.round(perimeter * scale * 1000) / 1000,
+    length: Math.round(length * scale * 1000) / 1000,
     count,
     byType,
   };

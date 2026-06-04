@@ -468,6 +468,83 @@ class AutoGenerateClaimRequest(BaseModel):
     )
 
 
+# ── Progress-claim bridge (Gap I) ────────────────────────────────────────
+
+
+class ProgressClaimPopulatePreviewItem(BaseModel):
+    """One previewed claim line derived from a progress observation.
+
+    The preview is read-only: it shows what the claim line WOULD become if the
+    user commits, so the UI can let the user deselect / tweak before saving.
+    All monetary values are Decimal-as-string in the claim's currency.
+    """
+
+    contract_line_id: UUID
+    contract_line_code: str = ""
+    contract_line_description: str = ""
+    boq_position_id: UUID
+    unit: str | None = None
+    contract_quantity: Decimal = Field(default=Decimal("0"))
+    contract_line_value: Decimal = Field(default=Decimal("0"))
+    # Latest observed percent-complete for the linked BOQ position (0-100).
+    observed_pct: Decimal = Field(default=Decimal("0"))
+    period_label: str | None = None
+    recorded_at: datetime | None = None
+    # Derived figures at the observed percent.
+    period_completed_qty: Decimal = Field(default=Decimal("0"))
+    period_completed_value: Decimal = Field(default=Decimal("0"))
+    cumulative_completed_value: Decimal = Field(default=Decimal("0"))
+
+
+class ProgressClaimPopulatePreviewResponse(BaseModel):
+    """Preview payload for ``GET /populate-from-progress``.
+
+    ``items`` are the populatable lines (SoV lines that link to a BOQ position
+    which has at least one progress observation). ``skipped_unlinked`` counts
+    SoV lines with no BOQ-position link, ``skipped_no_progress`` counts linked
+    lines that have no observation yet — both surfaced so the UI can hint why a
+    line is absent. ``currency`` is the claim currency the values are expressed
+    in (never a blend).
+    """
+
+    claim_id: UUID
+    contract_id: UUID
+    currency: str = ""
+    items: list[ProgressClaimPopulatePreviewItem] = Field(default_factory=list)
+    skipped_unlinked: int = 0
+    skipped_no_progress: int = 0
+    skipped_foreign_currency: int = 0
+    gross: Decimal = Field(default=Decimal("0"))
+    retention: Decimal = Field(default=Decimal("0"))
+    prior_claims_total: Decimal = Field(default=Decimal("0"))
+    net_due: Decimal = Field(default=Decimal("0"))
+
+
+class ProgressClaimCommitLine(BaseModel):
+    """One line the client commits back after editing the preview.
+
+    The client echoes the contract_line_id and the (possibly user-adjusted)
+    value/percent it wants persisted. Quantities/values are recomputed and
+    re-rolled-up server-side, so a tampered total cannot inflate the claim
+    beyond the contract line value.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    contract_line_id: UUID
+    period_completed_pct: Decimal = Field(default=Decimal("0"), ge=0, le=100)
+    # Optional explicit value override; when omitted the value is derived from
+    # the percent × contract line value. When supplied it is clamped to the
+    # contract line value so the claim line can never exceed the SoV line.
+    period_completed_value: Decimal | None = None
+
+
+class ProgressClaimCommitRequest(BaseModel):
+    """Body for ``PUT /commit-populated-lines``."""
+
+    lines: list[ProgressClaimCommitLine] = Field(default_factory=list)
+
+
 # ── FinalAccount ─────────────────────────────────────────────────────────
 
 

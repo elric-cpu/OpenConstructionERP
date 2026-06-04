@@ -11,6 +11,40 @@
 
 import { apiPost } from '@/shared/lib/api';
 
+/* ── Auto-escalation (TOP-30 #24) ──────────────────────────────────────── */
+
+/** Body for a manual escalation sweep over a project's risks. */
+export interface RiskEscalateRequest {
+  /** Override the default escalation threshold (1-25 PMBOK product scale). */
+  threshold?: number;
+}
+
+/** Summary returned by an escalation sweep. */
+export interface RiskEscalateResult {
+  scanned: number;
+  escalated: number;
+  /** Count of escalations grouped by trigger (severity / review_lapsed). */
+  triggers: Record<string, number>;
+}
+
+/**
+ * Run an on-demand auto-escalation sweep for ``projectId``.
+ *
+ * Escalates every not-yet-escalated risk whose severity product crosses the
+ * threshold or whose next-review date has lapsed. Idempotent: already
+ * escalated risks are skipped. Requires the ``risk.escalate`` permission
+ * (MANAGER). The same sweep is run periodically by the backend scheduler.
+ */
+export async function escalateProjectRisks(
+  projectId: string,
+  body: RiskEscalateRequest = {},
+): Promise<RiskEscalateResult> {
+  return apiPost<RiskEscalateResult, RiskEscalateRequest>(
+    `/v1/risk/projects/${projectId}/escalate`,
+    body,
+  );
+}
+
 /** Mode flag controlling which PERT triple(s) the simulator samples. */
 export type RiskSimulateMode = 'cost' | 'schedule' | 'both';
 

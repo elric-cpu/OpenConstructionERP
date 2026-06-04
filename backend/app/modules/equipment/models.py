@@ -327,6 +327,10 @@ class EquipmentRental(Base):
         server_default="",
     )
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
+    # Set when the rental billing has been computed and posted to the cost spine
+    # on return (Gap C). NULL means the rental has not yet been billed. Stored as
+    # an ISO timestamp string for parity with the other date columns here.
+    billing_calculated_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         "metadata",
         JSON,

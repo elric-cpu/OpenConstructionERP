@@ -435,6 +435,76 @@ class BIMModelOption(BaseModel):
     created_at: datetime | None
 
 
+# ── Symbol signature suggestion (item #18) ───────────────────────────────
+#
+# Deterministic shape/symbol signature recogniser. NOT computer vision —
+# raster CV symbol detection is the separate cv-pipeline service. This
+# ranks an already-structured descriptor against a built-in symbol library
+# and SUGGESTS (human confirms via the existing apply/confirm path).
+
+
+class SymbolSuggestRequest(BaseModel):
+    """Inbound request for ``POST /suggest-symbols``.
+
+    Provide EITHER an inline descriptor (``category`` + ``quantities`` +
+    ``properties``) OR a reference to an existing match group
+    (``session_id`` + ``group_key``) whose stored geometry/properties the
+    backend turns into a descriptor. When both are present, the inline
+    fields override the resolved group fields.
+    """
+
+    # Inline descriptor (canonical-format element shape).
+    category: str | None = Field(default=None, max_length=128)
+    quantities: dict[str, Any] = Field(default_factory=dict)
+    properties: dict[str, Any] = Field(default_factory=dict)
+
+    # OR reference an existing stored group. The router authorises the
+    # session (IDOR -> 404) before reading the group's fields.
+    session_id: uuid.UUID | None = None
+    group_key: str | None = Field(default=None, max_length=500)
+
+    top_k: int = Field(default=5, ge=1, le=20)
+    min_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class SymbolFactor(BaseModel):
+    """One contributing factor behind a suggestion's confidence."""
+
+    name: str
+    weight: float
+    contribution: float
+    detail: str = ""
+
+
+class SymbolSuggestion(BaseModel):
+    """One ranked symbol suggestion with honest confidence (0..1)."""
+
+    symbol: str
+    confidence: float
+    confidence_band: Literal["high", "medium", "low"]
+    factors: list[SymbolFactor] = Field(default_factory=list)
+    rank: int
+
+
+class SymbolSignatureOut(BaseModel):
+    """The deterministic signature the suggestions were computed from."""
+
+    category: str
+    ratios: dict[str, float] = Field(default_factory=dict)
+    property_fingerprint: list[str] = Field(default_factory=list)
+    raw_dimensions: dict[str, float] = Field(default_factory=dict)
+
+
+class SymbolSuggestResponse(BaseModel):
+    """Ranked symbol suggestions plus the signature and an honesty note."""
+
+    signature: SymbolSignatureOut
+    suggestions: list[SymbolSuggestion] = Field(default_factory=list)
+    # Provenance: clarifies this is deterministic heuristic ranking over
+    # structured data, not CV/ML pixel detection.
+    note: str
+
+
 # ── Analytics (MAPPING_PROCESS.md §10) ───────────────────────────────────
 
 

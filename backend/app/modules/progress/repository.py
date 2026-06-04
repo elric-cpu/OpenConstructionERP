@@ -82,6 +82,31 @@ class ProgressRepository:
         rows = (await self.session.execute(stmt)).all()
         return {row[0]: float(row[1]) for row in rows}
 
+    async def get_latest_for_position(
+        self,
+        project_id: uuid.UUID,
+        boq_position_id: uuid.UUID,
+    ) -> ProgressEntry | None:
+        """Return the most-recent progress observation for one BOQ position.
+
+        Used by the contracts progress-claim bridge (Gap I) to read the current
+        percent-complete of a single SoV-linked BOQ position. Returns ``None``
+        when no observation has been recorded yet (the bridge then skips that
+        line). Scoped by ``project_id`` so a position id from another project
+        can never leak an observation across the tenant boundary.
+        """
+        stmt = (
+            select(ProgressEntry)
+            .where(
+                ProgressEntry.project_id == project_id,
+                ProgressEntry.boq_position_id == boq_position_id,
+            )
+            .order_by(ProgressEntry.recorded_at.desc())
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def get_latest_project_entry(self, project_id: uuid.UUID) -> ProgressEntry | None:
         """Return the most recent *project-level* progress entry.
 

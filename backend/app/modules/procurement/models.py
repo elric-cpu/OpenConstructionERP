@@ -10,9 +10,19 @@ Tables:
 """
 
 import uuid
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
-from sqlalchemy import JSON, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db_types import MoneyType
@@ -47,6 +57,36 @@ class PurchaseOrder(Base):
     amount_subtotal: Mapped[str] = mapped_column(String(50), nullable=False, default="0")
     tax_amount: Mapped[str] = mapped_column(String(50), nullable=False, default="0")
     amount_total: Mapped[str] = mapped_column(String(50), nullable=False, default="0")
+    # ── Retainage (Gap F, v6.x) ──────────────────────────────────────────
+    # Retention withheld on a PO commitment. ``retention_percent`` is the
+    # agreed retainage rate (e.g. 5.00 for 5%); ``retainage_amount`` is
+    # computed = amount_total × percent / 100 and ``retainage_held`` nets
+    # off whatever has already been released. ``retainage_released_amount``
+    # is the cumulative Decimal-string total released so far. Money is
+    # never blended across currencies — every value stays in the PO's own
+    # ``currency_code`` (the report rolls up per-currency).
+    retention_percent: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2),
+        nullable=False,
+        default=Decimal("0.00"),
+        server_default="0.00",
+        index=True,
+        doc="Retention percentage (e.g. 5.00 for 5%)",
+    )
+    retain_on_receipt: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        doc="True: retainage applies at goods receipt; False: at invoice",
+    )
+    retainage_released_amount: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="0",
+        server_default="0",
+        doc="Cumulative retainage released (Decimal string)",
+    )
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="draft", index=True)
     payment_terms: Mapped[str | None] = mapped_column(String(100), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -70,6 +110,34 @@ class PurchaseOrder(Base):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+
+    def retainage_amount(self) -> Decimal:
+        """Computed retention withheld = amount_total × retention_percent / 100.
+
+        Quantised to four decimal places to match the NUMERIC(18, 4) precision
+        of the release-log column. Never blends currencies — the result is in
+        this PO's own ``currency_code``.
+        """
+        try:
+            total = Decimal(str(self.amount_total or "0"))
+        except (InvalidOperation, ValueError, TypeError):
+            total = Decimal("0")
+        pct = self.retention_percent if self.retention_percent is not None else Decimal("0")
+        if not isinstance(pct, Decimal):
+            try:
+                pct = Decimal(str(pct))
+            except (InvalidOperation, ValueError, TypeError):
+                pct = Decimal("0")
+        return (total * pct / Decimal("100")).quantize(Decimal("0.0001"))
+
+    def retainage_held(self) -> Decimal:
+        """Computed = retainage_amount − retainage_released_amount (floored at 0)."""
+        withheld = self.retainage_amount()
+        try:
+            released = Decimal(str(self.retainage_released_amount or "0"))
+        except (InvalidOperation, ValueError, TypeError):
+            released = Decimal("0")
+        return max(withheld - released, Decimal("0"))
 
     def __repr__(self) -> str:
         return f"<PurchaseOrder {self.po_number} ({self.status})>"
@@ -103,6 +171,45 @@ class PurchaseOrderItem(Base):
 
     def __repr__(self) -> str:
         return f"<PurchaseOrderItem {self.description[:40]}>"
+
+
+class PORetainageRelease(Base):
+    """Audit log of retainage-release transactions on a purchase order.
+
+    Each row records one MANAGER-approved release of withheld retainage:
+    who released it, when, how much, and an optional reason. The cumulative
+    sum is mirrored onto ``PurchaseOrder.retainage_released_amount`` so the
+    held balance can be computed without re-aggregating this log on every
+    read; this table is the immutable evidence trail.
+    """
+
+    __tablename__ = "oe_procurement_po_retainage_release"
+    __table_args__ = (Index("ix_retainage_po_date", "po_id", "release_date"),)
+
+    po_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_procurement_po.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    release_date: Mapped[str] = mapped_column(String(40), nullable=False)
+    release_amount: Mapped[Decimal] = mapped_column(
+        Numeric(18, 4),
+        nullable=False,
+        default=Decimal("0"),
+    )
+    release_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    released_by_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
+    metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        "metadata",
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
+
+    def __repr__(self) -> str:
+        return f"<PORetainageRelease po={self.po_id} amount={self.release_amount}>"
 
 
 class GoodsReceipt(Base):

@@ -5,6 +5,20 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.8.0] - 2026-06-04
+
+### Fixed
+
+- Quantity takeoff on DWG drawings now reports real-world metres. The drawing's own units (millimetres in most CAD files) were not being applied to the totals, so a wall measured as a few metres showed up roughly a thousand times too large in the summary panel, the layer breakdown and the value linked to a bill-of-quantities position. The drawing scale and unit factor are now applied everywhere a length or area is shown or exported, so a distance reads as 28.4 m and a room as 216.7 m2 the way it should. The single-drawing endpoint also no longer returns a server error while it fills in a drawing's units on first open.
+
+### Added
+
+- A wave of features that connect the modules to each other and close gaps against the larger commercial systems. Subcontractor scorecards track performance across jobs. Progress claims and a subcontractor invoice flow carry agreed work through to billing, with retainage held and released correctly. Resource leveling smooths over-allocated crews across the portfolio. Job costing reads through from the cost model to actuals with the leftover audit gaps filled. Element matching can now learn a symbol's signature and suggest where it recurs across a drawing set, and the project-intelligence module forecasts cost and flags risks early with an escalation path. The file-based ERP and accounting connectors round-trip without touching a live system. An offline slice lets the field app keep working without a connection and sync later. Each piece ships with its own tests and a single database migration.
+
+### Changed
+
+- The interface translation backlog is cleared. Around 22,000 strings were translated and applied across the 26 non-English languages, going module by module so the app reads naturally rather than falling back to English mid-screen. The remaining untranslated strings are deliberate: brand names, format codes and the like that should stay as they are.
+
 ## [6.7.0] - 2026-06-03
 
 ### Added

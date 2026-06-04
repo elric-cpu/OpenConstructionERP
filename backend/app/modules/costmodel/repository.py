@@ -393,6 +393,40 @@ class BudgetLineRepository:
         await self.session.flush()
         return lines
 
+    async def find_for_actual_posting(
+        self,
+        project_id: uuid.UUID,
+        *,
+        cost_line_id: uuid.UUID | None,
+        category: str | None,
+    ) -> BudgetLine | None:
+        """Find the single budget line that an actual-cost posting targets.
+
+        Used by ``CostSpineService.post_actual_to_budget_line`` to locate (or
+        decide to create) the row that accumulates ``actual_amount`` for a
+        given ``(project_id, cost_line_id, cost_category)`` triple. The
+        ``category`` column is NOT NULL (default ``""``), so a ``None`` /
+        uncategorised posting is matched against the empty-string sentinel
+        rather than SQL NULL — a headerless invoice posting therefore lands on
+        one stable "uncategorised" row instead of fanning out new rows.
+        ``cost_line_id`` is genuinely nullable and matched with ``IS NULL``.
+
+        When several rows somehow share the triple (legacy data) the oldest by
+        ``created_at`` wins so repeated postings stay deterministic and land on
+        the same row.
+        """
+        stmt = select(BudgetLine).where(
+            BudgetLine.project_id == project_id,
+            BudgetLine.category == (category or ""),
+        )
+        if cost_line_id is None:
+            stmt = stmt.where(BudgetLine.cost_line_id.is_(None))
+        else:
+            stmt = stmt.where(BudgetLine.cost_line_id == cost_line_id)
+        stmt = stmt.order_by(BudgetLine.created_at.asc()).limit(1)
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+
     async def existing_position_ids(self, project_id: uuid.UUID) -> set[uuid.UUID]:
         """Return the set of BOQ position IDs already wired to a budget line.
 

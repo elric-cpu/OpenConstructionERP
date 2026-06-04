@@ -559,6 +559,7 @@ export function ContractsPage() {
             rows={filteredClaims}
             onCreate={() => setNewClaimOpen(true)}
             hasContract={!!effectiveClaimsContract}
+            projectId={projectId}
           />
         ) : (
           <FinalAccountsView
@@ -761,10 +762,12 @@ function ClaimsTable({
   rows,
   onCreate,
   hasContract,
+  projectId,
 }: {
   rows: ProgressClaimItem[];
   onCreate: () => void;
   hasContract: boolean;
+  projectId: string;
 }) {
   const { t } = useTranslation();
   if (!hasContract) {
@@ -823,7 +826,7 @@ function ClaimsTable({
         </thead>
         <tbody>
           {rows.map((r) => (
-            <ClaimRow key={r.id} claim={r} />
+            <ClaimRow key={r.id} claim={r} projectId={projectId} />
           ))}
         </tbody>
       </table>
@@ -831,7 +834,13 @@ function ClaimsTable({
   );
 }
 
-function ClaimRow({ claim }: { claim: ProgressClaimItem }) {
+function ClaimRow({
+  claim,
+  projectId,
+}: {
+  claim: ProgressClaimItem;
+  projectId: string;
+}) {
   const qc = useQueryClient();
   const { t } = useTranslation();
   const addToast = useToastStore((s) => s.addToast);
@@ -860,8 +869,17 @@ function ClaimRow({ claim }: { claim: ProgressClaimItem }) {
 
   return (
     <tr className="border-t border-border-light hover:bg-surface-secondary">
-      <td className="px-4 py-2 font-mono text-xs text-content-secondary">
-        {claim.claim_number}
+      <td className="px-4 py-2 font-mono text-xs">
+        {projectId ? (
+          <Link
+            to={`/projects/${projectId}/contracts/claims/${claim.id}`}
+            className="text-oe-blue hover:underline"
+          >
+            {claim.claim_number}
+          </Link>
+        ) : (
+          <span className="text-content-secondary">{claim.claim_number}</span>
+        )}
       </td>
       <td className="px-4 py-2 text-xs text-content-secondary">
         {claim.period_start ? <DateDisplay value={claim.period_start} /> : '—'}

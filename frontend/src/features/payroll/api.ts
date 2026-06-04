@@ -6,7 +6,7 @@
  * only for display.
  */
 
-import { apiGet, apiPost } from '@/shared/lib/api';
+import { apiGet, apiPatch, apiPost } from '@/shared/lib/api';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -92,5 +92,16 @@ export async function fetchLabourCost(projectId: string): Promise<LabourCost | n
   if (!projectId) return null;
   return apiGet<LabourCost>(
     `/v1/payroll/projects/${encodeURIComponent(projectId)}/labour-cost/`,
+  );
+}
+
+/**
+ * Finalize (approve) a draft batch: transitions it to `approved` and posts its
+ * labour cost to the project budget. Idempotent - calling twice on an
+ * already-approved batch returns the unchanged batch.
+ */
+export async function finalizeBatch(batchId: string): Promise<PayrollBatchDetail> {
+  return apiPatch<PayrollBatchDetail>(
+    `/v1/payroll/batches/${encodeURIComponent(batchId)}/finalize/`,
   );
 }

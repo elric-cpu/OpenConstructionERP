@@ -16,6 +16,7 @@ import {
   type MatchCandidate,
 } from './api';
 import { NoMatchModal } from './NoMatchModal';
+import { SymbolSuggestionPanel } from './SymbolSuggestionPanel';
 
 type DetailTabKey = 'methods' | 'elements' | 'apply';
 const DETAIL_TAB_IDS: readonly DetailTabKey[] = ['methods', 'elements', 'apply'];
@@ -342,6 +343,16 @@ export function MatchDetailPanel({ sessionId, group, onClose }: Props) {
           {/* Tab: elements */}
           {tab === 'elements' && detailQ.data && (
             <div role="tabpanel" id="detail-tabpanel-elements" aria-labelledby="detail-tab-elements">
+              {/* Item #18 — deterministic symbol-signature suggestions for
+                  this group. The backend resolves the descriptor from the
+                  stored group (geometry + properties); a human reviews and
+                  confirms via the existing flow. NOT computer vision. */}
+              <div className="mb-3">
+                <SymbolSuggestionPanel
+                  sessionId={sessionId}
+                  groupKey={group.group_key}
+                />
+              </div>
               <p className="text-xs text-slate-500 mb-2">
                 {t('match_elements.detail.element_ids_count', '{{count}} element id(s)', { count: detailQ.data.element_ids.length })}
               </p>

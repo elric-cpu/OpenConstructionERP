@@ -81,10 +81,12 @@ from app.modules.contracts.schemas import (
     LDClauseCreate,
     LDClauseResponse,
     LDClauseUpdate,
+    ProgressClaimCommitRequest,
     ProgressClaimCreate,
     ProgressClaimLineCreate,
     ProgressClaimLineResponse,
     ProgressClaimLineUpdate,
+    ProgressClaimPopulatePreviewResponse,
     ProgressClaimResponse,
     ProgressClaimUpdate,
     RetentionScheduleCreate,
@@ -1057,6 +1059,67 @@ async def auto_generate_claim(
     await _verify_claim_access(session, claim_id, user_id)
     service = ContractsService(session)
     claim = await service.auto_generate_claim_lines(claim_id, payload)
+    return _claim_to_response(claim)
+
+
+# ── Progress bridge (Gap I): populate claim from progress observations ────
+
+
+@router.get(
+    "/progress-claims/{claim_id}/populate-from-progress",
+    response_model=ProgressClaimPopulatePreviewResponse,
+)
+async def populate_claim_from_progress(
+    claim_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    boq_position_ids: list[uuid.UUID] | None = Query(default=None),
+    _perm: None = Depends(RequirePermission("contracts.update")),
+) -> ProgressClaimPopulatePreviewResponse:
+    """Preview claim lines derived from the latest progress observations.
+
+    Read-only: returns the line breakdown the claim WOULD get if committed, so
+    the UI can let the user deselect / tweak before saving. SoV lines that link
+    to a BOQ position with at least one progress observation are included; lines
+    that are unlinked, have no observation yet, or carry a different currency
+    than the claim are skipped and counted (so the UI can hint why). Requires
+    ``contracts.update`` and project-level access on the owning project.
+    """
+    await _verify_claim_access(session, claim_id, user_id)
+    service = ContractsService(session)
+    preview = await service.populate_claim_from_progress(
+        claim_id,
+        boq_position_ids=boq_position_ids,
+    )
+    return ProgressClaimPopulatePreviewResponse.model_validate(preview)
+
+
+@router.put(
+    "/progress-claims/{claim_id}/commit-populated-lines",
+    response_model=ProgressClaimResponse,
+)
+async def commit_populated_claim_lines(
+    claim_id: uuid.UUID,
+    payload: ProgressClaimCommitRequest,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    _perm: None = Depends(RequirePermission("contracts.update")),
+) -> ProgressClaimResponse:
+    """Persist a populated / edited set of claim lines and roll up totals.
+
+    Idempotent: existing claim lines are replaced wholesale, values are
+    recomputed server-side (so a tampered total cannot inflate the claim), the
+    claim's gross / retention / prior / net are re-rolled, and
+    ``contracts.claim.populated`` is emitted. Only valid on a draft or submitted
+    claim. Requires ``contracts.update`` and project-level access.
+    """
+    await _verify_claim_access(session, claim_id, user_id)
+    service = ContractsService(session)
+    claim = await service.commit_preview_to_claim(
+        claim_id,
+        payload.lines,
+        actor_id=user_id,
+    )
     return _claim_to_response(claim)
 
 

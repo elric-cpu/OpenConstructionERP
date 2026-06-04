@@ -158,6 +158,9 @@ class PrequalRequest(BaseModel):
 
     questionnaire: dict[str, Any] = Field(default_factory=dict)
     score: int | None = Field(default=None, ge=0, le=100)
+    # When true the service rejects (400) a questionnaire that leaves any
+    # required question unanswered (final submit). Default false saves a draft.
+    require_complete: bool = False
 
     @field_validator("questionnaire")
     @classmethod
@@ -175,6 +178,43 @@ class PrequalRequest(BaseModel):
                     f"questionnaire answer for {key!r} exceeds 4096 chars",
                 )
         return value
+
+
+class PrequalView(BaseModel):
+    """Current prequalification state for a subcontractor (read model).
+
+    Backs ``GET /subcontractors/{id}/prequal`` so the questionnaire UI can
+    seed itself from the prior submission, show the stored score, and surface
+    the answer-key driven evaluation (which required questions are still
+    unanswered) without re-deriving it on the client.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    subcontractor_id: UUID
+    prequalification_status: str = "pending"
+    prequal_score: int | None = None
+    prequal_questionnaire: dict[str, Any] | None = None
+    prequal_completed_at: datetime | None = None
+    is_blocked: bool = False
+    blocked_reason: str | None = None
+    # Required question keys that are still unanswered against the canonical
+    # questionnaire spec. Empty when the questionnaire is complete (or none has
+    # been submitted yet, in which case ``prequal_questionnaire`` is null).
+    missing_required: list[str] = Field(default_factory=list)
+    # The answer-key score recomputed from the stored answers, so the UI shows
+    # the server-trusted value rather than trusting the persisted ``prequal_score``
+    # (which may have been an explicit caller override).
+    computed_score: int | None = None
+    approval_threshold: int = 70
+
+
+class MonthlyRatingComputeRequest(BaseModel):
+    """Admin trigger to recompute a subcontractor's monthly rating rollup."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    period: str = Field(..., pattern=r"^\d{4}-\d{2}$")
 
 
 class BlockRequest(BaseModel):

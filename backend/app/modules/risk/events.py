@@ -28,6 +28,24 @@ from app.modules.risk.vector_adapter import risk_vector_adapter
 logger = logging.getLogger(__name__)
 
 
+# ── Events emitted by this module (for cross-module subscribers) ──────────
+#
+# ``risk.escalated`` — published by ``escalation.RiskEscalationService`` when
+# a risk auto-escalates (severity product crosses the threshold, or its
+# next-review date lapses). Payload:
+#
+#     {
+#         "risk_id": str, "project_id": str, "code": str, "title": str,
+#         "trigger": "severity" | "review_lapsed",
+#         "severity_product": int, "threshold": int,
+#     }
+#
+# A notifications subscriber (in the notifications module, NOT here) is the
+# intended consumer that fans this out to in-app / email channels. This
+# module only EMITS the event; it never wires notifications itself.
+RISK_ESCALATED_EVENT = "risk.escalated"
+
+
 # ── Vector indexing subscribers ──────────────────────────────────────────
 #
 # Each handler opens its own short-lived session, loads the risk row and

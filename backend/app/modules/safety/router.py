@@ -1,6 +1,10 @@
 """‌⁠‍Safety API routes.
 
 Endpoints:
+    GET    /stats                       - Project safety KPI dashboard
+    GET    /trends                      - Incident/observation counts per period
+    GET    /trends/extended             - Rolling LTIFR/TRIR time series + trend
+    GET    /threshold-alert             - Current LTIFR/TRIR vs safe-baseline status
     GET    /incidents                   - List incidents for a project
     POST   /incidents                   - Create incident
     GET    /incidents/{id}              - Get single incident
@@ -31,6 +35,8 @@ from app.modules.safety.schemas import (
     ObservationResponse,
     ObservationUpdate,
     SafetyStatsResponse,
+    SafetyThresholdAlertResponse,
+    SafetyTrendsExtendedResponse,
     SafetyTrendsResponse,
 )
 from app.modules.safety.service import SafetyService
@@ -124,6 +130,39 @@ async def safety_trends(
     """‌⁠‍Return time-series incident and observation data grouped by period."""
     await verify_project_access(project_id, user_id, session)
     return await service.get_trends(project_id, period=period)
+
+
+@router.get("/trends/extended/", response_model=SafetyTrendsExtendedResponse)
+async def safety_trends_extended(
+    session: SessionDep,
+    project_id: uuid.UUID = Query(...),
+    period: str = Query(default="monthly", pattern=r"^(monthly|weekly)$"),
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("safety.read")),
+    service: SafetyService = Depends(_get_service),
+) -> SafetyTrendsExtendedResponse:
+    """‌⁠‍Return a rolling LTIFR/TRIR time series and the trend direction."""
+    await verify_project_access(project_id, user_id, session)
+    return await service.get_trends_extended(project_id, period=period)
+
+
+@router.get("/threshold-alert/", response_model=SafetyThresholdAlertResponse)
+async def safety_threshold_alert(
+    session: SessionDep,
+    project_id: uuid.UUID = Query(...),
+    baseline_ltifr: float = Query(default=2.5, ge=0.0),
+    baseline_trir: float = Query(default=3.0, ge=0.0),
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("safety.read")),
+    service: SafetyService = Depends(_get_service),
+) -> SafetyThresholdAlertResponse:
+    """‌⁠‍Check current LTIFR/TRIR against safe-baselines; return a status band."""
+    await verify_project_access(project_id, user_id, session)
+    return await service.get_threshold_alert(
+        project_id,
+        baseline_ltifr=baseline_ltifr,
+        baseline_trir=baseline_trir,
+    )
 
 
 # ── Incidents ────────────────────────────────────────────────────────────

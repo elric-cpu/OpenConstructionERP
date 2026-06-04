@@ -143,8 +143,75 @@ class POResponse(BaseModel):
     created_by: UUID | None = None
     metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
     items: list[POItemResponse] = Field(default_factory=list)
+    # ── Retainage (Gap F) ────────────────────────────────────────────────
+    # ``retention_percent`` / ``retain_on_receipt`` are persisted columns;
+    # ``retainage_amount`` / ``retainage_held`` are computed by the ORM model
+    # and stamped onto the response by the router (model_validate cannot call
+    # ORM methods). Decimal-as-string, always in this PO's ``currency_code``.
+    retention_percent: str = "0.00"
+    retain_on_receipt: bool = False
+    retainage_amount: str = "0"
+    retainage_held: str = "0"
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("retention_percent", mode="before")
+    @classmethod
+    def _coerce_retention_percent(cls, v: Any) -> str:
+        """Numeric(5,2) arrives as a Decimal from the ORM — render as string."""
+        if v is None:
+            return "0.00"
+        return str(v)
+
+
+class PORetainageReleaseResponse(BaseModel):
+    """A single retainage-release audit-log entry returned from the API."""
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    po_id: UUID
+    release_date: str
+    release_amount: str
+    release_reason: str | None = None
+    released_by_id: UUID | None = None
+    created_at: datetime
+
+    @field_validator("release_amount", mode="before")
+    @classmethod
+    def _coerce_release_amount(cls, v: Any) -> str:
+        """Numeric(18,4) arrives as a Decimal from the ORM — render as string."""
+        if v is None:
+            return "0"
+        return str(v)
+
+
+class PORetainageReleaseRequest(BaseModel):
+    """Request body for releasing withheld retainage on a PO."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    amount: str = Field(..., max_length=50)
+    reason: str | None = Field(default=None, max_length=255)
+
+    @field_validator("amount")
+    @classmethod
+    def _check_positive_decimal(cls, v: str) -> str:
+        """A release must be a strictly positive decimal amount."""
+        try:
+            d = Decimal(v)
+        except (InvalidOperation, ValueError, TypeError) as exc:
+            raise ValueError(f"Invalid decimal value: {v!r}") from exc
+        if d <= 0:
+            raise ValueError(f"Release amount must be positive, got {v!r}")
+        return v
+
+
+class PORetainageReleaseListResponse(BaseModel):
+    """Paginated list of retainage-release records for a PO."""
+
+    items: list[PORetainageReleaseResponse]
+    total: int
 
 
 class POListResponse(BaseModel):

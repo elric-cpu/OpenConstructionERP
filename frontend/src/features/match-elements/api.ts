@@ -848,6 +848,18 @@ export const matchElementsApi = {
 
   deletePromptTemplate: (id: string) =>
     call<void>(`/prompt-templates/${id}`, { method: 'DELETE' }),
+
+  /** Item #18 — deterministic symbol-signature recogniser. Ranks a
+   *  structured descriptor (category + geometry quantities + properties)
+   *  against the built-in symbol library and returns ranked suggestions
+   *  with honest confidence (0..1). NOT computer vision: raster CV symbol
+   *  detection is the separate cv-pipeline service. SUGGESTS only; the
+   *  human confirms via the existing confirm/apply path. */
+  suggestSymbols: (spec: SymbolSuggestRequest) =>
+    call<SymbolSuggestResponse>('/suggest-symbols', {
+      method: 'POST',
+      body: JSON.stringify(spec),
+    }),
 };
 
 // ── Visible pipeline types (mirror match_elements/schemas.py) ─────────
@@ -1022,4 +1034,49 @@ export async function fetchQdrantHealth(): Promise<QdrantHealth> {
 
 export async function installQdrantNative(): Promise<QdrantHealth> {
   return call<QdrantHealth>('/qdrant/install', { method: 'POST' });
+}
+
+// ── Symbol-signature suggestions (item #18) ───────────────────────────
+// Shapes mirror backend match_elements/schemas.py exactly.
+
+export interface SymbolSuggestRequest {
+  /** Inline descriptor (canonical-format element shape). */
+  category?: string | null;
+  quantities?: Record<string, number>;
+  properties?: Record<string, unknown>;
+  /** OR reference an existing stored group (authorised server-side). */
+  session_id?: string | null;
+  group_key?: string | null;
+  top_k?: number;
+  min_confidence?: number;
+}
+
+export interface SymbolFactor {
+  name: string;
+  weight: number;
+  contribution: number;
+  detail: string;
+}
+
+export interface SymbolSuggestion {
+  symbol: string;
+  /** Honest confidence in [0, 1] — blend of category, geometry, keywords. */
+  confidence: number;
+  confidence_band: 'high' | 'medium' | 'low';
+  factors: SymbolFactor[];
+  rank: number;
+}
+
+export interface SymbolSignatureOut {
+  category: string;
+  ratios: Record<string, number>;
+  property_fingerprint: string[];
+  raw_dimensions: Record<string, number>;
+}
+
+export interface SymbolSuggestResponse {
+  signature: SymbolSignatureOut;
+  suggestions: SymbolSuggestion[];
+  /** Provenance: deterministic heuristic, not CV/ML pixel detection. */
+  note: string;
 }

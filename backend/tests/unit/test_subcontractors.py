@@ -1037,3 +1037,278 @@ async def test_sov_summary_rolls_up_claimed_certified_approved() -> None:
     # Totals roll up across WPs.
     assert summary.totals["approved_to_date"] == Decimal("28000")
     assert summary.totals["remaining"] == Decimal("72000")
+
+
+# ── Prequalification questionnaire scoring (TOP-30 #20) ───────────────────
+
+
+def _full_prequal_answers(overrides: dict[str, str] | None = None) -> dict[str, str]:
+    """All 8 canonical questions answered correctly, with optional overrides."""
+    from app.modules.subcontractors.service import DEFAULT_PREQUAL_QUESTIONS
+
+    answers = {q.key: q.expected for q in DEFAULT_PREQUAL_QUESTIONS}
+    if overrides:
+        answers.update(overrides)
+    return answers
+
+
+def test_compute_prequal_score_six_of_eight() -> None:
+    """TC-1: 6 of 8 questions correct -> score == 75."""
+    from app.modules.subcontractors.service import compute_prequal_score
+
+    # Flip the two negative questions to the wrong answer ("yes").
+    answers = _full_prequal_answers(
+        {"has_open_incidents": "yes", "has_unpaid_liens": "yes"},
+    )
+    assert compute_prequal_score(answers) == 75
+
+
+def test_compute_prequal_score_all_correct() -> None:
+    from app.modules.subcontractors.service import compute_prequal_score
+
+    assert compute_prequal_score(_full_prequal_answers()) == 100
+
+
+def test_compute_prequal_score_blank_question_counts_against() -> None:
+    """An unanswered question lowers the score (no denominator shrink)."""
+    from app.modules.subcontractors.service import compute_prequal_score
+
+    answers = _full_prequal_answers()
+    del answers["license_current"]  # 7/8 -> 87.5 -> rounds to 88
+    assert compute_prequal_score(answers) == 88
+
+
+def test_compute_prequal_score_generic_fallback() -> None:
+    """A questionnaire with no canonical keys is scored generically."""
+    from app.modules.subcontractors.service import compute_prequal_score
+
+    # 2 of 3 yes/no answers truthy -> 67.
+    assert compute_prequal_score({"q1": "yes", "q2": "no", "q3": "yes"}) == 67
+
+
+def test_compute_prequal_score_accepts_bool_answers() -> None:
+    from app.modules.subcontractors.service import compute_prequal_score
+
+    answers = {
+        "license_current": True,
+        "wcb_coverage": True,
+        "insurance_current": True,
+        "safety_program": True,
+        "references_available": True,
+        "financial_statements": True,
+        "has_open_incidents": False,
+        "has_unpaid_liens": False,
+    }
+    assert compute_prequal_score(answers) == 100
+
+
+def test_validate_questionnaire_complete() -> None:
+    """TC: a fully-answered questionnaire has no missing required keys."""
+    from app.modules.subcontractors.service import validate_questionnaire
+
+    assert validate_questionnaire(_full_prequal_answers()) == []
+
+
+def test_validate_questionnaire_missing_required() -> None:
+    """TC-14: an unanswered required question is reported."""
+    from app.modules.subcontractors.service import validate_questionnaire
+
+    answers = _full_prequal_answers()
+    del answers["safety_program"]
+    missing = validate_questionnaire(answers)
+    assert missing == ["safety_program"]
+
+
+def test_validate_questionnaire_unrecognised_answer_is_missing() -> None:
+    """A scale/text answer to a required question does not satisfy it."""
+    from app.modules.subcontractors.service import validate_questionnaire
+
+    answers = _full_prequal_answers({"license_current": "maybe"})
+    assert "license_current" in validate_questionnaire(answers)
+
+
+# ── Award gate (TOP-30 #20) ───────────────────────────────────────────────
+
+
+def test_award_block_approved_is_clear() -> None:
+    from app.modules.subcontractors.service import subcontractor_award_block
+
+    sub = SimpleNamespace(prequalification_status="approved", is_blocked=False)
+    result = subcontractor_award_block(sub)
+    assert result.blocked is False
+    assert result.reasons == []
+
+
+def test_award_block_pending_is_clear() -> None:
+    """Pending prequal still allows award (UI nudges, gate does not bite)."""
+    from app.modules.subcontractors.service import subcontractor_award_block
+
+    sub = SimpleNamespace(prequalification_status="pending", is_blocked=False)
+    assert subcontractor_award_block(sub).blocked is False
+
+
+def test_award_block_rejected() -> None:
+    """TC-7: a rejected prequal blocks award."""
+    from app.modules.subcontractors.service import subcontractor_award_block
+
+    sub = SimpleNamespace(prequalification_status="rejected", is_blocked=False)
+    result = subcontractor_award_block(sub)
+    assert result.blocked is True
+    assert "prequalification_rejected" in result.reasons
+
+
+def test_award_block_suspended() -> None:
+    from app.modules.subcontractors.service import subcontractor_award_block
+
+    sub = SimpleNamespace(prequalification_status="suspended", is_blocked=False)
+    assert "prequalification_suspended" in subcontractor_award_block(sub).reasons
+
+
+def test_award_block_admin_blocked() -> None:
+    """TC-8: an administratively blocked sub is barred even if approved."""
+    from app.modules.subcontractors.service import subcontractor_award_block
+
+    sub = SimpleNamespace(prequalification_status="approved", is_blocked=True)
+    result = subcontractor_award_block(sub)
+    assert result.blocked is True
+    assert "subcontractor_blocked" in result.reasons
+
+
+# ── Monthly rating compute (TOP-30 #20) ───────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_compute_monthly_rating_from_event_basis() -> None:
+    """TC-5: monthly compute rolls up the event-accumulated basis counters.
+
+    The session here has no ``run_sync`` (a pure stub), so the cross-lane
+    direct-count path bails out and the event-accumulated basis stands alone.
+    Two NCRs + one incident + a 3-day slip must produce sub-100 component
+    scores and emit ``subcontractors.rating.updated``.
+    """
+    from app.modules.subcontractors.service import SubcontractorService
+
+    sub_id = uuid.uuid4()
+    svc = SubcontractorService.__new__(SubcontractorService)
+    svc.session = SimpleNamespace(refresh=AsyncMock(return_value=None))
+    svc.subs = _SubStubRepo(sub_id=sub_id)  # type: ignore[assignment]
+    ratings = _RatingStubRepo()
+    # Seed the period row with the counters the event subscribers would have
+    # accumulated during the month.
+    seeded = SimpleNamespace(
+        id=uuid.uuid4(),
+        subcontractor_id=sub_id,
+        period="2026-05",
+        basis={
+            "ncr_count": 2,
+            "hse_incidents": 1,
+            "schedule_deviations_days": 3,
+        },
+    )
+    ratings.rows[seeded.id] = seeded
+    svc.ratings = ratings  # type: ignore[assignment]
+
+    published: list[tuple[str, dict[str, Any]]] = []
+
+    def _capture(name: str, data: dict[str, Any], **_: Any) -> None:
+        published.append((name, data))
+
+    with patch(
+        "app.modules.subcontractors.service.event_bus.publish_detached",
+        side_effect=_capture,
+    ):
+        rating = await svc.compute_monthly_rating(sub_id, "2026-05")
+
+    assert rating is not None
+    assert rating.id == seeded.id  # upsert, not a new row
+    assert len(ratings.rows) == 1
+    # 2 NCRs (penalty 15) -> quality 70; 1 incident (penalty 20) -> hse 80;
+    # 3-day slip (x2) -> schedule 94.
+    assert rating.quality_score == Decimal("70.00")
+    assert rating.hse_score == Decimal("80.00")
+    assert rating.schedule_score == Decimal("94.00")
+    assert rating.overall_score < Decimal("100")
+    # Event published with the monthly_compute trigger.
+    assert any(
+        name == "subcontractors.rating.updated" and data.get("trigger") == "monthly_compute"
+        for name, data in published
+    )
+    # Sub's rolled-up score == new overall.
+    assert svc.subs.rating_score == rating.overall_score  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_compute_monthly_rating_unknown_sub_returns_none() -> None:
+    """TC-16-ish: compute for a deleted/unknown sub returns None, no raise."""
+    from app.modules.subcontractors.service import SubcontractorService
+
+    svc = SubcontractorService.__new__(SubcontractorService)
+    svc.session = SimpleNamespace(refresh=AsyncMock(return_value=None))
+    svc.subs = _SubStubRepo(sub_id=uuid.uuid4())  # type: ignore[assignment]
+    svc.ratings = _RatingStubRepo()  # type: ignore[assignment]
+
+    with patch("app.modules.subcontractors.service.event_bus.publish_detached"):
+        result = await svc.compute_monthly_rating(uuid.uuid4(), "2026-05")
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_compute_monthly_rating_idempotent_recompute() -> None:
+    """TC-10/11: re-computing the same month updates one row, not a new one."""
+    from app.modules.subcontractors.service import SubcontractorService
+
+    sub_id = uuid.uuid4()
+    svc = SubcontractorService.__new__(SubcontractorService)
+    svc.session = SimpleNamespace(refresh=AsyncMock(return_value=None))
+    svc.subs = _SubStubRepo(sub_id=sub_id)  # type: ignore[assignment]
+    ratings = _RatingStubRepo()
+    seeded = SimpleNamespace(
+        id=uuid.uuid4(),
+        subcontractor_id=sub_id,
+        period="2026-05",
+        basis={"ncr_count": 1, "hse_incidents": 0, "schedule_deviations_days": 0},
+    )
+    ratings.rows[seeded.id] = seeded
+    svc.ratings = ratings  # type: ignore[assignment]
+
+    with patch("app.modules.subcontractors.service.event_bus.publish_detached"):
+        first = await svc.compute_monthly_rating(sub_id, "2026-05")
+        second = await svc.compute_monthly_rating(sub_id, "2026-05")
+
+    assert first is not None and second is not None
+    assert first.id == second.id
+    assert len(ratings.rows) == 1
+    # Recompute from the same basis yields the same score (deterministic).
+    assert first.overall_score == second.overall_score
+
+
+# ── Prequal view read-model (TOP-30 #20) ──────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_prequal_view_reports_score_and_missing() -> None:
+    from app.modules.subcontractors.service import SubcontractorService
+
+    sub_id = uuid.uuid4()
+    answers = _full_prequal_answers({"has_open_incidents": "yes"})  # one wrong answer
+    del answers["has_unpaid_liens"]  # leave one required unanswered (6/8 -> 75)
+
+    svc = SubcontractorService.__new__(SubcontractorService)
+
+    async def _get(_id: uuid.UUID) -> Any:
+        return SimpleNamespace(
+            id=sub_id,
+            prequalification_status="pending",
+            prequal_score=88,
+            prequal_questionnaire=answers,
+            prequal_completed_at=datetime.now(UTC),
+            is_blocked=False,
+            blocked_reason=None,
+        )
+
+    svc.get_subcontractor = _get  # type: ignore[method-assign]
+    view = await svc.prequal_view(sub_id)
+    assert view["missing_required"] == ["has_unpaid_liens"]
+    assert view["computed_score"] is not None
+    assert view["approval_threshold"] == 70

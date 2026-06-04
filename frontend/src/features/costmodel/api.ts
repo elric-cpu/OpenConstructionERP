@@ -44,6 +44,13 @@ export interface BudgetLine {
   currency: string;
   period_start: string | null;
   period_end: string | null;
+  /**
+   * Cost-overrun alert threshold (Gap D): a percentage above planned at which
+   * an alert fires. Backend sends it as a Decimal-encoded string; '0' disables.
+   */
+  overrun_alert_threshold_pct?: string;
+  /** ISO timestamp of the last overrun alert sent for this line (null = never). */
+  overrun_alerted_at?: string | null;
 }
 
 export interface BudgetCategorySummary {
@@ -252,6 +259,18 @@ export const costModelApi = {
     apiPost<BudgetLine>(`/v1/costmodel/projects/${projectId}/5d/budget-lines/`, data),
   updateBudgetLine: (id: string, data: Partial<BudgetLine>) =>
     apiPatch<BudgetLine>(`/v1/costmodel/5d/budget-lines/${id}`, data),
+  /**
+   * Arm (or disable) the cost-overrun alert threshold on a budget line (Gap D).
+   * ``threshold`` is a percentage in [0, 100]; 0 disables alerting. The value
+   * travels as a query parameter to match the backend endpoint contract.
+   */
+  setOverrunAlertThreshold: (id: string, threshold: number) =>
+    apiPatch<BudgetLine>(
+      `/v1/costmodel/5d/budget-lines/${id}/overrun-alert-threshold?threshold=${encodeURIComponent(
+        String(threshold),
+      )}`,
+      {},
+    ),
   generateBudgetFromBoq: (projectId: string, boqId: string) =>
     apiPost(`/v1/costmodel/projects/${projectId}/5d/generate-budget/`, { boq_id: boqId }),
   createSnapshot: (projectId: string, data: { period: string; notes?: string }) =>

@@ -250,3 +250,68 @@ class SnoozeForecastRequest(BaseModel):
     """Snooze a forecast alert for a number of hours (1-720, default 24)."""
 
     hours: int = Field(default=24, ge=1, le=720)
+
+
+# ── Predictive forecast analytics (TOP-30 #19) ────────────────────────────
+#
+# These power GET /{project_id}/forecast — the live, read-only predictive
+# cost + schedule + risk analytics. Distinct from the persisted-forecast
+# alert surface above (ForecastsResponse), which reads stored EVMForecast
+# rows. This one recomputes the canonical EVM math live, never writing.
+
+
+class CostForecastResponse(BaseModel):
+    """Earned-value cost forecast (CPI/SPI/EAC/ETC/VAC/TCPI)."""
+
+    available: bool = False
+    reason: str | None = None
+    currency: str = ""
+    snapshot_date: str | None = None
+    bac: str | None = None
+    ev: str | None = None
+    ac: str | None = None
+    pv: str | None = None
+    cpi: float | None = None
+    spi: float | None = None
+    eac: str | None = None
+    etc: str | None = None
+    vac: str | None = None
+    tcpi: str | None = None
+    eac_over_bac: float | None = None
+
+
+class ScheduleSlipResponse(BaseModel):
+    """Forward projection of the schedule finish-date variance."""
+
+    available: bool = False
+    reason: str | None = None
+    activities_total: int = 0
+    activities_complete: int = 0
+    planned_pct_complete: float | None = None
+    actual_pct_complete: float | None = None
+    baseline_finish: str | None = None
+    forecast_finish: str | None = None
+    finish_variance_days: int | None = None
+    at_risk_task_count: int = 0
+
+
+class CostOverrunRiskResponse(BaseModel):
+    """Deterministic cost-overrun risk score with confidence + rationale."""
+
+    score: float = 0.0
+    band: str = "green"
+    confidence: float = 0.0
+    rationale: list[str] = Field(default_factory=list)
+
+
+class ProjectForecastResponse(BaseModel):
+    """Full predictive-analytics payload for a project (forecast - review required)."""
+
+    project_id: str = ""
+    project_name: str = ""
+    currency: str = ""
+    generated_at: str = ""
+    cost: CostForecastResponse = Field(default_factory=CostForecastResponse)
+    schedule: ScheduleSlipResponse = Field(default_factory=ScheduleSlipResponse)
+    risk: CostOverrunRiskResponse = Field(default_factory=CostOverrunRiskResponse)
+    review_required: bool = True

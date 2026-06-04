@@ -9,8 +9,9 @@ Tables:
 """
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import JSON, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import GUID, Base
@@ -74,6 +75,18 @@ class BudgetLine(Base):
     """
 
     __tablename__ = "oe_costmodel_budget_line"
+    __table_args__ = (
+        # Partial index for the overrun-alert sweep (Gap D): only rows with a
+        # threshold actually armed (> '0') are interesting, so the index stays
+        # tiny on projects that never opt in. PostgreSQL string-compares the
+        # VARCHAR threshold; '0' is the disabled sentinel.
+        Index(
+            "ix_costmodel_budget_line_overrun_alert",
+            "project_id",
+            "overrun_alerted_at",
+            postgresql_where="overrun_alert_threshold_pct > '0'",
+        ),
+    )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
         GUID(),
@@ -104,6 +117,27 @@ class BudgetLine(Base):
     period_start: Mapped[str | None] = mapped_column(String(20), nullable=True, doc="ISO date start")
     period_end: Mapped[str | None] = mapped_column(String(20), nullable=True, doc="ISO date end")
     currency: Mapped[str] = mapped_column(String(10), nullable=False, default="", doc="From project settings")
+    # ── Cost-overrun alerts (Gap D) ──────────────────────────────────────
+    # ``overrun_alert_threshold_pct`` is the percentage above ``planned_amount``
+    # at which an in-app alert fires; ``'0'`` (the default) disables alerting on
+    # the line. Stored as a string for the same reason money is: the column
+    # vocabulary stays uniform and PostgreSQL string-comparison ('> 0') powers
+    # the partial index above. ``overrun_alerted_at`` records the last time an
+    # alert was sent so the subscriber can enforce a 24h cooldown (idempotent
+    # re-notification). NULL means "never alerted".
+    overrun_alert_threshold_pct: Mapped[str] = mapped_column(
+        String(10),
+        nullable=False,
+        default="0",
+        server_default="0",
+        doc="% above planned that triggers an alert; '0' disables (Gap D)",
+    )
+    overrun_alerted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        default=None,
+        doc="Timestamp of the last overrun alert sent for this line (24h cooldown anchor)",
+    )
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         "metadata",
         JSON,

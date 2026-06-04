@@ -116,6 +116,33 @@ async def recalculate_all_kpis(
     return await service.auto_recalculate_kpis()
 
 
+# ── PO retainage reconciliation (Gap F) ───────────────────────────────────
+
+
+@router.get("/po-retainage-reconciliation/", response_model=dict)
+async def get_po_retainage_reconciliation(
+    session: SessionDep,
+    project_id: uuid.UUID = Query(...),
+    period_start: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    period_end: str = Query(..., pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("reporting.read")),
+    service: ReportingService = Depends(_get_service),
+) -> dict:
+    """Period-end PO retainage reconciliation for a project.
+
+    Aggregates POs issued in ``[period_start, period_end]`` (inclusive,
+    ISO ``YYYY-MM-DD``) that carry a non-zero retention percentage. Money is
+    rolled up per currency (never blended). Deterministic; no AI.
+    """
+    await verify_project_access(project_id, user_id, session)
+    return await service.render_po_retainage_reconciliation(
+        project_id=project_id,
+        period_start=period_start,
+        period_end=period_end,
+    )
+
+
 # ── Report Template endpoints ─────────────────────────────────────────────
 
 

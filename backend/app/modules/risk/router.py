@@ -20,6 +20,8 @@ from app.core.bulk_ops import BulkDeleteRequest, BulkStatusRequest
 from app.dependencies import CurrentUserId, RequirePermission, SessionDep, verify_project_access
 from app.modules.risk.schemas import (
     RiskCreate,
+    RiskEscalationSweepRequest,
+    RiskEscalationSweepResult,
     RiskMatrixCell,
     RiskMatrixResponse,
     RiskResponse,
@@ -92,6 +94,10 @@ def _risk_to_response(item: object) -> RiskResponse:
         owner_user_id=getattr(item, "owner_user_id", None),
         response_cost=_as_float(item.response_cost),  # type: ignore[attr-defined]
         currency=item.currency,  # type: ignore[attr-defined]
+        escalated=bool(getattr(item, "escalated", False)),
+        escalated_at=getattr(item, "escalated_at", None),
+        escalation_trigger=getattr(item, "escalation_trigger", None),
+        escalation_threshold=getattr(item, "escalation_threshold", None),
         metadata=getattr(item, "metadata_", {}),  # type: ignore[attr-defined]
         created_at=item.created_at,  # type: ignore[attr-defined]
         updated_at=item.updated_at,  # type: ignore[attr-defined]
@@ -237,6 +243,48 @@ async def simulate_risks(
         mode=body.mode,
     )
     return RiskSimulationResult(**data)
+
+
+# ── Auto-escalation sweep (TOP-30 #24) ───────────────────────────────────
+#
+# Manual, on-demand counterpart to the periodic sweep the central scheduler
+# runs. Mounted under ``/projects/{project_id}/escalate`` (non-parametric
+# prefix) so it does not collide with ``/{risk_id}``. Gated at
+# ``risk.escalate`` (MANAGER) because escalation drives notifications and
+# auto-creates action items — a supervisory action, not a routine edit.
+
+
+@router.post(
+    "/projects/{project_id}/escalate",
+    response_model=RiskEscalationSweepResult,
+    dependencies=[Depends(RequirePermission("risk.escalate"))],
+)
+async def escalate_project_risks(
+    project_id: uuid.UUID,
+    body: RiskEscalationSweepRequest,
+    user_id: CurrentUserId,
+    session: SessionDep,
+) -> RiskEscalationSweepResult:
+    """Run an auto-escalation sweep over one project's risks.
+
+    Escalates every not-yet-escalated risk whose severity product crosses
+    the threshold or whose next-review date has lapsed. Idempotent — risks
+    already escalated for their current trigger are skipped. Each escalation
+    flips the flag, stamps ``escalated_at``, appends a mitigation action and
+    emits ``risk.escalated``.
+    """
+    from app.modules.risk.escalation import (
+        DEFAULT_ESCALATION_THRESHOLD,
+        RiskEscalationService,
+    )
+
+    await verify_project_access(project_id, user_id, session)
+    svc = RiskEscalationService(session)
+    summary = await svc.sweep(
+        project_id=project_id,
+        default_threshold=body.threshold or DEFAULT_ESCALATION_THRESHOLD,
+    )
+    return RiskEscalationSweepResult(**summary)
 
 
 # ── Bulk operations (must come BEFORE parametric /{risk_id}) ─────────

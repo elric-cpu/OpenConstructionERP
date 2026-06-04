@@ -29,6 +29,7 @@ from app.modules.contracts.compliance_packs import (
     WORKFLOW_CONTRACT_SIGNATURE,
     resolve_rule_sets,
 )
+from app.modules.contracts.events import CLAIM_POPULATED
 from app.modules.contracts.models import (
     Contract,
     ContractLine,
@@ -243,6 +244,76 @@ def compute_progress_claim_total(
     if net < DEC_ZERO:
         net = DEC_ZERO
     return {"gross": gross, "retention": retention, "net": net}
+
+
+#: Key under which a SoV ``ContractLine.metadata_`` stores the id of the BOQ
+#: position it bills against. The progress bridge reads the latest observation
+#: for this position; lines without it are skipped (additive, no DDL needed).
+BOQ_POSITION_META_KEY = "boq_position_id"
+
+
+def boq_position_id_for_line(line: ContractLine | Any) -> uuid.UUID | None:
+    """Return the BOQ position a SoV line bills against, or ``None``.
+
+    The link lives in ``ContractLine.metadata_["boq_position_id"]`` (a string
+    UUID). Returns ``None`` when the line is unlinked or the stored value is not
+    a parseable UUID, so a malformed metadata entry degrades to "skip this
+    line" rather than raising.
+    """
+    meta = getattr(line, "metadata_", None) or {}
+    if not isinstance(meta, dict):
+        return None
+    raw = meta.get(BOQ_POSITION_META_KEY)
+    if raw in (None, ""):
+        return None
+    if isinstance(raw, uuid.UUID):
+        return raw
+    try:
+        return uuid.UUID(str(raw))
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
+def compute_progress_claim_line(
+    line: ContractLine | Any,
+    observed_pct: Decimal | float | int,
+    *,
+    value_override: Decimal | float | int | None = None,
+) -> dict[str, Decimal]:
+    """Pure: derive one claim line's figures from a SoV line + observed pct.
+
+    The percent is clamped to [0, 100]. ``period_completed_value`` defaults to
+    ``contract_line_value × pct / 100`` (rounded to 0.0001). When
+    ``value_override`` is supplied (the user tweaked the value in the preview),
+    it is used instead but clamped to the contract line value so a claim line
+    can never bill more than the SoV line it sits against. Quantity progress is
+    ``contract_quantity × pct / 100``.
+
+    Returns ``{period_completed_qty, period_completed_value,
+    period_completed_pct, cumulative_completed_value}`` (all Decimal).
+    """
+    pct = Decimal(str(observed_pct or 0))
+    if pct < DEC_ZERO:
+        pct = DEC_ZERO
+    if pct > DEC_HUNDRED:
+        pct = DEC_HUNDRED
+    line_value = Decimal(str(getattr(line, "total_value", 0) or 0))
+    qty = Decimal(str(getattr(line, "quantity", 0) or 0))
+    if value_override is not None:
+        value = Decimal(str(value_override or 0))
+        if value < DEC_ZERO:
+            value = DEC_ZERO
+        if value > line_value:
+            value = line_value
+    else:
+        value = (line_value * pct / DEC_HUNDRED).quantize(Decimal("0.0001"))
+    qty_progress = (qty * pct / DEC_HUNDRED).quantize(Decimal("0.0001"))
+    return {
+        "period_completed_qty": qty_progress,
+        "period_completed_value": value,
+        "period_completed_pct": pct.quantize(Decimal("0.0001")),
+        "cumulative_completed_value": value,
+    }
 
 
 def compute_gmp_gainshare(
@@ -1419,6 +1490,238 @@ class ContractsService:
         await self.session.refresh(claim)
         return claim
 
+    # ── Progress bridge (Gap I) ──────────────────────────────────────────
+
+    #: Claim statuses whose line breakdown may still be edited. A submitted
+    #: claim is still owner-editable before approval (a re-measure is common
+    #: mid-review); once approved / certified / paid / rejected the breakdown
+    #: is part of the immutable audit trail.
+    _CLAIM_EDITABLE_STATUSES = frozenset({"draft", "submitted"})
+
+    def _assert_claim_editable(self, claim: ProgressClaim) -> None:
+        """Raise HTTP 422 unless the claim is in a line-editable status."""
+        if claim.status not in self._CLAIM_EDITABLE_STATUSES:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": "claim_not_editable",
+                    "message": (
+                        "Progress lines can only be populated / committed on a "
+                        f"draft or submitted claim; this claim is {claim.status!r}."
+                    ),
+                    "claim_status": claim.status,
+                },
+            )
+
+    async def populate_claim_from_progress(
+        self,
+        claim_id: uuid.UUID,
+        *,
+        boq_position_ids: list[uuid.UUID] | None = None,
+    ) -> dict[str, Any]:
+        """Preview claim lines derived from the latest progress observations.
+
+        Read-only: builds the line breakdown the claim WOULD get if committed,
+        without persisting anything, so the UI can let the user deselect / tweak
+        first. For every SoV line that links to a BOQ position
+        (``ContractLine.metadata_["boq_position_id"]``) the latest
+        ``ProgressEntry`` for that position is read and its percent-complete is
+        applied to the line value (same currency as the claim — currencies are
+        never blended; a SoV line in a different currency than the claim is
+        skipped and counted).
+
+        Args:
+            claim_id: target progress claim.
+            boq_position_ids: optional filter — only preview lines whose linked
+                BOQ position is in this set.
+
+        Raises:
+            HTTPException 404 if the claim is missing; 422 if it is not in a
+            line-editable status.
+        """
+        claim = await self.claim_repo.get_by_id(claim_id)
+        if claim is None:
+            raise HTTPException(status_code=404, detail=translate("errors.claim_not_found", locale=get_locale()))
+        self._assert_claim_editable(claim)
+        contract = await self.get_contract(claim.contract_id)
+        claim_currency = claim.currency or contract.currency or ""
+
+        position_filter: set[uuid.UUID] | None = set(boq_position_ids) if boq_position_ids else None
+
+        from app.modules.progress.repository import ProgressRepository  # noqa: PLC0415
+
+        progress_repo = ProgressRepository(self.session)
+
+        lines = await self.line_repo.list_for_contract(contract.id)
+        # Roll-up / parent rows are summed from children — never bill them
+        # directly, exactly as the auto-generate path does.
+        parent_ids = {ln.parent_line_id for ln in lines if getattr(ln, "parent_line_id", None) is not None}
+
+        items: list[dict[str, Any]] = []
+        skipped_unlinked = 0
+        skipped_no_progress = 0
+        skipped_foreign_currency = 0
+
+        for ln in lines:
+            if getattr(ln, "id", None) in parent_ids:
+                continue
+            pos_id = boq_position_id_for_line(ln)
+            if pos_id is None:
+                skipped_unlinked += 1
+                continue
+            if position_filter is not None and pos_id not in position_filter:
+                continue
+            # Never blend currencies: a SoV line whose own currency differs
+            # from the claim currency cannot be summed into this claim's gross.
+            ln_meta = getattr(ln, "metadata_", None)
+            line_currency = ln_meta.get("currency") if isinstance(ln_meta, dict) else None
+            if line_currency and claim_currency and str(line_currency).upper() != claim_currency.upper():
+                skipped_foreign_currency += 1
+                continue
+            entry = await progress_repo.get_latest_for_position(contract.project_id, pos_id)
+            if entry is None:
+                skipped_no_progress += 1
+                continue
+            observed_pct = Decimal(str(entry.percent_complete or 0))
+            derived = compute_progress_claim_line(ln, observed_pct)
+            items.append(
+                {
+                    "contract_line_id": ln.id,
+                    "contract_line_code": ln.code or "",
+                    "contract_line_description": ln.description or "",
+                    "boq_position_id": pos_id,
+                    "unit": ln.unit,
+                    "contract_quantity": Decimal(str(ln.quantity or 0)),
+                    "contract_line_value": Decimal(str(ln.total_value or 0)),
+                    "observed_pct": derived["period_completed_pct"],
+                    "period_label": entry.period_label,
+                    "recorded_at": entry.recorded_at,
+                    "period_completed_qty": derived["period_completed_qty"],
+                    "period_completed_value": derived["period_completed_value"],
+                    "cumulative_completed_value": derived["cumulative_completed_value"],
+                }
+            )
+
+        prior_paid = await self.claim_repo.paid_total(contract.id)
+        gross = sum((it["period_completed_value"] for it in items), DEC_ZERO)
+        pct = Decimal(str(contract.retention_percent or 0))
+        retention = (gross * pct / DEC_HUNDRED).quantize(Decimal("0.0001"))
+        net = gross - retention - prior_paid
+        if net < DEC_ZERO:
+            net = DEC_ZERO
+        return {
+            "claim_id": claim.id,
+            "contract_id": contract.id,
+            "currency": claim_currency,
+            "items": items,
+            "skipped_unlinked": skipped_unlinked,
+            "skipped_no_progress": skipped_no_progress,
+            "skipped_foreign_currency": skipped_foreign_currency,
+            "gross": gross,
+            "retention": retention,
+            "prior_claims_total": prior_paid,
+            "net_due": net,
+        }
+
+    async def commit_preview_to_claim(
+        self,
+        claim_id: uuid.UUID,
+        lines_data: list[Any],
+        *,
+        actor_id: str | None = None,
+    ) -> ProgressClaim:
+        """Persist a populated / edited set of claim lines and roll up totals.
+
+        Idempotent: every existing line on the claim is deleted first, then the
+        submitted ``lines_data`` is written, so committing the same preview
+        twice yields one set of lines (never duplicates). Each line's value is
+        recomputed server-side (percent × contract line value, or the supplied
+        override clamped to the line value) so a tampered total cannot inflate
+        the claim. The claim's gross / retention / prior / net are then re-rolled
+        and ``contracts.claim.populated`` is emitted.
+
+        Raises:
+            HTTPException 404 if the claim or a referenced contract line is
+            missing; 422 if the claim is not line-editable.
+        """
+        claim = await self.claim_repo.get_by_id(claim_id)
+        if claim is None:
+            raise HTTPException(status_code=404, detail=translate("errors.claim_not_found", locale=get_locale()))
+        self._assert_claim_editable(claim)
+        contract = await self.get_contract(claim.contract_id)
+
+        # Resolve + validate every referenced contract line belongs to this
+        # claim's contract BEFORE mutating anything (no partial writes).
+        contract_lines = await self.line_repo.list_for_contract(contract.id)
+        line_by_id = {ln.id: ln for ln in contract_lines}
+        resolved: list[tuple[Any, dict[str, Decimal]]] = []
+        for item in lines_data or []:
+            cl_id = item.contract_line_id
+            sov_line = line_by_id.get(cl_id)
+            if sov_line is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "error": "contract_line_not_found",
+                        "message": (f"Contract line {cl_id} does not belong to contract {contract.id}"),
+                        "contract_line_id": str(cl_id),
+                    },
+                )
+            derived = compute_progress_claim_line(
+                sov_line,
+                getattr(item, "period_completed_pct", 0),
+                value_override=getattr(item, "period_completed_value", None),
+            )
+            resolved.append((sov_line, derived))
+
+        # Idempotent replace: wipe existing lines, then write the new set.
+        await self.claim_line_repo.delete_for_claim(claim_id)
+        new_lines: list[ProgressClaimLine] = [
+            ProgressClaimLine(
+                progress_claim_id=claim_id,
+                contract_line_id=sov_line.id,
+                period_completed_qty=derived["period_completed_qty"],
+                period_completed_value=derived["period_completed_value"],
+                period_completed_pct=derived["period_completed_pct"],
+                cumulative_completed_value=derived["cumulative_completed_value"],
+            )
+            for sov_line, derived in resolved
+        ]
+        if new_lines:
+            await self.claim_line_repo.bulk_create(new_lines)
+
+        prior_paid = await self.claim_repo.paid_total(contract.id)
+        gross = sum((ln.period_completed_value for ln in new_lines), DEC_ZERO)
+        pct = Decimal(str(contract.retention_percent or 0))
+        retention = (gross * pct / DEC_HUNDRED).quantize(Decimal("0.0001"))
+        net = gross - retention - prior_paid
+        if net < DEC_ZERO:
+            net = DEC_ZERO
+        await self.claim_repo.update_fields(
+            claim_id,
+            gross_amount=gross,
+            retention_amount=retention,
+            prior_claims_total=prior_paid,
+            net_due=net,
+        )
+        await self.session.refresh(claim)
+        event_bus.publish_detached(
+            CLAIM_POPULATED,
+            data={
+                "claim_id": str(claim.id),
+                "contract_id": str(contract.id),
+                "claim_number": claim.claim_number,
+                "line_count": len(new_lines),
+                "gross": str(gross),
+                "retention": str(retention),
+                "net_due": str(net),
+                "currency": claim.currency or contract.currency or "",
+                "actor": actor_id,
+            },
+            source_module="contracts",
+        )
+        return claim
+
     # ── Gainshare ────────────────────────────────────────────────────────
 
     async def gainshare_preview(
@@ -1828,6 +2131,7 @@ class ContractsService:
 
 
 __all__ = [
+    "BOQ_POSITION_META_KEY",
     "ContractsService",
     "InvalidTransitionError",
     "NTECapExceededError",
@@ -1839,10 +2143,12 @@ __all__ = [
     "assert_claim_transition",
     "assert_contract_transition",
     "assert_final_account_transition",
+    "boq_position_id_for_line",
     "compute_contract_total",
     "compute_gmp_gainshare",
     "compute_ld_amount",
     "compute_line_total",
+    "compute_progress_claim_line",
     "compute_progress_claim_total",
     "generate_cost_plus_claim",
     "generate_lump_sum_claim",

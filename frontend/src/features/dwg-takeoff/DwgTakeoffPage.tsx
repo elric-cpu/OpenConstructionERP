@@ -894,14 +894,6 @@ export function DwgTakeoffPage() {
     enabled: !!projectId,
   });
 
-  // Raw DXF unit → real metres factor. Combined with ``drawingScale`` (paper
-  // ratio) produces ``effectiveScale``, the single number every measurement
-  // multiplies by. Without it mm-unit files read as "12 000 m walls".
-  const unitFactor = useMemo(() => {
-    const d = drawings.find((x) => x.id === selectedDrawingId);
-    return unitFactorToMetres(d?.units ?? null);
-  }, [drawings, selectedDrawingId]);
-  const effectiveScale = drawingScale * unitFactor;
 
   /**
    * Layers to request from the backend. While `visibleLayers` is empty the
@@ -950,11 +942,16 @@ export function DwgTakeoffPage() {
     () => drawings.find((d) => d.id === selectedDrawingId),
     [drawings, selectedDrawingId],
   );
-  const isStatusKnownReady = (selectedDrawingFromList?.status ?? null) === 'ready';
   const { data: liveDrawing } = useQuery({
     queryKey: ['dwg-drawing', selectedDrawingId],
     queryFn: () => fetchDrawing(selectedDrawingId!),
-    enabled: !!selectedDrawingId && !isStatusKnownReady,
+    // Always fetch the single drawing (not just while converting): the
+    // /drawings LIST response never carries the resolved unit, so the
+    // single-drawing fetch (which embeds latest_version.units) is the only
+    // place the frontend learns the drawing's unit and can apply the
+    // mm→m factor. The refetchInterval below stops polling once the status
+    // is terminal, so a ready drawing is fetched exactly once.
+    enabled: !!selectedDrawingId,
     refetchInterval: (q) => {
       const s = (q.state.data as { status?: string } | undefined)?.status;
       // Stop polling once the backend has reached a terminal state.
@@ -970,6 +967,64 @@ export function DwgTakeoffPage() {
     staleTime: 0,
     gcTime: 0,
   });
+
+  // Raw DXF unit → real metres factor. Combined with ``drawingScale`` (paper
+  // ratio) it produces ``effectiveScale``, the single number every
+  // measurement multiplies by. Without it mm-unit files read as "12 000 m
+  // walls".
+  //
+  // Unit resolution order:
+  //   1. The single-drawing fetch (``liveDrawing.latest_version.units``) —
+  //      the only response that carries the backend-resolved/backfilled unit
+  //      (the /drawings LIST never serialises it).
+  //   2. The cached list row (kept for the rare first-paint window before the
+  //      single-drawing fetch resolves).
+  //   3. Belt-and-suspenders: when the unit is still unknown/"unitless",
+  //      guess from the drawing's own extent. A plan whose largest extent is
+  //      >= 1000 raw units is almost certainly authored in millimetres (the
+  //      same heuristic the backend uses), so fall back to the mm factor.
+  const knownUnits =
+    liveDrawing?.latest_version?.units ??
+    selectedDrawingFromList?.units ??
+    null;
+  /** Largest extent of the loaded entities, in raw drawing units. Used only
+   *  for the units guess; ``0`` while entities are still loading. */
+  const entitiesMaxDim = useMemo(() => {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    const expand = (x: number, y: number): void => {
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    };
+    for (const e of entities) {
+      if (e.start) expand(e.start.x, e.start.y);
+      if (e.end) expand(e.end.x, e.end.y);
+      if (e.vertices) {
+        for (const v of e.vertices) expand(v.x, v.y);
+      }
+      if (e.start && typeof e.radius === 'number') {
+        expand(e.start.x - e.radius, e.start.y - e.radius);
+        expand(e.start.x + e.radius, e.start.y + e.radius);
+      }
+    }
+    if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return 0;
+    return Math.max(maxX - minX, maxY - minY);
+  }, [entities]);
+  const unitFactor = useMemo(() => {
+    const normalised = (knownUnits ?? '').toLowerCase();
+    // Honour an explicitly known unit (do NOT override the user's data).
+    if (normalised && normalised !== 'unitless') {
+      return unitFactorToMetres(knownUnits);
+    }
+    // Unknown unit → extents-based guess (mm for large drawings).
+    if (entitiesMaxDim >= 1000) return 0.001;
+    return unitFactorToMetres(knownUnits);
+  }, [knownUnits, entitiesMaxDim]);
+  const effectiveScale = drawingScale * unitFactor;
   /** Effective backend status. A terminal status (ready/error/empty) from
    *  EITHER the live poll or the cached drawings list wins, so a stale
    *  "processing" left over in one source after the other has already reached
@@ -1893,8 +1948,8 @@ export function DwgTakeoffPage() {
 
   /** Σ area / Σ perimeter / Σ length for the current selection. */
   const selectionAggregate = useMemo(
-    () => aggregateEntities(selectedEntities),
-    [selectedEntities],
+    () => aggregateEntities(selectedEntities, effectiveScale),
+    [selectedEntities, effectiveScale],
   );
 
   /**
@@ -1904,8 +1959,8 @@ export function DwgTakeoffPage() {
    * 12 m² to the drawing totals.
    */
   const summaryAggregate = useMemo(
-    () => aggregateEntities(filteredEntities),
-    [filteredEntities],
+    () => aggregateEntities(filteredEntities, effectiveScale),
+    [filteredEntities, effectiveScale],
   );
 
   /**
@@ -1932,10 +1987,18 @@ export function DwgTakeoffPage() {
       }
       buckets.set(e.layer, entry);
     }
+    // Convert raw DXF units to real metres (area × scale², length × scale)
+    // so the per-layer totals match the canvas labels and Σ panels.
+    const areaScale = effectiveScale * effectiveScale;
     return Array.from(buckets.entries())
-      .map(([layer, v]) => ({ layer, ...v }))
+      .map(([layer, v]) => ({
+        layer,
+        count: v.count,
+        area: v.area * areaScale,
+        length: v.length * effectiveScale,
+      }))
       .sort((a, b) => (b.area || b.length || b.count) - (a.area || a.length || a.count));
-  }, [filteredEntities]);
+  }, [filteredEntities, effectiveScale]);
 
   /** Breakdown by DXF entity type, already computed by ``aggregateEntities``. */
   const summaryByType = useMemo(() => {
@@ -2518,7 +2581,7 @@ export function DwgTakeoffPage() {
         name: groupName,
       });
 
-      const agg = aggregateEntities(selectedEntities);
+      const agg = aggregateEntities(selectedEntities, effectiveScale);
       const prefersArea = agg.area > 0 && agg.length === 0;
       const quantity = prefersArea ? agg.area : agg.length > 0 ? agg.length : agg.perimeter;
       const unit = prefersArea ? 'm2' : 'm';
@@ -2558,6 +2621,7 @@ export function DwgTakeoffPage() {
     selectedDrawingId,
     selectedEntityIds,
     selectedEntities,
+    effectiveScale,
     queryClient,
     addToast,
     t,
@@ -3586,24 +3650,41 @@ export function DwgTakeoffPage() {
 
             {/* Summary bar — totals across current drawing */}
             {(entities.length > 0 || annotations.length > 0) && (() => {
-              const areaSum = annotations
-                .filter((a) => a.type === 'area' && a.measurement_value != null)
-                .reduce((s, a) => s + (a.measurement_value ?? 0), 0);
-              const distSum = annotations
-                .filter((a) => a.type === 'distance' && a.measurement_value != null)
-                .reduce((s, a) => s + (a.measurement_value ?? 0), 0);
+              // Persisted measurement_value is in raw DXF units; convert to
+              // real metres (area × scale², distance × scale) so the totals
+              // match the canvas labels.
+              const areaSum =
+                annotations
+                  .filter((a) => a.type === 'area' && a.measurement_value != null)
+                  .reduce((s, a) => s + (a.measurement_value ?? 0), 0) *
+                effectiveScale *
+                effectiveScale;
+              const distSum =
+                annotations
+                  .filter((a) => a.type === 'distance' && a.measurement_value != null)
+                  .reduce((s, a) => s + (a.measurement_value ?? 0), 0) * effectiveScale;
               const handleExportCsv = () => {
                 const rows = [
                   ['type', 'text', 'value', 'unit', 'linked_boq_position_id'].join(','),
-                  ...annotations.map((a) =>
-                    [
+                  ...annotations.map((a) => {
+                    // Export real-metre values (raw DXF units × effectiveScale)
+                    // so the CSV's m / m² columns are meaningful.
+                    const isArea = (a.measurement_unit ?? '').includes('²');
+                    const scaled =
+                      a.measurement_value == null
+                        ? ''
+                        : (
+                            a.measurement_value *
+                            (isArea ? effectiveScale * effectiveScale : effectiveScale)
+                          ).toFixed(3);
+                    return [
                       a.type,
                       JSON.stringify(a.text ?? ''),
-                      a.measurement_value ?? '',
+                      scaled,
                       a.measurement_unit ?? '',
                       a.linked_boq_position_id ?? '',
-                    ].join(','),
-                  ),
+                    ].join(',');
+                  }),
                 ];
                 const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8' });
                 const url = URL.createObjectURL(blob);
@@ -3997,7 +4078,7 @@ export function DwgTakeoffPage() {
                   calibrationPixels={calibrationPixels}
                   onStartCalibration={handleStartCalibration}
                   onCancelCalibration={handleCancelCalibration}
-                  dxfUnits={drawings.find((d) => d.id === selectedDrawingId)?.units ?? null}
+                  dxfUnits={knownUnits}
                   effectiveScale={effectiveScale}
                 />
               )}

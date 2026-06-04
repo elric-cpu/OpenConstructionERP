@@ -1764,6 +1764,263 @@ class SubcontractorService:
         )
         return entity
 
+    # ── Prequalification read model (TOP-30 #20) ───────────────────────
+
+    async def prequal_view(self, sub_id: uuid.UUID) -> dict[str, Any]:
+        """Build the current prequalification state for a subcontractor.
+
+        Returns the persisted questionnaire + score plus a freshly recomputed
+        answer-key score and the list of still-unanswered required questions,
+        so the UI can render the form and the reviewer panel from one read.
+        """
+        sub = await self.get_subcontractor(sub_id)
+        answers = sub.prequal_questionnaire or {}
+        missing = validate_questionnaire(answers) if answers else []
+        computed = compute_prequal_score(answers) if answers else None
+        return {
+            "subcontractor_id": sub.id,
+            "prequalification_status": sub.prequalification_status,
+            "prequal_score": sub.prequal_score,
+            "prequal_questionnaire": sub.prequal_questionnaire,
+            "prequal_completed_at": sub.prequal_completed_at,
+            "is_blocked": bool(sub.is_blocked),
+            "blocked_reason": sub.blocked_reason,
+            "missing_required": missing,
+            "computed_score": computed,
+            "approval_threshold": PREQUAL_APPROVAL_THRESHOLD,
+        }
+
+    # ── Monthly rating rollup (TOP-30 #20) ─────────────────────────────
+
+    async def compute_monthly_rating(
+        self,
+        subcontractor_id: uuid.UUID,
+        period: str,
+    ) -> SubcontractorRating | None:
+        """Recompute and persist a subcontractor's rating for ``period``.
+
+        ``period`` is a ``YYYY-MM`` string. The compute is the authoritative
+        monthly rollup behind the cron / admin trigger. It combines two
+        signal sources and takes the larger of the two per metric so neither
+        a dropped event nor an un-landed cross-lane column undercounts:
+
+        1. The counters already accumulated on the period's rating ``basis``
+           by the event subscribers (``bump_rating_from_event``) — the live,
+           low-latency path that is fully in this module's lane.
+        2. A direct count of source rows for the period where the cross-lane
+           linkage columns exist (``oe_ncr_ncr.responsible_subcontractor_id``,
+           ``oe_safety_incident.responsible_subcontractor_id``, schedule
+           slips on ``oe_schedule_activity.assigned_subcontractor_id``). When
+           those columns are absent (the owning lanes have not shipped them
+           yet) the direct count contributes zero and the event path stands
+           alone — so this method is correct today and forward-compatible.
+
+        The rollup is idempotent: it upserts the single
+        ``(subcontractor_id, period)`` row (DB-unique), so a double-compute of
+        the same month produces the same authoritative figures rather than a
+        duplicate row (TC-10). Emits ``subcontractors.rating.updated``.
+
+        Returns the rating row, or ``None`` if the subcontractor is unknown.
+        """
+        sub = await self.subs.get_by_id(subcontractor_id)
+        if sub is None:
+            return None
+
+        existing = await self.ratings.get_for_period(subcontractor_id, period)
+
+        def _basis_int(value: Any) -> int:
+            try:
+                return int(Decimal(str(value))) if value not in (None, "") else 0
+            except (InvalidOperation, ValueError, TypeError):
+                return 0
+
+        accumulated = dict(existing.basis or {}) if existing is not None else {}
+        ncr_acc = _basis_int(accumulated.get("ncr_count"))
+        hse_acc = _basis_int(accumulated.get("hse_incidents"))
+        sched_acc = _basis_int(accumulated.get("schedule_deviations_days"))
+
+        direct = await self._count_source_events(subcontractor_id, period)
+
+        events = {
+            "ncr_count": max(ncr_acc, direct["ncr_count"]),
+            "hse_incidents": max(hse_acc, direct["hse_incidents"]),
+            "schedule_deviations_days": max(sched_acc, direct["schedule_deviations_days"]),
+            # Cost variance has no cross-lane source row yet — carry whatever
+            # the event path accumulated (kept as a string in basis).
+            "cost_variance_percent": accumulated.get("cost_variance_percent") or 0,
+        }
+        rating = compute_rating(events)
+        # Record where each metric came from for auditability.
+        rating.basis["sources"] = {
+            "ncr_count": {"event": ncr_acc, "direct": direct["ncr_count"]},
+            "hse_incidents": {"event": hse_acc, "direct": direct["hse_incidents"]},
+            "schedule_deviations_days": {
+                "event": sched_acc,
+                "direct": direct["schedule_deviations_days"],
+            },
+        }
+
+        if existing is not None:
+            await self.ratings.update_fields(
+                existing.id,
+                quality_score=rating.quality_score,
+                hse_score=rating.hse_score,
+                schedule_score=rating.schedule_score,
+                cost_score=rating.cost_score,
+                overall_score=rating.overall_score,
+                basis=rating.basis,
+            )
+            await self.session.refresh(existing)
+            entity = existing
+        else:
+            entity = SubcontractorRating(
+                subcontractor_id=subcontractor_id,
+                period=period,
+                quality_score=rating.quality_score,
+                hse_score=rating.hse_score,
+                schedule_score=rating.schedule_score,
+                cost_score=rating.cost_score,
+                overall_score=rating.overall_score,
+                basis=rating.basis,
+            )
+            try:
+                await self.ratings.create(entity)
+            except IntegrityError:
+                # Two computes raced past the read-then-write check above and
+                # both tried to INSERT the same (sub, period). The unique
+                # constraint rejected the loser; reload the winner and update
+                # it so the result is still the authoritative recompute.
+                await self.session.rollback()
+                existing = await self.ratings.get_for_period(subcontractor_id, period)
+                if existing is None:
+                    raise
+                await self.ratings.update_fields(
+                    existing.id,
+                    quality_score=rating.quality_score,
+                    hse_score=rating.hse_score,
+                    schedule_score=rating.schedule_score,
+                    cost_score=rating.cost_score,
+                    overall_score=rating.overall_score,
+                    basis=rating.basis,
+                )
+                await self.session.refresh(existing)
+                entity = existing
+
+        await self.subs.update_fields(subcontractor_id, rating_score=rating.overall_score)
+        await self.session.refresh(entity)
+        event_bus.publish_detached(
+            "subcontractors.rating.updated",
+            {
+                "subcontractor_id": str(subcontractor_id),
+                "period": period,
+                "overall_score": str(rating.overall_score),
+                "basis": rating.basis,
+                "trigger": "monthly_compute",
+            },
+            source_module="subcontractors",
+        )
+        return entity
+
+    async def _count_source_events(
+        self,
+        subcontractor_id: uuid.UUID,
+        period: str,
+    ) -> dict[str, int]:
+        """Count NCR / HSE / schedule-slip source rows for the period.
+
+        Reads the cross-lane source tables directly via raw SQL, guarded by
+        runtime column reflection so a missing linkage column (owning lane has
+        not shipped it) degrades to a zero count rather than erroring. The
+        result feeds :meth:`compute_monthly_rating`. Counting failures never
+        propagate — the event-accumulated basis remains the floor.
+        """
+        zero = {"ncr_count": 0, "hse_incidents": 0, "schedule_deviations_days": 0}
+        # Pure-logic / stub sessions (unit tests) have no real connection;
+        # bail out cleanly so the event path is used.
+        run_sync = getattr(self.session, "run_sync", None)
+        if run_sync is None:
+            return dict(zero)
+
+        try:
+            from sqlalchemy import inspect as _sa_inspect
+
+            def _columns(sync_conn: Any, table: str) -> set[str]:
+                insp = _sa_inspect(sync_conn)
+                if table not in set(insp.get_table_names()):
+                    return set()
+                return {c["name"] for c in insp.get_columns(table)}
+
+            conn = await self.session.connection()
+            ncr_cols = await conn.run_sync(_columns, "oe_ncr_ncr")
+            safety_cols = await conn.run_sync(_columns, "oe_safety_incident")
+            sched_cols = await conn.run_sync(_columns, "oe_schedule_activity")
+        except Exception:  # noqa: BLE001 — reflection must never break the rollup
+            logger.debug("compute_monthly_rating: column reflection failed", exc_info=True)
+            return dict(zero)
+
+        result = dict(zero)
+        sub_str = str(subcontractor_id)
+        like = f"{period}%"  # created_at::text starts with YYYY-MM
+
+        # NCR — one row per non-conformance attributed to this sub in the month.
+        if "responsible_subcontractor_id" in ncr_cols:
+            result["ncr_count"] = await self._scalar_count(
+                "oe_ncr_ncr",
+                sub_str,
+                like,
+                sub_col="responsible_subcontractor_id",
+            )
+        # Safety incidents.
+        if "responsible_subcontractor_id" in safety_cols:
+            result["hse_incidents"] = await self._scalar_count(
+                "oe_safety_incident",
+                sub_str,
+                like,
+                sub_col="responsible_subcontractor_id",
+            )
+        # Schedule slips — activities assigned to this sub that finished late
+        # (negative total float) within the month.
+        if "assigned_subcontractor_id" in sched_cols:
+            extra = ""
+            if "total_float" in sched_cols:
+                extra = " AND total_float IS NOT NULL AND total_float < 0"
+            result["schedule_deviations_days"] = await self._scalar_count(
+                "oe_schedule_activity",
+                sub_str,
+                like,
+                sub_col="assigned_subcontractor_id",
+                extra_where=extra,
+            )
+        return result
+
+    async def _scalar_count(
+        self,
+        table: str,
+        subcontractor_id: str,
+        period_like: str,
+        *,
+        sub_col: str,
+        extra_where: str = "",
+    ) -> int:
+        """Run a guarded ``COUNT(*)`` for one source table; 0 on any error.
+
+        ``table`` and ``sub_col`` are internal allow-listed identifiers (never
+        user input), so interpolating them into the SQL is safe; the values
+        bind as parameters.
+        """
+        from sqlalchemy import text as _text
+
+        sql = _text(
+            f"SELECT COUNT(*) FROM {table} "  # noqa: S608 — identifiers are internal constants
+            f"WHERE {sub_col} = :sid AND CAST(created_at AS TEXT) LIKE :period{extra_where}"
+        )
+        try:
+            value = (await self.session.execute(sql, {"sid": subcontractor_id, "period": period_like})).scalar_one()
+            return int(value or 0)
+        except Exception:  # noqa: BLE001
+            logger.debug("compute_monthly_rating: count on %s failed", table, exc_info=True)
+            return 0
+
     # ── Wave 4 / T12 — BuildingConnected-style prequal + insurance ─────
 
     async def submit_prequal(
@@ -1771,20 +2028,38 @@ class SubcontractorService:
         sub_id: uuid.UUID,
         questionnaire_data: dict[str, Any],
         score: int | None = None,
+        *,
+        require_complete: bool = False,
     ) -> Subcontractor:
         """Persist a questionnaire payload + computed/explicit score.
 
         If ``score`` is ``None`` the service derives a value from the
-        questionnaire answers. The default scorer is simple-on-purpose so
-        third-party questionnaires don't need to ship a custom evaluator
-        upfront: every truthy answer (``True`` / ``"yes"`` / ``"Yes"``) is
-        worth one point and the total is normalised to a 0-100 integer.
+        questionnaire answers via :func:`compute_prequal_score`, which scores
+        the canonical question spec by an answer key (correct / total * 100)
+        and falls back to the generic any-yes/no scorer for third-party
+        questionnaires whose keys it does not recognise.
+
+        When ``require_complete`` is true every REQUIRED question must carry
+        a recognisable yes/no answer, otherwise a 400 is raised naming the
+        missing keys (TC-14). The default is false so a partial draft can be
+        saved and iterated on from the UI.
 
         ``prequal_completed_at`` is stamped to UTC now and rolls up onto
         the subcontractor row for cheap list-view rendering.
         """
         await self.get_subcontractor(sub_id)
-        computed = score if score is not None else _compute_prequal_score(questionnaire_data)
+        if require_complete:
+            missing = validate_questionnaire(questionnaire_data)
+            if missing:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={
+                        "code": "incomplete_questionnaire",
+                        "message": "Required questions are unanswered.",
+                        "missing": missing,
+                    },
+                )
+        computed = score if score is not None else compute_prequal_score(questionnaire_data)
         completed_at = datetime.now(UTC)
         await self.subs.update_fields(
             sub_id,
@@ -1896,6 +2171,117 @@ class SubcontractorService:
 
 
 # ── Prequal score helper ─────────────────────────────────────────────────
+
+
+# ── Structured prequalification questionnaire (TOP-30 #20) ───────────────────
+#
+# The default questionnaire shipped with the platform. Each entry is the
+# question key, whether it is required, and the answer that scores a point
+# (``expected``). Real GCs author their own questionnaires; this canonical set
+# keeps the feature working out of the box and gives the validator / scorer a
+# deterministic shape to score against.
+#
+# ``expected`` semantics: a "positive" question (license current?) scores when
+# answered "yes"; a "negative" question (open HSE incidents?) scores when
+# answered "no". This mirrors the frontend PrequalModal question set so the
+# client-side preview score matches the server-trusted score.
+
+
+@dataclass(frozen=True)
+class PrequalQuestion:
+    """One question in a prequalification questionnaire spec."""
+
+    key: str
+    required: bool
+    expected: str  # "yes" or "no" — the answer that scores a point
+
+
+DEFAULT_PREQUAL_QUESTIONS: tuple[PrequalQuestion, ...] = (
+    PrequalQuestion("license_current", required=True, expected="yes"),
+    PrequalQuestion("wcb_coverage", required=True, expected="yes"),
+    PrequalQuestion("insurance_current", required=True, expected="yes"),
+    PrequalQuestion("safety_program", required=True, expected="yes"),
+    PrequalQuestion("references_available", required=True, expected="yes"),
+    PrequalQuestion("financial_statements", required=True, expected="yes"),
+    PrequalQuestion("has_open_incidents", required=True, expected="no"),
+    PrequalQuestion("has_unpaid_liens", required=True, expected="no"),
+)
+
+# Default approval threshold for the structured scorer. A prequalification at or
+# above this score is eligible to be auto-flagged for approval; below it the
+# reviewer must approve explicitly. Kept as a module constant so the route layer
+# and the tests share one source of truth.
+PREQUAL_APPROVAL_THRESHOLD: int = 70
+
+
+def _normalise_yes_no(value: Any) -> str | None:
+    """Coerce a free-form answer to ``"yes"`` / ``"no"`` / ``None``.
+
+    ``None`` means "not a recognisable yes/no answer" (unanswered or a
+    scale/text answer that the structured scorer cannot evaluate).
+    """
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, str):
+        normalised = value.strip().lower()
+        if normalised in _PREQUAL_TRUTHY:
+            return "yes"
+        if normalised in _PREQUAL_NEGATIVE:
+            return "no"
+    return None
+
+
+def validate_questionnaire(
+    answers: dict[str, Any],
+    questions: tuple[PrequalQuestion, ...] = DEFAULT_PREQUAL_QUESTIONS,
+) -> list[str]:
+    """Return the list of missing / unanswered REQUIRED question keys.
+
+    A required question is satisfied when its answer normalises to a
+    recognisable yes/no value. An empty list means the questionnaire is
+    complete and scoreable; a non-empty list drives a 400 at the route
+    boundary (TC-14).
+    """
+    missing: list[str] = []
+    for q in questions:
+        if not q.required:
+            continue
+        if _normalise_yes_no(answers.get(q.key)) is None:
+            missing.append(q.key)
+    return missing
+
+
+def compute_prequal_score(
+    answers: dict[str, Any],
+    questions: tuple[PrequalQuestion, ...] = DEFAULT_PREQUAL_QUESTIONS,
+) -> int:
+    """Score a structured questionnaire against an answer key, 0-100.
+
+    Score = correct_answers / total_questions * 100, rounded to the nearest
+    integer. A "correct" answer is one that matches the question's
+    ``expected`` value (yes for positive questions, no for negative ones).
+    Unanswered / unrecognised answers count as incorrect — they do not
+    shrink the denominator, so leaving questions blank lowers the score
+    rather than inflating it.
+
+    Example (TC-1): 6 of 8 questions correct -> 6 / 8 * 100 = 75.
+
+    Falls back to the generic any-yes/no scorer when none of the spec's
+    keys appear in ``answers`` (a custom questionnaire the platform does
+    not know the answer key for).
+    """
+    if not questions:
+        return _compute_prequal_score(answers)
+    known = sum(1 for q in questions if q.key in answers)
+    if known == 0:
+        # The submitted answers don't use the canonical spec at all — score
+        # generically so a third-party questionnaire still produces a value.
+        return _compute_prequal_score(answers)
+    correct = 0
+    for q in questions:
+        if _normalise_yes_no(answers.get(q.key)) == q.expected:
+            correct += 1
+    return int(round((correct / len(questions)) * 100))
 
 
 _PREQUAL_TRUTHY: frozenset[str] = frozenset(

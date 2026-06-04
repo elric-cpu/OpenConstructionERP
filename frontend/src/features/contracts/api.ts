@@ -10,7 +10,7 @@
  * aliases at the bottom so any in-flight call sites still type-check.
  */
 
-import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/lib/api';
+import { apiGet, apiPost, apiPatch, apiPut, apiDelete } from '@/shared/lib/api';
 
 /* ── Enums / unions ───────────────────────────────────────────────────── */
 
@@ -426,6 +426,83 @@ export function markClaimPaid(id: string): Promise<ProgressClaimItem> {
 
 export function listClaimLines(claimId: string): Promise<ProgressClaimLine[]> {
   return safeGetList<ProgressClaimLine>(`/v1/contracts/progress-claims/${claimId}/lines`);
+}
+
+export function updateClaimLine(
+  lineId: string,
+  data: {
+    period_completed_qty?: number;
+    period_completed_value?: number;
+    period_completed_pct?: number;
+    cumulative_completed_value?: number;
+  },
+): Promise<ProgressClaimLine> {
+  return apiPatch<ProgressClaimLine>(
+    `/v1/contracts/progress-claim-lines/${lineId}`,
+    data,
+  );
+}
+
+/* ── Progress bridge (Gap I) ──────────────────────────────────────────── */
+
+export interface ProgressClaimPopulatePreviewItem {
+  contract_line_id: string;
+  contract_line_code: string;
+  contract_line_description: string;
+  boq_position_id: string;
+  unit: string | null;
+  contract_quantity: number | string;
+  contract_line_value: number | string;
+  observed_pct: number | string;
+  period_label: string | null;
+  recorded_at: string | null;
+  period_completed_qty: number | string;
+  period_completed_value: number | string;
+  cumulative_completed_value: number | string;
+}
+
+export interface ProgressClaimPopulatePreview {
+  claim_id: string;
+  contract_id: string;
+  currency: string;
+  items: ProgressClaimPopulatePreviewItem[];
+  skipped_unlinked: number;
+  skipped_no_progress: number;
+  skipped_foreign_currency: number;
+  gross: number | string;
+  retention: number | string;
+  prior_claims_total: number | string;
+  net_due: number | string;
+}
+
+export interface ProgressClaimCommitLine {
+  contract_line_id: string;
+  period_completed_pct: number;
+  period_completed_value?: number;
+}
+
+/** Read-only preview of the claim lines derived from progress observations. */
+export function populateClaimPreview(
+  claimId: string,
+  boqPositionIds?: string[],
+): Promise<ProgressClaimPopulatePreview> {
+  const qs = new URLSearchParams();
+  (boqPositionIds ?? []).forEach((id) => qs.append('boq_position_ids', id));
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  return apiGet<ProgressClaimPopulatePreview>(
+    `/v1/contracts/progress-claims/${claimId}/populate-from-progress${suffix}`,
+  );
+}
+
+/** Commit a populated / edited set of claim lines; server re-rolls totals. */
+export function commitClaimLines(
+  claimId: string,
+  lines: ProgressClaimCommitLine[],
+): Promise<ProgressClaimItem> {
+  return apiPut<ProgressClaimItem>(
+    `/v1/contracts/progress-claims/${claimId}/commit-populated-lines`,
+    { lines },
+  );
 }
 
 /* ── Retention schedule ───────────────────────────────────────────────── */

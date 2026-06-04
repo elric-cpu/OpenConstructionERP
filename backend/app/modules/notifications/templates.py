@@ -62,6 +62,9 @@ _TEMPLATES: dict[str, str] = {
     # ── Risks ────────────────────────────────────────────────────────
     "notifications.risk.assigned.title": "Risk assigned to you",
     "notifications.risk.assigned.body": "{code} — {title}",
+    # ── Cost overrun (budget line) ───────────────────────────────────
+    "notifications.costmodel.overrun_alert.title": "Cost Overrun Alert",
+    "notifications.costmodel.overrun_alert.body": "{category} cost is over budget: actual {actual} {currency} exceeds the +{threshold_pct}% alert threshold on planned {planned} {currency}.",
     # ── Submittals ───────────────────────────────────────────────────
     "notifications.submittal.submitted.title": "Submittal awaiting review",
     "notifications.submittal.submitted.body": "{code} — {title}",

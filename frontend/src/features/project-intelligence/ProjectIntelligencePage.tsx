@@ -26,6 +26,7 @@ import { DomainDetails } from './DomainDetails';
 import { ProjectKPIHero } from './components/ProjectKPIHero';
 import { ProjectAnalyticsGrid } from './components/ProjectAnalyticsGrid';
 import { ForecastPanel } from './components/ForecastPanel';
+import { ForecastInsightsPanel } from './components/ForecastInsightsPanel';
 import {
   RefreshCw,
   BrainCircuit,
@@ -801,6 +802,26 @@ export function ProjectIntelligencePage() {
             projectId={activeProjectId}
             onAlertCountChange={setForecastAlertCount}
           />
+        </div>
+      </div>
+
+      {/* Section 2d — Live predictive cost + schedule + risk analytics (#19) */}
+      <div className="pb-4">
+        <div className="rounded-xl border border-border-light bg-white dark:bg-gray-800/60 shadow-sm p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <TrendingUp size={16} className="text-oe-blue" />
+            <h2 className="text-sm font-semibold text-content-primary">
+              {t('project_intelligence.insights.section_title', {
+                defaultValue: 'Predictive Risk Analytics',
+              })}
+            </h2>
+            <span className="ml-auto text-2xs text-content-tertiary">
+              {t('project_intelligence.insights.section_hint', {
+                defaultValue: 'CPI/SPI/EAC, finish-variance and cost-overrun risk',
+              })}
+            </span>
+          </div>
+          <ForecastInsightsPanel projectId={activeProjectId} />
         </div>
       </div>
 

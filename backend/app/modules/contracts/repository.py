@@ -6,6 +6,7 @@ import uuid
 from decimal import Decimal
 from typing import Any
 
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -283,6 +284,22 @@ class ProgressClaimLineRepository(_CRUDBase):
             self.session.add(line)
         await self.session.flush()
         return lines
+
+    async def delete_for_claim(self, claim_id: uuid.UUID) -> int:
+        """Delete every claim line belonging to ``claim_id``.
+
+        Returns the number of rows removed. Used by the Gap I progress bridge
+        when committing a freshly-populated set of lines: the existing draft
+        lines are wiped in one statement (instead of an N+1 per-row delete)
+        before the new breakdown is inserted, so re-running the populate +
+        commit is idempotent and never accumulates stale duplicate lines.
+        """
+        stmt = sa_delete(ProgressClaimLine).where(
+            ProgressClaimLine.progress_claim_id == claim_id,
+        )
+        result = await self.session.execute(stmt)
+        await self.session.flush()
+        return int(result.rowcount or 0)
 
     async def lines_with_status_for_contract(
         self,

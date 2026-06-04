@@ -45,6 +45,16 @@ from app.modules.finance.models import ProjectBudget
 
 logger = logging.getLogger(__name__)
 
+# ── Published event names (Gap E, Wave 6) ───────────────────────────────────
+# Declared here for discoverability; the string is the source of truth at the
+# call site in ``service.create_receivable_from_claim``.
+#
+# Emitted whenever a certified progress claim spawns its receivable invoice.
+# Payload: ``project_id``, ``invoice_id``, ``claim_id``, ``amount_total``,
+# ``retention_amount``, ``currency_code``. Reporting / BI dashboards subscribe
+# to track certified-but-uncollected receivables.
+EVENT_RECEIVABLE_FROM_CLAIM = "finance.invoice.created_from_claim"
+
 
 def _to_decimal(value: object, default: Decimal = Decimal("0")) -> Decimal:
     """‌⁠‍Best-effort string/Decimal coercion — never raises."""
@@ -208,9 +218,49 @@ async def _on_gr_confirmed(event: Event) -> None:
         logger.debug("finance: _on_gr_confirmed failed", exc_info=True)
 
 
+async def _on_claim_certified(event: Event) -> None:
+    """``contracts.claim.certified`` → auto-create a receivable invoice (Gap E).
+
+    A certified progress claim is a collectible amount: the moment it is
+    certified an accounts-receivable invoice should exist for it. This handler
+    turns the certified claim into a draft receivable invoice (with retainage
+    withheld from the gross) via ``FinanceService.create_receivable_from_claim``,
+    which is idempotent on the claim id — so an event replay, a double
+    certification, or two concurrent calls all converge on a single AR invoice.
+
+    Runs in its own short-lived session (mirrors ``_on_po_approved``) so a write
+    failure here never rolls back the upstream contracts transaction. The
+    handler swallows the "claim not certified yet" 400 silently because the
+    event is the certification itself; any other failure is logged.
+    """
+    data = event.data or {}
+    claim_id = _coerce_uuid(data.get("claim_id"))
+    if claim_id is None:
+        return
+    try:
+        from app.modules.finance.service import FinanceService
+
+        async with async_session_factory() as session:
+            service = FinanceService(session)
+            invoice = await service.create_receivable_from_claim(
+                claim_id,
+                actor_id=data.get("actor"),
+            )
+            await session.commit()
+            logger.info(
+                "finance: claim.certified → receivable invoice %s for claim %s",
+                getattr(invoice, "invoice_number", "?"),
+                claim_id,
+            )
+    except Exception:
+        logger.exception("finance: _on_claim_certified failed for claim %s", claim_id)
+
+
 _SUBSCRIPTIONS: list[tuple[str, callable]] = [  # type: ignore[type-arg]
     ("procurement.po.approved", _on_po_approved),
     ("procurement.gr.confirmed", _on_gr_confirmed),
+    # Gap E (Wave 6): certified progress claim → auto receivable invoice.
+    ("contracts.claim.certified", _on_claim_certified),
 ]
 
 

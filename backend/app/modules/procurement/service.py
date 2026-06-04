@@ -12,7 +12,7 @@ Event publishing (slice E):
 
 import logging
 import uuid
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from fastapi import HTTPException, status
@@ -26,6 +26,7 @@ from app.modules.procurement.models import (
     GoodsReceiptItem,
     MaterialRequisition,
     MaterialRequisitionItem,
+    PORetainageRelease,
     PurchaseOrder,
     PurchaseOrderItem,
 )
@@ -33,6 +34,7 @@ from app.modules.procurement.repository import (
     GoodsReceiptRepository,
     GRItemRepository,
     POItemRepository,
+    PORetainageReleaseRepository,
     PurchaseOrderRepository,
 )
 from app.modules.procurement.schemas import (
@@ -300,6 +302,7 @@ class ProcurementService:
         self.po_item_repo = POItemRepository(session)
         self.gr_repo = GoodsReceiptRepository(session)
         self.gr_item_repo = GRItemRepository(session)
+        self.retainage_repo = PORetainageReleaseRepository(session)
 
     # ── Purchase Orders ──────────────────────────────────────────────────────
 
@@ -731,6 +734,131 @@ class ProcurementService:
 
         logger.info("PO issued: %s", po.po_number)
         return updated
+
+    # ── Retainage (Gap F) ─────────────────────────────────────────────────────
+
+    # Statuses from which retainage may be released. A draft / approved /
+    # cancelled PO has not yet committed money to a vendor, so there is
+    # nothing legitimate to release.
+    _RETAINAGE_RELEASABLE_STATUSES = ("issued", "partially_received", "completed")
+
+    async def release_po_retainage(
+        self,
+        po_id: uuid.UUID,
+        release_amount: Decimal,
+        reason: str | None = None,
+        user_id: uuid.UUID | None = None,
+    ) -> PORetainageRelease:
+        """Release withheld retainage on a PO and audit-log the transaction.
+
+        Validation:
+            * 404 if the PO does not exist.
+            * 409 if the PO is in a status that cannot release retainage
+              (draft / approved / cancelled).
+            * 400 if the requested amount is non-positive or exceeds the
+              currently-held balance.
+
+        On success ``PurchaseOrder.retainage_released_amount`` is incremented,
+        a :class:`PORetainageRelease` audit row is written, and the
+        ``procurement.po.retainage_released`` event is published. The release
+        amount is kept in the PO's own currency (never blended).
+        """
+        po = await self.po_repo.get(po_id)
+        if po is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Purchase order not found",
+            )
+
+        if po.status not in self._RETAINAGE_RELEASABLE_STATUSES:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Cannot release retainage from a PO in status '{po.status}'. "
+                    f"Allowed: {', '.join(self._RETAINAGE_RELEASABLE_STATUSES)}."
+                ),
+            )
+
+        if release_amount <= Decimal("0"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Release amount must be positive",
+            )
+
+        held = po.retainage_held()
+        if release_amount > held:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Release amount {release_amount} exceeds held retainage {held}",
+            )
+
+        released_sum = _to_decimal(po.retainage_released_amount)
+        new_released = released_sum + release_amount
+        await self.po_repo.update(po_id, retainage_released_amount=str(new_released))
+
+        now = datetime.now(UTC).isoformat()
+        release = PORetainageRelease(
+            po_id=po_id,
+            release_date=now,
+            release_amount=release_amount,
+            release_reason=reason,
+            released_by_id=user_id,
+        )
+        release = await self.retainage_repo.create(release)
+
+        # FSM-style audit row — mirrors the PO approve/issue audit hooks so
+        # the release leaves the same evidence trail compliance expects.
+        try:
+            from app.core.audit_log import log_activity
+
+            await log_activity(
+                self.session,
+                actor_id=str(user_id) if user_id else None,
+                entity_type="purchase_order",
+                entity_id=str(po_id),
+                action="retainage_released",
+                reason=reason or "Retainage released via release_po_retainage()",
+                metadata={
+                    "po_number": po.po_number,
+                    "release_amount": str(release_amount),
+                    "currency_code": po.currency_code or "",
+                    "retainage_released_total": str(new_released),
+                },
+            )
+        except Exception:
+            logger.debug("Audit log skipped for PO %s retainage release", po_id)
+
+        await _safe_publish(
+            "procurement.po.retainage_released",
+            {
+                "po_id": str(po_id),
+                "project_id": str(po.project_id),
+                "po_number": po.po_number,
+                "release_amount": str(release_amount),
+                "currency_code": po.currency_code or "",
+                "released_by": str(user_id) if user_id else None,
+                "release_reason": reason,
+                "retainage_released_total": str(new_released),
+            },
+        )
+
+        logger.info(
+            "Retainage released on PO %s: amount=%s %s",
+            po.po_number,
+            release_amount,
+            po.currency_code or "",
+        )
+        return release
+
+    async def get_po_retainage_releases(
+        self,
+        po_id: uuid.UUID,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> tuple[list[PORetainageRelease], int]:
+        """List the retainage-release audit log for a PO (404 if PO missing)."""
+        await self.get_po(po_id)  # 404 if the PO does not exist
+        return await self.retainage_repo.list_for_po(po_id, offset=offset, limit=limit)
 
     # ── Goods Receipts ───────────────────────────────────────────────────────
 

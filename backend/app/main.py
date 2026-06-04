@@ -2580,6 +2580,26 @@ def create_app() -> FastAPI:
         except Exception:  # noqa: BLE001 - never block startup on the scheduler
             logger.exception("AI agent scheduler failed to start")
 
+        # Risk auto-escalation (item #24): hourly sweep that escalates risks
+        # crossing their severity threshold or with a lapsed review date. The
+        # review-lapse trigger has no update event, so a periodic sweep is the
+        # only path that catches it. Same lightweight asyncio loop as above;
+        # the sweep is idempotent and commits nothing itself (caller commits).
+        async def _risk_escalation_sweeper() -> None:
+            while True:
+                await asyncio.sleep(3600)
+                try:
+                    from app.database import async_session_factory as _risk_sf
+                    from app.modules.risk.escalation import RiskEscalationService
+
+                    async with _risk_sf() as risk_session:
+                        await RiskEscalationService(risk_session).sweep()
+                        await risk_session.commit()
+                except Exception:
+                    logger.exception("Risk escalation sweep tick failed")
+
+        asyncio.create_task(_risk_escalation_sweeper())
+
         _section("Ready")
         # Friendly multi-line ready banner. The CLI (`openestimate serve`)
         # exposes OE_CLI_HOST / OE_CLI_PORT / OE_CLI_DATA_DIR so we can show

@@ -112,6 +112,9 @@ class RiskCreate(BaseModel):
     # time (see RiskService.create_risk). An explicit value here overrides
     # the project default; "" means "inherit from project / unknown".
     currency: str = Field(default="", max_length=10)
+    # Per-risk override of the auto-escalation threshold (1-25 PMBOK product
+    # scale). None inherits the project/global default (16 == critical tier).
+    escalation_threshold: int | None = Field(default=None, ge=1, le=25)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_serializer("impact_cost", "response_cost", when_used="json")
@@ -147,6 +150,7 @@ class RiskUpdate(BaseModel):
     owner_user_id: UUID | None = None
     response_cost: Decimal | None = Field(default=None, ge=0)
     currency: str | None = Field(default=None, max_length=10)
+    escalation_threshold: int | None = Field(default=None, ge=1, le=25)
     metadata: dict[str, Any] | None = None
 
     @field_serializer("impact_cost", "response_cost", when_used="json")
@@ -183,6 +187,11 @@ class RiskResponse(BaseModel):
     owner_user_id: UUID | None = None
     response_cost: Decimal = Decimal("0")
     currency: str = ""
+    # ── Auto-escalation (TOP-30 #24) ──────────────────────────────────────
+    escalated: bool = False
+    escalated_at: datetime | None = None
+    escalation_trigger: str | None = None
+    escalation_threshold: int | None = None
     metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
     created_at: datetime
     updated_at: datetime
@@ -248,6 +257,29 @@ class RiskMatrixResponse(BaseModel):
     """5x5 risk matrix data."""
 
     cells: list[RiskMatrixCell] = Field(default_factory=list)
+
+
+# ── Auto-escalation (TOP-30 #24) ─────────────────────────────────────────
+
+
+class RiskEscalationSweepRequest(BaseModel):
+    """Body for a manual escalation sweep over a project's risks.
+
+    ``threshold`` overrides the default product threshold (1-25 PMBOK
+    scale) for this run only. The same sweep is what the central scheduler
+    calls on an interval; this endpoint lets a manager run it on demand.
+    """
+
+    threshold: int | None = Field(default=None, ge=1, le=25)
+
+
+class RiskEscalationSweepResult(BaseModel):
+    """Summary of an escalation sweep run."""
+
+    scanned: int = 0
+    escalated: int = 0
+    # Count of escalations by trigger ("severity" / "review_lapsed").
+    triggers: dict[str, int] = Field(default_factory=dict)
 
 
 # ── Monte Carlo simulation (v3.11 — T1) ──────────────────────────────────

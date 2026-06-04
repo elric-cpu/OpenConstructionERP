@@ -40,19 +40,24 @@ from app.modules.project_intelligence.schemas import (
     ActionDefinitionResponse,
     ActionResponse,
     ChatRequest,
+    CostForecastResponse,
+    CostOverrunRiskResponse,
     CriticalGapResponse,
     ExplainGapRequest,
     ForecastAlertRow,
     ForecastSnapshotPoint,
     ForecastsResponse,
     LatestForecast,
+    ProjectForecastResponse,
     ProjectScoreResponse,
     ProjectStateResponse,
     ProjectSummaryResponse,
     RecommendationRequest,
+    ScheduleSlipResponse,
     SnoozeForecastRequest,
 )
 from app.modules.project_intelligence.scorer import compute_score
+from app.modules.project_intelligence.service import ForecastService
 
 router = APIRouter(tags=["Project Intelligence"])
 logger = logging.getLogger(__name__)
@@ -657,4 +662,45 @@ async def snooze_forecast_alert(
         vac=updated.vac,
         tcpi=updated.tcpi,
         summary=summary,
+    )
+
+
+# ── GET /{project_id}/forecast (TOP-30 #19) ───────────────────────────────
+#
+# Live, READ-ONLY predictive analytics: recomputes the canonical Earned-Value
+# forecast from the latest EVM snapshot, projects the schedule finish-date
+# variance, and scores the cost-overrun risk deterministically. Distinct from
+# the persisted-forecast alert surface (/forecasts/) above: nothing is written.
+# The two-segment path never collides with the single-segment /forecasts/.
+
+
+@router.get(
+    "/{project_id}/forecast",
+    response_model=ProjectForecastResponse,
+    dependencies=[Depends(RequirePermission("project_intelligence.read"))],
+)
+async def get_project_forecast(
+    project_id: uuid.UUID,
+    session: SessionDep = None,  # type: ignore[assignment]
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+) -> ProjectForecastResponse:
+    """Return live predictive cost + schedule + risk analytics for a project.
+
+    Cost forecast (CPI/SPI/EAC/ETC/VAC/TCPI) is recomputed from the latest EVM
+    snapshot; when none exists the cost section degrades gracefully with a
+    reason. The schedule slip projects a finish-date variance and at-risk task
+    count; the deterministic risk score carries a confidence and a rationale.
+    This is a forecast - human review is required; no action is taken.
+    """
+    await _verify_project_access(session, project_id, user_id)
+    forecast = await ForecastService(session).get_project_forecast(project_id)
+    return ProjectForecastResponse(
+        project_id=forecast.project_id,
+        project_name=forecast.project_name,
+        currency=forecast.currency,
+        generated_at=forecast.generated_at,
+        cost=CostForecastResponse(**asdict(forecast.cost)),
+        schedule=ScheduleSlipResponse(**asdict(forecast.schedule)),
+        risk=CostOverrunRiskResponse(**asdict(forecast.risk)),
+        review_required=forecast.review_required,
     )

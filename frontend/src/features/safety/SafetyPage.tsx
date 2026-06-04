@@ -21,6 +21,7 @@ import {
   UserX,
   AlertOctagon,
   Globe2,
+  LineChart,
 } from 'lucide-react';
 import {
   Button,
@@ -34,6 +35,8 @@ import {
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { SectionIntro } from '@/features/validation';
+import { SafetyTrendsChart } from './SafetyTrendsChart';
+import { SafetyThresholdWidget } from './SafetyThresholdWidget';
 import { apiGet, apiPost, triggerDownload, extractErrorMessageFromBody } from '@/shared/lib/api';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -115,7 +118,7 @@ function normaliseObservation(o: ObservationWire): Observation {
 
 /* ── Constants ────────────────────────────────────────────────────────── */
 
-const SAFETY_TAB_IDS = ['incidents', 'observations'] as const;
+const SAFETY_TAB_IDS = ['incidents', 'observations', 'trends'] as const;
 type SafetyTab = (typeof SAFETY_TAB_IDS)[number];
 
 // Keyed on the backend incident_type enum
@@ -500,6 +503,11 @@ export function SafetyPage() {
       label: t('safety.observations', { defaultValue: 'Observations' }),
       icon: <Eye size={15} />,
     },
+    {
+      key: 'trends',
+      label: t('safety.trends', { defaultValue: 'Trends' }),
+      icon: <LineChart size={15} />,
+    },
   ];
 
   return (
@@ -622,6 +630,12 @@ export function SafetyPage() {
           )}
           {activeTab === 'observations' && projectId && (
             <ObservationsTab projectId={projectId} />
+          )}
+          {activeTab === 'trends' && projectId && (
+            <div className="space-y-4">
+              <SafetyThresholdWidget projectId={projectId} />
+              <SafetyTrendsChart projectId={projectId} />
+            </div>
           )}
         </div>
       </RequiresProject>

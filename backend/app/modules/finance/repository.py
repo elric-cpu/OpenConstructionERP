@@ -4,6 +4,8 @@ All database queries for finance entities live here.
 No business logic — pure data access.
 """
 
+from __future__ import annotations
+
 import uuid
 
 from sqlalchemy import func, select, update
@@ -71,6 +73,27 @@ class InvoiceRepository:
         self.session.add(invoice)
         await self.session.flush()
         return invoice
+
+    async def find_by_source_claim(self, claim_id: uuid.UUID) -> Invoice | None:
+        """Return the receivable invoice auto-created from *claim_id*, or None.
+
+        Gap E idempotency anchor: ``create_receivable_from_claim`` calls this
+        first so a second ``contracts.claim.certified`` (event replay, double
+        click, concurrent certification) returns the existing AR invoice rather
+        than writing a duplicate. Line items / payments are eager-loaded so the
+        caller can serialise the row straight back through ``InvoiceResponse``.
+        """
+        stmt = (
+            select(Invoice)
+            .where(Invoice.source_claim_id == claim_id)
+            .options(
+                selectinload(Invoice.line_items),
+                selectinload(Invoice.payments),
+            )
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
 
     async def update(self, invoice_id: uuid.UUID, **fields: object) -> None:
         """Update specific fields on an invoice."""
@@ -329,6 +352,21 @@ class PaymentRepository:
         stmt = select(Payment).where(Payment.idempotency_key == key).limit(1)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def find_by_source_claim(self, claim_id: uuid.UUID) -> list[Payment]:
+        """Return every payment recorded against the certified claim *claim_id*.
+
+        Gap E: a certified claim can be paid in instalments (each holding its own
+        retainage), so this returns a list ordered oldest-first. Used by the
+        retainage-release flow and the claim → receivable lookup endpoint.
+        """
+        stmt = (
+            select(Payment)
+            .where(Payment.source_claim_id == claim_id)
+            .order_by(Payment.created_at.asc())
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
 
 
 class BudgetRepository:

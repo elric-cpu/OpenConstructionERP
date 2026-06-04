@@ -85,6 +85,8 @@ def _make_resources(rng: random.Random) -> list[Resource]:
                 resource_type="person",
                 default_cost_rate=Decimal(str(35 + rng.randint(0, 60))),
                 currency="EUR",
+                # One full-time person can absorb 100% per bucket.
+                capacity_percent=100,
                 status="active" if rng.random() > 0.05 else "on_leave",
             )
         )
@@ -97,6 +99,8 @@ def _make_resources(rng: random.Random) -> list[Resource]:
                 resource_type="crew",
                 default_cost_rate=Decimal(str(150 + rng.randint(0, 100))),
                 currency="EUR",
+                # A multi-member crew can split across up to three sites.
+                capacity_percent=300,
                 status="active",
             )
         )
@@ -111,10 +115,16 @@ def _make_resources(rng: random.Random) -> list[Resource]:
                 resource_type="equipment",
                 default_cost_rate=Decimal(str(80 + rng.randint(0, 200))),
                 currency="EUR",
+                # A single machine works one place at a time.
+                capacity_percent=100,
                 status="active" if rng.random() > 0.1 else "inactive",
             )
         )
-    # 20 subcontractors
+    # 20 subcontractors. Capacity is deliberately left unset (None) for subs:
+    # an external company's headcount is not tracked in our resource model, so
+    # leveling honestly reports their buckets as "capacity unknown" rather than
+    # fabricating a ceiling. This also exercises the unknown-capacity path in
+    # the demo dataset.
     for i in range(20):
         resources.append(
             Resource(

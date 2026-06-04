@@ -254,3 +254,90 @@ class SafetyTrendsResponse(BaseModel):
 
     period_type: str = Field(description="'monthly' or 'weekly'")
     entries: list[SafetyTrendEntry] = Field(default_factory=list)
+
+
+# ── Extended trends (LTIFR/TRIR time series) ───────────────────────────────
+
+
+class SafetyTrendEntryExtended(BaseModel):
+    """A single period bucket carrying computed LTIFR/TRIR rates.
+
+    ``ltifr``/``trir`` are ``None`` (not 0.0) when the period has no usable
+    man-hours, mirroring :class:`SafetyStatsResponse`: a missing denominator
+    is "not enough data", never a falsely-precise zero rate.
+    """
+
+    period: str = Field(description="Period label, e.g. '2026-01' for monthly")
+    incident_count: int = 0
+    observation_count: int = 0
+    days_lost: int = 0
+    ltifr: float | None = Field(
+        default=None,
+        description="Lost Time Injury Frequency Rate per 1M hours for this period",
+    )
+    trir: float | None = Field(
+        default=None,
+        description="Total Recordable Incident Rate per 200k hours for this period",
+    )
+    man_hours_total: float = Field(
+        default=0.0,
+        description="Sum of incident man_hours_total in this period (rate denominator)",
+    )
+    recordable_incidents: int = 0
+    lost_time_incidents: int = 0
+
+
+class SafetyTrendsExtendedResponse(BaseModel):
+    """Rolling LTIFR/TRIR time series with a trend-direction heuristic."""
+
+    period_type: str = Field(description="'monthly' or 'weekly'")
+    entries: list[SafetyTrendEntryExtended] = Field(default_factory=list)
+    rolling_12_month_ltifr: float | None = Field(
+        default=None,
+        description="Mean LTIFR across the trailing window of periods with a usable rate",
+    )
+    rolling_12_month_trir: float | None = Field(
+        default=None,
+        description="Mean TRIR across the trailing window of periods with a usable rate",
+    )
+    current_period_ltifr: float | None = Field(
+        default=None,
+        description="LTIFR of the most recent period (None when no man-hours)",
+    )
+    current_period_trir: float | None = Field(
+        default=None,
+        description="TRIR of the most recent period (None when no man-hours)",
+    )
+    trend_direction: str = Field(
+        default="unknown",
+        pattern=r"^(improving|stable|declining|unknown)$",
+        description=(
+            "3-period LTIFR slope heuristic: 'improving' (rate falling), "
+            "'declining' (rate rising), 'stable', or 'unknown' (<3 usable periods)"
+        ),
+    )
+
+
+class SafetyThresholdAlertResponse(BaseModel):
+    """Current LTIFR/TRIR checked against configurable safe-baselines.
+
+    Status bands per rate: ``green`` when current <= baseline, ``yellow`` when
+    current is 120-150 percent of baseline, ``red`` when above 150 percent.
+    ``unknown`` when the rate could not be computed (no man-hours).
+    """
+
+    current_ltifr: float | None = None
+    current_trir: float | None = None
+    baseline_ltifr: float
+    baseline_trir: float
+    ltifr_delta: float | None = Field(
+        default=None,
+        description="current_ltifr - baseline_ltifr (None when current is unknown)",
+    )
+    trir_delta: float | None = Field(
+        default=None,
+        description="current_trir - baseline_trir (None when current is unknown)",
+    )
+    ltifr_status: str = Field(default="unknown", pattern=r"^(green|yellow|red|unknown)$")
+    trir_status: str = Field(default="unknown", pattern=r"^(green|yellow|red|unknown)$")
+    message: str = Field(default="")

@@ -321,6 +321,63 @@ def _get_entities_dir() -> str:
     return entities_dir
 
 
+def _extents_from_raw_entities(entities: list[dict[str, Any]]) -> dict[str, float] | None:
+    """Compute a bounding box from stored (un-normalised) entity records.
+
+    Mirrors the parser's ``expand`` pass over the stored
+    ``{entity_type, geometry_data: {…}}`` shape. Used by the lazy units
+    backfill to recover extents for legacy/seeded drawings whose version row
+    stored ``extents == {}``. Returns ``None`` when no coordinates are found.
+    """
+    min_x = min_y = float("inf")
+    max_x = max_y = float("-inf")
+    found = False
+
+    def expand(x: Any, y: Any) -> None:
+        nonlocal min_x, min_y, max_x, max_y, found
+        try:
+            fx, fy = float(x), float(y)
+        except (TypeError, ValueError):
+            return
+        min_x, min_y = min(min_x, fx), min(min_y, fy)
+        max_x, max_y = max(max_x, fx), max(max_y, fy)
+        found = True
+
+    for ent in entities:
+        gd = ent.get("geometry_data", {}) or {}
+        start = gd.get("start")
+        end = gd.get("end")
+        if isinstance(start, dict):
+            expand(start.get("x"), start.get("y"))
+        if isinstance(end, dict):
+            expand(end.get("x"), end.get("y"))
+        for v in gd.get("points", []) or []:
+            if isinstance(v, dict):
+                expand(v.get("x"), v.get("y"))
+        center = gd.get("center")
+        if isinstance(center, dict):
+            r = gd.get("radius") or gd.get("major_radius") or 0
+            try:
+                rr = float(r)
+            except (TypeError, ValueError):
+                rr = 0.0
+            expand(center.get("x", 0) - rr, center.get("y", 0) - rr)
+            expand(center.get("x", 0) + rr, center.get("y", 0) + rr)
+        for key in ("insert", "insertion_point"):
+            pt = gd.get(key)
+            if isinstance(pt, dict):
+                expand(pt.get("x"), pt.get("y"))
+
+    if not found:
+        return None
+    return {
+        "min_x": float(min_x),
+        "min_y": float(min_y),
+        "max_x": float(max_x),
+        "max_y": float(max_y),
+    }
+
+
 def _process_dxf_sync(file_path: str, entities_key: str, thumbnail_key: str) -> dict[str, Any]:
     """Synchronous DXF processing — runs in a thread via asyncio.to_thread.
 
@@ -1254,8 +1311,97 @@ class DwgTakeoffService:
     # ── Drawing version & entities ──────────────────────────────────────
 
     async def get_latest_version(self, drawing_id: uuid.UUID) -> DwgDrawingVersion | None:
-        """Get the latest version for a drawing."""
-        return await self.version_repo.get_latest_for_drawing(drawing_id)
+        """Get the latest version for a drawing.
+
+        Performs a one-time, fail-soft units backfill on the read path:
+        legacy/seeded drawings were stored with ``units == null`` (and
+        sometimes ``extents == {}``) which forced a 1.0 scale factor and
+        made millimetre drawings read 1000x too large (BUG-D-TKC-002c).
+        When the unit is unknown we recover extents from the stored
+        entities, infer the unit (a >=1000-unit drawing is almost certainly
+        in mm) and persist both onto the version row so the API and BOQ
+        push see real-world units thereafter.
+        """
+        version = await self.version_repo.get_latest_for_drawing(drawing_id)
+        if version is not None:
+            await self._backfill_units_if_unknown(version)
+        return version
+
+    async def _backfill_units_if_unknown(self, version: DwgDrawingVersion) -> None:
+        """Lazily infer + persist units/extents when the version has none.
+
+        Fail-soft: any error here is logged and swallowed so a read never
+        breaks. Only runs when ``units`` is unknown (null/"unitless"), so a
+        drawing whose unit was resolved at parse time is left untouched.
+        """
+        if version.units not in (None, "unitless"):
+            return
+        try:
+            from app.modules.dwg_takeoff.ddc_dwg_parser import infer_units_from_extents
+
+            extents = version.extents if isinstance(version.extents, dict) else {}
+            # Recover a bounding box from the stored entities when the row
+            # never persisted one (the flagship demo was seeded that way).
+            if not extents or not all(k in extents for k in ("min_x", "min_y", "max_x", "max_y")):
+                raw = await self._load_raw_entities(version)
+                computed = _extents_from_raw_entities(raw)
+                if computed is not None:
+                    extents = computed
+
+            inferred = infer_units_from_extents(extents)
+            updates: dict[str, object] = {}
+            if extents and extents != version.extents:
+                updates["extents"] = extents
+            if inferred is not None and inferred != version.units:
+                updates["units"] = inferred
+            if not updates:
+                return
+
+            # Persist with a bulk UPDATE that does NOT synchronize/expire the
+            # session. ``DwgDrawingVersionRepository.update_fields`` calls
+            # ``session.expire_all()``, which would also expire the router's
+            # already-loaded ``DwgDrawing`` row; a later attribute access while
+            # serializing the response would then attempt a lazy load on the
+            # sync path and raise MissingGreenlet, 500-ing the whole read
+            # (BUG-D-TKC-002d). We update in place and mirror the new values
+            # onto the live object so the response and BOQ push see them.
+            from sqlalchemy import update as sa_update
+
+            await self.session.execute(
+                sa_update(DwgDrawingVersion)
+                .where(DwgDrawingVersion.id == version.id)
+                .values(**updates)
+                .execution_options(synchronize_session=False)
+            )
+            await self.session.flush()
+            for field, value in updates.items():
+                setattr(version, field, value)
+            logger.info(
+                "Backfilled units=%s extents on drawing version %s (was unitless)",
+                version.units,
+                version.id,
+            )
+        except Exception:  # noqa: BLE001 — backfill is advisory, never break the read
+            logger.warning(
+                "Units backfill failed for drawing version %s",
+                version.id,
+                exc_info=True,
+            )
+
+    async def _load_raw_entities(self, version: DwgDrawingVersion) -> list[dict[str, Any]]:
+        """Load the stored (un-normalised) entity records for a version.
+
+        Returns the raw ``{entity_type, geometry_data: {…}}`` list straight
+        from disk (no frontend flattening) so extents can be recomputed.
+        """
+        if version.entities_key is None:
+            return []
+        entities_path = os.path.join(_get_entities_dir(), version.entities_key)
+        if not os.path.exists(entities_path):
+            return []
+        with open(entities_path, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
 
     # ── Revision compare (Item 17) ──────────────────────────────────────
 

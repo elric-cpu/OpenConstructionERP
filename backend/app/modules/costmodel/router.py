@@ -135,6 +135,8 @@ def _budget_line_to_response(line: object) -> BudgetLineResponse:
         period_start=line.period_start,  # type: ignore[attr-defined]
         period_end=line.period_end,  # type: ignore[attr-defined]
         currency=line.currency,  # type: ignore[attr-defined]
+        overrun_alert_threshold_pct=getattr(line, "overrun_alert_threshold_pct", "0") or "0",
+        overrun_alerted_at=getattr(line, "overrun_alerted_at", None),
         metadata_=line.metadata_,  # type: ignore[attr-defined]
         created_at=line.created_at,  # type: ignore[attr-defined]
         updated_at=line.updated_at,  # type: ignore[attr-defined]
@@ -288,6 +290,38 @@ async def update_budget_line(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Budget line not found")
     await verify_project_access(existing.project_id, user_id, session)
     line = await service.update_budget_line(line_id, data)
+    return _budget_line_to_response(line)
+
+
+@router.patch(
+    "/5d/budget-lines/{line_id}/overrun-alert-threshold",
+    response_model=BudgetLineResponse,
+    dependencies=[Depends(RequirePermission("costmodel.write"))],
+)
+async def set_overrun_alert_threshold(
+    line_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    threshold: float = Query(
+        ...,
+        ge=0.0,
+        le=100.0,
+        description="Percentage above planned that arms a cost-overrun alert (0 disables).",
+    ),
+    service: CostModelService = Depends(_get_service),
+) -> BudgetLineResponse:
+    """Set the cost-overrun alert threshold on a budget line (Gap D).
+
+    ``threshold`` is a percentage in ``[0, 100]``; ``0`` disables alerting on
+    the line. When the line's ``actual_amount`` later breaches
+    ``planned_amount * (1 + threshold / 100)``, the cost-overrun subscriber
+    notifies the project owner (subject to a 24h cooldown).
+    """
+    existing = await service.budget_repo.get_by_id(line_id)
+    if existing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Budget line not found")
+    await verify_project_access(existing.project_id, user_id, session)
+    line = await service.set_overrun_alert_threshold(line_id, threshold)
     return _budget_line_to_response(line)
 
 

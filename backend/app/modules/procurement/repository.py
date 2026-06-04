@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.procurement.models import (
     GoodsReceipt,
     GoodsReceiptItem,
+    PORetainageRelease,
     PurchaseOrder,
     PurchaseOrderItem,
 )
@@ -312,3 +313,32 @@ class GRItemRepository:
         self.session.add(item)
         await self.session.flush()
         return item
+
+
+class PORetainageReleaseRepository:
+    """Data access for PORetainageRelease — the retainage-release audit log."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.session = session
+
+    async def create(self, record: PORetainageRelease) -> PORetainageRelease:
+        """Insert a new retainage-release record."""
+        self.session.add(record)
+        await self.session.flush()
+        await self.session.refresh(record)
+        return record
+
+    async def list_for_po(
+        self,
+        po_id: uuid.UUID,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> tuple[list[PORetainageRelease], int]:
+        """List release records for a PO, newest first, with the total count."""
+        base = select(PORetainageRelease).where(PORetainageRelease.po_id == po_id)
+        count_stmt = select(func.count()).select_from(base.subquery())
+        total = (await self.session.execute(count_stmt)).scalar_one()
+
+        stmt = base.order_by(PORetainageRelease.release_date.desc()).offset(offset).limit(limit)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all()), total

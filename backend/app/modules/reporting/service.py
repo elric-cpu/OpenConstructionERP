@@ -1227,3 +1227,161 @@ class ReportingService:
             await self.session.flush()
             logger.info("Seeded %d system report templates", created)
         return created
+
+    # ── PO retainage reconciliation (Gap F) ──────────────────────────────────
+
+    async def render_po_retainage_reconciliation(
+        self,
+        project_id: uuid.UUID,
+        period_start: str,
+        period_end: str,
+    ) -> dict:
+        """Render a period-end PO retainage reconciliation report.
+
+        Aggregates every purchase order issued in ``[period_start, period_end]``
+        (inclusive, ISO ``YYYY-MM-DD`` strings compared lexicographically) that
+        carries a non-zero ``retention_percent``. Deterministic, no AI.
+
+        Currency rule: money is NEVER blended. Each PO's figures stay in the
+        PO's own ``currency_code``; the summary is broken out per currency in
+        ``summary_by_currency`` and ``currencies`` lists every currency seen.
+        ``summary`` is the convenience roll-up for the common single-currency
+        project and carries a ``mixed_currency`` flag when more than one
+        currency is present so the UI can warn instead of silently summing
+        incomparable amounts.
+
+        Returns a JSON-serialisable dict consumed by the reporting router and
+        the frontend report template.
+        """
+        from decimal import Decimal, InvalidOperation
+
+        from sqlalchemy import select
+
+        from app.modules.procurement.models import PurchaseOrder
+
+        stmt = (
+            select(PurchaseOrder)
+            .where(
+                PurchaseOrder.project_id == project_id,
+                PurchaseOrder.retention_percent > Decimal("0"),
+                PurchaseOrder.issue_date.is_not(None),
+                PurchaseOrder.issue_date >= period_start,
+                PurchaseOrder.issue_date <= period_end,
+            )
+            .order_by(PurchaseOrder.issue_date.asc())
+        )
+        result = await self.session.execute(stmt)
+        pos = list(result.scalars().all())
+
+        # Resolve vendor display names in one round trip (avoid N+1).
+        vendor_names: dict[str, str] = {}
+        vendor_ids = {po.vendor_contact_id for po in pos if po.vendor_contact_id}
+        if vendor_ids:
+            try:
+                from app.modules.contacts.models import Contact
+
+                rows = (
+                    (await self.session.execute(select(Contact).where(Contact.id.in_(vendor_ids))))
+                    .scalars()
+                    .all()
+                )
+                for c in rows:
+                    label = c.company_name or f"{c.first_name or ''} {c.last_name or ''}".strip() or c.email or ""
+                    vendor_names[str(c.id)] = label
+            except Exception:
+                logger.debug("Vendor-name lookup skipped for retainage report", exc_info=True)
+
+        po_rows: list[dict] = []
+        # Per-currency accumulators so we never blend currencies.
+        by_currency: dict[str, dict[str, Decimal]] = {}
+
+        for po in pos:
+            currency = po.currency_code or ""
+            committed = po.amount_total or "0"
+            try:
+                committed_dec = Decimal(str(committed))
+            except (InvalidOperation, ValueError, TypeError):
+                committed_dec = Decimal("0")
+            withheld = po.retainage_amount()
+            try:
+                released = Decimal(str(po.retainage_released_amount or "0"))
+            except (InvalidOperation, ValueError, TypeError):
+                released = Decimal("0")
+            held = max(withheld - released, Decimal("0"))
+
+            bucket = by_currency.setdefault(
+                currency,
+                {
+                    "committed": Decimal("0"),
+                    "withheld": Decimal("0"),
+                    "released": Decimal("0"),
+                    "held": Decimal("0"),
+                },
+            )
+            bucket["committed"] += committed_dec
+            bucket["withheld"] += withheld
+            bucket["released"] += released
+            bucket["held"] += held
+
+            po_rows.append(
+                {
+                    "po_id": str(po.id),
+                    "po_number": po.po_number,
+                    "vendor_name": vendor_names.get(po.vendor_contact_id or "", ""),
+                    "issue_date": po.issue_date,
+                    "status": po.status,
+                    "amount_total": str(committed_dec),
+                    "currency": currency,
+                    "retention_percent": str(po.retention_percent),
+                    "retainage_withheld": str(withheld),
+                    "retainage_released_ytd": str(released),
+                    "retainage_held": str(held),
+                }
+            )
+
+        summary_by_currency = {
+            cur: {
+                "total_committed": str(b["committed"]),
+                "total_withheld": str(b["withheld"]),
+                "total_released": str(b["released"]),
+                "total_held": str(b["held"]),
+            }
+            for cur, b in sorted(by_currency.items())
+        }
+        currencies = sorted(by_currency.keys())
+        mixed = len(currencies) > 1
+
+        # Convenience single-currency roll-up. When more than one currency is
+        # present we still emit a numeric sum (so the UI has *something*) but
+        # flag it as mixed so it can be rendered with a warning rather than as
+        # an authoritative total. This deliberately sums raw amounts only as a
+        # last resort and never zeroes a foreign value.
+        agg = {
+            "total_committed": Decimal("0"),
+            "total_withheld": Decimal("0"),
+            "total_released": Decimal("0"),
+            "total_held": Decimal("0"),
+        }
+        for b in by_currency.values():
+            agg["total_committed"] += b["committed"]
+            agg["total_withheld"] += b["withheld"]
+            agg["total_released"] += b["released"]
+            agg["total_held"] += b["held"]
+
+        summary = {k: str(v) for k, v in agg.items()}
+        summary["currency"] = currencies[0] if len(currencies) == 1 else ""
+        summary["mixed_currency"] = mixed
+
+        project_name = await self._lookup_project_name(project_id)
+
+        return {
+            "report_type": "po_retainage_reconciliation",
+            "project_id": str(project_id),
+            "project_name": project_name,
+            "period_start": period_start,
+            "period_end": period_end,
+            "currencies": currencies,
+            "summary": summary,
+            "summary_by_currency": summary_by_currency,
+            "po_rows": po_rows,
+        }

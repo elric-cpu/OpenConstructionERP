@@ -29,6 +29,11 @@ def register_finance_permissions() -> None:
             "finance.approve": Role.MANAGER,
             "finance.pay": Role.MANAGER,
             "finance.record_payment": Role.MANAGER,
+            # Gap E (Wave 6): manually raising the receivable from a certified
+            # claim is a financial commitment (it books revenue against the
+            # client), so it sits at MANAGER alongside approve/pay. The event
+            # subscriber path is system-driven and bypasses the permission gate.
+            "finance.invoice_from_claim": Role.MANAGER,
             # TOP-30 #4: ERP / accounting connectors. Reading the catalogue
             # and sync history is VIEWER; managing configs (which touch
             # encrypted credentials) and triggering a live sync (which mutates

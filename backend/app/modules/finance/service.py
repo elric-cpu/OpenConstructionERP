@@ -6,7 +6,7 @@ Stateless service layer.
 import logging
 import uuid
 from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
@@ -36,6 +36,7 @@ from app.modules.finance.schemas import (
     InvoiceUpdate,
     LedgerEntryCreate,
     PaymentCreate,
+    RecordClaimPaymentRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -154,6 +155,49 @@ def _compute_invoice_total(subtotal: str, tax: str) -> str:
     return str(s + t)
 
 
+# ── Gap E: retainage withholding maths ───────────────────────────────────────
+
+
+def _q2(value: Decimal) -> Decimal:
+    """Quantize a money Decimal to 2 places (half-up, the accounting default)."""
+    return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def compute_payment_withholding(
+    gross: object,
+    *,
+    retention_pct: object = Decimal("0"),
+    withholding_amount: object | None = None,
+) -> tuple[Decimal, Decimal]:
+    """Split a certified gross into (cash to pay, retainage withheld).
+
+    The cash paid out is ``gross - withheld``. The retainage withheld is either
+    the explicit ``withholding_amount`` (when supplied) or ``gross *
+    retention_pct / 100`` otherwise. Both legs are clamped so they stay within
+    ``[0, gross]`` — a retention percentage above 100 or a withholding above the
+    gross can never produce a negative cash payment (which would be a phantom
+    refund) nor a withholding larger than the claim.
+
+    Returns ``(amount_to_pay, withheld)`` both quantized to 2dp. Pure function:
+    no DB, no I/O — the unit suite asserts exact Decimals against it.
+    """
+    g = _safe_decimal(gross)
+    if g < 0:
+        g = Decimal("0")
+    if withholding_amount is not None:
+        withheld = _safe_decimal(withholding_amount)
+    else:
+        pct = _safe_decimal(retention_pct)
+        withheld = g * pct / Decimal("100")
+    # Clamp into [0, gross]: never withhold more than the claim, never negative.
+    if withheld < 0:
+        withheld = Decimal("0")
+    if withheld > g:
+        withheld = g
+    amount_to_pay = g - withheld
+    return _q2(amount_to_pay), _q2(withheld)
+
+
 class FinanceService:
     """Business logic for finance operations."""
 
@@ -225,6 +269,7 @@ class FinanceService:
                 amount=item_data.amount,
                 wbs_id=item_data.wbs_id,
                 cost_category=item_data.cost_category,
+                cost_line_id=getattr(item_data, "cost_line_id", None),
                 sort_order=item_data.sort_order if item_data.sort_order else idx,
             )
             await self.line_items.create(item)
@@ -348,6 +393,7 @@ class FinanceService:
                     amount=item_data.amount,
                     wbs_id=item_data.wbs_id,
                     cost_category=item_data.cost_category,
+                    cost_line_id=getattr(item_data, "cost_line_id", None),
                     sort_order=item_data.sort_order if item_data.sort_order else idx,
                 )
                 await self.line_items.create(item)
@@ -607,6 +653,30 @@ class FinanceService:
                 invoice.invoice_number,
             )
 
+        # ── Post to the costmodel.BudgetLine cost spine (Gap B) ─────────────
+        # In addition to the legacy ProjectBudget bucketing above, mirror every
+        # paid invoice into the cost spine via the shared
+        # CostSpineService.post_actual_to_budget_line(). This is the table the
+        # EVM / forecasting dashboards read. Both updates happen inside the same
+        # request transaction so the two budget tables never drift.
+        #
+        # Idempotency: the spine method is keyed on (source_kind, source_ref)
+        # where source_ref is "{invoice_id}:{item_id}" (or ":full"), so paying
+        # the same invoice twice — or replaying this loop over every already-paid
+        # invoice of the project on each pay — posts each line exactly once.
+        #
+        # FX: amounts are converted to the project base currency BEFORE posting
+        # (the spine stores base-currency actuals). A missing rate keeps the
+        # foreign value as-is (never zeroed), matching the rest of the cost
+        # domain. Non-fatal: a spine failure must NEVER roll back the payment.
+        try:
+            await self._post_paid_invoices_to_spine(invoice.project_id)
+        except Exception:
+            logger.exception(
+                "Spine posting failed for invoice %s — payment unaffected",
+                invoice.invoice_number,
+            )
+
         # Emit event for additional cross-module handlers
         event_bus.publish_detached(
             "invoice.paid",
@@ -623,6 +693,110 @@ class FinanceService:
         )
 
         return updated
+
+    async def _post_paid_invoices_to_spine(self, project_id: uuid.UUID) -> None:
+        """Mirror every paid invoice of a project into the costmodel cost spine.
+
+        Walks all ``status="paid"`` invoices for ``project_id`` and posts each
+        line item (or the full total for a headerless invoice) into
+        ``CostSpineService.post_actual_to_budget_line``. The spine method is
+        idempotent on ``(source_kind, source_ref)``, so re-running this sweep on
+        every pay only ever posts each line once — no double counting, and a
+        newly-paid invoice's lines get posted on the pass triggered by its own
+        payment.
+
+        FX: each amount is converted to the project base currency here, before
+        posting, because the spine stores base-currency actuals. A line priced
+        in a currency without a configured project FX rate keeps its own value
+        (never zeroed) so a forgotten rate surfaces as a visibly-wrong figure
+        rather than silently dropping money.
+        """
+        import hashlib
+
+        from sqlalchemy import select
+        from sqlalchemy.orm import selectinload
+
+        from app.modules.costmodel.service import CostSpineService
+        from app.modules.projects.repository import ProjectRepository
+
+        # Resolve the project base currency + FX table once.
+        project = await ProjectRepository(self.session).get_by_id(project_id)
+        base_currency = (getattr(project, "currency", "") or "").strip().upper() if project else ""
+        fx_map = _project_fx_map(project)
+
+        def _to_base(raw: object, currency: str) -> str:
+            """Convert a stored money value to the project base currency string.
+
+            Reuses ``_convert_to_base`` (the finance FX helper) so semantics are
+            identical to the dashboard: a foreign currency with no rate is kept
+            in its own units, never zeroed. Returns a Decimal-as-string.
+            """
+            amount = _safe_decimal(raw)
+            converted, _missing = _convert_to_base(
+                {(currency or "").strip().upper(): float(amount)},
+                base_currency=base_currency,
+                fx_rates_map=fx_map,
+            )
+            return str(Decimal(str(converted)))
+
+        result = await self.session.execute(
+            select(Invoice)
+            .options(selectinload(Invoice.line_items))
+            .where(Invoice.project_id == project_id, Invoice.status == "paid")
+        )
+        paid_invoices = result.scalars().all()
+
+        spine = CostSpineService(self.session)
+
+        async def _post_one(
+            *,
+            posting_ref: str,
+            cost_line_id: uuid.UUID | None,
+            cost_category: str | None,
+            amount_base: str,
+            currency: str,
+        ) -> None:
+            """Post a single line, isolating its failure from the rest of the sweep.
+
+            One malformed line (e.g. an out-of-vocabulary ``cost_category``,
+            which the spine rejects with a 400) must not abort posting for the
+            other lines / invoices. Each failure is logged and skipped.
+            """
+            idempotency = hashlib.sha256(f"invoice_paid:{posting_ref}".encode()).hexdigest()[:16]
+            try:
+                await spine.post_actual_to_budget_line(
+                    project_id=project_id,
+                    cost_line_id=cost_line_id,
+                    cost_category=cost_category,
+                    amount_base=amount_base,
+                    currency=currency,
+                    source_kind="invoice_paid",
+                    source_ref=posting_ref,
+                    idempotency_key=idempotency,
+                )
+            except Exception:
+                logger.exception("Spine posting failed for invoice line ref=%s — skipped", posting_ref)
+
+        for inv in paid_invoices:
+            inv_currency = inv.currency_code or ""
+            items = list(inv.line_items or [])
+            if items:
+                for item in items:
+                    await _post_one(
+                        posting_ref=f"{inv.id}:{item.id}",
+                        cost_line_id=getattr(item, "cost_line_id", None),
+                        cost_category=item.cost_category or None,
+                        amount_base=_to_base(item.amount, inv_currency),
+                        currency=inv_currency,
+                    )
+            else:
+                await _post_one(
+                    posting_ref=f"{inv.id}:full",
+                    cost_line_id=None,
+                    cost_category=None,
+                    amount_base=_to_base(inv.amount_total, inv_currency),
+                    currency=inv_currency,
+                )
 
     # ── Payments ─────────────────────────────────────────────────────────────
 
@@ -730,6 +904,394 @@ class FinanceService:
 
         logger.info("Payment recorded: %s for invoice %s", data.amount, data.invoice_id)
         return payment
+
+    # ── Gap E: certified claim → receivable invoice ──────────────────────────
+
+    async def create_receivable_from_claim(
+        self,
+        claim_id: uuid.UUID,
+        *,
+        actor_id: str | None = None,
+    ) -> Invoice:
+        """Auto-create a receivable invoice from a certified progress claim.
+
+        Idempotent: if a receivable invoice already carries this ``claim_id`` in
+        its ``source_claim_id`` column it is returned unchanged (event replay /
+        double certification / concurrent calls all converge on one row).
+
+        The claim's contract supplies the project and counterparty; the claim
+        supplies the gross / retention / net figures. Each ``ProgressClaimLine``
+        becomes one ``InvoiceLineItem`` (3 claim lines → 3 invoice items). The
+        claim's gross lands in ``amount_subtotal`` / ``amount_total`` and the
+        retainage in ``retention_amount``; the net collectible is therefore
+        ``amount_total - retention_amount``. Storing the gross (not the net)
+        keeps retention a single deduction so the payment-time withholding never
+        double-counts it.
+
+        Multi-currency: amounts denominated in the claim currency are converted
+        into the project base currency via ``Project.fx_rates`` before storing.
+        A currency with no configured rate keeps its own value (never zeroed) so
+        a forgotten rate surfaces as a visibly-wrong figure rather than dropping
+        money silently.
+
+        Raises:
+            HTTPException 404 when the claim or its contract is missing.
+            HTTPException 400 when the claim is not in ``certified`` status.
+        """
+        from app.modules.contracts.repository import (
+            ContractRepository,
+            ProgressClaimLineRepository,
+            ProgressClaimRepository,
+        )
+        from app.modules.projects.repository import ProjectRepository
+
+        claim_repo = ProgressClaimRepository(self.session)
+        claim = await claim_repo.get_by_id(claim_id)
+        if claim is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Progress claim not found",
+            )
+
+        # ── Idempotency: one AR invoice per claim ────────────────────────────
+        existing = await self.invoices.find_by_source_claim(claim_id)
+        if existing is not None:
+            return existing
+
+        if claim.status != "certified":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Claim must be certified before it can be invoiced "
+                    f"(current status: '{claim.status}')."
+                ),
+            )
+
+        contract_repo = ContractRepository(self.session)
+        contract = await contract_repo.get_by_id(claim.contract_id)
+        if contract is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Contract for progress claim not found",
+            )
+
+        project_id = contract.project_id
+        # Counterparty (client) on the contract becomes the invoice contact.
+        contact_id = str(contract.counterparty_id) if contract.counterparty_id else None
+        claim_currency = (claim.currency or contract.currency or "").strip().upper()
+
+        # ── FX: convert claim figures into the project base currency ─────────
+        project = await ProjectRepository(self.session).get_by_id(project_id)
+        base_currency = (getattr(project, "currency", "") or "").strip().upper() if project else ""
+        fx_map = _project_fx_map(project)
+
+        def _to_base(raw: object) -> Decimal:
+            converted, _missing = _convert_to_base(
+                {claim_currency: float(_safe_decimal(raw))},
+                base_currency=base_currency,
+                fx_rates_map=fx_map,
+            )
+            return Decimal(str(converted))
+
+        # Invoice money model (conventional, so payment-time withholding works):
+        #   amount_subtotal / amount_total = GROSS certified work value
+        #   retention_amount               = retainage to hold back
+        #   net collectible now            = amount_total - retention_amount
+        # The design's shorthand "net_due → subtotal" would store the net and
+        # make the payment then withhold retention a SECOND time. Storing the
+        # gross (with retention broken out) keeps a single source of truth: the
+        # withholding payment subtracts retention_amount exactly once. We prefer
+        # the claim's own gross_amount; if it is absent/zero we reconstruct it
+        # from net_due + retention so a thin claim still books a sane gross.
+        gross_base = _to_base(claim.gross_amount)
+        net_base = _to_base(claim.net_due)
+        retention_base = _to_base(claim.retention_amount)
+        if gross_base <= 0 < (net_base + retention_base):
+            gross_base = net_base + retention_base
+        invoice_currency = base_currency or claim_currency
+
+        # ── Map claim lines → invoice line items ─────────────────────────────
+        line_repo = ProgressClaimLineRepository(self.session)
+        claim_lines = await line_repo.list_for_claim(claim_id)
+
+        invoice_number = await self.invoices.next_invoice_number(project_id, "receivable")
+        invoice = Invoice(
+            project_id=project_id,
+            contact_id=contact_id,
+            invoice_direction="receivable",
+            invoice_number=invoice_number,
+            invoice_date=(claim.claim_date or "")[:10],
+            due_date=None,
+            currency_code=invoice_currency,
+            amount_subtotal=gross_base,
+            tax_amount=Decimal("0"),
+            retention_amount=retention_base,
+            amount_total=gross_base,
+            status="draft",
+            source_claim_id=claim_id,
+            notes=f"Auto-created from certified progress claim {claim.claim_number}",
+            created_by=uuid.UUID(actor_id) if actor_id else None,
+            metadata_={
+                "source": "progress_claim",
+                "claim_id": str(claim_id),
+                "claim_number": claim.claim_number,
+                "contract_id": str(claim.contract_id),
+                "claim_currency": claim_currency,
+                "gross_amount": str(gross_base),
+                "net_due": str(net_base),
+            },
+        )
+        invoice = await self.invoices.create(invoice)
+
+        for idx, cl in enumerate(claim_lines):
+            amount_base = _to_base(cl.period_completed_value)
+            await self.line_items.create(
+                InvoiceLineItem(
+                    invoice_id=invoice.id,
+                    description=(
+                        f"Progress claim {claim.claim_number} line "
+                        f"(contract line {cl.contract_line_id})"
+                    ),
+                    quantity=_safe_decimal(cl.period_completed_qty, Decimal("1")) or Decimal("1"),
+                    unit=None,
+                    unit_rate=Decimal("0"),
+                    amount=amount_base,
+                    wbs_id=None,
+                    cost_category=None,
+                    sort_order=idx,
+                )
+            )
+
+        refreshed = await self.invoices.get(invoice.id)
+        if refreshed is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to re-fetch created receivable invoice",
+            )
+
+        # Audit row — best-effort (mirrors create_invoice / approve paths).
+        try:
+            from app.core.audit_log import log_activity
+
+            await log_activity(
+                self.session,
+                actor_id=actor_id,
+                entity_type="invoice",
+                entity_id=str(refreshed.id),
+                action="created_from_claim",
+                reason=f"Receivable auto-created from certified claim {claim.claim_number}",
+                metadata={
+                    "claim_id": str(claim_id),
+                    "claim_number": claim.claim_number,
+                    "gross_base": str(gross_base),
+                    "net_due_base": str(net_base),
+                    "retention_base": str(retention_base),
+                    "currency": invoice_currency,
+                },
+            )
+        except Exception as exc:
+            logger.warning(
+                "Audit log FAILED for receivable-from-claim (claim_id=%s): %s",
+                claim_id,
+                exc,
+                exc_info=True,
+            )
+
+        # Emit so reporting / BI can track certified-but-uncollected AR.
+        event_bus.publish_detached(
+            "finance.invoice.created_from_claim",
+            {
+                "project_id": str(project_id),
+                "invoice_id": str(refreshed.id),
+                "claim_id": str(claim_id),
+                "amount_total": str(gross_base),
+                "net_due": str(net_base),
+                "retention_amount": str(retention_base),
+                "currency_code": invoice_currency,
+            },
+            source_module="finance",
+        )
+
+        logger.info(
+            "Receivable invoice %s auto-created from certified claim %s (gross=%s net=%s %s)",
+            refreshed.invoice_number,
+            claim.claim_number,
+            gross_base,
+            net_base,
+            invoice_currency,
+        )
+        return refreshed
+
+    async def get_receivable_for_claim(self, claim_id: uuid.UUID) -> Invoice | None:
+        """Return the receivable invoice raised from *claim_id*, or None.
+
+        Convenience lookup behind ``GET /claims/{claim_id}/receivable-invoice``.
+        """
+        return await self.invoices.find_by_source_claim(claim_id)
+
+    async def record_payment_with_withholding(
+        self,
+        invoice_id: uuid.UUID,
+        data: RecordClaimPaymentRequest,
+        *,
+        actor_id: str | None = None,
+    ) -> Payment:
+        """Record a payment that holds back retainage, then post the cash actual.
+
+        Splits the gross into (cash paid, retainage withheld) via
+        :func:`compute_payment_withholding`. When the caller omits
+        ``withholding_amount`` it is derived from the invoice
+        ``retention_amount``; when the caller omits ``amount`` the invoice net
+        (``amount_total - retention_amount``) is paid out. Both are then re-split
+        so the stored breakdown is always internally consistent.
+
+        Idempotent on ``idempotency_key`` (a replay returns the existing row).
+
+        After the payment is written, the cash paid out (NOT the withheld
+        retainage — that is not yet a realised cost to the client/payer) is
+        posted to the cost spine via
+        :meth:`CostSpineService.post_actual_to_budget_line`. The spine call is
+        non-fatal: a failure there must never roll back the payment.
+        """
+        # ── Idempotency check first (cheapest path) ──────────────────────────
+        if data.idempotency_key:
+            existing = await self.payments_repo.get_by_idempotency_key(data.idempotency_key)
+            if existing is not None:
+                return existing
+
+        invoice = await self.get_invoice(invoice_id)  # 404 check
+
+        inv_total = _safe_decimal(invoice.amount_total)
+        inv_retention = _safe_decimal(invoice.retention_amount)
+
+        # Resolve the gross being settled. When amount is given it is the cash
+        # the caller intends to pay; gross = cash + withholding. When amount is
+        # omitted we settle the whole invoice (gross = amount_total).
+        explicit_withholding = (
+            _safe_decimal(data.withholding_amount) if data.withholding_amount is not None else None
+        )
+        if data.amount is not None:
+            cash_in = _safe_decimal(data.amount)
+            withheld = explicit_withholding if explicit_withholding is not None else inv_retention
+            gross = cash_in + withheld
+        else:
+            gross = inv_total
+            withheld = explicit_withholding if explicit_withholding is not None else inv_retention
+
+        amount_to_pay, withholding = compute_payment_withholding(
+            gross, withholding_amount=withheld
+        )
+
+        pay_currency = data.currency_code or invoice.currency_code or ""
+        payment = Payment(
+            invoice_id=invoice_id,
+            payment_date=data.payment_date,
+            amount=amount_to_pay,
+            currency_code=pay_currency,
+            exchange_rate_snapshot=_safe_decimal(data.exchange_rate_snapshot, Decimal("1")),
+            reference=data.reference,
+            idempotency_key=data.idempotency_key,
+            is_refund=False,
+            withholding_amount=withholding,
+            withholding_release_date=data.withholding_release_date,
+            source_claim_id=invoice.source_claim_id,
+            metadata_=data.metadata,
+        )
+        payment = await self.payments_repo.create(payment)
+
+        # ── Post the cash paid out onto the cost spine ───────────────────────
+        # Only the cash leg is a realised actual; withheld retainage is a
+        # liability still owed, not yet spent. Non-fatal.
+        try:
+            await self._post_claim_payment_to_spine(
+                project_id=invoice.project_id,
+                payment=payment,
+                currency=pay_currency,
+            )
+        except Exception:
+            logger.exception(
+                "Spine posting failed for claim payment %s — payment unaffected",
+                payment.id,
+            )
+
+        # Audit row — best-effort.
+        try:
+            from app.core.audit_log import log_activity
+
+            await log_activity(
+                self.session,
+                actor_id=actor_id,
+                entity_type="payment",
+                entity_id=str(payment.id),
+                action="created_with_withholding",
+                reason="Claim payment recorded with retainage withholding",
+                metadata={
+                    "invoice_id": str(invoice_id),
+                    "amount": str(amount_to_pay),
+                    "withholding_amount": str(withholding),
+                    "currency_code": pay_currency,
+                    "source_claim_id": str(invoice.source_claim_id) if invoice.source_claim_id else "",
+                },
+            )
+        except Exception as exc:
+            logger.warning(
+                "Audit log FAILED for withholding payment (invoice_id=%s): %s",
+                invoice_id,
+                exc,
+                exc_info=True,
+            )
+
+        logger.info(
+            "Payment with withholding recorded: paid=%s withheld=%s for invoice %s",
+            amount_to_pay,
+            withholding,
+            invoice_id,
+        )
+        return payment
+
+    async def _post_claim_payment_to_spine(
+        self,
+        *,
+        project_id: uuid.UUID,
+        payment: Payment,
+        currency: str,
+    ) -> None:
+        """Post the cash leg of a claim payment onto the cost spine.
+
+        FX: the payment ``amount`` is converted to the project base currency
+        before posting (spine stores base-currency actuals). A missing rate keeps
+        the foreign value as-is, never zeroed. Idempotent on
+        ``(source_kind, source_ref)`` keyed by the payment id, so a replay of
+        the same payment posts exactly once.
+        """
+        import hashlib
+
+        from app.modules.costmodel.service import CostSpineService
+        from app.modules.projects.repository import ProjectRepository
+
+        project = await ProjectRepository(self.session).get_by_id(project_id)
+        base_currency = (getattr(project, "currency", "") or "").strip().upper() if project else ""
+        fx_map = _project_fx_map(project)
+        converted, _missing = _convert_to_base(
+            {(currency or "").strip().upper(): float(_safe_decimal(payment.amount))},
+            base_currency=base_currency,
+            fx_rates_map=fx_map,
+        )
+        amount_base = str(Decimal(str(converted)))
+
+        posting_ref = f"payment:{payment.id}"
+        idempotency = hashlib.sha256(f"claim_payment:{posting_ref}".encode()).hexdigest()[:16]
+        spine = CostSpineService(self.session)
+        await spine.post_actual_to_budget_line(
+            project_id=project_id,
+            cost_line_id=None,
+            cost_category=None,
+            amount_base=amount_base,
+            currency=currency or "",
+            source_kind="claim_payment",
+            source_ref=posting_ref,
+            idempotency_key=idempotency,
+        )
 
     async def list_payments(
         self,

@@ -25,6 +25,8 @@ class Invoice(Base):
     __table_args__ = (
         Index("ix_invoice_project_direction", "project_id", "invoice_direction"),
         Index("ix_invoice_project_status", "project_id", "status"),
+        # Gap E: fast idempotent "did this claim already spawn an invoice?" lookup.
+        Index("ix_invoice_source_claim", "source_claim_id"),
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
@@ -34,6 +36,14 @@ class Invoice(Base):
     )
     contact_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     invoice_direction: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    # Gap E (Wave 6): when a receivable invoice is auto-created from a certified
+    # progress claim, this column records the originating claim so the creation
+    # is idempotent (a second ``contracts.claim.certified`` for the same claim
+    # finds the existing row instead of writing a duplicate) and the UI can link
+    # the invoice straight back to its claim. Plain GUID (no cross-module FK):
+    # the claim lives in another module and may be deleted while the AR invoice
+    # and its payment history survive. NULL on every non-claim invoice.
+    source_claim_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True, index=True)
     invoice_number: Mapped[str] = mapped_column(String(50), nullable=False)
     invoice_date: Mapped[str] = mapped_column(String(40), nullable=False)
     due_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
@@ -93,6 +103,11 @@ class InvoiceLineItem(Base):
     amount: Mapped[Decimal] = mapped_column(MoneyType(), nullable=False, default=Decimal("0"))
     wbs_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     cost_category: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Gap B (Wave 6): optional link to a costmodel.CostLine so an invoice line
+    # can post its paid actual straight onto the right cost-spine row. Plain
+    # GUID (no cross-module FK) — the cost line may be deleted while the
+    # invoice and its posting history survive. NULL on legacy / unlinked lines.
+    cost_line_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True, index=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     # Relationship
@@ -106,7 +121,11 @@ class Payment(Base):
     """A payment recorded against an invoice."""
 
     __tablename__ = "oe_finance_payment"
-    __table_args__ = (Index("ix_finance_payment_idempotency", "idempotency_key", unique=True),)
+    __table_args__ = (
+        Index("ix_finance_payment_idempotency", "idempotency_key", unique=True),
+        # Gap E: trace every payment back to the certified claim it settles.
+        Index("ix_finance_payment_source_claim", "source_claim_id"),
+    )
 
     invoice_id: Mapped[uuid.UUID] = mapped_column(
         GUID(),
@@ -125,6 +144,26 @@ class Payment(Base):
     # R7: is_refund flag — stored separately from amount sign so the positive
     # amount validator on PaymentCreate can remain in place.
     is_refund: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=False, server_default="0")
+    # ── Gap E (Wave 6): retainage withholding ──────────────────────────────
+    # ``amount`` is the cash actually paid out. ``withholding_amount`` is the
+    # retainage held back from the certified-claim gross at payment time
+    # (gross = amount + withholding_amount). Stored as Decimal-as-string money
+    # so the payment row carries the full breakdown the certificate requires
+    # without recomputing it from the claim every time.
+    withholding_amount: Mapped[Decimal] = mapped_column(
+        MoneyType(),
+        nullable=False,
+        default=Decimal("0"),
+        server_default="0",
+    )
+    # The certified progress claim this payment settles, when it originated
+    # from one. Plain GUID (no cross-module FK) — same rationale as
+    # ``Invoice.source_claim_id``. NULL for ordinary non-claim payments.
+    source_claim_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True, index=True)
+    # ISO date on which the withheld retainage becomes releasable (typically
+    # the contract's retention-release event date, e.g. practical completion).
+    # NULL when no retention was withheld or no release date is known yet.
+    withholding_release_date: Mapped[str | None] = mapped_column(String(40), nullable=True)
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         "metadata",
         JSON,
@@ -137,7 +176,7 @@ class Payment(Base):
     invoice: Mapped["Invoice"] = relationship(back_populates="payments")
 
     def __repr__(self) -> str:
-        return f"<Payment {self.amount} on {self.payment_date}>"
+        return f"<Payment {self.amount} (held {self.withholding_amount}) on {self.payment_date}>"
 
 
 class ProjectBudget(Base):

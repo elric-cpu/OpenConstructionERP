@@ -117,6 +117,21 @@ class RiskService:
         except Exception:
             return ""
 
+    async def _maybe_escalate(self, risk_id: uuid.UUID) -> bool:
+        """Run the auto-escalation engine for one risk (on-create/update hook).
+
+        Best-effort: escalation must never break a normal CRUD path, so any
+        failure is logged and swallowed. Returns True iff the risk was
+        escalated by this call.
+        """
+        try:
+            from app.modules.risk.escalation import RiskEscalationService
+
+            return await RiskEscalationService(self.session).evaluate_one(risk_id)
+        except Exception:
+            logger.debug("Risk auto-escalation hook failed for %s", risk_id, exc_info=True)
+            return False
+
     # ── Create ────────────────────────────────────────────────────────────
 
     async def create_risk(
@@ -162,10 +177,14 @@ class RiskService:
             owner_user_id=data.owner_user_id,
             response_cost=str(data.response_cost),
             currency=currency,
+            escalation_threshold=data.escalation_threshold,
             metadata_=data.metadata,
         )
         item = await self.repo.create(item)
         logger.info("Risk created: %s for project %s", code, data.project_id)
+        # On-create escalation hook: a risk can be born already critical (or
+        # imported with a lapsed review date), so evaluate it immediately.
+        await self._maybe_escalate(item.id)
         await _safe_publish(
             "risk.risk.created",
             {
@@ -270,6 +289,11 @@ class RiskService:
 
         await self.repo.update_fields(risk_id, **fields)
         await self.session.refresh(item)
+
+        # On-update escalation hook: re-score may have crossed the threshold,
+        # or the metadata may carry a (now lapsed) review date. Idempotent —
+        # a no-op when the risk is already escalated or below threshold.
+        await self._maybe_escalate(risk_id)
 
         logger.info("Risk updated: %s (fields=%s)", risk_id, list(fields.keys()))
         await _safe_publish(

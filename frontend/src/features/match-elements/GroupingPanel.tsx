@@ -13,8 +13,13 @@
 //                       MatchGroup rows.
 //   B. 3-slot picker  — ordered custom composite key. Driven by the
 //                       attribute list the wizard prefetched.
-//   C. Filter chips   — Phase-0 placeholder; the next slice will surface
-//                       category counts from the prefetched query.
+//   C. Filter chips   — one toggleable chip per IfcCategory actually
+//                       present in the data (count badge included).
+//                       Toggling a chip narrows the grouping preview to
+//                       the selected categories by writing the session's
+//                       ``filters`` JSON ({"ifc_class": [...]}); the
+//                       backend's ``rebuild_groups`` honours it. No chip
+//                       selected = all categories included.
 //   D. Count table    — live element count + sample names per group,
 //                       with inline warnings when the chosen key is
 //                       too granular or has high missingness.
@@ -42,9 +47,11 @@ import { useToastStore } from '@/stores/useToastStore';
 import {
   matchElementsApi,
   type AttributeKey,
+  type CategoryCount,
   type GroupListResponse,
   type MatchSession,
 } from './api';
+import { ifcClassLabel } from './ifcClassLabels';
 
 // Canonical attribute keys that are always offered even if the
 // 200-row sample didn't surface them (e.g. an all-walls model that
@@ -149,6 +156,18 @@ export function GroupingPanel({ sessionId, groupsQ, updateSessionM }: GroupingPa
     return Array.from(merged);
   }, [attrs]);
 
+  // ── Available categories for the filter-chip row. ─────────────────────
+  // Real counts straight from the source adapter (BIM: GROUP BY
+  // element_type). Drives one toggle chip per IfcCategory present.
+  const categoriesQ = useQuery({
+    enabled: !!sessionId,
+    queryKey: ['match-categories', sessionId],
+    queryFn: () => matchElementsApi.listCategories(sessionId),
+    staleTime: 60_000,
+  });
+
+  const categories: CategoryCount[] = categoriesQ.data ?? [];
+
   // ── Current session group_by, hydrated from the cached session. ───────
   // The session is the source of truth; we use the cached value if
   // present so the picker reflects the wizard's last write without an
@@ -204,6 +223,81 @@ export function GroupingPanel({ sessionId, groupsQ, updateSessionM }: GroupingPa
         message: e.message,
       }),
   });
+
+  // ── Category filter (session.filters["ifc_class"]). ───────────────────
+  // The session is the source of truth — hydrate the active set from the
+  // cached session's ``filters`` so a Back/Next round-trip keeps the
+  // user's selection. Empty set = no filter = every category included.
+  const initialFilterCats = useMemo(() => {
+    const raw = sessionData?.filters?.ifc_class;
+    if (!Array.isArray(raw)) return new Set<string>();
+    return new Set<string>(raw.filter((v): v is string => typeof v === 'string'));
+  }, [sessionData]);
+
+  const [selectedCats, setSelectedCats] = useState<Set<string>>(initialFilterCats);
+
+  // Rehydrate when the session's filters change from outside (e.g. after a
+  // PATCH invalidates and the cache is replaced). Compare by sorted
+  // contents so we don't clobber an in-progress toggle with an identical
+  // server echo.
+  const initialFilterKey = useMemo(
+    () => Array.from(initialFilterCats).sort().join('|'),
+    [initialFilterCats],
+  );
+  useEffect(() => {
+    setSelectedCats((prev) => {
+      const prevKey = Array.from(prev).sort().join('|');
+      return prevKey === initialFilterKey ? prev : new Set(initialFilterCats);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFilterKey]);
+
+  // Mutation for filter writes. Mirrors groupByM (same cache write +
+  // group invalidation) so the preview re-groups server-side on toggle.
+  const filtersM = useMutation({
+    mutationFn: (filters: Record<string, unknown[]>) =>
+      matchElementsApi.updateSession(sessionId, { filters }),
+    onSuccess: (s: MatchSession) => {
+      qc.setQueryData(['match-session', sessionId], s);
+      qc.invalidateQueries({ queryKey: ['match-groups', sessionId] });
+    },
+    onError: (e: Error) =>
+      addToast({
+        type: 'error',
+        title: t('match.wizard.grouping.updateFailed', {
+          defaultValue: 'Could not update grouping',
+        }),
+        message: e.message,
+      }),
+  });
+
+  const toggleCategory = useCallback(
+    (category: string) => {
+      setSelectedCats((prev) => {
+        const next = new Set(prev);
+        if (next.has(category)) {
+          next.delete(category);
+        } else {
+          next.add(category);
+        }
+        // Empty set clears the filter entirely (show everything); a
+        // non-empty set pins ``ifc_class`` to the chosen categories.
+        const filters: Record<string, unknown[]> =
+          next.size > 0 ? { ifc_class: Array.from(next) } : {};
+        filtersM.mutate(filters);
+        return next;
+      });
+    },
+    [filtersM],
+  );
+
+  const clearCategoryFilter = useCallback(() => {
+    setSelectedCats((prev) => {
+      if (prev.size === 0) return prev;
+      filtersM.mutate({});
+      return new Set<string>();
+    });
+  }, [filtersM]);
 
   // ── Debounced PATCH ───────────────────────────────────────────────────
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -276,7 +370,7 @@ export function GroupingPanel({ sessionId, groupsQ, updateSessionM }: GroupingPa
     singletonGroups >= 1 &&
     singletonGroups / groups.length > 0.2;
 
-  const isWriting = groupByM.isPending;
+  const isWriting = groupByM.isPending || filtersM.isPending;
   const isUpdatingScope = updateSessionM.isPending;
 
   return (
@@ -382,20 +476,101 @@ export function GroupingPanel({ sessionId, groupsQ, updateSessionM }: GroupingPa
         </div>
       </div>
 
-      {/* ── C. Filter-chip row (Phase 0 placeholder) ─────────────────── */}
+      {/* ── C. Filter-chip row (per-category include filter) ─────────── */}
       <div>
-        <div className="mb-2 text-xs font-medium uppercase tracking-wide text-content-tertiary">
-          {t('match.wizard.grouping.filters', { defaultValue: 'Filters' })}
+        <div className="mb-2 flex items-center gap-2">
+          <span className="text-xs font-medium uppercase tracking-wide text-content-tertiary">
+            {t('match.wizard.grouping.filters', { defaultValue: 'Filters' })}
+          </span>
+          {categoriesQ.isLoading && (
+            <Loader2 className="h-3 w-3 animate-spin text-content-tertiary" />
+          )}
+          {selectedCats.size > 0 && (
+            <button
+              type="button"
+              onClick={clearCategoryFilter}
+              disabled={isWriting}
+              data-testid="grouping-filters-clear"
+              className={clsx(
+                'text-xs text-oe-blue hover:underline',
+                isWriting && 'opacity-60',
+              )}
+            >
+              {t('match.wizard.grouping.filtersClear', {
+                defaultValue: 'Clear ({{count}})',
+                count: selectedCats.size,
+              })}
+            </button>
+          )}
         </div>
-        <div
-          className="rounded-lg border border-dashed border-border-light bg-surface-muted px-3 py-2 text-xs text-content-tertiary"
-          data-testid="grouping-filters-placeholder"
-        >
-          {t('match.wizard.grouping.filtersTodo', {
-            defaultValue:
-              'TODO: filter chips from categories — coming in the next slice.',
-          })}
-        </div>
+
+        {categoriesQ.isLoading ? (
+          <div className="flex items-center gap-2 text-xs text-content-tertiary">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            {t('match.wizard.grouping.filtersLoading', {
+              defaultValue: 'Loading categories…',
+            })}
+          </div>
+        ) : categories.length === 0 ? (
+          <div
+            className="rounded-lg border border-border-light bg-surface-muted px-3 py-2 text-xs text-content-tertiary"
+            data-testid="grouping-filters-empty"
+          >
+            {t('match.wizard.grouping.filtersEmpty', {
+              defaultValue: 'No categories to filter.',
+            })}
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-2" data-testid="grouping-filters">
+            {categories.map((cat) => {
+              const active = selectedCats.has(cat.category);
+              const label = ifcClassLabel(t, cat.category);
+              return (
+                <button
+                  key={cat.category}
+                  type="button"
+                  aria-pressed={active}
+                  data-testid={`grouping-filter-${cat.category}`}
+                  onClick={() => toggleCategory(cat.category)}
+                  disabled={isWriting}
+                  className={clsx(
+                    'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors',
+                    active
+                      ? 'border-oe-blue bg-oe-blue/10 text-oe-blue'
+                      : 'border-border-light bg-surface-muted text-content-primary hover:bg-surface-base',
+                    isWriting && 'opacity-60',
+                  )}
+                  title={cat.category}
+                >
+                  <span>{label}</span>
+                  <span
+                    className={clsx(
+                      'rounded-full px-1.5 text-xs tabular-nums',
+                      active
+                        ? 'bg-oe-blue/20 text-oe-blue'
+                        : 'bg-surface-base text-content-tertiary',
+                    )}
+                  >
+                    {cat.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <p className="mt-2 text-xs text-content-tertiary">
+          {selectedCats.size > 0
+            ? t('match.wizard.grouping.filtersActiveHint', {
+                defaultValue:
+                  'Showing only the {{count}} selected categories in the preview below.',
+                count: selectedCats.size,
+              })
+            : t('match.wizard.grouping.filtersAllHint', {
+                defaultValue:
+                  'All categories included. Pick one or more to narrow the preview.',
+              })}
+        </p>
       </div>
 
       {/* ── D. Live count-table ──────────────────────────────────────── */}

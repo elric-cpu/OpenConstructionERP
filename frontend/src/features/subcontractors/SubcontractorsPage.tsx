@@ -43,6 +43,7 @@ import { PipelineBanner } from './PipelineBanner';
 import { PrequalModal } from './PrequalModal';
 import { ScorecardTile } from './ScorecardTile';
 import { LienWaiverPanel } from './LienWaiverPanel';
+import { AwardEligibilityBanner } from './AwardEligibilityBanner';
 import { useToastStore } from '@/stores/useToastStore';
 import { getErrorMessage } from '@/shared/lib/api';
 import {
@@ -59,6 +60,7 @@ import {
   getPaymentReleaseCheck,
   listRetentionLedger,
   listRatings,
+  computeMonthlyRating,
   listCertificates,
   blockSubcontractor,
   unblockSubcontractor,
@@ -841,28 +843,18 @@ function DetailDrawer({ id, onClose }: { id: string; onClose: () => void }) {
                 {sub.blocked_reason}
               </div>
             )}
-            {/* Prequalification award gate (TOP-30 #20): a rejected or suspended
-                vendor cannot have an agreement activated or be paid - mirror the
-                backend 409 with a banner so the reason is visible up front. */}
-            {!sub.is_blocked &&
-              (sub.prequalification_status === 'rejected' ||
-                sub.prequalification_status === 'suspended') && (
-                <div className="flex items-start gap-2 border-b border-amber-200 bg-amber-50 px-5 py-2.5 text-xs text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-200">
-                  <ShieldAlert size={14} className="mt-0.5 shrink-0" />
-                  <span>
-                    <span className="font-semibold">
-                      {t('subcontractors.award_gate_label', {
-                        defaultValue: 'Not approved for award.',
-                      })}
-                    </span>{' '}
-                    {t('subcontractors.award_gate_desc', {
-                      defaultValue:
-                        'Prequalification is {{status}}. Agreements cannot be activated and payments are held until it is cleared.',
-                      status: sub.prequalification_status,
-                    })}
-                  </span>
-                </div>
-              )}
+            {/* Prequalification award gate (TOP-30 #20): one comprehensive
+                banner that mirrors the backend gate exactly (eligible /
+                pending / rejected-or-suspended / blocked) so the verdict is
+                visible up front instead of only on a 409. */}
+            <div className="border-b border-border-light px-5 py-3">
+              <AwardEligibilityBanner
+                subcontractorId={sub.id}
+                prequalStatus={sub.prequalification_status}
+                isBlocked={!!sub.is_blocked}
+                blockedReason={sub.blocked_reason}
+              />
+            </div>
 
             <div className="flex flex-wrap items-center gap-2 px-5 py-3 text-xs border-b border-border-light">
               <span className="text-content-tertiary">
@@ -951,6 +943,7 @@ function DetailDrawer({ id, onClose }: { id: string; onClose: () => void }) {
               )}
               {tab === 'ratings' && (
                 <RatingsTab
+                  subcontractorId={sub.id}
                   data={ratingsQ.data ?? []}
                   loading={ratingsQ.isLoading}
                 />
@@ -1361,10 +1354,57 @@ function PaymentList({
   );
 }
 
+function currentPeriod(): string {
+  const now = new Date();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  return `${now.getFullYear()}-${mm}`;
+}
+
+/**
+ * Header control that recomputes the current-month rating rollup on demand
+ * (TOP-30 #20). The compute is idempotent server-side, so re-running is safe;
+ * MANAGER-only on the backend, so non-managers get a toast on the 403.
+ */
+function ComputeRatingButton({ subcontractorId }: { subcontractorId: string }) {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const addToast = useToastStore((s) => s.addToast);
+  const mutation = useMutation({
+    mutationFn: () => computeMonthlyRating(subcontractorId, currentPeriod()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['subcontractors', 'ratings', subcontractorId] });
+      qc.invalidateQueries({ queryKey: ['subcontractors', 'detail', subcontractorId] });
+      addToast({
+        type: 'success',
+        title: t('subcontractors.rating_recomputed', {
+          defaultValue: 'Rating recomputed for {{period}}',
+          period: currentPeriod(),
+        }),
+      });
+    },
+    onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),
+  });
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      loading={mutation.isPending}
+      onClick={() => mutation.mutate()}
+      icon={<Star size={13} />}
+    >
+      {t('subcontractors.compute_rating', {
+        defaultValue: 'Recompute this month',
+      })}
+    </Button>
+  );
+}
+
 function RatingsTab({
+  subcontractorId,
   data,
   loading,
 }: {
+  subcontractorId: string;
   data: Rating[];
   loading: boolean;
 }) {
@@ -1373,6 +1413,15 @@ function RatingsTab({
   if (data.length === 0) {
     return (
       <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-content-tertiary">
+            {t('subcontractors.ratings_intro', {
+              defaultValue:
+                'Monthly performance is rolled up from NCRs, safety incidents and schedule slips.',
+            })}
+          </p>
+          <ComputeRatingButton subcontractorId={subcontractorId} />
+        </div>
         <ScorecardTile ratings={data} />
         <EmptyState
           icon={<Star size={20} />}
@@ -1383,6 +1432,9 @@ function RatingsTab({
   }
   return (
     <div className="space-y-3">
+      <div className="flex items-center justify-end">
+        <ComputeRatingButton subcontractorId={subcontractorId} />
+      </div>
       <ScorecardTile ratings={data} />
       <div className="overflow-x-auto rounded-lg border border-border-light">
       <table className="w-full text-xs">

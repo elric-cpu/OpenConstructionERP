@@ -20,7 +20,18 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import GUID, Base
@@ -440,9 +451,26 @@ class RetentionLedger(Base):
 
 
 class SubcontractorRating(Base):
-    """Monthly rating rollup for a subcontractor."""
+    """Monthly rating rollup for a subcontractor.
+
+    There is at most one row per ``(subcontractor_id, period)`` — the
+    unique constraint below is the database backstop that makes the
+    monthly-rollup compute idempotent: a double-compute of the same month
+    (e.g. a cron re-run or a manual trigger landing twice) can never
+    insert a duplicate rating row. The service still upserts via a
+    read-then-write on ``get_for_period``; this constraint catches the
+    race where two computes flush concurrently (TOP-30 #20, TC-10).
+    """
 
     __tablename__ = "oe_subcontractors_rating"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "subcontractor_id",
+            "period",
+            name="uq_subcontractors_rating_period",
+        ),
+    )
 
     subcontractor_id: Mapped[uuid.UUID] = mapped_column(
         GUID(),

@@ -85,6 +85,9 @@ class InvoiceLineItemCreate(BaseModel):
     amount: str = Field(default="0", max_length=50)
     wbs_id: str | None = Field(default=None, max_length=36)
     cost_category: str | None = Field(default=None, max_length=100)
+    # Gap B (Wave 6): optional link to a costmodel.CostLine so the paid actual
+    # posts onto the matching cost-spine budget row.
+    cost_line_id: UUID | None = Field(default=None)
     sort_order: int = Field(default=0, ge=0)
 
     @field_validator("quantity", "unit_rate", "amount")
@@ -188,6 +191,7 @@ class InvoiceLineItemResponse(BaseModel):
     amount: str = "0"
     wbs_id: str | None = None
     cost_category: str | None = None
+    cost_line_id: UUID | None = None
     sort_order: int = 0
     created_at: datetime
     updated_at: datetime
@@ -206,6 +210,8 @@ class InvoiceResponse(BaseModel):
     project_id: UUID
     contact_id: str | None = None
     counterparty_name: str | None = None
+    # Gap E: link back to the certified claim this AR invoice was raised from.
+    source_claim_id: UUID | None = None
     invoice_direction: str
     invoice_number: str
     invoice_date: str
@@ -262,6 +268,16 @@ class PaymentCreate(BaseModel):
     idempotency_key: str | None = Field(default=None, max_length=64)
     # R7: refund flag — positive amount with is_refund=True decreases net_paid.
     is_refund: bool = Field(default=False)
+    # ── Gap E (Wave 6): retainage withholding ──────────────────────────────
+    # Amount of retainage held back from the certified gross at payment time.
+    # ``amount`` stays the cash paid out; gross = amount + withholding_amount.
+    # Defaults to "0" so ordinary (non-claim) payments are unaffected.
+    withholding_amount: str = Field(default="0", max_length=50)
+    # ISO date the withheld retainage becomes releasable (e.g. practical
+    # completion). NULL/omitted when nothing is withheld or the date is unknown.
+    withholding_release_date: str | None = Field(default=None, max_length=40)
+    # Certified progress claim this payment settles, when applicable.
+    source_claim_id: UUID | None = Field(default=None)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("amount")
@@ -273,6 +289,11 @@ class PaymentCreate(BaseModel):
     @classmethod
     def _check_positive_rate(cls, v: str) -> str:
         return _validate_positive_decimal(v, "exchange_rate_snapshot")
+
+    @field_validator("withholding_amount")
+    @classmethod
+    def _check_non_negative_withholding(cls, v: str) -> str:
+        return _validate_non_negative_decimal(v, "withholding_amount")
 
 
 class PaymentResponse(BaseModel):
@@ -289,6 +310,10 @@ class PaymentResponse(BaseModel):
     reference: str | None = None
     idempotency_key: str | None = None
     is_refund: bool = False
+    # Gap E: retainage breakdown carried on every payment row.
+    withholding_amount: str = "0"
+    withholding_release_date: str | None = None
+    source_claim_id: UUID | None = None
     # Enriched server-side from the parent invoice so the payments table can
     # show a human-readable reference instead of a raw invoice UUID. Resolved
     # in the router (mirrors the counterparty-name enrichment on invoices).
@@ -302,7 +327,7 @@ class PaymentResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    _coerce_decimal = field_validator("amount", "exchange_rate_snapshot", mode="before")(
+    _coerce_decimal = field_validator("amount", "exchange_rate_snapshot", "withholding_amount", mode="before")(
         lambda cls, v: _decimal_to_str(v)
     )
 
@@ -312,6 +337,59 @@ class PaymentListResponse(BaseModel):
 
     items: list[PaymentResponse]
     total: int
+
+
+# ── Gap E: claim → receivable & withholding payment ──────────────────────────
+
+
+class ClaimInvoiceRequest(BaseModel):
+    """Body for ``POST /invoices/from-claim`` — turn a certified claim into AR.
+
+    The claim itself carries the gross / retention / net figures and the
+    contract carries the project + counterparty, so the caller only has to name
+    the claim. The endpoint is idempotent on ``claim_id``.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    claim_id: UUID
+
+
+class RecordClaimPaymentRequest(BaseModel):
+    """Body for ``POST /invoices/{id}/record-payment`` with retainage.
+
+    A thin superset of :class:`PaymentCreate` minus ``invoice_id`` (taken from
+    the path). When ``withholding_amount`` is omitted it is derived from the
+    invoice's ``retention_amount`` so a one-click "pay this claim" still holds
+    back the right retainage.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    payment_date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$", max_length=20)
+    # Cash actually paid out. When omitted the service pays the invoice net
+    # (amount_total - retention) so the caller can settle a claim with no math.
+    amount: str | None = Field(default=None, max_length=50)
+    currency_code: str = Field(default="", max_length=10)
+    exchange_rate_snapshot: str = Field(default="1", max_length=50)
+    reference: str | None = Field(default=None, max_length=255)
+    idempotency_key: str | None = Field(default=None, max_length=64)
+    # When None the service derives it from the invoice retention_amount.
+    withholding_amount: str | None = Field(default=None, max_length=50)
+    withholding_release_date: str | None = Field(default=None, max_length=40)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("amount", "withholding_amount")
+    @classmethod
+    def _check_non_negative_optional(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        return _validate_non_negative_decimal(v)
+
+    @field_validator("exchange_rate_snapshot")
+    @classmethod
+    def _check_positive_rate(cls, v: str) -> str:
+        return _validate_positive_decimal(v, "exchange_rate_snapshot")
 
 
 # ── Budget ───────────────────────────────────────────────────────────────────

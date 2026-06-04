@@ -38,6 +38,7 @@ import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { getPOMatchStatus, type POLineMatchTag } from './api';
 import { SupplierScorecardModal } from './SupplierScorecardModal';
+import { RetainagePanel, RetainageBadge } from './RetainagePanel';
 import { POStatusPipeline } from './POStatusPipeline';
 import { DeliveryCountdownBadge } from './DeliveryCountdownBadge';
 
@@ -60,6 +61,13 @@ interface PurchaseOrder {
   status: string;
   description: string;
   line_items_count: number;
+  // ── Retainage (Gap F) ──────────────────────────────────────────────────
+  // retention_percent / retain_on_receipt are persisted; retainage_amount /
+  // retainage_held are computed by the backend. All Decimal-as-string.
+  retention_percent?: string;
+  retain_on_receipt?: boolean;
+  retainage_amount?: string;
+  retainage_held?: string;
   created_at: string;
   updated_at: string;
 }
@@ -301,6 +309,8 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
   const [scorecardOpen, setScorecardOpen] = useState<
     { contactId: string; name?: string | null } | null
   >(null);
+  // Retainage panel (Gap F) — opened from a PO row's "Retainage" action.
+  const [retainagePO, setRetainagePO] = useState<PurchaseOrder | null>(null);
 
   // Resolve the project's currency from the finance dashboard so new POs
   // default to it instead of a hardcoded EUR (task #217). Empty string when
@@ -1090,6 +1100,8 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
                         progression (draft → issued → partial → completed).
                         Mirrors backend _PO_STATUS_TRANSITIONS in service.py. */}
                     <POStatusPipeline status={po.status} />
+                    {/* Amber retainage chip (Gap F) — only when retention > 0. */}
+                    <RetainageBadge percent={po.retention_percent} />
                   </div>
                 </td>
                 <td className="px-4 py-3 text-right">
@@ -1182,6 +1194,22 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
                         </Button>
                       );
                     })()}
+                    {/* Retainage (Gap F): only meaningful when the PO carries
+                        retention. Opens the release panel; the release form
+                        inside is MANAGER-gated server-side and UI-side. */}
+                    {Number(po.retention_percent ?? '0') > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setRetainagePO(po)}
+                        title={t('procurement.open_retainage', {
+                          defaultValue: 'Manage retainage',
+                        })}
+                      >
+                        <Wallet size={14} className="mr-1" />
+                        {t('procurement.retainage_short', { defaultValue: 'Retainage' })}
+                      </Button>
+                    )}
                   </div>
                   )}
                 </td>
@@ -1203,6 +1231,21 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
         contactId={scorecardOpen.contactId}
         contactName={scorecardOpen.name ?? undefined}
         projectId={projectId}
+      />
+    )}
+
+    {/* Retainage panel (Gap F) — release withheld retention + audit log */}
+    {retainagePO && (
+      <RetainagePanel
+        open
+        onClose={() => setRetainagePO(null)}
+        poId={retainagePO.id}
+        poNumber={retainagePO.po_number}
+        currency={retainagePO.currency_code}
+        retainageAmount={retainagePO.retainage_amount ?? '0'}
+        retainageHeld={retainagePO.retainage_held ?? '0'}
+        retentionPercent={retainagePO.retention_percent ?? '0'}
+        canRelease={isManager}
       />
     )}
     </>

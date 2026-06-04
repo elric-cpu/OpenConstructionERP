@@ -42,6 +42,11 @@ export interface DwgDrawing {
   status?: DwgDrawingStatus;
   /** Human-readable reason when ``status === 'error'`` or ``'empty'``. */
   error_message?: string | null;
+  /** Latest parsed version. Only present on the single-drawing fetch
+   *  ({@link fetchDrawing}); the LIST endpoint omits it. Carries the
+   *  resolved/backfilled ``units`` the LIST response does not expose, so
+   *  the page can apply the mm→m factor. */
+  latest_version?: DwgDrawingVersion | null;
   created_at: string;
   updated_at: string;
 }

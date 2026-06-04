@@ -340,6 +340,57 @@ export function listRatings(subcontractorId: string): Promise<Rating[]> {
   return apiGet<Rating[]>(`/v1/subcontractors/ratings/?${qs.toString()}`);
 }
 
+/**
+ * Recompute the monthly rating rollup for a subcontractor (TOP-30 #20).
+ *
+ * `period` is a YYYY-MM string. MANAGER-only on the backend. The compute is
+ * idempotent — re-running for the same month refreshes the figures rather than
+ * creating a duplicate row — and emits `subcontractors.rating.updated`.
+ */
+export function computeMonthlyRating(
+  subId: string,
+  period: string,
+): Promise<Rating> {
+  const qs = new URLSearchParams({ period });
+  return apiPost<Rating>(
+    `/v1/subcontractors/subcontractors/${subId}/ratings/compute?${qs.toString()}`,
+    {},
+  );
+}
+
+/* ── Award eligibility + prequalification (TOP-30 #20) ──────────────────── */
+
+export interface AwardEligibility {
+  subcontractor_id: string;
+  awardable: boolean;
+  reasons: string[];
+}
+
+export function getAwardEligibility(subId: string): Promise<AwardEligibility> {
+  return apiGet<AwardEligibility>(
+    `/v1/subcontractors/subcontractors/${subId}/award-eligibility`,
+  );
+}
+
+export interface PrequalView {
+  subcontractor_id: string;
+  prequalification_status: PrequalStatus;
+  prequal_score?: number | null;
+  prequal_questionnaire?: Record<string, unknown> | null;
+  prequal_completed_at?: string | null;
+  is_blocked: boolean;
+  blocked_reason?: string | null;
+  missing_required: string[];
+  computed_score?: number | null;
+  approval_threshold: number;
+}
+
+export function getPrequalView(subId: string): Promise<PrequalView> {
+  return apiGet<PrequalView>(
+    `/v1/subcontractors/subcontractors/${subId}/prequal`,
+  );
+}
+
 /* ── Wave 4 / T12: Prequal + block + insurance ─────────────────────────── */
 
 export interface PrequalRequestPayload {

@@ -31,7 +31,7 @@ import uuid
 from collections.abc import Iterable
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -66,6 +66,7 @@ from app.modules.finance.schemas import (
     BudgetListResponse,
     BudgetResponse,
     BudgetUpdate,
+    ClaimInvoiceRequest,
     EVMListResponse,
     EVMSnapshotCreate,
     EVMSnapshotResponse,
@@ -76,6 +77,7 @@ from app.modules.finance.schemas import (
     PaymentCreate,
     PaymentListResponse,
     PaymentResponse,
+    RecordClaimPaymentRequest,
 )
 from app.modules.finance.service import FinanceService
 
@@ -645,6 +647,99 @@ async def create_payment(
     """
     await _require_invoice_access(session, data.invoice_id, user_id)
     payment = await service.create_payment(data, actor_id=str(user_id) if user_id else None)
+    return PaymentResponse.model_validate(payment)
+
+
+# ── Gap E: certified claim → receivable invoice (MUST be before /{id}) ───────
+
+
+@router.post(
+    "/invoices/from-claim/",
+    response_model=InvoiceResponse,
+    summary="Create receivable invoice from a certified claim",
+    description="Auto-create (or return the existing) accounts-receivable invoice for a "
+    "certified progress claim. Idempotent on claim_id: a second call returns the same "
+    "invoice with 200 rather than writing a duplicate. The claim must be in 'certified' "
+    "status (400 otherwise). MANAGER-only — it books revenue against the client.",
+)
+async def create_invoice_from_claim(
+    data: ClaimInvoiceRequest,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    response: Response,
+    _perm: None = Depends(RequirePermission("finance.invoice_from_claim")),
+    service: FinanceService = Depends(_get_service),
+) -> InvoiceResponse:
+    """Create or return the receivable invoice for a certified claim.
+
+    Returns 201 when a new invoice is created, 200 when an existing one is
+    returned (idempotent retry). The 200/201 distinction is set on the
+    response after the service resolves whether the invoice already existed.
+    """
+    pre_existing = await service.get_receivable_for_claim(data.claim_id)
+    invoice = await service.create_receivable_from_claim(
+        data.claim_id,
+        actor_id=str(user_id) if user_id else None,
+    )
+    # Authorise against the resolved project (the claim's contract project).
+    await _require_project_access(session, invoice.project_id, user_id)
+    response.status_code = status.HTTP_200_OK if pre_existing is not None else status.HTTP_201_CREATED
+    names = await _fetch_counterparty_names(session, [invoice.contact_id])
+    return _invoice_to_response(invoice, names)
+
+
+@router.get(
+    "/claims/{claim_id}/receivable-invoice/",
+    response_model=InvoiceResponse,
+    summary="Get the receivable invoice raised from a claim",
+    description="Convenience lookup: return the accounts-receivable invoice that was "
+    "auto-created from the given certified progress claim. 404 when none exists yet.",
+)
+async def get_receivable_for_claim(
+    claim_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    _perm: None = Depends(RequirePermission("finance.read")),
+    service: FinanceService = Depends(_get_service),
+) -> InvoiceResponse:
+    """Look up the receivable invoice for a claim."""
+    invoice = await service.get_receivable_for_claim(claim_id)
+    if invoice is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No receivable invoice exists for this claim",
+        )
+    await _require_project_access(session, invoice.project_id, user_id)
+    names = await _fetch_counterparty_names(session, [invoice.contact_id])
+    return _invoice_to_response(invoice, names)
+
+
+@router.post(
+    "/invoices/{invoice_id}/record-payment/",
+    response_model=PaymentResponse,
+    status_code=201,
+    summary="Record a payment with retainage withholding",
+    description="Record a payment against an invoice, holding back retainage. When "
+    "withholding_amount is omitted it is derived from the invoice retention_amount; when "
+    "amount is omitted the invoice net (total - retention) is paid. Idempotent on "
+    "idempotency_key. The cash leg (not the withheld retainage) is posted to the cost "
+    "spine. MANAGER-only — a payment is a binding ledger entry.",
+)
+async def record_payment_with_withholding(
+    invoice_id: uuid.UUID,
+    data: RecordClaimPaymentRequest,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    _perm: None = Depends(RequirePermission("finance.record_payment")),
+    service: FinanceService = Depends(_get_service),
+) -> PaymentResponse:
+    """Record a withholding payment against an invoice."""
+    await _require_invoice_access(session, invoice_id, user_id)
+    payment = await service.record_payment_with_withholding(
+        invoice_id,
+        data,
+        actor_id=str(user_id) if user_id else None,
+    )
     return PaymentResponse.model_validate(payment)
 
 

@@ -35,6 +35,12 @@ interface RiskItem {
   contingency_plan: string; owner_name: string; owner_user_id?: string | null;
   response_cost: number; currency: string;
   probability_score?: number | null; impact_score_cost?: number | null;
+  // Auto-escalation (TOP-30 #24): set server-side when the risk crosses the
+  // escalation threshold or its review date lapses.
+  escalated?: boolean;
+  escalated_at?: string | null;
+  escalation_trigger?: string | null;
+  escalation_threshold?: number | null;
   metadata: Record<string, unknown>; created_at: string; updated_at: string;
 }
 
@@ -381,6 +387,14 @@ function DetailView({ riskId, onBack }: { riskId: string; onBack: () => void }) 
               <h2 className="text-xl font-semibold text-content-primary">{risk.code}</h2>
               <Badge variant={STATUS_COLORS[risk.status] || 'neutral'}>{t(`risk.status_${risk.status}`, { defaultValue: risk.status })}</Badge>
               <Badge variant="neutral">{t(`risk.cat_${risk.category}`, { defaultValue: risk.category })}</Badge>
+              {risk.escalated && (
+                <Badge variant="error">
+                  <AlertTriangle size={12} className="mr-1 inline" />
+                  {risk.escalation_trigger === 'review_lapsed'
+                    ? t('risk.escalated_review', { defaultValue: 'Escalated: review lapsed' })
+                    : t('risk.escalated_severity', { defaultValue: 'Escalated: severity' })}
+                </Badge>
+              )}
             </div>
             <h3 className="mt-1 text-lg text-content-secondary">{risk.title}</h3>
             {risk.description && <p className="mt-2 text-sm text-content-tertiary max-w-2xl">{risk.description}</p>}
@@ -798,7 +812,18 @@ export function RiskRegisterPage() {
                   {filteredRisks.map((r) => (
                     <tr key={r.id} className="border-b border-border last:border-0 hover:bg-surface-secondary/30 cursor-pointer" onClick={() => setSelectedRiskId(r.id)}>
                       <td className="px-4 py-3 font-mono text-xs text-content-secondary">{r.code}</td>
-                      <td className="px-4 py-3 text-content-primary font-medium max-w-[200px] truncate">{r.title}</td>
+                      <td className="px-4 py-3 text-content-primary font-medium max-w-[200px] truncate">
+                        <span className="inline-flex items-center gap-1.5">
+                          {r.escalated && (
+                            <AlertTriangle
+                              size={14}
+                              className="text-semantic-error shrink-0"
+                              aria-label={t('risk.escalated', { defaultValue: 'Escalated' })}
+                            />
+                          )}
+                          <span className="truncate">{r.title}</span>
+                        </span>
+                      </td>
                       <td className="px-4 py-3"><Badge variant="neutral">{t(`risk.cat_${r.category}`, { defaultValue: r.category })}</Badge></td>
                       <td className="px-4 py-3 text-center text-content-secondary tabular-nums">{(r.probability * 100).toFixed(0)}%</td>
                       <td className="px-4 py-3"><Badge variant={r.impact_severity === 'critical' ? 'error' : r.impact_severity === 'high' ? 'warning' : r.impact_severity === 'medium' ? 'blue' : 'neutral'}>{r.impact_severity}</Badge></td>

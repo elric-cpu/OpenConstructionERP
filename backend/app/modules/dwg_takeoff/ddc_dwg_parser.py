@@ -126,6 +126,55 @@ def _safe_float(val: Any) -> float | None:
         return None
 
 
+# Threshold (in raw drawing units) above which a drawing is almost
+# certainly authored in millimetres.  A building whose largest extent is
+# >= 1000 units would be 1 km+ if those units were metres (absurd for a
+# floor plan) but a sensible 1 m+ if they are millimetres.
+_MM_EXTENT_THRESHOLD = 1000.0
+
+
+def infer_units_from_extents(extents: dict | None) -> str | None:
+    """Best-effort unit guess for a DWG/DXF whose header carries no usable
+    ``$INSUNITS``.
+
+    A drawing whose largest extent is >= 1000 units is almost certainly in
+    millimetres (a 1000+ unit building read as metres would be 1 km+, which
+    is absurd for a plan; read as mm it is a sensible 1 m+).  Returns
+    ``"mm"`` for such large drawings, else ``None`` so callers keep the
+    existing "raw units == metres" assumption for genuinely small/empty
+    drawings.
+
+    Guards against missing / zero / non-finite extents (returns ``None``).
+
+    Args:
+        extents: ``{"min_x", "min_y", "max_x", "max_y"}`` or ``None``.
+
+    Returns:
+        ``"mm"`` when the drawing's largest extent is large enough to imply
+        millimetres, otherwise ``None``.
+    """
+    if not extents:
+        return None
+    try:
+        min_x = float(extents["min_x"])
+        min_y = float(extents["min_y"])
+        max_x = float(extents["max_x"])
+        max_y = float(extents["max_y"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    width = max_x - min_x
+    height = max_y - min_y
+    # Reject NaN / inf (an empty extents collapses to inf in the parsers).
+    if not (width == width and height == height):  # NaN check
+        return None
+    if width in (float("inf"), float("-inf")) or height in (float("inf"), float("-inf")):
+        return None
+    maxdim = max(width, height)
+    if maxdim >= _MM_EXTENT_THRESHOLD:
+        return "mm"
+    return None
+
+
 # AutoCAD ``$INSUNITS`` code → canonical unit string.  Mirrors the
 # reference table in dxf_processor.py (ezdxf path) so the DDC and ezdxf
 # pipelines agree on unit semantics and the downstream scale factor in
@@ -826,19 +875,27 @@ def parse_ddc_dwg_excel(excel_path: str | Path) -> dict[str, Any]:
 
     # BUG-D-TKC-002b — carry the real source unit from the DDC export
     # instead of hardcoding "unitless" (which forced a 1.0 scale factor in
-    # service.py and made a millimetre DWG read 1000× too big).
+    # service.py and made a millimetre DWG read 1000x too big).
     units = _resolve_dwg_units(all_rows, get)
+
+    extents = {
+        "min_x": float(min_x),
+        "min_y": float(min_y),
+        "max_x": float(max_x),
+        "max_y": float(max_y),
+    }
+    # BUG-D-TKC-002c — when the export carries no usable unit, fall back to
+    # an extents-based guess (a >=1000-unit drawing is almost certainly in
+    # millimetres). Without this, an mm DWG with no $INSUNITS reads 1000x
+    # too large because service.py applies a 1.0 factor for "unitless".
+    if units in (None, "unitless"):
+        units = infer_units_from_extents(extents) or units
     logger.info("DDC DWG source unit resolved: %s", units)
 
     return {
         "layers": layers,
         "entities": entities,
-        "extents": {
-            "min_x": float(min_x),
-            "min_y": float(min_y),
-            "max_x": float(max_x),
-            "max_y": float(max_y),
-        },
+        "extents": extents,
         "units": units,
         "entity_count": len(entities),
         "layouts": sorted_layouts,

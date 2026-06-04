@@ -12,5 +12,10 @@ def register_risk_permissions() -> None:
             "risk.read": Role.VIEWER,
             "risk.update": Role.EDITOR,
             "risk.delete": Role.MANAGER,
+            # Auto-escalation control (TOP-30 #24): manually trigger a
+            # project escalation sweep / set per-risk escalation config.
+            # Gated at MANAGER — escalation drives notifications and action
+            # items, so it is a supervisory action, not a routine edit.
+            "risk.escalate": Role.MANAGER,
         },
     )

@@ -395,6 +395,7 @@ class EquipmentRentalResponse(BaseModel):
     internal_rate_per_hour: Decimal
     currency: str = ""
     status: str
+    billing_calculated_at: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
     created_at: datetime
     updated_at: datetime

@@ -286,6 +286,16 @@ def parse_dxf(file_path: str) -> dict[str, Any]:
     insunits = doc.header.get("$INSUNITS", 0)
     units = units_map.get(insunits, "unitless")
 
+    # BUG-D-TKC-002c — when $INSUNITS is absent/0 ("unitless") fall back to
+    # an extents-based guess. A drawing whose largest extent is >=1000 units
+    # is almost certainly authored in millimetres; without this an mm DXF
+    # with no header reads 1000x too large (service.py applies a 1.0 factor
+    # for "unitless"). Mirrors the DDC parser path.
+    if units == "unitless":
+        from app.modules.dwg_takeoff.ddc_dwg_parser import infer_units_from_extents
+
+        units = infer_units_from_extents(extents) or units
+
     # Deduplicate and sort layout names, ensure "Model" comes first
     unique_layouts = list(dict.fromkeys(layout_names))
 

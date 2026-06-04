@@ -2,13 +2,14 @@ import { useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { Wallet, Plus, Users, Coins, Loader2, ChevronRight } from 'lucide-react';
+import { Wallet, Plus, Users, Coins, Loader2, ChevronRight, CheckCircle2 } from 'lucide-react';
 import {
   Button,
   Card,
   Badge,
   EmptyState,
   Breadcrumb,
+  ConfirmDialog,
   DateDisplay,
   Skeleton,
 } from '@/shared/ui';
@@ -20,6 +21,7 @@ import {
   fetchPayrollBatches,
   fetchPayrollBatch,
   generatePayrollBatch,
+  finalizeBatch,
   fetchLabourCost,
 } from './api';
 import type { PayrollBatch } from './api';
@@ -57,6 +59,7 @@ export default function PayrollPage() {
   const projectId = activeProjectId ?? '';
 
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
+  const [confirmFinalizeOpen, setConfirmFinalizeOpen] = useState(false);
 
   const batchesQuery = useQuery({
     queryKey: ['payroll', 'batches', projectId],
@@ -99,9 +102,42 @@ export default function PayrollPage() {
     },
   });
 
+  const finalizeMut = useMutation({
+    mutationFn: (batchId: string) => finalizeBatch(batchId),
+    onSuccess: (batch) => {
+      addToast({
+        type: 'success',
+        title: '',
+        message: t('payroll.finalized', {
+          defaultValue: 'Batch approved. Labour cost posted to the budget.',
+        }),
+      });
+      // Refresh the list (status badge) and the open detail (Finalize hidden).
+      void queryClient.invalidateQueries({ queryKey: ['payroll', 'batches', projectId] });
+      void queryClient.invalidateQueries({ queryKey: ['payroll', 'batch', batch.id] });
+    },
+    onError: (err) => {
+      addToast({
+        type: 'error',
+        title: t('common.error', { defaultValue: 'Error' }),
+        message: getErrorMessage(err),
+      });
+    },
+  });
+
   const handleSelect = useCallback((id: string) => {
     setSelectedBatchId((prev) => (prev === id ? null : id));
   }, []);
+
+  const selectedBatch = batchDetailQuery.data ?? null;
+  const canFinalize = selectedBatch?.status === 'draft';
+
+  const handleConfirmFinalize = useCallback(() => {
+    if (!selectedBatchId) return;
+    finalizeMut.mutate(selectedBatchId, {
+      onSettled: () => setConfirmFinalizeOpen(false),
+    });
+  }, [finalizeMut, selectedBatchId]);
 
   /* Project gate */
   if (!projectId) {
@@ -248,11 +284,27 @@ export default function PayrollPage() {
 
         {/* Entries for the selected batch */}
         <Card className="p-0">
-          <div className="border-b border-border-subtle px-4 py-3">
+          <div className="flex items-center justify-between gap-2 border-b border-border-subtle px-4 py-3">
             <h2 className="flex items-center gap-2 text-sm font-semibold text-content-primary">
               <Users size={16} />
               {t('payroll.entries', { defaultValue: 'Entries' })}
             </h2>
+            {canFinalize && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setConfirmFinalizeOpen(true)}
+                disabled={finalizeMut.isPending}
+                aria-label={t('payroll.finalize', { defaultValue: 'Finalize batch' })}
+              >
+                {finalizeMut.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 size={16} />
+                )}
+                {t('payroll.finalize', { defaultValue: 'Finalize batch' })}
+              </Button>
+            )}
           </div>
           {!selectedBatchId ? (
             <div className="p-6 text-sm text-content-tertiary">
@@ -305,6 +357,20 @@ export default function PayrollPage() {
           )}
         </Card>
       </div>
+
+      <ConfirmDialog
+        open={confirmFinalizeOpen}
+        variant="warning"
+        title={t('payroll.finalize_confirm_title', { defaultValue: 'Approve batch?' })}
+        message={t('payroll.finalize_confirm_message', {
+          defaultValue: 'Labour cost will post to the project budget. This cannot be undone.',
+        })}
+        confirmLabel={t('payroll.finalize', { defaultValue: 'Finalize batch' })}
+        cancelLabel={t('confirm_dialog.cancel', { defaultValue: 'Cancel' })}
+        loading={finalizeMut.isPending}
+        onConfirm={handleConfirmFinalize}
+        onCancel={() => setConfirmFinalizeOpen(false)}
+      />
     </div>
   );
 }

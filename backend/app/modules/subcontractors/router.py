@@ -46,6 +46,7 @@ from app.modules.subcontractors.schemas import (
     InsuranceExpiryEntry,
     LienWaiverFormFields,
     LienWaiverResponse,
+    MonthlyRatingComputeRequest,
     PaymentApplicationCreate,
     PaymentApplicationResponse,
     PaymentApplicationUpdate,
@@ -54,6 +55,7 @@ from app.modules.subcontractors.schemas import (
     PrequalificationResponse,
     PrequalificationUpdate,
     PrequalRequest,
+    PrequalView,
     RatingCreate,
     RatingResponse,
     RetentionLedgerEntryResponse,
@@ -245,6 +247,28 @@ async def subcontractor_award_eligibility(
         awardable=not result.blocked,
         reasons=result.reasons,
     )
+
+
+@router.get(
+    "/subcontractors/{sub_id}/prequal",
+    response_model=PrequalView,
+)
+async def get_subcontractor_prequal(
+    sub_id: uuid.UUID,
+    session: SessionDep,
+    _user: CurrentUserId,
+    _perm: None = Depends(RequirePermission("subcontractors.read")),
+) -> PrequalView:
+    """Return the current prequalification state for a subcontractor (TOP-30 #20).
+
+    Carries the persisted questionnaire + score plus a freshly recomputed
+    answer-key score and the list of still-unanswered required questions, so
+    the prequalification form and the reviewer approval panel can render from
+    a single read.
+    """
+    svc = SubcontractorService(session)
+    view = await svc.prequal_view(sub_id)
+    return PrequalView.model_validate(view)
 
 
 # ── Contacts ───────────────────────────────────────────────────────────
@@ -838,6 +862,40 @@ async def update_rating(
     return RatingResponse.model_validate(entity)
 
 
+@router.post(
+    "/subcontractors/{sub_id}/ratings/compute",
+    response_model=RatingResponse,
+)
+async def compute_monthly_rating(
+    sub_id: uuid.UUID,
+    session: SessionDep,
+    _user: CurrentUserId,
+    period: str = Query(..., pattern=r"^\d{4}-\d{2}$"),
+    _perm: None = Depends(RequirePermission("subcontractors.rate")),
+) -> RatingResponse:
+    """Recompute and persist a subcontractor's monthly rating rollup (TOP-30 #20).
+
+    The authoritative monthly compute behind the cron / admin trigger:
+    combines the event-accumulated counters with a direct count of NCR / HSE /
+    schedule-slip source rows for the period and upserts the single
+    ``(subcontractor_id, period)`` rating row, emitting
+    ``subcontractors.rating.updated``. Idempotent: a re-run for the same month
+    refreshes the figures rather than creating a duplicate row.
+
+    MANAGER-only (the ``subcontractors.rate`` gate) so a rating cannot be
+    forged by an EDITOR. Validates the ``period`` shape (YYYY-MM); 404 when the
+    subcontractor does not exist.
+    """
+    # Validate the period shape through the request model too (defence in depth
+    # against a future Query regression dropping the pattern).
+    MonthlyRatingComputeRequest(period=period)
+    svc = SubcontractorService(session)
+    entity = await svc.compute_monthly_rating(sub_id, period)
+    if entity is None:
+        raise HTTPException(status_code=404, detail="Subcontractor not found")
+    return RatingResponse.model_validate(entity)
+
+
 # ── Schedule of Values ─────────────────────────────────────────────────
 
 
@@ -909,6 +967,7 @@ async def submit_prequal(
         sub_id,
         questionnaire_data=body.questionnaire,
         score=body.score,
+        require_complete=body.require_complete,
     )
     return SubcontractorResponse.model_validate(entity)
 
