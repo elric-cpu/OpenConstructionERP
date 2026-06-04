@@ -22,6 +22,9 @@ def register_procurement_permissions() -> None:
             "procurement.create": Role.EDITOR,
             "procurement.update": Role.EDITOR,
             "procurement.delete": Role.MANAGER,
+            # TOP-30 #10: approving a PO commits budget, so it is a
+            # MANAGER-level gate, the same tier as issuing it.
+            "procurement.approve": Role.MANAGER,
             "procurement.issue": Role.MANAGER,
             "procurement.confirm_receipt": Role.EDITOR,
             # R7 (2026-05-24): PO → Invoice conversion is a financial

@@ -10,7 +10,9 @@ silently divorced from real procurement activity.
 The handlers in this module subscribe to those events and adjust the
 project's budget rows accordingly:
 
-* ``procurement.po.issued`` → committed += po.amount_total
+* ``procurement.po.approved`` → committed += po.amount_total (TOP-30 #10:
+  budget is committed when a PO is approved, the moment the spend is
+  authorised, since a PO must be approved before it can be issued)
 * ``procurement.gr.confirmed`` → committed -= gr.amount, actual += gr.amount
 
 Each handler opens its own short-lived session via
@@ -126,8 +128,13 @@ async def _select_budget_row(
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
-async def _on_po_issued(event: Event) -> None:
-    """``procurement.po.issued`` → ProjectBudget.committed += amount_total."""
+async def _on_po_approved(event: Event) -> None:
+    """``procurement.po.approved`` → ProjectBudget.committed += amount_total.
+
+    Approval is the commitment moment (TOP-30 #10): a PO must be approved
+    before it can be issued, so committing budget here gives a live committed
+    figure the instant the spend is authorised, not when the paperwork is sent.
+    """
     data = event.data or {}
     project_id = _coerce_uuid(data.get("project_id"))
     amount = _to_decimal(data.get("amount_total"))
@@ -139,7 +146,7 @@ async def _on_po_issued(event: Event) -> None:
             budget = await _select_budget_row(session, project_id, wbs_hint)
             if budget is None:
                 logger.info(
-                    "finance: po.issued for project %s — no budget rows, commitment skipped (po_id=%s, amount=%s)",
+                    "finance: po.approved for project %s — no budget rows, commitment skipped (po_id=%s, amount=%s)",
                     project_id,
                     data.get("po_id"),
                     amount,
@@ -149,14 +156,14 @@ async def _on_po_issued(event: Event) -> None:
             budget.committed = current + amount
             await session.commit()
             logger.info(
-                "finance: po.issued committed += %s on budget %s (project=%s, po=%s)",
+                "finance: po.approved committed += %s on budget %s (project=%s, po=%s)",
                 amount,
                 budget.id,
                 project_id,
                 data.get("po_id"),
             )
     except Exception:
-        logger.debug("finance: _on_po_issued failed", exc_info=True)
+        logger.debug("finance: _on_po_approved failed", exc_info=True)
 
 
 async def _on_gr_confirmed(event: Event) -> None:
@@ -202,7 +209,7 @@ async def _on_gr_confirmed(event: Event) -> None:
 
 
 _SUBSCRIPTIONS: list[tuple[str, callable]] = [  # type: ignore[type-arg]
-    ("procurement.po.issued", _on_po_issued),
+    ("procurement.po.approved", _on_po_approved),
     ("procurement.gr.confirmed", _on_gr_confirmed),
 ]
 

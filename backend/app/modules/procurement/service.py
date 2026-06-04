@@ -151,7 +151,10 @@ async def _safe_publish(name: str, data: dict, source_module: str = "oe_procurem
 # ── Allowed PO status transitions ───────────────────────────────────────────
 
 _PO_STATUS_TRANSITIONS: dict[str, set[str]] = {
-    "draft": {"issued", "cancelled"},
+    # A PO is committed money, so it must be approved before it can be issued
+    # to a vendor (TOP-30 #10). Budget is committed at approval, not issue.
+    "draft": {"approved", "cancelled"},
+    "approved": {"issued", "draft", "cancelled"},
     "issued": {"partially_received", "completed", "cancelled"},
     "partially_received": {"completed", "cancelled"},
     "completed": set(),  # terminal
@@ -617,14 +620,74 @@ class ProcurementService:
         logger.info("PO updated: %s", po_id)
         return updated
 
-    async def issue_po(self, po_id: uuid.UUID) -> PurchaseOrder:
-        """Transition PO to issued status."""
+    async def approve_po(self, po_id: uuid.UUID, approver_id: str | None = None) -> PurchaseOrder:
+        """Approve a draft PO so it can be issued (TOP-30 #10).
+
+        Approval is the commitment moment: it transitions ``draft -> approved``
+        and publishes ``procurement.po.approved`` so finance commits the amount
+        against the project budget. Issuing the PO to the vendor is a separate
+        downstream step that requires this approval first.
+        """
         po = await self.get_po(po_id)
         prior_status = po.status
+        if prior_status == "approved":
+            return po  # idempotent
         if prior_status != "draft":
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot issue PO in status '{prior_status}'",
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Cannot approve PO in status '{prior_status}'",
+            )
+        await self.po_repo.update(po_id, status="approved")
+
+        try:
+            from app.core.audit_log import log_activity
+
+            await log_activity(
+                self.session,
+                actor_id=approver_id,
+                entity_type="purchase_order",
+                entity_id=str(po_id),
+                action="status_changed",
+                from_status=prior_status,
+                to_status="approved",
+                reason="PO approved via approve_po()",
+                metadata={"po_number": po.po_number},
+            )
+        except Exception:
+            logger.debug("FSM audit log skipped for PO %s approve", po_id)
+
+        updated = await self.po_repo.get(po_id)
+        if updated is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Purchase order not found",
+            )
+
+        await _safe_publish(
+            "procurement.po.approved",
+            {
+                "po_id": str(po_id),
+                "project_id": str(updated.project_id),
+                "po_number": updated.po_number,
+                "amount_total": updated.amount_total,
+                "currency_code": updated.currency_code or "",
+                "approver_id": approver_id or "",
+            },
+        )
+        logger.info("PO approved: %s", updated.po_number)
+        return updated
+
+    async def issue_po(self, po_id: uuid.UUID) -> PurchaseOrder:
+        """Transition PO to issued status (requires prior approval - TOP-30 #10)."""
+        po = await self.get_po(po_id)
+        prior_status = po.status
+        if prior_status != "approved":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Cannot issue PO in status '{prior_status}'; "
+                    "a purchase order must be approved before it is issued"
+                ),
             )
         await self.po_repo.update(po_id, status="issued")
 

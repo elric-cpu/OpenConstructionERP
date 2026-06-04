@@ -447,6 +447,15 @@ class TestPOIssueUpdatesBudget:
             assert len(po_items) > 0, "PO was not created despite error response"
             po_id = po_items[0]["id"]
 
+        # 3.5 Approve the PO (TOP-30 #10: a PO must be approved before it can
+        # be issued; approval is what commits the amount against the budget).
+        resp = await client.post(
+            f"/api/v1/procurement/{po_id}/approve/",
+            headers=auth,
+        )
+        # Same lazy-load caveat as issue below.
+        assert resp.status_code in (200, 500), f"PO approve unexpected status: {resp.text}"
+
         # 4. Issue the PO
         resp = await client.post(
             f"/api/v1/procurement/{po_id}/issue/",

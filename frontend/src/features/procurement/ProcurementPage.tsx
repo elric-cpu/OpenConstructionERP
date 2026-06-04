@@ -16,6 +16,7 @@ import {
   Trash2,
   Pencil,
   Send,
+  CheckCircle2,
 } from 'lucide-react';
 import {
   Button,
@@ -522,9 +523,41 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
       addToast({ type: 'error', title: t('common.error', { defaultValue: 'Error' }), message: e.message }),
   });
 
+  /* ── PO approve ──
+     Transitions a draft PO to `approved`. This is the commitment moment
+     (TOP-30 #10): the backend publishes procurement.po.approved, which
+     finance turns into a live ProjectBudget.committed increase. A PO must
+     be approved before it can be issued, so the budget reflects authorised
+     spend the instant it is approved, not when paperwork is sent. We refresh
+     the PO list (status pipeline + Approve→Issue button swap) and the finance
+     dashboard so the committed figure updates without a manual reload. */
+  const approvePOMut = useMutation({
+    mutationFn: (poId: string) =>
+      apiPost(`/v1/procurement/${poId}/approve/`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['procurement-po', projectId] });
+      queryClient.invalidateQueries({ queryKey: ['finance', 'dashboard', projectId] });
+      addToast({
+        type: 'success',
+        title: t('procurement.po_approved_toast', {
+          defaultValue: 'Purchase order approved',
+        }),
+        message: t('procurement.po_approved_committed', {
+          defaultValue: 'Budget committed. You can now issue it to the vendor.',
+        }),
+      });
+    },
+    onError: (e: Error) =>
+      addToast({
+        type: 'error',
+        title: t('common.error', { defaultValue: 'Error' }),
+        message: e.message,
+      }),
+  });
+
   /* ── PO issue ──
-     Transitions a draft PO to `issued`. The backend enforces the FSM
-     (only draft→issued; see _PO_STATUS_TRANSITIONS in service.py) and
+     Transitions an approved PO to `issued`. The backend enforces the FSM
+     (only approved→issued; see _PO_STATUS_TRANSITIONS in service.py) and
      audit-logs the transition. After success we re-run the PO list query
      so the status pipeline and Issue/Invoice button visibility update
      in place. */
@@ -1076,10 +1109,34 @@ function PurchaseOrdersTab({ projectId }: { projectId: string }) {
                         <Pencil size={14} />
                       )}
                     </Button>
-                    {/* Mobile-friendly Issue button — only shown while the PO
-                        is in draft (matches backend FSM allowlist). On phones
-                        the row stacks; the Issue chip stays tappable at 44x32. */}
+                    {/* Commitment gate (TOP-30 #10): a draft PO must be
+                        approved before it can be issued. Approval is what
+                        commits budget in finance, so draft rows show Approve
+                        and only approved rows show Issue — matching the
+                        backend FSM (draft→approved→issued). The chip stays
+                        tappable at 44x32 when the row stacks on phones. */}
                     {po.status === 'draft' && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => approvePOMut.mutate(po.id)}
+                        disabled={approvePOMut.isPending}
+                        title={t('procurement.action_approve', {
+                          defaultValue: 'Approve PO (commits budget)',
+                        })}
+                        aria-label={t('procurement.action_approve', {
+                          defaultValue: 'Approve PO (commits budget)',
+                        })}
+                      >
+                        {approvePOMut.isPending && approvePOMut.variables === po.id ? (
+                          <Loader2 size={14} className="animate-spin mr-1" />
+                        ) : (
+                          <CheckCircle2 size={14} className="mr-1" />
+                        )}
+                        {t('procurement.action_approve_short', { defaultValue: 'Approve' })}
+                      </Button>
+                    )}
+                    {po.status === 'approved' && (
                       <Button
                         variant="ghost"
                         size="sm"

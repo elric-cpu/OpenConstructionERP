@@ -583,6 +583,29 @@ async def get_po_match_status(
 
 
 @router.post(
+    "/{po_id}/approve/",
+    response_model=POResponse,
+    dependencies=[Depends(RequirePermission("procurement.approve"))],
+)
+async def approve_purchase_order(
+    po_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: ProcurementService = Depends(_get_service),
+) -> POResponse:
+    """Approve a draft purchase order so it can be issued (TOP-30 #10).
+
+    Approval commits the amount against the project budget; the PO must be
+    approved before it is issued to the vendor.
+    """
+    existing = await service.get_po(po_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
+    po = await service.approve_po(po_id, approver_id=str(user_id))
+    vendor_names = await _fetch_vendor_names(service.session, [po.vendor_contact_id])
+    return _po_to_response(po, vendor_names)
+
+
+@router.post(
     "/{po_id}/issue/",
     response_model=POResponse,
     dependencies=[Depends(RequirePermission("procurement.issue"))],
