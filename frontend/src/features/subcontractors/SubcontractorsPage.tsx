@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import clsx from 'clsx';
 import {
   HardHat,
@@ -22,6 +22,7 @@ import {
   Ban,
   CheckCircle2,
   ClipboardCheck,
+  FileSignature,
 } from 'lucide-react';
 import {
   Button,
@@ -35,6 +36,7 @@ import {
   WideModalSection,
   WideModalField,
 } from '@/shared/ui';
+import { Toggle } from '@/shared/ui/Toggle';
 import { MoneyDisplay } from '@/shared/ui/MoneyDisplay';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { PipelineBanner } from './PipelineBanner';
@@ -51,8 +53,10 @@ import {
   deleteSubcontractor,
   getSubcontractorDashboard,
   listAgreements,
+  updateAgreement,
   listWorkPackages,
   listPaymentApplications,
+  getPaymentReleaseCheck,
   listRetentionLedger,
   listRatings,
   listCertificates,
@@ -1092,6 +1096,7 @@ function AgreementRow({ agreement }: { agreement: Agreement }) {
           />
         </span>
       </div>
+      <LienWaiverRequirementToggle agreement={agreement} />
       {packages.length > 0 && (
         <div className="mt-3 border-t border-border-light pt-3 space-y-1.5">
           {packages.map((wp) => (
@@ -1108,6 +1113,96 @@ function AgreementRow({ agreement }: { agreement: Agreement }) {
         </div>
       )}
     </Card>
+  );
+}
+
+/**
+ * Inline switch that turns the lien-waiver payment gate on or off for one
+ * agreement. When on, finance approval and mark-paid are held server-side
+ * until a signed waiver covering the net amount is on file (TOP-30 #9). The
+ * PATCH is optimistic-free: we just invalidate and let the list re-fetch.
+ */
+function LienWaiverRequirementToggle({ agreement }: { agreement: Agreement }) {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const addToast = useToastStore((s) => s.addToast);
+  const required = agreement.requires_lien_waiver;
+
+  const mutation = useMutation({
+    mutationFn: (next: boolean) =>
+      updateAgreement(agreement.id, { requires_lien_waiver: next }),
+    onSuccess: (updated) => {
+      qc.invalidateQueries({ queryKey: ['subcontractors'] });
+      addToast({
+        type: 'success',
+        title: updated.requires_lien_waiver
+          ? t('subcontractors.waiver_gate_on', {
+              defaultValue: 'Lien waiver now required before payment',
+            })
+          : t('subcontractors.waiver_gate_off', {
+              defaultValue: 'Lien waiver requirement removed',
+            }),
+      });
+    },
+    onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),
+  });
+
+  return (
+    <div className="mt-3 flex items-center justify-between gap-3 border-t border-border-light pt-3">
+      <span className="flex items-center gap-1.5 text-xs text-content-secondary">
+        <FileSignature size={13} className="text-content-tertiary" />
+        {t('subcontractors.require_lien_waiver', {
+          defaultValue: 'Require signed lien waiver before payment',
+        })}
+      </span>
+      <Toggle
+        size="sm"
+        checked={required}
+        disabled={mutation.isPending}
+        onChange={(next) => mutation.mutate(next)}
+      />
+    </div>
+  );
+}
+
+/**
+ * Per-payment lien-waiver gate indicator (TOP-30 #9). Only queried while the
+ * payment is still pending finance approval, where the gate actually bites;
+ * paid / finance-approved rows render nothing.
+ */
+function WaiverBadge({
+  paymentId,
+  status,
+}: {
+  paymentId: string;
+  status: PaymentApplicationStatus;
+}) {
+  const { t } = useTranslation();
+  const pending = status === 'submitted' || status === 'foreman_approved';
+  const checkQ = useQuery({
+    queryKey: ['subcontractors', 'releaseCheck', paymentId],
+    queryFn: () => getPaymentReleaseCheck(paymentId),
+    enabled: pending,
+  });
+
+  if (!pending || !checkQ.data || !checkQ.data.waiver_required) return null;
+
+  if (checkQ.data.blocked) {
+    const reason = checkQ.data.reasons[0];
+    const label =
+      reason === 'waiver_amount_mismatch'
+        ? t('subcontractors.waiver_short', { defaultValue: 'Waiver too low' })
+        : t('subcontractors.waiver_missing', { defaultValue: 'Waiver required' });
+    return (
+      <Badge variant="warning" size="sm" dot>
+        {label}
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="success" size="sm" dot>
+      {t('subcontractors.waiver_ok', { defaultValue: 'Waiver on file' })}
+    </Badge>
   );
 }
 
@@ -1166,13 +1261,24 @@ function PaymentsTab({
         </p>
       )}
       {paymentsQ.data && paymentsQ.data.length > 0 && (
-        <PaymentList rows={paymentsQ.data} />
+        <PaymentList
+          rows={paymentsQ.data}
+          requiresWaiver={
+            agreements.find((a) => a.id === effectiveId)?.requires_lien_waiver ?? false
+          }
+        />
       )}
     </div>
   );
 }
 
-function PaymentList({ rows }: { rows: PaymentApplication[] }) {
+function PaymentList({
+  rows,
+  requiresWaiver,
+}: {
+  rows: PaymentApplication[];
+  requiresWaiver: boolean;
+}) {
   const { t } = useTranslation();
   return (
     <div className="overflow-x-auto rounded-lg border border-border-light">
@@ -1216,9 +1322,14 @@ function PaymentList({ rows }: { rows: PaymentApplication[] }) {
                 />
               </td>
               <td className="px-3 py-2">
-                <Badge variant={PAYMENT_VARIANT[p.status]} dot>
-                  {p.status}
-                </Badge>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Badge variant={PAYMENT_VARIANT[p.status]} dot>
+                    {p.status}
+                  </Badge>
+                  {requiresWaiver && (
+                    <WaiverBadge paymentId={p.id} status={p.status} />
+                  )}
+                </div>
               </td>
             </tr>
           ))}

@@ -228,6 +228,16 @@ class SubcontractAgreement(Base):
         server_default="5.0",
     )
     retention_release_event: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # When set, every payment application under this agreement must carry a
+    # signed lien waiver (conditional/unconditional/partial/final) covering the
+    # payment amount before finance approval or mark-paid is allowed. Opt-in so
+    # existing agreements keep their current behaviour.
+    requires_lien_waiver: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="0",
+    )
     status: Mapped[str] = mapped_column(
         String(32),
         nullable=False,

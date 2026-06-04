@@ -397,6 +397,7 @@ class AgreementCreate(BaseModel):
     end_date: date | None = None
     retention_percent: Decimal = Field(default=Decimal("5.0"), ge=0, le=100)
     retention_release_event: str | None = Field(default=None, max_length=120)
+    requires_lien_waiver: bool = False
     notes: str | None = None
 
     @field_validator("currency")
@@ -417,6 +418,7 @@ class AgreementUpdate(BaseModel):
     end_date: date | None = None
     retention_percent: Decimal | None = Field(default=None, ge=0, le=100)
     retention_release_event: str | None = Field(default=None, max_length=120)
+    requires_lien_waiver: bool | None = None
     status: str | None = Field(
         default=None,
         pattern=r"^(draft|active|completed|terminated)$",
@@ -444,6 +446,7 @@ class AgreementResponse(BaseModel):
     end_date: date | None = None
     retention_percent: Decimal = Decimal("5.0")
     retention_release_event: str | None = None
+    requires_lien_waiver: bool = False
     status: str = "draft"
     notes: str | None = None
     created_by: str | None = None
@@ -688,6 +691,19 @@ class ExpiryAlert(BaseModel):
 class PaymentBlockResult(BaseModel):
     """Result of `next_payment_blocked` check."""
 
+    blocked: bool
+    reasons: list[str] = Field(default_factory=list)
+
+
+class PaymentReleaseCheck(BaseModel):
+    """Lien-waiver release gate for a single payment application.
+
+    Drives the waiver badge and the disabled state of the approve/pay buttons
+    in the payment-approval UI.
+    """
+
+    payment_application_id: UUID
+    waiver_required: bool
     blocked: bool
     reasons: list[str] = Field(default_factory=list)
 

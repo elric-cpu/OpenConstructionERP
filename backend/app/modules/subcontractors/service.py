@@ -28,6 +28,7 @@ from app.core.i18n import get_locale
 from app.core.validation.messages import translate
 from app.modules.subcontractors.models import (
     Certificate,
+    LienWaiver,
     PaymentApplication,
     PaymentApplicationLine,
     PrequalificationApplication,
@@ -197,6 +198,51 @@ def next_payment_blocked(
             reasons.append(f"expired_or_revoked_certificate:{cert_type}")
 
     return PaymentBlockResult(blocked=bool(reasons), reasons=reasons)
+
+
+# Tax forms that never release a payment - they prove vendor tax status, not
+# that the sub has waived lien rights for the amount being paid. Everything in
+# the waiver enum other than these (the four conditional/unconditional ×
+# partial/final lien-waiver types) counts toward the gate. Matching by the
+# tax-form exclusion rather than an allow-list keeps this correct if new lien
+# variants are added to ``_VALID_WAIVER_TYPES``.
+_TAX_FORM_WAIVER_TYPES: frozenset[str] = frozenset({"w9", "w8"})
+
+
+def _is_payment_waiver(waiver_type: str) -> bool:
+    """True when a waiver type counts toward releasing a payment.
+
+    The stored enum is compound (e.g. ``unconditional_final``); tax forms
+    (``w9`` / ``w8``) are excluded. Also tolerates the bare ``conditional`` /
+    ``unconditional`` bases for forward-compatibility.
+    """
+    return waiver_type not in _TAX_FORM_WAIVER_TYPES and (
+        waiver_type.startswith(("conditional", "unconditional"))
+    )
+
+
+def lien_waiver_blocked(
+    payment_net_amount: Decimal,
+    waivers: list[LienWaiver],
+    *,
+    required: bool,
+) -> PaymentBlockResult:
+    """Return whether the next payment is blocked by a missing or short waiver.
+
+    Only applies when the agreement requires waivers. The payment is released
+    only if it carries at least one lien waiver (any conditional/unconditional
+    partial/final type - not a W-9/W-8 tax form) whose covered amount is at
+    least the payment's net amount.
+    """
+    if not required:
+        return PaymentBlockResult(blocked=False, reasons=[])
+    payment_waivers = [w for w in waivers if _is_payment_waiver(w.waiver_type)]
+    if not payment_waivers:
+        return PaymentBlockResult(blocked=True, reasons=["missing_waiver"])
+    covered = max((w.amount for w in payment_waivers), default=Decimal("0"))
+    if covered < payment_net_amount:
+        return PaymentBlockResult(blocked=True, reasons=["waiver_amount_mismatch"])
+    return PaymentBlockResult(blocked=False, reasons=[])
 
 
 @dataclass
@@ -896,6 +942,7 @@ class SubcontractorService:
             end_date=data.end_date,
             retention_percent=data.retention_percent,
             retention_release_event=data.retention_release_event,
+            requires_lien_waiver=data.requires_lien_waiver,
             notes=data.notes,
             # Born unsigned. Set explicitly rather than leaning on the column
             # default so the state machine has a deterministic origin
@@ -1126,6 +1173,7 @@ class SubcontractorService:
         payment_id: uuid.UUID,
         user_id: str,
     ) -> PaymentApplication:
+        await self._assert_lien_waiver_ok(payment_id)
         return await self._transition_payment(
             payment_id,
             "finance_approved",
@@ -1133,11 +1181,48 @@ class SubcontractorService:
         )
 
     async def mark_paid(self, payment_id: uuid.UUID) -> PaymentApplication:
+        await self._assert_lien_waiver_ok(payment_id)
         return await self._transition_payment(
             payment_id,
             "paid",
             extra={"paid_at": datetime.now(UTC)},
         )
+
+    async def lien_waiver_status(self, payment_id: uuid.UUID) -> tuple[bool, PaymentBlockResult]:
+        """Return ``(required, block_result)`` for a payment application.
+
+        Read-only sibling of :meth:`_assert_lien_waiver_ok` so the UI can show a
+        waiver badge and disable approve/pay before the user clicks. ``required``
+        distinguishes "no waiver needed" from "waiver on file and clear", both of
+        which are ``blocked=False``.
+        """
+        payment = await self.payments.get_by_id(payment_id)
+        if payment is None:
+            raise HTTPException(status_code=404, detail="Payment application not found")
+        agreement = await self.agreements.get_by_id(payment.agreement_id)
+        required = bool(getattr(agreement, "requires_lien_waiver", False))
+        waivers = await self.lien_waivers.list_for_payment_app(payment_id) if required else []
+        return required, lien_waiver_blocked(payment.net_amount, waivers, required=required)
+
+    async def _assert_lien_waiver_ok(self, payment_id: uuid.UUID) -> None:
+        """Raise 409 if the agreement requires a lien waiver that is not on file.
+
+        No-op for agreements that do not require waivers, so existing payment
+        flows are unaffected.
+        """
+        _required, result = await self.lien_waiver_status(payment_id)
+        if result.blocked:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": result.reasons[0] if result.reasons else "missing_waiver",
+                    "message": (
+                        "This payment is blocked until a signed lien waiver covering the "
+                        "amount is on file."
+                    ),
+                    "reasons": result.reasons,
+                },
+            )
 
     async def reject_payment_application(
         self,

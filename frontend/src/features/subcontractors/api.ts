@@ -115,6 +115,9 @@ export interface Agreement {
   retention_percent: number | string;
   retention_release_event?: string | null;
   status: AgreementStatus;
+  // When true, every payment application under this agreement is held until a
+  // signed lien waiver covering the net amount is on file (TOP-30 #9).
+  requires_lien_waiver: boolean;
   notes?: string | null;
   created_by?: string | null;
   metadata: Record<string, unknown>;
@@ -275,6 +278,13 @@ export function listAgreements(params: {
   return apiGet<Agreement[]>(`/v1/subcontractors/agreements/?${qs.toString()}`);
 }
 
+export function updateAgreement(
+  id: string,
+  data: Partial<Pick<Agreement, 'title' | 'status' | 'notes' | 'requires_lien_waiver'>>,
+): Promise<Agreement> {
+  return apiPatch<Agreement>(`/v1/subcontractors/agreements/${id}`, data);
+}
+
 export function listWorkPackages(agreementId: string): Promise<WorkPackage[]> {
   const qs = new URLSearchParams({ agreement_id: agreementId });
   return apiGet<WorkPackage[]>(`/v1/subcontractors/work-packages/?${qs.toString()}`);
@@ -294,6 +304,26 @@ export function listPaymentApplications(params: {
 export function listRetentionLedger(agreementId: string): Promise<RetentionLedgerEntry[]> {
   const qs = new URLSearchParams({ agreement_id: agreementId });
   return apiGet<RetentionLedgerEntry[]>(`/v1/subcontractors/retention/ledger?${qs.toString()}`);
+}
+
+/**
+ * Lien-waiver release gate for a single payment application (TOP-30 #9).
+ *
+ * `waiver_required` mirrors the agreement flag; `blocked` is true when the
+ * gate would refuse finance approval / mark-paid right now, with `reasons`
+ * one of `missing_waiver` / `waiver_amount_mismatch`.
+ */
+export interface PaymentReleaseCheck {
+  payment_application_id: string;
+  waiver_required: boolean;
+  blocked: boolean;
+  reasons: string[];
+}
+
+export function getPaymentReleaseCheck(paymentId: string): Promise<PaymentReleaseCheck> {
+  return apiGet<PaymentReleaseCheck>(
+    `/v1/subcontractors/payment-applications/${paymentId}/release-check`,
+  );
 }
 
 /* ── Certificates ──────────────────────────────────────────────────────── */
