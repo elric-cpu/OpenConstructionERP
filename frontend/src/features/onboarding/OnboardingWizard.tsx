@@ -44,6 +44,8 @@ import { useUploadQueueStore } from '@/stores/useUploadQueueStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useModuleStore } from '@/stores/useModuleStore';
 import { useViewModeStore } from '@/stores/useViewModeStore';
+import { useBrandingStore } from '@/stores/useBrandingStore';
+import { BrandingEditorModal } from '@/app/layout/CustomBranding';
 import { aiApi, type AIProvider } from '@/features/ai/api';
 import { apiGet, apiPost, extractErrorMessageFromBody } from '@/shared/lib/api';
 import {
@@ -2560,6 +2562,67 @@ function StepDataSetup({
 
 // ── Step 6: Summary + Finish ────────────────────────────────────────────────
 
+/**
+ * "Make your workspace yours" — an optional, last-step personalization card on
+ * the Finish screen. Opens the exact same {@link BrandingEditorModal} the
+ * sidebar uses, so the company logo / name a user sets here behaves identically
+ * to editing it later from the sidebar (single source of truth — the shared
+ * ``useBrandingStore``). Shows a live preview of the chosen brand.
+ */
+function WorkspaceBrandingCard() {
+  const { t } = useTranslation();
+  const { mode, logoDataUrl, companyName } = useBrandingStore();
+  const [editing, setEditing] = useState(false);
+  const customised = mode === 'logo' || mode === 'text';
+
+  return (
+    <div className="mt-7 w-full max-w-md mx-auto">
+      <div className="flex items-center gap-3 rounded-2xl border border-border-light bg-surface-elevated/70 backdrop-blur-md p-4 text-left shadow-sm shadow-black/[0.04]">
+        {/* Brand preview tile — user logo when set, else a neutral glyph. */}
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-oe-blue-subtle overflow-hidden">
+          {mode === 'logo' && logoDataUrl ? (
+            <img
+              src={logoDataUrl}
+              alt={companyName || 'Logo'}
+              className="h-full w-full object-contain"
+              draggable={false}
+            />
+          ) : (
+            <Building2 size={22} className="text-oe-blue" />
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-content-primary truncate">
+            {customised && companyName
+              ? companyName
+              : t('onboarding.brand_title', { defaultValue: 'Make your workspace yours' })}
+          </p>
+          <p className="text-xs text-content-tertiary truncate">
+            {customised
+              ? t('onboarding.brand_set', {
+                  defaultValue: 'Your brand shows in the sidebar and the browser tab',
+                })
+              : t('onboarding.brand_hint', {
+                  defaultValue: 'Add your company logo or name (optional)',
+                })}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-oe-blue/30 bg-oe-blue/5 px-3 py-1.5 text-xs font-semibold text-oe-blue hover:bg-oe-blue/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/40"
+        >
+          <Pencil size={13} />
+          {customised
+            ? t('common.edit', { defaultValue: 'Edit' })
+            : t('onboarding.brand_add', { defaultValue: 'Add' })}
+        </button>
+      </div>
+      {editing && <BrandingEditorModal onClose={() => setEditing(false)} />}
+    </div>
+  );
+}
+
 function StepFinish({
   onBack,
   companyType,
@@ -2665,6 +2728,11 @@ function StepFinish({
           defaultValue: 'You can adjust all settings later from the Settings page.',
         })}
       </p>
+
+      {/* Optional personalization — set the company logo / name now, using the
+          same editor the sidebar uses. Purely optional; the brand also stays
+          editable from the sidebar at any time. */}
+      <WorkspaceBrandingCard />
 
       <div className="mt-8 flex items-center gap-3">
         <Button variant="ghost" onClick={onBack} icon={<ArrowLeft size={16} />}>

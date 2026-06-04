@@ -24,6 +24,7 @@ import { useSwipeGesture, useEdgeSwipe } from '@/shared/hooks/useSwipeGesture';
 import { useIsRTL } from '@/shared/hooks/useIsRTL';
 import { useOfflineSync } from '@/shared/hooks/useOnlineStatus';
 import { usePartnerPackLocale } from '@/shared/hooks/usePartnerPackLocale';
+import { useBrandingStore } from '@/stores/useBrandingStore';
 
 interface AppLayoutProps {
   title?: string;
@@ -46,14 +47,20 @@ export function AppLayout({ title, children }: AppLayoutProps) {
   // dialog reverts to English.
   usePartnerPackLocale();
 
+  // When the user has white-labelled the workspace with their own company
+  // name, the browser tab follows the same brand as the sidebar so the whole
+  // experience reads as "their" tool. Falls back to OpenConstructionERP.
+  const brandName = useBrandingStore((s) => (s.companyName.trim() ? s.companyName.trim() : null));
+
   useEffect(() => {
     // Translate the browser-tab title through the same map the on-screen
     // page heading uses, so the tab also follows the active language.
     const key = resolvePageTitleKey(title);
     const translated = title ? (key ? t(key, { defaultValue: title }) : title) : null;
-    document.title = translated ? `${translated} | OpenConstructionERP` : 'OpenConstructionERP';
+    const suffix = brandName ?? 'OpenConstructionERP';
+    document.title = translated ? `${translated} | ${suffix}` : suffix;
     // i18n.language in deps so the tab re-translates on a language switch.
-  }, [title, t, i18n.language]);
+  }, [title, t, i18n.language, brandName]);
 
   // Lock body scroll when mobile sidebar is open
   useEffect(() => {
