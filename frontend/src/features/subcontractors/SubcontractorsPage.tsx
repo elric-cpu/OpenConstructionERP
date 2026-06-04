@@ -841,6 +841,28 @@ function DetailDrawer({ id, onClose }: { id: string; onClose: () => void }) {
                 {sub.blocked_reason}
               </div>
             )}
+            {/* Prequalification award gate (TOP-30 #20): a rejected or suspended
+                vendor cannot have an agreement activated or be paid - mirror the
+                backend 409 with a banner so the reason is visible up front. */}
+            {!sub.is_blocked &&
+              (sub.prequalification_status === 'rejected' ||
+                sub.prequalification_status === 'suspended') && (
+                <div className="flex items-start gap-2 border-b border-amber-200 bg-amber-50 px-5 py-2.5 text-xs text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-200">
+                  <ShieldAlert size={14} className="mt-0.5 shrink-0" />
+                  <span>
+                    <span className="font-semibold">
+                      {t('subcontractors.award_gate_label', {
+                        defaultValue: 'Not approved for award.',
+                      })}
+                    </span>{' '}
+                    {t('subcontractors.award_gate_desc', {
+                      defaultValue:
+                        'Prequalification is {{status}}. Agreements cannot be activated and payments are held until it is cleared.',
+                      status: sub.prequalification_status,
+                    })}
+                  </span>
+                </div>
+              )}
 
             <div className="flex flex-wrap items-center gap-2 px-5 py-3 text-xs border-b border-border-light">
               <span className="text-content-tertiary">

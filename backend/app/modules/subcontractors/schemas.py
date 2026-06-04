@@ -708,6 +708,19 @@ class PaymentReleaseCheck(BaseModel):
     reasons: list[str] = Field(default_factory=list)
 
 
+class AwardEligibility(BaseModel):
+    """Whether a subcontractor may be awarded live work (TOP-30 #20).
+
+    Drives the prequalification banner in the subcontractor drawer and the
+    409 raised when an agreement is activated or a payment is claimed for a
+    blocked or rejected/suspended vendor.
+    """
+
+    subcontractor_id: UUID
+    awardable: bool
+    reasons: list[str] = Field(default_factory=list)
+
+
 class CurrencyAmount(BaseModel):
     """One ISO-currency bucket of a money rollup.
 

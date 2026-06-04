@@ -245,6 +245,30 @@ def lien_waiver_blocked(
     return PaymentBlockResult(blocked=False, reasons=[])
 
 
+# Prequalification states that bar awarding live work (TOP-30 #20). A
+# subcontractor explicitly rejected or suspended in prequalification - or
+# administratively blocked - must not be moved onto a live subcontract or paid.
+# ``pending`` (the default for a new vendor) and ``approved`` are allowed; the
+# UI still nudges to finish prequalification while pending.
+_AWARD_BARRED_PREQUAL_STATES: frozenset[str] = frozenset({"rejected", "suspended"})
+
+
+def subcontractor_award_block(subcontractor: object) -> PaymentBlockResult:
+    """Why, if at all, a subcontractor may not be awarded live work.
+
+    Returns the reasons an agreement cannot be activated and a payment cannot
+    be claimed for this vendor: ``subcontractor_blocked`` (admin block) and/or
+    ``prequalification_<status>`` for a rejected/suspended prequal.
+    """
+    reasons: list[str] = []
+    if getattr(subcontractor, "is_blocked", False):
+        reasons.append("subcontractor_blocked")
+    prequal = getattr(subcontractor, "prequalification_status", "") or ""
+    if prequal in _AWARD_BARRED_PREQUAL_STATES:
+        reasons.append(f"prequalification_{prequal}")
+    return PaymentBlockResult(blocked=bool(reasons), reasons=reasons)
+
+
 @dataclass
 class Rating:
     """Weighted rating components and overall score (all 0–100)."""
@@ -969,10 +993,44 @@ class SubcontractorService:
                 _AGREEMENT_TRANSITIONS,
                 "agreement",
             )
+            # Prequalification gate (TOP-30 #20): a draft can be drawn up while
+            # a sub is still being vetted, but it cannot go live for a blocked
+            # or rejected/suspended vendor.
+            if fields["status"] == "active" and entity.status != "active":
+                await self._assert_subcontractor_awardable(entity.subcontractor_id)
         if fields:
             await self.agreements.update_fields(agreement_id, **fields)
             await self.session.refresh(entity)
         return entity
+
+    async def subcontractor_award_eligibility(
+        self,
+        subcontractor_id: uuid.UUID,
+    ) -> PaymentBlockResult:
+        """Report whether a subcontractor may be awarded live work (TOP-30 #20)."""
+        sub = await self.subs.get_by_id(subcontractor_id)
+        if sub is None:
+            raise HTTPException(status_code=404, detail="Subcontractor not found")
+        return subcontractor_award_block(sub)
+
+    async def _assert_subcontractor_awardable(
+        self,
+        subcontractor_id: uuid.UUID,
+    ) -> None:
+        block = await self.subcontractor_award_eligibility(subcontractor_id)
+        if block.blocked:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": block.reasons[0],
+                    "message": (
+                        "This subcontractor is not approved for award. Clear the "
+                        "block or complete prequalification before activating the "
+                        "agreement."
+                    ),
+                    "reasons": block.reasons,
+                },
+            )
 
     async def delete_agreement(self, agreement_id: uuid.UUID) -> None:
         await self.agreements.delete(agreement_id)
@@ -1039,6 +1097,10 @@ class SubcontractorService:
                     f"in status {agreement.status!r}; agreement must be active"
                 ),
             )
+
+        # Prequalification gate (TOP-30 #20): no payment for a blocked or
+        # rejected/suspended vendor, even on an already-active agreement.
+        await self._assert_subcontractor_awardable(agreement.subcontractor_id)
 
         # Block submission if required certs are missing / expired.
         certs = await self.certs.list_by_subcontractor(agreement.subcontractor_id)

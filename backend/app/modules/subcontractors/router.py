@@ -37,6 +37,7 @@ from app.modules.subcontractors.schemas import (
     AgreementCreate,
     AgreementResponse,
     AgreementUpdate,
+    AwardEligibility,
     BlockRequest,
     CertificateCreate,
     CertificateResponse,
@@ -220,6 +221,30 @@ async def subcontractor_dashboard(
     """Return aggregated stats for a single subcontractor."""
     svc = SubcontractorService(session)
     return await svc.dashboard(sub_id)
+
+
+@router.get(
+    "/subcontractors/{sub_id}/award-eligibility",
+    response_model=AwardEligibility,
+)
+async def subcontractor_award_eligibility(
+    sub_id: uuid.UUID,
+    session: SessionDep,
+    _user: CurrentUserId,
+    _perm: None = Depends(RequirePermission("subcontractors.read")),
+) -> AwardEligibility:
+    """Report whether a subcontractor may be awarded live work (TOP-30 #20).
+
+    Lets the UI show a prequalification banner before anyone tries to activate
+    an agreement, instead of only learning about the block on a 409.
+    """
+    svc = SubcontractorService(session)
+    result = await svc.subcontractor_award_eligibility(sub_id)
+    return AwardEligibility(
+        subcontractor_id=sub_id,
+        awardable=not result.blocked,
+        reasons=result.reasons,
+    )
 
 
 # ── Contacts ───────────────────────────────────────────────────────────
