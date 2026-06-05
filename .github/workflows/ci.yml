@@ -149,6 +149,10 @@ jobs:
         run: npm run typecheck
 
       - name: Build
+        # Vite/Rollup now needs more than Node's default ~4 GB heap (exit 134,
+        # "JavaScript heap out of memory"). Lift the old-space ceiling to 6 GB.
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
         run: npm run build
 
       - name: Run tests
