@@ -20,7 +20,7 @@ Professional BOQ, 4D scheduling, 5D cost model, and tendering - all in one open-
 ![Languages](https://img.shields.io/badge/languages-27-orange)
 ![Cost Items](https://img.shields.io/badge/cost_items-55%2C000%2B-red)
 
-<img src="docs/screenshots/hero-overview.jpg" alt="OpenConstructionERP - Dashboard Overview" width="800" />
+<img src="docs/screenshots/hero-overview.png" alt="OpenConstructionERP - open-source construction ERP for BOQ, BIM takeoff, DWG/PDF quantification and 5D cost modeling" width="800" />
 
 <video src="https://github.com/user-attachments/assets/20b9b585-93ac-4829-a3dc-0ede9ca9e2fc" controls width="800" playsinline>
   <a href="https://github.com/datadrivenconstruction/OpenConstructionERP/releases/download/v2.0.0/oce_full_demo.mp4">▶ 1-minute teaser (your browser can't inline this - click for full 12-min walkthrough)</a>
