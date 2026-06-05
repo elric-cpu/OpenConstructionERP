@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 
   <title>Partner Program — OpenConstructionERP (Open Source Construction ERP)</title>
-  <meta name="description" content="Become a Founding Partner. 45–65% margins on OpenConstructionERP commercial licences, CWICR cost DB, cad2data converters and localisation packs. 100% on implementation services. AGPL-3.0 + Commercial dual-licence." />
+  <meta name="description" content="OpenConstructionERP partner program. One deal for everyone: 45% margin on commercial licences, CWICR and connectors, 55% on localisation packs and cad2data converters, 25% recurring on renewals, 100% on implementation services. EUR 0 annual fee. AGPL-3.0 + Commercial dual-licence." />
   <meta name="robots" content="index,follow" />
   <link rel="canonical" href="https://openconstructionerp.com/partners.html" />
 
@@ -14,13 +14,13 @@
   <meta property="og:site_name" content="OpenConstructionERP" />
   <meta property="og:url" content="https://openconstructionerp.com/partners.html" />
   <meta property="og:title" content="OpenConstructionERP Partner Program — 80% open. 20% paid. 100% yours." />
-  <meta property="og:description" content="Free foundation. Paid floors. Real construction software, built like a building. Founding Partner cohort open — 10 spots, no fee, top-tier economics from day one." />
+  <meta property="og:description" content="Free foundation. Paid floors. Real construction software, built like a building. One partner deal, same for everyone: real margins, no annual fee." />
   <meta property="og:image" content="https://openconstructionerp.com/pro/shared/media/og-breeze.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="OpenConstructionERP Partner Program" />
-  <meta name="twitter:description" content="Founding Partner cohort open — 10 spots, no fee, top-tier economics from day one." />
+  <meta name="twitter:description" content="One partner deal, same for everyone: real margins, no annual fee." />
   <meta name="twitter:image" content="https://openconstructionerp.com/pro/shared/media/og-breeze.png" />
 
   <!-- Favicon + manifest -->
@@ -764,9 +764,9 @@
     }
     .tier-grid {
       display: grid;
-      grid-template-columns: 1.4fr 1fr 1fr;
+      grid-template-columns: 1.8fr 1fr;
       gap: 0;
-      min-width: 560px;
+      min-width: 420px;
       background: var(--bg-1);
       border: 1px solid var(--line-1);
       border-radius: 16px;
@@ -779,53 +779,18 @@
       border-bottom: 1px solid var(--line-0);
       border-right: 1px solid var(--line-0);
     }
-    .tier-grid > div:nth-child(3n) { border-right: 0; }
-    .tier-grid > div:nth-last-child(-n+3) { border-bottom: 0; }
+    .tier-grid > div:nth-child(2n) { border-right: 0; }
+    .tier-grid > div:nth-last-child(-n+2) { border-bottom: 0; }
     .tier-grid .row-label {
       color: var(--ink-2);
       background: color-mix(in oklab, var(--bg-2) 60%, transparent);
       font-weight: 500;
     }
-    .tier-grid .col-head {
-      font-family: 'Inter Tight', sans-serif;
-      font-weight: 700;
-      font-size: 16px;
-      letter-spacing: -0.01em;
-      color: var(--ink-0);
-      text-align: center;
-      padding: 18px 14px;
-      background: color-mix(in oklab, var(--bg-2) 40%, transparent);
-    }
-    .tier-grid .col-head[data-tier="a"] {
-      box-shadow: inset 0 -3px 0 var(--accent-2);
-    }
-    .tier-grid .col-head[data-tier="f"] {
-      box-shadow: inset 0 -3px 0 #f59e0b;
-      background: linear-gradient(180deg,
-        color-mix(in oklab, #fbbf24 12%, var(--bg-2)) 0%,
-        color-mix(in oklab, #f59e0b 6%, var(--bg-2)) 100%);
-    }
-    .tier-grid .col-head .badge {
-      display: inline-block;
-      width: 10px; height: 10px;
-      border-radius: 50%;
-      margin-right: 8px;
-      vertical-align: middle;
-      box-shadow: 0 0 0 2px color-mix(in oklab, var(--bg-1) 80%, transparent);
-    }
-    .tier-grid .col-head[data-tier="a"] .badge { background: var(--accent-2); }
-    .tier-grid .col-head[data-tier="f"] .badge { background: linear-gradient(135deg, #fbbf24, #f59e0b); }
-
-    /* Column tinting — Active / Founding */
-    .tier-grid > div:nth-child(3n+2):not(.col-head):not(.row-label) {
+    /* Value-column tinting — single partner deal */
+    .tier-grid > div:nth-child(2n):not(.row-label) {
       background: linear-gradient(90deg,
         color-mix(in oklab, var(--accent-2) 18%, transparent) 0%,
         color-mix(in oklab, var(--accent-2) 6%, transparent) 100%);
-    }
-    .tier-grid > div:nth-child(3n+3):not(.col-head):not(.row-label) {
-      background: linear-gradient(90deg,
-        color-mix(in oklab, #fbbf24 22%, transparent) 0%,
-        color-mix(in oklab, #f59e0b 9%, transparent) 100%);
     }
     .tier-grid .num {
       text-align: center;
@@ -842,10 +807,6 @@
       font-weight: 700;
       color: var(--accent);
       text-shadow: 0 0 18px color-mix(in oklab, var(--accent) 40%, transparent);
-    }
-    .tier-grid > div:nth-child(3n+3).num.lg {
-      color: #b45309;
-      text-shadow: 0 0 18px color-mix(in oklab, #f59e0b 50%, transparent);
     }
     .tier-fee-banner {
       max-width: 1140px;
@@ -1017,192 +978,6 @@
       line-height: 1.55;
     }
     .earns-recurring b { color: var(--ink-0); }
-
-    /* ─── FOUNDING PARTNER ────────────────────────────────────────── */
-    .founding {
-      background: linear-gradient(165deg,
-        color-mix(in oklab, var(--accent) 8%, var(--bg-1)) 0%,
-        color-mix(in oklab, var(--accent-3) 6%, var(--bg-1)) 100%);
-      border-radius: 24px;
-      padding: clamp(36px, 6vw, 64px);
-      max-width: 1080px;
-      margin: 0 auto;
-      border: 1px solid color-mix(in oklab, var(--accent) 24%, transparent);
-    }
-    .founding-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: clamp(32px, 5vw, 64px);
-      align-items: start;
-    }
-    @media (max-width: 880px) {
-      .founding-grid { grid-template-columns: 1fr; }
-    }
-    .founding h3 {
-      font-family: 'Inter Tight', sans-serif;
-      font-weight: 600;
-      font-size: clamp(24px, 3vw, 36px);
-      letter-spacing: -0.025em;
-      margin: 0 0 18px;
-      line-height: 1.15;
-    }
-    .founding h3 em {
-      font-family: 'Fraunces', serif;
-      font-style: italic;
-      font-weight: 400;
-      color: var(--accent);
-    }
-    .founding p {
-      font-size: 15px;
-      color: var(--ink-1);
-      line-height: 1.6;
-      margin: 0 0 14px;
-    }
-    .founding p strong { color: var(--ink-0); }
-    .founding-counter-card {
-      position: relative;
-      background: linear-gradient(165deg, var(--bg-0) 0%, color-mix(in oklab, var(--accent) 5%, var(--bg-0)) 100%);
-      border: 1px solid color-mix(in oklab, var(--accent) 28%, transparent);
-      border-radius: 16px;
-      padding: 22px 22px 18px;
-      margin-bottom: 18px;
-      overflow: hidden;
-      box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.55),
-        0 16px 36px -18px color-mix(in oklab, var(--accent) 32%, transparent);
-    }
-    .founding-counter-card::before {
-      content: "";
-      position: absolute;
-      top: -40%;
-      right: -25%;
-      width: 60%;
-      height: 180%;
-      background: radial-gradient(closest-side,
-        color-mix(in oklab, var(--accent) 18%, transparent) 0%,
-        transparent 100%);
-      pointer-events: none;
-      opacity: 0.6;
-    }
-    .founding-counter-card > * { position: relative; }
-    .founding-counter-head {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 16px;
-    }
-    .founding-counter-eyebrow {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 11px;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      color: var(--ink-3);
-    }
-    .founding-counter-big {
-      font-family: 'Fraunces', serif;
-      font-weight: 500;
-      font-size: clamp(28px, 4vw, 40px);
-      line-height: 1;
-      color: var(--ink-0);
-      font-variant-numeric: tabular-nums;
-    }
-    .founding-counter-big b {
-      color: var(--accent);
-      font-weight: 500;
-    }
-    .founding-counter-sub {
-      font-size: 13.5px;
-      color: var(--ink-2);
-      line-height: 1.45;
-      margin: 0 0 18px;
-    }
-    .founding-counter-sub b { color: var(--ink-0); font-weight: 700; }
-    .founding-counter {
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: 10px;
-    }
-    .founding-counter .slot {
-      position: relative;
-      aspect-ratio: 1 / 1;
-      border: 2px solid color-mix(in oklab, var(--accent) 50%, transparent);
-      border-radius: 10px;
-      display: grid;
-      place-items: center;
-      font-family: 'JetBrains Mono', monospace;
-      font-weight: 700;
-      font-size: 16px;
-      color: var(--accent);
-      background: color-mix(in oklab, var(--accent) 5%, var(--bg-0));
-      overflow: hidden;
-      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-    }
-    .founding-counter .slot > * { position: relative; z-index: 1; }
-    .founding-counter .slot:not(.filled)::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background: radial-gradient(60% 60% at 50% 55%,
-        color-mix(in oklab, var(--accent) 26%, transparent) 0%,
-        transparent 70%);
-      animation: slotPulse 2.6s ease-in-out infinite;
-      z-index: 0;
-    }
-    .founding-counter .slot:not(.filled)::after {
-      content: "open";
-      position: absolute;
-      bottom: 5px;
-      left: 0; right: 0;
-      text-align: center;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 8px;
-      font-weight: 700;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      color: color-mix(in oklab, var(--accent) 78%, transparent);
-      opacity: 0.75;
-      z-index: 1;
-    }
-    @keyframes slotPulse {
-      0%, 100% { opacity: 0.25; transform: scale(0.85); }
-      50% { opacity: 0.85; transform: scale(1.08); }
-    }
-    .founding-counter .slot:hover {
-      transform: translateY(-3px);
-      border-color: var(--accent);
-      box-shadow: 0 12px 22px -8px color-mix(in oklab, var(--accent) 38%, transparent);
-    }
-    .founding-counter .slot:not(.filled):hover::before {
-      animation: none;
-      opacity: 0.95;
-      transform: scale(1.18);
-    }
-    .founding-counter .slot.filled {
-      background: linear-gradient(135deg, var(--accent), var(--accent-3));
-      border-color: transparent;
-      color: #fff;
-      box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.4),
-        0 6px 14px -6px color-mix(in oklab, var(--accent) 60%, transparent);
-    }
-    .founding-counter .slot.filled::after {
-      content: "";
-      position: absolute;
-      top: 4px; right: 4px;
-      width: 6px; height: 6px;
-      border-radius: 50%;
-      background: rgba(255, 255, 255, 0.85);
-    }
-    @media (max-width: 480px) {
-      .founding-counter { grid-template-columns: repeat(5, 1fr); gap: 6px; }
-      .founding-counter .slot { font-size: 13px; border-radius: 8px; }
-    }
-    .founding .micro {
-      font-size: 12.5px;
-      color: var(--ink-3);
-      margin-top: 14px;
-    }
 
     /* ─── STICKY SECTION NAV ──────────────────────────────────────── */
     .section-nav {
@@ -2583,7 +2358,7 @@
         "@id": "https://openconstructionerp.com/partners.html#webpage",
         "url": "https://openconstructionerp.com/partners.html",
         "name": "Partner Program — OpenConstructionERP",
-        "description": "Become a Founding Partner. 45–65% margins on OpenConstructionERP commercial licences, CWICR cost DB, cad2data converters and localisation packs. 100% on implementation services. AGPL-3.0 + Commercial dual-licence.",
+        "description": "OpenConstructionERP partner program. One deal for everyone: 45% margin on commercial licences, CWICR and connectors, 55% on localisation packs and cad2data converters, 25% recurring on renewals, 100% on implementation services. EUR 0 annual fee. AGPL-3.0 + Commercial dual-licence.",
         "inLanguage": "en",
         "isPartOf": { "@id": "https://openconstructionerp.com/#website" },
         "about": { "@id": "https://openconstructionerp.com/#software" },
@@ -2627,14 +2402,6 @@
           },
           {
             "@type": "Question",
-            "name": "What's the difference between a Founding Partner and an Active Partner?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Founding Partners are the first 3 signatories. They get the Founding rate card from day 0 — no ladder climb, no fees, direct line to the core team. Active is the standard partnership for everyone else. Founding cohort closes when 3 partners sign or on 31 December 2026, whichever comes first."
-            }
-          },
-          {
-            "@type": "Question",
             "name": "Do I need to be a developer or software house to qualify?",
             "acceptedAnswer": {
               "@type": "Answer",
@@ -2662,7 +2429,7 @@
             "name": "How is this different from being an Odoo partner?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Three concrete differences: (1) construction-native product (BOQ, IFC, schedule, AI takeoff) — no retrofit; (2) higher margins (up to 65% on localisation, 55% on commercial); (3) no annual partnership fee at any tier; (4) DDC explicitly does not compete on services."
+              "text": "Three concrete differences: (1) construction-native product (BOQ, IFC, schedule, AI takeoff) - no retrofit; (2) higher margins (up to 55% on localisation, 45% on commercial); (3) no annual partnership fee; (4) DDC explicitly does not compete on services."
             }
           },
           {
@@ -2670,7 +2437,7 @@
             "name": "What if I never close a deal — do I lose my partnership?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Nothing punitive. Partners stay on the Active rate card indefinitely — no demotion, no fee clawback, no expiry. If activity slows, we work on lead-share or co-sell. Founding partners keep Founding rates as long as they have at least one live client."
+              "text": "Nothing punitive. Partners stay on the rate card indefinitely - no demotion, no fee clawback, no expiry. If activity slows, we work on lead-share or co-sell."
             }
           }
         ]
@@ -2735,8 +2502,7 @@
     <a href="#earns" data-i18n="page.partners.section_nav_economics">Economics</a>
     <a href="#audience" data-i18n="page.partners.section_nav_audience">Audience</a>
     <a href="#compare-programs" data-i18n="page.partners.section_nav_vs_others">vs Others</a>
-    <a href="#tiers" data-i18n="page.partners.section_nav_tiers">Tiers</a>
-    <a href="#founding" data-i18n="page.partners.section_nav_founding">Founding</a>
+    <a href="#tiers" data-i18n="page.partners.section_nav_deal">Partner deal</a>
     <a href="#toolkit" data-i18n="page.partners.section_nav_toolkit">Toolkit</a>
     <a href="#archetypes" data-i18n="page.partners.section_nav_archetypes">Archetypes</a>
     <a href="#risk" data-i18n="page.partners.section_nav_risk">Risk</a>
@@ -2754,7 +2520,7 @@
       <div>
         <span class="eyebrow">
           <span class="dot" aria-hidden="true"></span>
-          <span data-i18n="page.partners.hero_eyebrow">Partner Program · Founding cohort</span>
+          <span data-i18n="page.partners.hero_eyebrow_v2">Partner Program</span>
         </span>
         <h1 class="h1" data-i18n-html="page.partners.hero_title">
           Open core. <em>Real margins.</em><br>
@@ -2769,7 +2535,7 @@
         </p>
         <div class="cta-row">
           <a class="btn btn-primary" href="#apply">
-            <span data-i18n="page.partners.hero_cta_primary">Become a Founding Partner</span>
+            <span data-i18n="page.partners.hero_cta_primary_v2">Become a partner</span>
             <svg class="arr" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
           </a>
           <a class="btn btn-ghost" href="#audience" data-i18n="page.partners.hero_cta_ghost">
@@ -2851,7 +2617,7 @@
       </svg>
       <div class="ribbon-num">€0<sup>fee</sup></div>
       <div class="ribbon-label" data-i18n="page.partners.ribbon_fee_label">Annual partnership fee</div>
-      <div class="ribbon-sub" data-i18n="page.partners.ribbon_fee_sub">All tiers, forever — written in</div>
+      <div class="ribbon-sub" data-i18n="page.partners.ribbon_fee_sub_v2">Forever, written into the agreement</div>
     </div>
 
     <div class="ribbon-card">
@@ -2868,9 +2634,9 @@
         <path d="M3 17l6-6 4 4 8-8"/>
         <polyline points="14 7 21 7 21 14"/>
       </svg>
-      <div class="ribbon-num">65<sup>%</sup></div>
-      <div class="ribbon-label" data-i18n="page.partners.ribbon_loc_label">Top localisation margin</div>
-      <div class="ribbon-sub" data-i18n="page.partners.ribbon_loc_sub">Regional packs · cad2data · Founding</div>
+      <div class="ribbon-num">55<sup>%</sup></div>
+      <div class="ribbon-label" data-i18n="page.partners.ribbon_loc_label_v2">Localisation margin</div>
+      <div class="ribbon-sub" data-i18n="page.partners.ribbon_loc_sub_v2">Regional packs and cad2data converters</div>
     </div>
 
     <div class="ribbon-card">
@@ -3029,15 +2795,15 @@
 
         <div class="earns-pill-row">
           <span class="earns-pill" data-i18n-html="page.partners.earns_pill_impl"><b>100%</b> implementation</span>
-          <span class="earns-pill" data-i18n-html="page.partners.earns_pill_loc"><b>55–65%</b> localisation</span>
-          <span class="earns-pill" data-i18n-html="page.partners.earns_pill_comm"><b>45–55%</b> commercial</span>
-          <span class="earns-pill" data-i18n-html="page.partners.earns_pill_rec"><b>15–30%</b> recurring</span>
+          <span class="earns-pill" data-i18n-html="page.partners.earns_pill_loc_v2"><b>55%</b> localisation</span>
+          <span class="earns-pill" data-i18n-html="page.partners.earns_pill_comm_v2"><b>45%</b> commercial</span>
+          <span class="earns-pill" data-i18n-html="page.partners.earns_pill_rec_v2"><b>25%</b> recurring</span>
         </div>
 
-        <div class="earns-recurring" data-i18n-html="page.partners.earns_recurring">
+        <div class="earns-recurring" data-i18n-html="page.partners.earns_recurring_v2">
           <b>Year-2 onwards:</b> the same client pays an SLA / optimisation retainer.
-          A Founding partner keeps <b>30%</b> of that for as long as the client
-          stays live (Active partners keep 25%). SMB volume compounds — ten live
+          You keep <b>25%</b> of that for as long as the client
+          stays live. SMB volume compounds, ten live
           clients ≈ €9k/year before any new work.
         </div>
       </div>
@@ -3061,10 +2827,10 @@
         </div>
         <div class="audience-title" data-i18n="page.partners.audience_partner_title">You're a partner</div>
         <div class="audience-who" data-i18n="page.partners.audience_partner_who">BIM consultancy · ERP integrator · freelance dev · local SI</div>
-        <p class="audience-body" data-i18n="page.partners.audience_partner_body">
+        <p class="audience-body" data-i18n="page.partners.audience_partner_body_v2">
           You sell implementation, training, custom modules. We share margins
-          (25–65%) on everything commercial and never compete on services.
-          €0 partnership fee at any tier.
+          (25–55%) on everything commercial and never compete on services.
+          €0 partnership fee.
         </p>
         <a class="audience-cta" href="#apply" data-i18n="page.partners.audience_partner_cta">Apply as a partner →</a>
       </div>
@@ -3079,7 +2845,7 @@
           production go-live, localisation and SLA. Three legitimate paths,
           your choice depends on team capacity and risk appetite.
         </p>
-        <a class="audience-cta" href="#tiers" data-i18n="page.partners.audience_client_cta">Compare your options →</a>
+        <a class="audience-cta" href="#tiers" data-i18n="page.partners.audience_client_cta_v2">See the partner deal →</a>
       </div>
       <div class="audience-card">
         <div class="audience-icon" aria-hidden="true">
@@ -3087,9 +2853,9 @@
         </div>
         <div class="audience-title" data-i18n="page.partners.audience_specialist_title">You're a specialist</div>
         <div class="audience-who" data-i18n="page.partners.audience_specialist_who">Plugin author · Revit dev · IFC expert · trainer</div>
-        <p class="audience-body" data-i18n="page.partners.audience_specialist_body">
+        <p class="audience-body" data-i18n="page.partners.audience_specialist_body_v2">
           You build a connector, training pack or custom module and earn
-          45–65% on every commercial deal it touches. Listed in the marketplace
+          45–55% on every commercial deal it touches. Listed in the marketplace
           once your first artefact ships.
         </p>
         <a class="audience-cta" href="#apply" data-i18n="page.partners.audience_specialist_cta">Apply as a specialist →</a>
@@ -3105,11 +2871,11 @@
   <div class="wrap">
     <div class="section-head">
       <h2 class="h2" data-i18n="page.partners.cmp_h2">Our partner program at a glance.</h2>
-      <p class="section-lede" data-i18n-html="page.partners.cmp_lede">
+      <p class="section-lede" data-i18n-html="page.partners.cmp_lede_v2">
         Standalone summary of what OpenConstructionERP's program offers.
         We deliberately do not publish side-by-side numeric comparisons
         with named vendor programs &mdash; their terms change, vary by
-        region and tier, and are best confirmed against each vendor's
+        region, and are best confirmed against each vendor's
         own public materials. Below is what we commit to in writing.
       </p>
     </div>
@@ -3124,16 +2890,16 @@
         </thead>
         <tbody>
           <tr>
-            <td data-i18n-html="page.partners.cmp_r1_label">Annual partnership fee<small>at every tier</small></td>
-            <td class="us-cell" data-i18n-html="page.partners.cmp_r1_value"><b style="color:var(--accent);">&euro;0</b><small style="color:var(--ink-3);font-weight:400;">no certification fee, no annual minimum, no top-tier upcharge</small></td>
+            <td data-i18n-html="page.partners.cmp_r1_label_v2">Annual partnership fee<small>same for everyone</small></td>
+            <td class="us-cell" data-i18n-html="page.partners.cmp_r1_value_v2"><b style="color:var(--accent);">&euro;0</b><small style="color:var(--ink-3);font-weight:400;">no certification fee, no annual minimum, no upcharge</small></td>
           </tr>
           <tr>
-            <td data-i18n-html="page.partners.cmp_r2_label">Margin on commercial licences and SaaS<small>partner share at top tier</small></td>
-            <td class="us-cell" data-i18n-html="page.partners.cmp_r2_value">45&ndash;55%<small style="color:var(--ink-3);font-weight:400;">documented in the partner agreement; tier-based</small></td>
+            <td data-i18n-html="page.partners.cmp_r2_label_v2">Margin on commercial licences and SaaS<small>partner share</small></td>
+            <td class="us-cell" data-i18n-html="page.partners.cmp_r2_value_v2">45%<small style="color:var(--ink-3);font-weight:400;">documented in the partner agreement</small></td>
           </tr>
           <tr>
             <td data-i18n-html="page.partners.cmp_r3_label">Margin on regional packs<small>localisation, vertical add-ons</small></td>
-            <td class="us-cell" data-i18n-html="page.partners.cmp_r3_value">55&ndash;65%<small style="color:var(--ink-3);font-weight:400;">higher share for partner-authored regional content</small></td>
+            <td class="us-cell" data-i18n-html="page.partners.cmp_r3_value_v2">55%<small style="color:var(--ink-3);font-weight:400;">higher share for partner-authored regional content</small></td>
           </tr>
           <tr>
             <td data-i18n-html="page.partners.cmp_r4_label">Implementation revenue<small>partner-kept</small></td>
@@ -3157,17 +2923,17 @@
           </tr>
           <tr>
             <td data-i18n-html="page.partners.cmp_r9_label">Recurring renewal margin<small>passive Year-2+ stream</small></td>
-            <td class="us-cell" data-i18n-html="page.partners.cmp_r9_value">15&ndash;30%<small style="color:var(--ink-3);font-weight:400;">paid annually on every renewing customer you brought in</small></td>
+            <td class="us-cell" data-i18n-html="page.partners.cmp_r9_value_v2">25%<small style="color:var(--ink-3);font-weight:400;">paid annually on every renewing customer you brought in</small></td>
           </tr>
         </tbody>
       </table>
     </div>
 
-    <p class="calc-disclaimer" data-i18n-html="page.partners.cmp_disclaimer">
+    <p class="calc-disclaimer" data-i18n-html="page.partners.cmp_disclaimer_v2">
       Figures reflect OpenConstructionERP's own partner agreement as
       published 2026-05-20. We deliberately avoid publishing side-by-side
-      numeric comparisons with named vendor programs &mdash; their tier
-      structures, regional minima and qualifying criteria change often
+      numeric comparisons with named vendor programs &mdash; their terms,
+      regional minima and qualifying criteria change often
       and are best confirmed against each vendor's own public materials.
     </p>
   </div>
@@ -3179,107 +2945,36 @@
 <section class="section" id="tiers">
   <div class="wrap">
     <div class="section-head">
-      <h2 class="h2" data-i18n="page.partners.tiers_h2">Two tiers. That's it.</h2>
-      <p class="section-lede" data-i18n="page.partners.tiers_lede">
-        No 4-step ladder, no certification gates. Either you're Active
-        (everyone, from day one) or you're Founding (first 3 partners).
+      <h2 class="h2" data-i18n="page.partners.deal_h2">One partner deal. Same for everyone.</h2>
+      <p class="section-lede" data-i18n="page.partners.deal_lede">
+        No tiers, no ladder, no certification gates. The same rate card from
+        day one, whoever you are.
       </p>
     </div>
     <div class="tiers">
-      <div class="tier-grid" role="table" aria-label="Partner tier card" data-i18n-aria-label="page.partners.tiers_table_aria">
-        <div class="row-label" data-i18n="page.partners.tiers_row_band">Margin band</div>
-        <div class="col-head" data-tier="a"><span class="badge"></span><span data-i18n="page.partners.tiers_col_active">Active</span></div>
-        <div class="col-head" data-tier="f"><span class="badge"></span><span data-i18n="page.partners.tiers_col_founding">Founding</span></div>
-
-        <div class="row-label" data-i18n="page.partners.tiers_row_commercial">Commercial licences · CWICR · connectors</div>
+      <div class="tier-grid" role="table" aria-label="Partner deal rate card" data-i18n-aria-label="page.partners.deal_table_aria">
+        <div class="row-label" data-i18n="page.partners.deal_row_commercial">Commercial licences · CWICR · connectors</div>
         <div class="num lg">45%</div>
+
+        <div class="row-label" data-i18n="page.partners.deal_row_localisation">Localisation packs · cad2data converters</div>
         <div class="num lg">55%</div>
 
-        <div class="row-label" data-i18n="page.partners.tiers_row_localisation">Localisation packs · cad2data converters</div>
-        <div class="num lg">55%</div>
-        <div class="num lg">65%</div>
+        <div class="row-label" data-i18n="page.partners.deal_row_recurring">Recurring on renewals</div>
+        <div class="num lg">25%</div>
 
-        <div class="row-label" data-i18n="page.partners.tiers_row_recurring">Recurring on renewals</div>
-        <div class="num">25%</div>
-        <div class="num lg">30%</div>
+        <div class="row-label" data-i18n="page.partners.deal_row_implementation">Implementation services</div>
+        <div class="num lg">100%</div>
 
-        <div class="row-label" data-i18n="page.partners.tiers_row_implementation">Implementation services</div>
-        <div class="num">100%</div>
-        <div class="num">100%</div>
-
-        <div class="row-label" data-i18n="page.partners.tiers_row_qualify">How you qualify</div>
-        <div class="num" data-i18n="page.partners.tiers_qualify_active">Apply</div>
-        <div class="num" data-i18n="page.partners.tiers_qualify_founding">First 3 to sign</div>
-
-        <div class="row-label" style="font-weight: 700; color: var(--ink-0);" data-i18n="page.partners.tiers_row_fee">Annual fee</div>
+        <div class="row-label" style="font-weight: 700; color: var(--ink-0);" data-i18n="page.partners.deal_row_fee">Annual fee</div>
         <div class="num lg">€0</div>
-        <div class="num lg">€0</div>
+
+        <div class="row-label" data-i18n="page.partners.deal_row_qualify">How you qualify</div>
+        <div class="num" data-i18n="page.partners.deal_qualify_apply">Apply</div>
       </div>
     </div>
-    <div class="tier-fee-banner" data-i18n-html="page.partners.tiers_fee_banner">
+    <div class="tier-fee-banner" data-i18n-html="page.partners.deal_fee_banner">
       <em>€0 annual fee.</em> No headcount minimums, no certification gates, no quotas.
-      Just close deals when you have them — keep the margin when you do.
-    </div>
-  </div>
-</section>
-
-<!-- ============================================================ -->
-<!-- 8. FOUNDING PARTNER                                           -->
-<!-- ============================================================ -->
-<section class="section" id="founding">
-  <div class="wrap">
-    <div class="founding">
-      <div class="founding-grid">
-        <div>
-          <h3 data-i18n-html="page.partners.founding_h3">Founding Partner — <em>3 spots,</em> no fee, enhanced rates from day one.</h3>
-          <p data-i18n="page.partners.founding_p1">
-            Founding Partners get the Founding-tier rate card from signing,
-            keep that rate for 12 months, and co-shape the roadmap. After
-            month 12, you stay on Founding rates as long as you have at least
-            one live client.
-          </p>
-          <p data-i18n-html="page.partners.founding_p2">
-            <strong>What you get:</strong> <strong>65% margin on localisation packs and cad2data converters</strong>,
-            <strong>55% on OpenConstructionERP commercial licences and CWICR</strong>, 30% recurring on
-            renewals, 100% on services, <strong>€0 fees ever</strong>, direct Telegram
-            with the core team, your logo on the homepage, co-authored case study
-            after first go-live — distributed through DDC's social channels
-            (tens of thousands of AEC professionals across LinkedIn, X and
-            YouTube).
-          </p>
-          <p data-i18n-html="page.partners.founding_p3">
-            <strong>What we ask:</strong> one pilot deal in 90 days and a public commitment
-            to AGPL stewardship. <em>No headcount minimums. No certification gates.</em>
-            Build the team you need when you need it.
-          </p>
-        </div>
-        <div>
-          <div class="founding-counter-card">
-            <div class="founding-counter-head">
-              <div class="founding-counter-eyebrow" data-i18n="page.partners.founding_counter_eyebrow">Founding cohort</div>
-              <div class="founding-counter-big"><b>3</b> / 3</div>
-            </div>
-            <p class="founding-counter-sub" data-i18n-html="page.partners.founding_counter_sub">
-              Three Founding Partner spots open. Each slot is one regional
-              integrator who joins on the Founding rate card from day one —
-              no fees, direct line to the core team. <b>0 claimed so far.</b>
-            </p>
-            <div class="founding-counter" aria-label="Founding Partner spots — 0 of 3 claimed" data-i18n-aria-label="page.partners.founding_counter_aria">
-              <div class="slot" title="Spot 1 — open" data-i18n-attr="title:page.partners.founding_slot1_title">1</div>
-              <div class="slot" title="Spot 2 — open" data-i18n-attr="title:page.partners.founding_slot2_title">2</div>
-              <div class="slot" title="Spot 3 — open" data-i18n-attr="title:page.partners.founding_slot3_title">3</div>
-            </div>
-          </div>
-          <a class="btn btn-primary" href="#apply" style="margin-top: 6px;">
-            <span data-i18n="page.partners.founding_cta">Apply for a Founding Partner spot</span>
-            <svg class="arr" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-          </a>
-          <p class="micro" data-i18n="page.partners.founding_micro">
-            Onboarding takes 1–2 weeks. Founding cohort closes once 3 partners
-            sign or on 31 December 2026 — whichever comes first.
-          </p>
-        </div>
-      </div>
+      Just close deals when you have them, keep the margin when you do.
     </div>
   </div>
 </section>
@@ -3412,7 +3107,7 @@
         <div class="arche-stats">
           <div><div class="arche-stat-num">3–5</div><div class="arche-stat-label" data-i18n="page.partners.arche_stat_deals">deals / year</div></div>
           <div><div class="arche-stat-num">€35–60k</div><div class="arche-stat-label" data-i18n="page.partners.arche_stat_take">Year-1 take</div></div>
-          <div><div class="arche-stat-num">Active</div><div class="arche-stat-label" data-i18n="page.partners.arche_stat_tier">target tier</div></div>
+          <div><div class="arche-stat-num">+25%</div><div class="arche-stat-label" data-i18n="page.partners.arche_stat_recurring">recurring Year-2</div></div>
           <div><div class="arche-stat-num">€0</div><div class="arche-stat-label" data-i18n="page.partners.arche_stat_fees">fees, ever</div></div>
         </div>
 
@@ -3440,16 +3135,16 @@
         <div class="arche-stats">
           <div><div class="arche-stat-num">8–12</div><div class="arche-stat-label" data-i18n="page.partners.arche_stat_deals">deals / year</div></div>
           <div><div class="arche-stat-num">€130–200k</div><div class="arche-stat-label" data-i18n="page.partners.arche_stat_take">Year-1 take</div></div>
-          <div><div class="arche-stat-num">Active / Founding</div><div class="arche-stat-label" data-i18n="page.partners.arche_stat_tier">target tier</div></div>
-          <div><div class="arche-stat-num">+30%</div><div class="arche-stat-label" data-i18n="page.partners.arche_stat_recurring">recurring Year-2</div></div>
+          <div><div class="arche-stat-num">€0</div><div class="arche-stat-label" data-i18n="page.partners.arche_stat_fees">fees, ever</div></div>
+          <div><div class="arche-stat-num">+25%</div><div class="arche-stat-label" data-i18n="page.partners.arche_stat_recurring">recurring Year-2</div></div>
         </div>
 
         <div class="arche-mix">
           <div class="arche-mix-row"><span data-i18n="page.partners.arche2_mix1">Implementation services (100%)</span><span class="arche-mix-amt">€110k</span></div>
           <div class="arche-mix-bar"><span style="width:78%"></span></div>
-          <div class="arche-mix-row"><span data-i18n="page.partners.arche2_mix2">Localisation + cad2data (55–65%)</span><span class="arche-mix-amt">€26k</span></div>
+          <div class="arche-mix-row"><span data-i18n="page.partners.arche2_mix2_v2">Localisation + cad2data (55%)</span><span class="arche-mix-amt">€26k</span></div>
           <div class="arche-mix-bar"><span style="width:23%"></span></div>
-          <div class="arche-mix-row"><span data-i18n="page.partners.arche2_mix3">OCERP commercial + CWICR (45–55%)</span><span class="arche-mix-amt">€18k</span></div>
+          <div class="arche-mix-row"><span data-i18n="page.partners.arche2_mix3_v2">OCERP commercial + CWICR (45%)</span><span class="arche-mix-amt">€18k</span></div>
           <div class="arche-mix-bar"><span style="width:17%"></span></div>
         </div>
 
@@ -3468,16 +3163,16 @@
         <div class="arche-stats">
           <div><div class="arche-stat-num">18–28</div><div class="arche-stat-label" data-i18n="page.partners.arche_stat_deals">deals / year</div></div>
           <div><div class="arche-stat-num">€320–520k</div><div class="arche-stat-label" data-i18n="page.partners.arche_stat_take">Year-1 take</div></div>
-          <div><div class="arche-stat-num">Founding</div><div class="arche-stat-label" data-i18n="page.partners.arche_stat_tier">target tier</div></div>
+          <div><div class="arche-stat-num">€0</div><div class="arche-stat-label" data-i18n="page.partners.arche_stat_fees">fees, ever</div></div>
           <div><div class="arche-stat-num">2–4</div><div class="arche-stat-label" data-i18n="page.partners.arche_stat_countries">countries served</div></div>
         </div>
 
         <div class="arche-mix">
           <div class="arche-mix-row"><span data-i18n="page.partners.arche3_mix1">Implementation services (100%)</span><span class="arche-mix-amt">€260k</span></div>
           <div class="arche-mix-bar"><span style="width:75%"></span></div>
-          <div class="arche-mix-row"><span data-i18n="page.partners.arche3_mix2">Multi-country localisation (65%)</span><span class="arche-mix-amt">€60k</span></div>
+          <div class="arche-mix-row"><span data-i18n="page.partners.arche3_mix2_v2">Multi-country localisation (55%)</span><span class="arche-mix-amt">€60k</span></div>
           <div class="arche-mix-bar"><span style="width:22%"></span></div>
-          <div class="arche-mix-row"><span data-i18n="page.partners.arche3_mix3">Commercial + cad2data resale (55%)</span><span class="arche-mix-amt">€40k</span></div>
+          <div class="arche-mix-row"><span data-i18n="page.partners.arche3_mix3_v2">Commercial + cad2data resale (45%)</span><span class="arche-mix-amt">€40k</span></div>
           <div class="arche-mix-bar"><span style="width:17%"></span></div>
         </div>
 
@@ -3505,7 +3200,7 @@
     <div class="apply-flow">
       <div class="apply-step">
         <h4 data-i18n="page.partners.howapply_s1_title">Apply</h4>
-        <p data-i18n="page.partners.howapply_s1_body">6-field form: name, company, country, website, current AEC clients, target tier.</p>
+        <p data-i18n="page.partners.howapply_s1_body_v2">5-field form: name, company, country, website, current AEC clients.</p>
       </div>
       <div class="apply-step">
         <h4 data-i18n="page.partners.howapply_s2_title">Intro call</h4>
@@ -3558,11 +3253,9 @@
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
         </span>
         <h3 class="risk-q" data-i18n="page.partners.risk_q2">"What if I don't close any deals in Year 1?"</h3>
-        <p class="risk-a" data-i18n-html="page.partners.risk_a2">
+        <p class="risk-a" data-i18n-html="page.partners.risk_a2_v2">
           You owe nothing. <b>€0 annual fee, no quotas, no minimums.</b>
-          You stay on the Active rate card indefinitely. Founding cohort
-          asks for one pilot in 90 days, but standard Active partnership
-          has no deal target.
+          You stay on the rate card indefinitely. There is no deal target.
         </p>
       </div>
 
@@ -3584,10 +3277,9 @@
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
         </span>
         <h3 class="risk-q" data-i18n="page.partners.risk_q4">"What if you change the terms later?"</h3>
-        <p class="risk-a" data-i18n="page.partners.risk_a4">
-          Founding Partners keep signing-day rates for 12 months. All partners
-          get a rate guarantee on deals already in flight. New rates only
-          apply to deals booked after 90 days' notice.
+        <p class="risk-a" data-i18n="page.partners.risk_a4_v2">
+          All partners get a rate guarantee on deals already in flight. New
+          rates only apply to deals booked after 90 days' notice.
         </p>
       </div>
 
@@ -3608,10 +3300,10 @@
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         </span>
         <h3 class="risk-q" data-i18n="page.partners.risk_q6">"What if my first client hates the product?"</h3>
-        <p class="risk-a" data-i18n="page.partners.risk_a6">
+        <p class="risk-a" data-i18n="page.partners.risk_a6_v2">
           They run the AGPL build for free, so the downside is your hours
-          and their time — not a five-figure licence locked in upfront.
-          If a Founding pilot fails inside 90 days, we run a joint
+          and their time, not a five-figure licence locked in upfront.
+          If a pilot fails inside 90 days, we run a joint
           retrospective and help you unwind it.
         </p>
       </div>
@@ -3626,7 +3318,7 @@
   <div class="wrap">
     <div class="section-head">
       <h2 class="h2" data-i18n-html="page.partners.faq_h2">Still have <em>questions?</em></h2>
-      <p class="section-lede" data-i18n="page.partners.faq_lede">Ten of them, answered straight.</p>
+      <p class="section-lede" data-i18n="page.partners.faq_lede_v2">Nine of them, answered straight.</p>
     </div>
     <div class="faq-list">
       <details class="faq-item">
@@ -3684,19 +3376,6 @@
       </details>
       <details class="faq-item">
         <summary class="faq-q">
-          <span data-i18n="page.partners.faq_q5">What's the difference between a Founding Partner and an Active Partner?</span>
-          <span class="faq-chev"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>
-        </summary>
-        <div class="faq-a" data-i18n-html="page.partners.faq_a5">
-          Founding Partners are the first 3 signatories. They get the Founding
-          rate card from day 0 — no ladder climb, no fees, direct line to
-          the core team. Active is the standard partnership for everyone
-          else. <strong>Founding cohort closes</strong> when 3 partners sign
-          or on 31 December 2026, whichever comes first.
-        </div>
-      </details>
-      <details class="faq-item">
-        <summary class="faq-q">
           <span data-i18n="page.partners.faq_q6">Do I need to be a developer or a software house to qualify?</span>
           <span class="faq-chev"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>
         </summary>
@@ -3735,12 +3414,12 @@
           <span data-i18n="page.partners.faq_q9">How is this different from being an Odoo partner?</span>
           <span class="faq-chev"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>
         </summary>
-        <div class="faq-a" data-i18n-html="page.partners.faq_a9">
+        <div class="faq-a" data-i18n-html="page.partners.faq_a9_v2">
           Three concrete differences: (1) <strong>construction-native product</strong>
-          (BOQ, IFC, schedule, AI takeoff) — no retrofit; (2) <strong>higher
-          margins</strong> — up to 65% on localisation packs and cad2data converters,
-          55% on commercial OpenConstructionERP / CWICR; (3) <strong>no annual
-          partnership fee</strong> at any tier; (4) DDC explicitly does not compete on
+          (BOQ, IFC, schedule, AI takeoff), no retrofit; (2) <strong>higher
+          margins</strong>, 55% on localisation packs and cad2data converters,
+          45% on commercial OpenConstructionERP / CWICR; (3) <strong>no annual
+          partnership fee</strong>; (4) DDC explicitly does not compete on
           services.
         </div>
       </details>
@@ -3749,11 +3428,10 @@
           <span data-i18n="page.partners.faq_q10">What if I never close a deal — do I lose my partnership?</span>
           <span class="faq-chev"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>
         </summary>
-        <div class="faq-a" data-i18n-html="page.partners.faq_a10">
-          Nothing punitive. <strong>You stay on the Active rate card indefinitely</strong> —
-          there's no demotion, no fee clawback, no expiry. If activity slows,
-          we work with you on lead-share or co-sell. Founding partners keep
-          Founding rates as long as they have at least one live client.
+        <div class="faq-a" data-i18n-html="page.partners.faq_a10_v2">
+          Nothing punitive. <strong>You stay on the rate card indefinitely.</strong>
+          There's no demotion, no fee clawback, no expiry. If activity slows,
+          we work with you on lead-share or co-sell.
         </div>
       </details>
     </div>
@@ -3769,7 +3447,7 @@
 
       <!-- LEFT RAIL: what happens next + trust -->
       <div class="apply-rail">
-        <div class="apply-rail-eyebrow" data-i18n="page.partners.apply_rail_eyebrow">Founding cohort · 0 of 3 claimed</div>
+        <div class="apply-rail-eyebrow" data-i18n="page.partners.apply_rail_eyebrow_v2">Partner program · open to apply</div>
         <h2 data-i18n-html="page.partners.apply_rail_h2">Apply in <em>six fields.</em></h2>
         <p class="apply-rail-lede" data-i18n="page.partners.apply_rail_lede">
           We read every application personally.
@@ -3850,14 +3528,6 @@
               <textarea name="brief" required placeholder="e.g. We are a Berlin-based BIM consultancy with 12 SMB GC clients. First target: a €22k pilot for a small residential developer in Q3 2026..." data-i18n-attr="placeholder:page.partners.form_ph_brief"></textarea>
             </label>
             <label>
-              <span data-i18n="page.partners.form_label_tier">Target tier</span>
-              <select name="target_tier" required>
-                <option value="founding" selected data-i18n="page.partners.form_tier_founding">Founding Partner (first 3, top rates)</option>
-                <option value="active" data-i18n="page.partners.form_tier_active">Active Partner (standard rates)</option>
-                <option value="not_sure" data-i18n="page.partners.form_tier_notsure">Not sure — let's discuss</option>
-              </select>
-            </label>
-            <label>
               <span data-i18n="page.partners.form_label_audience">Audience type</span>
               <select name="audience_type">
                 <option value="partner" data-i18n="page.partners.form_aud_partner">Implementation / reseller partner</option>
@@ -3895,10 +3565,9 @@
       <a class="btn btn-primary" href="#apply" data-i18n="page.partners.footer_cta_apply">Apply as a partner</a>
       <a class="btn btn-ghost" href="https://github.com/datadrivenconstruction/OpenConstructionERP" target="_blank" rel="noopener" data-i18n="page.partners.footer_cta_github">View on GitHub</a>
     </div>
-    <p class="commitment" data-i18n="page.partners.footer_cta_commitment">
+    <p class="commitment" data-i18n="page.partners.footer_cta_commitment_v2">
       Written commitment in every partnership agreement: DDC will never compete with
-      partners on implementation services. Tiers reviewed annually, never demoted in
-      the first year. €0 partnership fee at every tier, forever.
+      partners on implementation services. €0 partnership fee, forever.
     </p>
   </div>
 </section>

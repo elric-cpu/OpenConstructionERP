@@ -16,7 +16,7 @@
 (function i18n() {
   // Bumped on every content change so updated copy reaches users
   // without a hard refresh. Keep in sync with index.html.
-  var LOCALE_VERSION = '20260605a';
+  var LOCALE_VERSION = '20260605b';
 
   var SUPPORTED = ['en','de','fr','es','it','pt','nl','pl','cs','ru','bg','tr','sv','no','fi','da','ar','zh','ja','ko'];
   var LANG_NAMES = { en:'English', de:'Deutsch', fr:'Français', es:'Español', it:'Italiano', pt:'Português', nl:'Nederlands', pl:'Polski', cs:'Čeština', ru:'Русский', bg:'Български', tr:'Türkçe', sv:'Svenska', no:'Norsk', fi:'Suomi', da:'Dansk', ar:'العربية', zh:'中文', ja:'日本語', ko:'한국어' };
