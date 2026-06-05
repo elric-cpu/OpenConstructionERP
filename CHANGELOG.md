@@ -5,6 +5,13 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.8.1] - 2026-06-05
+
+### Fixed
+
+- The Windows desktop app installed and then did nothing when you launched it. No window, no server, no local address, just nothing. The cause was the database driver trying to open an encrypted connection to the app's own local database using the security libraries packed inside the desktop build, which failed and stopped the backend before it ever came up. The app talks to its embedded database over local loopback only, where encryption is neither used nor needed, so it no longer attempts that handshake there. The same fix applies on macOS and Linux. An external PostgreSQL set through DATABASE_URL keeps its normal encrypted connection.
+- The desktop launcher no longer fails silently. If the backend cannot start for any reason it now shows a plain message on the loading screen instead of leaving you with a blank or missing window, and it always writes a full startup log to a file in your home folder under .openestimate so the problem can be diagnosed and sent in. First-run setup, which builds the local database the first time you open the app, is given more time on a slow machine before it is treated as a failure.
+
 ## [6.8.0] - 2026-06-04
 
 ### Fixed

@@ -238,6 +238,30 @@ def create_engine_from_settings():
     kwargs["pool_pre_ping"] = True
     kwargs["pool_recycle"] = settings.database_pool_recycle
 
+    # Disable TLS for loopback PostgreSQL.
+    #
+    # asyncpg defaults to sslmode "prefer", which eagerly builds an
+    # ``ssl.SSLContext`` (via ``ssl.create_default_context``) while parsing the
+    # connect arguments, *before* it ever talks to the server. In a frozen
+    # PyInstaller build the bundled OpenSSL cannot initialise its default verify
+    # paths, so that call raises ``ssl.SSLError: [SSL] system lib`` and kills
+    # startup in the very first migration connection. This is the exact reason
+    # the desktop app "did nothing": the embedded cluster started fine but the
+    # first async connection blew up on SSL.
+    #
+    # The embedded cluster (and any local PostgreSQL) is plaintext on loopback
+    # and never negotiates TLS, so explicitly turning SSL off is both correct
+    # and what avoids the broken-OpenSSL path entirely. Remote hosts keep
+    # asyncpg's default behaviour so an external TLS PostgreSQL still works.
+    from urllib.parse import urlsplit
+
+    try:
+        host = (urlsplit(url).hostname or "").lower()
+    except ValueError:
+        host = ""
+    if host in ("", "localhost", "127.0.0.1", "::1"):
+        kwargs["connect_args"] = {**kwargs.get("connect_args", {}), "ssl": False}
+
     # Test mode: use NullPool so every checkout opens a fresh asyncpg
     # connection on the current event loop. pytest-asyncio runs each test in its
     # own loop, and a pooled asyncpg connection created on one loop and reused on
