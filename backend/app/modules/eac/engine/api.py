@@ -332,9 +332,11 @@ async def cancel(
         return False
     if tenant_id is not None and run_row.tenant_id != tenant_id:
         return False
-    if run_row.status in {"success", "failed", "cancelled"}:
+    if run_row.status in {"success", "failed", "partial", "cancelled"}:
         # Terminal states — accept the request idempotently when the run
-        # is already cancelled, refuse otherwise.
+        # is already cancelled, refuse otherwise. ``partial`` is terminal too
+        # (the run finished, just with mixed pass/fail or spilled results), so
+        # it must never be overwritten with ``cancelled``.
         return run_row.status == "cancelled"
 
     _request_cancel(run_id)

@@ -283,6 +283,17 @@ class ComplianceDocService:
         # If status not explicitly set in the patch, recompute it from
         # the (possibly updated) date window.
         explicit_status = fields.get("status")
+        # FSM guard: ``cancelled`` / ``void`` are terminal manual states.
+        # ``recompute_status`` already preserves them on the auto-derive
+        # path, but an explicit ``status`` in the patch body would bypass
+        # that and let a doc be un-cancelled (e.g. ``cancelled`` → ``active``).
+        # Mirror the terminal-state contract here so the explicit path can't
+        # break it.
+        if explicit_status is not None and doc.status in _TERMINAL_STATUSES and explicit_status != doc.status:
+            raise HTTPException(
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+                detail=("Cannot transition out of a terminal status."),
+            )
         if explicit_status is None:
             fields["status"] = recompute_status(
                 today=self._today(),

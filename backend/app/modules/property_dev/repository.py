@@ -650,7 +650,16 @@ class ReservationRepository(_BaseRepo):
         return list((await self.session.execute(stmt)).scalars().all())
 
     async def next_sequence_for_plot(self, plot_id: uuid.UUID) -> int:
-        """Return next per-plot reservation sequence (max+1)."""
+        """Return next per-plot reservation sequence (max+1).
+
+        Locks the parent plot row (``SELECT ... FOR UPDATE``) before
+        counting so two concurrent reservation creates on the same plot
+        cannot read the same count and generate a duplicate
+        ``reservation_number`` (which would otherwise collide on the
+        ``uq_oe_property_dev_reservation_plot_number`` unique constraint).
+        The lock is released when the surrounding transaction commits.
+        """
+        await self.session.execute(select(Plot.id).where(Plot.id == plot_id).with_for_update())
         stmt = select(func.count()).select_from(Reservation).where(Reservation.plot_id == plot_id)
         existing = (await self.session.execute(stmt)).scalar_one()
         return int(existing) + 1
@@ -724,6 +733,17 @@ class SalesContractRepository(_BaseRepo):
         return list((await self.session.execute(stmt)).scalars().all())
 
     async def next_sequence_for_plot(self, plot_id: uuid.UUID) -> int:
+        """Return next per-plot contract sequence (max+1).
+
+        Locks the parent plot row (``SELECT ... FOR UPDATE``) before
+        counting so two concurrent SPA creates on the same plot cannot
+        read the same count and generate a duplicate ``contract_number``
+        (which would otherwise collide on the
+        ``uq_oe_property_dev_sales_contract_plot_number`` unique
+        constraint). The lock is released when the surrounding
+        transaction commits.
+        """
+        await self.session.execute(select(Plot.id).where(Plot.id == plot_id).with_for_update())
         stmt = select(func.count()).select_from(SalesContract).where(SalesContract.plot_id == plot_id)
         existing = (await self.session.execute(stmt)).scalar_one()
         return int(existing) + 1

@@ -338,6 +338,32 @@ export function getPackage(id: string): Promise<BidPackage> {
   return apiGet<BidPackage>(`/v1/bid-management/bid-packages/${id}`);
 }
 
+/* ── Scope line items ──────────────────────────────────────────────────── */
+
+export interface CreateLineItemPayload {
+  package_id: string;
+  code?: string;
+  description?: string;
+  unit?: string;
+  quantity?: number | string;
+  is_mandatory?: boolean;
+  order_index?: number;
+}
+
+export function listLineItems(packageId: string): Promise<BidPackageLineItem[]> {
+  return apiGet<BidPackageLineItem[]>(
+    `/v1/bid-management/bid-package-line-items/?package_id=${packageId}`,
+  );
+}
+
+export function createLineItem(data: CreateLineItemPayload): Promise<BidPackageLineItem> {
+  return apiPost<BidPackageLineItem>('/v1/bid-management/bid-package-line-items/', data);
+}
+
+export function deleteLineItem(id: string): Promise<void> {
+  return apiDelete(`/v1/bid-management/bid-package-line-items/${id}`);
+}
+
 export function createPackage(data: CreatePackagePayload): Promise<BidPackage> {
   return apiPost<BidPackage>('/v1/bid-management/bid-packages/', data);
 }
@@ -438,6 +464,39 @@ export function createSubmission(data: {
 
 export function withdrawSubmission(id: string): Promise<BidSubmission> {
   return apiPost<BidSubmission>(`/v1/bid-management/submissions/${id}/withdraw`, {});
+}
+
+/* ── Submission lines (priced) ─────────────────────────────────────────── */
+
+export interface CreateSubmissionLinePayload {
+  submission_id: string;
+  line_item_id: string;
+  unit_price?: number | string;
+  quantity_priced?: number | string;
+  inclusion_status?: string;
+  comment?: string;
+}
+
+export function listSubmissionLines(submissionId: string): Promise<BidSubmissionLine[]> {
+  return apiGet<BidSubmissionLine[]>(
+    `/v1/bid-management/submission-lines/?submission_id=${submissionId}`,
+  );
+}
+
+export function createSubmissionLine(
+  data: CreateSubmissionLinePayload,
+): Promise<BidSubmissionLine> {
+  return apiPost<BidSubmissionLine>('/v1/bid-management/submission-lines/', data);
+}
+
+export function bulkCreateSubmissionLines(
+  submissionId: string,
+  items: Omit<CreateSubmissionLinePayload, 'submission_id'>[],
+): Promise<BidSubmissionLine[]> {
+  return apiPost<BidSubmissionLine[]>(
+    `/v1/bid-management/submissions/${submissionId}/lines/bulk`,
+    { items: items.map((i) => ({ ...i, submission_id: submissionId })) },
+  );
 }
 
 /* ── Q & A ─────────────────────────────────────────────────────────────── */

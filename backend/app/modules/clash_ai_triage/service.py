@@ -482,12 +482,24 @@ class ClashTriageService:
                         # closed session.
                         worker_session.expunge(row)
                         results_by_id[cid] = row
-                except (ClashSubjectNotFound, ClashTriageUnavailable):
-                    raise  # Surface configuration / not-found errors fast.
+                except ClashTriageUnavailable:
+                    # Batch-wide configuration error (no AI provider key): no
+                    # clash in the batch can succeed, so surface it. The router
+                    # translates this to 503.
+                    raise
                 except Exception as exc:  # noqa: BLE001 — per-clash failure
+                    # Per-clash failures (including a missing/not-found clash)
+                    # are logged and skipped, per the method contract.
                     logger.warning("Batch triage skipped clash %s: %s", cid, exc)
 
-        await asyncio.gather(*[_one(cid) for cid in clash_ids])
+        # ``return_exceptions=True`` so a single worker raising
+        # ``ClashTriageUnavailable`` does not cancel the other in-flight
+        # workers and discard rows that already completed. We surface the
+        # config error afterwards (preserving the router's 503 path).
+        gathered = await asyncio.gather(*[_one(cid) for cid in clash_ids], return_exceptions=True)
+        for outcome in gathered:
+            if isinstance(outcome, ClashTriageUnavailable):
+                raise outcome
         # Preserve input order in the result list.
         return [results_by_id[cid] for cid in clash_ids if cid in results_by_id]
 

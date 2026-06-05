@@ -151,6 +151,9 @@ const InspectionsPage = lazy(() =>
 const NCRPage = lazy(() =>
   import('@/features/ncr/NCRPage').then((m) => ({ default: m.NCRPage }))
 );
+const MoCPage = lazy(() =>
+  import('@/features/moc/MoCPage').then((m) => ({ default: m.MoCPage }))
+);
 const ReportingPage = lazy(() =>
   import('@/features/reporting/ReportingPage').then((m) => ({ default: m.ReportingPage }))
 );
@@ -874,6 +877,8 @@ export default function App() {
         <Route path="/inspections" element={<P title="Inspections"><InspectionsPage /></P>} />
         <Route path="/projects/:projectId/ncr" element={<P title="NCR"><NCRPage /></P>} />
         <Route path="/ncr" element={<P title="NCR"><NCRPage /></P>} />
+        <Route path="/projects/:projectId/moc" element={<P title="Management of Change"><MoCPage /></P>} />
+        <Route path="/moc" element={<P title="Management of Change"><MoCPage /></P>} />
 
         <Route path="/users" element={<P title="User Management"><UserManagementPage /></P>} />
         <Route path="/admin/audit-log" element={<P title="Audit Log"><AuditLogPage /></P>} />

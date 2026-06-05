@@ -144,6 +144,11 @@ export interface StageHistory {
   created_at: string;
 }
 
+export interface CurrencyTotal {
+  currency: string;
+  total: number | string;
+}
+
 export interface CrmDashboard {
   open_opportunities: number;
   weighted_value: number | string;
@@ -151,15 +156,46 @@ export interface CrmDashboard {
   leads_open: number;
   activities_due_soon: number;
   win_rate_30d: number | string;
-  by_stage: Record<string, { name: string; count: number; value: number }>;
+  /** Keyed by stage_id. Backend buckets carry count + total + weighted
+   *  (no embedded stage name — resolve names from the stages list). */
+  by_stage: Record<
+    string,
+    { count: number; total: number | string; weighted: number | string }
+  >;
+  /** Per-currency truth (never blends ISO codes). Use these for display. */
+  by_currency?: CurrencyTotal[];
+  weighted_by_currency?: CurrencyTotal[];
+  mixed_currency?: boolean;
+}
+
+export interface WinLossAnalytics {
+  period_start: string | null;
+  period_end: string | null;
+  won_count: number;
+  lost_count: number;
+  abandoned_count: number;
+  win_rate: number | string;
+  average_sales_cycle_days: number;
+  lost_reasons_breakdown: Record<string, number>;
+  won_value: number | string;
+  lost_value: number | string;
+  won_value_by_currency?: CurrencyTotal[];
+  lost_value_by_currency?: CurrencyTotal[];
+  mixed_currency?: boolean;
 }
 
 export interface PipelineMetrics {
   open_count: number;
   weighted_value: number | string;
   total_value: number | string;
-  by_stage: Record<string, { name: string; count: number; value: number }>;
+  by_stage: Record<
+    string,
+    { count: number; total: number | string; weighted: number | string }
+  >;
   win_rate_30d: number | string;
+  by_currency?: CurrencyTotal[];
+  weighted_by_currency?: CurrencyTotal[];
+  mixed_currency?: boolean;
 }
 
 /* ── Payloads ─────────────────────────────────────────────────────────── */
@@ -474,4 +510,11 @@ export function getCrmDashboard(params?: { owner_user_id?: string }): Promise<Cr
 
 export function getPipelineMetrics(): Promise<PipelineMetrics> {
   return apiGet<PipelineMetrics>('/v1/crm/pipeline/metrics');
+}
+
+export function getWinLossAnalytics(params?: {
+  period_start?: string;
+  period_end?: string;
+}): Promise<WinLossAnalytics> {
+  return apiGet<WinLossAnalytics>(withQs('/v1/crm/analytics/win-loss', params ?? {}));
 }

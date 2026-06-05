@@ -633,6 +633,26 @@ async def run_report(
 # ── Schedules ─────────────────────────────────────────────────────────
 
 
+@router.get(
+    "/report-schedules",
+    response_model=list[ReportScheduleRead],
+    dependencies=[Depends(RequirePermission("bi.report.read"))],
+)
+async def list_schedules(
+    user_id: CurrentUserId,
+    service: BIDashboardsService = Depends(_service),
+) -> list[ReportScheduleRead]:
+    """List every schedule attached to a report the caller can see.
+
+    Ownership is inherited from the parent report (own + shared
+    global/role), matching ``GET /reports``. Until this endpoint existed
+    the Schedules tab could only render fabricated "On demand / —" rows;
+    now it shows real frequency, next-run and recipient counts.
+    """
+    rows = await service.list_schedules_visible_to(owner_user_id=_user_uuid(user_id))
+    return [ReportScheduleRead.model_validate(r) for r in rows]
+
+
 @router.post(
     "/report-schedules",
     response_model=ReportScheduleRead,

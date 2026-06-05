@@ -112,6 +112,14 @@ export interface TagFacet {
   count: number;
 }
 
+/** Aggregate stats from GET /v1/contacts/stats/. */
+export interface ContactStats {
+  total: number;
+  by_type: Record<string, number>;
+  by_country_top10: Record<string, number>;
+  with_expiring_prequalification: number;
+}
+
 export interface CreateContactPayload {
   contact_type: ContactType;
   first_name?: string;
@@ -150,6 +158,11 @@ export async function fetchContacts(filters?: ContactFilters): Promise<Contact[]
 export async function fetchContactTags(): Promise<TagFacet[]> {
   const res = await apiGet<{ items: TagFacet[] }>(`/v1/contacts/tags/`);
   return res.items ?? [];
+}
+
+/** Aggregate directory stats (total, by-type, top countries, expiring prequal). */
+export async function fetchContactStats(): Promise<ContactStats> {
+  return apiGet<ContactStats>(`/v1/contacts/stats/`);
 }
 
 export async function createContact(data: CreateContactPayload): Promise<Contact> {

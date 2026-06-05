@@ -238,6 +238,31 @@ class PortalMagicLinkRepository:
         await self.session.flush()
         self.session.expire_all()
 
+    async def consume(self, link_id: uuid.UUID, *, consumed_at: datetime) -> bool:
+        """Atomically mark a magic link consumed.
+
+        Guards against the consume-then-create race: only the first request
+        whose ``consumed_at`` is still ``NULL`` wins. Mirrors the conditional
+        ``UPDATE ... WHERE ... IS NULL`` pattern used by
+        :meth:`PortalSessionRepository.revoke_all_for_user`. Returns ``True``
+        when this call flipped the row (i.e. it was previously unconsumed),
+        ``False`` if another concurrent request already consumed it.
+        """
+        stmt = (
+            update(PortalMagicLink)
+            .where(
+                and_(
+                    PortalMagicLink.id == link_id,
+                    PortalMagicLink.consumed_at.is_(None),
+                )
+            )
+            .values(consumed_at=consumed_at)
+        )
+        result = await self.session.execute(stmt)
+        await self.session.flush()
+        self.session.expire_all()
+        return bool(result.rowcount)
+
 
 class PortalNotificationRepository:
     """CRUD + lookup helpers for :class:`PortalNotification`."""

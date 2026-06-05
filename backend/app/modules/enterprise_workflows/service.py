@@ -170,14 +170,27 @@ class WorkflowService:
         logger.info("Workflow created: %s (%s)", workflow.name, workflow.entity_type)
         return workflow
 
-    async def get_workflow(self, workflow_id: uuid.UUID) -> ApprovalWorkflow:
-        """Get workflow by ID. Raises 404 if not found."""
+    async def get_workflow(
+        self,
+        workflow_id: uuid.UUID,
+        user_id: str | None = None,
+    ) -> ApprovalWorkflow:
+        """Get workflow by ID. Raises 404 if not found.
+
+        When *user_id* is supplied (public read path), enforce project-scoped
+        access via ``_verify_workflow_project_access`` so a caller outside the
+        workflow's project gets a 404 and never learns it exists. Internal
+        callers fetch with ``user_id=None`` and run their own access check
+        afterwards, so the helper stays a plain 404-fetch for them.
+        """
         workflow = await self.workflows.get(workflow_id)
         if workflow is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Workflow not found",
             )
+        if user_id is not None:
+            await self._verify_workflow_project_access(workflow, user_id)
         return workflow
 
     async def list_workflows(
@@ -186,10 +199,20 @@ class WorkflowService:
         project_id: uuid.UUID | None = None,
         entity_type: str | None = None,
         is_active: bool | None = None,
+        user_id: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[ApprovalWorkflow], int]:
-        """List workflows with filters."""
+        """List workflows with filters.
+
+        When a ``project_id`` filter is supplied with a *user_id* (public read
+        path), verify project-scoped access first so a caller cannot enumerate
+        workflows for a project they are not a member of (404 on denial).
+        """
+        if project_id is not None and user_id is not None:
+            from app.dependencies import verify_project_access
+
+            await verify_project_access(project_id, str(user_id), self.session)
         return await self.workflows.list(
             project_id=project_id,
             entity_type=entity_type,
@@ -262,14 +285,28 @@ class WorkflowService:
         )
         return request
 
-    async def get_request(self, request_id: uuid.UUID) -> ApprovalRequest:
-        """Get approval request by ID. Raises 404 if not found."""
+    async def get_request(
+        self,
+        request_id: uuid.UUID,
+        user_id: str | None = None,
+    ) -> ApprovalRequest:
+        """Get approval request by ID. Raises 404 if not found.
+
+        When *user_id* is supplied (public read path), load the owning
+        workflow and enforce project-scoped access so a caller outside the
+        workflow's project gets a 404 and never learns the request exists.
+        Internal callers fetch with ``user_id=None`` and run their own access
+        check afterwards.
+        """
         request = await self.requests.get(request_id)
         if request is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Approval request not found",
             )
+        if user_id is not None:
+            workflow = await self.get_workflow(request.workflow_id)
+            await self._verify_workflow_project_access(workflow, user_id)
         return request
 
     async def list_requests(
@@ -278,10 +315,20 @@ class WorkflowService:
         workflow_id: uuid.UUID | None = None,
         entity_type: str | None = None,
         request_status: str | None = None,
+        user_id: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[ApprovalRequest], int]:
-        """List approval requests with filters."""
+        """List approval requests with filters.
+
+        When a ``workflow_id`` filter is supplied with a *user_id* (public read
+        path), load the owning workflow and verify project-scoped access first
+        so a caller cannot enumerate approval requests for a workflow whose
+        project they are not a member of (404 on denial).
+        """
+        if workflow_id is not None and user_id is not None:
+            workflow = await self.get_workflow(workflow_id)
+            await self._verify_workflow_project_access(workflow, user_id)
         return await self.requests.list(
             workflow_id=workflow_id,
             entity_type=entity_type,

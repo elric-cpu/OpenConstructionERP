@@ -266,6 +266,8 @@ async def list_bids(
     return BidListResponse(
         items=[RFQBidResponse.model_validate(b) for b in items],
         total=total,
+        offset=offset,
+        limit=limit,
     )
 
 

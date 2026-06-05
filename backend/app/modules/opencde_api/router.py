@@ -240,7 +240,7 @@ async def bcf_update_topic(
 ) -> BCFTopic:
     """Update a BCF topic (caller must be able to access the project)."""
     await verify_project_access(project_id, user_id, session)
-    return await service.update_topic(project_id, topic_guid, data)
+    return await service.update_topic(project_id, topic_guid, data, uuid.UUID(user_id))
 
 
 # ══════════════════════════════════════════════════════════════════════════

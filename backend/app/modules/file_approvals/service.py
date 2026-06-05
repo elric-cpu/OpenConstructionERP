@@ -518,7 +518,13 @@ class ApprovalService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="No stamped artifact for this workflow",
             )
-        data = await get_storage_backend().get(workflow.stamped_artifact_path)
+        try:
+            data = await get_storage_backend().get(workflow.stamped_artifact_path)
+        except FileNotFoundError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Stamped artifact is missing from storage",
+            ) from exc
         if workflow.stamped_artifact_path.endswith(".pdf"):
             return data, "application/pdf"
         return data, "application/json"

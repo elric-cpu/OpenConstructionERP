@@ -135,7 +135,12 @@ class MoCEntryResponse(BaseModel):
     variation_request_id: uuid.UUID | None
     variation_order_id: uuid.UUID | None
     change_order_id: uuid.UUID | None
-    metadata: dict[str, Any]
+    # The ORM stores this under the ``metadata_`` attribute (``metadata`` is
+    # reserved by SQLAlchemy declarative for the MetaData registry). Read from
+    # the real attribute via validation_alias, mirroring NCR/procurement, so the
+    # stored data actually reaches the client instead of silently coercing the
+    # inherited MetaData object to {}.
+    metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
     impacts: list[MoCImpactResponse] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}

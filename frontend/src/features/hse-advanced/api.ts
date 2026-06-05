@@ -357,11 +357,47 @@ export const fetchJSAs = (projectId: string) =>
 export const createJSA = (payload: CreateJSAPayload) =>
   apiPost<JobSafetyAnalysis>(`${BASE}/jsa/`, payload);
 
+/* JSA lifecycle FSM — draft → under_review (submit) → approved → active →
+ * archived (router.py:279-340). The endpoints take no body. */
+export const submitJSA = (id: string) =>
+  apiPost<JobSafetyAnalysis>(`${BASE}/jsa/${id}/submit`, {});
+export const approveJSA = (id: string) =>
+  apiPost<JobSafetyAnalysis>(`${BASE}/jsa/${id}/approve`, {});
+export const activateJSA = (id: string) =>
+  apiPost<JobSafetyAnalysis>(`${BASE}/jsa/${id}/activate`, {});
+export const archiveJSA = (id: string) =>
+  apiPost<JobSafetyAnalysis>(`${BASE}/jsa/${id}/archive`, {});
+
 export const fetchPermits = (projectId: string) =>
   apiGet<PermitToWork[] | { items: PermitToWork[] }>(`${BASE}/permits/?project_id=${projectId}`);
 
 export const createPermit = (payload: CreatePermitPayload) =>
   apiPost<PermitToWork>(`${BASE}/permits/`, payload);
+
+/* Permit lifecycle FSM — requested → approved → active →
+ * suspended/closed/cancelled (router.py:419-478). */
+export interface PermitPrerequisites {
+  prereq_jsa_approved?: boolean | null;
+  prereq_supervisor_present?: boolean | null;
+  prereq_fire_watch_assigned?: boolean | null;
+  prereq_extinguisher_present?: boolean | null;
+  prereq_atmospheric_test_passed?: boolean | null;
+}
+
+export const approvePermit = (id: string, conditions = '') =>
+  apiPost<PermitToWork>(`${BASE}/permits/${id}/approve`, { conditions });
+export const activatePermit = (id: string) =>
+  apiPost<PermitToWork>(`${BASE}/permits/${id}/activate`, {});
+export const suspendPermit = (id: string) =>
+  apiPost<PermitToWork>(`${BASE}/permits/${id}/suspend`, {});
+export const closePermit = (
+  id: string,
+  body: { closure_checklist_passed?: boolean; closure_notes?: string } = {},
+) => apiPost<PermitToWork>(`${BASE}/permits/${id}/close`, body);
+export const cancelPermit = (id: string) =>
+  apiPost<PermitToWork>(`${BASE}/permits/${id}/cancel`, {});
+export const updatePermitPrerequisites = (id: string, body: PermitPrerequisites) =>
+  apiPatch<PermitToWork>(`${BASE}/permits/${id}/prerequisites`, body);
 
 export const fetchToolboxTalks = (projectId: string) =>
   apiGet<ToolboxTalk[] | { items: ToolboxTalk[] }>(
@@ -388,6 +424,54 @@ export const fetchAudits = (projectId: string) =>
 export const createAudit = (payload: CreateAuditPayload) =>
   apiPost<SafetyAudit>(`${BASE}/audits/`, payload);
 
+/* -- Audit findings + completion (router.py:748-793) --------------------- */
+
+export type AuditFindingCategory =
+  | 'PPE'
+  | 'permit'
+  | 'housekeeping'
+  | 'electrical'
+  | 'fire'
+  | 'environmental'
+  | 'other';
+export type AuditFindingSeverity = 'low' | 'med' | 'high' | 'critical';
+
+// Matches schemas.py AuditFindingResponse.
+export interface AuditFinding {
+  id: string;
+  audit_id: string;
+  item_description: string;
+  category: AuditFindingCategory;
+  severity: AuditFindingSeverity;
+  is_passed: boolean;
+  evidence_url?: string | null;
+  corrective_action_ref?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// AuditFindingCreate (schemas.py AuditFindingPayload). is_passed scores the
+// audit; failed findings drag the score down.
+export interface CreateAuditFindingPayload {
+  item_description: string;
+  category?: AuditFindingCategory;
+  severity?: AuditFindingSeverity;
+  is_passed?: boolean;
+  evidence_url?: string | null;
+}
+
+export const fetchAuditFindings = (auditId: string) =>
+  apiGet<AuditFinding[] | { items: AuditFinding[] }>(`${BASE}/audits/${auditId}/findings`);
+
+export const createAuditFinding = (auditId: string, payload: CreateAuditFindingPayload) =>
+  apiPost<AuditFinding>(`${BASE}/audits/${auditId}/findings`, payload);
+
+export const deleteAuditFinding = (findingId: string) =>
+  apiDelete(`${BASE}/audit-findings/${findingId}`);
+
+export const completeAudit = (auditId: string) =>
+  apiPost<SafetyAudit>(`${BASE}/audits/${auditId}/complete`, {});
+
 export const fetchCAPAs = (projectId: string) =>
   apiGet<CorrectiveAction[] | { items: CorrectiveAction[] }>(
     `${BASE}/capas/?project_id=${projectId}`,
@@ -395,6 +479,41 @@ export const fetchCAPAs = (projectId: string) =>
 
 export const createCAPA = (payload: CreateCAPAPayload) =>
   apiPost<CorrectiveAction>(`${BASE}/capas/`, payload);
+
+/* -- CAPA lifecycle + 5-Whys + effectiveness (router.py:865-909,1163-1194) */
+
+export type RootCauseCategory =
+  | 'manpower'
+  | 'method'
+  | 'material'
+  | 'machine'
+  | 'environment'
+  | 'management'
+  | 'other';
+
+export interface FiveWhyStep {
+  why: string;
+  answer: string;
+}
+
+export const completeCAPA = (id: string, verification_notes = '') =>
+  apiPost<CorrectiveAction>(`${BASE}/capas/${id}/complete`, { verification_notes });
+
+export const escalateCAPA = (id: string) =>
+  apiPost<CorrectiveAction>(`${BASE}/capas/${id}/escalate`, {});
+
+export const cancelCAPA = (id: string) =>
+  apiPost<CorrectiveAction>(`${BASE}/capas/${id}/cancel`, {});
+
+export const setCAPAFiveWhys = (
+  id: string,
+  body: { steps: FiveWhyStep[]; root_cause_category?: RootCauseCategory | null },
+) => apiPost<CorrectiveAction>(`${BASE}/capas/${id}/five-whys`, body);
+
+export const verifyCAPAEffectiveness = (
+  id: string,
+  body: { effective: boolean; notes?: string },
+) => apiPost<CorrectiveAction>(`${BASE}/capas/${id}/effectiveness`, body);
 
 export const fetchCertifications = () =>
   apiGet<SafetyCertification[] | { items: SafetyCertification[] }>(`${BASE}/certifications/`);

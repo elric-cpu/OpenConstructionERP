@@ -35,7 +35,12 @@ import { ConfirmDialog, WideModal } from '@/shared/ui';
 import { useToastStore } from '@/stores/useToastStore';
 import { apiGet } from '@/shared/lib/api';
 import { installYaml, previewYaml } from './api';
-import type { PreviewYamlResponse, ParsedRule, RuleSeverity } from './types';
+import type {
+  PreviewYamlResponse,
+  ParsedRule,
+  RuleSeverity,
+  DryRunElementResult,
+} from './types';
 import { YamlEditor } from './YamlEditor';
 import type { SeedPack } from './SEED_PACKS';
 
@@ -76,6 +81,58 @@ function severityLabelKey(s: RuleSeverity): string {
     case 'info':
       return 'rulePacks.severity_info';
   }
+}
+
+/** Renders the actual failing elements for one rule in the drilldown.
+ *  The backend dry-run already returns one row per failing (rule, element)
+ *  pair with `element_id` + an optional `message`, so we list them here
+ *  instead of promising a non-existent click-through. Caps the rendered
+ *  list at 50 rows to keep the panel light. */
+function FailingElementsList({
+  rows,
+  total,
+}: {
+  rows: DryRunElementResult[];
+  total: number;
+}) {
+  const { t } = useTranslation();
+  const MAX = 50;
+  const shown = rows.slice(0, MAX);
+  return (
+    <div data-testid="failing-elements-list">
+      <p className="mb-1.5 font-medium text-content-secondary">
+        {t('bim_requirements.failing_elements_heading', {
+          defaultValue: '{{count}} element(s) failed this rule:',
+          count: total,
+        })}
+      </p>
+      <ul className="max-h-40 space-y-0.5 overflow-y-auto rounded border border-border-light bg-surface-primary p-1.5">
+        {shown.map((r, i) => (
+          <li
+            key={`${r.element_id}-${i}`}
+            className="flex items-baseline gap-2 px-1 py-0.5"
+            data-testid="failing-element-row"
+          >
+            <code className="shrink-0 font-mono text-[10px] text-content-primary">
+              {r.element_id}
+            </code>
+            {r.message && (
+              <span className="truncate text-[10px] text-content-tertiary">{r.message}</span>
+            )}
+          </li>
+        ))}
+      </ul>
+      {total > shown.length && (
+        <p className="mt-1 text-[10px] text-content-tertiary">
+          {t('bim_requirements.failing_elements_truncated', {
+            defaultValue: 'Showing first {{shown}} of {{total}} failing elements.',
+            shown: shown.length,
+            total,
+          })}
+        </p>
+      )}
+    </div>
+  );
 }
 
 export function RulePackPreviewModal({
@@ -221,6 +278,20 @@ export function RulePackPreviewModal({
       if (r.passed) acc.pass += 1;
       else acc.fail += 1;
       map.set(r.rule_id, acc);
+    }
+    return map;
+  }, [preview]);
+
+  // The failing element rows per rule, so the drilldown can actually list
+  // *which* elements failed (the backend already returns element_id +
+  // message + evidence on each row). Keyed by rule_id.
+  const failingElementsByRule = useMemo(() => {
+    const map = new Map<string, DryRunElementResult[]>();
+    for (const r of preview?.dry_run?.results ?? []) {
+      if (r.passed) continue;
+      const list = map.get(r.rule_id) ?? [];
+      list.push(r);
+      map.set(r.rule_id, list);
     }
     return map;
   }, [preview]);
@@ -604,13 +675,10 @@ export function RulePackPreviewModal({
                               })}
                             </p>
                           ) : (
-                            <p>
-                              {fail}{' '}
-                              {t('rulePacks.test_mode_filtered_list_hint', {
-                                defaultValue:
-                                  'element(s) failed — click through to the filtered list.',
-                              })}
-                            </p>
+                            <FailingElementsList
+                              rows={failingElementsByRule.get(rule.id) ?? []}
+                              total={fail}
+                            />
                           )}
                         </div>
                       )}

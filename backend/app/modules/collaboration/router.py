@@ -15,13 +15,19 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.dependencies import CurrentUserId, RequirePermission, SessionDep
+from app.dependencies import (
+    CurrentUserId,
+    RequirePermission,
+    SessionDep,
+    verify_project_access,
+)
 from app.modules.collaboration.schemas import (
     CommentCreate,
     CommentListResponse,
     CommentResponse,
     CommentUpdate,
     ViewpointCreate,
+    ViewpointListResponse,
     ViewpointResponse,
 )
 from app.modules.collaboration.service import CollaborationService
@@ -75,12 +81,42 @@ def _validate_entity_type(entity_type: str) -> None:
         )
 
 
+async def _verify_entity_access(
+    entity_type: str,
+    entity_id: str,
+    user_id: str,
+    session: SessionDep,
+) -> None:
+    """Verify the caller may read/write comments on the target entity.
+
+    When the target IS a project, ``entity_id`` is the project UUID, so we
+    gate on project membership exactly like every other single-resource
+    handler (``verify_project_access`` -> 404 on missing OR denied, which
+    avoids leaking UUID existence). This closes the IDOR where any user with
+    ``collaboration.read`` could enumerate comments on projects they cannot
+    access. Other ``entity_type`` values (boq, document, task, ...) carry an
+    id from a different module and need a shared (entity_type, entity_id) ->
+    project resolver to gate fully; that helper does not exist yet (see the
+    needs_manual note), so they are left unchanged here rather than guessed.
+    """
+    if entity_type == "project":
+        try:
+            project_uuid = uuid.UUID(entity_id)
+        except (ValueError, TypeError):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project not found",
+            ) from None
+        await verify_project_access(project_uuid, str(user_id), session)
+
+
 # ── Comments ─────────────────────────────────────────────────────────────
 
 
 @router.get("/comments/", response_model=CommentListResponse)
 async def list_comments(
-    _user_id: CurrentUserId,
+    user_id: CurrentUserId,
+    session: SessionDep,
     entity_type: str = Query(..., min_length=1, max_length=100),
     entity_id: str = Query(..., min_length=1, max_length=36),
     offset: int = Query(default=0, ge=0),
@@ -90,6 +126,7 @@ async def list_comments(
 ) -> CommentListResponse:
     """‌⁠‍List top-level comments for an entity (replies loaded as nested)."""
     _validate_entity_type(entity_type)
+    await _verify_entity_access(entity_type, entity_id, str(user_id), session)
     comments, total = await service.list_comments(
         entity_type,
         entity_id,
@@ -106,11 +143,13 @@ async def list_comments(
 async def create_comment(
     data: CommentCreate,
     user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("collaboration.create")),
     service: CollaborationService = Depends(_get_service),
 ) -> CommentResponse:
     """Create a comment with optional @mentions and viewpoint."""
     _validate_entity_type(data.entity_type)
+    await _verify_entity_access(data.entity_type, data.entity_id, str(user_id), session)
     try:
         comment = await service.create_comment(data, uuid.UUID(user_id))
         return CommentResponse.model_validate(comment)
@@ -164,11 +203,13 @@ async def get_thread(
 async def create_viewpoint(
     data: ViewpointCreate,
     user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("collaboration.create")),
     service: CollaborationService = Depends(_get_service),
 ) -> ViewpointResponse:
     """Create a standalone viewpoint (or linked to a comment)."""
     _validate_entity_type(data.entity_type)
+    await _verify_entity_access(data.entity_type, data.entity_id, str(user_id), session)
     try:
         viewpoint = await service.create_viewpoint(data, uuid.UUID(user_id))
         return ViewpointResponse.model_validate(viewpoint)
@@ -179,22 +220,27 @@ async def create_viewpoint(
         raise HTTPException(status_code=500, detail="Failed to create viewpoint")
 
 
-@router.get("/viewpoints/", response_model=list[ViewpointResponse])
+@router.get("/viewpoints/", response_model=ViewpointListResponse)
 async def list_viewpoints(
-    _user_id: CurrentUserId,
+    user_id: CurrentUserId,
+    session: SessionDep,
     entity_type: str = Query(..., min_length=1, max_length=100),
     entity_id: str = Query(..., min_length=1, max_length=36),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
     _perm: None = Depends(RequirePermission("collaboration.read")),
     service: CollaborationService = Depends(_get_service),
-) -> list[ViewpointResponse]:
-    """List viewpoints for an entity."""
+) -> ViewpointListResponse:
+    """List viewpoints for an entity (paginated, mirrors list_comments)."""
     _validate_entity_type(entity_type)
-    viewpoints, _ = await service.list_viewpoints(
+    await _verify_entity_access(entity_type, entity_id, str(user_id), session)
+    viewpoints, total = await service.list_viewpoints(
         entity_type,
         entity_id,
         offset=offset,
         limit=limit,
     )
-    return [ViewpointResponse.model_validate(vp) for vp in viewpoints]
+    return ViewpointListResponse(
+        items=[ViewpointResponse.model_validate(vp) for vp in viewpoints],
+        total=total,
+    )

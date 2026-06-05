@@ -14,7 +14,7 @@
 
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Calculator,
   TrendingUp,
@@ -25,6 +25,7 @@ import {
   ChevronDown,
   ChevronUp,
   Info,
+  History,
 } from 'lucide-react';
 import { Button, Card, Badge } from '@/shared/ui';
 import { getIntlLocale } from '@/shared/lib/formatters';
@@ -89,19 +90,31 @@ function DeltaRow({
   );
 }
 
+/** One saved what-if scenario from the CO metadata (service.publish_scenario). */
+export interface SavedScenario {
+  at?: string;
+  snapshot?: Partial<SimulateImpactResponse>;
+}
+
 export function ImpactSimulator({
   orderId,
   defaultCost,
   defaultDays,
   canPublish,
+  savedScenarios = [],
 }: {
   orderId: string;
   defaultCost: string;
   defaultDays: number;
   canPublish: boolean;
+  /** Previously published scenarios from order.metadata.simulations (newest
+   *  last, max 10). Shown as a small read-only history so "Save scenario"
+   *  has a visible, lasting effect. */
+  savedScenarios?: SavedScenario[];
 }) {
   const { t } = useTranslation();
   const addToast = useToastStore((s) => s.addToast);
+  const queryClient = useQueryClient();
   const [open, setOpen] = useState(true);
   const [showAdjust, setShowAdjust] = useState(false);
   // Draft override inputs (what the user is typing).
@@ -125,13 +138,18 @@ export function ImpactSimulator({
 
   const publishMut = useMutation({
     mutationFn: () => publishScenario(orderId, queryBody),
-    onSuccess: () =>
+    onSuccess: () => {
+      // The backend appends to order.metadata.simulations; invalidate the
+      // detail query so the saved scenario shows up in the history below
+      // without a manual reload.
+      queryClient.invalidateQueries({ queryKey: ['changeorder', orderId] });
       addToast({
         type: 'success',
         title: t('changeorders.scenario_published', {
           defaultValue: 'Scenario saved to the audit trail',
         }),
-      }),
+      });
+    },
     onError: (e: Error) =>
       addToast({ type: 'error', title: t('common.error', { defaultValue: 'Error' }), message: e.message }),
   });
@@ -333,6 +351,53 @@ export function ImpactSimulator({
                     </li>
                   ))}
                 </ul>
+              )}
+
+              {/* Saved scenarios — read-only audit history of what reviewers
+                  have published. Newest first. */}
+              {savedScenarios.length > 0 && (
+                <section>
+                  <h4 className="mb-1 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-content-tertiary">
+                    <History size={14} />{' '}
+                    {t('changeorders.impact_saved_scenarios', { defaultValue: 'Saved scenarios' })}
+                    <Badge variant="neutral" size="sm">{savedScenarios.length}</Badge>
+                  </h4>
+                  <ul className="divide-y divide-border-light rounded-md border border-border-light">
+                    {savedScenarios
+                      .slice()
+                      .reverse()
+                      .map((s, i) => {
+                        const snap = s.snapshot ?? {};
+                        const ccyS = snap.base_currency || ccy;
+                        return (
+                          <li
+                            key={`${s.at ?? 'scenario'}-${i}`}
+                            className="flex items-center justify-between gap-3 px-3 py-2 text-xs"
+                          >
+                            <span className="text-content-tertiary">
+                              {s.at
+                                ? new Date(s.at).toLocaleString(getIntlLocale())
+                                : t('changeorders.impact_saved_unknown_date', { defaultValue: 'Saved scenario' })}
+                            </span>
+                            <span className="flex items-center gap-3 tabular-nums">
+                              {snap.co_cost_base !== undefined && (
+                                <span className="text-content-secondary">
+                                  {t('changeorders.impact_delta', { defaultValue: 'This change order' })}:{' '}
+                                  <span className="font-medium">{fmtMoney(snap.co_cost_base, ccyS)}</span>
+                                </span>
+                              )}
+                              {snap.schedule?.days_added !== undefined && snap.schedule.days_added > 0 && (
+                                <span className="text-content-secondary">
+                                  +{snap.schedule.days_added}
+                                  {t('changeorders.impact_days_suffix', { defaultValue: 'd' })}
+                                </span>
+                              )}
+                            </span>
+                          </li>
+                        );
+                      })}
+                  </ul>
+                </section>
               )}
 
               {/* Adjust + actions */}

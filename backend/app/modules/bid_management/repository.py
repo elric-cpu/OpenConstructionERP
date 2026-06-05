@@ -170,6 +170,26 @@ class BidSubmissionLineRepository(_BaseRepo):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def list_for_submissions(
+        self,
+        submission_ids: list[uuid.UUID],
+    ) -> dict[uuid.UUID, list[BidSubmissionLine]]:
+        """Fetch lines for several submissions in one query.
+
+        Returns a mapping ``submission_id -> [lines]`` so callers can build
+        per-submission groupings without an N+1 fan-out.
+        """
+        grouped: dict[uuid.UUID, list[BidSubmissionLine]] = {sid: [] for sid in submission_ids}
+        if not submission_ids:
+            return grouped
+        stmt = select(BidSubmissionLine).where(
+            BidSubmissionLine.submission_id.in_(submission_ids),
+        )
+        result = await self.session.execute(stmt)
+        for line in result.scalars().all():
+            grouped.setdefault(line.submission_id, []).append(line)
+        return grouped
+
     async def bulk_create(self, items: list[BidSubmissionLine]) -> list[BidSubmissionLine]:
         self.session.add_all(items)
         await self.session.flush()

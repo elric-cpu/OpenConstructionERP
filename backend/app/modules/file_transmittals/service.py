@@ -374,9 +374,26 @@ class TransmittalService:
         await self.session.flush()
         return await self.get(transmittal.id)
 
+    @staticmethod
+    def _assert_draft(transmittal: FileTransmittal) -> None:
+        """Guard: only ``draft`` transmittals may be mutated.
+
+        A ``sent`` / ``acknowledged`` / ``rejected`` transmittal is a formal
+        historical record; adding/removing items or recipients after dispatch
+        would retroactively alter what was transmitted and to whom. Mirrors the
+        FSM editability guard used elsewhere (e.g. variations) — 409 with a
+        descriptive message.
+        """
+        if transmittal.status != "draft":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(f"Transmittal is {transmittal.status} and is no longer editable"),
+            )
+
     async def add_item(self, transmittal_id: uuid.UUID, item: TransmittalItemCreate) -> FileTransmittalItem:
-        """Append an item to an existing transmittal."""
+        """Append an item to an existing transmittal (draft only)."""
         transmittal = await self.get(transmittal_id)
+        self._assert_draft(transmittal)
         # Compute next sort order.
         next_order = max((it.sort_order for it in transmittal.items), default=-1) + 1
         row = FileTransmittalItem(
@@ -392,7 +409,8 @@ class TransmittalService:
         return row
 
     async def remove_item(self, transmittal_id: uuid.UUID, item_id: uuid.UUID) -> None:
-        """Delete one item from a transmittal."""
+        """Delete one item from a transmittal (draft only)."""
+        self._assert_draft(await self.get(transmittal_id))
         stmt = select(FileTransmittalItem).where(
             FileTransmittalItem.id == item_id,
             FileTransmittalItem.transmittal_id == transmittal_id,
@@ -417,8 +435,9 @@ class TransmittalService:
         transmittal_id: uuid.UUID,
         recipient: TransmittalRecipientCreate,
     ) -> FileTransmittalRecipient:
-        """Append a recipient to an existing transmittal (idempotent on email)."""
+        """Append a recipient to an existing transmittal (draft only, idempotent on email)."""
         transmittal = await self.get(transmittal_id)
+        self._assert_draft(transmittal)
         email_lower = str(recipient.email).lower()
         for existing in transmittal.recipients:
             if existing.email.lower() == email_lower:

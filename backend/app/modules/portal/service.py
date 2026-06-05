@@ -330,8 +330,18 @@ class PortalService:
         user_id = user.id
         user_status = user.status
 
-        # Mark link consumed.
-        await self.magic_repo.update_fields(link_id, consumed_at=now)
+        # Mark link consumed — atomically. The ``link.consumed_at is not None``
+        # check above is only a fast-path for the common already-consumed case;
+        # the actual one-time-use guarantee comes from this conditional
+        # ``UPDATE ... WHERE consumed_at IS NULL``. Under two concurrent
+        # requests both can pass the read-check (TOCTOU), but only the one whose
+        # row was still NULL flips it — the loser gets rowcount 0 and is
+        # rejected here, so exactly one session is ever opened per link.
+        if not await self.magic_repo.consume(link_id, consumed_at=now):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Magic link already consumed",
+            )
 
         # Activate first-login users.
         if user_status == "invited":

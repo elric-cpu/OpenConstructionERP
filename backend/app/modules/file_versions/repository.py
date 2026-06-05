@@ -27,8 +27,21 @@ class FileVersionRepository:
         project_id: uuid.UUID,
         file_kind: str,
         canonical_name: str,
+        for_update: bool = False,
     ) -> FileVersion | None:
-        """Return the active ``is_current=True`` row in the chain, or ``None``."""
+        """Return the active ``is_current=True`` row in the chain, or ``None``.
+
+        When ``for_update`` is set, take an exclusive row lock on the
+        current row so two concurrent writers on the same
+        ``(project_id, file_kind, canonical_name)`` chain are serialised
+        at the DB level: the second transaction blocks here until the
+        first commits, then re-reads the (now superseded) row and sees
+        ``is_current=False``. This prevents two requests from both
+        leaving an ``is_current=True`` row and both superseding the same
+        prior current row. Mirrors the ``with_for_update`` pattern used
+        in cde/repository.py and approval_routes/service.py. ``FOR
+        UPDATE`` is honoured on PostgreSQL (the only supported backend).
+        """
         stmt = (
             select(FileVersion)
             .where(
@@ -40,6 +53,8 @@ class FileVersionRepository:
             .order_by(FileVersion.version_number.desc())
             .limit(1)
         )
+        if for_update:
+            stmt = stmt.with_for_update()
         return (await self.session.execute(stmt)).scalar_one_or_none()
 
     async def list_chain(

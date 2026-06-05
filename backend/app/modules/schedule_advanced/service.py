@@ -1465,6 +1465,7 @@ class ScheduleAdvancedService:
         self,
         cid: uuid.UUID,
         rnc_payload: dict[str, Any] | RNCCreate,
+        user_id: str | None = None,
     ) -> tuple[Commitment, ReasonForNonCompletion]:
         """Flip a commitment to ``missed`` and record the paired RNC."""
         c = await self.get_commitment(cid)
@@ -1481,12 +1482,18 @@ class ScheduleAdvancedService:
         else:
             payload = dict(rnc_payload)
         payload["commitment_id"] = cid
+        recorded_by_uuid = payload.get("recorded_by")
+        if recorded_by_uuid is None and user_id is not None:
+            try:
+                recorded_by_uuid = uuid.UUID(str(user_id))
+            except (TypeError, ValueError):
+                recorded_by_uuid = None
         rnc = ReasonForNonCompletion(
             commitment_id=cid,
             category=payload.get("category", "other"),
             description=payload.get("description", ""),
             recorded_at=payload.get("recorded_at") or datetime.now(UTC),
-            recorded_by=payload.get("recorded_by"),
+            recorded_by=recorded_by_uuid,
             root_cause_notes=payload.get("root_cause_notes", ""),
         )
         rnc = await self.rnc_repo.create(rnc)
@@ -1949,6 +1956,13 @@ class TaktScheduleService:
 
     async def list_locations(self, takt_id: uuid.UUID) -> list[Location]:
         return await self.location_repo.list_for_takt(takt_id)
+
+    async def list_locations_for_takts(
+        self,
+        takt_ids: list[uuid.UUID],
+    ) -> dict[uuid.UUID, list[Location]]:
+        """Batch-fetch locations for several takt schedules in one query."""
+        return await self.location_repo.list_for_takts(takt_ids)
 
     async def add_location(
         self,

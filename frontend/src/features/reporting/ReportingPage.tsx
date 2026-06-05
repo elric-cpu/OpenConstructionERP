@@ -155,8 +155,12 @@ const trafficClasses: Record<TrafficLight, string> = {
   gray: 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
 };
 
+// Empty metrics render as a muted em-dash, never "N/A". A grid full of
+// "N/A" reads as a broken page; a quiet dash reads as "not measured yet".
+const EMPTY = '—';
+
 function fmt(v: string | number | null | undefined, suffix = ''): string {
-  if (v === null || v === undefined || v === '') return 'N/A';
+  if (v === null || v === undefined || v === '') return EMPTY;
   return `${v}${suffix}`;
 }
 
@@ -171,7 +175,7 @@ function humanizeReportType(reportType: string): string {
 }
 
 function fmtNum(v: number | null | undefined, decimals = 0): string {
-  if (v === null || v === undefined) return 'N/A';
+  if (v === null || v === undefined) return EMPTY;
   return v.toLocaleString(undefined, {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
@@ -610,7 +614,7 @@ function ExecutiveDashboard({
   const [topEntry] = currencyEntries;
   const portfolioValueLabel =
     currencyEntries.length === 0 || topEntry === undefined
-      ? 'N/A'
+      ? EMPTY
       : currencyEntries.length === 1
         ? `${fmtNum(topEntry[1])} ${topEntry[0]}`
         : currencyEntries.map(([code, amount]) => `${fmtNum(amount)} ${code}`).join(' · ');
@@ -644,6 +648,20 @@ function ExecutiveDashboard({
           icon={TrendingUp}
         />
       </div>
+
+      {/* Explain the dashes: KPI snapshots are opt-in per project, so a fresh
+          project legitimately has no CPI/SPI/progress until its first snapshot. */}
+      {projects.length > 0 && Object.keys(kpiMap).length < projects.length && (
+        <div className="flex items-start gap-2 rounded-lg border border-border-light bg-surface-secondary/60 px-4 py-2.5 text-xs text-content-secondary">
+          <Activity size={14} className="mt-0.5 shrink-0 text-content-tertiary" />
+          <span>
+            {t('reporting.kpi_empty_hint', {
+              defaultValue:
+                'CPI, SPI, budget and schedule progress appear once a project has its first cost snapshot. Projects without one show a dash, not a problem.',
+            })}
+          </span>
+        </div>
+      )}
 
       {/* Project table with KPI traffic lights */}
       <Card>
@@ -691,7 +709,9 @@ function ExecutiveDashboard({
                       <td className="px-4 py-3">
                         <TrafficDot color={riskVal !== null ? kpiColor(10 - riskVal, [3, 7]) : 'gray'} label={fmt(kpi?.risk_score_avg)} />
                       </td>
-                      <td className="px-4 py-3 text-content-secondary">{kpi ? openItems : 'N/A'}</td>
+                      <td className="px-4 py-3 text-content-secondary">
+                        {kpi ? openItems : <span className="text-content-tertiary">{EMPTY}</span>}
+                      </td>
                     </tr>
                   );
                 })}
@@ -714,6 +734,11 @@ function ExecutiveDashboard({
 /* ── Traffic dot component ─────────────────────────────────────────────────── */
 
 function TrafficDot({ color, label }: { color: TrafficLight; label: string }) {
+  // No value yet: render a quiet muted dash with no status dot, so an
+  // un-snapshotted project does not light up a row of grey "lights".
+  if (label === EMPTY) {
+    return <span className="text-sm text-content-tertiary">{EMPTY}</span>;
+  }
   const dotColors: Record<TrafficLight, string> = {
     green: 'bg-emerald-500',
     yellow: 'bg-amber-500',

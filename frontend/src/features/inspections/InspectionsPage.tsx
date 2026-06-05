@@ -26,6 +26,10 @@ import {
   Calendar,
   Pencil,
   Trash2,
+  Play,
+  Info,
+  ListChecks,
+  MinusCircle,
 } from 'lucide-react';
 import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, RecoveryCard, SkeletonTable } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
@@ -40,6 +44,7 @@ import {
   fetchInspections,
   createInspection,
   completeInspection,
+  createNcrFromInspection,
   updateInspection,
   deleteInspection,
   type Inspection,
@@ -48,6 +53,7 @@ import {
   type InspectionStatus,
   type CreateInspectionPayload,
   type UpdateInspectionPayload,
+  type ChecklistEntryPayload,
 } from './api';
 
 /* -- Constants ------------------------------------------------------------- */
@@ -90,6 +96,7 @@ const STATUS_CONFIG: Record<
   scheduled: { variant: 'blue', cls: '' },
   in_progress: { variant: 'warning', cls: '' },
   completed: { variant: 'success', cls: '' },
+  failed: { variant: 'error', cls: '' },
   cancelled: {
     variant: 'neutral',
     cls: '',
@@ -132,12 +139,19 @@ const INSPECTION_STATUSES: InspectionStatus[] = [
 
 /* -- Create Inspection Modal ----------------------------------------------- */
 
+interface ChecklistRow {
+  question: string;
+  critical: boolean;
+  notes: string;
+}
+
 interface InspectionFormData {
   title: string;
   inspection_type: InspectionType;
   date: string;
   inspector: string;
   location: string;
+  checklist: ChecklistRow[];
 }
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
@@ -148,7 +162,26 @@ const EMPTY_FORM: InspectionFormData = {
   date: todayStr(),
   inspector: '',
   location: '',
+  checklist: [],
 };
+
+/**
+ * Map the modal's checklist rows to the wire payload (drops blank rows).
+ *
+ * Items are created without a pass/fail response — they describe what to verify
+ * on site. The overall inspection result (pass/fail/partial) is captured when the
+ * inspection is completed.
+ */
+function checklistToPayload(rows: ChecklistRow[]): ChecklistEntryPayload[] {
+  return rows
+    .filter((r) => r.question.trim().length > 0)
+    .map((r) => ({
+      question: r.question.trim(),
+      response_type: 'pass_fail',
+      critical: r.critical,
+      notes: r.notes.trim() || undefined,
+    }));
+}
 
 function CreateInspectionModal({
   onClose,
@@ -376,6 +409,113 @@ function CreateInspectionModal({
               })}
             />
           </div>
+
+          {/* ── Checklist Section ── */}
+          <div className="flex items-center gap-2 pt-2 pb-1">
+            <ListChecks size={14} className="text-content-tertiary" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-content-tertiary">
+              {t('inspections.section_checklist', { defaultValue: 'Checklist' })}
+            </span>
+            <div className="flex-1 h-px bg-border-light" />
+          </div>
+          <p className="-mt-2 text-xs text-content-tertiary">
+            {t('inspections.checklist_help', {
+              defaultValue:
+                'Add the items to verify on site. When you complete the inspection you mark each item pass/fail; failed items pre-fill any Punch List item or NCR you raise.',
+            })}
+          </p>
+          <div className="space-y-2">
+            {form.checklist.map((row, idx) => (
+              <div
+                key={idx}
+                className="rounded-lg border border-border bg-surface-primary p-3 space-y-2"
+              >
+                <div className="flex items-start gap-2">
+                  <input
+                    value={row.question}
+                    onChange={(e) =>
+                      set(
+                        'checklist',
+                        form.checklist.map((r, i) =>
+                          i === idx ? { ...r, question: e.target.value } : r,
+                        ),
+                      )
+                    }
+                    className={inputCls}
+                    placeholder={t('inspections.checklist_item_placeholder', {
+                      defaultValue: 'e.g. Rebar spacing per drawing',
+                    })}
+                    aria-label={t('inspections.checklist_item_label', {
+                      defaultValue: 'Checklist item',
+                    })}
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      set(
+                        'checklist',
+                        form.checklist.filter((_, i) => i !== idx),
+                      )
+                    }
+                    className="flex h-10 w-9 items-center justify-center rounded-lg text-content-tertiary hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30 transition-colors shrink-0"
+                    aria-label={t('inspections.checklist_remove', {
+                      defaultValue: 'Remove checklist item',
+                    })}
+                  >
+                    <MinusCircle size={16} />
+                  </button>
+                </div>
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-1.5 text-xs text-content-secondary cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={row.critical}
+                      onChange={(e) =>
+                        set(
+                          'checklist',
+                          form.checklist.map((r, i) =>
+                            i === idx ? { ...r, critical: e.target.checked } : r,
+                          ),
+                        )
+                      }
+                      className="rounded border-border text-oe-blue focus:ring-oe-blue/30"
+                    />
+                    <AlertTriangle size={12} className="text-semantic-error" />
+                    {t('inspections.checklist_critical', { defaultValue: 'Critical (hold point)' })}
+                  </label>
+                  <input
+                    value={row.notes}
+                    onChange={(e) =>
+                      set(
+                        'checklist',
+                        form.checklist.map((r, i) =>
+                          i === idx ? { ...r, notes: e.target.value } : r,
+                        ),
+                      )
+                    }
+                    className={inputCls + ' !h-8 flex-1 text-xs'}
+                    placeholder={t('inspections.checklist_notes_placeholder', {
+                      defaultValue: 'Notes / acceptance criteria (optional)',
+                    })}
+                    aria-label={t('inspections.checklist_notes_label', {
+                      defaultValue: 'Checklist item notes',
+                    })}
+                  />
+                </div>
+              </div>
+            ))}
+            <Button
+              variant="secondary"
+              size="sm"
+              type="button"
+              onClick={() =>
+                set('checklist', [...form.checklist, { question: '', critical: false, notes: '' }])
+              }
+            >
+              <Plus size={14} className="mr-1.5" />
+              {t('inspections.checklist_add', { defaultValue: 'Add checklist item' })}
+            </Button>
+          </div>
         </div>
 
         {/* Footer */}
@@ -403,23 +543,175 @@ function CreateInspectionModal({
   );
 }
 
+/* -- Record-result Dialog -------------------------------------------------- */
+
+const RESULT_OPTIONS: {
+  value: InspectionResult;
+  icon: React.ElementType;
+  iconCls: string;
+  ringCls: string;
+}[] = [
+  {
+    value: 'pass',
+    icon: CheckCircle2,
+    iconCls: 'text-semantic-success',
+    ringCls: 'border-green-300 bg-green-50 ring-2 ring-green-300 dark:border-green-700 dark:bg-green-950/30',
+  },
+  {
+    value: 'partial',
+    icon: AlertTriangle,
+    iconCls: 'text-amber-500',
+    ringCls: 'border-amber-300 bg-amber-50 ring-2 ring-amber-300 dark:border-amber-700 dark:bg-amber-950/30',
+  },
+  {
+    value: 'fail',
+    icon: XCircle,
+    iconCls: 'text-semantic-error',
+    ringCls: 'border-red-300 bg-red-50 ring-2 ring-red-300 dark:border-red-700 dark:bg-red-950/30',
+  },
+];
+
+function CompleteInspectionDialog({
+  inspection,
+  onClose,
+  onConfirm,
+  isPending,
+}: {
+  inspection: Inspection;
+  onClose: () => void;
+  onConfirm: (result: InspectionResult) => void;
+  isPending: boolean;
+}) {
+  const { t } = useTranslation();
+  const [result, setResult] = useState<InspectionResult>('pass');
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  const resultLabels: Record<InspectionResult, string> = {
+    pass: t('inspections.result_pass', { defaultValue: 'Pass' }),
+    partial: t('inspections.result_partial', { defaultValue: 'Partial' }),
+    fail: t('inspections.result_fail', { defaultValue: 'Fail' }),
+  };
+  const resultDescriptions: Record<InspectionResult, string> = {
+    pass: t('inspections.result_pass_desc', { defaultValue: 'All checks met. No follow-up needed.' }),
+    partial: t('inspections.result_partial_desc', {
+      defaultValue: 'Mostly compliant with minor issues to resolve.',
+    }),
+    fail: t('inspections.result_fail_desc', {
+      defaultValue: 'Did not meet acceptance criteria. Raise a Punch List item or NCR.',
+    }),
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-lg animate-fade-in">
+      <div
+        className="w-full max-w-md bg-surface-elevated rounded-xl shadow-xl border border-border animate-card-in mx-4"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t('inspections.record_result_title', { defaultValue: 'Record inspection result' })}
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border-light">
+          <div>
+            <h2 className="text-lg font-semibold text-content-primary">
+              {t('inspections.record_result_title', { defaultValue: 'Record inspection result' })}
+            </h2>
+            <p className="text-xs text-content-tertiary mt-0.5 truncate">
+              {inspection.inspection_number} · {inspection.title}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label={t('common.close', { defaultValue: 'Close' })}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-content-tertiary hover:bg-surface-secondary hover:text-content-primary transition-colors shrink-0"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-2">
+          <p className="text-sm text-content-secondary mb-2">
+            {t('inspections.record_result_prompt', {
+              defaultValue: 'Choose the outcome. A fail or partial result lets you raise a Punch List item or NCR.',
+            })}
+          </p>
+          {RESULT_OPTIONS.map((opt) => {
+            const OptIcon = opt.icon;
+            const selected = result === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setResult(opt.value)}
+                className={clsx(
+                  'flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-all',
+                  selected
+                    ? opt.ringCls
+                    : 'border-border bg-surface-primary hover:bg-surface-secondary',
+                )}
+                aria-pressed={selected}
+              >
+                <OptIcon size={18} className={clsx('mt-0.5 shrink-0', opt.iconCls)} />
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-content-primary">
+                    {resultLabels[opt.value]}
+                  </span>
+                  <span className="block text-xs text-content-tertiary">
+                    {resultDescriptions[opt.value]}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border-light">
+          <Button variant="ghost" onClick={onClose} disabled={isPending}>
+            {t('common.cancel', { defaultValue: 'Cancel' })}
+          </Button>
+          <Button
+            variant="primary"
+            onClick={() => onConfirm(result)}
+            disabled={isPending}
+          >
+            {isPending ? (
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent mr-2 shrink-0" />
+            ) : (
+              <CheckCircle2 size={16} className="mr-1.5 shrink-0" />
+            )}
+            <span>{t('inspections.record_result_confirm', { defaultValue: 'Record Result' })}</span>
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* -- Inspection Row (expandable) ------------------------------------------- */
 
 const InspectionRow = React.memo(function InspectionRow({
   inspection,
   onComplete,
+  onStart,
   onCreateDefect,
+  onCreateNcr,
   onEdit,
   onDelete,
 }: {
   inspection: Inspection;
   onComplete: (id: string) => void;
+  onStart: (id: string) => void;
   onCreateDefect: (id: string) => void;
+  onCreateNcr: (id: string) => void;
   onEdit: (inspection: Inspection) => void;
   onDelete: (id: string) => void;
 }) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
   const statusCfg = STATUS_CONFIG[inspection.status] ?? STATUS_CONFIG.scheduled;
   const typeCfg = INSPECTION_TYPE_COLORS[inspection.inspection_type] ?? 'neutral';
@@ -428,7 +720,7 @@ const InspectionRow = React.memo(function InspectionRow({
   // terminal state. Disable the Edit button with an explanatory tooltip so we
   // never ship a control that returns an error.
   const editDisabled =
-    inspection.status === 'completed' || (inspection.status as string) === 'failed';
+    inspection.status === 'completed' || inspection.status === 'failed';
 
   return (
     <div className="border-b border-border-light last:border-b-0">
@@ -453,9 +745,9 @@ const InspectionRow = React.memo(function InspectionRow({
           )}
         />
 
-        {/* Inspection # */}
+        {/* Inspection # — backend already returns it formatted (e.g. "INS-001"). */}
         <span className="text-sm font-mono font-semibold text-content-secondary w-20 shrink-0">
-          INS-{String(inspection.inspection_number).padStart(3, '0')}
+          {inspection.inspection_number}
         </span>
 
         {/* Title */}
@@ -563,7 +855,20 @@ const InspectionRow = React.memo(function InspectionRow({
           )}
 
           {/* Actions */}
-          <div className="flex items-center gap-2 pt-1">
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            {inspection.status === 'scheduled' && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onStart(inspection.id);
+                }}
+              >
+                <Play size={14} className="mr-1.5" />
+                {t('inspections.action_start', { defaultValue: 'Start Inspection' })}
+              </Button>
+            )}
             {(inspection.status === 'scheduled' || inspection.status === 'in_progress') && (
               <Button
                 variant="primary"
@@ -574,11 +879,11 @@ const InspectionRow = React.memo(function InspectionRow({
                 }}
               >
                 <CheckCircle2 size={14} className="mr-1.5" />
-                {t('inspections.action_complete', { defaultValue: 'Complete Inspection' })}
+                {t('inspections.action_record_result', { defaultValue: 'Record Result' })}
               </Button>
             )}
             {inspection.result && (inspection.result === 'fail' || inspection.result === 'partial') && (
-              <div className="flex gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   variant="secondary"
                   size="sm"
@@ -595,12 +900,24 @@ const InspectionRow = React.memo(function InspectionRow({
                   size="sm"
                   onClick={(e) => {
                     e.stopPropagation();
-                    navigate('/ncr');
+                    onCreateNcr(inspection.id);
                   }}
                 >
                   <AlertTriangle size={14} className="mr-1.5" />
                   {t('inspections.create_ncr', { defaultValue: 'Create NCR' })}
                 </Button>
+                <span
+                  className="inline-flex items-center gap-1 text-2xs text-content-tertiary"
+                  title={t('inspections.punch_vs_ncr_help', {
+                    defaultValue:
+                      'Punch List: minor defects to fix and re-check. NCR: a formal non-conformance needing root-cause analysis, corrective action and signoff.',
+                  })}
+                >
+                  <Info size={12} />
+                  {t('inspections.punch_vs_ncr_short', {
+                    defaultValue: 'Punch List for minor defects, NCR for formal non-conformances.',
+                  })}
+                </span>
               </div>
             )}
 
@@ -685,8 +1002,10 @@ export function InspectionsPage() {
   // State
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingInspection, setEditingInspection] = useState<Inspection | null>(null);
+  const [completingId, setCompletingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<InspectionStatus | ''>('');
+  const [typeFilter, setTypeFilter] = useState<InspectionType | ''>('');
 
   // Data
   const { data: projects = [] } = useQuery({
@@ -699,11 +1018,12 @@ export function InspectionsPage() {
   const projectName = projects.find((p) => p.id === projectId)?.name || '';
 
   const { data: inspections = [], isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['inspections', projectId, statusFilter],
+    queryKey: ['inspections', projectId, statusFilter, typeFilter],
     queryFn: () =>
       fetchInspections({
         project_id: projectId,
         status: statusFilter || undefined,
+        type: typeFilter || undefined,
       }),
     enabled: !!projectId,
   });
@@ -715,7 +1035,7 @@ export function InspectionsPage() {
     return inspections.filter(
       (ins) =>
         ins.title.toLowerCase().includes(q) ||
-        String(ins.inspection_number).includes(q) ||
+        ins.inspection_number.toLowerCase().includes(q) ||
         (ins.inspector && ins.inspector.toLowerCase().includes(q)),
     );
   }, [inspections, searchQuery]);
@@ -754,9 +1074,11 @@ export function InspectionsPage() {
   });
 
   const completeMut = useMutation({
-    mutationFn: (id: string) => completeInspection(id),
+    mutationFn: ({ id, result }: { id: string; result: InspectionResult }) =>
+      completeInspection(id, result),
     onSuccess: (data) => {
       invalidateAll();
+      setCompletingId(null);
       const isFail = data?.result === 'fail' || data?.result === 'partial';
       addToast(
         {
@@ -789,6 +1111,7 @@ export function InspectionsPage() {
         addToast({ type: 'error', title: t('common.error', { defaultValue: 'Error' }), message: t('common.select_project_first', { defaultValue: 'Please select a project first' }) });
         return;
       }
+      const checklist = checklistToPayload(formData.checklist);
       createMut.mutate({
         project_id: projectId,
         title: formData.title,
@@ -796,6 +1119,7 @@ export function InspectionsPage() {
         inspection_date: formData.date,
         inspector_id: formData.inspector || undefined,
         location: formData.location || undefined,
+        checklist_data: checklist.length > 0 ? checklist : undefined,
       });
     },
     [createMut, projectId, addToast, t],
@@ -831,6 +1155,7 @@ export function InspectionsPage() {
           inspection_date: formData.date || null,
           inspector_id: formData.inspector || null,
           location: formData.location || null,
+          checklist_data: checklistToPayload(formData.checklist),
         },
       });
     },
@@ -879,18 +1204,12 @@ export function InspectionsPage() {
 
   const { confirm, ...confirmProps } = useConfirm();
 
-  const handleComplete = useCallback(
-    async (id: string) => {
-      const ok = await confirm({
-        title: t('inspections.confirm_complete_title', { defaultValue: 'Complete inspection?' }),
-        message: t('inspections.confirm_complete_msg', { defaultValue: 'This inspection will be marked as completed.' }),
-        confirmLabel: t('inspections.mark_complete', { defaultValue: 'Complete' }),
-        variant: 'warning',
-      });
-      if (ok) completeMut.mutate(id);
-    },
-    [completeMut, confirm, t],
-  );
+  // Opening the completion flow no longer auto-passes the inspection — it
+  // opens a Pass / Fail / Partial picker so a failed inspection is recordable
+  // (which unlocks the Punch List / NCR follow-up flow).
+  const handleComplete = useCallback((id: string) => {
+    setCompletingId(id);
+  }, []);
 
   const handleDeleteInspection = useCallback(
     async (id: string) => {
@@ -934,6 +1253,63 @@ export function InspectionsPage() {
     },
     [createDefectMut],
   );
+
+  // Raise a formal NCR pre-filled from the failed inspection via the real
+  // backend endpoint (idempotent), then deep-link to the created NCR.
+  const createNcrMut = useMutation({
+    mutationFn: (inspectionId: string) => createNcrFromInspection(inspectionId),
+    onSuccess: (data) => {
+      addToast({
+        type: 'success',
+        title: data.created
+          ? t('inspections.ncr_created', { defaultValue: 'NCR raised' })
+          : t('inspections.ncr_exists', { defaultValue: 'NCR already exists for this inspection' }),
+        message: data.ncr_number,
+        action: {
+          label: t('inspections.view_ncr', { defaultValue: 'Open NCRs' }),
+          onClick: () => navigate('/ncr'),
+        },
+      });
+    },
+    onError: (e: Error) =>
+      addToast({
+        type: 'error',
+        title: t('common.error', { defaultValue: 'Error' }),
+        message: e.message,
+      }),
+  });
+
+  const handleCreateNcr = useCallback(
+    (id: string) => {
+      createNcrMut.mutate(id);
+    },
+    [createNcrMut],
+  );
+
+  // Walk a scheduled inspection into in_progress so the in_progress state is
+  // actually reachable from the UI (the FSM allows scheduled -> in_progress).
+  const startMut = useMutation({
+    mutationFn: (id: string) => updateInspection(id, { status: 'in_progress' }),
+    onSuccess: () => {
+      invalidateAll();
+      addToast({
+        type: 'success',
+        title: t('inspections.started', { defaultValue: 'Inspection started' }),
+      });
+    },
+    onError: (e: Error) =>
+      addToast({
+        type: 'error',
+        title: t('common.error', { defaultValue: 'Error' }),
+        message: e.message,
+      }),
+  });
+
+  const handleStart = useCallback((id: string) => startMut.mutate(id), [startMut]);
+
+  const completingInspection = completingId
+    ? inspections.find((i) => i.id === completingId) ?? null
+    : null;
 
   return (
     <div className="w-full animate-fade-in">
@@ -1111,6 +1487,30 @@ export function InspectionsPage() {
             <ChevronDown size={14} />
           </div>
         </div>
+
+        {/* Type filter */}
+        <div className="relative">
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value as InspectionType | '')}
+            aria-label={t('inspections.filter_all_types', { defaultValue: 'All Types' })}
+            className="h-10 appearance-none rounded-lg border border-border bg-surface-primary pl-3 pr-9 text-sm text-content-primary focus:outline-none focus:ring-2 focus:ring-oe-blue sm:w-40"
+          >
+            <option value="">
+              {t('inspections.filter_all_types', { defaultValue: 'All Types' })}
+            </option>
+            {INSPECTION_TYPES.map((it) => (
+              <option key={it} value={it}>
+                {t(`inspections.type_${it}`, {
+                  defaultValue: it.replace(/_/g, ' '),
+                })}
+              </option>
+            ))}
+          </select>
+          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5 text-content-tertiary">
+            <ChevronDown size={14} />
+          </div>
+        </div>
       </div>
 
       {/* Table */}
@@ -1123,12 +1523,12 @@ export function InspectionsPage() {
           <EmptyState
             icon={<ClipboardCheck size={28} strokeWidth={1.5} />}
             title={
-              searchQuery || statusFilter
+              searchQuery || statusFilter || typeFilter
                 ? t('inspections.no_results', { defaultValue: 'No matching inspections' })
                 : t('inspections.no_inspections', { defaultValue: 'No inspections yet' })
             }
             description={
-              searchQuery || statusFilter
+              searchQuery || statusFilter || typeFilter
                 ? t('inspections.no_results_hint', {
                     defaultValue: 'Try adjusting your search or filters',
                   })
@@ -1137,7 +1537,7 @@ export function InspectionsPage() {
                   })
             }
             action={
-              !searchQuery && !statusFilter
+              !searchQuery && !statusFilter && !typeFilter
                 ? {
                     label: t('inspections.new_inspection', {
                       defaultValue: 'New Inspection',
@@ -1186,7 +1586,9 @@ export function InspectionsPage() {
                   key={inspection.id}
                   inspection={inspection}
                   onComplete={handleComplete}
+                  onStart={handleStart}
                   onCreateDefect={handleCreateDefect}
+                  onCreateNcr={handleCreateNcr}
                   onEdit={handleEditInspection}
                   onDelete={handleDeleteInspection}
                 />
@@ -1220,9 +1622,28 @@ export function InspectionsPage() {
                   date: editingInspection.date || todayStr(),
                   inspector: editingInspection.inspector || '',
                   location: editingInspection.location || '',
+                  checklist: editingInspection.checklist.map((c) => ({
+                    question: c.description,
+                    critical: c.critical,
+                    notes: c.notes,
+                  })),
                 }
               : null
           }
+        />
+      )}
+
+      {/* Record-result Dialog (Pass / Fail / Partial) */}
+      {completingInspection && (
+        <CompleteInspectionDialog
+          inspection={completingInspection}
+          onClose={() => {
+            if (!completeMut.isPending) setCompletingId(null);
+          }}
+          onConfirm={(result) =>
+            completeMut.mutate({ id: completingInspection.id, result })
+          }
+          isPending={completeMut.isPending}
         />
       )}
 

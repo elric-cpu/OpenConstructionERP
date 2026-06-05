@@ -843,7 +843,7 @@ class EquipmentService:
             if rental.end_date and rental.end_date < ref:
                 continue
             return rental.project_id
-        return rentals[0].project_id
+        return None
 
     async def create_fuel_log(self, data: FuelLogCreate) -> FuelLog:
         """Record a fuel fill and emit ``equipment.fuel_logged``.

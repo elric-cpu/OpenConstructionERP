@@ -943,6 +943,13 @@ class ERPChatService:
         if str(message.session.user_id) != str(uid):
             raise LookupError("Chat message not found")
 
+        # Feedback is a thumbs up/down on an assistant turn only — rating a
+        # user prompt (or a tool/system row) is meaningless and would poison
+        # the admin observability rollups (top_negative_prompts joins assume
+        # the rated message is the assistant reply).
+        if message.role != "assistant":
+            raise ValueError("Feedback can only be submitted on assistant messages")
+
         # Look up an existing row first; if present, flip the rating.
         stmt = select(ChatTurnFeedback).where(
             ChatTurnFeedback.message_id == message_id,
@@ -1039,6 +1046,7 @@ class ERPChatService:
                 ChatTurnFeedback.message_id == ChatMessage.id,
             )
             .where(
+                ChatMessage.role == "assistant",
                 ChatMessage.created_at >= cutoff,
             )
         )
@@ -1070,7 +1078,10 @@ class ERPChatService:
                 neg_assistant.c.downs,
             )
             .join(neg_assistant, neg_assistant.c.assistant_id == ChatMessage.id)
-            .where(ChatMessage.created_at >= cutoff)
+            .where(
+                ChatMessage.role == "assistant",
+                ChatMessage.created_at >= cutoff,
+            )
             .order_by(neg_assistant.c.downs.desc(), ChatMessage.created_at.desc())
             .limit(5)
         )
@@ -1140,7 +1151,10 @@ class ERPChatService:
                 ChatTurnFeedback,
                 ChatTurnFeedback.message_id == ChatMessage.id,
             )
-            .where(ChatMessage.created_at >= cutoff)
+            .where(
+                ChatMessage.role == "assistant",
+                ChatMessage.created_at >= cutoff,
+            )
         )
         for created_at, rating in (await self.session.execute(fb_daily_q)).all():
             if created_at is None:

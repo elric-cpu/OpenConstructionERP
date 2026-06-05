@@ -311,6 +311,21 @@ class PaymentApplicationRepository(_BaseRepo):
         return int((await self.session.execute(stmt)).scalar_one() or 0)
 
     async def next_application_number(self, agreement_id: uuid.UUID) -> str:
+        """Mint the next ``PA-NNNN`` number for an agreement.
+
+        Two concurrent ``submit_payment_application`` calls on the same
+        agreement would otherwise both read the same ``COUNT(*)`` and mint
+        identical application numbers. To serialise them, take an exclusive
+        row lock on the parent agreement first: the lock is held until the
+        surrounding transaction commits, so a second concurrent transaction
+        blocks here until the first has flushed its new payment row and then
+        sees the updated count. Mirrors the ``with_for_update`` pattern used
+        in cde/repository.py (``FOR UPDATE`` is honoured on PostgreSQL, the
+        only supported backend).
+        """
+        lock_stmt = select(SubcontractAgreement.id).where(SubcontractAgreement.id == agreement_id).with_for_update()
+        await self.session.execute(lock_stmt)
+
         stmt = (
             select(func.count()).select_from(PaymentApplication).where(PaymentApplication.agreement_id == agreement_id)
         )

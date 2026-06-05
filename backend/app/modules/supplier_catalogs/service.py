@@ -1505,10 +1505,9 @@ class SupplierCatalogsService:
                 status_code=400,
                 detail=(f"Cannot issue {data.quantity}: only {balance.quantity_on_hand} on hand"),
             )
-        # Reduce reserved if it was reserved
-        new_reserved = balance.quantity_reserved
-        if new_reserved >= data.quantity:
-            new_reserved = new_reserved - data.quantity
+        # Issuing consumes reserved units; clamp at zero so reserved never
+        # exceeds the (now reduced) on-hand quantity.
+        new_reserved = max(Decimal("0"), balance.quantity_reserved - data.quantity)
         await self.stock.update_balance(
             balance.id,
             quantity_on_hand=balance.quantity_on_hand - data.quantity,

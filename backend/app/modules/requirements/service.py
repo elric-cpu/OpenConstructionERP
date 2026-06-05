@@ -365,6 +365,17 @@ class RequirementsService:
         ]
         created = await self.req_repo.bulk_create(items)
         logger.info("Bulk added %d requirements to set %s", len(created), set_id)
+        # Publish a created event per row so the vector indexer embeds them,
+        # mirroring add_requirement. Without this, bulk-added requirements are
+        # invisible to semantic search.
+        for item in created:
+            await _safe_publish(
+                "requirements.requirement.created",
+                {
+                    "requirement_id": str(item.id),
+                    "requirement_set_id": str(set_id),
+                },
+            )
         return created
 
     # ── Link to BOQ position ─────────────────────────────────────────────
@@ -1067,8 +1078,9 @@ class RequirementsService:
                 )
             )
 
+        created: list[Requirement] = []
         if items:
-            await self.req_repo.bulk_create(items)
+            created = await self.req_repo.bulk_create(items)
 
         # Store parse errors in metadata
         if parse_errors:
@@ -1089,6 +1101,19 @@ class RequirementsService:
 
         # Commit and re-fetch to load all relationships cleanly
         await self.session.commit()
+
+        # Publish a created event per imported row so the vector indexer embeds
+        # them, mirroring add_requirement. Without this, text-imported
+        # requirements are invisible to semantic search.
+        for item in created:
+            await _safe_publish(
+                "requirements.requirement.created",
+                {
+                    "requirement_id": str(item.id),
+                    "requirement_set_id": str(set_id_val),
+                },
+            )
+
         return await self.get_set(set_id_val)
 
     # ── Statistics ───────────────────────────────────────────────────────

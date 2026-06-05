@@ -59,7 +59,8 @@ function textForCount(open: number, maxOpen: number): string {
   return 'text-red-900';
 }
 
-/** Discipline label palette — uses the same axes as the federations page. */
+/** English fallback labels, kept for the aria-string builder (which renders
+ *  values directly so a screen reader never reads a raw `{{key}}`). */
 const DISCIPLINE_LABELS: Record<CanonicalTrade, string> = {
   arch: 'Arch',
   struct: 'Struct',
@@ -68,6 +69,18 @@ const DISCIPLINE_LABELS: Record<CanonicalTrade, string> = {
   civil: 'Civil',
   other: 'Other',
 };
+
+/** Localised discipline label — routes the six canonical trades through
+ *  i18next so the matrix axes translate with the rest of the page. Falls
+ *  back to the English label, then the raw key, for any unknown trade. */
+function disciplineLabel(
+  t: (key: string, opts?: Record<string, unknown>) => string,
+  trade: CanonicalTrade,
+): string {
+  return t(`coordination_hub.trade_${trade}`, {
+    defaultValue: DISCIPLINE_LABELS[trade] ?? trade,
+  });
+}
 
 export function CoordinationTradeMatrix({
   data,
@@ -131,7 +144,7 @@ export function CoordinationTradeMatrix({
             key={`col-${col}`}
             className="text-center text-xs font-medium uppercase tracking-wide text-content-secondary"
           >
-            {DISCIPLINE_LABELS[col] ?? col}
+            {disciplineLabel(t, col)}
           </div>
         ))}
         {/* Rows */}
@@ -208,7 +221,7 @@ function RowFragment({
   return (
     <>
       <div className="text-right text-xs font-medium uppercase tracking-wide text-content-secondary">
-        {DISCIPLINE_LABELS[row] ?? row}
+        {disciplineLabel(t, row)}
       </div>
       {trades.map((col) => {
         // The server emits each pair once (row index ≤ col index). For
@@ -303,7 +316,7 @@ function RowFragment({
                 className="pointer-events-none absolute left-1/2 top-full z-20 mt-1 -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-slate-900 px-2 py-1 text-xs font-medium text-white shadow-lg"
               >
                 <div className="font-semibold">
-                  {DISCIPLINE_LABELS[row] ?? row} × {DISCIPLINE_LABELS[col] ?? col}
+                  {disciplineLabel(t, row)} × {disciplineLabel(t, col)}
                 </div>
                 <div>
                   {t('coordination.matrix_tooltip_total', {

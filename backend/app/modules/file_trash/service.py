@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.file_trash.models import FileTrash
@@ -313,9 +314,25 @@ class FileTrashService:
         # SQLAlchemy assigns a fresh ``created_at`` / ``updated_at``
         # server-default; force the original id back so cross-module
         # links (e.g. activity log, document<->BIM) survive the trip.
+        #
+        # The ``restored_at`` pre-flight above is the fast path for
+        # serialised requests, but two concurrent restores can both pass
+        # that check and then race to re-insert the kind row with the same
+        # (forced-back) primary key. The kind table's PK constraint fires
+        # on the loser, surfacing as an ``IntegrityError``. Wrap the
+        # insert + flush so that becomes a clean 409 instead of an
+        # unhandled 500 — mirroring the duplicate-guard pattern other
+        # services use (e.g. bid_management submission create).
         new_row = model(**clean)
         self.session.add(new_row)
-        await self.session.flush()
+        try:
+            await self.session.flush()
+        except IntegrityError:
+            await self.session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Trash item already restored (concurrent request)",
+            ) from None
 
         row.restored_at = datetime.now(UTC)
         row.restored_by_id = actor_id

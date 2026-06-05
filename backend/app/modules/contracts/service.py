@@ -1459,17 +1459,27 @@ class ContractsService:
         existing = await self.claim_line_repo.list_for_claim(claim_id)
         for ex in existing:
             await self.claim_line_repo.delete(ex.id)
+        # Running total: per SoV line, cumulative = sum of period values already
+        # billed on prior (non-rejected) claims + this period. Downstream
+        # consumers (costmodel claimed-to-date) read cumulative_completed_value
+        # as the running total, so it must net prior claims, not just this one.
+        prior_by_line = await self.claim_line_repo.prior_period_value_by_line(
+            contract.id,
+            exclude_claim_id=claim_id,
+        )
         new_lines: list[ProgressClaimLine] = []
         for cl in result.get("claim_lines", []) or []:
+            period_value = Decimal(str(cl["period_completed_value"]))
+            prior_value = prior_by_line.get(cl["contract_line_id"], DEC_ZERO)
             new_lines.append(
                 ProgressClaimLine(
                     progress_claim_id=claim_id,
                     contract_line_id=cl["contract_line_id"],
                     period_completed_qty=Decimal(str(cl["period_completed_qty"])),
-                    period_completed_value=Decimal(str(cl["period_completed_value"])),
+                    period_completed_value=period_value,
                     period_completed_pct=Decimal(str(cl["period_completed_pct"])),
-                    cumulative_completed_value=Decimal(
-                        str(cl["cumulative_completed_value"]),
+                    cumulative_completed_value=(prior_value + period_value).quantize(
+                        Decimal("0.0001"),
                     ),
                 )
             )
@@ -1673,6 +1683,13 @@ class ContractsService:
 
         # Idempotent replace: wipe existing lines, then write the new set.
         await self.claim_line_repo.delete_for_claim(claim_id)
+        # Running total: cumulative = prior non-rejected period values on this
+        # SoV line + this period. costmodel reads cumulative_completed_value as
+        # the running claimed-to-date total, so it must net prior claims.
+        prior_by_line = await self.claim_line_repo.prior_period_value_by_line(
+            contract.id,
+            exclude_claim_id=claim_id,
+        )
         new_lines: list[ProgressClaimLine] = [
             ProgressClaimLine(
                 progress_claim_id=claim_id,
@@ -1680,7 +1697,9 @@ class ContractsService:
                 period_completed_qty=derived["period_completed_qty"],
                 period_completed_value=derived["period_completed_value"],
                 period_completed_pct=derived["period_completed_pct"],
-                cumulative_completed_value=derived["cumulative_completed_value"],
+                cumulative_completed_value=(
+                    prior_by_line.get(sov_line.id, DEC_ZERO) + derived["period_completed_value"]
+                ).quantize(Decimal("0.0001")),
             )
             for sov_line, derived in resolved
         ]

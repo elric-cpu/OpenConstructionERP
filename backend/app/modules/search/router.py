@@ -59,6 +59,7 @@ async def unified_search_endpoint(
         await verify_project_access(uuid.UUID(project_id), _user_id, session)
     return await unified_search_service(
         query=q,
+        user_id=_user_id,
         types=types,
         project_id=project_id,
         tenant_id=tenant_id,

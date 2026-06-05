@@ -28,6 +28,7 @@ import {
   MessageSquare,
   X,
   FileEdit,
+  Replace,
   ShieldAlert,
   ClipboardCheck,
   ClipboardList,
@@ -266,6 +267,7 @@ const navGroups: NavGroup[] = [
       { labelKey: 'nav.bid_management', to: '/bid-management', icon: Scale },
       { labelKey: 'tendering.title', to: '/tendering', icon: FileText, moduleKey: 'tendering', advancedOnly: true },
       { labelKey: 'nav.variations', to: '/variations', icon: GitBranch },
+      { labelKey: 'moc.title', to: '/moc', icon: Replace, advancedOnly: true },
       { labelKey: 'nav.supplier_catalogs', to: '/supplier-catalogs', icon: ShoppingCart },
     ],
   },
@@ -551,6 +553,7 @@ const ROUTE_BACKEND_MODULE: Record<string, string> = {
   '/bid-management': 'oe_bid_management',
   '/tendering': 'oe_tendering',
   '/variations': 'oe_variations',
+  '/moc': 'oe_moc',
   '/supplier-catalogs': 'oe_supplier_catalogs',
   // Real estate development
   '/property-dev': 'oe_property_dev',
@@ -645,6 +648,7 @@ const ROUTE_MODULE_KEY: Record<string, string> = {
   '/bid-management': 'bid_management',
   '/tendering': 'tendering',
   '/variations': 'variations',
+  '/moc': 'moc',
   '/supplier-catalogs': 'supplier_catalogs',
   // Real estate development (every tab tied to the one capability)
   '/property-dev': 'property_dev',

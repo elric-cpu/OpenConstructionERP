@@ -196,6 +196,11 @@ class ServiceTicketResponse(BaseModel):
     priority: str = "med"
     reported_at: str
     sla_due_at: str | None = None
+    # Two-clock SLA tracking: deadlines for first response and resolution,
+    # plus the timestamp the SLA clock was paused (awaiting_customer state).
+    response_due_at: str | None = None
+    resolution_due_at: str | None = None
+    awaiting_customer_since: str | None = None
     status: str = "new"
     source: str = "manual"
     reported_by: str | None = None

@@ -120,3 +120,10 @@ class CommentListResponse(BaseModel):
 
     items: list[CommentResponse]
     total: int
+
+
+class ViewpointListResponse(BaseModel):
+    """Paginated list of viewpoints."""
+
+    items: list[ViewpointResponse]
+    total: int

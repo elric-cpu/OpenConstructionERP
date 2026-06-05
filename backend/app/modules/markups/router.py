@@ -174,10 +174,18 @@ async def export_markups(
 async def bulk_create_markups(
     data: MarkupBulkCreate,
     user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("markups.create")),
     service: MarkupsService = Depends(_get_service),
 ) -> list[MarkupResponse]:
-    """Bulk create multiple markups at once."""
+    """Bulk create multiple markups at once.
+
+    Every distinct ``project_id`` in the batch is checked for membership
+    before anything is persisted, so a caller cannot smuggle markups into
+    projects they do not belong to by mixing them into a bulk request.
+    """
+    for project_id in {m.project_id for m in data.markups}:
+        await verify_project_access(project_id, str(user_id), session)
     try:
         items = await service.bulk_create_markups(data.markups, user_id)
         return [_markup_to_response(i) for i in items]
@@ -198,10 +206,18 @@ async def bulk_create_markups(
 async def create_markup(
     data: MarkupCreate,
     user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("markups.create")),
     service: MarkupsService = Depends(_get_service),
 ) -> MarkupResponse:
-    """Create a new markup annotation."""
+    """Create a new markup annotation.
+
+    Project membership is verified before persisting — a caller cannot
+    plant a markup into a project they do not belong to by supplying an
+    arbitrary ``project_id`` (404 maps both "no such project" and "not
+    your project" to the same response shape).
+    """
+    await verify_project_access(data.project_id, str(user_id), session)
     try:
         item = await service.create_markup(data, user_id)
         return _markup_to_response(item)

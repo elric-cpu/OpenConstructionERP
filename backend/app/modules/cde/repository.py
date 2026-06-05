@@ -161,7 +161,24 @@ class RevisionRepository:
         return items, total
 
     async def next_revision_number(self, container_id: uuid.UUID) -> int:
-        """Get the next revision number for a container."""
+        """Get the next revision number for a container.
+
+        Two concurrent ``create_revision`` calls on the same container would
+        otherwise both read the same ``MAX(revision_number)`` and mint
+        duplicate revision numbers (and identical revision codes). To serialise
+        them, take an exclusive row lock on the parent container first: the
+        lock is held until the surrounding transaction commits, so a second
+        concurrent transaction blocks here until the first has flushed its new
+        revision row and then sees the updated max. Mirrors the
+        ``with_for_update`` pattern used in approval_routes/service.py.
+
+        ``FOR UPDATE`` is honoured on PostgreSQL (the only supported backend);
+        the recompute of ``MAX(revision_number)`` after the lock is acquired is
+        the actual integrity guarantee.
+        """
+        lock_stmt = select(DocumentContainer.id).where(DocumentContainer.id == container_id).with_for_update()
+        await self.session.execute(lock_stmt)
+
         stmt = select(func.coalesce(func.max(DocumentRevision.revision_number), 0)).where(
             DocumentRevision.container_id == container_id
         )

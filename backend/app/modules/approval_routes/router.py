@@ -293,7 +293,7 @@ async def list_instances(
     # project_id. We resolve project_id once per route via cache to
     # keep the listing query cheap.
     project_cache: dict[uuid.UUID, uuid.UUID | None] = {}
-    out: list[InstanceResponse] = []
+    visible: list[object] = []
     for inst in rows:
         if project_route_ids is not None and inst.route_id not in project_route_ids:
             continue
@@ -309,7 +309,21 @@ async def list_instances(
                 await verify_project_access(pid, user_id, session)
             except HTTPException:
                 continue  # Filter out cross-tenant rows silently.
-        out.append(await _instance_to_response(inst, service))
+        visible.append(inst)
+
+    # Batched: one IN(...) StepState fetch for all visible instances
+    # instead of N per-instance round trips.
+    states_by_instance = await service.list_step_states_for_instances(
+        [inst.id for inst in visible],  # type: ignore[attr-defined]
+    )
+    out: list[InstanceResponse] = []
+    for inst in visible:
+        payload = InstanceResponse.model_validate(inst)
+        payload.step_states = [
+            StepStateResponse.model_validate(s)
+            for s in states_by_instance.get(inst.id, [])  # type: ignore[attr-defined]
+        ]
+        out.append(payload)
     return out
 
 

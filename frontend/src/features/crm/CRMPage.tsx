@@ -52,6 +52,10 @@ import {
   GripVertical,
   CheckCircle2,
   XCircle,
+  BarChart3,
+  History,
+  Info,
+  Clock,
 } from 'lucide-react';
 import {
   Button,
@@ -87,23 +91,28 @@ import {
   createActivity,
   qualifyLead,
   disqualifyLead,
+  convertLead,
   moveOpportunityStage,
   winOpportunity,
   loseOpportunity,
   listWinLossReasons,
+  getOpportunityHistory,
+  getCrmDashboard,
+  getWinLossAnalytics,
   type WinLossReason,
   type Account,
   type Lead,
   type Opportunity,
   type Activity,
   type PipelineStage,
+  type StageHistory,
   type LeadStatus,
   type LeadSource,
   type OpportunityStatus,
   type ActivityKind,
 } from './api';
 
-type View = 'pipeline' | 'list' | 'leads' | 'activities';
+type View = 'pipeline' | 'list' | 'leads' | 'activities' | 'insights';
 
 const LEAD_STATUS_VARIANT: Record<
   LeadStatus,
@@ -135,6 +144,32 @@ const LEAD_SOURCES: LeadSource[] = [
 ];
 
 const ACTIVITY_KINDS: ActivityKind[] = ['call', 'meeting', 'email', 'task', 'note'];
+
+// ISO-4217 codes offered in the deal currency picker. Keeps multi-currency
+// rollups (MultiCurrencyTotal / MoneyDisplay) consistent by preventing
+// free-text codes that would key the per-currency split incorrectly.
+const CURRENCY_CODES = [
+  'EUR',
+  'USD',
+  'GBP',
+  'CHF',
+  'CAD',
+  'AUD',
+  'NZD',
+  'SEK',
+  'NOK',
+  'DKK',
+  'PLN',
+  'CZK',
+  'JPY',
+  'CNY',
+  'INR',
+  'BRL',
+  'AED',
+  'SAR',
+  'ZAR',
+  'TRY',
+];
 
 const inputCls =
   'h-9 w-full rounded-lg border border-border bg-surface-primary px-3 text-sm focus:outline-none focus:ring-2 focus:ring-oe-blue/30 focus:border-oe-blue';
@@ -286,6 +321,11 @@ export function CRMPage() {
       label: t('crm.tab_activities', { defaultValue: 'Activities' }),
       icon: ActivityIcon,
     },
+    {
+      id: 'insights',
+      label: t('crm.tab_insights', { defaultValue: 'Insights' }),
+      icon: BarChart3,
+    },
   ];
 
   const newLabel =
@@ -311,13 +351,15 @@ export function CRMPage() {
             })}
           </p>
         </div>
-        <Button
-          variant="primary"
-          icon={<Plus size={14} />}
-          onClick={() => setCreateOpen(true)}
-        >
-          {newLabel}
-        </Button>
+        {view !== 'insights' && (
+          <Button
+            variant="primary"
+            icon={<Plus size={14} />}
+            onClick={() => setCreateOpen(true)}
+          >
+            {newLabel}
+          </Button>
+        )}
       </div>
 
       <PipelineBanner
@@ -372,19 +414,21 @@ export function CRMPage() {
             );
           })}
         </div>
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search
-            size={14}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-content-tertiary"
-          />
-          <input
-            type="text"
-            placeholder={t('common.search', { defaultValue: 'Search…' })}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className={clsx(inputCls, 'pl-8')}
-          />
-        </div>
+        {view !== 'insights' && (
+          <div className="relative flex-1 min-w-[200px] max-w-sm">
+            <Search
+              size={14}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-content-tertiary"
+            />
+            <input
+              type="text"
+              placeholder={t('common.search', { defaultValue: 'Search…' })}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className={clsx(inputCls, 'pl-8')}
+            />
+          </div>
+        )}
       </div>
 
       {/* Body */}
@@ -429,13 +473,15 @@ export function CRMPage() {
             onCreate={() => setCreateOpen(true)}
           />
         </Card>
-      ) : (
+      ) : view === 'activities' ? (
         <Card padding="none">
           <ActivitiesTable
             rows={filteredActivities}
             onCreate={() => setCreateOpen(true)}
           />
         </Card>
+      ) : (
+        <InsightsPanel stagesById={stagesById} />
       )}
 
       {selectedOpportunityId && (
@@ -452,6 +498,13 @@ export function CRMPage() {
           leadId={selectedLeadId}
           leads={leadsQ.data ?? []}
           accountsById={accountsById}
+          accounts={accountsQ.data ?? []}
+          stages={stagesSorted}
+          onConverted={(opportunityId) => {
+            setSelectedLeadId(null);
+            setView('pipeline');
+            setSelectedOpportunityId(opportunityId);
+          }}
           onClose={() => setSelectedLeadId(null)}
         />
       )}
@@ -1063,12 +1116,21 @@ function DealDrawer({
   const opp = opportunities.find((o) => o.id === opportunityId);
 
   const [loseReason, setLoseReason] = useState('');
+  const [winReason, setWinReason] = useState('');
   const [noteText, setNoteText] = useState('');
   const [linkOpen, setLinkOpen] = useState(false);
 
   const activitiesQ = useQuery({
     queryKey: ['crm', 'activities', 'opp', opportunityId],
     queryFn: () => listActivities({ opportunity_id: opportunityId, limit: 50 }),
+  });
+
+  // Stage-history audit trail (from→to with dwell time). Backed by
+  // GET /opportunities/{id}/history; refetched whenever the opportunity
+  // list invalidates after a stage move / win / lose.
+  const historyQ = useQuery({
+    queryKey: ['crm', 'opp-history', opportunityId],
+    queryFn: () => getOpportunityHistory(opportunityId),
   });
 
   // Loss-reason codes come from the win-loss-reasons catalogue — the backend
@@ -1080,6 +1142,9 @@ function DealDrawer({
   });
   const lossReasons = (lossReasonsQ.data ?? []).filter(
     (r: WinLossReason) => r.is_loss_reason,
+  );
+  const winReasons = (lossReasonsQ.data ?? []).filter(
+    (r: WinLossReason) => r.is_win_reason,
   );
 
   // Resolve the linked Contact through the Contacts module (no local copy).
@@ -1115,6 +1180,7 @@ function DealDrawer({
       moveOpportunityStage(opportunityId, { to_stage_id: toStageId }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['crm', 'opportunities'] });
+      qc.invalidateQueries({ queryKey: ['crm', 'opp-history', opportunityId] });
       addToast({
         type: 'success',
         title: t('crm.stage_moved', { defaultValue: 'Stage updated' }),
@@ -1124,9 +1190,14 @@ function DealDrawer({
   });
 
   const winMut = useMutation({
-    mutationFn: () => winOpportunity(opportunityId, { won_at: todayIso() }),
+    mutationFn: () =>
+      winOpportunity(opportunityId, {
+        won_at: todayIso(),
+        win_reason_code: winReason.trim() || undefined,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['crm', 'opportunities'] });
+      qc.invalidateQueries({ queryKey: ['crm', 'opp-history', opportunityId] });
       addToast({
         type: 'success',
         title: t('crm.opportunity_won', { defaultValue: 'Deal won' }),
@@ -1143,6 +1214,7 @@ function DealDrawer({
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['crm', 'opportunities'] });
+      qc.invalidateQueries({ queryKey: ['crm', 'opp-history', opportunityId] });
       addToast({
         type: 'success',
         title: t('crm.opportunity_lost', { defaultValue: 'Deal lost' }),
@@ -1241,9 +1313,23 @@ function DealDrawer({
 
           {/* Pipeline stepper — one click moves stage */}
           <Card padding="sm">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-content-secondary">
-              {t('crm.pipeline', { defaultValue: 'Pipeline' })}
-            </p>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-content-secondary">
+                {t('crm.pipeline', { defaultValue: 'Pipeline' })}
+              </p>
+              <span
+                className="inline-flex items-center gap-1 text-[11px] text-content-tertiary"
+                title={t('crm.stepper_hint', {
+                  defaultValue:
+                    'Click a stage to move the deal. Won / lost stages are closed via the Win / Lose buttons below.',
+                })}
+              >
+                <Info size={12} />
+                {t('crm.stepper_hint_short', {
+                  defaultValue: 'Use Win / Lose below to close',
+                })}
+              </span>
+            </div>
             <div className="flex flex-wrap items-center gap-1">
               {stages.map((s, idx) => {
                 const isCurrent = s.id === opp.stage_id;
@@ -1422,7 +1508,28 @@ function DealDrawer({
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-content-secondary">
                 {t('crm.close_deal', { defaultValue: 'Close the deal' })}
               </p>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="flex flex-1 flex-col gap-1 max-w-[12rem]">
+                  <label className="text-[11px] uppercase tracking-wide text-content-tertiary">
+                    {t('crm.win_reason_optional', {
+                      defaultValue: 'Win reason (optional)',
+                    })}
+                  </label>
+                  <select
+                    value={winReason}
+                    onChange={(e) => setWinReason(e.target.value)}
+                    className={inputCls}
+                  >
+                    <option value="">
+                      {t('crm.no_reason', { defaultValue: '— none —' })}
+                    </option>
+                    {winReasons.map((r: WinLossReason) => (
+                      <option key={r.id} value={r.code}>
+                        {r.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <Button
                   variant="primary"
                   icon={<Trophy size={14} />}
@@ -1573,10 +1680,97 @@ function DealDrawer({
               </ul>
             )}
           </Card>
+
+          {/* Stage-history audit trail */}
+          <Card padding="sm">
+            <div className="mb-2 flex items-center gap-2">
+              <History size={14} className="text-content-tertiary" />
+              <p className="text-xs font-semibold uppercase tracking-wide text-content-secondary">
+                {t('crm.stage_history', { defaultValue: 'Stage history' })}
+              </p>
+            </div>
+            {historyQ.isLoading ? (
+              <SkeletonTable rows={3} columns={2} />
+            ) : (historyQ.data ?? []).length === 0 ? (
+              <p className="py-1 text-sm text-content-tertiary">
+                {t('crm.no_stage_history', {
+                  defaultValue: 'No stage changes recorded yet.',
+                })}
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {(historyQ.data ?? []).map((h: StageHistory) => {
+                  const from = h.from_stage_id
+                    ? stages.find((s) => s.id === h.from_stage_id)?.name
+                    : null;
+                  const to =
+                    stages.find((s) => s.id === h.to_stage_id)?.name ||
+                    h.to_stage_id;
+                  return (
+                    <li
+                      key={h.id}
+                      className="flex items-start gap-2 border-b border-border-light pb-2 text-sm last:border-0"
+                    >
+                      <ArrowRight
+                        size={13}
+                        className="mt-0.5 shrink-0 text-content-tertiary"
+                      />
+                      <div className="flex-1">
+                        <p className="text-sm">
+                          {from ? (
+                            <span className="text-content-secondary">
+                              {from}{' '}
+                              <ArrowRight
+                                size={11}
+                                className="inline align-middle text-content-tertiary"
+                              />{' '}
+                            </span>
+                          ) : (
+                            <span className="text-content-tertiary">
+                              {t('crm.created_in', { defaultValue: 'Created in' })}{' '}
+                            </span>
+                          )}
+                          <span className="font-medium text-content-primary">
+                            {to}
+                          </span>
+                        </p>
+                        <p className="mt-0.5 flex items-center gap-2 text-[10px] text-content-tertiary">
+                          {h.changed_at && <DateDisplay value={h.changed_at} />}
+                          {h.duration_in_previous_seconds != null &&
+                            h.duration_in_previous_seconds > 0 && (
+                              <span className="inline-flex items-center gap-0.5">
+                                <Clock size={10} />
+                                {formatDwell(h.duration_in_previous_seconds, t)}
+                              </span>
+                            )}
+                        </p>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Card>
         </div>
       </div>
     </div>
   );
+}
+
+type TFn = ReturnType<typeof useTranslation>['t'];
+
+/** Human-readable dwell time spent in the previous stage. */
+function formatDwell(seconds: number, t: TFn): string {
+  const days = Math.floor(seconds / 86400);
+  if (days >= 1) {
+    return t('crm.dwell_days', { defaultValue: '{{count}}d in prev', count: days });
+  }
+  const hours = Math.floor(seconds / 3600);
+  if (hours >= 1) {
+    return t('crm.dwell_hours', { defaultValue: '{{count}}h in prev', count: hours });
+  }
+  const mins = Math.max(1, Math.floor(seconds / 60));
+  return t('crm.dwell_mins', { defaultValue: '{{count}}m in prev', count: mins });
 }
 
 /* Inline contact + project linker — reuses Contacts & Projects, never
@@ -1676,11 +1870,17 @@ function LeadDrawer({
   leadId,
   leads,
   accountsById,
+  accounts,
+  stages,
+  onConverted,
   onClose,
 }: {
   leadId: string;
   leads: Lead[];
   accountsById: Record<string, Account>;
+  accounts: Account[];
+  stages: PipelineStage[];
+  onConverted: (opportunityId: string) => void;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
@@ -1688,6 +1888,28 @@ function LeadDrawer({
   const addToast = useToastStore((s) => s.addToast);
   const lead = leads.find((l) => l.id === leadId);
   const [notes, setNotes] = useState(lead?.qualification_notes ?? '');
+  const [showConvert, setShowConvert] = useState(false);
+  const [convForm, setConvForm] = useState({
+    title: '',
+    account_id: '',
+    stage_id: '',
+    estimated_value: '0',
+    currency: 'EUR',
+    probability_percent: '20',
+  });
+
+  // Seed the convert form once the lead (and stages) are known: pre-fill the
+  // deal title from the contact, the account from the lead, and the first
+  // pipeline stage so the user can convert in one click.
+  useEffect(() => {
+    if (!lead) return;
+    setConvForm((f) => ({
+      ...f,
+      title: f.title || `${lead.contact_name} — opportunity`,
+      account_id: f.account_id || lead.account_id || accounts[0]?.id || '',
+      stage_id: f.stage_id || stages[0]?.id || '',
+    }));
+  }, [lead, accounts, stages]);
 
   useEffect(() => {
     setNotes(lead?.qualification_notes ?? '');
@@ -1727,7 +1949,37 @@ function LeadDrawer({
     onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),
   });
 
+  // Convert a qualified lead into an opportunity — the central CRM workflow.
+  // The backend rejects conversion unless the lead is `qualified`, so the
+  // button only appears for that status (see render below).
+  const convertMut = useMutation({
+    mutationFn: () =>
+      convertLead(leadId, {
+        account_id: convForm.account_id,
+        title: convForm.title.trim(),
+        stage_id: convForm.stage_id,
+        estimated_value: Number(convForm.estimated_value) || 0,
+        currency: convForm.currency || 'EUR',
+        probability_percent: Number(convForm.probability_percent) || 0,
+      }),
+    onSuccess: (opp) => {
+      qc.invalidateQueries({ queryKey: ['crm', 'leads'] });
+      qc.invalidateQueries({ queryKey: ['crm', 'opportunities'] });
+      addToast({
+        type: 'success',
+        title: t('crm.lead_converted', {
+          defaultValue: 'Lead converted to deal',
+        }),
+      });
+      onConverted(opp.id);
+    },
+    onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),
+  });
+
   if (!lead) return null;
+
+  const convertDisabled =
+    !convForm.title.trim() || !convForm.account_id || !convForm.stage_id;
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
@@ -1823,6 +2075,165 @@ function LeadDrawer({
             </Card>
           )}
 
+          {lead.status === 'qualified' && (
+            <Card padding="sm">
+              <div className="mb-1 flex items-center gap-2">
+                <ArrowRight size={14} className="text-oe-blue" />
+                <p className="text-xs font-semibold uppercase tracking-wide text-content-secondary">
+                  {t('crm.convert_to_deal', { defaultValue: 'Convert to deal' })}
+                </p>
+              </div>
+              <p className="mb-2 text-xs text-content-tertiary">
+                {t('crm.convert_hint', {
+                  defaultValue:
+                    'This lead is qualified. Convert it into an open deal on the pipeline — the lead is then marked converted and linked to the new deal.',
+                })}
+              </p>
+              {!showConvert ? (
+                <Button
+                  variant="primary"
+                  icon={<ArrowRight size={14} />}
+                  onClick={() => setShowConvert(true)}
+                >
+                  {t('crm.convert_to_deal', { defaultValue: 'Convert to deal' })}
+                </Button>
+              ) : (
+                <div className="space-y-2">
+                  <div>
+                    <p className="mb-1 text-[11px] uppercase tracking-wide text-content-tertiary">
+                      {t('crm.title_col', { defaultValue: 'Title' })}
+                    </p>
+                    <input
+                      value={convForm.title}
+                      onChange={(e) =>
+                        setConvForm({ ...convForm, title: e.target.value })
+                      }
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <p className="mb-1 text-[11px] uppercase tracking-wide text-content-tertiary">
+                      {t('crm.account', { defaultValue: 'Account' })}
+                    </p>
+                    <select
+                      value={convForm.account_id}
+                      onChange={(e) =>
+                        setConvForm({ ...convForm, account_id: e.target.value })
+                      }
+                      className={inputCls}
+                    >
+                      <option value="">
+                        {t('crm.select_account', {
+                          defaultValue: '— Select account —',
+                        })}
+                      </option>
+                      {accounts.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="mb-1 text-[11px] uppercase tracking-wide text-content-tertiary">
+                        {t('crm.value', { defaultValue: 'Value' })}
+                      </p>
+                      <input
+                        type="number"
+                        value={convForm.estimated_value}
+                        onChange={(e) =>
+                          setConvForm({
+                            ...convForm,
+                            estimated_value: e.target.value,
+                          })
+                        }
+                        className={inputCls}
+                      />
+                    </div>
+                    <div>
+                      <p className="mb-1 text-[11px] uppercase tracking-wide text-content-tertiary">
+                        {t('crm.currency', { defaultValue: 'Currency' })}
+                      </p>
+                      <select
+                        value={convForm.currency}
+                        onChange={(e) =>
+                          setConvForm({ ...convForm, currency: e.target.value })
+                        }
+                        className={inputCls}
+                      >
+                        {CURRENCY_CODES.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="mb-1 text-[11px] uppercase tracking-wide text-content-tertiary">
+                        {t('crm.stage', { defaultValue: 'Stage' })}
+                      </p>
+                      <select
+                        value={convForm.stage_id}
+                        onChange={(e) =>
+                          setConvForm({ ...convForm, stage_id: e.target.value })
+                        }
+                        className={inputCls}
+                      >
+                        <option value="">—</option>
+                        {stages
+                          .filter((s) => !(s.is_final && (s.is_won || s.is_lost)))
+                          .map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                    <div>
+                      <p className="mb-1 text-[11px] uppercase tracking-wide text-content-tertiary">
+                        {t('crm.probability', { defaultValue: 'Probability %' })}
+                      </p>
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={convForm.probability_percent}
+                        onChange={(e) =>
+                          setConvForm({
+                            ...convForm,
+                            probability_percent: e.target.value,
+                          })
+                        }
+                        className={inputCls}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <Button
+                      variant="primary"
+                      icon={<ArrowRight size={14} />}
+                      onClick={() => convertMut.mutate()}
+                      loading={convertMut.isPending}
+                      disabled={convertDisabled}
+                    >
+                      {t('crm.convert', { defaultValue: 'Convert' })}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      onClick={() => setShowConvert(false)}
+                      disabled={convertMut.isPending}
+                    >
+                      {t('common.cancel', { defaultValue: 'Cancel' })}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </Card>
+          )}
+
           {lead.qualification_notes && (
             <Card padding="sm">
               <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-content-secondary">
@@ -1871,6 +2282,238 @@ function Field({
         {label}
       </p>
       <p className="mt-0.5 text-sm text-content-primary">{value}</p>
+    </div>
+  );
+}
+
+/* ═══════════════ Insights (analytics surfaced from the backend) ═══════════════ */
+
+function InsightsCard({
+  label,
+  value,
+  hint,
+  icon,
+}: {
+  label: React.ReactNode;
+  value: React.ReactNode;
+  hint?: React.ReactNode;
+  icon?: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border border-border-light bg-surface-primary p-4">
+      <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-content-tertiary">
+        {icon}
+        {label}
+      </div>
+      <div className="mt-1 text-xl font-semibold text-content-primary">
+        {value}
+      </div>
+      {hint && (
+        <p className="mt-0.5 text-xs text-content-tertiary">{hint}</p>
+      )}
+    </div>
+  );
+}
+
+function InsightsPanel({
+  stagesById,
+}: {
+  stagesById: Record<string, PipelineStage>;
+}) {
+  const { t } = useTranslation();
+
+  const dashQ = useQuery({
+    queryKey: ['crm', 'dashboard'],
+    queryFn: () => getCrmDashboard(),
+  });
+  const winLossQ = useQuery({
+    queryKey: ['crm', 'win-loss'],
+    queryFn: () => getWinLossAnalytics(),
+  });
+
+  if (dashQ.isLoading || winLossQ.isLoading) {
+    return (
+      <Card padding="md">
+        <SkeletonTable rows={6} columns={4} />
+      </Card>
+    );
+  }
+
+  if (dashQ.error || winLossQ.error) {
+    return (
+      <Card padding="none">
+        <EmptyState
+          icon={<AlertTriangle size={22} />}
+          title={t('crm.insights_failed', {
+            defaultValue: 'Could not load insights',
+          })}
+          description={getErrorMessage(dashQ.error ?? winLossQ.error)}
+        />
+      </Card>
+    );
+  }
+
+  const dash = dashQ.data;
+  const wl = winLossQ.data;
+
+  // Per-currency truth where the backend provides it; fall back to the
+  // blended scalar (still labelled honestly) only when absent.
+  const pipelineItems =
+    dash?.by_currency?.map((c) => ({ amount: c.total, currency: c.currency })) ??
+    [];
+  const weightedItems =
+    dash?.weighted_by_currency?.map((c) => ({
+      amount: c.total,
+      currency: c.currency,
+    })) ?? [];
+
+  const winRate = toNum(dash?.win_rate_30d);
+  const stageRows = Object.entries(dash?.by_stage ?? {});
+
+  const lostReasons = Object.entries(wl?.lost_reasons_breakdown ?? {}).sort(
+    (a, b) => b[1] - a[1],
+  );
+  const lostTotal = lostReasons.reduce((sum, [, n]) => sum + n, 0);
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <InsightsCard
+          icon={<FolderKanban size={12} />}
+          label={t('crm.open_deals', { defaultValue: 'Open deals' })}
+          value={dash?.open_opportunities ?? 0}
+          hint={
+            <span>
+              {t('crm.pipeline_value', { defaultValue: 'Pipeline' })}:{' '}
+              {pipelineItems.length > 0 ? (
+                <MultiCurrencyTotal items={pipelineItems} variant="inline" compact />
+              ) : (
+                <MoneyDisplay amount={toNum(dash?.pipeline_value)} compact />
+              )}
+            </span>
+          }
+        />
+        <InsightsCard
+          icon={<BarChart3 size={12} />}
+          label={t('crm.weighted_forecast', { defaultValue: 'Weighted forecast' })}
+          value={
+            weightedItems.length > 0 ? (
+              <MultiCurrencyTotal
+                items={weightedItems}
+                variant="inline"
+                compact
+              />
+            ) : (
+              <MoneyDisplay amount={toNum(dash?.weighted_value)} compact />
+            )
+          }
+          hint={t('crm.weighted_hint', {
+            defaultValue: 'Value × probability across open deals',
+          })}
+        />
+        <InsightsCard
+          icon={<Trophy size={12} />}
+          label={t('crm.win_rate_30d', { defaultValue: 'Win rate (30d)' })}
+          value={`${Math.round(winRate)}%`}
+          hint={
+            <span>
+              {t('crm.won_lost_counts', {
+                defaultValue: '{{won}} won · {{lost}} lost',
+                won: wl?.won_count ?? 0,
+                lost: wl?.lost_count ?? 0,
+              })}
+            </span>
+          }
+        />
+        <InsightsCard
+          icon={<Clock size={12} />}
+          label={t('crm.avg_sales_cycle', { defaultValue: 'Avg sales cycle' })}
+          value={t('crm.n_days', {
+            defaultValue: '{{count}} days',
+            count: wl?.average_sales_cycle_days ?? 0,
+          })}
+          hint={t('crm.leads_open_n', {
+            defaultValue: '{{count}} open leads',
+            count: dash?.leads_open ?? 0,
+          })}
+        />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card padding="md">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-content-secondary">
+            {t('crm.by_stage', { defaultValue: 'Open value by stage' })}
+          </p>
+          {stageRows.length === 0 ? (
+            <p className="py-2 text-sm text-content-tertiary">
+              {t('crm.no_open_deals', { defaultValue: 'No open deals yet.' })}
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {stageRows.map(([stageId, info]) => {
+                const stage = stagesById[stageId];
+                return (
+                  <li
+                    key={stageId}
+                    className="flex items-center justify-between gap-3 border-b border-border-light pb-2 text-sm last:border-0"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span
+                        className="inline-block h-2.5 w-2.5 rounded-full"
+                        style={{
+                          backgroundColor: stage ? stageAccent(stage) : '#94a3b8',
+                        }}
+                      />
+                      <span className="font-medium text-content-primary">
+                        {stage?.name || stageId}
+                      </span>
+                      <Badge variant="neutral">{info.count}</Badge>
+                    </span>
+                    <MoneyDisplay amount={toNum(info.total)} compact />
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+
+        <Card padding="md">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-content-secondary">
+            {t('crm.lost_reasons', { defaultValue: 'Why deals are lost' })}
+          </p>
+          {lostReasons.length === 0 ? (
+            <p className="py-2 text-sm text-content-tertiary">
+              {t('crm.no_lost_deals', {
+                defaultValue: 'No lost deals recorded yet.',
+              })}
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {lostReasons.map(([reason, count]) => {
+                const pct = lostTotal > 0 ? (count / lostTotal) * 100 : 0;
+                return (
+                  <li key={reason} className="text-sm">
+                    <div className="mb-0.5 flex items-center justify-between gap-3">
+                      <span className="truncate capitalize text-content-primary">
+                        {reason.replace(/_/g, ' ')}
+                      </span>
+                      <span className="shrink-0 text-content-tertiary">
+                        {count}
+                      </span>
+                    </div>
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-secondary">
+                      <div
+                        className="h-full rounded-full bg-rose-400"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }
@@ -1934,6 +2577,7 @@ function CreateModal({
     subject: '',
     body: '',
     due_at: '',
+    account_id: '',
   });
 
   const submit = async () => {
@@ -1990,6 +2634,7 @@ function CreateModal({
           subject: actForm.subject || undefined,
           body: actForm.body || undefined,
           due_at: actForm.due_at || null,
+          account_id: actForm.account_id || null,
         });
         addToast({
           type: 'success',
@@ -2119,14 +2764,19 @@ function CreateModal({
             <WideModalField
               label={t('crm.currency', { defaultValue: 'Currency' })}
             >
-              <input
+              <select
                 value={dealForm.currency}
                 onChange={(e) =>
                   setDealForm({ ...dealForm, currency: e.target.value })
                 }
                 className={inputCls}
-                maxLength={8}
-              />
+              >
+                {CURRENCY_CODES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
             </WideModalField>
             <WideModalField label={t('crm.stage', { defaultValue: 'Stage' })}>
               <select
@@ -2311,6 +2961,15 @@ function CreateModal({
 
       {kind === 'activity' && (
         <WideModalSection columns={2}>
+          <WideModalField span={2}>
+            <p className="flex items-start gap-1.5 text-xs text-content-tertiary">
+              <Info size={13} className="mt-0.5 shrink-0" />
+              {t('crm.activity_link_hint', {
+                defaultValue:
+                  'Link this activity to an account so it shows up on that account. To attach an activity to a specific deal, open the deal and log it from there.',
+              })}
+            </p>
+          </WideModalField>
           <WideModalField label={t('crm.kind', { defaultValue: 'Kind' })}>
             <select
               value={actForm.kind}
@@ -2338,6 +2997,31 @@ function CreateModal({
               }
               className={inputCls}
             />
+          </WideModalField>
+          <WideModalField
+            label={t('crm.link_account', {
+              defaultValue: 'Link to account (optional)',
+            })}
+            span={2}
+          >
+            <select
+              value={actForm.account_id}
+              onChange={(e) =>
+                setActForm({ ...actForm, account_id: e.target.value })
+              }
+              className={inputCls}
+            >
+              <option value="">
+                {t('crm.no_account_link', {
+                  defaultValue: '— Not linked —',
+                })}
+              </option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
           </WideModalField>
           <WideModalField
             label={t('crm.subject', { defaultValue: 'Subject' })}

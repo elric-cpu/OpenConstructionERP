@@ -855,6 +855,10 @@ def _envelope_from_group(
 
     parts: list[str] = []
     # 1. Human category (translated IFC label) — anchors the embedding.
+    # ``ifc_labels.lookup`` aliases a raw Revit OST category ("Walls") to
+    # its canonical IFC class meta, so an RVT group inherits the right
+    # label + din276 / masterformat / nrm hints. Genuine IFC and non-BIM
+    # placeholder categories are unaffected.
     ifc_meta = ifc_labels.lookup(sample.category)
     category_label = ifc_meta.en_label
     # For free-text / BoQ sources the category is a placeholder
@@ -871,7 +875,14 @@ def _envelope_from_group(
     raw_text = _attr("raw_text", "description")
     if source in {"text", "boq"} and raw_text:
         parts.append(raw_text)
-    type_name = _attr("type_name", "Type", "Family", "name")
+    # ``type_name`` carries the discriminating Revit family/type
+    # ("Exterior - Brick on Mtl. Stud" / "Generic 150mm"). Prefer a real
+    # family/type over the bare category word: the BIM adapter already
+    # surfaces the RVT ``family`` as ``type_name``, but we also probe
+    # ``family`` here so a group keyed straight off the family attribute
+    # still feeds it into the dense query. Never let it collapse to the
+    # category label (that adds no signal beyond ``category_label`` above).
+    type_name = _attr("type_name", "family", "Family", "Type", "name")
     if type_name and type_name != category_label:
         parts.append(type_name)
     # 3. Material.
@@ -945,16 +956,19 @@ def _envelope_from_group(
         nominal_size_mm = int(round(diameter_mm))
 
     # Forward ``ifc_class`` only when it's an actual IFC class — BIM
-    # extractors set ``sample.category="IfcWall"`` / ``IfcSlab``, but BoQ /
-    # text / image adapters synthesise placeholders (``"BoQ"``, ``"Text"``)
-    # that aren't valid IFC identifiers. Promoting those to the v3
-    # SearchPlan's ``ifc_class`` hard filter eliminates every Qdrant hit
-    # (CWICR rates carry empty / IfcCovering / etc. for non-BIM rows) and
-    # collapses the search to the metadata-only fallback (score ≈ 0.0002).
-    # An explicit ``Ifc`` prefix is the cheapest, most defensive check —
-    # callers who know the IFC class for a BoQ row can put it in
+    # extractors set ``sample.category="IfcWall"`` / ``IfcSlab`` (and the
+    # adapter now crosswalks a Revit OST category into a canonical
+    # ``IfcXxx`` stored in ``attributes["ifc_class"]``), but BoQ / text /
+    # image adapters synthesise placeholders (``"BoQ"``, ``"Text"``) that
+    # aren't valid IFC identifiers. Promoting those to the v3 SearchPlan's
+    # ``ifc_class`` hard filter eliminates every Qdrant hit (CWICR rates
+    # carry empty / IfcCovering / etc. for non-BIM rows) and collapses the
+    # search to the metadata-only fallback (score ≈ 0.0002). An explicit
+    # ``Ifc`` prefix (case-insensitive) is the cheapest, most defensive
+    # check — callers who know the IFC class for a BoQ row can put it in
     # ``attributes["ifc_class"]`` (the BoqAdapter forwards that key
-    # verbatim).
+    # verbatim). Reading the normalized attribute first is what lets RVT
+    # groups now forward a real IFC class.
     raw_cat = (sample.category or "").strip()
     attr_ifc_class = _attr("ifc_class", "IfcClass")
     forwarded_ifc_class: str | None = None
@@ -962,6 +976,19 @@ def _envelope_from_group(
         forwarded_ifc_class = attr_ifc_class
     elif raw_cat.lower().startswith("ifc"):
         forwarded_ifc_class = raw_cat
+
+    # Material bucket for the x1.3 soft boost. Prefer an explicit material
+    # property. When a Revit model carries the material inside the family
+    # name instead ("Exterior - Brick on Mtl. Stud"), fall back to the
+    # type/family string so a confident bucket ("brick") still fires. The
+    # bucketiser is conservative (returns ``None`` when unsure), so this
+    # never invents a material — it only recovers one the property layer
+    # missed. The type-name fallback is scoped to non-IFC (Revit) inputs
+    # so a genuine IFC envelope's ``material_class`` stays exactly as
+    # before (IFC elements always carry their material as a property).
+    material_class = _normalise_material_class(material)
+    if material_class is None and not raw_cat.lower().startswith("ifc"):
+        material_class = _normalise_material_class(type_name)
 
     return ElementEnvelope(
         source=source,
@@ -973,8 +1000,12 @@ def _envelope_from_group(
         classifier_hint=classifier_hint,
         ifc_class=forwarded_ifc_class,
         ifc_predefined_type=_attr("ifc_predefined_type", "PredefinedType"),
-        ost_category=_attr("ost_category", "Category", "OST_Category"),
-        material_class=_normalise_material_class(material),
+        # The Revit OST category drives the x1.5 ``ost_category`` soft
+        # boost. The BIM adapter records it under both ``ost_category``
+        # and ``revit_category`` for any non-IFC (Revit) source, so it
+        # fires for RVT models that previously had no OST hint at all.
+        ost_category=_attr("ost_category", "revit_category", "Category", "OST_Category"),
+        material_class=material_class,
         nominal_size_mm=nominal_size_mm,
         is_external=_parse_tri_bool(is_external_raw),
         is_loadbearing=_parse_tri_bool(load_bearing_raw),
@@ -1329,6 +1360,29 @@ def _to_decimal(s: str | None, default: float = 0.0) -> float:
         return default
 
 
+# v3 §10 — write-boundary quantum for persisted Position money fields.
+# Mirrors boq.service: per-line storage stays at 4dp so the q×r identity
+# is preserved and aggregate drift cannot compound across thousands of
+# lines. Aggregate read boundaries snap to 2dp separately.
+_Q4 = Decimal("0.0001")
+
+
+def _decimal_or_zero(value: object) -> Decimal:
+    """Coerce a catalogue value to an exact ``Decimal``, falling back to 0.
+
+    Used at the BOQ write boundary so monetary rates never round-trip
+    through a lossy float before being stringified into ``Position``.
+    Non-finite / unparseable input collapses to ``Decimal('0')``.
+    """
+    if value is None:
+        return Decimal("0")
+    try:
+        d = value if isinstance(value, Decimal) else Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return Decimal("0")
+    return d if d.is_finite() else Decimal("0")
+
+
 # ── Service ──────────────────────────────────────────────────────────────
 
 
@@ -1661,12 +1715,16 @@ class MatchElementsService:
             except Exception:  # noqa: BLE001 — defensive, fx is optional
                 fx_map = {}
 
-        def _convert(amount: float, src_ccy: str) -> tuple[float, bool]:
+        def _convert(amount: Decimal, src_ccy: str) -> tuple[Decimal, bool]:
             """Return (amount_in_project_ccy, ok). ``ok`` is False when FX
             is missing — caller drops the row rather than stamping a
-            misleading project-currency label on a foreign amount."""
+            misleading project-currency label on a foreign amount.
+
+            v3 §10 — money flows through ``Decimal`` end-to-end so cents
+            never drift through float intermediates (mirrors the rollup in
+            ``apply_to_boq``)."""
             if not amount:
-                return 0.0, True
+                return Decimal("0"), True
             if not project_ccy:
                 # No project currency known — pass through raw amount;
                 # caller stamps with row's own currency.
@@ -1674,24 +1732,30 @@ class MatchElementsService:
             if not src_ccy or src_ccy == project_ccy:
                 return amount, True
             factor = fx_map.get(src_ccy)
-            if factor is None or factor <= 0:
+            if factor is None:
                 # No FX rate — refuse to silently mis-label.
-                return 0.0, False
-            return amount * float(factor), True
+                return Decimal("0"), False
+            try:
+                factor_dec = Decimal(str(factor))
+            except (InvalidOperation, TypeError, ValueError):
+                return Decimal("0"), False
+            if not factor_dec.is_finite() or factor_dec <= 0:
+                return Decimal("0"), False
+            return amount * factor_dec, True
 
-        totals: dict[uuid.UUID, tuple[float, str | None]] = dict.fromkeys(sids, (0.0, None))
+        totals: dict[uuid.UUID, tuple[Decimal, str | None]] = dict.fromkeys(sids, (Decimal("0"), None))
         for sid, cid, qty_raw, unit in applied_rows:
             if cid is None or cid not in cost_lookup:
                 continue
             rate, ccy = cost_lookup[cid]
             qty = _quantity_for_unit(qty_raw or {}, unit or "pcs")
-            row_total, ok = _convert(rate * qty, ccy)
+            row_total, ok = _convert(Decimal(str(rate)) * Decimal(str(qty)), ccy)
             if not ok:
                 # Drop rows we can't FX-convert into the project
                 # currency. The session is still shown — just with a
                 # smaller (or zero) total — which is honest.
                 continue
-            cur, prev_ccy = totals.get(sid, (0.0, None))
+            cur, prev_ccy = totals.get(sid, (Decimal("0"), None))
             # When project currency is known, every row converts into
             # it, so the stamp is unambiguous. When it isn't, we fall
             # back to whichever currency the first applied row carried
@@ -1702,7 +1766,7 @@ class MatchElementsService:
         out: list[schemas.SessionSummary] = []
         for s in sessions:
             counts = per_session.get(s.id, {})
-            tot, ccy = totals.get(s.id, (0.0, None))
+            tot, ccy = totals.get(s.id, (Decimal("0"), None))
             out.append(
                 schemas.SessionSummary(
                     id=s.id,
@@ -1716,7 +1780,7 @@ class MatchElementsService:
                     group_count=sum(counts.values()),
                     confirmed_count=counts.get("confirmed", 0),
                     applied_count=counts.get("applied", 0),
-                    total_value=round(tot, 2),
+                    total_value=tot.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
                     currency=ccy,
                 )
             )
@@ -3180,8 +3244,12 @@ class MatchElementsService:
             # dimensionally honest.
             raw_unit = (ci.unit if ci else unit) or unit
             mult, position_unit = _split_unit_multiplier(raw_unit)
-            raw_rate = _to_decimal(ci.rate, 0.0) if ci else 0.0
-            unit_rate = (raw_rate / mult) if mult > 0 else raw_rate
+            # v3 §10 — keep the rate as Decimal from the catalogue value so
+            # the stored Position.unit_rate / .total never round-trip
+            # through a lossy float (mirrors boq.service._compute_total).
+            raw_rate = _decimal_or_zero(ci.rate) if ci else Decimal("0")
+            mult_dec = Decimal(str(mult))
+            unit_rate = (raw_rate / mult_dec) if mult_dec > 0 else raw_rate
 
             # Dimensional gate: if the catalog row is priced in m³ but
             # the group quantity is `pcs`, the line total is meaningless.
@@ -3195,7 +3263,7 @@ class MatchElementsService:
             env_dim = _DIMENSION_GROUP.get(env_unit_canon, "")
             cand_dim = _DIMENSION_GROUP.get(cand_unit_canon, "")
             if env_dim and cand_dim and env_dim != cand_dim:
-                unit_rate = 0.0
+                unit_rate = Decimal("0")
 
             currency = (ci.currency if ci else base_currency) or base_currency
             classification = ci.classification if ci else {}
@@ -3269,8 +3337,8 @@ class MatchElementsService:
                     description=description,
                     unit=position_unit,
                     quantity=f"{qty:.4f}",
-                    unit_rate=f"{unit_rate:.4f}",
-                    total=f"{qty * unit_rate:.4f}",
+                    unit_rate=f"{unit_rate.quantize(_Q4, rounding=ROUND_HALF_UP)}",
+                    total=f"{(Decimal(str(qty)) * unit_rate).quantize(_Q4, rounding=ROUND_HALF_UP)}",
                     classification=classification if isinstance(classification, dict) else {},
                     source="cad_import",
                     confidence=g.confidence or "",

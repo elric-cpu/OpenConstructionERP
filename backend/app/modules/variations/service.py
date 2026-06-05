@@ -1459,7 +1459,7 @@ class VariationsService:
             quantity=qty,
             unit=data.unit,
             unit_rate=rate,
-            total=qty * rate,
+            total=(qty * rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
             currency=line_currency,
             source=data.source,
         )
@@ -1480,7 +1480,9 @@ class VariationsService:
             fields["unit_rate"] = _to_decimal(fields["unit_rate"])
         new_qty = fields.get("quantity", row.quantity)
         new_rate = fields.get("unit_rate", row.unit_rate)
-        fields["total"] = _to_decimal(new_qty) * _to_decimal(new_rate)
+        fields["total"] = (_to_decimal(new_qty) * _to_decimal(new_rate)).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
         await self.cost_impact_repo.update_fields(line_id, **fields)
         await self.session.refresh(row)
         return row
@@ -1767,7 +1769,7 @@ class VariationsService:
             quantity=qty,
             unit=data.unit,
             unit_rate=rate,
-            total=qty * rate,
+            total=(qty * rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
             worker_name=data.worker_name,
             equipment_code=data.equipment_code,
         )
@@ -1804,7 +1806,9 @@ class VariationsService:
             fields["unit_rate"] = _to_decimal(fields["unit_rate"])
         new_qty = fields.get("quantity", row.quantity)
         new_rate = fields.get("unit_rate", row.unit_rate)
-        fields["total"] = _to_decimal(new_qty) * _to_decimal(new_rate)
+        fields["total"] = (_to_decimal(new_qty) * _to_decimal(new_rate)).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
         await self.daywork_line_repo.update_fields(line_id, **fields)
         await self.session.refresh(row)
         # Refresh sheet total.

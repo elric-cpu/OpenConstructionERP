@@ -421,9 +421,12 @@ async def approve_permit(
     item_id: uuid.UUID,
     payload: PermitApprovalPayload,
     user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("hse_advanced.approve_permit")),
     service: HSEAdvancedService = Depends(_get_service),
 ) -> PermitResponse:
+    existing = await service.get_permit(item_id)
+    await _guard_project(existing.project_id, user_id, session)
     approver_uuid: uuid.UUID | None = None
     try:
         approver_uuid = uuid.UUID(str(user_id)) if user_id else None
@@ -436,9 +439,13 @@ async def approve_permit(
 @router.post("/permits/{item_id}/activate", response_model=PermitResponse)
 async def activate_permit(
     item_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("hse_advanced.update")),
     service: HSEAdvancedService = Depends(_get_service),
 ) -> PermitResponse:
+    existing = await service.get_permit(item_id)
+    await _guard_project(existing.project_id, user_id, session)
     obj = await service.activate_permit(item_id)
     return PermitResponse.model_validate(obj)
 
@@ -446,9 +453,13 @@ async def activate_permit(
 @router.post("/permits/{item_id}/suspend", response_model=PermitResponse)
 async def suspend_permit(
     item_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("hse_advanced.update")),
     service: HSEAdvancedService = Depends(_get_service),
 ) -> PermitResponse:
+    existing = await service.get_permit(item_id)
+    await _guard_project(existing.project_id, user_id, session)
     obj = await service.suspend_permit(item_id)
     return PermitResponse.model_validate(obj)
 
@@ -457,9 +468,13 @@ async def suspend_permit(
 async def close_permit(
     item_id: uuid.UUID,
     payload: PermitClosurePayload,
+    user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("hse_advanced.close_permit")),
     service: HSEAdvancedService = Depends(_get_service),
 ) -> PermitResponse:
+    existing = await service.get_permit(item_id)
+    await _guard_project(existing.project_id, user_id, session)
     obj = await service.close_permit(
         item_id,
         closure_checklist_passed=payload.closure_checklist_passed,
@@ -471,9 +486,13 @@ async def close_permit(
 @router.post("/permits/{item_id}/cancel", response_model=PermitResponse)
 async def cancel_permit(
     item_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("hse_advanced.update")),
     service: HSEAdvancedService = Depends(_get_service),
 ) -> PermitResponse:
+    existing = await service.get_permit(item_id)
+    await _guard_project(existing.project_id, user_id, session)
     obj = await service.cancel_permit(item_id)
     return PermitResponse.model_validate(obj)
 
@@ -1150,9 +1169,13 @@ async def permit_prereq_status(
 async def update_permit_prereqs(
     item_id: uuid.UUID,
     payload: PermitPrerequisitesPayload,
+    user_id: CurrentUserId,
+    session: SessionDep,
     _perm: None = Depends(RequirePermission("hse_advanced.update_prereqs")),
     service: HSEAdvancedService = Depends(_get_service),
 ) -> PermitResponse:
+    existing = await service.get_permit(item_id)
+    await _guard_project(existing.project_id, user_id, session)
     obj = await service.update_permit_prerequisites(item_id, payload)
     return PermitResponse.model_validate(obj)
 

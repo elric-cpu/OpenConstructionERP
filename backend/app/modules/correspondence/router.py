@@ -7,6 +7,7 @@ Endpoints:
     PATCH  /{correspondence_id}                         - Update correspondence
     DELETE /{correspondence_id}                         - Delete correspondence
     POST   /{correspondence_id}/attachments/            - Upload attachment (magic-byte gated)
+    GET    /{correspondence_id}/attachments/{index}     - Download a stored attachment
 """
 
 import logging
@@ -14,6 +15,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse
 
 from app.core.file_signature import (
     SIGNATURE_BYTES_REQUIRED,
@@ -243,3 +245,84 @@ async def upload_attachment(
     relative_path = f"correspondence/attachments/{safe_name}"
     updated = await service.add_attachment(correspondence_id, relative_path)
     return _to_response(updated)
+
+
+# Base directory under which every correspondence attachment lives. The
+# stored attachment paths are relative to this (``correspondence/attachments/
+# <name>``), so the download handler resolves against it and refuses anything
+# that escapes the tree.
+_UPLOADS_BASE = Path("uploads")
+
+# Media types we are willing to hand back, keyed by stored extension. Anything
+# not in this map is served as ``application/octet-stream`` so the browser
+# downloads rather than renders it — defence in depth against an HTML/SVG
+# payload that slipped past the upload magic-byte gate.
+_DOWNLOAD_MEDIA_TYPES = {
+    ".pdf": "application/pdf",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".zip": "application/zip",
+}
+
+
+@router.get("/{correspondence_id}/attachments/{index}")
+async def download_attachment(
+    correspondence_id: uuid.UUID,
+    index: int,
+    session: SessionDep,
+    user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("correspondence.read")),
+    service: CorrespondenceService = Depends(_get_service),
+) -> FileResponse:
+    """‌⁠‍Serve a stored correspondence attachment by its list index.
+
+    The attachment list holds server-derived relative paths only; the index
+    addresses an entry rather than letting the client name a path. We still
+    resolve the path and confirm it stays inside ``uploads/`` (and is not a
+    symlink) before streaming, mirroring the Documents photo-serve gate.
+    """
+    existing = await service.get_correspondence(correspondence_id)
+    await verify_project_access(existing.project_id, str(user_id), session)
+
+    attachments = list(getattr(existing, "attachments", None) or [])
+    if index < 0 or index >= len(attachments):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attachment not found",
+        )
+
+    relative_path = attachments[index]
+    file_path = (_UPLOADS_BASE / relative_path).resolve()
+    uploads_base = _UPLOADS_BASE.resolve()
+
+    # Path-traversal / symlink guard — the stored path is trusted (we derived
+    # it), but resolve-then-relative_to is cheap insurance against a poisoned
+    # row or a future code path that stores a client-influenced value.
+    try:
+        file_path.relative_to(uploads_base)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    if file_path.is_symlink():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Symlinks not permitted",
+        )
+
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attachment file missing on disk",
+        )
+
+    ext = file_path.suffix.lower()
+    media_type = _DOWNLOAD_MEDIA_TYPES.get(ext, "application/octet-stream")
+    return FileResponse(
+        path=str(file_path),
+        filename=file_path.name,
+        media_type=media_type,
+        content_disposition_type="attachment",
+    )

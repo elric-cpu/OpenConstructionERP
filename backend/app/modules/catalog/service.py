@@ -279,7 +279,13 @@ class CatalogResourceService:
                     continue
 
                 key = f"{comp_type}:{code}"
-                rate = float(comp.get("unit_rate", 0) or 0)
+                try:
+                    rate = float(comp.get("unit_rate", 0) or 0)
+                except (ValueError, TypeError):
+                    # Skip components whose unit_rate is non-numeric
+                    # (e.g. "N/A", "TBD", or a nested object). Mirrors the
+                    # GitHub CSV import path's malformed-row handling.
+                    continue
 
                 if key not in component_data:
                     component_data[key] = {
@@ -390,7 +396,13 @@ class CatalogResourceService:
                     continue
 
                 key = f"{comp_type}:{code}"
-                rate = float(comp.get("unit_rate", 0) or 0)
+                try:
+                    rate = float(comp.get("unit_rate", 0) or 0)
+                except (ValueError, TypeError):
+                    # Skip components whose unit_rate is non-numeric
+                    # (e.g. "N/A", "TBD", or a nested object). Mirrors the
+                    # GitHub CSV import path's malformed-row handling.
+                    continue
 
                 if key not in component_data:
                     component_data[key] = {

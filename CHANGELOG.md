@@ -5,6 +5,27 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.9.0] - 2026-06-05
+
+### Added
+
+- A screen for the Management of Change register. The module had a working backend and permissions but no way to use it from the app. You can now raise a change request, set its category and risk level, record the headline cost and schedule impact, and walk it through review, approval and implementation. Each step is a guarded transition that asks for a short note so the audit trail stays complete, and the page only ever offers the moves that are legal for the current state. Entries take per-line impact assessments, link across to variations and change orders, and show a clean empty state until the first request is raised. It sits under the Commercial group in the sidebar at /moc and /projects/:id/moc, mirroring how the NCR register is wired.
+
+### Fixed
+
+- Cost matching now returns results for projects outside the US. A Canadian, UK or German project resolved to the English cost collection, which only carries US-tagged rates, and then pinned a country filter that removed every row, so the match screen came back empty. The country pin is now data-driven: if the region has no rows in the collection being searched, the pin is dropped and the whole collection is ranked instead. Where the country really is present, for example Mexican rates inside the Spanish collection, the pin still narrows correctly. A keyword fallback in the Revit to IFC crosswalk also maps the long tail of custom Revit sub-categories such as curtain grids, stair railings and framing joists, while genuinely non-billable categories stay unmapped. Across six demo models the IFC suggest rate rose from 32 to 95 percent and Revit from 57 to 87 percent, and the three non-US projects went from zero to between 84 and 95 percent.
+- Backup restore is now scoped to the user who runs it. Export already filtered rows to the caller, but restore cleared every row in each table before reloading, so one user's restore could wipe another user's data. Restore now deletes only inside the same ownership scope it exports.
+- The purchase-order list no longer returns a server error for a project that has at least one order. Two figures on the order were declared as plain text but exposed by the model as methods, so reading the list failed validation before the real values could be filled in. The list and the per-order quantities now read consistently, with ordered, received and invoiced totals shown the same way rather than one as 100 and another as 100.0.
+- A purchase order can only be created as a draft. It was possible to create one already approved or issued and skip the approval step that commits budget. The only legal starting state is now draft, and callers move it forward with the approve and issue actions.
+- Closed a team-member access hole. Listing a team's members did not check project access, so any signed-in user could read any team's membership. It now gates on the parent project, the same rule used for create, update and delete.
+- Management-of-change entries return their stored notes again. The response field was being read from the wrong place and quietly came back empty, so saved metadata never reached the client.
+- A broad hardening pass across the backend modules from the deep module-by-module review: access-control checks added where they were missing, money handled as exact decimals, safer list and detail endpoints, and small correctness fixes across procurement, contracts, files, approvals, reporting and many more. This branch also folds in the desktop launcher hardening and the plain-http frontend fixes that shipped in the 6.8 desktop builds, plus four TypeScript errors that had broken the production build.
+
+### Changed
+
+- Reporting reads better before a project has any data. Projects with no cost snapshot yet show a clean dash instead of "N/A", with a short note that CPI, SPI and progress appear after the first snapshot, so an empty value reads as "not started" rather than broken.
+- Removed the PostgreSQL-migration notice banner left over from the 6.0 launch, and raised the users list cap so the markups and change-order views no longer reject a 200-row page. Also dropped a dead, never-called placeholder in the property-development module, and folded in the cross-module depth and UI polish from this quality wave across approval routes, coordination, field reports, change orders, inspections, BI dashboards, correspondence and BIM requirements, together with the translation-key merge behind it.
+
 ## [6.8.2] - 2026-06-05
 
 ### Fixed

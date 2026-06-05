@@ -28,6 +28,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.dependencies import verify_project_access
 from app.modules.file_distribution.models import (
     FileDistributionList,
     FileDistributionMember,
@@ -615,6 +616,13 @@ class SubscriptionService:
         )
         if row is None:
             raise DistributionNotFoundError(str(subscription_id))
+        # IDOR guard: file_distribution.subscribe is a global role and an
+        # external-only subscription has subscriber_user_id IS NULL, so the
+        # subscriber-ownership check below would let any permission holder
+        # delete subs in projects they cannot access. Mirror create()'s
+        # verify_project_access gate (raises 404 on denial, matching the
+        # codebase IDOR policy) before touching the row.
+        await verify_project_access(row.project_id, str(user_id), self.session)
         if row.subscriber_user_id is not None and row.subscriber_user_id != user_id:
             # Only the subscriber themselves (or, indirectly via
             # cascade, the project owner) can delete a sub.

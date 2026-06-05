@@ -254,6 +254,53 @@ def test_country_filter_returns_none_for_empty() -> None:
     assert country_filter_for("   ") is None
 
 
+def test_country_filter_drops_pin_when_head_absent_from_collection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-US English projects fix: a region head the resolved collection
+    doesn't actually carry must NOT be pinned, or every candidate is filtered
+    out. ``CA_TORONTO`` → head ``"CA"``, but the English CWICR snapshot
+    ``cwicr_en_v3`` holds only ``country="US"`` rows. The guard drops the pin
+    so the whole collection is searched (best available rates) rather than
+    returning an empty list - the user-reported "/match-elements returns
+    nothing" for Canadian / UK / non-US English projects."""
+    from app.modules.costs import qdrant_adapter as qa
+
+    monkeypatch.setattr(qa, "_country_head_present", lambda _collection, _head: False)
+    assert qa.country_filter_for("CA_TORONTO") is None
+    assert qa.country_filter_for("GBR_LONDON") is None
+    assert qa.country_filter_for("DE_BERLIN") is None
+
+
+def test_country_filter_keeps_pin_when_head_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the resolved collection genuinely carries the region's country
+    (e.g. ``MX`` rows inside ``cwicr_es_v3``), the pin is preserved so the
+    search correctly narrows to that country - the data-driven guard never
+    weakens a legitimate per-country catalogue."""
+    from app.modules.costs import qdrant_adapter as qa
+
+    monkeypatch.setattr(qa, "_country_head_present", lambda _collection, _head: True)
+    assert qa.country_filter_for("MX_MEXICO") == "MX"
+    assert qa.country_filter_for("USA_USD") == "US"
+    assert qa.country_filter_for("ENG_TORONTO") == "CA"
+
+
+def test_country_head_present_true_when_probe_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Probe-disabled escape hatch keeps the pure pinning contract and issues
+    no network I/O - mirrors ``_available_cwicr_collections``."""
+    from app.modules.costs import qdrant_adapter as qa
+
+    # autouse fixture already sets CWICR_COLLECTION_PROBE=0; assert the
+    # escape hatch returns True without touching Qdrant.
+    monkeypatch.setenv("CWICR_COLLECTION_PROBE", "0")
+    get_settings.cache_clear()
+    assert qa._country_head_present("cwicr_en_v3", "CA") is True
+
+
 # ── _build_filter — 29 indexed payload fields per MAPPING_PROCESS.md §2.2 ──
 
 

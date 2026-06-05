@@ -105,10 +105,16 @@ class FileVersionService:
         canonical = _canonicalize(payload.canonical_name)
         now = datetime.now(UTC)
 
+        # Lock the prior current row (FOR UPDATE) so two concurrent
+        # registrations on the same chain cannot both supersede it and
+        # both leave their new row as is_current=True. The second writer
+        # blocks here until the first commits, then re-reads the now
+        # superseded row.
         previous_current = await self.repo.get_current(
             project_id=payload.project_id,
             file_kind=payload.file_kind,
             canonical_name=canonical,
+            for_update=True,
         )
 
         # Caller may pass an explicit previous_version_id (e.g. when
@@ -195,10 +201,16 @@ class FileVersionService:
             return target
 
         now = datetime.now(UTC)
+        # Lock the current row (FOR UPDATE) so two concurrent restores on
+        # the same chain are serialised. The second restore blocks here
+        # until the first commits, then re-reads the now-promoted row as
+        # the current one and demotes *that* instead of the stale prior
+        # current — keeping exactly one is_current=True row per chain.
         previous_current = await self.repo.get_current(
             project_id=target.project_id,
             file_kind=target.file_kind,
             canonical_name=target.canonical_name,
+            for_update=True,
         )
 
         if previous_current is not None and previous_current.id != target.id:

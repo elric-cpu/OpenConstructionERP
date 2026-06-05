@@ -269,6 +269,18 @@ async def download_field_reports_template(
     for i, val in enumerate(workforce_example, 1):
         ws_workforce.cell(row=2, column=i, value=val)
 
+    # The file importer only reads the first sheet (Field Reports). The
+    # structured workforce / equipment logs are entered per report in the
+    # app (report editor -> "Workforce Log" / "Equipment Log"), which drives
+    # the dedicated CRUD endpoints. State that here so a user filling these
+    # reference sheets is not misled into thinking they import automatically.
+    ws_workforce.cell(
+        row=4,
+        column=1,
+        value="Reference only - import reads the 'Field Reports' sheet. "
+        "Enter detailed workforce per report in the app.",
+    ).font = Font(italic=True)
+
     # ── Sheet 3: Equipment Log ──────────────────────────────────────────
     ws_equipment = wb.create_sheet("Equipment Log")
 
@@ -288,12 +300,25 @@ async def download_field_reports_template(
     for i, val in enumerate(equipment_example, 1):
         ws_equipment.cell(row=2, column=i, value=val)
 
+    ws_equipment.cell(
+        row=4,
+        column=1,
+        value="Reference only - import reads the 'Field Reports' sheet. "
+        "Enter detailed equipment per report in the app.",
+    ).font = Font(italic=True)
+
     # ── Sheet 4: Notes ──────────────────────────────────────────────────
     ws_notes = wb.create_sheet("Notes")
     ws_notes.cell(row=1, column=1, value="Column").font = Font(bold=True)
     ws_notes.cell(row=1, column=2, value="Description").font = Font(bold=True)
 
     notes_data = [
+        (
+            "Import scope",
+            "Only the 'Field Reports' sheet is imported. The Workforce Log "
+            "and Equipment Log sheets are a reference for the detailed "
+            "per-report logs you enter directly in the app.",
+        ),
         ("Date", "Report date in YYYY-MM-DD format (e.g. 2026-04-07)"),
         ("Weather", "clear, cloudy, rain, snow, fog, or storm"),
         ("Temperature", "Temperature in Celsius (number)"),
@@ -669,7 +694,12 @@ async def export_field_reports(
     from openpyxl import Workbook
     from openpyxl.styles import Font
 
-    reports, _ = await service.list_reports(project_id, offset=0, limit=2000)
+    # Export every report for the project. The previous ``limit=2000`` cap
+    # silently truncated the file for large projects, contradicting the
+    # "Export all field reports" contract. ``all_for_project`` fetches the
+    # full set; sort newest-first to match the list view's ordering.
+    reports = await service.repo.all_for_project(project_id)
+    reports.sort(key=lambda r: r.report_date, reverse=True)
 
     wb = Workbook()
     ws = wb.active

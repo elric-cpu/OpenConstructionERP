@@ -7,6 +7,8 @@ export { ApprovalRoutesPage } from './ApprovalRoutesPage';
 export { ApprovalInstanceCard } from './ApprovalInstanceCard';
 export type { ApprovalInstanceCardProps } from './ApprovalInstanceCard';
 export { ApprovalInstancesList } from './ApprovalInstancesList';
+export { ApprovalInstanceDetailDrawer } from './ApprovalInstanceDetailDrawer';
+export type { ApprovalInstanceDetailDrawerProps } from './ApprovalInstanceDetailDrawer';
 export { RouteEditor } from './RouteEditor';
 export * as approvalRoutesApi from './api';
 export type {

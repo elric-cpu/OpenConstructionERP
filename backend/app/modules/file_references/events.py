@@ -33,9 +33,15 @@ async def _on_document_deleted(event: Event) -> None:
     removes zero further rows. Failures are logged and swallowed - a
     best-effort cleanup must never break the document delete path.
     """
-    file_id = str((event.data or {}).get("document_id") or "").strip()
+    data = event.data or {}
+    file_id = str(data.get("document_id") or "").strip()
     if not file_id:
         return
+    # Scope the purge to the project that owned the document so a delete
+    # in one project never wipes a same-id file's references elsewhere
+    # (file_id is a polymorphic string key, not globally unique by
+    # contract). Omitted when the event predates the project_id payload.
+    project_id = str(data.get("project_id") or "").strip() or None
 
     try:
         async with async_session_factory() as session:
@@ -43,6 +49,7 @@ async def _on_document_deleted(event: Event) -> None:
                 session,
                 file_kind=_DOCUMENT_FILE_KIND,
                 file_id=file_id,
+                project_id=project_id,
             )
             await session.commit()
         if removed:

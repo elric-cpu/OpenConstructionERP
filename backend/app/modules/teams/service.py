@@ -364,9 +364,20 @@ class TeamService:
         )
         logger.info("Member removed: user %s from team %s", user_id, team_id)
 
-    async def list_members(self, team_id: uuid.UUID) -> list[TeamMembership]:
-        """List members of a team."""
-        await self.get_team(team_id)  # Raises 404 if team not found
+    async def list_members(
+        self,
+        team_id: uuid.UUID,
+        *,
+        actor_id: str | uuid.UUID | None = None,
+    ) -> list[TeamMembership]:
+        """List members of a team.
+
+        Gated on project access: team membership is sensitive (it reveals who
+        is on a project), so a caller must own / admin / belong to the parent
+        project. ``actor_id is None`` is a SYSTEM call and skips the check.
+        """
+        team = await self.get_team(team_id)  # Raises 404 if team not found
+        await self._assert_project_access(team.project_id, actor_id)
         return await self.membership_repo.list_for_team(team_id)
 
     # ── Visibility ───────────────────────────────────────────────────────

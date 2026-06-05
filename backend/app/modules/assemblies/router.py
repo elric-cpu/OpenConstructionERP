@@ -18,6 +18,7 @@ import logging
 import time
 import uuid
 from datetime import UTC
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
@@ -186,7 +187,9 @@ def _component_to_response(comp: object) -> ComponentResponse:
         quantity=_str_to_float(comp.quantity),  # type: ignore[attr-defined]
         unit=comp.unit,  # type: ignore[attr-defined]
         unit_cost=_str_to_float(comp.unit_cost),  # type: ignore[attr-defined]
-        total=_str_to_float(comp.total),  # type: ignore[attr-defined]
+        # v3 §10 — money as Decimal so the field_serializer emits an exact
+        # decimal string, not a lossy float (mirrors the service builder).
+        total=Decimal(str(comp.total or "0")),  # type: ignore[attr-defined]
         sort_order=comp.sort_order,  # type: ignore[attr-defined]
         metadata=comp.metadata_ or {},  # type: ignore[attr-defined]
         created_at=comp.created_at,  # type: ignore[attr-defined]

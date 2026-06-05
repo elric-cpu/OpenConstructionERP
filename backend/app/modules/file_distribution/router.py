@@ -171,6 +171,13 @@ async def list_distribution_lists(
     project_id: uuid.UUID | None = Query(default=None),
 ) -> DistributionListListResponse:
     user_uuid = _user_uuid(current_user_id)
+    # IDOR guard: when scoped to a project, list_for_user returns other
+    # users' shared lists (with their member emails) in that project, so a
+    # caller who cannot access the project could enumerate them by guessing
+    # the UUID. Gate on project access first (404 on denial, matching the
+    # codebase IDOR policy and create_subscription's pattern).
+    if project_id is not None:
+        await verify_project_access(project_id, str(user_uuid), session)
     service = DistributionListService(session)
     rows = await service.list_for_user(user_id=user_uuid, project_id=project_id)
     return DistributionListListResponse(

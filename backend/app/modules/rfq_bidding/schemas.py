@@ -266,3 +266,5 @@ class BidListResponse(BaseModel):
 
     items: list[RFQBidResponse]
     total: int
+    offset: int
+    limit: int

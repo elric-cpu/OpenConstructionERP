@@ -108,6 +108,14 @@ async def list_pipelines(
     project_id: str | None = Query(default=None),
 ) -> list[PipelineSummary]:
     """List pipelines, optionally scoped to a project."""
+    if project_id is not None:
+        try:
+            uuid.UUID(str(project_id))
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=translate("errors.project_not_found", locale=get_locale()),
+            ) from exc
     service = PipelineService(session)
     rows = await service.list(project_id=project_id, user_id=user_id)
     return [

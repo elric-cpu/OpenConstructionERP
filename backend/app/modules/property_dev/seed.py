@@ -164,11 +164,6 @@ _OPTION_GROUP_SPEC: Sequence[dict[str, object]] = (
 )
 
 
-def _maybe_existing_dev(session_sync_or_async: object, code: str) -> Development | None:
-    """‌⁠‍Sync wrapper around the async lookup not needed — caller awaits us."""
-    raise NotImplementedError  # placeholder, real lookup is below
-
-
 async def seed_property_dev_demo(session: AsyncSession, project_ids: Iterable[uuid.UUID]) -> Development | None:
     """‌⁠‍Seed a deterministic demo development for the first project in the list.
 

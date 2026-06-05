@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  AlertTriangle,
   ArrowDown,
   ArrowUp,
   Plus,
@@ -699,11 +700,14 @@ function StepEditorRow({
             ))}
           </select>
           {!userMode && (
-            <p className="mt-0.5 text-2xs text-content-tertiary">
-              {t('approvalRoutes.mode_role_note', {
-                defaultValue:
-                  'Role steps clear on the first approval — the engine does not expand roles to all members.',
-              })}
+            <p className="mt-1 flex items-start gap-1 rounded-md border border-amber-300/60 bg-amber-50/60 px-1.5 py-1 text-2xs text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400">
+              <AlertTriangle size={11} className="mt-0.5 shrink-0" />
+              <span>
+                {t('approvalRoutes.mode_role_warning', {
+                  defaultValue:
+                    'Role steps clear on the first approval. To require all or a majority, pin specific users instead of a role.',
+                })}
+              </span>
             </p>
           )}
         </div>

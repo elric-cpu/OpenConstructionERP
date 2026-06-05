@@ -368,7 +368,10 @@ async def _match_cwicr_prices(
             try:
                 qty_dec = Decimal(str(pos.quantity or "0"))
             except (InvalidOperation, ValueError):
-                qty_dec = Decimal("0")
+                # Unparseable quantity: don't silently coerce to 0 and overwrite
+                # the line (which would corrupt total -> "0"). Skip it instead.
+                count_skipped += 1
+                continue
 
             pos.unit_rate = str(rate_dec)
             pos.total = str(qty_dec * rate_dec)

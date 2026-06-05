@@ -380,10 +380,23 @@ class GeoHubService:
         stmt = stmt.limit(200)
         rows = (await self.session.execute(stmt)).scalars().all()
 
+        # Prefetch every existing anchor for the fetched projects in ONE
+        # query instead of probing per-project inside the loop (the old
+        # ``get_by_project`` call made it an N+1: 1 + up-to-200 queries).
+        project_ids = [project.id for project in rows]
+        anchors_by_project: dict[Any, GeoAnchor] = {}
+        if project_ids:
+            anchor_rows = (
+                (await self.session.execute(select(GeoAnchor).where(GeoAnchor.project_id.in_(project_ids))))
+                .scalars()
+                .all()
+            )
+            anchors_by_project = {anchor.project_id: anchor for anchor in anchor_rows}
+
         results: list[dict[str, Any]] = []
         succeeded = skipped = failed = 0
         for project in rows:
-            existing = await self.anchors.get_by_project(project.id)
+            existing = anchors_by_project.get(project.id)
             # Treat (0, 0) placeholder anchors (created by the
             # ``projects.created`` subscriber before the user filled in
             # an address) as "no real anchor" so the bulk sweep actually

@@ -588,7 +588,8 @@ class BidManagementService:
             submission.is_valid = is_valid
             submission.open_after_deadline = validate_late_submission(submission, package)
             submission.completeness_score = str(compute_completeness_score(submission_lines, package_lines))
-            invitation.status = "submitted"
+            if "submitted" in allowed_invitation_transitions(invitation.status):
+                invitation.status = "submitted"
 
         await self.session.flush()
 
@@ -962,7 +963,7 @@ class BidManagementService:
             inv = await self.invitation_repo.get_by_id(data.invitation_id)
             if inv is not None:
                 inv.submission_received_at = sub.submitted_at
-                if inv.status in ("pending", "sent", "opened"):
+                if "submitted" in allowed_invitation_transitions(inv.status):
                     inv.status = "submitted"
 
             await self.session.flush()
@@ -1444,6 +1445,23 @@ class BidManagementService:
             raise HTTPException(status_code=404, detail=translate("errors.rejection_not_found", locale=get_locale()))
         rejection.notified_at = _now_iso()
         await self.session.flush()
+        # stub fix (audit #5): previously this only stamped notified_at and
+        # returned, so "notify bidder of rejection" did nothing observable.
+        # Publish a domain event (mirroring dispatch_invitation_emails) so the
+        # notifications module can deliver the rejection. The timestamp records
+        # that the notification was dispatched.
+        event_bus.publish_detached(
+            "bid_management.bidder.rejected",
+            {
+                "package_id": str(rejection.package_id),
+                "bidder_id": str(rejection.bidder_id),
+                "rejection_id": str(rejection.id),
+                "rejection_code": rejection.rejection_code,
+                "reason": rejection.rejection_reason,
+                "notified_at": rejection.notified_at,
+            },
+            source_module="bid_management",
+        )
         return rejection
 
     async def delete_rejection(self, rejection_id: uuid.UUID) -> None:
@@ -1507,12 +1525,10 @@ class BidManagementService:
         # Map bidder_id → submission for column lookup
         sub_by_bidder = {s.bidder_id: s for s in valid_subs}
 
-        # Pre-fetch every line for every submission (one query each).
-        lines_by_sub: dict[uuid.UUID, list[BidSubmissionLine]] = {}
-        for sub in valid_subs:
-            lines_by_sub[sub.id] = await self.submission_line_repo.list_for_submission(
-                sub.id,
-            )
+        # Pre-fetch every line for every submission in a single query.
+        lines_by_sub: dict[uuid.UUID, list[BidSubmissionLine]] = await self.submission_line_repo.list_for_submissions(
+            [s.id for s in valid_subs]
+        )
 
         rows: list[dict[str, Any]] = []
         for line in lines:

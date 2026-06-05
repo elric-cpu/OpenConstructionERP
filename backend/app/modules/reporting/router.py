@@ -151,6 +151,7 @@ async def list_templates(
     user_id: CurrentUserId = None,  # type: ignore[assignment]
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
+    _perm: None = Depends(RequirePermission("reporting.read")),
     service: ReportingService = Depends(_get_service),
 ) -> list[ReportTemplateResponse]:
     """List all report templates (system + custom)."""

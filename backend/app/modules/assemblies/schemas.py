@@ -210,6 +210,10 @@ class ComponentResponse(BaseModel):
     def _ser_unit_cost(self, v: Decimal) -> str | None:
         return _serialise_money(v)
 
+    @field_serializer("total", when_used="json")
+    def _ser_total(self, v: Decimal) -> str | None:
+        return _serialise_money(v)
+
 
 # ── Assembly schemas ─────────────────────────────────────────────────────────
 

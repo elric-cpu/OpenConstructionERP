@@ -99,14 +99,14 @@ export interface ApprovalInstanceCardProps {
 
 /** View-model for one rung of the ladder: the template step joined with
  *  its decision rows for this instance. */
-interface LadderStep {
+export interface LadderStep {
   step: RouteStep;
   states: StepState[];
   status: LadderStepStatus;
   isCurrent: boolean;
 }
 
-function buildLadder(
+export function buildLadder(
   route: ApprovalRoute | undefined,
   instance: ApprovalInstance,
 ): LadderStep[] {
@@ -477,7 +477,7 @@ export function ApprovalInstanceCard({
 
 /* ── Helpers ────────────────────────────────────────────────────────── */
 
-function InstanceStatusBadge({ status }: { status: ApprovalInstance['status'] }) {
+export function InstanceStatusBadge({ status }: { status: ApprovalInstance['status'] }) {
   const { t } = useTranslation();
   const variant: 'neutral' | 'blue' | 'success' | 'warning' | 'error' =
     status === 'approved'
@@ -497,7 +497,7 @@ function InstanceStatusBadge({ status }: { status: ApprovalInstance['status'] })
   );
 }
 
-interface StepRowProps {
+export interface StepRowProps {
   rung: LadderStep;
   index: number;
   total: number;
@@ -508,7 +508,7 @@ interface StepRowProps {
   deciding: boolean;
 }
 
-function StepRow({
+export function StepRow({
   rung,
   index,
   total,
@@ -593,10 +593,17 @@ function StepRow({
         {step.sla_hours != null && (
           <>
             {' · '}
-            {t('approvalRoutes.sla_hours_value', {
-              defaultValue: 'SLA: {{h}}h',
-              h: step.sla_hours,
-            })}
+            <span
+              title={t('approvalRoutes.sla_informational_hint', {
+                defaultValue:
+                  'Target turnaround only. Not enforced - no automatic escalation or overdue blocking.',
+              })}
+            >
+              {t('approvalRoutes.sla_target_value', {
+                defaultValue: 'Target SLA {{h}}h',
+                h: step.sla_hours,
+              })}
+            </span>
           </>
         )}
       </p>

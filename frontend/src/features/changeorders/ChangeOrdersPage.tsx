@@ -7,9 +7,12 @@ import {
   Plus,
   Send,
   CheckCircle2,
+  CheckCheck,
   XCircle,
   ChevronRight,
   ArrowLeft,
+  ArrowUp,
+  ArrowDown,
   DollarSign,
   Clock,
   AlertTriangle,
@@ -31,7 +34,7 @@ import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { ApprovalTimeline } from './ApprovalTimeline';
-import { ImpactSimulator } from './ImpactSimulator';
+import { ImpactSimulator, type SavedScenario } from './ImpactSimulator';
 import { AIDraftModal } from './AIDraftModal';
 import {
   advanceApproval,
@@ -80,8 +83,13 @@ interface ChangeOrder {
   status: string;
   submitted_by: string | null;
   approved_by: string | null;
+  // BUG-351: rejection now has its own audit columns on the backend. A CO
+  // rejected straight from 'submitted' populates only these — gating the
+  // audit card on approved_at hid the rejection entirely.
+  rejected_by: string | null;
   submitted_at: string | null;
   approved_at: string | null;
+  rejected_at: string | null;
   // Backend emits cost_impact as a canonical decimal string (see schemas.py
   // ChangeOrderResponse.cost_impact:str). Coerce with Number(...) at use.
   cost_impact: string;
@@ -141,11 +149,15 @@ interface Summary {
 
 /* ── Helpers ───────────────────────────────────────────────────────────── */
 
+// Status vocabulary mirrors the backend FSM exactly
+// (service.VALID_TRANSITIONS: draft -> submitted -> approved -> executed,
+// with rejected as a terminal branch). There is no 'under_review' state on
+// the backend, so it is intentionally absent here.
 const STATUS_COLORS: Record<string, 'neutral' | 'blue' | 'success' | 'warning' | 'error'> = {
   draft: 'neutral',
   submitted: 'blue',
-  under_review: 'warning',
   approved: 'success',
+  executed: 'success',
   rejected: 'error',
 };
 
@@ -163,8 +175,8 @@ function translateStatus(status: string, t: (key: string, opts?: Record<string, 
   const map: Record<string, string> = {
     draft: t('changeorders.status_draft', { defaultValue: 'Draft' }),
     submitted: t('changeorders.status_submitted', { defaultValue: 'Submitted' }),
-    under_review: t('changeorders.status_under_review', { defaultValue: 'Under Review' }),
     approved: t('changeorders.status_approved', { defaultValue: 'Approved' }),
+    executed: t('changeorders.status_executed', { defaultValue: 'Executed' }),
     rejected: t('changeorders.status_rejected', { defaultValue: 'Rejected' }),
   };
   return map[status] || status;
@@ -553,11 +565,27 @@ function AddItemDialog({
 
 /* ── Approval Chain Builder ────────────────────────────────────────────── */
 
+interface DirectoryUser {
+  id: string;
+  email: string;
+  full_name: string;
+  role: string;
+  is_active: boolean;
+}
+
+/** Friendly display name for a directory user. */
+function userLabel(u: DirectoryUser): string {
+  return (u.full_name || '').trim() || u.email || u.id;
+}
+
 /**
- * Minimal approver-id picker — accepts one UUID per line so an admin can
- * paste a list of user ids without needing the full users-directory
- * search-and-select widget. The full picker can replace this textarea
- * later without changing the API surface.
+ * Approver picker — searches the user directory by name/email and lets the
+ * admin add approvers in step order (reorder + remove). This replaces the
+ * old raw-UUID textarea so a real PM can build the chain by name.
+ *
+ * If the directory cannot be loaded (e.g. the caller lacks the users.list
+ * permission), it degrades to a paste-UUID textarea so the feature still
+ * works rather than dead-ending.
  */
 function ApprovalChainBuilderDialog({
   onClose,
@@ -569,8 +597,58 @@ function ApprovalChainBuilderDialog({
   busy: boolean;
 }) {
   const { t } = useTranslation();
+  const [search, setSearch] = useState('');
+  // Ordered approver list (step 1 first). Holds the full user object so the
+  // chip can show a name without a second lookup.
+  const [chosen, setChosen] = useState<DirectoryUser[]>([]);
+  // Fallback textarea state (only used when the directory query failed).
   const [raw, setRaw] = useState('');
-  const ids = useMemo(
+
+  const { data: users = [], isError: dirError } = useQuery({
+    queryKey: ['users-directory'],
+    queryFn: () => apiGet<DirectoryUser[]>('/v1/users/?limit=200&is_active=true'),
+    staleTime: 60_000,
+  });
+
+  const chosenIds = useMemo(() => new Set(chosen.map((u) => u.id)), [chosen]);
+  const matches = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const pool = users.filter((u) => !chosenIds.has(u.id));
+    if (!q) return pool.slice(0, 8);
+    return pool
+      .filter(
+        (u) =>
+          userLabel(u).toLowerCase().includes(q) ||
+          (u.email || '').toLowerCase().includes(q) ||
+          (u.role || '').toLowerCase().includes(q),
+      )
+      .slice(0, 8);
+  }, [users, chosenIds, search]);
+
+  const addUser = (u: DirectoryUser) => {
+    if (chosen.length >= 20 || chosenIds.has(u.id)) return;
+    setChosen((prev) => [...prev, u]);
+    setSearch('');
+  };
+  const removeAt = (idx: number) =>
+    setChosen((prev) => prev.filter((_, i) => i !== idx));
+  const moveUp = (idx: number) =>
+    setChosen((prev) => {
+      if (idx <= 0) return prev;
+      const next = [...prev];
+      [next[idx - 1], next[idx]] = [next[idx]!, next[idx - 1]!];
+      return next;
+    });
+  const moveDown = (idx: number) =>
+    setChosen((prev) => {
+      if (idx >= prev.length - 1) return prev;
+      const next = [...prev];
+      [next[idx + 1], next[idx]] = [next[idx]!, next[idx + 1]!];
+      return next;
+    });
+
+  // Fallback parsing (raw textarea).
+  const rawIds = useMemo(
     () =>
       raw
         .split(/[\s,;]+/)
@@ -578,12 +656,18 @@ function ApprovalChainBuilderDialog({
         .filter((x) => x.length > 0),
     [raw],
   );
-  // Permissive UUID check — back-end Pydantic will reject malformed
-  // ones anyway; we just want to catch typos early.
-  const looksValid =
-    ids.length > 0 &&
-    ids.length <= 20 &&
-    ids.every((id) => /^[0-9a-f-]{32,36}$/i.test(id));
+  const rawLooksValid =
+    rawIds.length > 0 &&
+    rawIds.length <= 20 &&
+    rawIds.every((id) => /^[0-9a-f-]{32,36}$/i.test(id));
+
+  const usePicker = !dirError;
+  const canSubmit = usePicker ? chosen.length > 0 : rawLooksValid;
+  const handleConfirm = () =>
+    onConfirm(usePicker ? chosen.map((u) => u.id) : rawIds);
+
+  const fieldCls =
+    'h-10 w-full rounded-lg border border-border bg-surface-primary px-3 text-sm focus:outline-none focus:ring-2 focus:ring-oe-blue/30 focus:border-oe-blue';
 
   return (
     <WideModal
@@ -601,8 +685,8 @@ function ApprovalChainBuilderDialog({
           </Button>
           <Button
             variant="primary"
-            disabled={!looksValid || busy}
-            onClick={() => onConfirm(ids)}
+            disabled={!canSubmit || busy}
+            onClick={handleConfirm}
           >
             {busy
               ? t('common.saving', { defaultValue: 'Saving…' })
@@ -614,29 +698,141 @@ function ApprovalChainBuilderDialog({
       }
     >
       <WideModalSection columns={1}>
-        <WideModalField
-          label={t('changeorders.approver_user_ids_label', {
-            defaultValue: 'Approver user ids (one per line, in step order)',
-          })}
-          htmlFor="approver-user-ids"
-          span={1}
-        >
-          <textarea
-            id="approver-user-ids"
-            value={raw}
-            onChange={(e) => setRaw(e.target.value)}
-            rows={5}
-            disabled={busy}
-            placeholder={'b1f7e8e2-…\n5c0a9d1f-…\n8e4f1a32-…'}
-            className="w-full rounded-lg border border-border bg-surface-primary p-2 font-mono text-xs focus:border-oe-blue focus:outline-none focus:ring-2 focus:ring-oe-blue/30"
-          />
-        </WideModalField>
         <p className="text-xs text-content-tertiary">
           {t('changeorders.approver_user_ids_hint', {
             defaultValue:
               'Steps run sequentially: step 1 acts first, then step 2, etc. Each approver only sees the change order when their step becomes active.',
           })}
         </p>
+
+        {usePicker ? (
+          <>
+            <WideModalField
+              label={t('changeorders.approver_search_label', {
+                defaultValue: 'Add approver (search by name or email)',
+              })}
+              htmlFor="approver-search"
+              span={1}
+            >
+              <input
+                id="approver-search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                disabled={busy}
+                placeholder={t('changeorders.approver_search_placeholder', {
+                  defaultValue: 'Start typing a name…',
+                })}
+                className={fieldCls}
+                autoComplete="off"
+              />
+            </WideModalField>
+
+            {/* Suggestion list */}
+            {matches.length > 0 && (
+              <ul className="max-h-44 overflow-y-auto rounded-lg border border-border divide-y divide-border-light">
+                {matches.map((u) => (
+                  <li key={u.id}>
+                    <button
+                      type="button"
+                      onClick={() => addUser(u)}
+                      disabled={busy || chosen.length >= 20}
+                      className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-surface-secondary disabled:opacity-50"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium text-content-primary">{userLabel(u)}</span>
+                        <span className="block truncate text-xs text-content-tertiary">{u.email} · {u.role}</span>
+                      </span>
+                      <Plus size={14} className="shrink-0 text-content-tertiary" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {search.trim() && matches.length === 0 && (
+              <p className="text-xs text-content-tertiary">
+                {t('changeorders.approver_no_match', { defaultValue: 'No matching active users.' })}
+              </p>
+            )}
+
+            {/* Chosen approvers, in step order */}
+            {chosen.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-border px-3 py-4 text-center text-xs text-content-tertiary">
+                {t('changeorders.approver_chain_empty', {
+                  defaultValue: 'No approvers added yet. Search above and add them in the order they should sign off.',
+                })}
+              </p>
+            ) : (
+              <ol className="space-y-2">
+                {chosen.map((u, idx) => (
+                  <li
+                    key={u.id}
+                    className="flex items-center gap-2 rounded-lg border border-border bg-surface-secondary/40 px-3 py-2"
+                  >
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-oe-blue-subtle text-2xs font-bold text-oe-blue-text">
+                      {idx + 1}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-content-primary">{userLabel(u)}</span>
+                      <span className="block truncate text-xs text-content-tertiary">{u.email}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => moveUp(idx)}
+                      disabled={busy || idx === 0}
+                      aria-label={t('changeorders.approver_move_up', { defaultValue: 'Move up' })}
+                      className="text-content-tertiary hover:text-content-primary disabled:opacity-30"
+                    >
+                      <ArrowUp size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveDown(idx)}
+                      disabled={busy || idx === chosen.length - 1}
+                      aria-label={t('changeorders.approver_move_down', { defaultValue: 'Move down' })}
+                      className="text-content-tertiary hover:text-content-primary disabled:opacity-30"
+                    >
+                      <ArrowDown size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeAt(idx)}
+                      disabled={busy}
+                      aria-label={t('changeorders.approver_remove', { defaultValue: 'Remove approver' })}
+                      className="text-content-tertiary hover:text-semantic-error"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </>
+        ) : (
+          // Directory unavailable (no users.list permission) — fall back to
+          // pasting UUIDs so the feature is never a dead end.
+          <WideModalField
+            label={t('changeorders.approver_user_ids_label', {
+              defaultValue: 'Approver user ids (one per line, in step order)',
+            })}
+            htmlFor="approver-user-ids"
+            span={1}
+          >
+            <textarea
+              id="approver-user-ids"
+              value={raw}
+              onChange={(e) => setRaw(e.target.value)}
+              rows={5}
+              disabled={busy}
+              placeholder={'b1f7e8e2-…\n5c0a9d1f-…\n8e4f1a32-…'}
+              className="w-full rounded-lg border border-border bg-surface-primary p-2 font-mono text-xs focus:border-oe-blue focus:outline-none focus:ring-2 focus:ring-oe-blue/30"
+            />
+            <p className="mt-1 text-xs text-content-tertiary">
+              {t('changeorders.approver_directory_unavailable', {
+                defaultValue: 'The user directory is unavailable, so paste approver ids one per line in step order.',
+              })}
+            </p>
+          </WideModalField>
+        )}
       </WideModalSection>
     </WideModal>
   );
@@ -649,10 +845,12 @@ function WorkflowStepper({ status, t }: { status: string; t: (key: string, opts?
     { key: 'draft', label: t('changeorders.status_draft', { defaultValue: 'Draft' }) },
     { key: 'submitted', label: t('changeorders.status_submitted', { defaultValue: 'Submitted' }) },
     { key: 'approved', label: t('changeorders.status_approved', { defaultValue: 'Approved' }) },
+    { key: 'executed', label: t('changeorders.status_executed', { defaultValue: 'Executed' }) },
   ];
 
-  // Map status to step index
-  const statusIndex: Record<string, number> = { draft: 0, submitted: 1, under_review: 1, approved: 2, rejected: 2 };
+  // Map status to step index — mirrors the backend FSM. A rejected CO sits on
+  // the step it was rejected from (submitted) so the cross renders in place.
+  const statusIndex: Record<string, number> = { draft: 0, submitted: 1, approved: 2, executed: 3, rejected: 1 };
   const currentIdx = statusIndex[status] ?? 0;
   const isRejected = status === 'rejected';
 
@@ -662,7 +860,9 @@ function WorkflowStepper({ status, t }: { status: string; t: (key: string, opts?
         const isActive = i === currentIdx;
         const isCompleted = i < currentIdx;
         const isLast = i === steps.length - 1;
-        const showRejected = isLast && isRejected;
+        // A rejected CO marks the step it stalled on (currentIdx) with a cross
+        // rather than the final step, so the workflow reads truthfully.
+        const showRejected = isRejected && i === currentIdx;
 
         return (
           <div key={step.key} className="flex items-center" role="listitem">
@@ -718,6 +918,9 @@ function DetailView({
   // permission `changeorders.approve` enforces this server-side; we hide
   // the buttons in the UI to give a better experience than 403 errors.
   const canApprove = userRole === 'admin' || userRole === 'manager';
+  // Marking a CO executed is an editor-level operation (changeorders.update),
+  // so it is available to editors too, not just approvers.
+  const canExecute = userRole === 'admin' || userRole === 'manager' || userRole === 'editor';
   const currentUserId = useMemo(
     () => decodeUserIdFromToken(accessToken),
     [accessToken],
@@ -758,6 +961,20 @@ function DetailView({
     onError: (err: Error) => addToast({ type: 'error', title: t('common.error', { defaultValue: 'Error' }), message: err.message }),
   });
 
+  // Terminal FSM step approved -> executed: the work has actually been carried
+  // out on site. Needs changeorders.update (editor level) on the backend; the
+  // button is shown to admins/managers/editors so a controller can close it out.
+  const executeMut = useMutation({
+    mutationFn: () => apiPost<ChangeOrder>(`/v1/changeorders/${orderId}/execute/`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['changeorder', orderId] });
+      queryClient.invalidateQueries({ queryKey: ['changeorders'] });
+      queryClient.invalidateQueries({ queryKey: ['changeorders-summary'] });
+      addToast({ type: 'success', title: t('changeorders.executed', { defaultValue: 'Change order marked as executed' }) });
+    },
+    onError: (err: Error) => addToast({ type: 'error', title: t('common.error', { defaultValue: 'Error' }), message: err.message }),
+  });
+
   const deleteItemMut = useMutation({
     mutationFn: (itemId: string) => apiDelete(`/v1/changeorders/${orderId}/items/${itemId}`),
     onSuccess: () => {
@@ -775,6 +992,21 @@ function DetailView({
     queryKey: ['changeorder-approvals', orderId],
     queryFn: () => getApprovals(orderId),
   });
+
+  // Resolve approver UUIDs to display names for the timeline. Best-effort:
+  // if the directory is unavailable (no users.list permission) the timeline
+  // falls back to the id snippet on its own.
+  const { data: directory = [] } = useQuery<DirectoryUser[]>({
+    queryKey: ['users-directory'],
+    queryFn: () => apiGet<DirectoryUser[]>('/v1/users/?limit=200&is_active=true'),
+    staleTime: 60_000,
+    enabled: approvals.length > 0,
+  });
+  const approverNames = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const u of directory) map[u.id] = userLabel(u);
+    return map;
+  }, [directory]);
 
   const startChainMut = useMutation({
     mutationFn: (approverUserIds: string[]) =>
@@ -957,6 +1189,22 @@ function DetailView({
                 </div>
               )
             )}
+            {/* Terminal step: an approved CO whose work has been done on site.
+                Moves it approved -> executed so dashboards can tell committed
+                from realised scope. */}
+            {order.status === 'approved' && canExecute && (
+              <Button variant="secondary" size="sm" onClick={async () => {
+                const ok = await confirm({
+                  title: t('changeorders.execute_confirm_title', { defaultValue: 'Mark as executed?' }),
+                  message: t('changeorders.execute_confirm', { defaultValue: 'Mark this change order as executed? This records that the scope change has been carried out on site. It cannot be undone.' }),
+                  variant: 'warning',
+                });
+                if (ok) executeMut.mutate();
+              }} disabled={executeMut.isPending}>
+                <CheckCheck size={14} className="mr-1.5" />
+                {t('changeorders.mark_executed', { defaultValue: 'Mark as executed' })}
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -1021,11 +1269,19 @@ function DetailView({
           defaultCost={order.cost_impact}
           defaultDays={order.schedule_impact_days}
           canPublish={order.status === 'draft' || order.status === 'submitted'}
+          savedScenarios={
+            Array.isArray((order.metadata as { simulations?: unknown[] })?.simulations)
+              ? ((order.metadata as { simulations: SavedScenario[] }).simulations)
+              : []
+          }
         />
       )}
 
-      {/* Audit trail */}
-      {(order.submitted_at || order.approved_at) && (
+      {/* Audit trail. Each milestone has its own dedicated card keyed on its
+          own timestamp column — a CO rejected straight from 'submitted' has
+          only rejected_at, so reusing approved_at (BUG-351) used to hide the
+          rejection entirely. */}
+      {(order.submitted_at || order.approved_at || order.rejected_at) && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
           {order.submitted_at && (
             <Card className="p-4">
@@ -1041,13 +1297,22 @@ function DetailView({
           {order.approved_at && (
             <Card className="p-4">
               <p className="text-xs text-content-tertiary uppercase tracking-wide">
-                {order.status === 'rejected'
-                  ? t('changeorders.rejected_at', { defaultValue: 'Rejected' })
-                  : t('changeorders.approved_at', { defaultValue: 'Approved' })}
+                {t('changeorders.approved_at', { defaultValue: 'Approved' })}
               </p>
               <p className="mt-1 text-sm font-medium text-content-primary">{formatDate(order.approved_at)}</p>
               {order.approved_by && (
                 <p className="mt-0.5 text-xs text-content-tertiary">{order.approved_by}</p>
+              )}
+            </Card>
+          )}
+          {order.rejected_at && (
+            <Card className="p-4">
+              <p className="text-xs text-semantic-error uppercase tracking-wide">
+                {t('changeorders.rejected_at', { defaultValue: 'Rejected' })}
+              </p>
+              <p className="mt-1 text-sm font-medium text-content-primary">{formatDate(order.rejected_at)}</p>
+              {order.rejected_by && (
+                <p className="mt-0.5 text-xs text-content-tertiary">{order.rejected_by}</p>
               )}
             </Card>
           )}
@@ -1082,10 +1347,25 @@ function DetailView({
                 </Button>
               )}
           </div>
+          <InfoHint
+            className="mb-3"
+            text={
+              approvals.length === 0
+                ? t('changeorders.approval_chain_help_start', {
+                    defaultValue:
+                      'Optional: route this submitted change order through named approvers in sequence. Starting a chain replaces the single Approve/Reject buttons above - each approver then signs off step by step in the timeline below.',
+                  })
+                : t('changeorders.approval_chain_help_active', {
+                    defaultValue:
+                      'This change order is on a step-by-step approval chain. The single Approve/Reject buttons are disabled - the assigned approver records each decision in the timeline below, and a rejection at any step stops the chain.',
+                  })
+            }
+          />
           <ApprovalTimeline
             rows={approvals}
             currentApprovalStep={order.current_approval_step ?? null}
             currentUserId={currentUserId}
+            approverNames={approverNames}
             busy={advanceMut.isPending}
             onDecide={(decision, comments) =>
               advanceMut.mutate({ decision, comments })

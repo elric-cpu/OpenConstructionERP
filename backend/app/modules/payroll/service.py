@@ -339,10 +339,16 @@ class PayrollService:
             amount_base = _amount_in_base(str(amount_native), agg.currency, base, fx)
             total_hours += agg.hours
             total_amount += amount_base
+            entry_resource_id: uuid.UUID | None = None
+            if agg.resource_id:
+                try:
+                    entry_resource_id = uuid.UUID(str(agg.resource_id))
+                except (ValueError, AttributeError, TypeError):
+                    entry_resource_id = None
             entries.append(
                 PayrollEntry(
                     batch_id=batch.id,
-                    resource_id=(uuid.UUID(agg.resource_id) if agg.resource_id else None),
+                    resource_id=entry_resource_id,
                     worker=agg.worker[:255],
                     work_date=agg.work_date,
                     hours=str(agg.hours.quantize(Decimal("0.01"))),

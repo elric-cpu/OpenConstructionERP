@@ -691,7 +691,7 @@ class ChangeOrderService:
 
         if co_currency and base_ccy and co_currency != base_ccy:
             converted, missing = _convert_to_base(
-                {co_currency: float(co_cost_native)},
+                {co_currency: co_cost_native},
                 base_currency=base_ccy,
                 fx_rates_map=fx_map,
             )

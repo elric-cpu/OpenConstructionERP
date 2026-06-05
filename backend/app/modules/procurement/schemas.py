@@ -146,8 +146,11 @@ class POResponse(BaseModel):
     # ── Retainage (Gap F) ────────────────────────────────────────────────
     # ``retention_percent`` / ``retain_on_receipt`` are persisted columns;
     # ``retainage_amount`` / ``retainage_held`` are computed by the ORM model
-    # and stamped onto the response by the router (model_validate cannot call
-    # ORM methods). Decimal-as-string, always in this PO's ``currency_code``.
+    # as METHODS (``po.retainage_amount()``). With ``from_attributes`` pydantic
+    # reads the bound method object, which is not a string. The before-validator
+    # below collapses any callable to "0" so model_validate succeeds; the router
+    # then stamps the real computed values via ``po.retainage_amount()``.
+    # Decimal-as-string, always in this PO's ``currency_code``.
     retention_percent: str = "0.00"
     retain_on_receipt: bool = False
     retainage_amount: str = "0"
@@ -161,6 +164,16 @@ class POResponse(BaseModel):
         """Numeric(5,2) arrives as a Decimal from the ORM — render as string."""
         if v is None:
             return "0.00"
+        return str(v)
+
+    @field_validator("retainage_amount", "retainage_held", mode="before")
+    @classmethod
+    def _coerce_retainage(cls, v: Any) -> str:
+        """These are ORM *methods*, not columns. ``from_attributes`` hands us
+        the bound method object — collapse any callable (or None) to "0"; the
+        router stamps the real computed value after validation."""
+        if v is None or callable(v):
+            return "0"
         return str(v)
 
 

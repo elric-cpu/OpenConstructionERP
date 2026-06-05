@@ -277,8 +277,8 @@ def _validate_3way_match(
                     "ordinal": line.get("ordinal"),
                     "po_item_id": str(po_item_id),
                     "description": po_item.description,
-                    "requested_qty": str(requested),
-                    "received_qty": str(received),
+                    "requested_qty": _fmt_qty(requested),
+                    "received_qty": _fmt_qty(received),
                     "reason": "qty_exceeds_received",
                 }
             )
@@ -291,6 +291,19 @@ def _to_decimal(value: object) -> Decimal:
         return Decimal(str(value or "0"))
     except (InvalidOperation, ValueError, TypeError):
         return Decimal("0")
+
+
+def _fmt_qty(value: object) -> str:
+    """Render a quantity uniformly, regardless of source.
+
+    Quantities reach us as plain strings ("100"), but a SQL ``SUM`` over a
+    ``numeric_value`` column comes back as a float (100.0). Without
+    normalisation the same logical quantity renders two ways in one response
+    ("ordered 100" vs "received 100.0"). ``Decimal.normalize`` strips the
+    spurious trailing zeros and ``format(..., "f")`` keeps large values out of
+    scientific notation (normalize alone yields ``1E+2``).
+    """
+    return format(_to_decimal(value).normalize(), "f")
 
 
 class ProcurementService:
@@ -318,11 +331,17 @@ class ProcurementService:
         ``sum(quantity * unit_rate)`` so the PO totals always agree with the
         line items the caller actually persisted (BUG-015).
         """
-        # Validate initial status
-        if data.status not in _VALID_PO_STATUSES:
+        # Validate initial status — a PO always enters the FSM at "draft".
+        # Allowing a caller to create one already "approved"/"issued"/"completed"
+        # would bypass the approval gate that commits budget (TOP-30 #10). The
+        # only legal entry state is "draft"; advance it via approve_po/issue_po.
+        if data.status != "draft":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(f"Invalid PO status: '{data.status}'. Allowed: {', '.join(sorted(_VALID_PO_STATUSES))}"),
+                detail=(
+                    f"A purchase order must be created in 'draft' status, not '{data.status}'. "
+                    "Use the approve and issue actions to advance it through the workflow."
+                ),
             )
 
         # Re-aggregate subtotal from items when items are supplied. Each item's
@@ -1171,9 +1190,9 @@ class ProcurementService:
                 {
                     "line_id": po_item.id,
                     "description": po_item.description,
-                    "ordered_qty": str(ordered),
-                    "received_qty": str(received),
-                    "invoiced_qty": str(invoiced),
+                    "ordered_qty": _fmt_qty(ordered),
+                    "received_qty": _fmt_qty(received),
+                    "invoiced_qty": _fmt_qty(invoiced),
                     "match_status": status_tag,
                 }
             )

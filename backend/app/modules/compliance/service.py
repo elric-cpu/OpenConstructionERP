@@ -24,6 +24,8 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
+
 from app.core.validation.dsl import (
     DSLError,
     RuleDefinition,
@@ -114,6 +116,13 @@ class ComplianceDSLService:
             )
         definition = self.parse_or_raise(args.definition_yaml)
 
+        # Pre-flight lookup gives a clean 409 in the common case. We ALSO
+        # catch IntegrityError on the insert below, because the check and
+        # the insert are not atomic: two concurrent requests can both pass
+        # this check and both attempt to INSERT, with one tripping the
+        # ``uq_oe_compliance_dsl_rule_tenant_rule_id`` unique constraint.
+        # The second guard closes that race window so the loser gets a 409
+        # instead of an opaque 500 from an uncaught IntegrityError.
         existing = await self.repo.get_by_rule_id(
             definition.rule_id,
             tenant_id=args.tenant_id,
@@ -136,7 +145,17 @@ class ComplianceDSLService:
             owner_user_id=args.owner_user_id,
             is_active=bool(args.activate),
         )
-        await self.repo.add(row)
+        try:
+            await self.repo.add(row)
+        except IntegrityError as exc:
+            logger.info(
+                "Race on compliance DSL rule_id %s (treated as duplicate)",
+                definition.rule_id,
+            )
+            raise ComplianceConflictError(
+                f"A rule with id '{definition.rule_id}' already exists.",
+                details={"rule_id": definition.rule_id},
+            ) from exc
 
         # Register with the engine so subsequent validation runs pick
         # the rule up. Failures are logged but don't abort the save —

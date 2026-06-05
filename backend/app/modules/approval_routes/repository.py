@@ -149,6 +149,29 @@ class ApprovalRouteRepository:
         stmt = select(StepState).where(StepState.instance_id == instance_id).order_by(StepState.created_at.asc())
         return list((await self.session.execute(stmt)).scalars().all())
 
+    async def list_step_states_for_instances(
+        self,
+        instance_ids: list[uuid.UUID],
+    ) -> dict[uuid.UUID, list[StepState]]:
+        """Batched fetch of step states for many instances — kills the N+1 in /instances.
+
+        Returns a dict keyed by ``instance_id``; missing keys mean no
+        states. States within each bucket are ordered by ``created_at``,
+        matching the per-instance accessor's contract.
+        """
+        if not instance_ids:
+            return {}
+        stmt = (
+            select(StepState)
+            .where(StepState.instance_id.in_(instance_ids))
+            .order_by(StepState.instance_id, StepState.created_at.asc())
+        )
+        rows = list((await self.session.execute(stmt)).scalars().all())
+        out: dict[uuid.UUID, list[StepState]] = {iid: [] for iid in instance_ids}
+        for state in rows:
+            out.setdefault(state.instance_id, []).append(state)
+        return out
+
     async def list_step_states_for_step(
         self,
         *,

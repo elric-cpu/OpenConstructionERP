@@ -1,4 +1,4 @@
-"""‌⁠‍BIM Requirements service -- business logic for import/export.
+"""BIM Requirements service -- business logic for import/export.
 
 Handles file import orchestration, parser selection, DB persistence,
 and export generation.
@@ -24,7 +24,7 @@ _classifier = FormatClassifier()
 
 
 def _get_parser(format_name: str) -> Any:
-    """‌⁠‍Return the appropriate parser instance for a detected format.
+    """Return the appropriate parser instance for a detected format.
 
     The :class:`FormatClassifier` can emit *generic* labels for content it
     recognises only loosely (``GenericXML``, ``MVD``, ``ArchiCAD`` for any
@@ -73,7 +73,7 @@ def _get_parser(format_name: str) -> Any:
 
 
 class BIMRequirementService:
-    """‌⁠‍Business logic for BIM requirements import/export."""
+    """Business logic for BIM requirements import/export."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -443,7 +443,16 @@ class BIMRequirementService:
             # classification filter
             skip = False
             if classification:
-                elem_class = elem.classification or {}
+                # BIMElement has no dedicated classification column; per the
+                # canonical format spec the codes live under
+                # ``properties["classification"]`` (e.g. {"din276": "330"}).
+                # Mirror bim_hub.smart_views / vector_adapter which read the
+                # same nested dict. Fall back to {} so a missing key never
+                # raises AttributeError.
+                _props = getattr(elem, "properties", None) or {}
+                elem_class = _props.get("classification") if isinstance(_props, dict) else None
+                if not isinstance(elem_class, dict):
+                    elem_class = {}
                 for code_sys, pattern in classification.items():
                     actual = str(elem_class.get(code_sys, "")).lower()
                     if not _fnmatch(actual, str(pattern).lower()):

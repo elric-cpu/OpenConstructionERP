@@ -290,6 +290,13 @@ class ApprovalRouteService:
     async def list_step_states(self, instance_id: uuid.UUID) -> list[StepState]:
         return await self.repo.list_step_states(instance_id)
 
+    async def list_step_states_for_instances(
+        self,
+        instance_ids: list[uuid.UUID],
+    ) -> dict[uuid.UUID, list[StepState]]:
+        """Batched accessor — kills the per-instance N+1 in :get:`/instances`."""
+        return await self.repo.list_step_states_for_instances(instance_ids)
+
     async def list_instances(
         self,
         *,

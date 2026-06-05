@@ -1122,7 +1122,17 @@ class CarbonService:
         inventory_id: uuid.UUID,
         data: CarbonInventoryUpdate,
     ) -> CarbonInventory:
-        await self.get_inventory(inventory_id)
+        inv = await self.get_inventory(inventory_id)
+        # 'archived' is a terminal state — refuse any update on an archived
+        # inventory. Otherwise a caller could resurrect it by PATCHing
+        # status back to 'draft', silently un-freezing a footprint that
+        # downstream targets and TCFD reports already consumed. This mirrors
+        # the same guard in finalize_inventory().
+        if inv.status == "archived":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot update an archived inventory",
+            )
         fields = data.model_dump(exclude_unset=True)
         if "metadata" in fields:
             fields["metadata_"] = fields.pop("metadata")

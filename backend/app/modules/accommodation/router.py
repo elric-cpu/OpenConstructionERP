@@ -264,7 +264,7 @@ async def list_bookings_for_accommodation_endpoint(
     :func:`service._apply_booking_filters`.
     """
     statuses = _parse_booking_status_filter(status_filter)
-    bookings, room_label_by_id = await list_bookings_for_accommodation(
+    bookings, room_label_by_id, total = await list_bookings_for_accommodation(
         session,
         accommodation_id,
         user_id,
@@ -277,7 +277,7 @@ async def list_bookings_for_accommodation_endpoint(
     items = _decorate_bookings(bookings, room_label_by_id)
     return BookingListResponse(
         items=items,
-        total=len(items),
+        total=total,
         limit=limit,
         offset=offset,
     )
@@ -414,7 +414,7 @@ async def list_bookings_for_room_endpoint(
 ) -> BookingListResponse:
     """List bookings for one specific room."""
     statuses = _parse_booking_status_filter(status_filter)
-    bookings, room_label_by_id = await list_bookings_for_room(
+    bookings, room_label_by_id, total = await list_bookings_for_room(
         session,
         room_id,
         user_id,
@@ -427,7 +427,7 @@ async def list_bookings_for_room_endpoint(
     items = _decorate_bookings(bookings, room_label_by_id)
     return BookingListResponse(
         items=items,
-        total=len(items),
+        total=total,
         limit=limit,
         offset=offset,
     )

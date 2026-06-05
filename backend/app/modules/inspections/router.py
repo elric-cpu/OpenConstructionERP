@@ -150,9 +150,19 @@ async def export_inspections(
         ws.cell(row=row_idx, column=6, value=item.location or "")
         ws.cell(row=row_idx, column=7, value=item.status)
         ws.cell(row=row_idx, column=8, value=item.result or "")
-        # Checklist pass/fail count
+
+        # Checklist pass/fail count. Mirror the response-based checking used
+        # by complete_inspection / create_defect_from_inspection: the schema
+        # field is ``response`` (yes/no/pass/fail/...), with a legacy
+        # ``passed`` boolean accepted as a fallback.
+        def _is_passed(ci: dict) -> bool:
+            if "passed" in ci:
+                return ci.get("passed") is True
+            resp = str(ci.get("response", "")).strip().lower()
+            return resp in {"yes", "pass", "true", "1", "passed"}
+
         checklist = item.checklist_data or []
-        passed = sum(1 for ci in checklist if isinstance(ci, dict) and ci.get("passed"))
+        passed = sum(1 for ci in checklist if isinstance(ci, dict) and _is_passed(ci))
         failed = len(checklist) - passed
         ws.cell(row=row_idx, column=9, value=f"{passed}/{failed}")
 

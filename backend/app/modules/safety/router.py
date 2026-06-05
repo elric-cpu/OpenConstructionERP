@@ -373,6 +373,7 @@ async def export_observations(
     from sqlalchemy import select
 
     from app.modules.safety.models import SafetyObservation
+    from app.modules.safety.service import _compute_risk_tier
 
     result = await session.execute(
         select(SafetyObservation)
@@ -412,15 +413,8 @@ async def export_observations(
         ws.cell(row=row_idx, column=6, value=item.severity)
         ws.cell(row=row_idx, column=7, value=item.likelihood)
         ws.cell(row=row_idx, column=8, value=item.risk_score)
-        # Risk tier derived from risk score
-        risk_tier = "Low"
-        if item.risk_score > 15:
-            risk_tier = "Critical"
-        elif item.risk_score > 10:
-            risk_tier = "High"
-        elif item.risk_score > 5:
-            risk_tier = "Medium"
-        ws.cell(row=row_idx, column=9, value=risk_tier)
+        # Risk tier derived from risk score (same logic/casing as API responses)
+        ws.cell(row=row_idx, column=9, value=_compute_risk_tier(item.risk_score))
         ws.cell(row=row_idx, column=10, value=item.status)
         ws.cell(row=row_idx, column=11, value=item.corrective_action or "")
 

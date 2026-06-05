@@ -360,7 +360,37 @@ def country_filter_for(country: str | None) -> str | None:
 
     head = raw.split("_", 1)[0]
     head = _REGION_HEAD_ALIASES.get(head, head)
-    return head or None
+    if not head:
+        return None
+
+    # Data-driven presence guard — extends the language-fallback guard above
+    # to the *same-language but country-absent* case it cannot see. The
+    # English CWICR snapshot ``cwicr_en_v3`` is the native English collection
+    # (no language fallback), yet it carries ONLY ``country="US"`` rows. A
+    # Canadian-English catalogue (``CA_TORONTO`` → head ``"CA"``) or a UK one
+    # (``GBR_LONDON`` → head ``"GB"``) would therefore pin a country the
+    # collection has zero rows for, and every candidate is filtered out — the
+    # user-reported "/match-elements returns nothing" for non-US English
+    # projects. When the head is genuinely absent, don't pin it: let
+    # multilingual BGE-M3 rank the whole collection (the best available
+    # rates) rather than returning an empty list. When the head IS present
+    # (e.g. ``MX`` rows inside ``cwicr_es_v3``) the pin still correctly
+    # narrows to that country, so legitimate per-country catalogues are
+    # unaffected.
+    try:
+        collection = country_to_collection(country)
+        if not _country_head_present(collection, head):
+            logger.info(
+                "country_filter_for: head %r absent in %r — searching the "
+                "whole collection instead of pinning an empty country (region %r)",
+                head,
+                collection,
+                country,
+            )
+            return None
+    except Exception:  # noqa: BLE001 — degrade to legacy pinning on any probe error
+        pass
+    return head
 
 
 def _language_fallback_active(country: str) -> bool:
@@ -416,6 +446,67 @@ _ENCODER_LOAD_LOCK = threading.Lock()
 # collection doesn't carry — that would 404 the whole query and force
 # the ranker into the metadata-only fallback.
 _collection_vectors_cache: dict[str, frozenset[str]] = {}
+
+# Per-(collection, country-head) presence cache — answers "does this
+# collection carry any point tagged country==HEAD?". Consulted by
+# ``country_filter_for`` to avoid pinning a country payload predicate that
+# would eliminate every candidate (e.g. CA_TORONTO → head "CA" against the
+# US-only ``cwicr_en_v3`` English snapshot). One scroll(limit=1) per pair,
+# memoised for the process lifetime — the snapshot's country domain doesn't
+# change without a re-ingest + restart.
+_country_presence_cache: dict[tuple[str, str], bool] = {}
+
+
+def _country_head_present(collection: str, head: str) -> bool:
+    """True when ``collection`` carries at least one point with ``country==head``.
+
+    Cached per ``(collection, head)``. Best-effort: any probe failure
+    returns ``True`` so a transient Qdrant hiccup never silently drops a
+    country pin that would otherwise work — we only suppress a pin when we
+    can positively prove the head is absent.
+    """
+
+    # Pure-routing escape hatch — mirrors ``_available_cwicr_collections``.
+    # When the live-Qdrant probe is disabled (deterministic bench / unit
+    # tests, or any host that wants the naive pinning contract), behave as
+    # if the head were present so ``country_filter_for`` keeps its pure
+    # head-extraction behaviour and never issues network I/O.
+    if not getattr(get_settings(), "cwicr_collection_probe", True):
+        return True
+
+    key = (collection, head)
+    cached = _country_presence_cache.get(key)
+    if cached is not None:
+        return cached
+
+    def _probe(coll: str) -> bool:
+        client = _get_client()
+        flt = _build_filter({"country": head})
+        points, _ = client.scroll(
+            collection_name=coll,
+            scroll_filter=flt,
+            limit=1,
+            with_payload=False,
+            with_vectors=False,
+        )
+        return bool(points)
+
+    present = True
+    try:
+        present = _probe(collection)
+    except Exception:
+        # Versionless retry — same logic as ``search`` for dev installs
+        # that ingested before the ``_v3`` rename.
+        base = collection.rsplit("_v", 1)[0] if "_v" in collection else collection
+        if base != collection:
+            try:
+                present = _probe(base)
+            except Exception:
+                present = True
+        else:
+            present = True
+    _country_presence_cache[key] = present
+    return present
 
 
 def _get_client() -> Any:

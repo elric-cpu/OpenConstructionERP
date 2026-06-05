@@ -450,11 +450,14 @@ async def list_bookings_for_accommodation(
     to_date: date | None = None,
     limit: int = 50,
     offset: int = 0,
-) -> tuple[list[Booking], dict[uuid.UUID, str]]:
+) -> tuple[list[Booking], dict[uuid.UUID, str], int]:
     """List bookings across every room of an accommodation.
 
-    Returns ``(bookings, room_label_by_room_id)`` so the router can
-    decorate the response with ``room_label`` without a per-row N+1.
+    Returns ``(bookings, room_label_by_room_id, total)`` where ``total`` is
+    the count of all matching bookings (before ``limit``/``offset``) so the
+    router can populate ``BookingListResponse.total`` correctly across pages,
+    and ``room_label_by_room_id`` lets it decorate the response with
+    ``room_label`` without a per-row N+1.
 
     IDOR-gated through :func:`get_accommodation_or_404` — a caller who
     can't see the parent project gets a 404, never a 403.
@@ -472,11 +475,23 @@ async def list_bookings_for_accommodation(
     ).all()
     room_label_by_id: dict[uuid.UUID, str] = {r[0]: r[1] for r in room_rows}
     if not room_label_by_id:
-        return [], {}
+        return [], {}, 0
+
+    room_ids = list(room_label_by_id.keys())
+
+    # Total matching count (same filters, no limit/offset) so pagination
+    # metadata reflects the full result set, not just the current page.
+    count_stmt = _apply_booking_filters(
+        select(func.count(Booking.id)).where(Booking.room_id.in_(room_ids)),
+        statuses=statuses,
+        from_date=from_date,
+        to_date=to_date,
+    )
+    total = int((await session.execute(count_stmt)).scalar() or 0)
 
     stmt = (
         select(Booking)
-        .where(Booking.room_id.in_(list(room_label_by_id.keys())))
+        .where(Booking.room_id.in_(room_ids))
         .order_by(Booking.check_in.desc(), Booking.created_at.desc())
         .limit(limit)
         .offset(offset)
@@ -488,7 +503,7 @@ async def list_bookings_for_accommodation(
         to_date=to_date,
     )
     rows = (await session.execute(stmt)).scalars().all()
-    return list(rows), room_label_by_id
+    return list(rows), room_label_by_id, total
 
 
 async def list_bookings_for_room(
@@ -501,13 +516,26 @@ async def list_bookings_for_room(
     to_date: date | None = None,
     limit: int = 50,
     offset: int = 0,
-) -> tuple[list[Booking], dict[uuid.UUID, str]]:
+) -> tuple[list[Booking], dict[uuid.UUID, str], int]:
     """List bookings for a single room.
+
+    Returns ``(bookings, room_label_by_room_id, total)`` where ``total`` is
+    the count of all matching bookings (before ``limit``/``offset``).
 
     Same IDOR posture as :func:`list_bookings_for_accommodation` — the
     caller must own the parent project or we 404.
     """
     room, _accom = await get_room_or_404(session, room_id, user_id)
+
+    # Total matching count (same filters, no limit/offset) so pagination
+    # metadata reflects the full result set, not just the current page.
+    count_stmt = _apply_booking_filters(
+        select(func.count(Booking.id)).where(Booking.room_id == room.id),
+        statuses=statuses,
+        from_date=from_date,
+        to_date=to_date,
+    )
+    total = int((await session.execute(count_stmt)).scalar() or 0)
 
     stmt = (
         select(Booking)
@@ -523,7 +551,7 @@ async def list_bookings_for_room(
         to_date=to_date,
     )
     rows = (await session.execute(stmt)).scalars().all()
-    return list(rows), {room.id: room.label}
+    return list(rows), {room.id: room.label}, total
 
 
 # ── Currency-inheritance helpers ─────────────────────────────────────────

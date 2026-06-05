@@ -35,6 +35,10 @@ interface ApprovalTimelineProps {
   currentApprovalStep: number | null;
   /** Authenticated user's id; matched against the active step's approver. */
   currentUserId: string | null;
+  /** Resolved approver id -> display name. When an id is missing from the
+   *  map (directory unavailable / deleted user) the timeline falls back to a
+   *  short id snippet. */
+  approverNames?: Record<string, string>;
   /** Caller hook for the decision call; receives the chosen decision and
    *  an optional comment. Omit to render the timeline read-only. */
   onDecide?: (decision: 'approved' | 'rejected', comments: string) => void;
@@ -115,11 +119,18 @@ export function ApprovalTimeline({
   rows,
   currentApprovalStep,
   currentUserId,
+  approverNames = {},
   onDecide,
   busy = false,
 }: ApprovalTimelineProps): JSX.Element {
   const { t } = useTranslation();
   const [comment, setComment] = useState('');
+
+  // Prefer a resolved display name; fall back to a short id snippet.
+  const approverDisplay = (id: string | null): string => {
+    if (!id) return '—';
+    return approverNames[id] || shortId(id);
+  };
 
   // Active row = the one at the cursor. Memoised so a re-render of the
   // comment textarea doesn't re-scan the list.
@@ -201,9 +212,16 @@ export function ApprovalTimeline({
                         defaultValue: 'Approver',
                       })}
                       :{' '}
-                      <span className="font-mono">
-                        {shortId(row.approver_user_id)}
+                      <span className="font-medium text-content-primary">
+                        {approverDisplay(row.approver_user_id)}
                       </span>
+                      {row.approver_user_id &&
+                        currentUserId &&
+                        row.approver_user_id === currentUserId && (
+                          <span className="ml-1 text-content-tertiary">
+                            ({t('changeorders.approval_you', { defaultValue: 'you' })})
+                          </span>
+                        )}
                     </p>
                     {row.decided_at && (
                       <p className="mt-0.5 text-xs text-content-tertiary">

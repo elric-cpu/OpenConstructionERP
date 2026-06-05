@@ -415,6 +415,10 @@ async def seed_default_tags(
             found = (await session.execute(stmt)).scalar_one_or_none()
             if found is not None:
                 seeded.append(found)
+        # Rollback undid every insert this session attempted, so nothing
+        # was created here; the re-queried tags already exist in the DB.
+        created = 0
+        existing = len(seeded)
 
     return TagSeedResponse(
         project_id=project_id,

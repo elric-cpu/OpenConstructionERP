@@ -17,6 +17,9 @@ import {
   Calculator,
   Award,
   ArrowRight,
+  ListPlus,
+  FileText,
+  Info,
 } from 'lucide-react';
 import {
   Button,
@@ -57,6 +60,9 @@ import {
   computeLeveling,
   levelingTable,
   levelingMatrix,
+  createLineItem,
+  createSubmission,
+  bulkCreateSubmissionLines,
   type BidPackage,
   type BidPackageStatus,
   type BidInvitationStatus,
@@ -813,6 +819,15 @@ function LevelingTable({
   // user has computed it (audit #4).
   const [leveling, setLeveling] = useState<LevelingTableData | null>(null);
 
+  // logic_confusing fix (audit #6): award used to fire on a single click with
+  // an empty decision_summary and an irreversible FSM jump. Now it opens a
+  // confirmation dialog with an editable amount and a justification field.
+  const [awardTarget, setAwardTarget] = useState<{
+    bidderId: string;
+    name: string;
+    amount: number;
+  } | null>(null);
+
   const computeMut = useMutation({
     mutationFn: async () => {
       // Get-or-create: re-running leveling after a prior run must not 409
@@ -833,17 +848,22 @@ function LevelingTable({
   });
 
   const awardMut = useMutation({
-    mutationFn: async (vars: { bidderId: string; amount: number }) => {
+    mutationFn: async (vars: {
+      bidderId: string;
+      amount: number;
+      decisionSummary: string;
+    }) => {
       return awardPackage(packageId, {
         package_id: packageId,
         awarded_bidder_id: vars.bidderId,
         awarded_amount: vars.amount,
         currency,
-        decision_summary: '',
+        decision_summary: vars.decisionSummary,
       });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['bid-management'] });
+      setAwardTarget(null);
       addToast({
         type: 'success',
         title: t('bid_management.awarded', { defaultValue: 'Package awarded' }),
@@ -890,6 +910,13 @@ function LevelingTable({
     ? bidders.find((b) => b.id === leveling.recommended_bidder_id)?.company_name ||
       leveling.recommended_bidder_id.slice(0, 8)
     : '';
+
+  // logic_confusing fix (audit #4): the Technical column implied an evaluation
+  // the UI never captures, so for real (non-seeded) data it was always 0.0 and
+  // Score == Commercial. Only show it once a technical score actually exists,
+  // so the comparison does not advertise a capability that is not in play.
+  const hasTechnicalScores =
+    !!leveling && leveling.rows.some((r) => Number(r.technical_score) > 0);
 
   return (
     <div className="space-y-4">
@@ -945,9 +972,11 @@ function LevelingTable({
                         defaultValue: 'Commercial',
                       })}
                     </th>
-                    <th className="px-3 py-2 text-right">
-                      {t('bid_management.technical_score', { defaultValue: 'Technical' })}
-                    </th>
+                    {hasTechnicalScores && (
+                      <th className="px-3 py-2 text-right">
+                        {t('bid_management.technical_score', { defaultValue: 'Technical' })}
+                      </th>
+                    )}
                     <th className="px-3 py-2 text-right">
                       {t('bid_management.total_score', { defaultValue: 'Score' })}
                     </th>
@@ -986,9 +1015,11 @@ function LevelingTable({
                           <td className="px-3 py-1.5 text-right tabular-nums">
                             {Number(row.commercial_score).toFixed(1)}
                           </td>
-                          <td className="px-3 py-1.5 text-right tabular-nums">
-                            {Number(row.technical_score).toFixed(1)}
-                          </td>
+                          {hasTechnicalScores && (
+                            <td className="px-3 py-1.5 text-right tabular-nums">
+                              {Number(row.technical_score).toFixed(1)}
+                            </td>
+                          )}
                           <td className="px-3 py-1.5 text-right tabular-nums font-semibold">
                             {Number(row.total_score).toFixed(1)}
                           </td>
@@ -1092,7 +1123,6 @@ function LevelingTable({
                         size="sm"
                         variant="secondary"
                         icon={<Award size={12} />}
-                        loading={awardMut.isPending}
                         disabled={!awardable}
                         title={
                           awardable
@@ -1102,8 +1132,9 @@ function LevelingTable({
                               })
                         }
                         onClick={() =>
-                          awardMut.mutate({
+                          setAwardTarget({
                             bidderId: col.id,
+                            name: col.name,
                             amount: columnTotals.get(col.id) ?? 0,
                           })
                         }
@@ -1118,7 +1149,127 @@ function LevelingTable({
           </div>
         </>
       )}
+
+      {awardTarget && (
+        <AwardConfirmModal
+          target={awardTarget}
+          currency={currency}
+          levelingComputed={!!leveling && leveling.rows.length > 0}
+          busy={awardMut.isPending}
+          onClose={() => setAwardTarget(null)}
+          onConfirm={(amount, decisionSummary) =>
+            awardMut.mutate({
+              bidderId: awardTarget.bidderId,
+              amount,
+              decisionSummary,
+            })
+          }
+        />
+      )}
     </div>
+  );
+}
+
+/* ─── Award confirmation ─── */
+
+function AwardConfirmModal({
+  target,
+  currency,
+  levelingComputed,
+  busy,
+  onClose,
+  onConfirm,
+}: {
+  target: { bidderId: string; name: string; amount: number };
+  currency?: string;
+  levelingComputed: boolean;
+  busy: boolean;
+  onClose: () => void;
+  onConfirm: (amount: number, decisionSummary: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [amount, setAmount] = useState(String(target.amount || 0));
+  const [summary, setSummary] = useState('');
+
+  return (
+    <WideModal
+      open
+      onClose={onClose}
+      title={t('bid_management.award_confirm_title', { defaultValue: 'Award this package' })}
+      subtitle={t('bid_management.award_confirm_subtitle', {
+        defaultValue:
+          'Awarding is final - the package moves to "Awarded" and cannot be re-opened. Review the bidder, amount and reason before confirming.',
+      })}
+      size="md"
+      busy={busy}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
+            {t('common.cancel', { defaultValue: 'Cancel' })}
+          </Button>
+          <Button
+            variant="primary"
+            icon={<Award size={14} />}
+            loading={busy}
+            onClick={() => onConfirm(Number(amount) || 0, summary.trim())}
+          >
+            {t('bid_management.confirm_award', { defaultValue: 'Confirm award' })}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        {!levelingComputed && (
+          <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-200">
+            <Info size={14} className="mt-0.5 shrink-0" />
+            <span>
+              {t('bid_management.award_no_leveling', {
+                defaultValue:
+                  'Leveling has not been computed yet. Consider running Compute Leveling first so the recommendation is based on adjusted scores.',
+              })}
+            </span>
+          </div>
+        )}
+        <div>
+          <label className={labelCls}>
+            {t('bid_management.awarded_bidder', { defaultValue: 'Awarded bidder' })}
+          </label>
+          <p className="text-sm font-medium text-content-primary">{target.name}</p>
+        </div>
+        <div>
+          <label className={labelCls}>
+            {t('bid_management.awarded_amount', { defaultValue: 'Awarded amount' })}
+          </label>
+          <input
+            type="number"
+            min="0"
+            step="any"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            className={clsx(inputCls, 'text-right')}
+          />
+          <p className="mt-1 text-xs text-content-tertiary">
+            {currency || ''} — {t('bid_management.awarded_amount_hint', {
+              defaultValue: 'Pre-filled from the column total; adjust if a negotiated figure applies.',
+            })}
+          </p>
+        </div>
+        <div>
+          <label className={labelCls}>
+            {t('bid_management.decision_summary', { defaultValue: 'Decision summary' })}
+          </label>
+          <textarea
+            value={summary}
+            onChange={(e) => setSummary(e.target.value)}
+            rows={3}
+            placeholder={t('bid_management.decision_summary_placeholder', {
+              defaultValue: 'Why this bidder was selected (kept on the award record).',
+            })}
+            className={clsx(inputCls, 'h-auto py-2 resize-y')}
+          />
+        </div>
+      </div>
+    </WideModal>
   );
 }
 
@@ -1340,6 +1491,11 @@ function PackageDrawer({
   const qc = useQueryClient();
   const addToast = useToastStore((s) => s.addToast);
 
+  // unwired fix (audit #1): there was no way to record a bidder's priced
+  // submission, so leveling/award were inert for real packages. This holds the
+  // invitation a manager is recording a bid against.
+  const [recordFor, setRecordFor] = useState<BidInvitation | null>(null);
+
   const pkgQ = useQuery({
     queryKey: ['bid-management', 'package', packageId],
     queryFn: () => getPackage(packageId),
@@ -1515,6 +1671,19 @@ function PackageDrawer({
                 />
               </div>
 
+              {/* missing_help fix (audit #8): explain the required FSM sequence
+                  so a user knows why leveling/award stay empty until they walk
+                  publish → open bids → record submissions → level → award. */}
+              <div className="flex items-start gap-2 rounded-lg border border-border-light bg-surface-secondary px-3 py-2 text-xs text-content-secondary">
+                <Info size={14} className="mt-0.5 shrink-0 text-oe-blue" />
+                <span>
+                  {t('bid_management.workflow_hint', {
+                    defaultValue:
+                      "Sequence: Publish the package, add scope lines and invite bidders, then Open Bids (this validates the offers). Record each bidder's priced submission, Compute Leveling, and Award. Leveling and award stay empty until valid submissions exist.",
+                  })}
+                </span>
+              </div>
+
               <div className="flex flex-wrap gap-2 pt-2 border-t border-border-light">
                 {pkg.status === 'draft' && (
                   <Button
@@ -1537,6 +1706,23 @@ function PackageDrawer({
                     loading={openBidsMut.isPending}
                   >
                     {t('bid_management.open_bids', { defaultValue: 'Open Bids' })}
+                  </Button>
+                )}
+                {/* open_bids is idempotent and re-validates every submission, so
+                    expose it again on an already-open package — a bid recorded
+                    after opening needs re-validation to become is_valid and
+                    appear in leveling. */}
+                {pkg.status === 'open' && (
+                  <Button
+                    variant="secondary"
+                    icon={<Inbox size={14} />}
+                    onClick={() => openBidsMut.mutate()}
+                    loading={openBidsMut.isPending}
+                    title={t('bid_management.revalidate_bids_hint', {
+                      defaultValue: 'Re-check submitted bids and refresh which ones count as valid.',
+                    })}
+                  >
+                    {t('bid_management.revalidate_bids', { defaultValue: 'Re-validate bids' })}
                   </Button>
                 )}
                 {(pkg.status === 'open' || pkg.status === 'published') && (
@@ -1576,7 +1762,10 @@ function PackageDrawer({
                   <SkeletonTable rows={3} columns={3} />
                 ) : (linesQ.data ?? []).length === 0 ? (
                   <p className="text-xs text-content-tertiary">
-                    {t('bid_management.no_lines', { defaultValue: 'No scope lines yet.' })}
+                    {t('bid_management.no_lines', {
+                      defaultValue:
+                        'No scope lines yet. Add the items being tendered below - bidders price these, and they become the rows of the leveling matrix.',
+                    })}
                   </p>
                 ) : (
                   <table className="w-full text-xs">
@@ -1608,6 +1797,13 @@ function PackageDrawer({
                     </tbody>
                   </table>
                 )}
+                {/* unwired fix (audit #2): scope lines could only be displayed,
+                    never created. createLineItem now wires an inline editor so
+                    the leveling matrix has rows for real (non-seeded) packages. */}
+                <AddScopeLineForm
+                  packageId={packageId}
+                  nextOrderIndex={(linesQ.data ?? []).length}
+                />
               </Card>
 
               <Card padding="sm">
@@ -1624,20 +1820,43 @@ function PackageDrawer({
                   </p>
                 ) : (
                   <ul className="space-y-1 text-xs">
-                    {(invQ.data ?? []).map((inv) => (
-                      <li
-                        key={inv.id}
-                        className="flex items-center justify-between border-b border-border-light pb-1 last:border-b-0"
-                      >
-                        <span className="truncate">
-                          <span className="font-medium">{inv.invitee_company_name || '—'}</span>
-                          <span className="ml-2 text-content-tertiary">{inv.invitee_email}</span>
-                        </span>
-                        <Badge variant={INVITATION_STATUS_VARIANT[inv.status]} dot>
-                          {invitationStatusLabel(t, inv.status)}
-                        </Badge>
-                      </li>
-                    ))}
+                    {(invQ.data ?? []).map((inv) => {
+                      // An invitation that already produced a submission cannot
+                      // be recorded again (the backend enforces one submission
+                      // per invitation with a UNIQUE constraint → 409).
+                      const hasSubmission = (subsQ.data ?? []).some(
+                        (s) => s.invitation_id === inv.id,
+                      );
+                      const canRecord =
+                        !hasSubmission &&
+                        !!inv.bidder_ref_id &&
+                        pkg.status !== 'awarded' &&
+                        pkg.status !== 'cancelled';
+                      return (
+                        <li
+                          key={inv.id}
+                          className="flex items-center justify-between gap-2 border-b border-border-light pb-1 last:border-b-0"
+                        >
+                          <span className="min-w-0 flex-1 truncate">
+                            <span className="font-medium">{inv.invitee_company_name || '—'}</span>
+                            <span className="ml-2 text-content-tertiary">{inv.invitee_email}</span>
+                          </span>
+                          <Badge variant={INVITATION_STATUS_VARIANT[inv.status]} dot>
+                            {invitationStatusLabel(t, inv.status)}
+                          </Badge>
+                          {canRecord && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              icon={<FileText size={12} />}
+                              onClick={() => setRecordFor(inv)}
+                            >
+                              {t('bid_management.record_bid', { defaultValue: 'Record bid' })}
+                            </Button>
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </Card>
@@ -1672,7 +1891,328 @@ function PackageDrawer({
           )}
         </div>
       </div>
+
+      {recordFor && pkg && (
+        <RecordBidModal
+          invitation={recordFor}
+          currency={pkg.currency || currency}
+          lineItems={linesQ.data ?? []}
+          onClose={() => setRecordFor(null)}
+        />
+      )}
     </div>
+  );
+}
+
+/* ─── Add a scope line (inline editor) ─── */
+
+function AddScopeLineForm({
+  packageId,
+  nextOrderIndex,
+}: {
+  packageId: string;
+  nextOrderIndex: number;
+}) {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const addToast = useToastStore((s) => s.addToast);
+  const [code, setCode] = useState('');
+  const [description, setDescription] = useState('');
+  const [unit, setUnit] = useState('');
+  const [quantity, setQuantity] = useState('1');
+
+  const addMut = useMutation({
+    mutationFn: () =>
+      createLineItem({
+        package_id: packageId,
+        code: code.trim(),
+        description: description.trim(),
+        unit: unit.trim(),
+        quantity: Number(quantity) || 0,
+        order_index: nextOrderIndex,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['bid-management', 'lines', packageId] });
+      qc.invalidateQueries({ queryKey: ['bid-management', 'leveling-matrix', packageId] });
+      setCode('');
+      setDescription('');
+      setUnit('');
+      setQuantity('1');
+      addToast({
+        type: 'success',
+        title: t('bid_management.scope_line_added', { defaultValue: 'Scope line added' }),
+      });
+    },
+    onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),
+  });
+
+  return (
+    <div className="mt-3 grid grid-cols-[minmax(60px,0.6fr)_minmax(0,2fr)_minmax(50px,0.6fr)_minmax(50px,0.6fr)_auto] items-end gap-2 border-t border-border-light pt-3">
+      <div>
+        <label className={labelCls}>{t('bid_management.code', { defaultValue: 'Code' })}</label>
+        <input
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          placeholder="01.001"
+          className={inputCls}
+        />
+      </div>
+      <div>
+        <label className={labelCls}>
+          {t('bid_management.description', { defaultValue: 'Description' })}
+        </label>
+        <input
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder={t('bid_management.scope_line_desc_placeholder', {
+            defaultValue: 'Reinforced concrete wall',
+          })}
+          className={inputCls}
+        />
+      </div>
+      <div>
+        <label className={labelCls}>{t('bid_management.qty', { defaultValue: 'Qty' })}</label>
+        <input
+          type="number"
+          min="0"
+          step="any"
+          value={quantity}
+          onChange={(e) => setQuantity(e.target.value)}
+          className={clsx(inputCls, 'text-right')}
+        />
+      </div>
+      <div>
+        <label className={labelCls}>{t('bid_management.unit', { defaultValue: 'Unit' })}</label>
+        <input
+          value={unit}
+          onChange={(e) => setUnit(e.target.value)}
+          placeholder="m²"
+          className={inputCls}
+        />
+      </div>
+      <Button
+        size="sm"
+        variant="secondary"
+        icon={<ListPlus size={14} />}
+        disabled={!description.trim()}
+        loading={addMut.isPending}
+        onClick={() => addMut.mutate()}
+      >
+        {t('bid_management.add_line', { defaultValue: 'Add' })}
+      </Button>
+    </div>
+  );
+}
+
+/* ─── Record a bidder's priced submission ─── */
+
+function RecordBidModal({
+  invitation,
+  currency,
+  lineItems,
+  onClose,
+}: {
+  invitation: BidInvitation;
+  currency?: string;
+  lineItems: BidPackageLineItem[];
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const addToast = useToastStore((s) => s.addToast);
+
+  // One editable unit-price per scope line. The submission total is derived
+  // from the priced lines so leveling reads consistent figures (audit #1).
+  const [prices, setPrices] = useState<Record<string, string>>({});
+  const [notes, setNotes] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const computedTotal = useMemo(() => {
+    return lineItems.reduce((acc, li) => {
+      const unitPrice = Number(prices[li.id] ?? '');
+      if (!Number.isFinite(unitPrice) || unitPrice <= 0) return acc;
+      return acc + unitPrice * (Number(li.quantity) || 0);
+    }, 0);
+  }, [lineItems, prices]);
+
+  const submit = async () => {
+    if (!invitation.bidder_ref_id) {
+      addToast({
+        type: 'error',
+        title: t('bid_management.record_bid_no_bidder', {
+          defaultValue: 'This invitation has no linked bidder to record against.',
+        }),
+      });
+      return;
+    }
+    setBusy(true);
+    try {
+      // 1) Create the submission envelope (priced, in the package currency).
+      const submission = await createSubmission({
+        invitation_id: invitation.id,
+        bidder_id: invitation.bidder_ref_id,
+        total_amount: computedTotal,
+        currency: currency || '',
+        notes_to_owner: notes.trim(),
+      });
+      // 2) Bulk-create one priced line per scope line that has a price.
+      const items = lineItems
+        .map((li) => ({
+          line_item_id: li.id,
+          unit_price: Number(prices[li.id] ?? '') || 0,
+          quantity_priced: Number(li.quantity) || 0,
+          inclusion_status: 'included',
+        }))
+        .filter((i) => i.unit_price > 0);
+      if (items.length > 0) {
+        await bulkCreateSubmissionLines(submission.id, items);
+      }
+      qc.invalidateQueries({ queryKey: ['bid-management'] });
+      addToast({
+        type: 'success',
+        title: t('bid_management.bid_recorded', { defaultValue: 'Bid recorded' }),
+      });
+      onClose();
+    } catch (err) {
+      addToast({ type: 'error', title: getErrorMessage(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <WideModal
+      open
+      onClose={onClose}
+      title={t('bid_management.record_bid_title', { defaultValue: 'Record bid' })}
+      subtitle={t('bid_management.record_bid_subtitle', {
+        defaultValue:
+          'Enter the unit prices this bidder quoted for each scope line. The total and the side-by-side leveling matrix are built from these figures.',
+      })}
+      size="lg"
+      busy={busy}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
+            {t('common.cancel', { defaultValue: 'Cancel' })}
+          </Button>
+          <Button
+            variant="primary"
+            onClick={submit}
+            loading={busy}
+            icon={<FileText size={14} />}
+          >
+            {t('bid_management.save_bid', { defaultValue: 'Save bid' })}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <p className="text-xs text-content-secondary">
+          {t('bid_management.record_bid_for', {
+            defaultValue: 'Bidder: {{company}} ({{email}})',
+            company: invitation.invitee_company_name || '—',
+            email: invitation.invitee_email,
+          })}
+        </p>
+        {lineItems.length === 0 ? (
+          <EmptyState
+            icon={<ListPlus size={22} />}
+            title={t('bid_management.no_lines_to_price', {
+              defaultValue: 'Add scope lines first',
+            })}
+            description={t('bid_management.no_lines_to_price_desc', {
+              defaultValue:
+                'A priced bid needs scope lines. Add them in the package drawer, then record prices here.',
+            })}
+          />
+        ) : (
+          <div className="overflow-x-auto rounded-lg border border-border-light">
+            <table className="w-full text-sm">
+              <thead className="bg-surface-secondary text-content-tertiary text-xs uppercase tracking-wide">
+                <tr>
+                  <th className="px-3 py-2 text-left">
+                    {t('bid_management.scope_line', { defaultValue: 'Scope line' })}
+                  </th>
+                  <th className="px-3 py-2 text-right">
+                    {t('bid_management.qty', { defaultValue: 'Qty' })}
+                  </th>
+                  <th className="px-3 py-2 text-right">
+                    {t('bid_management.unit_price', { defaultValue: 'Unit price' })}
+                  </th>
+                  <th className="px-3 py-2 text-right">
+                    {t('bid_management.line_total', { defaultValue: 'Line total' })}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {lineItems.map((li) => {
+                  const unitPrice = Number(prices[li.id] ?? '');
+                  const lineTotal =
+                    Number.isFinite(unitPrice) && unitPrice > 0
+                      ? unitPrice * (Number(li.quantity) || 0)
+                      : 0;
+                  return (
+                    <tr key={li.id} className="border-t border-border-light">
+                      <td className="px-3 py-1.5">
+                        <div className="font-mono text-xs text-content-tertiary">
+                          {li.code || '—'}
+                        </div>
+                        <div className="text-xs truncate max-w-[260px]">
+                          {li.description || '—'}
+                        </div>
+                      </td>
+                      <td className="px-3 py-1.5 text-right tabular-nums text-xs text-content-secondary">
+                        {Number(li.quantity)} {li.unit}
+                      </td>
+                      <td className="px-3 py-1.5 text-right">
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={prices[li.id] ?? ''}
+                          onChange={(e) =>
+                            setPrices((p) => ({ ...p, [li.id]: e.target.value }))
+                          }
+                          placeholder="0.00"
+                          className={clsx(inputCls, 'h-8 w-28 text-right')}
+                        />
+                      </td>
+                      <td className="px-3 py-1.5 text-right tabular-nums">
+                        {lineTotal > 0 ? (
+                          <MoneyDisplay amount={lineTotal} currency={currency} />
+                        ) : (
+                          <span className="text-content-tertiary">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                <tr className="border-t-2 border-border bg-surface-secondary font-semibold">
+                  <td className="px-3 py-2" colSpan={3}>
+                    {t('bid_management.total', { defaultValue: 'Total' })}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    <MoneyDisplay amount={computedTotal} currency={currency} />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div>
+          <label className={labelCls}>
+            {t('bid_management.notes_to_owner', { defaultValue: 'Notes / qualifications' })}
+          </label>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={2}
+            className={clsx(inputCls, 'h-auto py-2 resize-y')}
+          />
+        </div>
+      </div>
+    </WideModal>
   );
 }
 
@@ -1700,9 +2240,15 @@ function InlineInviteForm({ packageId }: { packageId: string }) {
       qc.invalidateQueries({ queryKey: ['bid-management'] });
       setEmail('');
       setCompany('');
+      // quick_win clarity (audit #9): the invite is recorded and marked "sent",
+      // but actual email delivery depends on SMTP being configured. Say so
+      // instead of implying mail definitely went out.
       addToast({
         type: 'success',
-        title: t('bid_management.invite_sent', { defaultValue: 'Invitation sent' }),
+        title: t('bid_management.invite_sent', { defaultValue: 'Bidder invited' }),
+        message: t('bid_management.invite_sent_detail', {
+          defaultValue: 'Recorded as invited. Email delivery requires SMTP to be configured.',
+        }),
       });
     },
     onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),

@@ -574,14 +574,24 @@ async def purge_references_for_file(
     *,
     file_kind: str,
     file_id: str,
+    project_id: uuid.UUID | str | None = None,
 ) -> int:
-    """Cleanup hook called by the file-manager dispatcher on delete."""
-    result = await session.execute(
-        delete(FileReference).where(
-            FileReference.file_kind == file_kind,
-            FileReference.file_id == file_id,
-        )
-    )
+    """Cleanup hook called by the file-manager dispatcher on delete.
+
+    Scoped by ``project_id`` when supplied so a delete in one project
+    never wipes a same-id file's references in another project. The
+    ``file_id`` is a polymorphic string key (not globally unique by
+    contract), so the project scope is the safety boundary. When
+    ``project_id`` is omitted the purge falls back to the legacy
+    unscoped behaviour for callers that cannot supply it.
+    """
+    conditions = [
+        FileReference.file_kind == file_kind,
+        FileReference.file_id == file_id,
+    ]
+    if project_id is not None:
+        conditions.append(FileReference.project_id == project_id)
+    result = await session.execute(delete(FileReference).where(*conditions))
     await session.flush()
     return int(result.rowcount or 0)
 

@@ -142,7 +142,12 @@ class InspectionService:
         """Update inspection fields."""
         inspection = await self.get_inspection(inspection_id)
 
-        if inspection.status in ("completed", "failed"):
+        # ``completed`` is terminal (see _INSPECTION_STATUS_TRANSITIONS) so it
+        # stays locked. ``failed`` is NOT terminal: the FSM allows
+        # failed → scheduled for re-inspection, so edits must be permitted and
+        # the transition validator below enforces that only valid status
+        # changes go through.
+        if inspection.status == "completed":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Cannot edit an inspection with status '{inspection.status}'",

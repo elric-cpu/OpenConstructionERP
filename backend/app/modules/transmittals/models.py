@@ -8,7 +8,7 @@ Tables:
 
 import uuid
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import GUID, Base
@@ -18,6 +18,19 @@ class Transmittal(Base):
     """‌⁠‍A formal document transmittal package."""
 
     __tablename__ = "oe_transmittals_transmittal"
+    # ``(project_id, transmittal_number)`` must be unique so concurrent
+    # ``create_transmittal`` calls racing on ``max(transmittal_number)+1``
+    # get a clean :class:`IntegrityError` the service can retry, rather than
+    # quietly writing two TR-007 rows in the same project. Mirrors the
+    # rfi ``uq_rfi_project_number`` / file_transmittals
+    # ``uq_oe_file_transmittal_project_id_number`` pattern.
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "transmittal_number",
+            name="uq_oe_transmittals_project_id_number",
+        ),
+    )
 
     project_id: Mapped[uuid.UUID] = mapped_column(
         GUID(),

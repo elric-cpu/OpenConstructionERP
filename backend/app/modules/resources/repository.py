@@ -154,6 +154,21 @@ class ResourceSkillRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def list_for_resources(self, resource_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[ResourceSkill]]:
+        """Bulk-fetch skills for many resources in one round-trip.
+
+        Returns a mapping ``resource_id -> [ResourceSkill, ...]`` so callers
+        can avoid the N+1 pattern of one ``list_for_resource`` per resource.
+        """
+        if not resource_ids:
+            return {}
+        stmt = select(ResourceSkill).where(ResourceSkill.resource_id.in_(resource_ids))
+        result = await self.session.execute(stmt)
+        out: dict[uuid.UUID, list[ResourceSkill]] = {}
+        for link in result.scalars().all():
+            out.setdefault(link.resource_id, []).append(link)
+        return out
+
     async def find_pair(
         self,
         resource_id: uuid.UUID,
@@ -272,6 +287,33 @@ class AvailabilityWindowRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def list_for_resources(
+        self,
+        resource_ids: list[uuid.UUID],
+        *,
+        start_at: datetime | None = None,
+        end_at: datetime | None = None,
+    ) -> dict[uuid.UUID, list[AvailabilityWindow]]:
+        """Bulk-fetch availability windows for many resources in one round-trip.
+
+        Applies the same overlap filter as :meth:`list_for_resource` and
+        returns a mapping ``resource_id -> [AvailabilityWindow, ...]`` so
+        callers can avoid one query per resource.
+        """
+        if not resource_ids:
+            return {}
+        stmt = select(AvailabilityWindow).where(AvailabilityWindow.resource_id.in_(resource_ids))
+        if start_at is not None:
+            stmt = stmt.where(AvailabilityWindow.end_at >= start_at)
+        if end_at is not None:
+            stmt = stmt.where(AvailabilityWindow.start_at <= end_at)
+        stmt = stmt.order_by(AvailabilityWindow.start_at)
+        result = await self.session.execute(stmt)
+        out: dict[uuid.UUID, list[AvailabilityWindow]] = {}
+        for window in result.scalars().all():
+            out.setdefault(window.resource_id, []).append(window)
+        return out
+
     async def create(self, window: AvailabilityWindow) -> AvailabilityWindow:
         self.session.add(window)
         await self.session.flush()
@@ -365,6 +407,37 @@ class AssignmentRepository:
             stmt = stmt.where(Assignment.id != exclude_id)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def assignments_for_resources_in_window(
+        self,
+        resource_ids: list[uuid.UUID],
+        start: datetime,
+        end: datetime,
+        *,
+        active_only: bool = True,
+    ) -> dict[uuid.UUID, list[Assignment]]:
+        """Bulk version of :meth:`assignments_for_resource_in_window`.
+
+        Returns a mapping ``resource_id -> [Assignment, ...]`` for assignments
+        overlapping ``[start, end)``, fetched in a single round-trip so callers
+        can avoid one query per resource. Active by default means not
+        cancelled / not completed (same as the per-resource method).
+        """
+        if not resource_ids:
+            return {}
+        stmt = select(Assignment).where(
+            Assignment.resource_id.in_(resource_ids),
+            # Overlap: (a.start < end) AND (a.end > start)
+            Assignment.start_at < end,
+            Assignment.end_at > start,
+        )
+        if active_only:
+            stmt = stmt.where(Assignment.status.notin_(("cancelled", "completed")))
+        result = await self.session.execute(stmt)
+        out: dict[uuid.UUID, list[Assignment]] = {}
+        for assignment in result.scalars().all():
+            out.setdefault(assignment.resource_id, []).append(assignment)
+        return out
 
     async def list_in_window(
         self,

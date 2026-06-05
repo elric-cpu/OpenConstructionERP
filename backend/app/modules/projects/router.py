@@ -2112,8 +2112,13 @@ async def update_wbs_node(
         await session.execute(stmt)
         await session.flush()
 
+    # Confirm the node belongs to this project before returning it. Owning the
+    # project only proves access to ``project_id``; without this scope check a
+    # request against a foreign ``wbs_id`` would fetch and leak another
+    # project's WBS node in the response below (the scoped UPDATE above is a
+    # no-op for such ids, but ``session.get`` is by primary key only).
     node = await session.get(ProjectWBS, wbs_id)
-    if node is None:
+    if node is None or node.project_id != project_id:
         raise HTTPException(status_code=404, detail="WBS node not found")
     return WBSResponse.model_validate(node)
 

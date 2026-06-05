@@ -265,21 +265,27 @@ async def test_issue_po() -> None:
     po = await svc.create_po(_po_data())
     assert po.status == "draft"
 
+    # A PO is committed money, so it must be approved before it can be issued
+    # to a vendor (TOP-30 #10). Budget is committed at approval.
+    approved = await svc.approve_po(po.id)
+    assert approved.status == "approved"
+
     issued = await svc.issue_po(po.id)
     assert issued.status == "issued"
 
 
 @pytest.mark.asyncio
-async def test_issue_po_non_draft_fails() -> None:
+async def test_issue_po_requires_approval() -> None:
+    """A draft PO cannot be issued directly; it must be approved first (TOP-30 #10)."""
     svc = _make_service()
     po = await svc.create_po(_po_data())
-    svc.po_repo.rows[po.id].status = "issued"
+    assert po.status == "draft"
 
     from fastapi import HTTPException
 
     with pytest.raises(HTTPException) as exc_info:
         await svc.issue_po(po.id)
-    assert exc_info.value.status_code == 400
+    assert exc_info.value.status_code == 409
 
 
 @pytest.mark.asyncio
@@ -287,8 +293,9 @@ async def test_update_po_status_transition_valid() -> None:
     svc = _make_service()
     po = await svc.create_po(_po_data())
 
-    updated = await svc.update_po(po.id, POUpdate(status="issued"))
-    assert updated.status == "issued"
+    # draft -> approved is the first legal transition (TOP-30 #10).
+    updated = await svc.update_po(po.id, POUpdate(status="approved"))
+    assert updated.status == "approved"
 
 
 @pytest.mark.asyncio

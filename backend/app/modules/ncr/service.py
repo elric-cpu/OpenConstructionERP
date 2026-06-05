@@ -236,6 +236,17 @@ class NCRService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Cannot close a voided NCR",
             )
+        # FSM guard: per _NCR_STATUS_TRANSITIONS only 'verification' -> 'closed'
+        # is allowed. Without this an NCR in 'identified', 'under_review' or
+        # 'corrective_action' could skip the mandatory verification step.
+        if "closed" not in _NCR_STATUS_TRANSITIONS.get(ncr.status, set()):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Cannot close an NCR from status '{ncr.status}'. "
+                    "An NCR must be in 'verification' status before it can be closed."
+                ),
+            )
         if not ncr.corrective_action:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

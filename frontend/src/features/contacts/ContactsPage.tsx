@@ -27,6 +27,11 @@ import {
   Trash2,
   Info,
   AlertTriangle,
+  MoreVertical,
+  UserPlus,
+  Home,
+  Link2,
+  ExternalLink,
 } from 'lucide-react';
 import {
   Button,
@@ -39,24 +44,31 @@ import {
   WideModal,
   WideModalSection,
   WideModalField,
+  SideDrawer,
 } from '@/shared/ui';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { useCreateShortcut } from '@/shared/hooks/useCreateShortcut';
 import { useToastStore } from '@/stores/useToastStore';
+import { useModuleStore } from '@/stores/useModuleStore';
+import { useNavigate } from 'react-router-dom';
 import {
   fetchContacts,
   fetchContactTags,
+  fetchContactStats,
   createContact,
   updateContact,
   deleteContact,
   importContactsFile,
   exportContacts,
   downloadContactsTemplate,
+  convertContactToLead,
+  fetchContactModuleRows,
   type Contact,
   type ContactType,
   type PrequalificationStatus,
   type CreateContactPayload,
   type ImportResult,
+  type ContactModuleRows,
 } from './api';
 
 /* ── Constants ─────────────────────────────────────────────────────────── */
@@ -68,6 +80,7 @@ const CONTACT_TYPES: ContactType[] = [
   'subcontractor',
   'supplier',
   'consultant',
+  'internal',
 ];
 
 /* Tag-prefix → display group used by the CRM chip strip. The order
@@ -450,10 +463,44 @@ function AddContactModal({
                 {days} {t('contacts.days', { defaultValue: 'days' })}
               </button>
             ))}
+            {/* Custom value — a free number input so imported / API
+                values other than 30/45/60 (e.g. 90 days) are visible and
+                editable rather than silently hidden behind the preset
+                toggles. */}
+            <div
+              className={clsx(
+                'flex items-center gap-1 rounded-lg border px-2 transition-all',
+                !['30', '45', '60'].includes(form.payment_terms) && form.payment_terms.trim() !== ''
+                  ? 'border-oe-blue bg-oe-blue-subtle ring-1 ring-oe-blue/30'
+                  : 'border-border',
+              )}
+            >
+              <input
+                type="number"
+                min={0}
+                inputMode="numeric"
+                value={form.payment_terms}
+                onChange={(e) => set('payment_terms', e.target.value.replace(/[^0-9]/g, ''))}
+                aria-label={t('contacts.payment_terms_custom', {
+                  defaultValue: 'Custom payment terms in days',
+                })}
+                placeholder={t('contacts.payment_terms_custom_ph', { defaultValue: 'Custom' })}
+                className="h-9 w-16 bg-transparent text-sm text-content-primary focus:outline-none"
+              />
+              <span className="text-xs text-content-tertiary pr-0.5">
+                {t('contacts.days', { defaultValue: 'days' })}
+              </span>
+            </div>
           </div>
         </WideModalField>
 
-        <WideModalField label={t('contacts.field_prequal', { defaultValue: 'Prequalification' })}>
+        <WideModalField
+          label={t('contacts.field_prequal', { defaultValue: 'Prequalification' })}
+          hint={t('contacts.prequal_hint', {
+            defaultValue:
+              'Approved = cleared to bid or be awarded work. Pending = under review. Rejected = not eligible. Expired = qualification lapsed (qualified-until date passed).',
+          })}
+        >
           <select
             value={form.prequalification_status}
             onChange={(e) =>
@@ -678,10 +725,12 @@ const ContactCard = React.memo(function ContactCard({
   contact,
   onEdit,
   onDelete,
+  onOpenDetail,
 }: {
   contact: Contact;
   onEdit: (contact: Contact) => void;
   onDelete: (id: string) => void;
+  onOpenDetail: (contact: Contact) => void;
 }) {
   const { t } = useTranslation();
   const prequal = PREQUAL_CONFIG[contact.prequalification_status as PrequalificationStatus] ?? PREQUAL_CONFIG.pending;
@@ -718,7 +767,16 @@ const ContactCard = React.memo(function ContactCard({
               defaultValue: contact.contact_type.charAt(0).toUpperCase() + contact.contact_type.slice(1),
             })}
           </Badge>
-          <div className="flex items-center gap-0 opacity-0 group-hover:opacity-100 transition-opacity ml-1">
+          <div className="flex items-center gap-0 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity ml-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onOpenDetail(contact)}
+              className="!p-1 text-content-quaternary hover:text-oe-blue h-auto"
+              title={t('contacts.open_detail', { defaultValue: 'Linked records & actions' })}
+            >
+              <MoreVertical size={12} />
+            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -741,19 +799,37 @@ const ContactCard = React.memo(function ContactCard({
         </div>
       </div>
 
-      {/* Contact details */}
+      {/* Contact details — email/phone are click-to-act (mailto:/tel:).
+          stopPropagation keeps the card's onEdit handler from firing when
+          the user clicks the link. */}
       <div className="mt-3 space-y-1.5">
         {contact.primary_email && (
-          <div className="flex items-center gap-2 text-xs text-content-secondary">
+          <a
+            href={`mailto:${contact.primary_email}`}
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center gap-2 text-xs text-content-secondary hover:text-oe-blue transition-colors"
+            title={t('contacts.email_action', {
+              defaultValue: 'Email {{email}}',
+              email: contact.primary_email,
+            })}
+          >
             <Mail size={12} className="shrink-0 text-content-tertiary" />
             <span className="truncate">{contact.primary_email}</span>
-          </div>
+          </a>
         )}
         {contact.primary_phone && (
-          <div className="flex items-center gap-2 text-xs text-content-secondary">
+          <a
+            href={`tel:${contact.primary_phone.replace(/[^\d+]/g, '')}`}
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center gap-2 text-xs text-content-secondary hover:text-oe-blue transition-colors"
+            title={t('contacts.phone_action', {
+              defaultValue: 'Call {{phone}}',
+              phone: contact.primary_phone,
+            })}
+          >
             <Phone size={12} className="shrink-0 text-content-tertiary" />
             <span>{contact.primary_phone}</span>
-          </div>
+          </a>
         )}
       </div>
 
@@ -794,6 +870,257 @@ const ContactCard = React.memo(function ContactCard({
   );
 });
 
+/* ── Contact Detail Drawer (linked records + module conversion) ────────── */
+
+/**
+ * Right-side drawer that surfaces the module-bridge capabilities that
+ * already exist on the backend but had no UI:
+ *
+ *   • GET  /v1/contacts/{id}/module-rows  → the "Linked records" list
+ *     (Leads / Buyers tied to this contact, with deep links into the
+ *     Property Development module).
+ *   • POST /v1/contacts/{id}/convert-to-lead  → "Convert to Lead".
+ *   • POST /v1/contacts/{id}/convert-to-buyer → "Convert to Buyer".
+ *
+ * The two convert actions are only offered when the Property Development
+ * module is enabled (the backend otherwise returns a 422 "module not
+ * installed"). Convert-to-Buyer requires a development_id; since picking
+ * a development belongs to the PropDev surface, we route the user there
+ * to complete a buyer conversion and keep the one-click path for Leads
+ * (development is optional on a Lead).
+ */
+function ContactDetailDrawer({
+  contact,
+  onClose,
+}: {
+  contact: Contact;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const addToast = useToastStore((s) => s.addToast);
+  const propDevEnabled = useModuleStore((s) => s.isModuleEnabled('property_dev'));
+
+  const displayName =
+    contact.company_name ||
+    [contact.first_name, contact.last_name].filter(Boolean).join(' ') ||
+    '—';
+
+  const {
+    data: rows,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery<ContactModuleRows>({
+    queryKey: ['contacts', contact.id, 'module-rows'],
+    queryFn: () => fetchContactModuleRows(contact.id),
+  });
+
+  const convertLeadMut = useMutation({
+    mutationFn: () => convertContactToLead(contact.id, { source: 'other' }),
+    onSuccess: (lead) => {
+      qc.invalidateQueries({ queryKey: ['contacts'] });
+      refetch();
+      addToast({
+        type: 'success',
+        title: t('contacts.convert_lead_ok', { defaultValue: 'Lead created from contact' }),
+        message: t('contacts.convert_lead_ok_msg', {
+          defaultValue: '{{name}} is now a Property Development lead.',
+          name: lead.full_name || displayName,
+        }),
+        action: {
+          label: t('contacts.open_property_dev', { defaultValue: 'Open in Property Dev' }),
+          onClick: () => navigate('/property-dev'),
+        },
+      });
+    },
+    onError: (e: Error) =>
+      addToast({
+        type: 'error',
+        title: t('contacts.convert_lead_failed', { defaultValue: 'Could not convert to lead' }),
+        message: e.message,
+      }),
+  });
+
+  const leads = rows?.property_dev_leads ?? [];
+  const buyers = rows?.property_dev_buyers ?? [];
+  const hasLinked = leads.length > 0 || buyers.length > 0;
+
+  return (
+    <SideDrawer
+      open
+      onClose={onClose}
+      busy={convertLeadMut.isPending}
+      title={displayName}
+      subtitle={t(`contacts.type_${contact.contact_type}`, {
+        defaultValue:
+          contact.contact_type.charAt(0).toUpperCase() + contact.contact_type.slice(1),
+      })}
+    >
+      <div className="px-5 py-4 space-y-6">
+        {/* ── Convert actions ──────────────────────────────────── */}
+        <section>
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-content-tertiary mb-2">
+            {t('contacts.convert_section', { defaultValue: 'Convert' })}
+          </h3>
+          {propDevEnabled ? (
+            <div className="space-y-2">
+              <p className="text-xs text-content-secondary">
+                {t('contacts.convert_hint', {
+                  defaultValue:
+                    'Turn this contact into a Property Development record. The new record keeps a link back to this contact.',
+                })}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon={
+                    convertLeadMut.isPending ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <UserPlus size={14} />
+                    )
+                  }
+                  onClick={() => convertLeadMut.mutate()}
+                  disabled={convertLeadMut.isPending}
+                >
+                  {t('contacts.convert_to_lead', { defaultValue: 'Convert to Lead' })}
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon={<Home size={14} />}
+                  onClick={() => navigate('/property-dev')}
+                  title={t('contacts.convert_to_buyer_hint', {
+                    defaultValue:
+                      'Creating a buyer needs a development and plot - continue in Property Development.',
+                  })}
+                >
+                  {t('contacts.convert_to_buyer', { defaultValue: 'Convert to Buyer' })}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-border-light bg-surface-secondary/40 p-3 text-xs text-content-secondary">
+              {t('contacts.convert_module_off', {
+                defaultValue:
+                  'Enable the Property Development module to convert contacts into leads and buyers.',
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* ── Linked records ───────────────────────────────────── */}
+        <section>
+          <div className="flex items-center gap-1.5 mb-2">
+            <Link2 size={13} className="text-content-tertiary" />
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-content-tertiary">
+              {t('contacts.linked_records', { defaultValue: 'Linked records' })}
+            </h3>
+          </div>
+
+          {isLoading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 2 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="h-12 animate-pulse rounded-lg bg-surface-tertiary"
+                />
+              ))}
+            </div>
+          ) : isError ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/20 p-3 text-xs text-semantic-error">
+              <p className="mb-1.5">
+                {error instanceof Error
+                  ? error.message
+                  : t('contacts.linked_load_failed', {
+                      defaultValue: 'Could not load linked records.',
+                    })}
+              </p>
+              <button
+                type="button"
+                onClick={() => refetch()}
+                className="font-medium text-oe-blue hover:underline"
+              >
+                {t('common.retry', { defaultValue: 'Retry' })}
+              </button>
+            </div>
+          ) : !hasLinked ? (
+            <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-content-tertiary">
+              {t('contacts.no_linked_records', {
+                defaultValue:
+                  'No leads or buyers are linked to this contact yet. Convert it above to create one.',
+              })}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {leads.length > 0 && (
+                <div>
+                  <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-content-tertiary">
+                    {t('contacts.linked_leads', { defaultValue: 'Leads' })} ({leads.length})
+                  </p>
+                  <div className="space-y-1.5">
+                    {leads.map((lead) => (
+                      <button
+                        key={lead.id}
+                        type="button"
+                        onClick={() => navigate('/property-dev')}
+                        className="flex w-full items-center justify-between gap-2 rounded-lg border border-border-light bg-surface-primary px-3 py-2 text-left hover:border-oe-blue/50 hover:bg-surface-secondary/50 transition-colors"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-content-primary">
+                            {lead.full_name || lead.email || lead.id.slice(0, 8)}
+                          </p>
+                          <p className="text-xs text-content-tertiary">
+                            {t('contacts.lead_meta', {
+                              defaultValue: '{{status}} · score {{score}}',
+                              status: lead.status,
+                              score: lead.lead_score,
+                            })}
+                          </p>
+                        </div>
+                        <ExternalLink size={13} className="shrink-0 text-content-tertiary" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {buyers.length > 0 && (
+                <div>
+                  <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-content-tertiary">
+                    {t('contacts.linked_buyers', { defaultValue: 'Buyers' })} ({buyers.length})
+                  </p>
+                  <div className="space-y-1.5">
+                    {buyers.map((buyer) => (
+                      <button
+                        key={buyer.id}
+                        type="button"
+                        onClick={() => navigate('/property-dev')}
+                        className="flex w-full items-center justify-between gap-2 rounded-lg border border-border-light bg-surface-primary px-3 py-2 text-left hover:border-oe-blue/50 hover:bg-surface-secondary/50 transition-colors"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-content-primary">
+                            {buyer.full_name || buyer.email || buyer.id.slice(0, 8)}
+                          </p>
+                          <p className="text-xs text-content-tertiary">{buyer.status}</p>
+                        </div>
+                        <ExternalLink size={13} className="shrink-0 text-content-tertiary" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      </div>
+    </SideDrawer>
+  );
+}
+
 /* ── Main Page ─────────────────────────────────────────────────────────── */
 
 export function ContactsPage() {
@@ -805,6 +1132,7 @@ export function ContactsPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
+  const [detailContact, setDetailContact] = useState<Contact | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<ContactType | ''>('');
   const [countryFilter, setCountryFilter] = useState('');
@@ -843,6 +1171,14 @@ export function ContactsPage() {
   const { data: tagFacets = [] } = useQuery({
     queryKey: ['contacts', 'tags'],
     queryFn: fetchContactTags,
+    staleTime: 60_000,
+  });
+
+  // Directory KPIs — total + expiring-prequalification surface, fed by
+  // the /stats/ endpoint that was previously orphaned.
+  const { data: stats } = useQuery({
+    queryKey: ['contacts', 'stats'],
+    queryFn: fetchContactStats,
     staleTime: 60_000,
   });
 
@@ -1002,6 +1338,10 @@ export function ContactsPage() {
     setShowAddModal(true);
   }, []);
 
+  const handleOpenDetail = useCallback((contact: Contact) => {
+    setDetailContact(contact);
+  }, []);
+
   const handleDeleteContact = useCallback(
     async (id: string) => {
       const ok = await confirm({
@@ -1118,6 +1458,74 @@ export function ContactsPage() {
           </Button>
         </div>
       </div>
+
+      {/* KPI strip — surfaces the /stats/ aggregate (total directory size
+          and the count of contacts whose prequalification is expiring, the
+          most actionable signal for a procurement / bid team). */}
+      {stats && (
+        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Card className="p-3">
+            <div className="flex items-center gap-2">
+              <Users size={16} className="text-oe-blue shrink-0" />
+              <div className="min-w-0">
+                <p className="text-lg font-bold leading-tight text-content-primary">
+                  {stats.total}
+                </p>
+                <p className="truncate text-xs text-content-tertiary">
+                  {t('contacts.kpi_total', { defaultValue: 'Total contacts' })}
+                </p>
+              </div>
+            </div>
+          </Card>
+          <Card className="p-3">
+            <div className="flex items-center gap-2">
+              <ShieldCheck size={16} className="text-green-600 dark:text-green-400 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-lg font-bold leading-tight text-content-primary">
+                  {stats.by_type.subcontractor ?? 0}
+                </p>
+                <p className="truncate text-xs text-content-tertiary">
+                  {t('contacts.kpi_subcontractors', { defaultValue: 'Subcontractors' })}
+                </p>
+              </div>
+            </div>
+          </Card>
+          <Card className="p-3">
+            <div className="flex items-center gap-2">
+              <Truck size={16} className="text-green-600 dark:text-green-400 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-lg font-bold leading-tight text-content-primary">
+                  {stats.by_type.supplier ?? 0}
+                </p>
+                <p className="truncate text-xs text-content-tertiary">
+                  {t('contacts.kpi_suppliers', { defaultValue: 'Suppliers' })}
+                </p>
+              </div>
+            </div>
+          </Card>
+          <Card className="p-3">
+            <div className="flex items-center gap-2">
+              <ShieldAlert
+                size={16}
+                className={clsx(
+                  'shrink-0',
+                  stats.with_expiring_prequalification > 0
+                    ? 'text-orange-500'
+                    : 'text-content-tertiary',
+                )}
+              />
+              <div className="min-w-0">
+                <p className="text-lg font-bold leading-tight text-content-primary">
+                  {stats.with_expiring_prequalification}
+                </p>
+                <p className="truncate text-xs text-content-tertiary">
+                  {t('contacts.kpi_expiring_prequal', { defaultValue: 'Expiring prequal.' })}
+                </p>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* Purpose / help banner — explains the directory and how it
           connects to the rest of the platform. */}
@@ -1387,6 +1795,7 @@ export function ContactsPage() {
                   contact={contact}
                   onEdit={handleEditContact}
                   onDelete={handleDeleteContact}
+                  onOpenDetail={handleOpenDetail}
                 />
               ))}
             </div>
@@ -1412,6 +1821,14 @@ export function ContactsPage() {
           onSuccess={() => {
             qc.invalidateQueries({ queryKey: ['contacts'] });
           }}
+        />
+      )}
+
+      {/* Contact Detail Drawer — linked records + module conversion */}
+      {detailContact && (
+        <ContactDetailDrawer
+          contact={detailContact}
+          onClose={() => setDetailContact(null)}
         />
       )}
 

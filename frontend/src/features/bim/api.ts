@@ -8,7 +8,15 @@
  *   GET  /v1/bim_hub/models/{id}/geometry   — serve DAE geometry file
  */
 
-import { apiGet, apiPost, apiPatch, apiDelete, extractErrorMessageFromBody } from '@/shared/lib/api';
+import {
+  apiGet,
+  apiPost,
+  apiPatch,
+  apiDelete,
+  extractErrorMessageFromBody,
+  triggerDownload,
+  getAuthToken,
+} from '@/shared/lib/api';
 import { isModuleLoaded } from '@/shared/lib/moduleProbe';
 import { useAuthStore } from '@/stores/useAuthStore';
 import type { BIMElementData, BIMModelData } from '@/shared/ui/BIMViewer';
@@ -1436,19 +1444,144 @@ export async function deleteBIMRequirementSet(setId: string): Promise<void> {
   await apiDelete(`/v1/bim_requirements/sets/${encodeURIComponent(setId)}/`);
 }
 
-/** Download the BIM requirements Excel template URL. */
+/** Download the BIM requirements Excel template URL.
+ *  @deprecated A bare `<a href>` to this GET endpoint sends no Authorization
+ *  header and 401s. Use {@link downloadBIMRequirementsTemplate} instead. */
 export function bimRequirementsTemplateUrl(): string {
   return '/api/v1/bim_requirements/template/';
 }
 
-/** Export a BIM requirement set as Excel (returns action URL for POST). */
+/** Export a BIM requirement set as Excel (returns action URL for POST).
+ *  @deprecated The endpoint is POST-only and auth is Bearer-only, so a
+ *  plain `<a href>` 405s/401s. Use {@link exportBIMRequirementSetExcel}. */
 export function bimRequirementsExportExcelUrl(setId: string, language = 'en'): string {
   return `/api/v1/bim_requirements/export/${encodeURIComponent(setId)}/excel/?language=${language}`;
 }
 
-/** Export a BIM requirement set as IDS XML (returns action URL for POST). */
+/** Export a BIM requirement set as IDS XML (returns action URL for POST).
+ *  @deprecated POST-only + Bearer-only auth. Use {@link exportBIMRequirementSetIds}. */
 export function bimRequirementsExportIdsUrl(setId: string): string {
   return `/api/v1/bim_requirements/export/${encodeURIComponent(setId)}/ids/`;
+}
+
+/** Pull a filename out of a Content-Disposition header, falling back to a
+ *  caller-supplied default. Shared by the three requirement downloads. */
+function filenameFromContentDisposition(resp: Response, fallback: string): string {
+  const cd = resp.headers.get('content-disposition') || '';
+  const match = cd.match(/filename="?([^";]+)"?/i);
+  return match?.[1] || fallback;
+}
+
+/** Common authenticated-blob fetch for the requirement export/template
+ *  endpoints. These are POST-only (export) or auth-guarded GET (template);
+ *  a bare anchor click carries no Bearer token, so we fetch the blob with
+ *  the JWT ourselves and trigger a synthetic download. Throws on HTTP
+ *  error with the backend's message when available. */
+async function downloadRequirementBlob(
+  url: string,
+  method: 'GET' | 'POST',
+  fallbackName: string,
+): Promise<void> {
+  const token = getAuthToken();
+  const headers: Record<string, string> = { Accept: '*/*' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const init: RequestInit = { method, headers };
+  if (method === 'POST') {
+    headers['Content-Type'] = 'application/json';
+    init.body = '{}';
+  }
+  const resp = await fetch(url, init);
+  if (!resp.ok) {
+    let detail = `Download failed (HTTP ${resp.status})`;
+    try {
+      const body = await resp.json();
+      detail = extractErrorMessageFromBody(body) ?? detail;
+    } catch {
+      /* ignore parse errors — keep the HTTP-status fallback */
+    }
+    throw new Error(detail);
+  }
+  const blob = await resp.blob();
+  triggerDownload(blob, filenameFromContentDisposition(resp, fallbackName));
+}
+
+/** Download the BIM requirements Excel template via an authenticated fetch. */
+export async function downloadBIMRequirementsTemplate(): Promise<void> {
+  await downloadRequirementBlob(
+    bimRequirementsTemplateUrl(),
+    'GET',
+    'bim_requirements_template.xlsx',
+  );
+}
+
+/** Export a requirement set as a formatted Excel file (authenticated POST). */
+export async function exportBIMRequirementSetExcel(
+  setId: string,
+  filename: string,
+  language = 'en',
+): Promise<void> {
+  await downloadRequirementBlob(
+    bimRequirementsExportExcelUrl(setId, language),
+    'POST',
+    `${filename || 'requirements'}.xlsx`,
+  );
+}
+
+/** Export a requirement set as IDS XML (authenticated POST). */
+export async function exportBIMRequirementSetIds(
+  setId: string,
+  filename: string,
+): Promise<void> {
+  await downloadRequirementBlob(
+    bimRequirementsExportIdsUrl(setId),
+    'POST',
+    `${filename || 'requirements'}.ids`,
+  );
+}
+
+/* ── BIM Requirements — model compliance validation ─────────────────── */
+
+/** One requirement's outcome when a set is validated against a BIM model.
+ *  Mirrors backend ``RequirementCheckResult``. */
+export interface BIMRequirementCheckResult {
+  requirement_id: string;
+  property_group: string | null;
+  property_name: string;
+  element_filter: Record<string, unknown>;
+  constraint_def: Record<string, unknown>;
+  /** "pass" | "fail" | "not_applicable". */
+  status: string;
+  matched_elements: number;
+  compliant_elements: number;
+  non_compliant_elements: number;
+  details: string;
+}
+
+/** Compliance report for a requirement set checked against a BIM model.
+ *  Mirrors backend ``RequirementValidationResponse``. */
+export interface BIMRequirementValidationResult {
+  requirement_set_id: string;
+  requirement_set_name: string;
+  model_id: string;
+  total_requirements: number;
+  passed: number;
+  failed: number;
+  not_applicable: number;
+  compliance_ratio: number;
+  results: BIMRequirementCheckResult[];
+}
+
+/** Validate a BIM model's elements against a requirement set. Calls the
+ *  real ``POST /validate/{set_id}/?model_id=...`` endpoint and returns the
+ *  pass/fail/not-applicable compliance report. */
+export async function validateBIMRequirementSet(
+  setId: string,
+  modelId: string,
+): Promise<BIMRequirementValidationResult> {
+  return apiPost<BIMRequirementValidationResult>(
+    `/v1/bim_requirements/validate/${encodeURIComponent(setId)}/?model_id=${encodeURIComponent(modelId)}`,
+    {},
+  );
 }
 
 /* ── Asset Register (v2.3.0) ──────────────────────────────────────────── */

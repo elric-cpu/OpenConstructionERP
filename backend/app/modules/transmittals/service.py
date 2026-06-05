@@ -11,6 +11,7 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import event_bus
@@ -27,6 +28,13 @@ from app.modules.transmittals.schemas import (
 
 logger = logging.getLogger(__name__)
 _logger_ev = logging.getLogger(__name__ + ".events")
+
+# Retry budget for ``create_transmittal`` when two concurrent transactions
+# race on ``max(transmittal_number)+1``. The ``(project_id,
+# transmittal_number)`` unique constraint turns the loser into an
+# IntegrityError; we roll back and retry with a freshly-bumped suffix.
+# Mirrors the rfi / changeorders code-collision retry loop.
+_TRANSMITTAL_CREATE_MAX_RETRIES = 5
 
 
 async def _safe_publish(name: str, data: dict, source_module: str = "oe_transmittals") -> None:
@@ -50,22 +58,52 @@ class TransmittalService:
         data: TransmittalCreate,
         user_id: str | None = None,
     ) -> Transmittal:
-        """‌⁠‍Create a new transmittal with auto-generated number."""
-        number = await self.repo.next_number(data.project_id)
+        """‌⁠‍Create a new transmittal with auto-generated number.
 
-        transmittal = Transmittal(
-            project_id=data.project_id,
-            transmittal_number=number,
-            subject=data.subject,
-            sender_org_id=data.sender_org_id,
-            purpose_code=data.purpose_code,
-            issued_date=data.issued_date,
-            response_due_date=data.response_due_date,
-            cover_note=data.cover_note,
-            created_by=uuid.UUID(user_id) if user_id else None,
-            metadata_=data.metadata,
-        )
-        transmittal = await self.repo.create(transmittal)
+        ``next_number`` reads ``MAX(transmittal_number)+1`` outside a
+        SERIALIZABLE transaction, so two concurrent calls can pick the same
+        suffix. The ``(project_id, transmittal_number)`` unique constraint
+        makes the loser fail with :class:`IntegrityError`; we roll back and
+        retry with a freshly-bumped suffix up to
+        ``_TRANSMITTAL_CREATE_MAX_RETRIES`` times. If every retry collides
+        (high contention) we surface HTTP 409 so the client retries — never
+        silently writing a duplicate. Mirrors the rfi create_rfi pattern.
+        """
+        last_exc: Exception | None = None
+        transmittal: Transmittal | None = None
+        number = ""
+        for _attempt in range(_TRANSMITTAL_CREATE_MAX_RETRIES):
+            number = await self.repo.next_number(data.project_id)
+            candidate = Transmittal(
+                project_id=data.project_id,
+                transmittal_number=number,
+                subject=data.subject,
+                sender_org_id=data.sender_org_id,
+                purpose_code=data.purpose_code,
+                issued_date=data.issued_date,
+                response_due_date=data.response_due_date,
+                cover_note=data.cover_note,
+                created_by=uuid.UUID(user_id) if user_id else None,
+                metadata_=data.metadata,
+            )
+            try:
+                transmittal = await self.repo.create(candidate)
+            except IntegrityError as exc:
+                # Another transaction picked the same number; roll back
+                # and retry with a freshly-bumped suffix.
+                last_exc = exc
+                await self.session.rollback()
+                continue
+            break
+
+        if transmittal is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Could not generate a unique transmittal number after "
+                    f"{_TRANSMITTAL_CREATE_MAX_RETRIES} attempts (concurrent contention)."
+                ),
+            ) from last_exc
 
         # Add recipients
         for r in data.recipients:

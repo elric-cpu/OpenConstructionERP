@@ -5,6 +5,7 @@ and stamp templates.
 """
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -116,7 +117,13 @@ class MarkupResponse(BaseModel):
     assignee_id: UUID | None = None
     status: str = "active"
     label: str | None = None
-    measurement_value: float | None = None
+    # Stored as Numeric(18, 6) in the model — calibration / measurement
+    # values flow into BOQ quantities, so we keep them as ``Decimal`` here
+    # rather than ``float``. Typing the field ``float`` made Pydantic coerce
+    # the ORM ``Decimal`` through a binary float on serialization, dropping
+    # precision (e.g. 12.345678 drifting). ``Decimal`` round-trips exactly
+    # and still emits a JSON number, so the client contract is unchanged.
+    measurement_value: Decimal | None = None
     measurement_unit: str | None = None
     stamp_template_id: UUID | None = None
     linked_boq_position_id: str | None = None
@@ -171,10 +178,14 @@ class ScaleConfigResponse(BaseModel):
     id: UUID
     document_id: str
     page: int = 1
-    pixels_per_unit: float
+    # Numeric(18, 6) in the model. Typed ``Decimal`` (not ``float``) so the
+    # ORM value is not coerced through a binary float on serialization,
+    # which would drift the calibration ratio that scales every measurement.
+    # Pydantic still emits a JSON number, so the client contract is unchanged.
+    pixels_per_unit: Decimal
     unit_label: str = "m"
     calibration_points: Any = Field(default_factory=dict)
-    real_distance: float
+    real_distance: Decimal
     created_by: str = ""
     created_at: datetime
     updated_at: datetime

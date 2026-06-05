@@ -3435,12 +3435,19 @@ async def get_elements_by_ids(
 
     from app.modules.bim_hub.models import BIMElement
 
+    parsed_uuids: list[uuid.UUID] = []
+    for eid in element_ids:
+        try:
+            parsed_uuids.append(uuid.UUID(str(eid)))
+        except (ValueError, TypeError):
+            continue
+
     query = (
         select(BIMElement)
         .where(BIMElement.model_id == model_id)
         .where(
             or_(
-                BIMElement.id.in_([uuid.UUID(eid) for eid in element_ids if len(eid) == 36]),
+                BIMElement.id.in_(parsed_uuids),
                 BIMElement.stable_id.in_(element_ids),
             )
         )

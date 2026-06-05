@@ -847,7 +847,7 @@ async def miss_commitment_endpoint(
     # Caller passes a full RNCCreate body — overwrite the commitment_id
     # with the URL value to ensure consistency.
     rnc_payload = rnc.model_copy(update={"commitment_id": cid})
-    c, _r = await service.mark_commitment_missed(cid, rnc_payload)
+    c, _r = await service.mark_commitment_missed(cid, rnc_payload, user_id=user_id)
     return CommitmentResponse.model_validate(c)
 
 
@@ -1648,11 +1648,8 @@ async def list_takt_schedules(
     project_id = await _project_id_for_master(master_id, service)
     await verify_project_access(project_id, user_id, session)
     items = await takt_service.list_for_master(master_id)
-    out: list[TaktScheduleResponse] = []
-    for ts in items:
-        locations = await takt_service.list_locations(ts.id)
-        out.append(_takt_response(ts, locations))
-    return out
+    locations_by_takt = await takt_service.list_locations_for_takts([ts.id for ts in items])
+    return [_takt_response(ts, locations_by_takt.get(ts.id, [])) for ts in items]
 
 
 @router.post(

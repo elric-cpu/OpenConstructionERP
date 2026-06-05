@@ -437,6 +437,28 @@ class LocationRepository(_BaseRepo):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def list_for_takts(
+        self,
+        takt_schedule_ids: list[uuid.UUID],
+    ) -> dict[uuid.UUID, list[Location]]:
+        """Fetch locations for many takt schedules in one query.
+
+        Returns a mapping of ``takt_schedule_id -> ordered locations`` so
+        callers can hydrate a list of schedules without an N+1 fan-out.
+        """
+        if not takt_schedule_ids:
+            return {}
+        stmt = (
+            select(Location)
+            .where(Location.takt_schedule_id.in_(takt_schedule_ids))
+            .order_by(Location.sequence_order.asc())
+        )
+        result = await self.session.execute(stmt)
+        grouped: dict[uuid.UUID, list[Location]] = {tid: [] for tid in takt_schedule_ids}
+        for loc in result.scalars().all():
+            grouped.setdefault(loc.takt_schedule_id, []).append(loc)
+        return grouped
+
 
 class TaktActivityRepository(_BaseRepo):
     """CRUD for :class:`TaktActivity`."""

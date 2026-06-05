@@ -1715,10 +1715,20 @@ class ResourcesService:
         all_resources, _ = await self.resource_repo.list_all(limit=2000)
         out: list[dict[str, Any]] = []
         required_set: set[uuid.UUID] = {uuid.UUID(str(s)) for s in required_skill_ids}
+
+        # Bulk-fetch skills, in-window assignments, and availability windows for
+        # the whole active candidate set in three round-trips, then join in
+        # Python. The previous per-resource queries inside the loop produced an
+        # N+1 explosion (~3 queries × up to 2000 resources).
+        active_ids = [res.id for res in all_resources if res.status == "active"]
+        skills_by_resource = await self.resource_skill_repo.list_for_resources(active_ids)
+        assignments_by_resource = await self.assignment_repo.assignments_for_resources_in_window(active_ids, start, end)
+        windows_by_resource = await self.window_repo.list_for_resources(active_ids, start_at=start, end_at=end)
+
         for res in all_resources:
             if res.status != "active":
                 continue
-            res_skills = await self.resource_skill_repo.list_for_resource(res.id)
+            res_skills = skills_by_resource.get(res.id, [])
             owned_skill_ids = {rs.skill_id for rs in res_skills}
             matched = required_set & owned_skill_ids
             if not matched and required_set:
@@ -1727,7 +1737,7 @@ class ResourcesService:
 
             # Availability: sum allocation_percent of overlapping non-cancelled
             # assignments in [start, end). Convert to a 0..1 free-fraction.
-            existing = await self.assignment_repo.assignments_for_resource_in_window(res.id, start, end)
+            existing = assignments_by_resource.get(res.id, [])
             total_alloc = 0
             for a in existing:
                 if a.status in ("cancelled", "completed"):
@@ -1743,7 +1753,7 @@ class ResourcesService:
             # available" — that would rank an out-of-office resource top of
             # the list and let a dispatcher book someone who is on leave.
             blocking = False
-            windows = await self.window_repo.list_for_resource(res.id, start_at=start, end_at=end)
+            windows = windows_by_resource.get(res.id, [])
             for w in windows:
                 if w.window_type in ("unavailable", "holiday", "sick"):
                     if _intervals_overlap(start, end, w.start_at, w.end_at):

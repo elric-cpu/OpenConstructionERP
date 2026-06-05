@@ -20,6 +20,10 @@ import {
   Send,
   HelpCircle,
   Link2,
+  Paperclip,
+  Download,
+  Upload,
+  Loader2,
 } from 'lucide-react';
 import {
   Button,
@@ -45,6 +49,9 @@ import {
   createCorrespondence,
   updateCorrespondence,
   deleteCorrespondence,
+  uploadCorrespondenceAttachment,
+  downloadCorrespondenceAttachment,
+  attachmentDisplayName,
   type Correspondence,
   type CorrespondenceDirection,
   type CorrespondenceType,
@@ -115,6 +122,9 @@ interface CorrespondenceFormData {
   date_sent: string;
   date_received: string;
   notes: string;
+  linked_document_ids: string[];
+  linked_transmittal_id: string;
+  linked_rfi_id: string;
 }
 
 const todayDate = () => new Date().toISOString().slice(0, 10);
@@ -130,7 +140,26 @@ const EMPTY_FORM: CorrespondenceFormData = {
   date_sent: '',
   date_received: '',
   notes: '',
+  linked_document_ids: [],
+  linked_transmittal_id: '',
+  linked_rfi_id: '',
 };
+
+/* Minimal row shapes for the link pickers — only the fields we render. */
+interface PickerDocument {
+  id: string;
+  name: string;
+}
+interface PickerTransmittal {
+  id: string;
+  transmittal_number: string;
+  subject: string;
+}
+interface PickerRFI {
+  id: string;
+  rfi_number: string;
+  subject: string;
+}
 
 function CreateCorrespondenceModal({
   onClose,
@@ -138,27 +167,84 @@ function CreateCorrespondenceModal({
   isPending,
   initialData,
   isEdit,
+  projectId,
 }: {
   onClose: () => void;
   onSubmit: (data: CorrespondenceFormData) => void;
   isPending: boolean;
   initialData?: CorrespondenceFormData | null;
   isEdit?: boolean;
+  projectId: string;
 }) {
   const { t } = useTranslation();
   const [form, setForm] = useState<CorrespondenceFormData>(
     initialData ?? {
       ...EMPTY_FORM,
+      // Default only the direction-relevant date — a brand-new entry starts
+      // as 'outgoing', so we pre-fill Date Sent and leave Date Received blank
+      // (it's the recipient's date, usually unknown when logging). See the
+      // inline helper text below.
       date_sent: todayDate(),
-      date_received: todayDate(),
+      date_received: '',
     },
   );
   const [touched, setTouched] = useState(false);
+
+  // Link pickers: load the project's documents / transmittals / RFIs so a
+  // user can connect this entry into the traceable communication thread the
+  // help banner promises. Lazy + project-scoped; failures degrade to empty
+  // lists (the section still renders with a "nothing to link yet" note).
+  const docsQuery = useQuery({
+    queryKey: ['correspondence-link-docs', projectId],
+    queryFn: () => apiGet<PickerDocument[]>(`/v1/documents/?project_id=${projectId}`),
+    enabled: !!projectId,
+    staleTime: 60_000,
+  });
+  const transmittalsQuery = useQuery({
+    queryKey: ['correspondence-link-transmittals', projectId],
+    queryFn: () =>
+      apiGet<PickerTransmittal[] | { items: PickerTransmittal[] }>(
+        `/v1/transmittals/?project_id=${projectId}`,
+      ),
+    enabled: !!projectId,
+    staleTime: 60_000,
+  });
+  const rfisQuery = useQuery({
+    queryKey: ['correspondence-link-rfis', projectId],
+    queryFn: () => apiGet<PickerRFI[]>(`/v1/rfi/?project_id=${projectId}`),
+    enabled: !!projectId,
+    staleTime: 60_000,
+  });
+
+  const documents = docsQuery.data ?? [];
+  const transmittals = Array.isArray(transmittalsQuery.data)
+    ? transmittalsQuery.data
+    : (transmittalsQuery.data?.items ?? []);
+  const rfis = rfisQuery.data ?? [];
+
+  const toggleDocument = (id: string) =>
+    setForm((prev) => ({
+      ...prev,
+      linked_document_ids: prev.linked_document_ids.includes(id)
+        ? prev.linked_document_ids.filter((d) => d !== id)
+        : [...prev.linked_document_ids, id],
+    }));
 
   const set = <K extends keyof CorrespondenceFormData>(
     key: K,
     value: CorrespondenceFormData[K],
   ) => setForm((prev) => ({ ...prev, [key]: value }));
+
+  // Switching direction: seed the now-relevant date with today when it's
+  // still empty, so the user isn't left with a blank key date. We never
+  // overwrite a value the user already entered.
+  const setDirection = (dir: CorrespondenceDirection) =>
+    setForm((prev) => {
+      const next = { ...prev, direction: dir };
+      if (dir === 'outgoing' && !next.date_sent) next.date_sent = todayDate();
+      if (dir === 'incoming' && !next.date_received) next.date_received = todayDate();
+      return next;
+    });
 
   const subjectError = touched && form.subject.trim().length === 0;
   const fromError = touched && (form.from_contact.trim().length === 0 && form.from_display.trim().length === 0);
@@ -218,7 +304,7 @@ function CreateCorrespondenceModal({
                   type="button"
                   role="radio"
                   aria-checked={selected}
-                  onClick={() => set('direction', dir)}
+                  onClick={() => setDirection(dir)}
                   className={clsx(
                     'flex items-center gap-3 rounded-lg border-2 px-4 py-3 transition-all text-left',
                     selected
@@ -368,6 +454,15 @@ function CreateCorrespondenceModal({
         <WideModalField
           label={t('correspondence.field_date_sent', { defaultValue: 'Date Sent' })}
           htmlFor="corr-date-sent"
+          hint={
+            form.direction === 'outgoing'
+              ? t('correspondence.hint_date_sent_outgoing', {
+                  defaultValue: 'When you sent it (the key date for outgoing mail).',
+                })
+              : t('correspondence.hint_date_sent_incoming', {
+                  defaultValue: "The sender's date, as printed on the incoming letter.",
+                })
+          }
         >
           <input
             id="corr-date-sent"
@@ -381,6 +476,15 @@ function CreateCorrespondenceModal({
         <WideModalField
           label={t('correspondence.field_date_received', { defaultValue: 'Date Received' })}
           htmlFor="corr-date-received"
+          hint={
+            form.direction === 'incoming'
+              ? t('correspondence.hint_date_received_incoming', {
+                  defaultValue: 'When it reached you (the key date for incoming mail).',
+                })
+              : t('correspondence.hint_date_received_outgoing', {
+                  defaultValue: 'Optional - when the recipient acknowledged receipt.',
+                })
+          }
         >
           <input
             id="corr-date-received"
@@ -408,6 +512,102 @@ function CreateCorrespondenceModal({
           />
         </WideModalField>
       </WideModalSection>
+
+      {/* Linked references — connect this entry into the traceable thread
+          (Documents / Transmittal / RFI). Backend fully supports these; this
+          is what makes the "Docs" count and the linked-reference badges
+          actually populate for manually created entries. */}
+      <WideModalSection
+        title={t('correspondence.section_links', { defaultValue: 'Linked References' })}
+        columns={2}
+      >
+        <WideModalField
+          label={t('correspondence.field_link_transmittal', { defaultValue: 'Transmittal' })}
+          htmlFor="corr-link-transmittal"
+          hint={t('correspondence.link_optional_hint', {
+            defaultValue: 'Optional - ties this entry to a related record.',
+          })}
+        >
+          <select
+            id="corr-link-transmittal"
+            value={form.linked_transmittal_id}
+            onChange={(e) => set('linked_transmittal_id', e.target.value)}
+            className={inputCls}
+          >
+            <option value="">
+              {t('correspondence.link_none', { defaultValue: 'None' })}
+            </option>
+            {transmittals.map((tr) => (
+              <option key={tr.id} value={tr.id}>
+                {tr.transmittal_number} - {tr.subject}
+              </option>
+            ))}
+          </select>
+        </WideModalField>
+
+        <WideModalField
+          label={t('correspondence.field_link_rfi', { defaultValue: 'RFI' })}
+          htmlFor="corr-link-rfi"
+          hint={t('correspondence.link_optional_hint', {
+            defaultValue: 'Optional - ties this entry to a related record.',
+          })}
+        >
+          <select
+            id="corr-link-rfi"
+            value={form.linked_rfi_id}
+            onChange={(e) => set('linked_rfi_id', e.target.value)}
+            className={inputCls}
+          >
+            <option value="">
+              {t('correspondence.link_none', { defaultValue: 'None' })}
+            </option>
+            {rfis.map((rfi) => (
+              <option key={rfi.id} value={rfi.id}>
+                {rfi.rfi_number} - {rfi.subject}
+              </option>
+            ))}
+          </select>
+        </WideModalField>
+
+        <WideModalField
+          label={t('correspondence.field_link_documents', { defaultValue: 'Documents' })}
+          span={2}
+          hint={t('correspondence.link_documents_hint', {
+            defaultValue: 'Tick the project documents this letter refers to.',
+          })}
+        >
+          {documents.length === 0 ? (
+            <p className="text-xs text-content-tertiary py-1">
+              {docsQuery.isLoading
+                ? t('common.loading', { defaultValue: 'Loading…' })
+                : t('correspondence.no_documents_to_link', {
+                    defaultValue: 'No documents in this project yet.',
+                  })}
+            </p>
+          ) : (
+            <div className="max-h-40 overflow-y-auto rounded-lg border border-border divide-y divide-border-light">
+              {documents.map((doc) => {
+                const checked = form.linked_document_ids.includes(doc.id);
+                return (
+                  <label
+                    key={doc.id}
+                    className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-surface-secondary/50"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleDocument(doc.id)}
+                      className="shrink-0 accent-oe-blue"
+                    />
+                    <FileText size={13} className="shrink-0 text-content-tertiary" />
+                    <span className="truncate">{doc.name}</span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </WideModalField>
+      </WideModalSection>
     </WideModal>
   );
 }
@@ -418,19 +618,41 @@ const CorrespondenceRow = React.memo(function CorrespondenceRow({
   item,
   onEdit,
   onDelete,
+  onUploadAttachment,
+  onDownloadAttachment,
 }: {
   item: Correspondence;
   onEdit: (item: Correspondence) => void;
   onDelete: (item: Correspondence) => void;
+  /** Upload a file to this entry; resolves once the row has been refetched. */
+  onUploadAttachment: (item: Correspondence, file: File) => Promise<void>;
+  /** Download the attachment at the given index (Bearer-authed fetch). */
+  onDownloadAttachment: (item: Correspondence, index: number, filename: string) => void;
 }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
   const fromLabel = item.from_contact_id || '—';
   const toLabel =
     (item.to_contact_ids ?? []).length > 0
       ? (item.to_contact_ids ?? []).join(', ')
       : '—';
   const docCount = (item.linked_document_ids ?? []).length;
+  const attachments = item.attachments ?? [];
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Reset the input value so picking the same file again re-fires onChange.
+    e.target.value = '';
+    if (!file) return;
+    setUploading(true);
+    try {
+      await onUploadAttachment(item, file);
+    } finally {
+      setUploading(false);
+    }
+  };
 
   return (
     <div className="border-b border-border-light last:border-b-0">
@@ -600,6 +822,69 @@ const CorrespondenceRow = React.memo(function CorrespondenceRow({
               )}
             </div>
           )}
+
+          {/* Attachments — validated files stored against this entry. Each
+              row links to the authenticated download endpoint. */}
+          <div className="space-y-1.5">
+            <span className="inline-flex items-center gap-1 text-2xs uppercase tracking-wide text-content-tertiary">
+              <Paperclip size={11} />
+              {t('correspondence.label_attachments', { defaultValue: 'Attachments' })}
+            </span>
+            {attachments.length > 0 ? (
+              <ul className="space-y-1">
+                {attachments.map((path, idx) => (
+                  <li key={`${path}-${idx}`}>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDownloadAttachment(item, idx, attachmentDisplayName(path));
+                      }}
+                      className="inline-flex items-center gap-1.5 text-xs text-oe-blue hover:underline"
+                      title={t('correspondence.download_attachment', {
+                        defaultValue: 'Download attachment',
+                      })}
+                    >
+                      <Download size={12} className="shrink-0" />
+                      <span className="truncate max-w-xs">{attachmentDisplayName(path)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs text-content-quaternary">
+                {t('correspondence.no_attachments', { defaultValue: 'No attachments yet.' })}
+              </p>
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.zip,.docx,.xlsx,.pptx,.doc,.xls"
+              onChange={handleFileChange}
+            />
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={uploading}
+              icon={
+                uploading ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <Upload size={13} />
+                )
+              }
+              onClick={(e) => {
+                e.stopPropagation();
+                fileInputRef.current?.click();
+              }}
+              data-testid={`correspondence-upload-${item.id}`}
+            >
+              {uploading
+                ? t('correspondence.uploading', { defaultValue: 'Uploading…' })
+                : t('correspondence.add_attachment', { defaultValue: 'Add attachment' })}
+            </Button>
+          </div>
 
           {/* Actions */}
           <div className="flex items-center gap-2 pt-1">
@@ -826,6 +1111,11 @@ export function CorrespondencePage() {
         .filter(Boolean),
       date_sent: formData.date_sent || undefined,
       date_received: formData.date_received || undefined,
+      // Link this entry into the traceable thread. Always sent (empty array /
+      // null clears links on edit) so the picker is fully round-trippable.
+      linked_document_ids: formData.linked_document_ids,
+      linked_transmittal_id: formData.linked_transmittal_id || null,
+      linked_rfi_id: formData.linked_rfi_id || null,
       notes: formData.notes || undefined,
     }),
     [],
@@ -862,6 +1152,9 @@ export function CorrespondencePage() {
       date_sent: c.date_sent || '',
       date_received: c.date_received || '',
       notes: c.notes || '',
+      linked_document_ids: c.linked_document_ids ?? [],
+      linked_transmittal_id: c.linked_transmittal_id || '',
+      linked_rfi_id: c.linked_rfi_id || '',
     }),
     [],
   );
@@ -882,6 +1175,43 @@ export function CorrespondencePage() {
       if (ok) deleteMut.mutate(item.id);
     },
     [deleteMut, confirm, t],
+  );
+
+  const handleUploadAttachment = useCallback(
+    async (item: Correspondence, file: File) => {
+      try {
+        await uploadCorrespondenceAttachment(item.id, file);
+        invalidateAll();
+        addToast({
+          type: 'success',
+          title: t('correspondence.attachment_uploaded', {
+            defaultValue: 'Attachment uploaded',
+          }),
+        });
+      } catch (e) {
+        addToast({
+          type: 'error',
+          title: t('correspondence.attachment_failed', {
+            defaultValue: 'Upload failed',
+          }),
+          message: e instanceof Error ? e.message : undefined,
+        });
+      }
+    },
+    [invalidateAll, addToast, t],
+  );
+
+  const handleDownloadAttachment = useCallback(
+    (item: Correspondence, index: number, filename: string) => {
+      void downloadCorrespondenceAttachment(item.id, index, filename).catch((e: unknown) => {
+        addToast({
+          type: 'error',
+          title: t('correspondence.download_failed', { defaultValue: 'Download failed' }),
+          message: e instanceof Error ? e.message : undefined,
+        });
+      });
+    },
+    [addToast, t],
   );
 
   return (
@@ -969,9 +1299,9 @@ export function CorrespondencePage() {
             </span>
           </div>
           <p className="text-xs pr-6">
-            {t('correspondence.info_body', {
+            {t('correspondence.info_body_v2', {
               defaultValue:
-                'A contemporaneous register of every formal letter, notice, email, and memo exchanged with project parties \u2014 the audit trail that protects you in disputes and claims. Log entries manually, or auto-import them via email/webhook integrations.',
+                'A contemporaneous register of every formal letter, notice, email, and memo exchanged with project parties - the audit trail that protects you in disputes and claims. Log each entry, attach the source file, and link it to the related records.',
             })}{' '}
             {t('correspondence.info_link_hint', {
               defaultValue:
@@ -1003,21 +1333,26 @@ export function CorrespondencePage() {
         </div>
       )}
 
-      {/* Connectors */}
+      {/* Connectors — inbound auto-import (IMAP / webhook ingestion) is not
+          built yet; the integrations module only dispatches OUTBOUND
+          webhooks. Marked "Coming Soon" so the cards don't promise a flow
+          that doesn't exist. Entries are logged manually today. */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <ConnectorCard
           name={t('correspondence.connector_email', { defaultValue: 'Email (IMAP/SMTP)' })}
-          status="available"
+          status="coming_soon"
           icon={Mail}
-          description={t('correspondence.connector_email_desc', { defaultValue: 'Auto-import incoming/outgoing project emails' })}
-          onSetup={() => navigate('/integrations')}
+          description={t('correspondence.connector_email_desc_planned', {
+            defaultValue: 'Planned: auto-import project emails into this register.',
+          })}
         />
         <ConnectorCard
           name={t('correspondence.connector_webhook', { defaultValue: 'API Webhook' })}
-          status="available"
+          status="coming_soon"
           icon={Webhook}
-          description={t('correspondence.connector_webhook_desc', { defaultValue: 'Receive correspondence via REST API' })}
-          onSetup={() => navigate('/integrations')}
+          description={t('correspondence.connector_webhook_desc_planned', {
+            defaultValue: 'Planned: create entries from inbound REST webhooks.',
+          })}
         />
       </div>
 
@@ -1163,6 +1498,8 @@ export function CorrespondencePage() {
                   item={c}
                   onEdit={setEditingItem}
                   onDelete={handleDelete}
+                  onUploadAttachment={handleUploadAttachment}
+                  onDownloadAttachment={handleDownloadAttachment}
                 />
               ))}
             </Card>
@@ -1173,6 +1510,7 @@ export function CorrespondencePage() {
       {/* Create Modal */}
       {showCreateModal && (
         <CreateCorrespondenceModal
+          projectId={projectId}
           onClose={() => setShowCreateModal(false)}
           onSubmit={handleCreateSubmit}
           isPending={createMut.isPending}
@@ -1183,6 +1521,7 @@ export function CorrespondencePage() {
       {editingItem && (
         <CreateCorrespondenceModal
           isEdit
+          projectId={projectId}
           initialData={formDataFromItem(editingItem)}
           onClose={() => setEditingItem(null)}
           onSubmit={handleEditSubmit}

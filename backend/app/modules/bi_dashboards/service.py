@@ -460,6 +460,11 @@ class BIDashboardsService:
         widgets = await self.repo.list_widgets(dashboard_id)
         results: list[WidgetRenderResult] = []
         now = _now()
+        # Perf (N+1): batch-load the latest snapshot for every widget in one
+        # query instead of one SELECT per widget inside the loop below.
+        latest_snapshots = await self.repo.get_latest_snapshots_for_widgets(
+            [w.id for w in widgets],
+        )
         for widget in widgets:
             widget_read = WidgetRead.model_validate(widget)
             value: Decimal | None = None
@@ -470,7 +475,7 @@ class BIDashboardsService:
             # Try cached snapshot first. SQLite returns naive datetimes —
             # assume UTC so the comparison against ``now`` (always tz-aware)
             # doesn't TypeError.
-            snap = await self.repo.get_latest_snapshot(widget.id)
+            snap = latest_snapshots.get(widget.id)
             snap_valid_until = (
                 snap.valid_until.replace(tzinfo=UTC)
                 if snap is not None and snap.valid_until is not None and snap.valid_until.tzinfo is None
@@ -608,6 +613,31 @@ class BIDashboardsService:
         # rather than twice. Any active filter (project/period/extra) makes
         # the cache inapplicable and we fall through to a live compute.
         has_active_filter = bool(project_id_val or period_start_val or period_end_val or kpi_filters)
+
+        # Perf (N+1): chart widgets each need a KPI history series. Many
+        # widgets on a board share the same ``kpi_code``, and ``project_id``
+        # is constant for this call, so fetch each distinct (kpi_code,
+        # project_id) series exactly once up front and look it up in the loop
+        # rather than re-querying per widget.
+        chart_kpi_codes = {
+            w.kpi_code for w in widgets if w.kpi_code is not None and w.widget_type in ("line_chart", "bar_chart")
+        }
+        history_by_kpi: dict[str, list[dict[str, Any]]] = {}
+        for kpi_code in chart_kpi_codes:
+            history_rows = await self.repo.list_kpi_values(
+                kpi_code,
+                project_id=project_id_val,
+                limit=12,
+            )
+            history_by_kpi[kpi_code] = [
+                {
+                    "period_start": h.period_start.isoformat(),
+                    "period_end": h.period_end.isoformat(),
+                    "value": str(h.value),
+                }
+                for h in history_rows
+            ]
+
         results: list[WidgetEvaluateResult] = []
         for widget in widgets:
             value: Decimal | None = None
@@ -665,22 +695,11 @@ class BIDashboardsService:
 
             # Optional ``series`` for line/bar charts — pulled from the
             # KPI history (cheapest source of a time-axis). For non-
-            # chart widgets we omit it to keep the payload light.
+            # chart widgets we omit it to keep the payload light. Read from
+            # the batch-prefetched cache to avoid an N+1 per chart widget.
             series: list[dict[str, Any]] = []
             if widget.kpi_code is not None and widget.widget_type in ("line_chart", "bar_chart"):
-                history = await self.repo.list_kpi_values(
-                    widget.kpi_code,
-                    project_id=project_id_val,
-                    limit=12,
-                )
-                series = [
-                    {
-                        "period_start": h.period_start.isoformat(),
-                        "period_end": h.period_end.isoformat(),
-                        "value": str(h.value),
-                    }
-                    for h in history
-                ]
+                series = list(history_by_kpi.get(widget.kpi_code, []))
 
             results.append(
                 WidgetEvaluateResult(
@@ -919,6 +938,23 @@ class BIDashboardsService:
             filter_overrides_json=payload.filter_overrides_json,
         )
         return await self.repo.create_schedule(schedule)
+
+    async def list_schedules_visible_to(
+        self,
+        *,
+        owner_user_id: uuid.UUID | None,
+    ) -> list[ReportSchedule]:
+        """Return every schedule attached to a report the caller can see.
+
+        Ownership is inherited from the parent report definition, so we
+        first resolve the visible reports (own + shared global/role) and
+        then fetch all of their schedules. This keeps the IDOR contract
+        the rest of the module enforces: a caller never sees a schedule
+        for a report they could not list.
+        """
+        reports = await self.repo.list_reports(owner_user_id=owner_user_id)
+        report_ids = [r.id for r in reports]
+        return await self.repo.list_schedules_for_reports(report_ids)
 
     async def update_schedule(
         self,
@@ -1263,7 +1299,14 @@ class BIDashboardsService:
             from fastapi import HTTPException
 
             raise HTTPException(status_code=404, detail="Filter not found")
-        if sf.owner_user_id is not None and owner_user_id is not None and sf.owner_user_id != owner_user_id:
+        # Only the owner may share. An unowned filter (``owner_user_id`` is
+        # NULL — e.g. a seeded global/role filter) has no owner, so no
+        # caller passes this check: previously the ``is not None`` guards
+        # short-circuited the comparison to False and let any authenticated
+        # user share such a filter with arbitrary users (IDOR). 404 (not
+        # 403) on denial to avoid leaking filter UUIDs across tenants,
+        # matching the module's other single-resource ownership guards.
+        if sf.owner_user_id != owner_user_id:
             from fastapi import HTTPException
 
             raise HTTPException(status_code=404, detail="Filter not found")

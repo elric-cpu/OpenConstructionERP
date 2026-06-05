@@ -347,7 +347,7 @@ async def search_content(
             )
         )
     hits.sort(key=lambda h: h.score, reverse=True)
-    return hits
+    return hits[:limit]
 
 
 def _score_for(text: str, q: str) -> float:

@@ -21,6 +21,9 @@ import {
   AlertCircle,
   Loader2,
   CheckCircle2,
+  ShieldCheck,
+  XCircle,
+  MinusCircle,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -31,11 +34,14 @@ import {
   fetchBIMRequirementSets,
   fetchBIMRequirementSetDetail,
   deleteBIMRequirementSet,
-  bimRequirementsTemplateUrl,
-  bimRequirementsExportExcelUrl,
-  bimRequirementsExportIdsUrl,
+  downloadBIMRequirementsTemplate,
+  exportBIMRequirementSetExcel,
+  exportBIMRequirementSetIds,
+  fetchBIMModels,
+  validateBIMRequirementSet,
   type BIMRequirementSetResponse,
   type BIMRequirementImportResult,
+  type BIMRequirementValidationResult,
 } from './api';
 
 const ACCEPTED_EXTENSIONS = '.ids,.xml,.xlsx,.xls,.csv,.txt,.json';
@@ -89,6 +95,15 @@ export default function BIMRequirementsImport() {
       addToast({ type: 'success', title: t('bim.requirements.deletedTitle', { defaultValue: 'Deleted' }), message: t('bim.requirements.deleted', { defaultValue: 'Requirement set deleted' }) });
       queryClient.invalidateQueries({ queryKey: ['bim-requirement-sets'] });
     },
+    onError: (err: Error) => {
+      addToast({ type: 'error', title: t('common.error', { defaultValue: 'Error' }), message: err.message });
+    },
+  });
+
+  // Template download mutation — fetches the Excel template blob with the
+  // Bearer token (a bare <a href> to this auth-guarded GET endpoint 401s).
+  const templateMutation = useMutation({
+    mutationFn: () => downloadBIMRequirementsTemplate(),
     onError: (err: Error) => {
       addToast({ type: 'error', title: t('common.error', { defaultValue: 'Error' }), message: err.message });
     },
@@ -189,13 +204,23 @@ export default function BIMRequirementsImport() {
 
         {/* Download template button */}
         <div className="mt-2 flex gap-2">
-          <a
-            href={bimRequirementsTemplateUrl()}
-            className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400"
+          <button
+            type="button"
+            onClick={() => templateMutation.mutate()}
+            disabled={templateMutation.isPending}
+            title={t('bim_requirements.downloadTemplateHint', {
+              defaultValue:
+                'Download a blank Excel workbook with the expected columns to fill in and re-import.',
+            })}
+            className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 disabled:opacity-50"
           >
-            <Download className="w-3.5 h-3.5" />
+            {templateMutation.isPending ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Download className="w-3.5 h-3.5" />
+            )}
             {t('bim.requirements.downloadTemplate', { defaultValue: 'Download Excel template' })}
-          </a>
+          </button>
         </div>
       </div>
 
@@ -219,15 +244,24 @@ export default function BIMRequirementsImport() {
             {t('common.loading', { defaultValue: 'Loading...' })}
           </div>
         ) : sets.length === 0 ? (
-          <p className="text-sm text-zinc-400">
-            {t('bim.requirements.noSets', { defaultValue: 'No requirement sets imported yet.' })}
-          </p>
+          <div className="rounded-lg border border-dashed border-zinc-200 dark:border-zinc-700 p-4 text-center">
+            <p className="text-sm text-zinc-400">
+              {t('bim.requirements.noSets', { defaultValue: 'No requirement sets imported yet.' })}
+            </p>
+            <p className="mt-1 text-xs text-zinc-400">
+              {t('bim_requirements.noSetsHint', {
+                defaultValue:
+                  'Import an IDS, COBie, Excel/CSV, Revit SP or BIMQ file above, then export it or validate a BIM model against it here.',
+              })}
+            </p>
+          </div>
         ) : (
           <div className="space-y-2">
             {sets.map((s) => (
               <RequirementSetCard
                 key={s.id}
                 set={s}
+                projectId={projectId}
                 isExpanded={expandedSet === s.id}
                 onToggle={() => setExpandedSet(expandedSet === s.id ? null : s.id)}
                 onDelete={() => deleteMutation.mutate(s.id)}
@@ -307,16 +341,37 @@ function ImportResultBanner({
 
 function RequirementSetCard({
   set,
+  projectId,
   isExpanded,
   onToggle,
   onDelete,
 }: {
   set: BIMRequirementSetResponse;
+  projectId: string;
   isExpanded: boolean;
   onToggle: () => void;
   onDelete: () => void;
 }) {
   const { t } = useTranslation();
+  const addToast = useToastStore((s) => s.addToast);
+  const [validateOpen, setValidateOpen] = useState(false);
+
+  // Export-as-Excel — authenticated POST → blob → download. A plain anchor
+  // would 405 (POST-only endpoint) / 401 (no Bearer header).
+  const exportExcelMutation = useMutation({
+    mutationFn: () => exportBIMRequirementSetExcel(set.id, set.name),
+    onError: (err: Error) => {
+      addToast({ type: 'error', title: t('common.error', { defaultValue: 'Error' }), message: err.message });
+    },
+  });
+
+  // Export-as-IDS-XML — same authenticated POST → blob → download path.
+  const exportIdsMutation = useMutation({
+    mutationFn: () => exportBIMRequirementSetIds(set.id, set.name),
+    onError: (err: Error) => {
+      addToast({ type: 'error', title: t('common.error', { defaultValue: 'Error' }), message: err.message });
+    },
+  });
 
   return (
     <div className="border rounded-lg border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800">
@@ -337,24 +392,42 @@ function RequirementSetCard({
           </span>
         </div>
         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-          <a
-            href={bimRequirementsExportExcelUrl(set.id)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="p-1.5 text-zinc-400 hover:text-green-600 rounded"
+          <button
+            type="button"
+            onClick={() => setValidateOpen(true)}
+            className="p-1.5 text-zinc-400 hover:text-indigo-600 rounded"
+            title={t('bim_requirements.validateAgainstModel', {
+              defaultValue: 'Validate a BIM model against this requirement set',
+            })}
+          >
+            <ShieldCheck className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => exportExcelMutation.mutate()}
+            disabled={exportExcelMutation.isPending}
+            className="p-1.5 text-zinc-400 hover:text-green-600 rounded disabled:opacity-50"
             title={t('bim.requirements.exportExcel', { defaultValue: 'Export as Excel' })}
           >
-            <FileSpreadsheet className="w-4 h-4" />
-          </a>
-          <a
-            href={bimRequirementsExportIdsUrl(set.id)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="p-1.5 text-zinc-400 hover:text-blue-600 rounded"
+            {exportExcelMutation.isPending ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <FileSpreadsheet className="w-4 h-4" />
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => exportIdsMutation.mutate()}
+            disabled={exportIdsMutation.isPending}
+            className="p-1.5 text-zinc-400 hover:text-blue-600 rounded disabled:opacity-50"
             title={t('bim.requirements.exportIDS', { defaultValue: 'Export as IDS XML' })}
           >
-            <FileCode className="w-4 h-4" />
-          </a>
+            {exportIdsMutation.isPending ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <FileCode className="w-4 h-4" />
+            )}
+          </button>
           <button
             onClick={onDelete}
             className="p-1.5 text-zinc-400 hover:text-red-600 rounded"
@@ -367,7 +440,265 @@ function RequirementSetCard({
 
       {/* Expanded detail */}
       {isExpanded && <RequirementSetDetail setId={set.id} />}
+
+      {/* Validate-against-model modal */}
+      {validateOpen && (
+        <ValidateAgainstModelModal
+          set={set}
+          projectId={projectId}
+          onClose={() => setValidateOpen(false)}
+        />
+      )}
     </div>
+  );
+}
+
+/* ── Validate against BIM model ────────────────────────────────────── */
+
+function ValidateAgainstModelModal({
+  set,
+  projectId,
+  onClose,
+}: {
+  set: BIMRequirementSetResponse;
+  projectId: string;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const addToast = useToastStore((s) => s.addToast);
+  const [modelId, setModelId] = useState<string>('');
+  const [report, setReport] = useState<BIMRequirementValidationResult | null>(null);
+
+  // Models for the picker — scoped to the active project.
+  const { data: modelsResp, isLoading: modelsLoading } = useQuery({
+    queryKey: ['bim-models', projectId],
+    queryFn: () => fetchBIMModels(projectId),
+  });
+  const models = modelsResp?.items ?? [];
+
+  const validateMutation = useMutation({
+    mutationFn: () => validateBIMRequirementSet(set.id, modelId),
+    onSuccess: (result) => setReport(result),
+    onError: (err: Error) => {
+      addToast({ type: 'error', title: t('common.error', { defaultValue: 'Error' }), message: err.message });
+    },
+  });
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-lg bg-white dark:bg-zinc-800 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-700 p-4">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-5 h-5 text-indigo-600" />
+            <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+              {t('bim_requirements.validateModalTitle', {
+                defaultValue: 'Validate model against "{{name}}"',
+                name: set.name,
+              })}
+            </h3>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-zinc-400 hover:text-zinc-600 text-sm"
+            aria-label={t('common.close', { defaultValue: 'Close' })}
+          >
+            x
+          </button>
+        </div>
+
+        <div className="p-4 space-y-4">
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            {t('bim_requirements.validateHint', {
+              defaultValue:
+                'Pick an imported BIM model. Each requirement is checked against the matching elements and you get a pass / fail / not-applicable report.',
+            })}
+          </p>
+
+          <div className="flex items-end gap-2">
+            <label className="flex-1 text-xs text-zinc-600 dark:text-zinc-300">
+              <span className="block mb-1 font-medium">
+                {t('bim_requirements.validateModelPicker', { defaultValue: 'BIM model' })}
+              </span>
+              <select
+                value={modelId}
+                onChange={(e) => {
+                  setModelId(e.target.value);
+                  setReport(null);
+                }}
+                disabled={modelsLoading || models.length === 0}
+                className="w-full rounded-md border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-2 py-1.5 text-sm disabled:opacity-50"
+              >
+                <option value="">
+                  {t('bim_requirements.validateSelectModel', { defaultValue: 'Select a model…' })}
+                </option>
+                {models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={() => validateMutation.mutate()}
+              disabled={!modelId || validateMutation.isPending}
+              className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {validateMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <ShieldCheck className="w-4 h-4" />
+              )}
+              {t('bim_requirements.runValidation', { defaultValue: 'Validate' })}
+            </button>
+          </div>
+
+          {!modelsLoading && models.length === 0 && (
+            <p className="text-sm text-zinc-400">
+              {t('bim_requirements.noModels', {
+                defaultValue: 'No BIM models in this project yet. Upload a model first.',
+              })}
+            </p>
+          )}
+
+          {report && <ValidationReportView report={report} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ValidationReportView({ report }: { report: BIMRequirementValidationResult }) {
+  const { t } = useTranslation();
+  const compliancePct = Math.round((report.compliance_ratio || 0) * 100);
+
+  return (
+    <div className="space-y-3">
+      {/* Traffic-light summary */}
+      <div className="grid grid-cols-4 gap-2">
+        <SummaryChip
+          tone="zinc"
+          label={t('bim_requirements.summaryTotal', { defaultValue: 'Total' })}
+          value={report.total_requirements}
+        />
+        <SummaryChip
+          tone="green"
+          label={t('bim_requirements.summaryPassed', { defaultValue: 'Passed' })}
+          value={report.passed}
+        />
+        <SummaryChip
+          tone="red"
+          label={t('bim_requirements.summaryFailed', { defaultValue: 'Failed' })}
+          value={report.failed}
+        />
+        <SummaryChip
+          tone="amber"
+          label={t('bim_requirements.summaryNA', { defaultValue: 'N/A' })}
+          value={report.not_applicable}
+        />
+      </div>
+      <div className="text-xs text-zinc-500 dark:text-zinc-400">
+        {t('bim_requirements.complianceRatio', {
+          defaultValue: 'Compliance: {{pct}}%',
+          pct: compliancePct,
+        })}
+      </div>
+
+      {report.results.length === 0 ? (
+        <p className="text-sm text-zinc-400">
+          {t('bim_requirements.noResults', {
+            defaultValue: 'No active requirements to evaluate in this set.',
+          })}
+        </p>
+      ) : (
+        <div className="overflow-x-auto rounded-md border border-zinc-100 dark:border-zinc-700">
+          <table className="w-full text-xs">
+            <thead className="bg-zinc-50 dark:bg-zinc-700/50">
+              <tr>
+                <th className="px-3 py-1.5 text-left font-medium text-zinc-500">
+                  {t('bim_requirements.colStatus', { defaultValue: 'Status' })}
+                </th>
+                <th className="px-3 py-1.5 text-left font-medium text-zinc-500">
+                  {t('bim.requirements.col.property', { defaultValue: 'Property' })}
+                </th>
+                <th className="px-3 py-1.5 text-left font-medium text-zinc-500">
+                  {t('bim_requirements.colDetails', { defaultValue: 'Details' })}
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100 dark:divide-zinc-700">
+              {report.results.map((r) => (
+                <tr key={r.requirement_id} className="hover:bg-zinc-50 dark:hover:bg-zinc-700/30">
+                  <td className="px-3 py-1.5 whitespace-nowrap">
+                    <StatusBadge status={r.status} />
+                  </td>
+                  <td className="px-3 py-1.5 text-zinc-800 dark:text-zinc-200 font-medium">
+                    {r.property_group ? `${r.property_group} · ` : ''}
+                    {r.property_name}
+                  </td>
+                  <td className="px-3 py-1.5 text-zinc-500 dark:text-zinc-400">{r.details}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SummaryChip({
+  tone,
+  label,
+  value,
+}: {
+  tone: 'zinc' | 'green' | 'red' | 'amber';
+  label: string;
+  value: number;
+}) {
+  const toneClass = {
+    zinc: 'bg-zinc-50 dark:bg-zinc-700/40 text-zinc-700 dark:text-zinc-200',
+    green: 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300',
+    red: 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300',
+    amber: 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300',
+  }[tone];
+  return (
+    <div className={clsx('rounded-md p-2 text-center', toneClass)}>
+      <div className="text-lg font-semibold">{value}</div>
+      <div className="text-[10px] uppercase tracking-wide opacity-80">{label}</div>
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation();
+  if (status === 'pass') {
+    return (
+      <span className="inline-flex items-center gap-1 text-green-700 dark:text-green-300">
+        <CheckCircle2 className="w-3.5 h-3.5" />
+        {t('bim_requirements.statusPass', { defaultValue: 'Pass' })}
+      </span>
+    );
+  }
+  if (status === 'fail') {
+    return (
+      <span className="inline-flex items-center gap-1 text-red-700 dark:text-red-300">
+        <XCircle className="w-3.5 h-3.5" />
+        {t('bim_requirements.statusFail', { defaultValue: 'Fail' })}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-300">
+      <MinusCircle className="w-3.5 h-3.5" />
+      {t('bim_requirements.statusNA', { defaultValue: 'N/A' })}
+    </span>
   );
 }
 

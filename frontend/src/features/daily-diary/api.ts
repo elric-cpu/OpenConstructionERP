@@ -167,6 +167,51 @@ export interface DiaryDashboard {
   diaries_by_date: Record<string, number>;
 }
 
+export interface DiaryCompleteness {
+  diary_id: string;
+  /** 0.0 to 1.0 — server returns a Decimal serialised as a string. */
+  completeness: string | number;
+  /** Translation tokens for the blocks still missing, e.g. ["weather", "photos"]. */
+  missing: string[];
+}
+
+export interface WorkforceSummary {
+  diary_id: string;
+  project_id: string;
+  diary_date: string;
+  labour_count: number;
+  equipment_count: number;
+  by_company: Record<string, number>;
+}
+
+export interface WeatherFetchResult {
+  project_id: string;
+  target_date: string;
+  fetched: boolean;
+  record_id?: string | null;
+  summary: Record<string, unknown>;
+}
+
+export interface SclBundleManifest {
+  project_id: string;
+  date_from: string;
+  date_to: string;
+  diary_count: number;
+  weather_record_count: number;
+  photo_count: number;
+  drone_survey_count: number;
+  bundle_sha256: string;
+  contents: Record<string, unknown>[];
+}
+
+export interface ExifGps {
+  found: boolean;
+  lat?: number | null;
+  lng?: number | null;
+  altitude_m?: number | null;
+  timestamp?: string | null;
+}
+
 /* ── Diaries ───────────────────────────────────────────────────────────── */
 
 export function listDiaries(params: {
@@ -232,10 +277,50 @@ export function archiveDiary(id: string): Promise<DailyDiary> {
   return apiPost<DailyDiary>(`/v1/daily-diary/diaries/${id}/archive`, {});
 }
 
+/**
+ * Re-open a signed diary so a manager can amend it.
+ *
+ * Hits POST /api/v1/daily-diary/diaries/{id}/unlock (gated by the
+ * `daily_diary.unlock` permission). The original archive signature is
+ * preserved server-side so the integrity break stays forensic and
+ * traceable. An archived diary cannot be unlocked (409).
+ */
+export function unlockDiary(id: string, reason?: string): Promise<DailyDiary> {
+  const qs = reason ? `?reason=${encodeURIComponent(reason)}` : '';
+  return apiPost<DailyDiary>(`/v1/daily-diary/diaries/${id}/unlock${qs}`, {});
+}
+
 export function diaryDashboard(projectId: string): Promise<DiaryDashboard> {
   return apiGet<DiaryDashboard>(
     `/v1/daily-diary/dashboard?project_id=${encodeURIComponent(projectId)}`,
   );
+}
+
+export function diaryCompleteness(diaryId: string): Promise<DiaryCompleteness> {
+  return apiGet<DiaryCompleteness>(
+    `/v1/daily-diary/diaries/${encodeURIComponent(diaryId)}/completeness`,
+  );
+}
+
+export function diaryWorkforceSummary(
+  diaryId: string,
+): Promise<WorkforceSummary> {
+  return apiGet<WorkforceSummary>(
+    `/v1/daily-diary/diaries/${encodeURIComponent(diaryId)}/workforce-summary`,
+  );
+}
+
+/**
+ * Build a hash-sealed SCL Protocol contemporary-record bundle manifest for
+ * the project over a date range. Backed by POST /exports/scl-bundle
+ * (gated by `daily_diary.export_scl_bundle`).
+ */
+export function exportSclBundle(data: {
+  project_id: string;
+  date_from: string;
+  date_to: string;
+}): Promise<SclBundleManifest> {
+  return apiPost<SclBundleManifest>('/v1/daily-diary/exports/scl-bundle', data);
 }
 
 /**
@@ -298,6 +383,21 @@ export function createWeather(data: {
   return apiPost<WeatherRecord>('/v1/daily-diary/weather-records/', data);
 }
 
+/**
+ * Fetch real weather from Open-Meteo for (project, date, coords) and persist
+ * it as a WeatherRecord. Backed by POST /weather/fetch (gated by
+ * `daily_diary.fetch_weather`).
+ */
+export function fetchWeather(data: {
+  project_id: string;
+  target_date: string;
+  lat: number;
+  lng: number;
+  persist?: boolean;
+}): Promise<WeatherFetchResult> {
+  return apiPost<WeatherFetchResult>('/v1/daily-diary/weather/fetch', data);
+}
+
 /* ── Entries ───────────────────────────────────────────────────────────── */
 
 export function listEntries(diaryId: string): Promise<DiaryEntry[]> {
@@ -336,6 +436,38 @@ export function listPhotos(params: {
   return apiGet<DiaryPhoto[]>(`/v1/daily-diary/photos/?${qs.toString()}`);
 }
 
+/**
+ * Register a diary photo. The binary lives in object storage; this records
+ * its URL + metadata. Backed by POST /diary-photos/ (gated by
+ * `daily_diary.upload_photo`).
+ */
+export function createPhoto(data: {
+  project_id: string;
+  diary_id?: string | null;
+  taken_at: string;
+  file_url: string;
+  thumbnail_url?: string | null;
+  mime_type?: string;
+  location_label?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  description?: string | null;
+  is_drone?: boolean;
+}): Promise<DiaryPhoto> {
+  return apiPost<DiaryPhoto>('/v1/daily-diary/diary-photos/', data);
+}
+
+/**
+ * Extract GPS coordinates from a base64-encoded image's EXIF metadata.
+ * Backed by POST /photos/extract-gps (magic-byte gated, gated by
+ * `daily_diary.upload_photo`). Used to prefill lat/lng on photo upload.
+ */
+export function extractPhotoGps(imageBase64: string): Promise<ExifGps> {
+  return apiPost<ExifGps>('/v1/daily-diary/photos/extract-gps', {
+    image_base64: imageBase64,
+  });
+}
+
 /* ── Drone surveys ─────────────────────────────────────────────────────── */
 
 export function listDroneSurveys(projectId: string): Promise<DroneSurvey[]> {
@@ -344,6 +476,23 @@ export function listDroneSurveys(projectId: string): Promise<DroneSurvey[]> {
       projectId,
     )}`,
   );
+}
+
+/**
+ * Attach a drone survey to the project. Backed by POST /drone-surveys/
+ * (gated by `daily_diary.attach_drone`).
+ */
+export function createDroneSurvey(data: {
+  project_id: string;
+  flown_at: string;
+  drone_model?: string | null;
+  pilot_name?: string | null;
+  area_m2?: string | null;
+  ortho_file_url?: string | null;
+  point_cloud_url?: string | null;
+  notes?: string | null;
+}): Promise<DroneSurvey> {
+  return apiPost<DroneSurvey>('/v1/daily-diary/drone-surveys/', data);
 }
 
 /* ── Reality captures ──────────────────────────────────────────────────── */
@@ -356,6 +505,23 @@ export function listRealityCaptures(
       projectId,
     )}`,
   );
+}
+
+/**
+ * Attach a reality-capture dataset (laser scan / photogrammetry / mobile
+ * scan) to the project. Backed by POST /reality-captures/ (gated by
+ * `daily_diary.attach_reality_capture`).
+ */
+export function createRealityCapture(data: {
+  project_id: string;
+  captured_at: string;
+  capture_type: CaptureType;
+  file_url: string;
+  point_count_estimate?: number | null;
+  accuracy_mm?: string | null;
+  notes?: string | null;
+}): Promise<RealityCapture> {
+  return apiPost<RealityCapture>('/v1/daily-diary/reality-captures/', data);
 }
 
 /* ── Archive signatures ────────────────────────────────────────────────── */

@@ -732,29 +732,32 @@ async def calendar_feed(
     try:
         from app.modules.schedule.models import Activity, Schedule
 
-        sched_result = await session.execute(select(Schedule).where(Schedule.project_id == project_id))
-        for sched in sched_result.scalars().all():
-            act_result = await session.execute(
-                select(Activity).where(
-                    Activity.schedule_id == sched.id,
-                    Activity.activity_type == "milestone",
-                )
+        # Single JOIN query across all of the project's schedules — avoids the
+        # 1 + N pattern of fetching every schedule and then querying activities
+        # once per schedule.
+        act_result = await session.execute(
+            select(Activity)
+            .join(Schedule, Activity.schedule_id == Schedule.id)
+            .where(
+                Schedule.project_id == project_id,
+                Activity.activity_type == "milestone",
             )
-            for act in act_result.scalars().all():
-                dt = _ical_dt(act.start_date)
-                if not dt:
-                    continue
-                uid = str(uuid.uuid5(uid_ns, f"milestone-{act.id}"))
-                lines.extend(
-                    [
-                        "BEGIN:VEVENT",
-                        f"UID:{uid}",
-                        f"DTSTART:{dt}",
-                        f"SUMMARY:Milestone: {_ical_escape(act.name)}",
-                        f"DESCRIPTION:{_ical_escape(act.description or '')}",
-                        "END:VEVENT",
-                    ]
-                )
+        )
+        for act in act_result.scalars().all():
+            dt = _ical_dt(act.start_date)
+            if not dt:
+                continue
+            uid = str(uuid.uuid5(uid_ns, f"milestone-{act.id}"))
+            lines.extend(
+                [
+                    "BEGIN:VEVENT",
+                    f"UID:{uid}",
+                    f"DTSTART:{dt}",
+                    f"SUMMARY:Milestone: {_ical_escape(act.name)}",
+                    f"DESCRIPTION:{_ical_escape(act.description or '')}",
+                    "END:VEVENT",
+                ]
+            )
     except Exception:
         logger.debug("Schedule milestones not available for calendar feed")
 

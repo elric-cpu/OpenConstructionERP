@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
-import { Library, Search, X, Layers, Globe, Check, AlertCircle, Loader2 } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import { Library, Search, X, Layers, Globe, AlertCircle, Loader2, Eye, Save } from 'lucide-react';
 
 import { Button, Card, Badge, EmptyState, SkeletonGrid } from '@/shared/ui';
 import { useToastStore } from '@/stores/useToastStore';
@@ -11,6 +12,7 @@ import {
   assembliesApi,
   type AssemblyTemplate,
   type AppliedTemplateResponse,
+  type ResourceType,
 } from './api';
 
 /* -- Constants ------------------------------------------------------------ */
@@ -46,7 +48,6 @@ const CATEGORY_BADGE: Record<string, BadgeVariant> = {
 
 export function AssemblyLibraryPage() {
   const { t, i18n } = useTranslation();
-  const addToast = useToastStore((s) => s.addToast);
 
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -176,20 +177,6 @@ export function AssemblyLibraryPage() {
           template={selected}
           localisedName={localisedName(selected)}
           onClose={() => setSelected(null)}
-          onApplied={(result) => {
-            addToast({
-              type: 'success',
-              title: t('assemblies.library.apply_success_title', 'Template applied'),
-              message: t(
-                'assemblies.library.apply_success',
-                'Template applied — {{matched}} of {{total}} components resolved.',
-                {
-                  matched: result.components.length - result.unresolved_components.length,
-                  total: result.components.length,
-                }
-              ),
-            });
-          }}
         />
       )}
     </div>
@@ -265,19 +252,20 @@ function TemplateDrawer({
   template,
   localisedName,
   onClose,
-  onApplied,
 }: {
   template: AssemblyTemplate;
   localisedName: string;
   onClose: () => void;
-  onApplied: (result: AppliedTemplateResponse) => void;
 }) {
   const { t } = useTranslation();
   const addToast = useToastStore((s) => s.addToast);
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const [projectId, setProjectId] = useState<string>('');
   const [quantity, setQuantity] = useState<string>('1');
   const [applying, setApplying] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<AppliedTemplateResponse | null>(null);
 
   const { data: projects } = useQuery({
@@ -292,7 +280,11 @@ function TemplateDrawer({
     if (first) setProjectId(first.id);
   }, [projects, projectId]);
 
-  const handleApply = async () => {
+  // Step 1 — Preview. Resolves the template against the project's cost
+  // catalogue WITHOUT persisting anything (the backend documents this as a
+  // non-persisted preview). The persist step is the explicit "Save as
+  // assembly" action below.
+  const handlePreview = async () => {
     if (!projectId) {
       addToast({
         type: 'error',
@@ -318,17 +310,82 @@ function TemplateDrawer({
         quantity: qty,
       });
       setResult(resp);
-      onApplied(resp);
     } catch (err) {
       addToast({
         type: 'error',
-        title: t('assemblies.library.apply_failed', 'Could not apply template.'),
+        title: t('assemblies.library.preview_failed', 'Could not build the preview.'),
         message: (err as { message?: string })?.message,
       });
     } finally {
       setApplying(false);
     }
   };
+
+  // Step 2 — Persist. Turns the previewed, catalogue-resolved components into
+  // a real, project-scoped Assembly via the existing create + addComponent
+  // endpoints (same machinery the AI Generate flow uses). This is the honest
+  // "we actually wrote something" step: the new assembly then appears in the
+  // assemblies list and can be applied to a BOQ from its editor.
+  const handleSaveAsAssembly = async () => {
+    if (!result || !projectId) return;
+    setSaving(true);
+    try {
+      const codeSuffix = Date.now().toString(36).slice(-4).toUpperCase();
+      const assembly = await assembliesApi.create({
+        code: `TPL-${codeSuffix}`,
+        name: localisedName,
+        unit: result.unit,
+        category: template.category || 'general',
+        classification: template.classification,
+        bid_factor: 1.0,
+        project_id: projectId,
+      });
+
+      for (const c of result.components) {
+        await assembliesApi.addComponent(assembly.id, {
+          cost_item_id: c.matched_cost_item_id || undefined,
+          description: c.matched_description || c.description,
+          resource_type: (c.role || 'material') as ResourceType,
+          factor: c.factor,
+          quantity: 1,
+          unit: c.unit,
+          unit_cost: Number(c.unit_rate) || 0,
+        });
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['assemblies'] });
+      queryClient.invalidateQueries({ queryKey: ['assemblies-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['assemblies-all-for-banner'] });
+
+      addToast({
+        type: 'success',
+        title: t('assemblies.library.saved_title', 'Assembly created from template'),
+        message: t(
+          'assemblies.library.saved_message',
+          '{{name}} was added to your assemblies. Open it to fine-tune rates and apply it to a BOQ.',
+          { name: localisedName }
+        ),
+      });
+      onClose();
+      navigate(`/assemblies/${assembly.id}`);
+    } catch (err) {
+      addToast({
+        type: 'error',
+        title: t('assemblies.library.save_failed', 'Could not create the assembly.'),
+        message: (err as { message?: string })?.message,
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // When the matched item carried no currency (no priced match resolved its
+  // currency), fall back to the project's own currency so the preview never
+  // renders a bare number with a trailing space; blank only if nothing is known.
+  const currencyLabel =
+    (result?.currency || '').trim() ||
+    (projects?.find((p) => p.id === projectId) as { currency?: string } | undefined)?.currency ||
+    '';
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/40">
@@ -437,9 +494,15 @@ function TemplateDrawer({
 
           {/* Apply form */}
           <section className="rounded-md border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-800/40">
-            <h3 className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-              {t('assemblies.library.apply_heading', 'Apply to BOQ')}
+            <h3 className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              {t('assemblies.library.preview_heading', 'Preview against a project')}
             </h3>
+            <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+              {t(
+                'assemblies.library.preview_explainer',
+                'Resolves each template component against the project cost catalogue so you can review rates. Nothing is saved until you create an assembly from the preview.'
+              )}
+            </p>
             <div className="space-y-3">
               <label className="block text-sm">
                 <span className="mb-1 block text-zinc-700 dark:text-zinc-300">
@@ -474,16 +537,16 @@ function TemplateDrawer({
                 />
               </label>
               <Button
-                onClick={handleApply}
+                onClick={handlePreview}
                 disabled={applying || !projectId}
                 className="w-full"
               >
                 {applying ? (
                   <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
                 ) : (
-                  <Check className="mr-1.5 h-4 w-4" />
+                  <Eye className="mr-1.5 h-4 w-4" />
                 )}
-                {t('assemblies.library.apply_button', 'Apply to BOQ')}
+                {t('assemblies.library.preview_button', 'Preview pricing')}
               </Button>
             </div>
           </section>
@@ -522,29 +585,41 @@ function TemplateDrawer({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                  {result.components.map((c, i) => (
-                    <tr key={i}>
-                      <td className="py-1.5 pr-2">
-                        <div className="text-zinc-800 dark:text-zinc-200">
-                          {c.description}
-                        </div>
-                        {c.matched_code && (
-                          <div className="font-mono text-[10px] text-zinc-500">
-                            {c.matched_code}
+                  {result.components.map((c, i) => {
+                    const matched = Boolean(c.matched_cost_item_id);
+                    return (
+                      <tr key={i} className={matched ? '' : 'bg-zinc-50/60 dark:bg-zinc-800/30'}>
+                        <td className="py-1.5 pr-2">
+                          <div className="flex items-center gap-1.5 text-zinc-800 dark:text-zinc-200">
+                            {c.description}
+                            {!matched && (
+                              <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                                {t('assemblies.library.not_matched', 'not matched')}
+                              </span>
+                            )}
                           </div>
-                        )}
-                      </td>
-                      <td className="py-1.5 pr-2 text-right font-mono">
-                        {c.scaled_quantity.toFixed(2)} {c.unit}
-                      </td>
-                      <td className="py-1.5 pr-2 text-right font-mono">
-                        {Number(c.unit_rate).toFixed(2)} {result.currency}
-                      </td>
-                      <td className="py-1.5 text-right font-mono">
-                        {c.total.toFixed(2)} {result.currency}
-                      </td>
-                    </tr>
-                  ))}
+                          {c.matched_code && (
+                            <div className="font-mono text-[10px] text-zinc-500">
+                              {c.matched_code}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-1.5 pr-2 text-right font-mono">
+                          {c.scaled_quantity.toFixed(2)} {c.unit}
+                        </td>
+                        <td className="py-1.5 pr-2 text-right font-mono">
+                          {matched
+                            ? `${Number(c.unit_rate).toFixed(2)} ${currencyLabel}`.trim()
+                            : '—'}
+                        </td>
+                        <td className="py-1.5 text-right font-mono">
+                          {matched
+                            ? `${c.total.toFixed(2)} ${currencyLabel}`.trim()
+                            : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
                 <tfoot>
                   <tr className="font-semibold">
@@ -552,11 +627,35 @@ function TemplateDrawer({
                       {t('assemblies.library.grand_total', 'Grand total')}
                     </td>
                     <td className="py-2 text-right font-mono">
-                      {Number(result.grand_total).toFixed(2)} {result.currency}
+                      {`${Number(result.grand_total).toFixed(2)} ${currencyLabel}`.trim()}
                     </td>
                   </tr>
                 </tfoot>
               </table>
+
+              {/* Persist step — the honest "this actually writes something"
+                  action. Creates a real project-scoped assembly from the
+                  previewed components. */}
+              <div className="mt-4 flex flex-col gap-2 rounded-md border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                  {t(
+                    'assemblies.library.save_explainer',
+                    'Create a reusable assembly in this project from the preview above. You can then refine rates and apply it to a BOQ from the assembly editor.'
+                  )}
+                </p>
+                <Button
+                  onClick={handleSaveAsAssembly}
+                  disabled={saving || result.components.length === 0}
+                  className="w-full"
+                >
+                  {saving ? (
+                    <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="mr-1.5 h-4 w-4" />
+                  )}
+                  {t('assemblies.library.save_button', 'Create assembly from template')}
+                </Button>
+              </div>
             </section>
           )}
         </div>

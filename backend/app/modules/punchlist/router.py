@@ -144,6 +144,7 @@ async def list_items(
     assigned_to: str | None = Query(default=None),
     category: str | None = Query(default=None),
     trade: str | None = Query(default=None),
+    _perm: None = Depends(RequirePermission("punchlist.read")),
     service: PunchListService = Depends(_get_service),
 ) -> list[PunchItemResponse]:
     """List punch items for a project with optional filters."""
@@ -182,6 +183,7 @@ async def list_items_root_alias(
     assigned_to: str | None = Query(default=None),
     category: str | None = Query(default=None),
     trade: str | None = Query(default=None),
+    _perm: None = Depends(RequirePermission("punchlist.read")),
     service: PunchListService = Depends(_get_service),
 ) -> list[PunchItemResponse]:
     """Alias for ``GET /items/`` — see that handler for full semantics."""
@@ -231,6 +233,7 @@ async def get_item(
     item_id: uuid.UUID,
     session: SessionDep,
     user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("punchlist.read")),
     service: PunchListService = Depends(_get_service),
 ) -> PunchItemResponse:
     """Get a single punch item."""
@@ -458,6 +461,7 @@ async def bulk_close(
     data: PunchBulkCloseRequest,
     user_id: CurrentUserId,
     session: SessionDep,
+    payload: CurrentUserPayload,
     _perm: None = Depends(RequirePermission("punchlist.update")),
     service: PunchListService = Depends(_get_service),
 ) -> PunchBulkCloseResponse:
@@ -469,6 +473,10 @@ async def bulk_close(
     standard ``punchlist.item.status_changed`` event.
     """
     await verify_project_access(data.project_id, user_id, session)
+    # Bulk-close drives items straight to ``closed``; mirror the elevated
+    # permission that ``transition_status`` requires for verify/close moves
+    # so the bulk path cannot bypass the punchlist.verify gate.
+    await RequirePermission("punchlist.verify")(payload)
     summary = await service.bulk_close(
         data.project_id,
         list(data.ids),
@@ -486,6 +494,7 @@ async def export_pdf(
     session: SessionDep,
     project_id: uuid.UUID = Query(...),
     user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("punchlist.read")),
     service: PunchListService = Depends(_get_service),
 ) -> Response:
     """Export punch list as a PDF report."""
@@ -503,6 +512,7 @@ async def export_excel(
     session: SessionDep,
     project_id: uuid.UUID = Query(...),
     user_id: CurrentUserId = None,  # type: ignore[assignment]
+    _perm: None = Depends(RequirePermission("punchlist.read")),
     service: PunchListService = Depends(_get_service),
 ) -> Response:
     """Export punch list as an Excel spreadsheet."""

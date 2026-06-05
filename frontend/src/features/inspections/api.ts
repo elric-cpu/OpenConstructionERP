@@ -23,7 +23,12 @@ export type InspectionType =
 
 export type InspectionResult = 'pass' | 'fail' | 'partial';
 
-export type InspectionStatus = 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
+export type InspectionStatus =
+  | 'scheduled'
+  | 'in_progress'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
 
 export interface ChecklistItem {
   id: string;
@@ -36,7 +41,8 @@ export interface ChecklistItem {
 export interface Inspection {
   id: string;
   project_id: string;
-  inspection_number: number;
+  /** Backend returns this already formatted, e.g. "INS-001". Do not re-prefix. */
+  inspection_number: string;
   title: string;
   inspection_type: InspectionType;
   inspector: string;
@@ -55,6 +61,20 @@ export interface InspectionFilters {
   project_id?: string;
   status?: InspectionStatus | '';
   result?: InspectionResult | '';
+  type?: InspectionType | '';
+}
+
+/**
+ * Checklist item as sent to the backend (matches the `ChecklistEntry`
+ * schema). The backend keys off `question` and the boolean `passed`
+ * (the create-defect / create-ncr flows read failed items from here).
+ */
+export interface ChecklistEntryPayload {
+  question: string;
+  response_type?: string;
+  passed?: boolean;
+  critical?: boolean;
+  notes?: string;
 }
 
 export interface CreateInspectionPayload {
@@ -64,6 +84,7 @@ export interface CreateInspectionPayload {
   inspection_date?: string;
   inspector_id?: string;
   location?: string;
+  checklist_data?: ChecklistEntryPayload[];
 }
 
 export interface UpdateInspectionPayload {
@@ -72,6 +93,19 @@ export interface UpdateInspectionPayload {
   inspection_date?: string | null;
   inspector_id?: string | null;
   location?: string | null;
+  status?: InspectionStatus;
+  checklist_data?: ChecklistEntryPayload[];
+}
+
+/** Result returned by POST /{id}/create-ncr/. */
+export interface CreateNcrResult {
+  ncr_id: string;
+  ncr_number: string;
+  inspection_id: string;
+  severity?: string;
+  ncr_type?: string;
+  /** false when an NCR already linked to this inspection was returned as-is. */
+  created: boolean;
 }
 
 /* -- Wire <-> UI normaliser ----------------------------------------------- */
@@ -98,10 +132,13 @@ type InspectionWire = Omit<Inspection, 'inspector' | 'date' | 'checklist'> & {
 };
 
 function normaliseChecklistItem(e: ChecklistEntryWire, i: number): ChecklistItem {
-  const passed =
-    typeof e.passed === 'boolean'
-      ? e.passed
-      : e.response === 'pass' || e.response === 'yes' || e.response === 'true';
+  // Mirror the backend's `_is_failed`: an item only counts as failed when it
+  // carries an explicit failing signal. An absent/empty response means "not yet
+  // assessed", which we treat as not-failed so freshly created checklists do not
+  // render as a wall of red crosses.
+  const failResponses = new Set(['no', 'fail', 'false', '0', 'failed']);
+  const resp = (e.response ?? '').trim().toLowerCase();
+  const passed = typeof e.passed === 'boolean' ? e.passed : !failResponses.has(resp);
   return {
     id: e.id ?? `item-${i}`,
     description: e.description ?? e.question ?? '',
@@ -129,6 +166,7 @@ export async function fetchInspections(filters?: InspectionFilters): Promise<Ins
   if (filters?.project_id) params.set('project_id', filters.project_id);
   if (filters?.status) params.set('status', filters.status);
   if (filters?.result) params.set('result', filters.result);
+  if (filters?.type) params.set('type', filters.type);
   const qs = params.toString();
   const rows = await apiGet<InspectionWire[]>(`/v1/inspections/${qs ? `?${qs}` : ''}`);
   return rows.map(normaliseInspection);
@@ -139,9 +177,24 @@ export async function createInspection(data: CreateInspectionPayload): Promise<I
   return normaliseInspection(row);
 }
 
-export async function completeInspection(id: string): Promise<Inspection> {
-  const row = await apiPost<InspectionWire>(`/v1/inspections/${id}/complete/`);
+export async function completeInspection(
+  id: string,
+  result: InspectionResult = 'pass',
+): Promise<Inspection> {
+  const row = await apiPost<InspectionWire>(`/v1/inspections/${id}/complete/`, { result });
   return normaliseInspection(row);
+}
+
+/**
+ * Raise a Non-Conformance Report pre-filled from a failed/partial inspection.
+ *
+ * The backend (POST /v1/inspections/{id}/create-ncr/) pre-fills the title and
+ * description from failed checklist items, maps severity + ncr_type, and links
+ * `linked_inspection_id`. It is idempotent: if an NCR already exists for the
+ * inspection it is returned with `created: false`.
+ */
+export async function createNcrFromInspection(id: string): Promise<CreateNcrResult> {
+  return apiPost<CreateNcrResult>(`/v1/inspections/${id}/create-ncr/`, {});
 }
 
 export async function updateInspection(

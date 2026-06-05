@@ -21,7 +21,12 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.dependencies import CurrentUserId, RequirePermission, SessionDep
+from app.dependencies import (
+    CurrentUserId,
+    RequirePermission,
+    SessionDep,
+    verify_project_access,
+)
 from app.modules.file_saved_views.schemas import (
     SavedViewCreate,
     SavedViewListResponse,
@@ -86,6 +91,12 @@ async def list_saved_views(
     ),
 ) -> SavedViewListResponse:
     user_uuid = _user_uuid(current_user_id)
+    # IDOR guard: a project-scoped listing may surface other members'
+    # shared views, so confirm the caller can see this project. 404 (not
+    # 403) on denial keeps "no such project" and "not your project"
+    # indistinguishable, matching the policy used across the codebase.
+    if project_id is not None:
+        await verify_project_access(project_id, current_user_id, session)
     service = SavedViewService(session)
     rows = await service.list_views(user_id=user_uuid, project_id=project_id)
     return SavedViewListResponse(
@@ -110,6 +121,12 @@ async def create_saved_view(
     current_user_id: CurrentUserId,
 ) -> SavedViewResponse:
     user_uuid = _user_uuid(current_user_id)
+    # IDOR guard: do not let a caller attach a view to a project they
+    # cannot access. Global views (project_id is None) are personal and
+    # need no project check. 404 (not 403) on denial mirrors the
+    # codebase-wide IDOR policy.
+    if payload.project_id is not None:
+        await verify_project_access(payload.project_id, current_user_id, session)
     service = SavedViewService(session)
     try:
         view = await service.create(payload, user_uuid)

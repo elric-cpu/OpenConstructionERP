@@ -30,6 +30,7 @@ import logging
 import uuid
 from typing import Any
 
+from sqlalchemy import false as sql_false
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -128,6 +129,49 @@ def _coerce_uuid(value: str | None) -> uuid.UUID | None:
         return None
 
 
+async def _accessible_project_ids(
+    session: AsyncSession,
+    user_id: str | None,
+) -> set[uuid.UUID] | None:
+    """Resolve the set of project UUIDs the caller may read.
+
+    Returns ``None`` to mean *unrestricted* — admins (and an unknown /
+    malformed user, which can only happen if the auth dependency is
+    bypassed) see everything, mirroring the admin bypass in
+    :func:`app.dependencies.verify_project_access`.
+
+    Otherwise returns the set of project IDs the user owns OR is a team
+    member of — exactly the scope used by
+    :meth:`ProjectRepository.list_for_user`. This is what gates a
+    cross-project (``project_id`` omitted) unified search so a user never
+    receives hits from projects they cannot access (IDOR defence).
+    """
+    uid = _coerce_uuid(user_id)
+    if uid is None:
+        return None
+
+    from app.modules.projects.models import Project
+    from app.modules.teams.access import member_project_ids_subquery
+    from app.modules.users.repository import UserRepository
+
+    # Admin bypass — same policy as verify_project_access.
+    try:
+        user = await UserRepository(session).get_by_id(uid)
+        if user is not None and getattr(user, "role", "") == "admin":
+            return None
+    except Exception:
+        logger.exception("Admin-role lookup failed during search scope resolution")
+
+    stmt = select(Project.id).where(
+        or_(
+            Project.owner_id == uid,
+            Project.id.in_(member_project_ids_subquery(uid)),
+        )
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+    return set(rows)
+
+
 def _hit_from_row(
     *,
     row_id: object,
@@ -164,6 +208,7 @@ async def _sql_search_collection(
     *,
     project_id: str | None = None,
     tenant_id: str | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     limit: int = 10,
 ) -> list[VectorHit]:
     """ILIKE substring search against the table backing *collection*.
@@ -178,6 +223,13 @@ async def _sql_search_collection(
     of each table. The ranking inside the SQL layer is "definition
     order" — first match wins — because SQL has no semantic similarity
     to lean on. Fusion via RRF mixes this rank with the vector rank.
+
+    Access scoping: when ``project_id`` is given the query is pinned to
+    that single project (the router already ran ``verify_project_access``).
+    When it is omitted, ``allowed_project_ids`` restricts the search to the
+    projects the caller may read — ``None`` means unrestricted (admin),
+    an empty set means "no accessible projects" so nothing is returned.
+    Shared catalogs without a project column (costs) are exempt.
     """
     pattern = f"%{query.strip()}%"
     if not pattern.strip("%"):
@@ -185,6 +237,22 @@ async def _sql_search_collection(
 
     project_uuid = _coerce_uuid(project_id)
     _ = _coerce_uuid(tenant_id)  # Reserved — most tables don't have tenant_id yet.
+
+    def _scope(stmt: Any, project_col: Any) -> Any:
+        """Apply per-project access scoping to a project-bearing query.
+
+        When a single ``project_id`` is supplied it pins the query to it.
+        Otherwise the cross-project search is fenced to the caller's
+        accessible projects (IDOR defence); an empty allow-set yields an
+        impossible predicate so the collection returns no rows.
+        """
+        if project_uuid is not None:
+            return stmt.where(project_col == project_uuid)
+        if allowed_project_ids is not None:
+            if not allowed_project_ids:
+                return stmt.where(sql_false())
+            return stmt.where(project_col.in_(allowed_project_ids))
+        return stmt
 
     if collection == COLLECTION_BOQ:
         from app.modules.boq.models import BOQ, Position
@@ -201,8 +269,7 @@ async def _sql_search_collection(
             .order_by(Position.created_at.desc())
             .limit(limit)
         )
-        if project_uuid is not None:
-            stmt = stmt.where(BOQ.project_id == project_uuid)
+        stmt = _scope(stmt, BOQ.project_id)
         rows = (await session.execute(stmt)).all()
         return [
             _hit_from_row(
@@ -235,8 +302,7 @@ async def _sql_search_collection(
             .order_by(Task.created_at.desc())
             .limit(limit)
         )
-        if project_uuid is not None:
-            stmt = stmt.where(Task.project_id == project_uuid)
+        stmt = _scope(stmt, Task.project_id)
         tasks = (await session.execute(stmt)).scalars().all()
         return [
             _hit_from_row(
@@ -269,8 +335,7 @@ async def _sql_search_collection(
             .order_by(RiskItem.created_at.desc())
             .limit(limit)
         )
-        if project_uuid is not None:
-            stmt = stmt.where(RiskItem.project_id == project_uuid)
+        stmt = _scope(stmt, RiskItem.project_id)
         risks = (await session.execute(stmt)).scalars().all()
         return [
             _hit_from_row(
@@ -303,8 +368,7 @@ async def _sql_search_collection(
             .order_by(Document.created_at.desc())
             .limit(limit)
         )
-        if project_uuid is not None:
-            stmt = stmt.where(Document.project_id == project_uuid)
+        stmt = _scope(stmt, Document.project_id)
         docs = (await session.execute(stmt)).scalars().all()
         return [
             _hit_from_row(
@@ -338,8 +402,7 @@ async def _sql_search_collection(
             .order_by(Requirement.created_at.desc())
             .limit(limit)
         )
-        if project_uuid is not None:
-            stmt = stmt.where(RequirementSet.project_id == project_uuid)
+        stmt = _scope(stmt, RequirementSet.project_id)
         rows = (await session.execute(stmt)).all()
         return [
             _hit_from_row(
@@ -374,8 +437,7 @@ async def _sql_search_collection(
             .order_by(RFI.created_at.desc())
             .limit(limit)
         )
-        if project_uuid is not None:
-            stmt = stmt.where(RFI.project_id == project_uuid)
+        stmt = _scope(stmt, RFI.project_id)
         rfis = (await session.execute(stmt)).scalars().all()
         return [
             _hit_from_row(
@@ -409,8 +471,7 @@ async def _sql_search_collection(
             .order_by(Submittal.created_at.desc())
             .limit(limit)
         )
-        if project_uuid is not None:
-            stmt = stmt.where(Submittal.project_id == project_uuid)
+        stmt = _scope(stmt, Submittal.project_id)
         submittals = (await session.execute(stmt)).scalars().all()
         return [
             _hit_from_row(
@@ -445,8 +506,7 @@ async def _sql_search_collection(
             .order_by(Correspondence.created_at.desc())
             .limit(limit)
         )
-        if project_uuid is not None:
-            stmt = stmt.where(Correspondence.project_id == project_uuid)
+        stmt = _scope(stmt, Correspondence.project_id)
         rows = (await session.execute(stmt)).scalars().all()
         return [
             _hit_from_row(
@@ -507,9 +567,36 @@ async def _sql_search_collection(
     return []
 
 
+def _filter_vector_hits_by_access(
+    rankings: list[list[VectorHit]],
+    allowed_project_ids: set[uuid.UUID] | None,
+) -> list[list[VectorHit]]:
+    """Drop vector hits whose project the caller may not read.
+
+    Mirrors the SQL-track scoping for the cross-project case: a hit is
+    kept only when its ``project_id`` is in ``allowed_project_ids``.
+    Hits with no project (empty ``project_id`` — shared catalogs such as
+    costs, and inherently cross-project collections) are kept because
+    they carry no per-project access decision. ``None`` means unrestricted
+    (admin), so nothing is filtered.
+    """
+    if allowed_project_ids is None:
+        return list(rankings)
+    out: list[list[VectorHit]] = []
+    for ranking in rankings:
+        kept: list[VectorHit] = []
+        for hit in ranking:
+            pid = _coerce_uuid(getattr(hit, "project_id", "") or None)
+            if pid is None or pid in allowed_project_ids:
+                kept.append(hit)
+        out.append(kept)
+    return out
+
+
 async def unified_search_service(
     query: str,
     *,
+    user_id: str | None = None,
     types: list[str] | None = None,
     project_id: str | None = None,
     tenant_id: str | None = None,
@@ -525,7 +612,13 @@ async def unified_search_service(
 
     Project-scoped queries pass ``project_id`` to drop hits from other
     projects at both layers (vector filter on the embedding payload,
-    SQL ``WHERE project_id = …`` clause).
+    SQL ``WHERE project_id = …`` clause). The router already verified the
+    caller's access to that single project.
+
+    Cross-project queries (``project_id`` omitted) are fenced to the
+    projects ``user_id`` may read — owned or team-member, with an admin
+    bypass — so the unified search never leaks data from projects the
+    caller has no access to (IDOR defence).
     """
     import asyncio
 
@@ -547,9 +640,14 @@ async def unified_search_service(
     vector_rankings = await asyncio.gather(*vector_coros, return_exceptions=False)
 
     # SQL track — always evaluated. Single shared session so all per-
-    # collection queries share a single connection and roundtrip.
+    # collection queries share a single connection and roundtrip. The
+    # same session resolves the caller's accessible projects for the
+    # cross-project access fence.
     sql_rankings: list[list[VectorHit]] = []
     async with async_session_factory() as session:
+        # Only resolve the accessible-project fence for cross-project
+        # searches; when project_id is set the router already authorised it.
+        allowed_project_ids = None if project_id else await _accessible_project_ids(session, user_id)
         for collection in chosen:
             try:
                 hits = await _sql_search_collection(
@@ -558,12 +656,19 @@ async def unified_search_service(
                     query,
                     project_id=project_id,
                     tenant_id=tenant_id,
+                    allowed_project_ids=allowed_project_ids,
                     limit=limit_per_collection,
                 )
             except Exception as exc:
                 logger.debug("_sql_search_collection(%s) failed: %s", collection, exc)
                 hits = []
             sql_rankings.append(hits)
+
+    # Apply the same access fence to the vector track. For a single
+    # authorised project_id the vector layer already filtered on the
+    # embedding payload, so allowed_project_ids stays None and this is a
+    # no-op; for cross-project searches it drops out-of-scope hits.
+    vector_rankings = _filter_vector_hits_by_access(vector_rankings, allowed_project_ids)
 
     # Per-collection facet counts include hits from both tracks,
     # deduplicated by id so the badge reflects unique items.

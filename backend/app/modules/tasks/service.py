@@ -366,13 +366,21 @@ class TaskService:
     ) -> Task:
         task = await self.get_task(task_id, current_user_id=current_user_id)
 
-        if task.status == "completed":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot edit a completed task",
-            )
-
         fields: dict[str, Any] = data.model_dump(exclude_unset=True)
+
+        # A completed task is read-only EXCEPT for a valid reopening status
+        # transition (completed → open / in_progress, per _TASK_STATUS_TRANSITIONS).
+        # The transition itself is validated below at the FSM check; here we only
+        # ensure the request is a status-change reopening and nothing else, so a
+        # completed task can be reworked but not silently edited in place.
+        if task.status == "completed":
+            requested_status = fields.get("status")
+            is_reopen = requested_status is not None and requested_status != task.status
+            if not is_reopen:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Cannot edit a completed task",
+                )
         if "metadata" in fields:
             fields["metadata_"] = fields.pop("metadata")
         if "checklist" in fields and fields["checklist"] is not None:

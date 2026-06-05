@@ -28,6 +28,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.bim_hub.models import BIMElement, BIMModel
+from app.modules.match_elements.revit_ifc_map import normalize_to_ifc_class
 from app.modules.match_elements.sources.base import SourceElement
 
 _GROUP_BY_KEY_ORDER = (
@@ -72,9 +73,19 @@ def _read_attr(element: BIMElement, key: str) -> Any:
     if key == "name":
         return element.name
     if key == "type_name":
-        # Revit "Type Name" lives in properties on most extractors.
+        # Revit "Type Name" lives in properties on most extractors. The
+        # DDC cad2data RVT extractor stores the discriminating value
+        # under lower-case ``family``; older / IFC extractors use
+        # ``Type`` / ``Family``. Prefer any of those real names over the
+        # bare ``element_type`` (which for RVT is just the category word).
         props = element.properties or {}
-        return props.get("type_name") or props.get("Type") or props.get("Family") or element.element_type
+        return (
+            props.get("type_name")
+            or props.get("Type")
+            or props.get("Family")
+            or props.get("family")
+            or element.element_type
+        )
     props = element.properties or {}
     if key in props:
         return props.get(key)
@@ -264,6 +275,32 @@ class BIMSourceAdapter:
             }
             # Pass through every property key — group-by can target any of them.
             attrs.update(props)
+
+            # Revit (RVT) elements arrive with a native OST category name
+            # in ``element_type`` ("Walls" / "Structural Columns"), not an
+            # IFC class. Crosswalk it so ``ifc_class`` carries a canonical
+            # ``IfcXxx`` the label table + Qdrant hard filter understand,
+            # while keeping the original Revit category for the soft boost.
+            # Genuine IFC inputs already start with "Ifc" — they pass
+            # through unchanged and gain no extra keys, so an IFC model's
+            # attrs stay byte-for-byte identical to before.
+            raw_category = elem.element_type
+            if raw_category and raw_category[:3].lower() != "ifc":
+                attrs["ost_category"] = raw_category
+                attrs["revit_category"] = raw_category
+                mapped_ifc = normalize_to_ifc_class(raw_category)
+                if mapped_ifc is not None:
+                    attrs["ifc_class"] = mapped_ifc
+                # Surface the Revit family so the envelope query carries
+                # the discriminating type name ("Exterior - Brick on Mtl.
+                # Stud") instead of being shadowed by the bare category
+                # word. Scoped to the non-IFC (Revit) branch so a genuine
+                # IFC element's attrs stay byte-for-byte identical.
+                family = props.get("family") or props.get("Family")
+                if family:
+                    attrs["family"] = family
+                    if not attrs.get("type_name"):
+                        attrs["type_name"] = family
 
             qty = _net_quantities(elem.quantities or {}, props, use_net_quantities)
 

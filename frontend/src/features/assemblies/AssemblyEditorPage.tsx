@@ -21,6 +21,7 @@ import {
   Briefcase,
   Boxes,
   ChevronDown,
+  Info,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { Button, Badge, Card, Input, Breadcrumb, ConfirmDialog } from '@/shared/ui';
@@ -279,7 +280,13 @@ export function AssemblyEditorPage() {
 
   const components = assembly.components ?? [];
   const computedTotal = components.reduce((sum, c) => sum + c.total, 0);
-  const adjustedTotal = computedTotal * assembly.bid_factor;
+  // Prefer the server-persisted total_rate for the headline figure: it already
+  // reflects the bid factor AND any per-type typed-formula adjustments
+  // (waste / burden / fuel) that the naive client-side sum does not mirror.
+  // Fall back to the local sum only when the server hasn't rolled up a rate
+  // yet (e.g. a freshly created assembly with no persisted total).
+  const localAdjustedTotal = computedTotal * assembly.bid_factor;
+  const adjustedTotal = assembly.total_rate > 0 ? assembly.total_rate : localAdjustedTotal;
 
   return (
     <div className="w-full animate-fade-in">
@@ -519,7 +526,24 @@ export function AssemblyEditorPage() {
                   {t('assemblies.type', { defaultValue: 'Type' })}
                 </th>
                 <th className="px-4 py-3 font-medium text-content-secondary w-24 text-right">
-                  {t('assemblies.factor', { defaultValue: 'Factor' })}
+                  <span className="inline-flex items-center justify-end gap-1">
+                    {t('assemblies.factor', { defaultValue: 'Factor' })}
+                    <Info
+                      size={12}
+                      className="text-content-tertiary cursor-help shrink-0"
+                      aria-label={t('assemblies.factor_hint', {
+                        defaultValue:
+                          'Consumption per 1 unit of the assembly (e.g. 0.12 t rebar per m3 of concrete). Multiplied by Qty and Unit Cost to give the line total.',
+                      })}
+                    >
+                      <title>
+                        {t('assemblies.factor_hint', {
+                          defaultValue:
+                            'Consumption per 1 unit of the assembly (e.g. 0.12 t rebar per m3 of concrete). Multiplied by Qty and Unit Cost to give the line total.',
+                        })}
+                      </title>
+                    </Info>
+                  </span>
                 </th>
                 <th className="px-4 py-3 font-medium text-content-secondary w-24 text-right">
                   {t('boq.quantity', { defaultValue: 'Qty' })}

@@ -401,6 +401,117 @@ export async function fetchWeather(lat: number, lon: number): Promise<WeatherDat
   return apiGet<WeatherData>(`/v1/fieldreports/weather/?lat=${lat}&lon=${lon}`);
 }
 
+/**
+ * Map an OpenWeatherMap free-text description / icon code to our coarse
+ * WeatherCondition enum so a fetched forecast can prefill the modal's
+ * "Condition" select. Falls back to 'cloudy' for anything unrecognised.
+ */
+export function weatherConditionFromDescription(
+  description?: string | null,
+  icon?: string | null,
+): WeatherCondition {
+  const d = (description ?? '').toLowerCase();
+  const ic = (icon ?? '').toLowerCase();
+  if (d.includes('thunder') || d.includes('storm') || ic.startsWith('11')) return 'storm';
+  if (d.includes('snow') || d.includes('sleet') || ic.startsWith('13')) return 'snow';
+  if (
+    d.includes('rain') ||
+    d.includes('drizzle') ||
+    d.includes('shower') ||
+    ic.startsWith('09') ||
+    ic.startsWith('10')
+  )
+    return 'rain';
+  if (d.includes('fog') || d.includes('mist') || d.includes('haze') || ic.startsWith('50'))
+    return 'fog';
+  if (d.includes('cloud') || d.includes('overcast') || ic.startsWith('02') || ic.startsWith('03') || ic.startsWith('04'))
+    return 'cloudy';
+  if (d.includes('clear') || d.includes('sun') || ic.startsWith('01')) return 'clear';
+  return 'cloudy';
+}
+
+/* ── Site Workforce / Equipment logs (structured, per-report) ───────────── */
+
+export interface SiteWorkforceLog {
+  id: string;
+  field_report_id: string;
+  worker_type: string;
+  company: string | null;
+  headcount: number;
+  hours_worked: string;
+  overtime_hours: string;
+  wbs_id: string | null;
+  cost_category: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SiteWorkforceLogPayload {
+  field_report_id: string;
+  worker_type: string;
+  company?: string | null;
+  headcount?: number;
+  hours_worked?: string;
+  overtime_hours?: string;
+  wbs_id?: string | null;
+  cost_category?: string | null;
+}
+
+export interface SiteEquipmentLog {
+  id: string;
+  field_report_id: string;
+  equipment_description: string;
+  equipment_type: string | null;
+  hours_operational: string;
+  hours_standby: string;
+  hours_breakdown: string;
+  operator_name: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SiteEquipmentLogPayload {
+  field_report_id: string;
+  equipment_description: string;
+  equipment_type?: string | null;
+  hours_operational?: string;
+  hours_standby?: string;
+  hours_breakdown?: string;
+  operator_name?: string | null;
+}
+
+export async function fetchWorkforceLogs(reportId: string): Promise<SiteWorkforceLog[]> {
+  return apiGet<SiteWorkforceLog[]>(`/v1/fieldreports/reports/${reportId}/workforce/`);
+}
+
+export async function createWorkforceLog(
+  reportId: string,
+  data: SiteWorkforceLogPayload,
+): Promise<SiteWorkforceLog> {
+  return apiPost<SiteWorkforceLog>(`/v1/fieldreports/reports/${reportId}/workforce/`, data);
+}
+
+export async function deleteWorkforceLog(entryId: string): Promise<void> {
+  return apiDelete(`/v1/fieldreports/workforce/${entryId}`);
+}
+
+export async function fetchEquipmentLogs(reportId: string): Promise<SiteEquipmentLog[]> {
+  return apiGet<SiteEquipmentLog[]>(`/v1/fieldreports/reports/${reportId}/equipment/`);
+}
+
+export async function createEquipmentLog(
+  reportId: string,
+  data: SiteEquipmentLogPayload,
+): Promise<SiteEquipmentLog> {
+  return apiPost<SiteEquipmentLog>(`/v1/fieldreports/reports/${reportId}/equipment/`, data);
+}
+
+export async function deleteEquipmentLog(entryId: string): Promise<void> {
+  return apiDelete(`/v1/fieldreports/equipment/${entryId}`);
+}
+
 /* ── Template Download ──────────────────────────────────────────────────── */
 
 export function downloadFieldReportsTemplate(): void {

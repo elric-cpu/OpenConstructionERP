@@ -166,8 +166,15 @@ class ChangeOrderResponse(BaseModel):
     status: str
     submitted_by: str | None = None
     approved_by: str | None = None
+    # BUG-351: rejection writes its own dedicated columns (never reuses
+    # ``approved_*``). Exposing them on the wire lets the UI render an honest
+    # "Rejected by X on DATE" card. A CO rejected straight from 'submitted'
+    # sets only ``rejected_*`` — without these fields the rejection was
+    # invisible to users.
+    rejected_by: str | None = None
     submitted_at: str | None = None
     approved_at: str | None = None
+    rejected_at: str | None = None
     cost_impact: str = "0"
     schedule_impact_days: int = 0
     currency: str

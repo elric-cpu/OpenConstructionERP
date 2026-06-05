@@ -267,15 +267,35 @@ async def list_rules(
                 EacRule.description.ilike(like),
             )
         )
-    stmt = stmt.order_by(EacRule.created_at.desc()).limit(filters.limit).offset(filters.offset)
+    stmt = stmt.order_by(EacRule.created_at.desc())
 
-    result = await session.execute(stmt)
-    rules = list(result.scalars().all())
+    # Tag membership lives in a JSON array column. It MUST be applied before
+    # ``limit``/``offset`` or pagination breaks: SQL paginates first, then a
+    # post-fetch Python filter drops some of those rows, so the page comes back
+    # short of ``limit`` even when more matching rows exist. On PostgreSQL the
+    # column is physically JSONB, so push the predicate into SQL via ``@>``
+    # containment (mirrors ``requirements.service``). On other dialects (the
+    # SQLite test lane) we cannot express array containment portably, so fetch
+    # the filtered set in Python and slice the page afterwards.
+    bind = session.get_bind()
+    dialect_name = getattr(getattr(bind, "dialect", None), "name", "") or ""
 
-    if filters.tag:
-        # Tags live in a JSON column — filter in Python rather than write a
-        # dialect-specific JSON containment expression that breaks SQLite.
-        rules = [r for r in rules if filters.tag in (r.tags or [])]
+    if filters.tag and dialect_name == "postgresql":
+        from sqlalchemy import cast
+        from sqlalchemy.dialects.postgresql import JSONB
+
+        stmt = stmt.where(cast(EacRule.tags, JSONB).contains([filters.tag]))
+
+    if not filters.tag or dialect_name == "postgresql":
+        stmt = stmt.limit(filters.limit).offset(filters.offset)
+        result = await session.execute(stmt)
+        rules = list(result.scalars().all())
+    else:
+        # Non-PostgreSQL with a tag filter: filter in Python, then paginate so
+        # the page still honours ``limit``/``offset`` against the filtered set.
+        result = await session.execute(stmt)
+        matched = [r for r in result.scalars().all() if filters.tag in (r.tags or [])]
+        rules = matched[filters.offset : filters.offset + filters.limit]
 
     return [EacRuleRead.model_validate(r) for r in rules]
 
@@ -1010,7 +1030,7 @@ async def cancel_run_endpoint(
     (run is pending/running, or already cancelled — idempotent).
     Returns 404 when the run does not exist for the current tenant.
     Returns 409 when the run is in a terminal non-cancelled state
-    (success/failed) — cancel is meaningless there.
+    (success/failed/partial) — cancel is meaningless there.
     """
     from app.modules.eac.service import cancel_run
 
@@ -1021,7 +1041,7 @@ async def cancel_run_endpoint(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Run {run_id} not found",
         )
-    if pre.status in {"success", "failed"}:
+    if pre.status in {"success", "failed", "partial"}:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Run {run_id} is already in terminal state '{pre.status}'",

@@ -26,6 +26,8 @@ from __future__ import annotations
 
 from typing import Literal, NamedTuple
 
+from app.modules.match_elements.revit_ifc_map import normalize_to_ifc_class
+
 Trade = Literal[
     "architectural",
     "structural",
@@ -272,6 +274,18 @@ def lookup(ifc_class: str | None) -> IfcClassMeta:
     meta = _TABLE.get(ifc_class)
     if meta is not None:
         return meta
+    # Revit OST category passed through verbatim ("Walls" / "Floors")?
+    # Alias it to its canonical IFC class so the RVT group inherits the
+    # full label + din276 / masterformat / nrm hints + trade. Genuine
+    # IFC keys never reach here (they hit ``_TABLE`` above), and
+    # ``normalize_to_ifc_class`` returns ``None`` for anything it cannot
+    # confidently map — so the bare fallback below still handles unknown
+    # IFC entities exactly as before.
+    aliased = normalize_to_ifc_class(ifc_class)
+    if aliased is not None and aliased != ifc_class:
+        aliased_meta = _TABLE.get(aliased)
+        if aliased_meta is not None:
+            return aliased_meta
     # Fallback — strip "Ifc" prefix, leave the rest.
     fallback = ifc_class
     if fallback.startswith("Ifc"):

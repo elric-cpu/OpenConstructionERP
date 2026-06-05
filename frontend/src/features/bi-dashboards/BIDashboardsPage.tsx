@@ -17,6 +17,9 @@ import {
   Loader2,
   AlertOctagon,
   Sparkles,
+  Download,
+  RefreshCw,
+  Trash2,
 } from 'lucide-react';
 import {
   Button,
@@ -35,17 +38,27 @@ import { getErrorMessage } from '@/shared/lib/api';
 import {
   listKpis,
   getKpiHistory,
+  computeKpi,
   listDashboards,
   renderDashboard,
   evaluateDashboard,
   createDashboard,
   installStarterPack,
+  createWidget,
+  deleteWidget,
   listReports,
   runReport,
   createReport,
+  downloadReportRun,
+  downloadWidgetExport,
+  listSchedules,
+  createSchedule,
+  updateSchedule,
+  runScheduleNow,
   listAlerts,
   toggleAlert,
   createAlert,
+  evaluateAlertsNow,
   type AlertCondition,
   type AlertRule,
   type AlertSeverity,
@@ -54,8 +67,11 @@ import {
   type DrillPath,
   type KpiDefinition,
   type ReportDefinition,
+  type ReportFrequency,
+  type ReportSchedule,
   type WidgetEvaluateResult,
   type WidgetRenderResult,
+  type WidgetType,
 } from './api';
 import { useDashboardFilters } from '@/stores/useDashboardFilters';
 
@@ -519,6 +535,8 @@ function KpiLibrary({ rows }: { rows: KpiDefinition[] }) {
 
 function KpiLibraryCard({ kpi }: { kpi: KpiDefinition }) {
   const { t } = useTranslation();
+  const qc = useQueryClient();
+  const addToast = useToastStore((s) => s.addToast);
   const historyQ = useQuery({
     queryKey: ['bi', 'kpi-history', kpi.code],
     queryFn: () => getKpiHistory(kpi.code, { limit: 12 }),
@@ -526,12 +544,35 @@ function KpiLibraryCard({ kpi }: { kpi: KpiDefinition }) {
   });
   const history = historyQ.data?.history ?? [];
   const values = history.map((p) => toNumber(p.value));
-  const latest = values.length > 0 ? values[values.length - 1] : null;
+
+  // Live value computed on demand. When a KPI has no persisted history
+  // (KPIs registered but never computed) the history-derived headline
+  // would otherwise read "—" as if the KPI were broken. The Compute
+  // action calls the real /compute endpoint, persists a fresh snapshot,
+  // and refetches so the card lights up.
+  const [liveValue, setLiveValue] = useState<{ value: number; unit: string } | null>(null);
+  const computeMut = useMutation({
+    mutationFn: () => computeKpi(kpi.code, { persist: true }),
+    onSuccess: (data) => {
+      setLiveValue({ value: toNumber(data.value), unit: data.unit });
+      qc.invalidateQueries({ queryKey: ['bi', 'kpi-history', kpi.code] });
+      addToast({
+        type: 'success',
+        title: t('bi.kpi_computed', { defaultValue: 'KPI computed' }),
+        message: `${formatValue(toNumber(data.value), data.unit)} · ${data.source_record_count} ${t('bi.records', { defaultValue: 'records' })}`,
+      });
+    },
+    onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),
+  });
+
+  const historyLatest = values.length > 0 ? values[values.length - 1] : null;
+  const latest = historyLatest != null ? historyLatest : liveValue?.value ?? null;
   const previous = values.length > 1 ? values[values.length - 2] : null;
   const delta =
-    latest != null && previous != null && previous !== 0
-      ? ((latest - previous) / Math.abs(previous)) * 100
+    historyLatest != null && previous != null && previous !== 0
+      ? ((historyLatest - previous) / Math.abs(previous)) * 100
       : null;
+  const isLive = historyLatest == null && liveValue != null;
 
   return (
     <Card padding="md">
@@ -547,9 +588,16 @@ function KpiLibraryCard({ kpi }: { kpi: KpiDefinition }) {
       <div className="mt-3 flex items-end justify-between gap-2">
         <div>
           <p className="text-2xl font-semibold text-content-primary leading-none">
-            {latest != null ? formatValue(latest, kpi.unit) : '—'}
+            {latest != null ? formatValue(latest, liveValue?.unit ?? kpi.unit) : '—'}
           </p>
-          <p className="mt-1 text-xs text-content-tertiary">{kpi.unit}</p>
+          <p className="mt-1 text-xs text-content-tertiary">
+            {kpi.unit}
+            {isLive && (
+              <span className="ml-1 rounded bg-surface-tertiary px-1 py-0.5 text-2xs font-medium text-content-tertiary">
+                {t('bi.live', { defaultValue: 'live' })}
+              </span>
+            )}
+          </p>
         </div>
         {delta != null && (
           <DeltaChip delta={delta} />
@@ -561,9 +609,29 @@ function KpiLibraryCard({ kpi }: { kpi: KpiDefinition }) {
       {kpi.description && (
         <p className="mt-3 text-xs text-content-secondary line-clamp-2">{kpi.description}</p>
       )}
-      <p className="mt-2 text-[10px] uppercase tracking-wide text-content-tertiary">
-        {t('bi.last_n_periods', { defaultValue: 'Last {{n}} periods', n: values.length })}
-      </p>
+      <div className="mt-2 flex items-center justify-between gap-2">
+        <p className="text-[10px] uppercase tracking-wide text-content-tertiary">
+          {t('bi.last_n_periods', { defaultValue: 'Last {{n}} periods', n: values.length })}
+        </p>
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={
+            computeMut.isPending ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <RefreshCw size={12} />
+            )
+          }
+          onClick={() => computeMut.mutate()}
+          loading={computeMut.isPending}
+          title={t('bi.compute_now_hint', {
+            defaultValue: 'Compute this KPI now from live data and save a snapshot.',
+          })}
+        >
+          {t('bi.compute_now', { defaultValue: 'Compute' })}
+        </Button>
+      </div>
     </Card>
   );
 }
@@ -630,6 +698,13 @@ function DeltaChip({ delta }: { delta: number }) {
 
 /* ─── Reports ─── */
 
+/** Pull the report-run UUID out of a ``…/report-runs/{id}/file`` URL. */
+function runIdFromFileUrl(fileUrl: string | null | undefined): string | null {
+  if (!fileUrl) return null;
+  const m = /report-runs\/([0-9a-fA-F-]{36})\/file/.exec(fileUrl);
+  return m?.[1] ?? null;
+}
+
 function ReportList({
   rows,
   onCreate,
@@ -640,18 +715,45 @@ function ReportList({
   const { t } = useTranslation();
   const qc = useQueryClient();
   const addToast = useToastStore((s) => s.addToast);
+  // Remember the most recent run's downloadable file per report so the row
+  // can offer a "Download" action instead of discarding the generated file.
+  const [lastRun, setLastRun] = useState<Record<string, { runId: string; format: string }>>({});
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const runMut = useMutation({
     mutationFn: (id: string) => runReport(id),
     onSuccess: (data) => {
+      const runId = runIdFromFileUrl(data.file_url);
+      if (runId) {
+        setLastRun((prev) => ({
+          ...prev,
+          [data.report_id]: { runId, format: data.output_format },
+        }));
+      }
       addToast({
         type: 'success',
         title: t('bi.report_run_ok', { defaultValue: 'Report generated' }),
-        message: `${data.row_count} ${t('bi.rows', { defaultValue: 'rows' })}`,
+        message: runId
+          ? t('bi.report_run_ok_download', {
+              defaultValue: '{{count}} rows — use Download to open the file.',
+              count: data.row_count,
+            })
+          : `${data.row_count} ${t('bi.rows', { defaultValue: 'rows' })}`,
       });
       qc.invalidateQueries({ queryKey: ['bi', 'reports'] });
     },
     onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),
   });
+
+  const downloadRun = async (reportName: string, runId: string, format: string) => {
+    setDownloadingId(runId);
+    try {
+      await downloadReportRun(runId, `${reportName || 'report'}.${format}`);
+    } catch (err) {
+      addToast({ type: 'error', title: getErrorMessage(err) });
+    } finally {
+      setDownloadingId(null);
+    }
+  };
 
   if (rows.length === 0) {
     return (
@@ -691,15 +793,36 @@ function ReportList({
                 <td className="px-4 py-2 font-medium">{r.name}</td>
                 <td className="px-4 py-2"><Badge variant="neutral">{r.scope}</Badge></td>
                 <td className="px-4 py-2 text-xs text-content-secondary uppercase">{r.output_format}</td>
-                <td className="px-4 py-2 text-right">
-                  <Button
-                    variant="secondary"
-                    icon={<Play size={12} />}
-                    onClick={() => runMut.mutate(r.id)}
-                    loading={runMut.isPending && runMut.variables === r.id}
-                  >
-                    {t('bi.run_now', { defaultValue: 'Run now' })}
-                  </Button>
+                <td className="px-4 py-2">
+                  <div className="flex items-center justify-end gap-2">
+                    {lastRun[r.id] && (
+                      <Button
+                        variant="ghost"
+                        icon={<Download size={12} />}
+                        onClick={() =>
+                          downloadRun(
+                            r.name,
+                            lastRun[r.id]!.runId,
+                            lastRun[r.id]!.format,
+                          )
+                        }
+                        loading={downloadingId === lastRun[r.id]!.runId}
+                        title={t('bi.download_report', {
+                          defaultValue: 'Download the last generated file',
+                        })}
+                      >
+                        {t('bi.download', { defaultValue: 'Download' })}
+                      </Button>
+                    )}
+                    <Button
+                      variant="secondary"
+                      icon={<Play size={12} />}
+                      onClick={() => runMut.mutate(r.id)}
+                      loading={runMut.isPending && runMut.variables === r.id}
+                    >
+                      {t('bi.run_now', { defaultValue: 'Run now' })}
+                    </Button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -712,65 +835,370 @@ function ReportList({
 
 /* ─── Schedules ─── */
 
+const FREQUENCY_LABELS: Record<ReportFrequency, string> = {
+  daily: 'Daily',
+  weekly: 'Weekly',
+  monthly: 'Monthly',
+  quarterly: 'Quarterly',
+};
+
 function SchedulesList({ reports }: { reports: ReportDefinition[] }) {
   const { t } = useTranslation();
+  const qc = useQueryClient();
+  const addToast = useToastStore((s) => s.addToast);
+  const [newOpen, setNewOpen] = useState(false);
 
-  // There is no list-schedules endpoint, so the client cannot resolve a
-  // report → its schedule id. Previously the row actions passed the
-  // *report* id straight into runScheduleNow()/updateSchedule(), which
-  // require a *schedule* id — every click was a guaranteed wrong-object
-  // call. Until a GET /report-schedules endpoint exists this panel is an
-  // honest read-only summary; running is done from the Reports tab
-  // (which correctly calls runReport with the report id).
+  // Real schedules — the backend GET /report-schedules resolves them from
+  // the reports the caller can see, so frequency / next-run / recipients
+  // are no longer fabricated.
+  const schedulesQ = useQuery({
+    queryKey: ['bi', 'schedules'],
+    queryFn: listSchedules,
+  });
+  const schedules = schedulesQ.data ?? [];
 
-  if (reports.length === 0) {
+  const reportName = (id: string) =>
+    reports.find((r) => r.id === id)?.name ??
+    t('bi.report', { defaultValue: 'Report' });
+
+  const toggleMut = useMutation({
+    mutationFn: (args: { id: string; enabled: boolean }) =>
+      updateSchedule(args.id, { enabled: args.enabled }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['bi', 'schedules'] });
+      addToast({
+        type: 'success',
+        title: t('bi.schedule_updated', { defaultValue: 'Schedule updated' }),
+      });
+    },
+    onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),
+  });
+
+  const runMut = useMutation({
+    mutationFn: (id: string) => runScheduleNow(id),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['bi', 'schedules'] });
+      addToast({
+        type: 'success',
+        title: t('bi.schedule_ran', { defaultValue: 'Schedule run' }),
+        message: `${data.row_count} ${t('bi.rows', { defaultValue: 'rows' })}`,
+      });
+    },
+    onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),
+  });
+
+  const recipientCount = (s: ReportSchedule) =>
+    Array.isArray(s.recipients_json) ? s.recipients_json.length : 0;
+
+  const freqLabel = (f: string) =>
+    t(`bi.freq_${f}`, {
+      defaultValue: FREQUENCY_LABELS[f as ReportFrequency] ?? f,
+    });
+
+  if (schedulesQ.isError) {
     return (
       <Card padding="md">
         <EmptyState
-          icon={<CalendarClock size={22} />}
-          title={t('bi.empty_schedules', { defaultValue: 'No scheduled reports' })}
-          description={t('bi.empty_schedules_desc', {
-            defaultValue:
-              'Create a report first, then attach a recurring schedule with recipients.',
-          })}
+          icon={<AlertOctagon size={22} />}
+          title={t('bi.load_error', { defaultValue: 'Could not load BI data' })}
+          description={getErrorMessage(schedulesQ.error)}
+          action={{
+            label: t('common.retry', { defaultValue: 'Retry' }),
+            onClick: () => schedulesQ.refetch(),
+          }}
         />
       </Card>
     );
   }
 
+  if (!schedulesQ.isLoading && schedules.length === 0) {
+    return (
+      <>
+        <Card padding="md">
+          <EmptyState
+            icon={<CalendarClock size={22} />}
+            title={t('bi.empty_schedules', { defaultValue: 'No scheduled reports' })}
+            description={
+              reports.length === 0
+                ? t('bi.empty_schedules_desc', {
+                    defaultValue:
+                      'Create a report first, then attach a recurring schedule with recipients.',
+                  })
+                : t('bi.empty_schedules_have_reports', {
+                    defaultValue:
+                      'Attach a recurring schedule to one of your reports to deliver it automatically.',
+                  })
+            }
+            action={
+              reports.length > 0
+                ? {
+                    label: t('bi.new_schedule', { defaultValue: 'New schedule' }),
+                    onClick: () => setNewOpen(true),
+                  }
+                : undefined
+            }
+          />
+        </Card>
+        {newOpen && (
+          <NewScheduleModal reports={reports} onClose={() => setNewOpen(false)} />
+        )}
+      </>
+    );
+  }
+
   return (
-    <Card padding="none">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-surface-secondary text-content-tertiary text-xs uppercase tracking-wide">
-            <tr>
-              <th className="px-4 py-2.5 text-left">{t('bi.report', { defaultValue: 'Report' })}</th>
-              <th className="px-4 py-2.5 text-left">{t('bi.frequency', { defaultValue: 'Frequency' })}</th>
-              <th className="px-4 py-2.5 text-left">{t('bi.next_run', { defaultValue: 'Next run' })}</th>
-              <th className="px-4 py-2.5 text-left">{t('bi.recipients', { defaultValue: 'Recipients' })}</th>
-            </tr>
-          </thead>
-          <tbody>
+    <>
+      <div className="flex justify-end">
+        <Button
+          variant="primary"
+          icon={<Plus size={14} />}
+          onClick={() => setNewOpen(true)}
+          disabled={reports.length === 0}
+          title={
+            reports.length === 0
+              ? t('bi.new_schedule_needs_report', {
+                  defaultValue: 'Create a report first to schedule it.',
+                })
+              : undefined
+          }
+        >
+          {t('bi.new_schedule', { defaultValue: 'New schedule' })}
+        </Button>
+      </div>
+      <Card padding="none" className="mt-3">
+        {schedulesQ.isLoading ? (
+          <div className="p-4">
+            <SkeletonTable rows={4} columns={5} />
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-surface-secondary text-content-tertiary text-xs uppercase tracking-wide">
+                <tr>
+                  <th className="px-4 py-2.5 text-left">{t('bi.report', { defaultValue: 'Report' })}</th>
+                  <th className="px-4 py-2.5 text-left">{t('bi.frequency', { defaultValue: 'Frequency' })}</th>
+                  <th className="px-4 py-2.5 text-left">{t('bi.next_run', { defaultValue: 'Next run' })}</th>
+                  <th className="px-4 py-2.5 text-left">{t('bi.recipients', { defaultValue: 'Recipients' })}</th>
+                  <th className="px-4 py-2.5 text-left">{t('bi.enabled', { defaultValue: 'Enabled' })}</th>
+                  <th className="px-4 py-2.5 text-right">{t('common.actions')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {schedules.map((s) => (
+                  <tr key={s.id} className="border-t border-border-light">
+                    <td className="px-4 py-2 font-medium">
+                      {reportName(s.report_definition_id)}
+                    </td>
+                    <td className="px-4 py-2 text-xs text-content-secondary">
+                      {freqLabel(s.frequency)}{' '}
+                      <span className="text-content-tertiary">· {s.time_of_day} {s.timezone}</span>
+                    </td>
+                    <td className="px-4 py-2 text-xs text-content-secondary">
+                      {s.next_run_at ? <DateDisplay value={s.next_run_at} format="datetime" /> : '—'}
+                    </td>
+                    <td className="px-4 py-2 text-xs text-content-secondary">
+                      {recipientCount(s) > 0
+                        ? t('bi.recipients_count', {
+                            defaultValue: '{{count}} recipients',
+                            count: recipientCount(s),
+                          })
+                        : '—'}
+                    </td>
+                    <td className="px-4 py-2">
+                      <label className="inline-flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={s.enabled}
+                          disabled={toggleMut.isPending}
+                          onChange={(e) =>
+                            toggleMut.mutate({ id: s.id, enabled: e.target.checked })
+                          }
+                          className="h-4 w-4 rounded border-border accent-oe-blue"
+                          aria-label={t('bi.schedule_enable_aria', {
+                            defaultValue: 'Enable schedule for {{name}}',
+                            name: reportName(s.report_definition_id),
+                          })}
+                        />
+                        <span className="text-xs text-content-tertiary">
+                          {s.enabled
+                            ? t('bi.on', { defaultValue: 'On' })
+                            : t('bi.off', { defaultValue: 'Off' })}
+                        </span>
+                      </label>
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      <Button
+                        variant="secondary"
+                        icon={<Play size={12} />}
+                        onClick={() => runMut.mutate(s.id)}
+                        loading={runMut.isPending && runMut.variables === s.id}
+                      >
+                        {t('bi.run_now', { defaultValue: 'Run now' })}
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <div className="border-t border-border-light px-4 py-2.5 text-xs text-content-tertiary">
+          {t('bi.schedules_hint', {
+            defaultValue:
+              'Schedules deliver a report automatically on the chosen cadence. "Run now" generates it immediately.',
+          })}
+        </div>
+      </Card>
+      {newOpen && (
+        <NewScheduleModal reports={reports} onClose={() => setNewOpen(false)} />
+      )}
+    </>
+  );
+}
+
+/* ─── New schedule modal ─── */
+
+function NewScheduleModal({
+  reports,
+  onClose,
+}: {
+  reports: ReportDefinition[];
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const addToast = useToastStore((s) => s.addToast);
+  const [busy, setBusy] = useState(false);
+  const [form, setForm] = useState({
+    report_definition_id: reports[0]?.id ?? '',
+    frequency: 'weekly' as ReportFrequency,
+    time_of_day: '08:00',
+    timezone: 'UTC',
+    enabled: true,
+  });
+
+  const submit = async () => {
+    setBusy(true);
+    try {
+      if (!form.report_definition_id) throw new Error('Report required');
+      if (!/^\d{2}:\d{2}$/.test(form.time_of_day)) {
+        throw new Error('Time must be HH:MM');
+      }
+      await createSchedule({
+        report_definition_id: form.report_definition_id,
+        frequency: form.frequency,
+        time_of_day: form.time_of_day,
+        timezone: form.timezone || 'UTC',
+        enabled: form.enabled,
+      });
+      addToast({
+        type: 'success',
+        title: t('bi.schedule_created', { defaultValue: 'Schedule created' }),
+      });
+      qc.invalidateQueries({ queryKey: ['bi', 'schedules'] });
+      onClose();
+    } catch (err) {
+      addToast({ type: 'error', title: getErrorMessage(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <WideModal
+      open
+      onClose={onClose}
+      title={t('bi.new_schedule', { defaultValue: 'New schedule' })}
+      subtitle={t('bi.new_schedule_subtitle', {
+        defaultValue:
+          'Deliver a report automatically on a recurring cadence. Times are interpreted in the chosen timezone.',
+      })}
+      size="md"
+      busy={busy}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
+            {t('common.cancel', { defaultValue: 'Cancel' })}
+          </Button>
+          <Button
+            variant="primary"
+            onClick={submit}
+            loading={busy}
+            icon={busy ? <Loader2 size={14} /> : <Plus size={14} />}
+          >
+            {t('common.create', { defaultValue: 'Create' })}
+          </Button>
+        </>
+      }
+    >
+      <WideModalSection columns={2}>
+        <WideModalField
+          label={t('bi.report', { defaultValue: 'Report' })}
+          required
+          span={2}
+        >
+          <select
+            value={form.report_definition_id}
+            onChange={(e) => setForm({ ...form, report_definition_id: e.target.value })}
+            className={inputCls}
+          >
             {reports.map((r) => (
-              <tr key={r.id} className="border-t border-border-light">
-                <td className="px-4 py-2 font-medium">{r.name}</td>
-                <td className="px-4 py-2 text-xs text-content-secondary">
-                  {t('bi.frequency_value', { defaultValue: 'On demand' })}
-                </td>
-                <td className="px-4 py-2 text-xs text-content-secondary">—</td>
-                <td className="px-4 py-2 text-xs text-content-secondary">—</td>
-              </tr>
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
             ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="border-t border-border-light px-4 py-2.5 text-xs text-content-tertiary">
-        {t('bi.schedules_run_hint', {
-          defaultValue:
-            'Run a report on demand from the Reports tab. Recurring delivery is configured server-side.',
-        })}
-      </div>
-    </Card>
+          </select>
+        </WideModalField>
+        <WideModalField label={t('bi.frequency', { defaultValue: 'Frequency' })}>
+          <select
+            value={form.frequency}
+            onChange={(e) =>
+              setForm({ ...form, frequency: e.target.value as ReportFrequency })
+            }
+            className={inputCls}
+          >
+            <option value="daily">{t('bi.freq_daily', { defaultValue: 'Daily' })}</option>
+            <option value="weekly">{t('bi.freq_weekly', { defaultValue: 'Weekly' })}</option>
+            <option value="monthly">{t('bi.freq_monthly', { defaultValue: 'Monthly' })}</option>
+            <option value="quarterly">{t('bi.freq_quarterly', { defaultValue: 'Quarterly' })}</option>
+          </select>
+        </WideModalField>
+        <WideModalField
+          label={t('bi.time_of_day', { defaultValue: 'Time of day (HH:MM)' })}
+          hint={t('bi.time_of_day_hint', {
+            defaultValue: '24-hour clock in the timezone below.',
+          })}
+        >
+          <input
+            type="time"
+            value={form.time_of_day}
+            onChange={(e) => setForm({ ...form, time_of_day: e.target.value })}
+            className={inputCls}
+          />
+        </WideModalField>
+        <WideModalField label={t('bi.timezone', { defaultValue: 'Timezone' })} span={2}>
+          <input
+            value={form.timezone}
+            onChange={(e) => setForm({ ...form, timezone: e.target.value })}
+            className={inputCls}
+            placeholder="UTC"
+          />
+        </WideModalField>
+        <WideModalField label={t('bi.enabled', { defaultValue: 'Enabled' })} span={2}>
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={form.enabled}
+              onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
+              className="h-4 w-4 rounded border-border accent-oe-blue"
+            />
+            {t('bi.schedule_enabled_label', {
+              defaultValue: 'Start delivering on this schedule immediately',
+            })}
+          </label>
+        </WideModalField>
+      </WideModalSection>
+    </WideModal>
   );
 }
 
@@ -794,6 +1222,21 @@ function AlertsList({
     },
     onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),
   });
+  const evalMut = useMutation({
+    mutationFn: () => evaluateAlertsNow(),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['bi', 'alerts'] });
+      addToast({
+        type: 'success',
+        title: t('bi.alerts_checked', { defaultValue: 'Alert checks complete' }),
+        message: t('bi.alerts_fired', {
+          defaultValue: '{{count}} alerts fired',
+          count: data.fired,
+        }),
+      });
+    },
+    onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),
+  });
 
   if (rows.length === 0) {
     return (
@@ -813,7 +1256,27 @@ function AlertsList({
     );
   }
   return (
-    <Card padding="none">
+    <>
+    <div className="flex justify-end">
+      <Button
+        variant="secondary"
+        icon={
+          evalMut.isPending ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <RefreshCw size={14} />
+          )
+        }
+        onClick={() => evalMut.mutate()}
+        loading={evalMut.isPending}
+        title={t('bi.run_alert_checks_hint', {
+          defaultValue: 'Evaluate every enabled alert now and fire any that breach.',
+        })}
+      >
+        {t('bi.run_alert_checks', { defaultValue: 'Run checks now' })}
+      </Button>
+    </div>
+    <Card padding="none" className="mt-3">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-surface-secondary text-content-tertiary text-xs uppercase tracking-wide">
@@ -843,15 +1306,38 @@ function AlertsList({
                   {a.last_triggered_at ? <DateDisplay value={a.last_triggered_at} /> : '—'}
                 </td>
                 <td className="px-4 py-2 text-right">
-                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                  <label
+                    className="inline-flex items-center gap-2 cursor-pointer"
+                    title={
+                      a.enabled
+                        ? t('bi.alert_disable_aria', {
+                            defaultValue: 'Disable {{name}}',
+                            name: a.name,
+                          })
+                        : t('bi.alert_enable_aria', {
+                            defaultValue: 'Enable {{name}}',
+                            name: a.name,
+                          })
+                    }
+                  >
                     <input
                       type="checkbox"
                       checked={a.enabled}
+                      disabled={toggleMut.isPending}
                       onChange={(e) =>
                         toggleMut.mutate({ id: a.id, enabled: e.target.checked })
                       }
                       className="h-4 w-4 rounded border-border accent-oe-blue"
+                      aria-label={t('bi.alert_enable_aria', {
+                        defaultValue: 'Enable {{name}}',
+                        name: a.name,
+                      })}
                     />
+                    <span className="text-xs text-content-tertiary">
+                      {a.enabled
+                        ? t('bi.on', { defaultValue: 'On' })
+                        : t('bi.off', { defaultValue: 'Off' })}
+                    </span>
                   </label>
                 </td>
               </tr>
@@ -860,6 +1346,7 @@ function AlertsList({
         </table>
       </div>
     </Card>
+    </>
   );
 }
 
@@ -884,6 +1371,9 @@ function DashboardRenderPanel({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
+  const qc = useQueryClient();
+  const addToast = useToastStore((s) => s.addToast);
+  const [addWidgetOpen, setAddWidgetOpen] = useState(false);
   useEscapeToClose(onClose);
 
   // Wave 4 / T11 — cross-filter wiring. The store is keyed by the active
@@ -933,6 +1423,36 @@ function DashboardRenderPanel({
     setFilter(path.filter_field, value);
   };
 
+  // Owners can author the board in place. Both mutations invalidate the
+  // render + evaluate queries so the grid reflects the change immediately.
+  const refreshBoard = () => {
+    qc.invalidateQueries({ queryKey: ['bi', 'dashboard-render', dashboardId] });
+    qc.invalidateQueries({ queryKey: ['bi', 'dashboard-evaluate', dashboardId] });
+    qc.invalidateQueries({ queryKey: ['bi', 'dashboards'] });
+  };
+  const deleteWidgetMut = useMutation({
+    mutationFn: (widgetId: string) => deleteWidget(widgetId),
+    onSuccess: () => {
+      refreshBoard();
+      addToast({
+        type: 'success',
+        title: t('bi.widget_removed', { defaultValue: 'Widget removed' }),
+      });
+    },
+    onError: (err) => addToast({ type: 'error', title: getErrorMessage(err) }),
+  });
+  const [exportingId, setExportingId] = useState<string | null>(null);
+  const exportWidget = async (widgetId: string, format: 'csv' | 'svg') => {
+    setExportingId(widgetId);
+    try {
+      await downloadWidgetExport(widgetId, format);
+    } catch (err) {
+      addToast({ type: 'error', title: getErrorMessage(err) });
+    } finally {
+      setExportingId(null);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30" />
@@ -954,14 +1474,23 @@ function DashboardRenderPanel({
               </p>
             )}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded p-1 hover:bg-surface-secondary"
-            aria-label={t('common.close', { defaultValue: 'Close' })}
-          >
-            <X size={16} />
-          </button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              icon={<Plus size={14} />}
+              onClick={() => setAddWidgetOpen(true)}
+            >
+              {t('bi.add_widget', { defaultValue: 'Add widget' })}
+            </Button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded p-1 hover:bg-surface-secondary"
+              aria-label={t('common.close', { defaultValue: 'Close' })}
+            >
+              <X size={16} />
+            </button>
+          </div>
         </div>
         <div className="space-y-3 p-5">
           {data?.dashboard.cross_filter_enabled && Object.keys(filtersForQuery).length > 0 && (
@@ -982,9 +1511,14 @@ function DashboardRenderPanel({
             <EmptyState
               icon={<LayoutDashboard size={22} />}
               title={t('bi.empty_widgets', { defaultValue: 'No widgets pinned' })}
-              description={t('bi.empty_widgets_desc', {
-                defaultValue: 'Edit the dashboard layout to pin KPI cards or charts.',
+              description={t('bi.empty_widgets_desc_v2', {
+                defaultValue:
+                  'Add a KPI card, chart or gauge to start building this dashboard.',
               })}
+              action={{
+                label: t('bi.add_widget', { defaultValue: 'Add widget' }),
+                onClick: () => setAddWidgetOpen(true),
+              }}
             />
           )}
           {data && data.widgets.length > 0 && (
@@ -1009,25 +1543,264 @@ function DashboardRenderPanel({
                       from_cache: false,
                     };
                     return (
-                      <WidgetCard
+                      <WidgetTile
                         key={w.id}
-                        widget={mapped}
-                        crossFilterEnabled={data.dashboard.cross_filter_enabled}
-                        drillPath={w.drill_path}
-                        onCellClick={(row) => handleCellClick(w, row)}
-                      />
+                        widgetId={w.id}
+                        spanFull={widgetMeta.widget_type === 'table'}
+                        exporting={exportingId === w.id}
+                        onExport={(fmt) => exportWidget(w.id, fmt)}
+                        onDelete={() => deleteWidgetMut.mutate(w.id)}
+                        deleting={deleteWidgetMut.isPending && deleteWidgetMut.variables === w.id}
+                      >
+                        <WidgetCard
+                          widget={mapped}
+                          crossFilterEnabled={data.dashboard.cross_filter_enabled}
+                          drillPath={w.drill_path}
+                          onCellClick={(row) => handleCellClick(w, row)}
+                        />
+                      </WidgetTile>
                     );
                   })
                 : data.widgets.map((w) => (
-                    <WidgetCard key={w.widget.id} widget={w} />
+                    <WidgetTile
+                      key={w.widget.id}
+                      widgetId={w.widget.id}
+                      spanFull={w.widget.widget_type === 'table'}
+                      exporting={exportingId === w.widget.id}
+                      onExport={(fmt) => exportWidget(w.widget.id, fmt)}
+                      onDelete={() => deleteWidgetMut.mutate(w.widget.id)}
+                      deleting={deleteWidgetMut.isPending && deleteWidgetMut.variables === w.widget.id}
+                    >
+                      <WidgetCard widget={w} />
+                    </WidgetTile>
                   ))}
             </div>
           )}
         </div>
       </div>
+      {addWidgetOpen && (
+        <AddWidgetModal
+          dashboardId={dashboardId}
+          onClose={() => setAddWidgetOpen(false)}
+          onCreated={refreshBoard}
+        />
+      )}
     </div>
   );
 }
+
+/**
+ * Wraps a rendered widget with owner controls (export CSV/SVG, remove).
+ * The ``WidgetCard`` already returns a ``<Card>`` per widget type; this
+ * adds a thin hover-revealed action row beneath it so the chart code
+ * itself stays untouched. ``table`` widgets span both columns, so the
+ * wrapper mirrors that to keep the grid intact.
+ */
+function WidgetTile({
+  widgetId,
+  spanFull,
+  exporting,
+  deleting,
+  onExport,
+  onDelete,
+  children,
+}: {
+  widgetId: string;
+  spanFull?: boolean;
+  exporting?: boolean;
+  deleting?: boolean;
+  onExport: (format: 'csv' | 'svg') => void;
+  onDelete: () => void;
+  children: React.ReactNode;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className={clsx('group relative', spanFull && 'md:col-span-2')}>
+      {children}
+      <div className="mt-1 flex items-center justify-end gap-2 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+        <button
+          type="button"
+          onClick={() => onExport('csv')}
+          disabled={exporting}
+          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs text-content-tertiary hover:bg-surface-secondary hover:text-content-primary disabled:opacity-50"
+          title={t('bi.export_csv', { defaultValue: 'Export data as CSV' })}
+          data-widget-id={widgetId}
+        >
+          {exporting ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
+          CSV
+        </button>
+        <button
+          type="button"
+          onClick={() => onExport('svg')}
+          disabled={exporting}
+          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs text-content-tertiary hover:bg-surface-secondary hover:text-content-primary disabled:opacity-50"
+          title={t('bi.export_svg', { defaultValue: 'Export chart as SVG' })}
+        >
+          <Download size={11} />
+          SVG
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          disabled={deleting}
+          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-2xs text-rose-600 hover:bg-rose-50 disabled:opacity-50 dark:hover:bg-rose-900/20"
+          title={t('bi.remove_widget', { defaultValue: 'Remove widget' })}
+        >
+          {deleting ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
+          {t('bi.remove', { defaultValue: 'Remove' })}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Add widget modal ─── */
+
+const ADD_WIDGET_TYPES: WidgetType[] = [
+  'kpi_card',
+  'line_chart',
+  'bar_chart',
+  'gauge',
+  'table',
+];
+
+function AddWidgetModal({
+  dashboardId,
+  onClose,
+  onCreated,
+}: {
+  dashboardId: string;
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const { t } = useTranslation();
+  const addToast = useToastStore((s) => s.addToast);
+  const [busy, setBusy] = useState(false);
+  // The modal needs the KPI catalogue to bind a widget to a KPI code.
+  const kpisQ = useQuery({ queryKey: ['bi', 'kpis'], queryFn: () => listKpis() });
+  const kpis = kpisQ.data ?? [];
+  const [form, setForm] = useState({
+    widget_type: 'kpi_card' as WidgetType,
+    kpi_code: '',
+  });
+
+  // Default the KPI code to the first available once the list loads.
+  useEffect(() => {
+    if (!form.kpi_code && kpis.length > 0) {
+      setForm((f) => ({ ...f, kpi_code: kpis[0]!.code }));
+    }
+  }, [kpis, form.kpi_code]);
+
+  const submit = async () => {
+    setBusy(true);
+    try {
+      if (!form.kpi_code) throw new Error('KPI required');
+      await createWidget({
+        dashboard_id: dashboardId,
+        widget_type: form.widget_type,
+        kpi_code: form.kpi_code,
+      });
+      addToast({
+        type: 'success',
+        title: t('bi.widget_added', { defaultValue: 'Widget added' }),
+      });
+      onCreated();
+      onClose();
+    } catch (err) {
+      addToast({ type: 'error', title: getErrorMessage(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <WideModal
+      open
+      onClose={onClose}
+      title={t('bi.add_widget', { defaultValue: 'Add widget' })}
+      subtitle={t('bi.add_widget_subtitle', {
+        defaultValue: 'Pick a KPI and how it should be displayed on the dashboard.',
+      })}
+      size="md"
+      busy={busy}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>
+            {t('common.cancel', { defaultValue: 'Cancel' })}
+          </Button>
+          <Button
+            variant="primary"
+            onClick={submit}
+            loading={busy}
+            disabled={busy || kpis.length === 0}
+            icon={busy ? <Loader2 size={14} /> : <Plus size={14} />}
+          >
+            {t('bi.add_widget', { defaultValue: 'Add widget' })}
+          </Button>
+        </>
+      }
+    >
+      <WideModalSection columns={2}>
+        <WideModalField
+          label={t('bi.kpi', { defaultValue: 'KPI' })}
+          required
+          span={2}
+        >
+          {kpisQ.isLoading ? (
+            <div className="h-9 w-full animate-pulse rounded-lg bg-surface-secondary" />
+          ) : kpis.length > 0 ? (
+            <select
+              value={form.kpi_code}
+              onChange={(e) => setForm({ ...form, kpi_code: e.target.value })}
+              className={inputCls}
+            >
+              {kpis.map((k) => (
+                <option key={k.id} value={k.code}>
+                  {k.code} — {k.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <p className="text-sm text-content-tertiary">
+              {t('bi.no_kpis_for_widget', {
+                defaultValue:
+                  'No KPIs are registered yet. Install the starter pack or register a KPI first.',
+              })}
+            </p>
+          )}
+        </WideModalField>
+        <WideModalField
+          label={t('bi.widget_type', { defaultValue: 'Display as' })}
+          span={2}
+        >
+          <select
+            value={form.widget_type}
+            onChange={(e) =>
+              setForm({ ...form, widget_type: e.target.value as WidgetType })
+            }
+            className={inputCls}
+          >
+            {ADD_WIDGET_TYPES.map((wt) => (
+              <option key={wt} value={wt}>
+                {t(`bi.widget_type_${wt}`, {
+                  defaultValue: WIDGET_TYPE_LABELS[wt],
+                })}
+              </option>
+            ))}
+          </select>
+        </WideModalField>
+      </WideModalSection>
+    </WideModal>
+  );
+}
+
+const WIDGET_TYPE_LABELS: Record<string, string> = {
+  kpi_card: 'KPI card',
+  line_chart: 'Line chart',
+  bar_chart: 'Bar chart',
+  gauge: 'Gauge',
+  table: 'Table',
+};
 
 /**
  * Pull the per-click value off either the row (table/chart row click) or a
@@ -1637,8 +2410,9 @@ function CreateModal({
           </WideModalField>
           <WideModalField
             label={t('bi.severity', { defaultValue: 'Severity' })}
-            hint={t('bi.severity_hint', {
-              defaultValue: 'Drives notification channel & escalation behaviour.',
+            hint={t('bi.severity_hint_v2', {
+              defaultValue:
+                'Sets the priority of the in-app notification when the rule fires. Delivery channels and recipients are configured server-side.',
             })}
             span={2}
           >
@@ -1649,9 +2423,9 @@ function CreateModal({
               }
               className={inputCls}
             >
-              <option value="info">{t('bi.sev_info', { defaultValue: 'Info — log only' })}</option>
-              <option value="warning">{t('bi.sev_warning', { defaultValue: 'Warning — in-app banner' })}</option>
-              <option value="critical">{t('bi.sev_critical', { defaultValue: 'Critical — email + Slack' })}</option>
+              <option value="info">{t('bi.sev_info_v2', { defaultValue: 'Info — informational' })}</option>
+              <option value="warning">{t('bi.sev_warning_v2', { defaultValue: 'Warning — needs attention' })}</option>
+              <option value="critical">{t('bi.sev_critical_v2', { defaultValue: 'Critical — urgent' })}</option>
             </select>
           </WideModalField>
         </WideModalSection>

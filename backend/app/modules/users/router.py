@@ -887,7 +887,11 @@ async def admin_create_user(
 async def list_users(
     service: UserService = Depends(_get_service),
     offset: int = Query(default=0, ge=0),
-    limit: int = Query(default=50, ge=1, le=100),
+    # Directory/assignee pickers load the full active-user list in one call,
+    # so the cap is generous (a hard 100 silently dropped assignees and made
+    # ``?limit=200`` requests fail with 422). Rows are tiny; 500 covers any
+    # realistic org without paging. Use ``offset`` for the rare larger directory.
+    limit: int = Query(default=50, ge=1, le=500),
     is_active: bool | None = None,
 ) -> list[UserResponse]:
     """List all users (admin/manager only).

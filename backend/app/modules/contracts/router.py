@@ -944,6 +944,22 @@ async def update_progress_claim(
     fields = data.model_dump(exclude_unset=True)
     if "metadata" in fields:
         fields["metadata_"] = fields.pop("metadata")
+    # Status changes must go through the lifecycle transition endpoints
+    # (submit / approve / certify / reject / mark-paid). They enforce the
+    # claim FSM and emit the events finance / dashboards subscribe to; a raw
+    # PATCH would skip both and could perform illegal jumps (e.g. submitted →
+    # paid), corrupting the audit trail.
+    if "status" in fields and fields["status"] != obj.status:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "status_not_directly_editable",
+                "message": (
+                    "Use the submit / approve / certify / reject / mark-paid endpoints to change progress claim status"
+                ),
+            },
+        )
+    fields.pop("status", None)
     if fields:
         await service.claim_repo.update_fields(claim_id, **fields)
         await session.refresh(obj)
@@ -1175,7 +1191,13 @@ async def update_claim_line(
     obj = await repo.get_by_id(line_id)
     if obj is None:
         raise HTTPException(status_code=404, detail="Claim line not found")
-    await _verify_claim_access(session, obj.progress_claim_id, user_id)
+    claim = await _verify_claim_access(session, obj.progress_claim_id, user_id)
+    # The claim line breakdown is part of the immutable audit trail once the
+    # parent claim leaves draft / submitted (approved / certified / paid /
+    # rejected). Mirror the service guard used by the auto-generate / populate
+    # paths so a raw PATCH cannot rewrite a billed line.
+    service = ContractsService(session)
+    service._assert_claim_editable(claim)
     fields = {k: v for k, v in data.model_dump(exclude_unset=True).items() if v is not None}
     if fields:
         await repo.update_fields(line_id, **fields)

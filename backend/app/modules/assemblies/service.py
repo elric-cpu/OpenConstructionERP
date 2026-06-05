@@ -756,7 +756,7 @@ class AssemblyService:
                     unit=comp.unit,
                     # v3 §10 — money as Decimal; Pydantic coerces str→Decimal
                     unit_cost=Decimal(str(comp.unit_cost or "0")),
-                    total=_str_to_float(comp.total),
+                    total=Decimal(str(comp.total or "0")),
                     sort_order=comp.sort_order,
                     metadata=comp.metadata_ or {},
                     created_at=comp.created_at,

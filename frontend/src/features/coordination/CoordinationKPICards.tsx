@@ -13,10 +13,22 @@
  * footprint so the page doesn't reflow when data lands.
  */
 
-import { Radar, Coins, ClipboardCheck, Layers, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react';
+import {
+  Radar,
+  Coins,
+  ClipboardCheck,
+  Layers,
+  ArrowUpRight,
+  ArrowDownRight,
+  Minus,
+  Eye,
+  FileText,
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import clsx from 'clsx';
 import { MoneyDisplay } from '@/shared/ui/MoneyDisplay';
+import { DateDisplay } from '@/shared/ui/DateDisplay';
+import { InfoHint } from '@/shared/ui';
 import type { CoordinationDashboard } from './types';
 
 export interface CoordinationKPICardsProps {
@@ -62,11 +74,13 @@ interface KPICardProps {
   label: string;
   primary: React.ReactNode;
   delta?: { value: number; direction: 'up' | 'down' | 'flat'; label: string } | null;
-  secondary?: string;
+  secondary?: React.ReactNode;
+  /** Optional one-line caveat surfaced via an (i) tooltip next to the label. */
+  hint?: string;
   testId?: string;
 }
 
-function KPICard({ accent, icon, label, primary, delta, secondary, testId }: KPICardProps) {
+function KPICard({ accent, icon, label, primary, delta, secondary, hint, testId }: KPICardProps) {
   const styles = ACCENT_STYLES[accent];
   return (
     <div
@@ -109,8 +123,9 @@ function KPICard({ accent, icon, label, primary, delta, secondary, testId }: KPI
             >
               {icon}
             </div>
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-content-tertiary">
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-content-tertiary">
               {label}
+              {hint ? <InfoHint inline text={hint} /> : null}
             </span>
           </div>
           {delta ? (
@@ -160,6 +175,40 @@ function SkeletonCard() {
   );
 }
 
+interface StatTileProps {
+  icon: React.ReactNode;
+  label: string;
+  value: React.ReactNode;
+  footer?: React.ReactNode;
+  /** Optional caveat surfaced via an (i) tooltip next to the label. */
+  hint?: string;
+}
+
+/** Lightweight supporting stat — used for the BCF / smart-view strip below
+ *  the four headline KPI cards. Glass treatment matches the cards but with
+ *  less visual weight (no accent bar, smaller type). */
+function StatTile({ icon, label, value, footer, hint }: StatTileProps) {
+  return (
+    <div className="relative overflow-hidden rounded-xl border border-white/40 bg-white/50 px-4 py-3 backdrop-blur-xl dark:border-white/5 dark:bg-slate-900/30">
+      <div className="flex items-center gap-2 text-content-tertiary">
+        <span className="flex h-6 w-6 items-center justify-center rounded-md bg-slate-100 text-content-secondary dark:bg-slate-800">
+          {icon}
+        </span>
+        <span className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider">
+          {label}
+          {hint ? <InfoHint inline text={hint} /> : null}
+        </span>
+      </div>
+      <div className="mt-1.5 text-base font-semibold text-content-primary">
+        {value}
+      </div>
+      {footer ? (
+        <div className="mt-0.5 text-xs text-content-tertiary">{footer}</div>
+      ) : null}
+    </div>
+  );
+}
+
 export function CoordinationKPICards({
   data,
   isLoading,
@@ -201,6 +250,7 @@ export function CoordinationKPICards({
   }
 
   return (
+    <>
     <div
       data-testid="coordination-kpi-cards"
       className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
@@ -212,10 +262,24 @@ export function CoordinationKPICards({
         label={t('coordination.open_clashes', { defaultValue: 'Open Clashes' })}
         primary={data.clashes.open_count.toLocaleString()}
         delta={clashDelta}
-        secondary={t('coordination.resolved_clashes', {
-          defaultValue: '{{n}} resolved',
-          n: data.clashes.resolved_count,
-        })}
+        secondary={
+          data.clashes.last_run_at ? (
+            <span className="inline-flex items-center gap-1">
+              {t('coordination.resolved_clashes', {
+                defaultValue: '{{n}} resolved',
+                n: data.clashes.resolved_count,
+              })}
+              {' · '}
+              {t('coordination_hub.last_run', { defaultValue: 'as of' })}{' '}
+              <DateDisplay value={data.clashes.last_run_at} format="relative" />
+            </span>
+          ) : (
+            t('coordination.resolved_clashes', {
+              defaultValue: '{{n}} resolved',
+              n: data.clashes.resolved_count,
+            })
+          )
+        }
       />
       <KPICard
         accent="amber"
@@ -231,7 +295,10 @@ export function CoordinationKPICards({
             compact
           />
         }
-        secondary={data.currency}
+        secondary={t('coordination_hub.cost_across_clashes', {
+          defaultValue: 'Across {{n}} open clash(es)',
+          n: data.clashes.open_count,
+        })}
       />
       <KPICard
         accent="emerald"
@@ -239,10 +306,14 @@ export function CoordinationKPICards({
         icon={<ClipboardCheck size={18} />}
         label={t('coordination.rule_pack_status', { defaultValue: 'Rule Packs' })}
         primary={data.rule_packs.installed_count.toLocaleString()}
-        secondary={t('coordination.rules_passing', {
-          defaultValue: '{{p}} passing · {{f}} failing',
+        secondary={t('coordination_hub.rules_active_disabled', {
+          defaultValue: '{{p}} active · {{f}} disabled',
           p: data.rule_packs.last_check_pass_count,
           f: data.rule_packs.last_check_fail_count,
+        })}
+        hint={t('coordination_hub.rules_hint', {
+          defaultValue:
+            'These are configuration states (rules switched on vs off), not the result of a model evaluation run.',
         })}
       />
       <KPICard
@@ -258,5 +329,71 @@ export function CoordinationKPICards({
         })}
       />
     </div>
+
+    {/* Secondary stat strip — surfaces the BCF-activity + smart-view
+        figures the dashboard payload already carries (and the page
+        subtitle advertises) but that the four KPI cards above never
+        render. Lighter chrome than a full KPI card so it reads as
+        supporting context, not a fifth headline metric. */}
+    <div
+      data-testid="coordination-stat-strip"
+      className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
+    >
+      <StatTile
+        icon={<FileText size={15} />}
+        label={t('coordination_hub.bcf_activity', {
+          defaultValue: 'BCF activity (30d)',
+        })}
+        value={t('coordination_hub.bcf_io', {
+          defaultValue: '{{out}} exported · {{in}} imported',
+          out: data.bcf_activity.topics_exported_30d,
+          in: data.bcf_activity.topics_imported_30d,
+        })}
+        footer={
+          data.bcf_activity.last_export_at ? (
+            <>
+              {t('coordination_hub.bcf_last', { defaultValue: 'Last activity' })}{' '}
+              <DateDisplay
+                value={data.bcf_activity.last_export_at}
+                format="relative"
+              />
+            </>
+          ) : (
+            t('coordination_hub.bcf_none', {
+              defaultValue: 'No BCF topics in the last 30 days',
+            })
+          )
+        }
+        hint={t('coordination_hub.bcf_hint', {
+          defaultValue:
+            'Coarse activity signal. Import vs export is approximated from topic authoring metadata, not a dedicated direction flag.',
+        })}
+      />
+      <StatTile
+        icon={<Eye size={15} />}
+        label={t('coordination_hub.smart_views_project', {
+          defaultValue: 'Project smart views',
+        })}
+        value={data.smart_views.project_count.toLocaleString()}
+        footer={t('coordination_hub.smart_views_project_footer', {
+          defaultValue: 'Saved views scoped to this project',
+        })}
+      />
+      <StatTile
+        icon={<Eye size={15} />}
+        label={t('coordination_hub.smart_views_personal', {
+          defaultValue: 'Personal smart views',
+        })}
+        value={data.smart_views.user_count.toLocaleString()}
+        footer={t('coordination_hub.smart_views_personal_footer', {
+          defaultValue: 'Across all projects',
+        })}
+        hint={t('coordination_hub.smart_views_personal_hint', {
+          defaultValue:
+            'Personal (user-scoped) views are not tied to a project, so this is a global count across every project you can access, not a per-project figure.',
+        })}
+      />
+    </div>
+    </>
   );
 }

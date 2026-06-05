@@ -7,7 +7,7 @@ import {
   Search, Plus, Layers, ChevronDown, ChevronLeft, ChevronRight, MoreHorizontal,
   Copy, Trash2, Download, ExternalLink, FileSpreadsheet, X, Sparkles, Loader2,
   Upload, Tag, Eye, Share2, LayoutGrid, Table2, ArrowUpDown, BarChart3, AlertCircle,
-  CheckSquare, Square as SquareIcon,
+  CheckSquare, Square as SquareIcon, Library,
 } from 'lucide-react';
 import { Button, Card, Badge, EmptyState, InfoHint, SkeletonGrid } from '@/shared/ui';
 import { apiGet, apiPost, apiDelete } from '@/shared/lib/api';
@@ -438,6 +438,17 @@ export function AssembliesPage() {
           <Button
             variant="secondary"
             size="sm"
+            icon={<Library size={14} />}
+            onClick={() => navigate('/assemblies/library')}
+            title={t('assemblies.browse_library_hint', {
+              defaultValue: 'Browse the built-in canonical recipe templates and apply one as a starting point',
+            })}
+          >
+            {t('assemblies.browse_library', { defaultValue: 'Browse Library' })}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
             icon={<Upload size={14} />}
             onClick={() => setShowImportModal(true)}
           >
@@ -813,7 +824,7 @@ export function AssembliesPage() {
             query || category
               ? t('assemblies.no_results_hint', { defaultValue: 'Try adjusting your search or filters' })
               : t('assemblies.empty_hint', {
-                  defaultValue: 'Create your first assembly to build reusable cost recipes',
+                  defaultValue: 'Create your first assembly to build reusable cost recipes, or browse the built-in template library for a starting point',
                 })
           }
           action={
@@ -1402,7 +1413,11 @@ function AIGenerateModal({
       maximumFractionDigits: 2,
     }).format(n);
 
-  const confidenceColor = result
+  // The backend "confidence" is purely a function of how many catalogue rows
+  // matched the keyword search (it is a lexical ILIKE search, not a model).
+  // Surface it honestly as "match coverage" so a non-expert does not read it
+  // as AI certainty.
+  const coverageColor = result
     ? result.confidence >= 0.7
       ? 'text-emerald-600'
       : result.confidence >= 0.4
@@ -1410,12 +1425,12 @@ function AIGenerateModal({
         : 'text-red-500'
     : '';
 
-  const confidenceLabel = result
+  const coverageLabel = result
     ? result.confidence >= 0.7
-      ? t('assemblies.confidence_high', { defaultValue: 'High' })
+      ? t('assemblies.coverage_high', { defaultValue: 'Strong' })
       : result.confidence >= 0.4
-        ? t('assemblies.confidence_medium', { defaultValue: 'Medium' })
-        : t('assemblies.confidence_low', { defaultValue: 'Low' })
+        ? t('assemblies.coverage_medium', { defaultValue: 'Partial' })
+        : t('assemblies.coverage_low', { defaultValue: 'Sparse' })
     : '';
 
   return (
@@ -1435,7 +1450,7 @@ function AIGenerateModal({
                 {t('assemblies.ai_generate_title', { defaultValue: 'AI Assembly Generator' })}
               </h2>
               <p className="text-xs text-content-tertiary">
-                {t('assemblies.ai_generate_desc', { defaultValue: 'Describe what you need and AI will find matching components' })}
+                {t('assemblies.ai_generate_desc', { defaultValue: 'Describe what you need and we search the cost catalogue for matching priced components' })}
               </p>
             </div>
           </div>
@@ -1542,7 +1557,16 @@ function AIGenerateModal({
                   <p className="text-xs text-content-tertiary mt-0.5">
                     {result.source_items_count} {t('assemblies.items_found', { defaultValue: 'items found' })}
                     {' / '}
-                    {t('assemblies.confidence', { defaultValue: 'Confidence' })}: <span className={`font-semibold ${confidenceColor}`}>{confidenceLabel}</span>
+                    <span
+                      title={t('assemblies.coverage_hint', {
+                        defaultValue:
+                          'How many of the components were matched to a priced catalogue item by the keyword search. This reflects catalogue coverage, not AI certainty — always review the matched rates.',
+                      })}
+                      className="cursor-help underline decoration-dotted decoration-content-quaternary underline-offset-2"
+                    >
+                      {t('assemblies.match_coverage', { defaultValue: 'Match coverage' })}
+                    </span>
+                    : <span className={`font-semibold ${coverageColor}`}>{coverageLabel}</span>
                   </p>
                 </div>
                 <div className="text-right">

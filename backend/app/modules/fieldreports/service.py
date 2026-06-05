@@ -239,10 +239,10 @@ class FieldReportService:
         """Update field report fields. Only allowed for draft reports."""
         report = await self.get_report(report_id)
 
-        if report.status == "approved":
+        if report.status != "draft":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot edit an approved report",
+                detail=f"Cannot edit a report with status '{report.status}' — only draft reports are editable",
             )
 
         fields = data.model_dump(exclude_unset=True)
@@ -267,8 +267,18 @@ class FieldReportService:
     # ── Delete ────────────────────────────────────────────────────────────
 
     async def delete_report(self, report_id: uuid.UUID) -> None:
-        """Delete a field report."""
-        await self.get_report(report_id)  # Raises 404 if not found
+        """Delete a field report. Only draft reports can be deleted.
+
+        Once a report is submitted or approved its labour log has been
+        published downstream (cost actuals / payroll) and an audit-trail
+        entry written, so a hard delete would orphan that data.
+        """
+        report = await self.get_report(report_id)  # Raises 404 if not found
+        if report.status != "draft":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot delete a report with status '{report.status}' — only draft reports can be deleted",
+            )
         await self.repo.delete(report_id)
         logger.info("Field report deleted: %s", report_id)
 

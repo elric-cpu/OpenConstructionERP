@@ -53,6 +53,8 @@ from app.modules.crm.schemas import (
 )
 from app.modules.crm.service import (
     CrmService,
+    _group_money_by_currency,
+    _is_mixed_currency,
     compute_average_sales_cycle,
     compute_lost_reasons_breakdown,
     compute_pipeline_metrics,
@@ -686,6 +688,9 @@ async def pipeline_metrics(
         total_value=metrics["total_value"],
         by_stage=metrics["by_stage"],
         win_rate_30d=metrics["win_rate_30d"],
+        by_currency=metrics["by_currency"],
+        weighted_by_currency=metrics["weighted_by_currency"],
+        mixed_currency=metrics["mixed_currency"],
     )
 
 
@@ -699,32 +704,34 @@ async def win_loss_analytics(
     opps_tuple = await service.opportunity_repo.list_all(limit=10000)
     opps = opps_tuple[0]
 
-    won_value = Decimal(0)
-    lost_value = Decimal(0)
-    won_count = 0
-    lost_count = 0
-    abandoned_count = 0
-    for o in opps:
-        if o.status == "won":
-            won_count += 1
-            won_value += Decimal(o.estimated_value or 0)
-        elif o.status == "lost":
-            lost_count += 1
-            lost_value += Decimal(o.estimated_value or 0)
-        elif o.status == "abandoned":
-            abandoned_count += 1
+    won_opps = [o for o in opps if o.status == "won"]
+    lost_opps = [o for o in opps if o.status == "lost"]
+    abandoned_count = sum(1 for o in opps if o.status == "abandoned")
+
+    won_value = sum((Decimal(o.estimated_value or 0) for o in won_opps), Decimal(0))
+    lost_value = sum((Decimal(o.estimated_value or 0) for o in lost_opps), Decimal(0))
+
+    # Currency bug fix: won_value / lost_value blend ISO currencies across
+    # closed deals. Group per currency (no FX) so the UI never reads a blended
+    # total as one currency. Mirrors compute_pipeline_metrics.
+    won_value_by_currency = _group_money_by_currency(won_opps)
+    lost_value_by_currency = _group_money_by_currency(lost_opps)
+    mixed_currency = _is_mixed_currency(won_value_by_currency + lost_value_by_currency)
 
     return WinLossAnalyticsResponse(
         period_start=period_start,
         period_end=period_end,
-        won_count=won_count,
-        lost_count=lost_count,
+        won_count=len(won_opps),
+        lost_count=len(lost_opps),
         abandoned_count=abandoned_count,
         win_rate=compute_win_rate(opps, period_start, period_end),
         average_sales_cycle_days=compute_average_sales_cycle(opps),
         lost_reasons_breakdown=compute_lost_reasons_breakdown(opps, period_start, period_end),
         won_value=won_value,
         lost_value=lost_value,
+        won_value_by_currency=won_value_by_currency,
+        lost_value_by_currency=lost_value_by_currency,
+        mixed_currency=mixed_currency,
     )
 
 

@@ -70,11 +70,14 @@ async def _require_project_access(session: AsyncSession, project_id: uuid.UUID, 
     dependencies=[Depends(RequirePermission("file_approvals.read"))],
 )
 async def list_stamp_templates(
+    user_id: CurrentUserId,
     session: SessionDep,
     service: ApprovalService = Depends(_get_service),
     project_id: uuid.UUID | None = Query(default=None),
 ) -> list[StampTemplateResponse]:
     """List active stamp templates (globals + ``project_id`` scope)."""
+    if project_id is not None:
+        await _require_project_access(session, project_id, user_id)
     rows = await service.list_templates(project_id)
     return [StampTemplateResponse.model_validate(r) for r in rows]
 

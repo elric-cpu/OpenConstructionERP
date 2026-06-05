@@ -484,6 +484,9 @@ async def risk_similar(
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Risk not found")
 
+    if row.project_id is not None:
+        await verify_project_access(row.project_id, str(_user_id), session)
+
     project_id = str(row.project_id) if row.project_id is not None else None
     hits = await find_similar(
         risk_vector_adapter,

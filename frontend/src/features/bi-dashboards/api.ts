@@ -4,7 +4,14 @@
  * Backed by /api/v1/bi-dashboards/ — see backend/app/modules/bi_dashboards/router.py
  */
 
-import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/lib/api';
+import {
+  apiGet,
+  apiPost,
+  apiPatch,
+  apiDelete,
+  getAuthToken,
+  triggerDownload,
+} from '@/shared/lib/api';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -359,6 +366,29 @@ export function evaluateDashboard(
   );
 }
 
+/* ── Widgets ──────────────────────────────────────────────────────────── */
+
+export interface CreateWidgetPayload {
+  dashboard_id: string;
+  widget_type?: WidgetType;
+  kpi_code?: string | null;
+  config_json?: Record<string, unknown>;
+  position_x?: number;
+  position_y?: number;
+  width?: number;
+  height?: number;
+  order_seq?: number;
+  drill_path?: DrillPath | null;
+}
+
+export function createWidget(data: CreateWidgetPayload): Promise<WidgetRead> {
+  return apiPost<WidgetRead>(`${BASE}/widgets`, data);
+}
+
+export function deleteWidget(id: string): Promise<void> {
+  return apiDelete(`${BASE}/widgets/${id}`);
+}
+
 /* ── Reports ──────────────────────────────────────────────────────────── */
 
 export function listReports(): Promise<ReportDefinition[]> {
@@ -374,6 +404,10 @@ export function runReport(id: string): Promise<ReportRunResponse> {
 }
 
 /* ── Schedules ────────────────────────────────────────────────────────── */
+
+export function listSchedules(): Promise<ReportSchedule[]> {
+  return apiGet<ReportSchedule[]>(`${BASE}/report-schedules`);
+}
 
 export function createSchedule(data: {
   report_definition_id: string;
@@ -411,6 +445,11 @@ export function toggleAlert(id: string, enabled: boolean): Promise<AlertRule> {
     `${BASE}/alerts/${id}/toggle?enabled=${enabled ? 'true' : 'false'}`,
     {},
   );
+}
+
+/** Run every enabled alert rule immediately. Returns the count that fired. */
+export function evaluateAlertsNow(): Promise<{ fired: number }> {
+  return apiPost<{ fired: number }>(`${BASE}/alerts/evaluate-now`, {});
 }
 
 /* ── Drill-down ───────────────────────────────────────────────────────── */
@@ -484,4 +523,52 @@ export function widgetExportUrl(
   format: 'csv' | 'svg' = 'csv',
 ): string {
   return `/api/v1/bi-dashboards/widgets/${widgetId}/export?format=${format}`;
+}
+
+/**
+ * Fetch an authenticated file path and hand the resulting blob to the
+ * browser's download flow. The BI download/export endpoints are gated by
+ * a JWT Bearer header, so a bare ``<a href>`` would 401 — we must fetch
+ * with the auth header and stream the body into a blob. ``fallbackName``
+ * is used when the server doesn't send a Content-Disposition filename.
+ */
+async function downloadAuthedFile(
+  url: string,
+  fallbackName: string,
+): Promise<void> {
+  const token = getAuthToken();
+  const res = await fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  if (!res.ok) {
+    throw new Error(`Download failed (${res.status})`);
+  }
+  // Prefer the server-provided filename when present.
+  let filename = fallbackName;
+  const disp = res.headers.get('Content-Disposition');
+  if (disp) {
+    const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disp);
+    if (match?.[1]) filename = decodeURIComponent(match[1]);
+  }
+  const blob = await res.blob();
+  triggerDownload(blob, filename);
+}
+
+/** Download the rendered report file for a completed run. */
+export function downloadReportRun(
+  runId: string,
+  fallbackName = 'report',
+): Promise<void> {
+  return downloadAuthedFile(reportRunDownloadUrl(runId), fallbackName);
+}
+
+/** Download a widget's data/chart export (CSV or SVG). */
+export function downloadWidgetExport(
+  widgetId: string,
+  format: 'csv' | 'svg' = 'csv',
+): Promise<void> {
+  return downloadAuthedFile(
+    widgetExportUrl(widgetId, format),
+    `widget-${widgetId}.${format}`,
+  );
 }
