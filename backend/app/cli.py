@@ -204,6 +204,10 @@ def _setup_env(data_dir: Path, host: str, port: int) -> None:
 
     if embedded_pg.is_requested():
         if embedded_pg.boot(data_dir):
+            # The embedded cluster is up; the schema bring-up (create_all +
+            # alembic) runs next, during app startup. Mark it so the desktop
+            # launcher can show a "preparing database" step.
+            embedded_pg.emit_stage("migrate", "start", "Preparing the database")
             # Transparent one-time SQLite -> PostgreSQL migration: if the box has
             # a legacy openestimate.db and the embedded cluster is still empty,
             # move the data over before the server starts. No-op otherwise.
@@ -627,6 +631,17 @@ def cmd_serve(args: argparse.Namespace) -> None:
                 pass
 
         threading.Thread(target=_open_browser, daemon=True).start()
+
+    # Emit a boot-progress marker the desktop launcher parses to advance its
+    # visible startup checklist. The embedded-PG and (where applicable) schema
+    # stages already emitted theirs; this one means "the HTTP server is coming
+    # up", after which the launcher's own /api/health probe drives the rest.
+    try:
+        from app.core.embedded_pg import emit_stage
+
+        emit_stage("server", "start", "Starting the application server")
+    except Exception:  # noqa: BLE001
+        pass
 
     try:
         import uvicorn

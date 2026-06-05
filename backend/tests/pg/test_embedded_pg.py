@@ -12,9 +12,73 @@ import pytest
 
 from app.core import embedded_pg
 
-pytestmark = pytest.mark.asyncio
+
+def test_emit_stage_writes_marker(capsys) -> None:
+    """emit_stage prints a stable, parseable STAGE marker on stdout."""
+    embedded_pg.emit_stage("pg", "start", "Starting embedded PostgreSQL")
+    out = capsys.readouterr().out
+    assert "STAGE:pg:start:Starting embedded PostgreSQL" in out
+
+    embedded_pg.emit_stage("server", "done")
+    out = capsys.readouterr().out
+    assert "STAGE:server:done" in out
 
 
+def test_emit_stage_strips_newlines(capsys) -> None:
+    embedded_pg.emit_stage("migrate", "progress", "line one\nline two")
+    out = capsys.readouterr().out
+    # One marker, no embedded newline in the detail.
+    lines = [ln for ln in out.splitlines() if ln.startswith("STAGE:")]
+    assert len(lines) == 1
+    assert "line one line two" in lines[0]
+
+
+def test_int_env(monkeypatch) -> None:
+    monkeypatch.delenv("OE_PG_BOOT_TIMEOUT", raising=False)
+    assert embedded_pg._int_env("OE_PG_BOOT_TIMEOUT", 600) == 600
+    monkeypatch.setenv("OE_PG_BOOT_TIMEOUT", "120")
+    assert embedded_pg._int_env("OE_PG_BOOT_TIMEOUT", 600) == 120
+    monkeypatch.setenv("OE_PG_BOOT_TIMEOUT", "not-a-number")
+    assert embedded_pg._int_env("OE_PG_BOOT_TIMEOUT", 600) == 600
+    monkeypatch.setenv("OE_PG_BOOT_TIMEOUT", "0")
+    assert embedded_pg._int_env("OE_PG_BOOT_TIMEOUT", 600) == 600
+
+
+def test_port_from_pidfile(tmp_path) -> None:
+    pgdata = tmp_path / "pgdata"
+    pgdata.mkdir()
+    # A recovering postmaster.pid: first four lines present (pid, dir, start, port).
+    (pgdata / "postmaster.pid").write_text("12345\n" + str(pgdata) + "\n1700000000\n54999\n")
+    assert embedded_pg._port_from_pidfile(pgdata) == 54999
+
+    # Too short to know the port yet (early recovery).
+    (pgdata / "postmaster.pid").write_text("12345\n" + str(pgdata) + "\n")
+    assert embedded_pg._port_from_pidfile(pgdata) is None
+
+
+def test_clear_stale_pidfile_removes_dead(tmp_path, monkeypatch) -> None:
+    pgdata = tmp_path / "pgdata"
+    pgdata.mkdir()
+    pidfile = pgdata / "postmaster.pid"
+    pidfile.write_text("999999\n" + str(pgdata) + "\n1700000000\n54999\n")
+    # Force the liveness check to report the pid as dead.
+    monkeypatch.setattr(embedded_pg, "_pid_alive", lambda _pid: False)
+    embedded_pg._clear_stale_pidfile(pgdata.resolve())
+    assert not pidfile.exists()
+
+
+def test_clear_stale_pidfile_keeps_live(tmp_path, monkeypatch) -> None:
+    pgdata = tmp_path / "pgdata"
+    pgdata.mkdir()
+    pidfile = pgdata / "postmaster.pid"
+    pidfile.write_text("4321\n" + str(pgdata) + "\n1700000000\n54999\n")
+    # A live postmaster's pidfile must never be deleted.
+    monkeypatch.setattr(embedded_pg, "_pid_alive", lambda _pid: True)
+    embedded_pg._clear_stale_pidfile(pgdata.resolve())
+    assert pidfile.exists()
+
+
+@pytest.mark.asyncio
 async def test_boot_sets_urls_connects_and_shuts_down(tmp_path, monkeypatch) -> None:
     # Preserve the URLs the session fixture set; boot() writes os.environ directly.
     saved_url = os.environ.get("DATABASE_URL")

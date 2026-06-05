@@ -11,6 +11,8 @@
       --text: #1d1d1f;
       --muted: #6e6e73;
       --error: #d70015;
+      --done: #1a8f3c;
+      --line: #e3e8f0;
     }
 
     * {
@@ -41,7 +43,7 @@
 
     .stage {
       width: 100%;
-      max-width: 520px;
+      max-width: 560px;
       padding: 32px 28px;
       display: flex;
       flex-direction: column;
@@ -50,8 +52,8 @@
     }
 
     .logo {
-      width: 96px;
-      height: 96px;
+      width: 84px;
+      height: 84px;
       display: block;
       filter: drop-shadow(0 10px 28px rgba(0, 102, 255, 0.22));
       animation: float 4.5s ease-in-out infinite;
@@ -63,36 +65,21 @@
     }
 
     .product {
-      margin-top: 26px;
-      font-size: 30px;
+      margin-top: 22px;
+      font-size: 28px;
       font-weight: 600;
       letter-spacing: -0.02em;
     }
 
     .subtitle {
       margin-top: 6px;
-      font-size: 15px;
+      font-size: 14px;
       color: var(--muted);
       font-weight: 400;
     }
 
-    .spinner {
-      margin-top: 34px;
-      width: 38px;
-      height: 38px;
-      border-radius: 50%;
-      border: 3px solid rgba(0, 102, 255, 0.15);
-      border-top-color: var(--brand-blue);
-      border-right-color: var(--brand-violet);
-      animation: spin 0.9s linear infinite;
-    }
-
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-
     .status {
-      margin-top: 26px;
+      margin-top: 22px;
       font-size: 16px;
       font-weight: 500;
       color: var(--text);
@@ -100,21 +87,120 @@
       transition: color 0.2s ease;
     }
 
-    .status.error {
-      color: var(--error);
+    .status.error { color: var(--error); }
+
+    /* Boot checklist */
+    .checklist {
+      margin-top: 22px;
+      width: 100%;
+      max-width: 420px;
+      text-align: left;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
     }
+
+    .step {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      font-size: 14.5px;
+      color: var(--muted);
+      transition: background 0.2s ease, color 0.2s ease;
+    }
+
+    .step.active {
+      color: var(--text);
+      background: rgba(0, 102, 255, 0.06);
+      font-weight: 500;
+    }
+
+    .step.done { color: var(--text); }
+    .step.failed { color: var(--error); }
+
+    .step .icon {
+      flex: 0 0 auto;
+      width: 18px;
+      height: 18px;
+      margin-top: 1px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* pending dot */
+    .step .icon .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--line);
+    }
+
+    /* active spinner */
+    .step.active .icon .dot {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: transparent;
+      border: 2px solid rgba(0, 102, 255, 0.2);
+      border-top-color: var(--brand-blue);
+      border-right-color: var(--brand-violet);
+      animation: spin 0.9s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .step .label-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      min-width: 0;
+    }
+
+    .step .detail {
+      font-size: 12.5px;
+      font-weight: 400;
+      color: var(--muted);
+      word-break: break-word;
+    }
+
+    .step.failed .detail { color: var(--error); }
 
     .hint {
-      margin-top: 10px;
-      font-size: 13.5px;
+      margin-top: 18px;
+      font-size: 13px;
       line-height: 1.5;
       color: var(--muted);
-      max-width: 420px;
+      max-width: 460px;
     }
 
-    @media (max-width: 360px) {
-      .product { font-size: 25px; }
-      .logo { width: 80px; height: 80px; }
+    .logpath {
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--muted);
+      word-break: break-all;
+    }
+
+    .copybtn {
+      margin-top: 12px;
+      display: none;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--text);
+      font: inherit;
+      font-size: 13px;
+      padding: 7px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    .copybtn:hover { background: #f4f7fc; }
+
+    @media (max-width: 380px) {
+      .product { font-size: 23px; }
+      .logo { width: 70px; height: 70px; }
     }
   </style>
 </head>
@@ -144,29 +230,157 @@
     <h1 class="product">OpenConstructionERP</h1>
     <p class="subtitle">by DataDrivenConstruction</p>
 
-    <div class="spinner" id="spinner" aria-hidden="true"></div>
-
     <p class="status" id="status">Starting the application</p>
+
+    <div class="checklist" id="checklist" aria-live="polite"></div>
+
     <p class="hint" id="hint">First run sets up your local database. This can take a minute or two, please wait.</p>
+    <p class="logpath" id="logpath"></p>
+    <button class="copybtn" id="copybtn" type="button">Copy details</button>
   </main>
 
   <script>
+    // Ordered boot checklist. Each entry: id -> label. The launcher drives state
+    // transitions by calling bootStage(id, status, detail). The same ids are
+    // emitted by the backend as "STAGE:<id>:<status>:<detail>" markers.
+    var STEPS = [
+      { id: 'launcher', label: 'Starting launcher' },
+      { id: 'sidecar',  label: 'Locating the backend' },
+      { id: 'pg',       label: 'Starting the local database' },
+      { id: 'migrate',  label: 'Preparing the database' },
+      { id: 'server',   label: 'Starting the application server' },
+      { id: 'open',     label: 'Opening the app' }
+    ];
+
+    var lastDetail = {};
+
+    function renderChecklist() {
+      var box = document.getElementById('checklist');
+      if (!box) { return; }
+      box.innerHTML = '';
+      for (var i = 0; i < STEPS.length; i++) {
+        var s = STEPS[i];
+        var row = document.createElement('div');
+        row.className = 'step';
+        row.id = 'step-' + s.id;
+        row.innerHTML =
+          '<span class="icon"><span class="dot"></span></span>' +
+          '<span class="label-wrap"><span class="label">' + s.label + '</span>' +
+          '<span class="detail"></span></span>';
+        box.appendChild(row);
+      }
+    }
+
+    function setIcon(row, status) {
+      var icon = row.querySelector('.icon');
+      if (!icon) { return; }
+      if (status === 'done') {
+        icon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none">' +
+          '<path d="M3 8.5l3.2 3.2L13 5" stroke="#1a8f3c" stroke-width="2.2" ' +
+          'stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      } else if (status === 'failed') {
+        icon.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none">' +
+          '<path d="M4 4l8 8M12 4l-8 8" stroke="#d70015" stroke-width="2.2" ' +
+          'stroke-linecap="round"/></svg>';
+      } else {
+        icon.innerHTML = '<span class="dot"></span>';
+      }
+    }
+
+    // status: 'pending' | 'active' | 'done' | 'failed'
+    function bootStage(id, status, detail) {
+      var row = document.getElementById('step-' + id);
+      if (!row) { return; }
+
+      // Advancing a step to active/done implicitly completes earlier steps that
+      // are still pending, so the checklist always reads top-to-bottom cleanly.
+      if (status === 'active' || status === 'done') {
+        var idx = -1;
+        for (var i = 0; i < STEPS.length; i++) { if (STEPS[i].id === id) { idx = i; break; } }
+        for (var j = 0; j < idx; j++) {
+          var prev = document.getElementById('step-' + STEPS[j].id);
+          if (prev && !prev.classList.contains('done') && !prev.classList.contains('failed')) {
+            prev.className = 'step done';
+            setIcon(prev, 'done');
+          }
+        }
+      }
+
+      row.className = 'step ' + (status === 'active' ? 'active'
+        : status === 'done' ? 'done'
+        : status === 'failed' ? 'failed' : '');
+      setIcon(row, status);
+
+      var detailEl = row.querySelector('.detail');
+      if (detailEl) {
+        if (detail) { lastDetail[id] = detail; detailEl.textContent = detail; }
+        else { detailEl.textContent = ''; }
+      }
+    }
+
     function setStatus(t) {
       var el = document.getElementById('status');
-      if (el) { el.textContent = t; }
+      if (el) { el.classList.remove('error'); el.textContent = t; }
+    }
+
+    // setLogPath lets the launcher tell the splash exactly where the log lives,
+    // so a failure message can point the user at the right file.
+    var LOG_PATH = '';
+    function setLogPath(p) {
+      LOG_PATH = p || '';
+      var el = document.getElementById('logpath');
+      if (el && LOG_PATH) { el.textContent = 'Log file: ' + LOG_PATH; }
     }
 
     function setError(t) {
       var status = document.getElementById('status');
       var hint = document.getElementById('hint');
-      var spinner = document.getElementById('spinner');
       if (status) {
         status.classList.add('error');
         status.textContent = 'Something went wrong';
       }
-      if (hint) { hint.textContent = t; }
-      if (spinner) { spinner.style.display = 'none'; }
+      if (hint) {
+        hint.textContent = (t || 'Startup failed.') +
+          (LOG_PATH ? '' : ' A log was saved under your home folder as .openestimate/desktop-launcher.log.');
+      }
+      var btn = document.getElementById('copybtn');
+      if (btn) { btn.style.display = 'inline-block'; }
     }
+
+    // failStage marks one step as failed and surfaces the error in the hint.
+    function failStage(id, detail) {
+      bootStage(id, 'failed', detail || '');
+      setError(detail || 'Startup failed.');
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+      renderChecklist();
+      bootStage('launcher', 'done', '');
+      bootStage('sidecar', 'active', '');
+
+      var btn = document.getElementById('copybtn');
+      if (btn) {
+        btn.addEventListener('click', function () {
+          var parts = ['OpenConstructionERP startup diagnostics'];
+          if (LOG_PATH) { parts.push('Log file: ' + LOG_PATH); }
+          for (var i = 0; i < STEPS.length; i++) {
+            var id = STEPS[i].id;
+            var row = document.getElementById('step-' + id);
+            var st = row ? (row.className.replace('step', '').trim() || 'pending') : 'pending';
+            var d = lastDetail[id] ? (' - ' + lastDetail[id]) : '';
+            parts.push(STEPS[i].label + ': ' + (st || 'pending') + d);
+          }
+          var text = parts.join('\n');
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(text);
+              btn.textContent = 'Copied';
+              setTimeout(function () { btn.textContent = 'Copy details'; }, 1500);
+            }
+          } catch (e) { /* clipboard not available; ignore */ }
+        });
+      }
+    });
   </script>
 </body>
 </html>

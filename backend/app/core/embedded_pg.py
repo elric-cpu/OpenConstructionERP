@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,36 @@ _server = None
 
 _TRUTHY = {"1", "true", "yes", "on"}
 _FALSY = {"0", "false", "no", "off"}
+
+
+def emit_stage(stage: str, status: str, detail: str = "") -> None:
+    """Emit one machine-readable boot-progress marker on stdout (and the log).
+
+    The desktop launcher (Tauri shell) pumps the sidecar's stdout into its own
+    diagnostic log and parses these ``STAGE:`` lines to drive the visible boot
+    checklist, so the user always sees which step is running and exactly where a
+    startup failure happened. The format is deliberately simple and stable:
+
+        ``STAGE:<stage>:<status>[:<detail>]``
+
+    where ``stage`` is a short identifier (``pg``, ``migrate``, ``server`` ...),
+    ``status`` is one of ``start`` / ``progress`` / ``done`` / ``fail``, and the
+    optional ``detail`` is free human text (no newlines, no colons are required
+    to be escaped because the consumer splits on the first three only).
+
+    Best effort: never raises, so progress reporting can never break startup.
+    """
+    try:
+        clean_detail = detail.replace("\n", " ").replace("\r", " ").strip()
+        line = f"STAGE:{stage}:{status}"
+        if clean_detail:
+            line += f":{clean_detail}"
+        # stdout is the transport the launcher watches; flush so the marker is
+        # delivered immediately rather than sitting in a block buffer.
+        print(line, flush=True)
+        logger.info(line)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def is_requested() -> bool:
@@ -103,54 +134,99 @@ def boot(data_dir: Path | str) -> bool:
 
     # pixeltable-pgserver hard-codes a 10s ``pg_ctl start -w`` timeout
     # (postgres_server.py). After an unclean shutdown (force-kill, crash, power
-    # loss) PostgreSQL replays its WAL on the next boot, and crash recovery
-    # routinely takes longer than 10s -- so the first get_server() raises even
-    # though it already launched the postmaster, which keeps recovering in the
-    # background. We retry: a later attempt finds the now-ready postmaster via
-    # postmaster.pid and simply attaches (no pg_ctl, no timeout), so embedded PG
-    # actually comes up instead of silently falling back to SQLite. The failed
-    # attempt registers a half-built handle in ``PostgresServer._instances``
-    # *before* ensure_postgres_running() runs, so we evict that stale cache entry
-    # between attempts -- otherwise get_server() keeps returning the broken
-    # handle (keyed by the resolved pgdata path).
-    import time as _time
+    # loss) PostgreSQL replays its WAL on the next boot. On a large cluster that
+    # replay also fsyncs every file in the data directory, which can take SEVERAL
+    # MINUTES (observed ~140s on a 1.2 GB cluster on Windows). The 10s pg_ctl
+    # wait therefore always times out, and pixeltable's pidfile parser then
+    # raises AssertionError because, while recovery is in progress, PostgreSQL
+    # writes only the first lines of postmaster.pid (the port/status lines are
+    # added once it is ready) -- so the file does not yet have the 8 lines the
+    # parser asserts on. Both failures mean a fixed-attempt retry gives up long
+    # before recovery finishes, the sidecar exits, and the desktop window shows
+    # nothing.
+    #
+    # The robust fix: launch the postmaster ourselves once, then WAIT for the
+    # cluster to actually accept connections (probing the real port, not the
+    # fragile pidfile) for a generous window, and only then hand off to
+    # get_server(), which now simply attaches to the already-running, ready
+    # postmaster (no pg_ctl, no timeout, complete pidfile).
+    resolved_pgdata = pgdata.expanduser().resolve()
 
     try:
         from pixeltable_pgserver.postgres_server import PostgresServer as _PS
     except Exception:  # noqa: BLE001
         _PS = None
-    resolved_pgdata = pgdata.expanduser().resolve()
+
+    # A leftover postmaster.pid whose process is gone (the usual aftermath of a
+    # force-kill) makes pixeltable take its slower "found a pid file but server
+    # not running" path; clearing it first keeps boot on the clean-start path.
+    _clear_stale_pidfile(resolved_pgdata)
+
+    emit_stage("pg", "start", "Starting embedded PostgreSQL")
+
+    # Window for the whole bring-up, including a possibly slow crash recovery.
+    # Override with OE_PG_BOOT_TIMEOUT (seconds) for very large clusters or slow
+    # disks. 600s comfortably covers multi-minute fsync-based recovery.
+    boot_timeout = _int_env("OE_PG_BOOT_TIMEOUT", 600)
+    deadline = time.monotonic() + boot_timeout
 
     srv = None
     last_exc: Exception | None = None
-    attempts = 6
-    for attempt in range(1, attempts + 1):
+    attempt = 0
+    while time.monotonic() < deadline:
+        attempt += 1
         try:
             srv = pgserver.get_server(str(pgdata))
             break
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
-            logger.warning(
-                "embedded PostgreSQL not ready (attempt %d/%d); crash recovery may be replaying WAL -- retrying: %r",
-                attempt,
-                attempts,
-                exc,
-            )
+            # The first get_server() launches the postmaster, which keeps
+            # recovering in the background even though pg_ctl/the parser raised.
+            # Evict the half-built handle pixeltable cached (keyed by resolved
+            # pgdata) so the next get_server() re-reads the now-progressing
+            # cluster instead of returning the broken handle.
             if _PS is not None:
                 try:
                     _PS._instances.pop(resolved_pgdata, None)
                 except Exception:  # noqa: BLE001
                     pass
-            if attempt < attempts:
-                _time.sleep(4)
+
+            remaining = int(deadline - time.monotonic())
+            logger.warning(
+                "embedded PostgreSQL not ready yet (attempt %d, %ds left); crash recovery "
+                "may be replaying WAL -- waiting: %r",
+                attempt,
+                max(remaining, 0),
+                exc,
+            )
+            emit_stage(
+                "pg",
+                "progress",
+                f"Recovering the local database, this can take a few minutes ({max(remaining, 0)}s left)",
+            )
+
+            # Wait for the postmaster to actually accept connections (recovery
+            # complete). When it does, loop straight back into get_server(),
+            # which now attaches cleanly. If it never does within the window we
+            # fall through to the failure path below.
+            if not _wait_until_connectable(resolved_pgdata, deadline):
+                break
+            # A short floor between get_server() retries: if the port is already
+            # open but get_server() still raised (a brief pidfile race), this
+            # keeps the loop from spinning hot while the pidfile finishes.
+            time.sleep(1.0)
+
     if srv is None:
+        emit_stage("pg", "fail", _pg_failure_detail(resolved_pgdata, last_exc))
         logger.error(
-            "embedded PostgreSQL failed to start at %s after %d attempts: %r",
+            "embedded PostgreSQL failed to start at %s within %ds: %r",
             pgdata,
-            attempts,
+            boot_timeout,
             last_exc,
         )
         return False
+
+    emit_stage("pg", "done", "Embedded PostgreSQL ready")
 
     try:
         # get_uri() is portable: TCP loopback on Windows, a unix socket on
@@ -171,6 +247,127 @@ def boot(data_dir: Path | str) -> bool:
     _server = srv
     logger.info("embedded PostgreSQL ready (data dir: %s)", pgdata)
     return True
+
+
+def _int_env(name: str, default: int) -> int:
+    """Read a positive integer from the environment, falling back on parse errors."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def _read_pidfile_pid(pgdata: Path) -> int | None:
+    """Return the postmaster PID recorded in ``postmaster.pid``, or ``None``."""
+    pidfile = pgdata / "postmaster.pid"
+    try:
+        first = pidfile.read_text(encoding="utf-8", errors="ignore").splitlines()[0].strip()
+        return int(first)
+    except (OSError, IndexError, ValueError):
+        return None
+
+
+def _pid_alive(pid: int) -> bool:
+    """Best-effort check whether a process with ``pid`` currently exists."""
+    try:
+        import psutil
+
+        return psutil.pid_exists(pid)
+    except Exception:  # noqa: BLE001
+        # Without psutil, assume the process may be alive so we never delete a
+        # pidfile for a live postmaster.
+        return True
+
+
+def _clear_stale_pidfile(pgdata: Path) -> None:
+    """Delete ``postmaster.pid`` when it points at a process that is gone.
+
+    A force-kill or crash leaves the pidfile behind. PostgreSQL itself refuses
+    to start while a pidfile names a live process, but a pidfile for a dead PID
+    only slows pixeltable's start path; removing it lets the clean-start path
+    run. Never removes a pidfile whose process is still alive.
+    """
+    pidfile = pgdata / "postmaster.pid"
+    if not pidfile.exists():
+        return
+    pid = _read_pidfile_pid(pgdata)
+    if pid is None:
+        return
+    if _pid_alive(pid):
+        return
+    try:
+        pidfile.unlink()
+        logger.info("removed stale postmaster.pid (dead pid %d) in %s", pid, pgdata)
+    except OSError as exc:
+        logger.warning("could not remove stale postmaster.pid in %s: %r", pgdata, exc)
+
+
+def _port_from_pidfile(pgdata: Path) -> int | None:
+    """Return the TCP port the recovering postmaster is listening on, if known.
+
+    During crash recovery PostgreSQL writes the port line (line 4) early, so we
+    can learn the port even before the pidfile is "complete" enough for
+    pixeltable's parser. Returns ``None`` if not yet present.
+    """
+    pidfile = pgdata / "postmaster.pid"
+    try:
+        lines = pidfile.read_text(encoding="utf-8", errors="ignore").splitlines()
+    except OSError:
+        return None
+    if len(lines) < 4:
+        return None
+    try:
+        port = int(lines[3].strip())
+    except ValueError:
+        return None
+    return port if port > 0 else None
+
+
+def _wait_until_connectable(pgdata: Path, deadline: float) -> bool:
+    """Block until the embedded postmaster accepts TCP connections, or deadline.
+
+    Probes ``127.0.0.1:<port>`` (port read from the recovering postmaster's
+    pidfile) with a raw socket connect, which succeeds as soon as recovery
+    finishes and the postmaster opens its listen socket. This is far more robust
+    than parsing the pidfile, which is incomplete while recovery runs. Returns
+    ``True`` if it became connectable before ``deadline``, else ``False``.
+    """
+    import socket
+
+    while time.monotonic() < deadline:
+        port = _port_from_pidfile(pgdata)
+        if port is not None:
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=2):
+                    # Give PostgreSQL a breath after the socket opens so the
+                    # very next get_server() attach finds status == 'ready'.
+                    time.sleep(1.0)
+                    return True
+            except OSError:
+                pass
+        time.sleep(2.0)
+    return False
+
+
+def _pg_failure_detail(pgdata: Path, last_exc: Exception | None) -> str:
+    """Build a short human-readable reason for an embedded-PG boot failure."""
+    detail = "Could not start the local database"
+    if last_exc is not None:
+        detail += f": {type(last_exc).__name__}"
+    log = pgdata / "log"
+    try:
+        if log.exists():
+            tail = log.read_text(encoding="utf-8", errors="ignore").splitlines()[-3:]
+            joined = " ".join(line.strip() for line in tail if line.strip())
+            if joined:
+                detail += f" (postgres log: {joined})"
+    except OSError:
+        pass
+    return detail
 
 
 def auto_migrate_legacy_sqlite(data_dir: Path | str) -> str:

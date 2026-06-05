@@ -85,26 +85,93 @@ fn js_escape(s: &str) -> String {
         .replace('\r', " ")
 }
 
-/// Show a fatal error on the splash screen without ever panicking.
+/// Run a snippet of JavaScript in the splash window, retried a few times.
 ///
 /// setup() may run before the splash page has finished loading its inline
-/// script, so we retry the eval a few times over ~2 seconds. setError() is
-/// idempotent (it just sets text), so repeated calls are harmless.
-fn report_fatal(handle: &tauri::AppHandle, message: &str) {
+/// script, so we retry the eval over ~2 seconds. The splash boot functions are
+/// idempotent (they just set DOM state), so repeated calls are harmless.
+fn eval_in_splash(handle: &tauri::AppHandle, js: String) {
     let handle = handle.clone();
-    let msg = js_escape(message);
     tauri::async_runtime::spawn(async move {
         for _ in 0..8 {
             if let Some(window) = handle.get_webview_window("main") {
                 let _ = window.show();
-                let _ = window.set_focus();
-                let _ = window.eval(&format!(
-                    "(function(){{if(typeof setError==='function'){{setError('{msg}');}}}})()"
-                ));
+                let _ = window.eval(&js);
             }
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
         }
     });
+}
+
+/// Tell the splash where the diagnostic log lives so a failure message can point
+/// the user straight at it.
+fn report_log_path(handle: &tauri::AppHandle) {
+    if let Some(path) = log_path() {
+        let p = js_escape(&path.to_string_lossy());
+        eval_in_splash(
+            handle,
+            format!("(function(){{if(typeof setLogPath==='function'){{setLogPath('{p}');}}}})()"),
+        );
+    }
+}
+
+/// Advance one step of the visible boot checklist on the splash screen.
+///
+/// `status` is one of "pending" | "active" | "done" | "failed". Never panics;
+/// if the splash is not ready yet the retrying eval picks it up shortly.
+fn boot_stage(handle: &tauri::AppHandle, id: &str, status: &str, detail: &str) {
+    let id = js_escape(id);
+    let status = js_escape(status);
+    let detail = js_escape(detail);
+    eval_in_splash(
+        handle,
+        format!(
+            "(function(){{if(typeof bootStage==='function'){{bootStage('{id}','{status}','{detail}');}}}})()"
+        ),
+    );
+}
+
+/// Show a fatal error on the splash screen and mark a checklist step as failed,
+/// without ever panicking. Always pairs the message with the log path so the
+/// user can find the full diagnostics.
+fn report_fatal_stage(handle: &tauri::AppHandle, stage: &str, message: &str) {
+    log_line(&format!("FATAL [{stage}]: {message}"));
+    report_log_path(handle);
+    let stage_js = js_escape(stage);
+    let msg = js_escape(message);
+    eval_in_splash(
+        handle,
+        format!(
+            "(function(){{\
+                if(typeof failStage==='function'){{failStage('{stage_js}','{msg}');}}\
+                else if(typeof setError==='function'){{setError('{msg}');}}\
+            }})()"
+        ),
+    );
+}
+
+/// Parse a backend ``STAGE:<id>:<status>[:<detail>]`` marker line.
+///
+/// Returns ``Some((id, splash_status, detail))`` where splash_status is mapped
+/// to the values the splash checklist understands. Returns ``None`` for lines
+/// that are not stage markers.
+fn parse_stage_marker(line: &str) -> Option<(String, String, String)> {
+    let rest = line.trim().strip_prefix("STAGE:")?;
+    let mut parts = rest.splitn(3, ':');
+    let id = parts.next()?.trim().to_string();
+    let raw_status = parts.next()?.trim().to_string();
+    let detail = parts.next().unwrap_or("").trim().to_string();
+    if id.is_empty() || raw_status.is_empty() {
+        return None;
+    }
+    let splash_status = match raw_status.as_str() {
+        "start" | "progress" => "active",
+        "done" => "done",
+        "fail" => "failed",
+        _ => "active",
+    }
+    .to_string();
+    Some((id, splash_status, detail))
 }
 
 /// Find an available port for the backend server, with a fixed fallback so a
@@ -144,7 +211,19 @@ async fn wait_for_backend(handle: &tauri::AppHandle, port: u16, timeout_secs: u6
 }
 
 fn main() {
+    // Write the diagnostic log at the VERY FIRST instruction, before anything
+    // else in startup can fail. If the user reports "I click the icon and
+    // nothing happens", this line guarantees the log file at least exists and
+    // records that the process launched -- so the failure is never invisible,
+    // even if building the Tauri app itself (WebView2 missing, etc.) blows up
+    // before any window appears.
+    log_line(&format!(
+        "=== OpenConstructionERP desktop launcher starting (v{}) ===",
+        env!("CARGO_PKG_VERSION")
+    ));
+
     let port = find_available_port();
+    log_line(&format!("selected backend port {port}"));
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -155,7 +234,13 @@ fn main() {
         })
         .setup(move |app| {
             let handle = app.handle().clone();
-            log_line(&format!("launcher starting; backend port = {port}"));
+            log_line(&format!("setup() running; backend port = {port}"));
+
+            // Surface the log path and the first two checklist steps right away
+            // so the user sees a live boot screen the instant the window paints.
+            report_log_path(&handle);
+            boot_stage(&handle, "launcher", "done", "");
+            boot_stage(&handle, "sidecar", "active", "Locating the backend");
 
             // Tray icon is a nice-to-have; never let its failure abort startup.
             match TrayIconBuilder::new()
@@ -194,11 +279,13 @@ fn main() {
                     cmd.args(["serve", "--host", "127.0.0.1", "--port", &port.to_string()])
                 }
                 Err(e) => {
-                    log_line(&format!("FATAL: cannot create sidecar command: {e}"));
-                    report_fatal(
+                    report_fatal_stage(
                         &handle,
-                        "Could not locate the backend component. Please reinstall the \
-application. A log was saved under your home folder as .openestimate/desktop-launcher.log.",
+                        "sidecar",
+                        &format!(
+                            "Could not locate the backend component ({e}). Please reinstall \
+the application."
+                        ),
                     );
                     // Keep the window open so the user sees the error.
                     return Ok(());
@@ -208,17 +295,20 @@ application. A log was saved under your home folder as .openestimate/desktop-lau
             let (mut rx, child) = match sidecar_cmd.spawn() {
                 Ok(pair) => pair,
                 Err(e) => {
-                    log_line(&format!("FATAL: cannot spawn sidecar: {e}"));
-                    report_fatal(
+                    report_fatal_stage(
                         &handle,
-                        "The backend component could not be started. Some antivirus tools \
-block newly installed programs; allow OpenConstructionERP and try again. A log was saved \
-under your home folder as .openestimate/desktop-launcher.log.",
+                        "sidecar",
+                        &format!(
+                            "The backend component could not be started ({e}). Some antivirus \
+tools block newly installed programs; allow OpenConstructionERP and try again."
+                        ),
                     );
                     return Ok(());
                 }
             };
             log_line("sidecar spawned");
+            boot_stage(&handle, "sidecar", "done", "");
+            boot_stage(&handle, "pg", "active", "Starting the local database");
 
             // Keep the child handle alive (and killable on exit).
             {
@@ -241,10 +331,24 @@ under your home folder as .openestimate/desktop-launcher.log.",
                             CommandEvent::Stdout(bytes) => {
                                 let line = String::from_utf8_lossy(&bytes);
                                 log_line(&format!("[backend] {}", line.trim_end()));
+                                // Drive the visible boot checklist from the
+                                // backend's machine-readable progress markers.
+                                for raw in line.split('\n') {
+                                    if let Some((id, status, detail)) = parse_stage_marker(raw) {
+                                        boot_stage(&handle_evt, &id, &status, &detail);
+                                    }
+                                }
                             }
                             CommandEvent::Stderr(bytes) => {
                                 let line = String::from_utf8_lossy(&bytes);
                                 log_line(&format!("[backend:err] {}", line.trim_end()));
+                                // Some launchers/loggers route progress markers
+                                // to stderr; honour them there too.
+                                for raw in line.split('\n') {
+                                    if let Some((id, status, detail)) = parse_stage_marker(raw) {
+                                        boot_stage(&handle_evt, &id, &status, &detail);
+                                    }
+                                }
                                 let mut buf = stderr_buf.lock().unwrap();
                                 buf.push_str(&line);
                                 if buf.len() > 4000 {
@@ -268,18 +372,27 @@ under your home folder as .openestimate/desktop-launcher.log.",
                                     let detail = if tail.trim().is_empty() {
                                         format!(
                                             "The backend stopped unexpectedly (exit code {:?}) \
-before it finished starting. A log was saved under your home folder as \
-.openestimate/desktop-launcher.log.",
+before it finished starting.",
                                             payload.code
                                         )
                                     } else {
+                                        // Keep the message readable: show the
+                                        // last chunk of stderr, which usually
+                                        // carries the actual cause.
+                                        let trimmed = tail.trim();
+                                        let shown = if trimmed.len() > 600 {
+                                            &trimmed[trimmed.len() - 600..]
+                                        } else {
+                                            trimmed
+                                        };
                                         format!(
-                                            "The backend stopped unexpectedly during startup: {} \
-(full log in .openestimate/desktop-launcher.log)",
-                                            tail.trim()
+                                            "The backend stopped unexpectedly during startup: {shown}"
                                         )
                                     };
-                                    report_fatal(&handle_evt, &detail);
+                                    // Attribute the failure to whichever step was
+                                    // last in progress so the checklist shows a
+                                    // clear red mark, defaulting to the server step.
+                                    report_fatal_stage(&handle_evt, "server", &detail);
                                 }
                                 break;
                             }
@@ -296,9 +409,17 @@ before it finished starting. A log was saved under your home folder as \
             let handle_clone = handle.clone();
             let ready_flag = backend_ready.clone();
             tauri::async_runtime::spawn(async move {
-                if wait_for_backend(&handle_clone, port, 240).await {
+                // A first run that has to recover a large local database (WAL
+                // replay + fsync) can take several minutes, so allow a generous
+                // window. The backend retries embedded-PG bring-up internally
+                // for up to ~10 minutes; keep the health wait comfortably above
+                // its own previous 240s so we never abandon a backend that is
+                // still legitimately recovering.
+                if wait_for_backend(&handle_clone, port, 600).await {
                     ready_flag.store(true, Ordering::SeqCst);
                     log_line("backend healthy; navigating to app");
+                    boot_stage(&handle_clone, "server", "done", "");
+                    boot_stage(&handle_clone, "open", "done", "Ready");
                     if let Some(window) = handle_clone.get_webview_window("main") {
                         let url = format!("http://127.0.0.1:{port}/");
                         let _ = window.show();
@@ -306,16 +427,17 @@ before it finished starting. A log was saved under your home folder as \
                         let _ = window.eval(&format!("window.location.replace('{url}')"));
                     }
                 } else {
-                    log_line("backend did not become healthy within 240s");
+                    log_line("backend did not become healthy within the startup window");
                     // If the sidecar already reported termination, that handler
                     // showed a precise error; only show the generic timeout if
                     // startup is genuinely still pending.
                     if !ready_flag.load(Ordering::SeqCst) {
-                        report_fatal(
+                        report_fatal_stage(
                             &handle_clone,
+                            "server",
                             "The application backend did not start in time. Please close this \
-window and try again. If the problem persists, a log was saved under your home folder as \
-.openestimate/desktop-launcher.log; please send it to info@datadrivenconstruction.io.",
+window and try again. If the problem persists, please send the log file to \
+info@datadrivenconstruction.io.",
                         );
                     }
                 }
