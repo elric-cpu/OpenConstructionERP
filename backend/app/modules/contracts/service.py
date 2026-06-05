@@ -1105,10 +1105,7 @@ class ContractsService:
 
         return {
             "error": "compliance_gate_failed",
-            "message": (
-                "Compliance gate failed: resolve the blocking issues below "
-                "before signing this contract."
-            ),
+            "message": ("Compliance gate failed: resolve the blocking issues below before signing this contract."),
             "rule_packs": pack_ids,
             "rule_sets": report.rule_sets_applied,
             "status": report.status.value,

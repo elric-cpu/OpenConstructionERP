@@ -54,6 +54,7 @@ def _version_key(version: str) -> tuple[int, ...]:
         return ()
     return tuple(int(part) for part in match.group(1).split("."))
 
+
 # Default community module registry
 DEFAULT_REGISTRY_URL = "https://registry.openestimate.io/api/v1"
 

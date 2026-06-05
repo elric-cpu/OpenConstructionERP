@@ -722,9 +722,7 @@ async def _seed_demo_account() -> None:
                     if _pack_demo:
                         async with async_session_factory() as pk_session:
                             try:
-                                pk_result = await install_demo_project(
-                                    pk_session, _pack_demo, partner_pack=_pack.slug
-                                )
+                                pk_result = await install_demo_project(pk_session, _pack_demo, partner_pack=_pack.slug)
                                 await pk_session.commit()
                                 logger.info(
                                     "Partner-pack demo installed: %s for pack %s (%s positions)",

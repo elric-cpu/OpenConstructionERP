@@ -42,9 +42,7 @@ async def test_relationship_create_and_completion_guard() -> None:
     async with transactional_session(disable_fks=True) as session:
         service = ScheduleService(session)
 
-        schedule = await service.create_schedule(
-            ScheduleCreate(project_id=uuid.uuid4(), name="Rel Guard Schedule")
-        )
+        schedule = await service.create_schedule(ScheduleCreate(project_id=uuid.uuid4(), name="Rel Guard Schedule"))
         pred = await service.create_activity(
             ActivityCreate(
                 schedule_id=schedule.id,

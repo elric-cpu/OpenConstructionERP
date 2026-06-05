@@ -95,8 +95,7 @@ def test_pack_rule_sets_exist_in_engine() -> None:
     for pack in RULE_PACKS.values():
         for rs in pack["rule_sets"]:
             assert rs in known_sets, (
-                f"pack {pack['id']} references unknown rule set {rs!r}; "
-                f"known sets: {sorted(known_sets)}"
+                f"pack {pack['id']} references unknown rule set {rs!r}; known sets: {sorted(known_sets)}"
             )
 
 

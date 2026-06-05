@@ -424,8 +424,7 @@ class QMSService:
         signer_rank = _SIGNER_ROLE_RANK.get(signer_role, 0)
         if signer_rank < required_rank:
             raise ValueError(
-                f"Signer role '{signer_role}' is below the control point's "
-                f"required authority '{required_role}'",
+                f"Signer role '{signer_role}' is below the control point's required authority '{required_role}'",
             )
 
     async def add_signature(
@@ -598,9 +597,7 @@ class QMSService:
         is_hold_point = item is not None and item.hold_witness_point in ("hold", "witness")
         if is_hold_point and result in ("passed", "failed"):
             hold_event = (
-                "qms.inspection.hold_point_passed"
-                if result == "passed"
-                else "qms.inspection.hold_point_failed"
+                "qms.inspection.hold_point_passed" if result == "passed" else "qms.inspection.hold_point_failed"
             )
             event_bus.publish_detached(
                 hold_event,
@@ -783,8 +780,7 @@ class QMSService:
             raise ValueError("Only hold or witness control points can be released")
         if inspection.status != "passed":
             raise ValueError(
-                f"Cannot release a hold point from status '{inspection.status}'; "
-                "the inspection must have passed first",
+                f"Cannot release a hold point from status '{inspection.status}'; the inspection must have passed first",
             )
         if await self.repo.get_hold_point_release(inspection_id) is not None:
             raise ValueError("This hold point has already been released")

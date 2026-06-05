@@ -49,9 +49,7 @@ def test_tax_forms_do_not_satisfy_requirement() -> None:
 
 
 def test_short_waiver_is_amount_mismatch() -> None:
-    result = lien_waiver_blocked(
-        Decimal("1000"), [_waiver("conditional_partial", "600")], required=True
-    )
+    result = lien_waiver_blocked(Decimal("1000"), [_waiver("conditional_partial", "600")], required=True)
     assert result.blocked is True
     assert result.reasons == ["waiver_amount_mismatch"]
 
@@ -59,9 +57,7 @@ def test_short_waiver_is_amount_mismatch() -> None:
 def test_covering_waiver_releases_payment() -> None:
     # Uses the real ``_VALID_WAIVER_TYPES`` compound value the upload endpoint
     # actually stores, not a bare base - the gate must match production data.
-    result = lien_waiver_blocked(
-        Decimal("1000"), [_waiver("unconditional_final", "1000")], required=True
-    )
+    result = lien_waiver_blocked(Decimal("1000"), [_waiver("unconditional_final", "1000")], required=True)
     assert result.blocked is False
     assert result.reasons == []
 

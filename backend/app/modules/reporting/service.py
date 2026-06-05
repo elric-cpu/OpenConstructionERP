@@ -1280,11 +1280,7 @@ class ReportingService:
             try:
                 from app.modules.contacts.models import Contact
 
-                rows = (
-                    (await self.session.execute(select(Contact).where(Contact.id.in_(vendor_ids))))
-                    .scalars()
-                    .all()
-                )
+                rows = (await self.session.execute(select(Contact).where(Contact.id.in_(vendor_ids)))).scalars().all()
                 for c in rows:
                     label = c.company_name or f"{c.first_name or ''} {c.last_name or ''}".strip() or c.email or ""
                     vendor_names[str(c.id)] = label

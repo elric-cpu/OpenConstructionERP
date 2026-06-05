@@ -360,11 +360,7 @@ class PaymentRepository:
         retainage), so this returns a list ordered oldest-first. Used by the
         retainage-release flow and the claim → receivable lookup endpoint.
         """
-        stmt = (
-            select(Payment)
-            .where(Payment.source_claim_id == claim_id)
-            .order_by(Payment.created_at.asc())
-        )
+        stmt = select(Payment).where(Payment.source_claim_id == claim_id).order_by(Payment.created_at.asc())
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 

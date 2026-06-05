@@ -2041,9 +2041,7 @@ class TaktScheduleService:
         locations = await self.location_repo.list_for_takt(takt_id)
         activities = await self.activity_repo.list_for_takt(takt_id)
 
-        loc_payload = [
-            {"id": str(loc.id), "name": loc.name, "sequence_order": loc.sequence_order} for loc in locations
-        ]
+        loc_payload = [{"id": str(loc.id), "name": loc.name, "sequence_order": loc.sequence_order} for loc in locations]
         act_payload = [
             {
                 "id": str(a.id),

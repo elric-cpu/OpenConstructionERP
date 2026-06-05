@@ -789,9 +789,7 @@ class DocumentService:
                     # Capture the Gate-B approval block in the document
                     # metadata for the compliance trail (scoped key so it
                     # never collides with caller-supplied metadata).
-                    is_gate_b = (
-                        new_state == CDEState.PUBLISHED.value and current_state == CDEState.SHARED.value
-                    )
+                    is_gate_b = new_state == CDEState.PUBLISHED.value and current_state == CDEState.SHARED.value
                     if is_gate_b:
                         md = dict(fields.get("metadata_", document.metadata_) or {})
                         md["cde_last_approval"] = {

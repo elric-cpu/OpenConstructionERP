@@ -298,9 +298,7 @@ async def _on_validation_errors_found(event: Event) -> None:
             # Idempotency — bail if an NCR already links this validation report.
             # Match metadata in Python (as the QMS bridge does) rather than via a
             # JSONB path operator, so the check never depends on column-type quirks.
-            existing_rows = (
-                await session.execute(select(NCR).where(NCR.project_id == project_id))
-            ).scalars().all()
+            existing_rows = (await session.execute(select(NCR).where(NCR.project_id == project_id))).scalars().all()
             for row in existing_rows:
                 md = row.metadata_ if isinstance(row.metadata_, dict) else {}
                 if md.get("source") == "validation" and md.get("report_id") == report_id_s:

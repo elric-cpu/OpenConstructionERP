@@ -137,9 +137,7 @@ def test_route_declares_finalize_permission() -> None:
     from app.dependencies import RequirePermission
     from app.modules.payroll.router import router
 
-    finalize_routes = [
-        r for r in router.routes if getattr(r, "path", "") == "/batches/{batch_id}/finalize/"
-    ]
+    finalize_routes = [r for r in router.routes if getattr(r, "path", "") == "/batches/{batch_id}/finalize/"]
     assert len(finalize_routes) == 1
     route = finalize_routes[0]
     assert "PATCH" in route.methods

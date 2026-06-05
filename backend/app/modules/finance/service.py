@@ -961,10 +961,7 @@ class FinanceService:
         if claim.status != "certified":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=(
-                    f"Claim must be certified before it can be invoiced "
-                    f"(current status: '{claim.status}')."
-                ),
+                detail=(f"Claim must be certified before it can be invoiced (current status: '{claim.status}')."),
             )
 
         contract_repo = ContractRepository(self.session)
@@ -1048,10 +1045,7 @@ class FinanceService:
             await self.line_items.create(
                 InvoiceLineItem(
                     invoice_id=invoice.id,
-                    description=(
-                        f"Progress claim {claim.claim_number} line "
-                        f"(contract line {cl.contract_line_id})"
-                    ),
+                    description=(f"Progress claim {claim.claim_number} line (contract line {cl.contract_line_id})"),
                     quantity=_safe_decimal(cl.period_completed_qty, Decimal("1")) or Decimal("1"),
                     unit=None,
                     unit_rate=Decimal("0"),
@@ -1167,9 +1161,7 @@ class FinanceService:
         # Resolve the gross being settled. When amount is given it is the cash
         # the caller intends to pay; gross = cash + withholding. When amount is
         # omitted we settle the whole invoice (gross = amount_total).
-        explicit_withholding = (
-            _safe_decimal(data.withholding_amount) if data.withholding_amount is not None else None
-        )
+        explicit_withholding = _safe_decimal(data.withholding_amount) if data.withholding_amount is not None else None
         if data.amount is not None:
             cash_in = _safe_decimal(data.amount)
             withheld = explicit_withholding if explicit_withholding is not None else inv_retention
@@ -1178,9 +1170,7 @@ class FinanceService:
             gross = inv_total
             withheld = explicit_withholding if explicit_withholding is not None else inv_retention
 
-        amount_to_pay, withholding = compute_payment_withholding(
-            gross, withholding_amount=withheld
-        )
+        amount_to_pay, withholding = compute_payment_withholding(gross, withholding_amount=withheld)
 
         pay_currency = data.currency_code or invoice.currency_code or ""
         payment = Payment(

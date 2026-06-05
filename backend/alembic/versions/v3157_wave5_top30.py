@@ -52,26 +52,40 @@ def upgrade() -> None:
             op.add_column("oe_qms_itp_item", sa.Column("bim_element_id", sa.String(length=255), nullable=True))
         if "predecessor_itp_item_id" not in itp:
             op.add_column("oe_qms_itp_item", sa.Column("predecessor_itp_item_id", sa.String(length=36), nullable=True))
-            op.create_index("ix_oe_qms_itp_item_predecessor_itp_item_id", "oe_qms_itp_item", ["predecessor_itp_item_id"])
+            op.create_index(
+                "ix_oe_qms_itp_item_predecessor_itp_item_id", "oe_qms_itp_item", ["predecessor_itp_item_id"]
+            )
             op.create_foreign_key(
-                "fk_qms_itp_item_predecessor", "oe_qms_itp_item", "oe_qms_itp_item",
-                ["predecessor_itp_item_id"], ["id"], ondelete="SET NULL",
+                "fk_qms_itp_item_predecessor",
+                "oe_qms_itp_item",
+                "oe_qms_itp_item",
+                ["predecessor_itp_item_id"],
+                ["id"],
+                ondelete="SET NULL",
             )
 
     insp_cols = _cols(insp, "oe_qms_inspection")
     if insp_cols and "attachment_document_ids" not in insp_cols:
-        op.add_column("oe_qms_inspection", sa.Column("attachment_document_ids", sa.JSON(), nullable=False, server_default="[]"))
+        op.add_column(
+            "oe_qms_inspection", sa.Column("attachment_document_ids", sa.JSON(), nullable=False, server_default="[]")
+        )
 
     sig = _cols(insp, "oe_qms_inspection_signature")
     if sig:
         if "timestamp_utc" not in sig:
-            op.add_column("oe_qms_inspection_signature", sa.Column("timestamp_utc", sa.String(length=32), nullable=True))
+            op.add_column(
+                "oe_qms_inspection_signature", sa.Column("timestamp_utc", sa.String(length=32), nullable=True)
+            )
         if "signer_ip" not in sig:
             op.add_column("oe_qms_inspection_signature", sa.Column("signer_ip", sa.String(length=64), nullable=True))
         if "signer_user_agent" not in sig:
-            op.add_column("oe_qms_inspection_signature", sa.Column("signer_user_agent", sa.String(length=512), nullable=True))
+            op.add_column(
+                "oe_qms_inspection_signature", sa.Column("signer_user_agent", sa.String(length=512), nullable=True)
+            )
         if "signature_token" not in sig:
-            op.add_column("oe_qms_inspection_signature", sa.Column("signature_token", sa.String(length=255), nullable=True))
+            op.add_column(
+                "oe_qms_inspection_signature", sa.Column("signature_token", sa.String(length=255), nullable=True)
+            )
 
     if "oe_qms_inspection_attachment" not in tables:
         op.create_table(
@@ -87,7 +101,9 @@ def upgrade() -> None:
             sa.Column("attached_at", sa.String(length=32), nullable=True),
             sa.ForeignKeyConstraint(["inspection_id"], ["oe_qms_inspection.id"], ondelete="CASCADE"),
         )
-        op.create_index("ix_oe_qms_inspection_attachment_inspection_id", "oe_qms_inspection_attachment", ["inspection_id"])
+        op.create_index(
+            "ix_oe_qms_inspection_attachment_inspection_id", "oe_qms_inspection_attachment", ["inspection_id"]
+        )
         op.create_index("ix_oe_qms_inspection_attachment_document_id", "oe_qms_inspection_attachment", ["document_id"])
 
     if "oe_qms_hold_point_release" not in tables:
@@ -142,9 +158,15 @@ def upgrade() -> None:
     clash_result = _cols(insp, "oe_clash_result")
     if clash_result:
         if "a_element_system" not in clash_result:
-            op.add_column("oe_clash_result", sa.Column("a_element_system", sa.String(length=100), nullable=False, server_default=""))
+            op.add_column(
+                "oe_clash_result",
+                sa.Column("a_element_system", sa.String(length=100), nullable=False, server_default=""),
+            )
         if "b_element_system" not in clash_result:
-            op.add_column("oe_clash_result", sa.Column("b_element_system", sa.String(length=100), nullable=False, server_default=""))
+            op.add_column(
+                "oe_clash_result",
+                sa.Column("b_element_system", sa.String(length=100), nullable=False, server_default=""),
+            )
 
     # ---------------------------------------------- #27 compliance rule packs
     proj = _cols(insp, "oe_projects_project")
@@ -174,9 +196,15 @@ def upgrade() -> None:
             sa.Column("location_sequence_count", sa.Integer(), nullable=False, server_default="0"),
             sa.Column("status", sa.String(length=32), nullable=False, server_default="draft"),
             sa.Column("created_by", sa.String(length=36), nullable=True),
-            sa.ForeignKeyConstraint(["master_schedule_id"], ["oe_schedule_advanced_master_schedule.id"], ondelete="CASCADE"),
+            sa.ForeignKeyConstraint(
+                ["master_schedule_id"], ["oe_schedule_advanced_master_schedule.id"], ondelete="CASCADE"
+            ),
         )
-        op.create_index("ix_oe_schedule_advanced_takt_schedule_master_schedule_id", "oe_schedule_advanced_takt_schedule", ["master_schedule_id"])
+        op.create_index(
+            "ix_oe_schedule_advanced_takt_schedule_master_schedule_id",
+            "oe_schedule_advanced_takt_schedule",
+            ["master_schedule_id"],
+        )
 
     if "oe_schedule_advanced_takt_location" not in tables:
         op.create_table(
@@ -189,10 +217,20 @@ def upgrade() -> None:
             sa.Column("name", sa.String(length=255), nullable=False),
             sa.Column("description", sa.Text(), nullable=False, server_default=""),
             sa.Column("work_area_sqm", sa.Numeric(precision=12, scale=2), nullable=True),
-            sa.ForeignKeyConstraint(["takt_schedule_id"], ["oe_schedule_advanced_takt_schedule.id"], ondelete="CASCADE"),
+            sa.ForeignKeyConstraint(
+                ["takt_schedule_id"], ["oe_schedule_advanced_takt_schedule.id"], ondelete="CASCADE"
+            ),
         )
-        op.create_index("ix_oe_schedule_advanced_takt_location_takt_schedule_id", "oe_schedule_advanced_takt_location", ["takt_schedule_id"])
-        op.create_index("ix_oe_schedule_advanced_takt_location_sequence_order", "oe_schedule_advanced_takt_location", ["sequence_order"])
+        op.create_index(
+            "ix_oe_schedule_advanced_takt_location_takt_schedule_id",
+            "oe_schedule_advanced_takt_location",
+            ["takt_schedule_id"],
+        )
+        op.create_index(
+            "ix_oe_schedule_advanced_takt_location_sequence_order",
+            "oe_schedule_advanced_takt_location",
+            ["sequence_order"],
+        )
 
     if "oe_schedule_advanced_takt_activity" not in tables:
         op.create_table(
@@ -211,10 +249,18 @@ def upgrade() -> None:
             sa.Column("sequence_predecessor_activity_id", sa.String(length=36), nullable=True),
             sa.Column("status", sa.String(length=32), nullable=False, server_default="planned"),
             sa.Column("actual_cycle_duration_days", sa.Numeric(precision=6, scale=2), nullable=True),
-            sa.ForeignKeyConstraint(["takt_schedule_id"], ["oe_schedule_advanced_takt_schedule.id"], ondelete="CASCADE"),
-            sa.ForeignKeyConstraint(["sequence_predecessor_activity_id"], ["oe_schedule_advanced_takt_activity.id"], ondelete="SET NULL"),
+            sa.ForeignKeyConstraint(
+                ["takt_schedule_id"], ["oe_schedule_advanced_takt_schedule.id"], ondelete="CASCADE"
+            ),
+            sa.ForeignKeyConstraint(
+                ["sequence_predecessor_activity_id"], ["oe_schedule_advanced_takt_activity.id"], ondelete="SET NULL"
+            ),
         )
-        op.create_index("ix_oe_schedule_advanced_takt_activity_takt_schedule_id", "oe_schedule_advanced_takt_activity", ["takt_schedule_id"])
+        op.create_index(
+            "ix_oe_schedule_advanced_takt_activity_takt_schedule_id",
+            "oe_schedule_advanced_takt_activity",
+            ["takt_schedule_id"],
+        )
 
 
 def downgrade() -> None:
@@ -222,7 +268,11 @@ def downgrade() -> None:
     insp = sa.inspect(bind)
     tables = set(insp.get_table_names())
 
-    for t in ("oe_schedule_advanced_takt_activity", "oe_schedule_advanced_takt_location", "oe_schedule_advanced_takt_schedule"):
+    for t in (
+        "oe_schedule_advanced_takt_activity",
+        "oe_schedule_advanced_takt_location",
+        "oe_schedule_advanced_takt_schedule",
+    ):
         if t in tables:
             op.drop_table(t)
 

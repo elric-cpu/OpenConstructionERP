@@ -664,7 +664,9 @@ class ChangeOrderService:
         order = await self.get_order(order_id)
 
         co_cost_native = _dec(cost_override) if cost_override is not None else _dec(order.cost_impact)
-        schedule_days = int(schedule_override) if schedule_override is not None else int(order.schedule_impact_days or 0)
+        schedule_days = (
+            int(schedule_override) if schedule_override is not None else int(order.schedule_impact_days or 0)
+        )
         co_currency = (order.currency or "").strip().upper()
         notes: list[str] = []
 
@@ -832,9 +834,7 @@ class ChangeOrderService:
         from app.modules.projects.models import Project
 
         try:
-            return (
-                await self.session.execute(select(Project).where(Project.id == project_id))
-            ).scalar_one_or_none()
+            return (await self.session.execute(select(Project).where(Project.id == project_id))).scalar_one_or_none()
         except Exception:
             return None
 

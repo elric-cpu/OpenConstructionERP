@@ -101,10 +101,7 @@ async def test_set_schedule_computes_next_run_and_is_due(session: AsyncSession) 
 
     # A non-owner cannot read or change the schedule.
     assert await svc.get_agent_metadata(agent_id, uuid.uuid4()) is None
-    assert (
-        await svc.set_schedule(agent_id=agent_id, user_id=uuid.uuid4(), cron_expr="0 0 * * *")
-        is None
-    )
+    assert await svc.set_schedule(agent_id=agent_id, user_id=uuid.uuid4(), cron_expr="0 0 * * *") is None
 
 
 @pytest.mark.asyncio

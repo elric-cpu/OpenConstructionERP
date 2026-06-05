@@ -1134,9 +1134,7 @@ class DwgTakeoffService:
                         "DXF is handled directly without requiring DDC."
                     )
                 else:
-                    nice_msg = (
-                        f"DDC DwgExporter produced no output (exit {rc}): {stderr_msg}"
-                    ).strip()
+                    nice_msg = (f"DDC DwgExporter produced no output (exit {rc}): {stderr_msg}").strip()
                 await self.drawing_repo.update_fields(
                     drawing_id,
                     status="error",
@@ -1479,9 +1477,7 @@ class DwgTakeoffService:
         summary = {
             "entities": _tally(entity_rows),
             "annotations": _tally(annotation_rows),
-            "net_cost_impact": str(net_impact.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
-            if has_cost
-            else None,
+            "net_cost_impact": str(net_impact.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) if has_cost else None,
             "cost_currency": cost_currency,
             "from_entity_count": from_version.entity_count,
             "to_entity_count": to_version.entity_count,

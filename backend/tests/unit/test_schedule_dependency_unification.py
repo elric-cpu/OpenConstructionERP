@@ -139,11 +139,7 @@ class _StubRelationshipRepo:
         if not predecessor_ids:
             return
         preds = set(predecessor_ids)
-        doomed = [
-            rid
-            for rid, r in self.rows.items()
-            if r.successor_id == successor_id and r.predecessor_id in preds
-        ]
+        doomed = [rid for rid, r in self.rows.items() if r.successor_id == successor_id and r.predecessor_id in preds]
         for rid in doomed:
             self.rows.pop(rid, None)
 
@@ -300,9 +296,7 @@ async def test_cpm_ignores_stale_json_when_canonical_has_other_edges() -> None:
     c = await _create_activity(svc, sched.id, name="C", start_date="2026-05-01", end_date="2026-05-06")
 
     # Canonical edge A -> B (kept).
-    await svc.update_activity(
-        b.id, ActivityUpdate(dependencies=[ActivityDependency(activity_id=a.id, type="FS")])
-    )
+    await svc.update_activity(b.id, ActivityUpdate(dependencies=[ActivityDependency(activity_id=a.id, type="FS")]))
     # Stale JSON-only edge A -> C: write JSON directly, leave canonical empty
     # for C (simulating a relationship row that was deleted but whose JSON copy
     # lingered).
@@ -413,8 +407,7 @@ async def test_round_trip_json_table_stays_consistent() -> None:
         for r in await svc.relationship_repo.list_predecessors(succ.id)
     }
     mirror = {
-        (uuid.UUID(d["activity_id"]), d["type"], d["lag_days"])
-        for d in svc.activity_repo.rows[succ.id].dependencies
+        (uuid.UUID(d["activity_id"]), d["type"], d["lag_days"]) for d in svc.activity_repo.rows[succ.id].dependencies
     }
     assert canonical == mirror
 
@@ -430,9 +423,7 @@ async def test_reconcile_promotes_orphan_json_edges() -> None:
     succ = await _create_activity(svc, sched.id, name="S")
 
     # Simulate legacy data: JSON edge with no canonical row.
-    svc.activity_repo.rows[succ.id].dependencies = [
-        {"activity_id": str(pred.id), "type": "FF", "lag_days": 5}
-    ]
+    svc.activity_repo.rows[succ.id].dependencies = [{"activity_id": str(pred.id), "type": "FF", "lag_days": 5}]
 
     stats = await svc.reconcile_dependency_sources(sched.id)
     assert stats["edges_created"] == 1
@@ -442,9 +433,7 @@ async def test_reconcile_promotes_orphan_json_edges() -> None:
     assert rows[0].relationship_type == "FF"
     assert rows[0].lag_days == 5
     # Mirror rebuilt from canonical.
-    assert svc.activity_repo.rows[succ.id].dependencies == [
-        {"activity_id": str(pred.id), "type": "FF", "lag_days": 5}
-    ]
+    assert svc.activity_repo.rows[succ.id].dependencies == [{"activity_id": str(pred.id), "type": "FF", "lag_days": 5}]
 
 
 @pytest.mark.asyncio
@@ -468,9 +457,7 @@ async def test_reconcile_is_idempotent() -> None:
     svc = _make_service()
     sched = await _create_schedule(svc)
     pred = await _create_activity(svc, sched.id, name="P")
-    succ = await _create_activity(
-        svc, sched.id, name="S", dependencies=[ActivityDependency(activity_id=pred.id)]
-    )
+    succ = await _create_activity(svc, sched.id, name="S", dependencies=[ActivityDependency(activity_id=pred.id)])
 
     # Already projected at create time; reconcile must be a no-op.
     first = await svc.reconcile_dependency_sources(sched.id)
@@ -494,7 +481,5 @@ def test_edge_payload_dedups_last_wins() -> None:
 
 
 def test_edge_payload_skips_invalid_uuids() -> None:
-    edges = ScheduleService._edge_payload_from_json(
-        [{"activity_id": "not-a-uuid", "type": "FS", "lag_days": 0}]
-    )
+    edges = ScheduleService._edge_payload_from_json([{"activity_id": "not-a-uuid", "type": "FS", "lag_days": 0}])
     assert edges == {}

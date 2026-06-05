@@ -103,11 +103,7 @@ async def _find_existing_po(
     wanted = {field: value for field, value in keys.items() if value}
     if not wanted:
         return None
-    rows = (
-        (await session.execute(select(PurchaseOrder).where(PurchaseOrder.project_id == project_id)))
-        .scalars()
-        .all()
-    )
+    rows = (await session.execute(select(PurchaseOrder).where(PurchaseOrder.project_id == project_id))).scalars().all()
     for po in rows:
         md = po.metadata_ if isinstance(po.metadata_, dict) else {}
         for field, value in wanted.items():
@@ -182,12 +178,8 @@ async def _create_po_from_award(event: Event) -> None:
             # caught.
             po_repo = PurchaseOrderRepository(session)
             linked_bid_package_id = (
-                (
-                    await session.execute(
-                        select(BidPackage.id).where(BidPackage.tender_id == package_id)
-                    )
-                ).scalar_one_or_none()
-            )
+                await session.execute(select(BidPackage.id).where(BidPackage.tender_id == package_id))
+            ).scalar_one_or_none()
             existing = await _find_existing_po(
                 session,
                 package.project_id,
@@ -339,9 +331,7 @@ async def _create_po_from_bid_award(event: Event) -> None:
             package = (
                 await session.execute(select(BidPackage).where(BidPackage.id == package_id))
             ).scalar_one_or_none()
-            bidder = (
-                await session.execute(select(Bidder).where(Bidder.id == bidder_id))
-            ).scalar_one_or_none()
+            bidder = (await session.execute(select(Bidder).where(Bidder.id == bidder_id))).scalar_one_or_none()
 
             if package is None or bidder is None:
                 logger.warning(
@@ -400,8 +390,7 @@ async def _create_po_from_bid_award(event: Event) -> None:
                 sub_lines = (
                     (
                         await session.execute(
-                            select(BidSubmissionLine)
-                            .where(BidSubmissionLine.submission_id == winning_submission.id)
+                            select(BidSubmissionLine).where(BidSubmissionLine.submission_id == winning_submission.id)
                         )
                     )
                     .scalars()
@@ -516,11 +505,7 @@ async def _bid_line_lookup(session: AsyncSession, package_id: uuid.UUID) -> dict
     from app.modules.bid_management.models import BidPackageLineItem
 
     rows = (
-        (
-            await session.execute(
-                select(BidPackageLineItem).where(BidPackageLineItem.package_id == package_id)
-            )
-        )
+        (await session.execute(select(BidPackageLineItem).where(BidPackageLineItem.package_id == package_id)))
         .scalars()
         .all()
     )

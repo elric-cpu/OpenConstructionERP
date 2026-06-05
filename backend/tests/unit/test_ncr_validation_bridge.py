@@ -180,12 +180,8 @@ async def test_validation_ncr_replay_is_idempotent(store: list[NCR]) -> None:
 async def test_validation_new_report_raises_second_ncr(store: list[NCR]) -> None:
     """A fresh validation run (new report id) is a new non-conformance."""
     project_id = uuid.uuid4()
-    await ncr_events._on_validation_errors_found(
-        _validation_event(project_id=project_id, report_id=uuid.uuid4())
-    )
-    await ncr_events._on_validation_errors_found(
-        _validation_event(project_id=project_id, report_id=uuid.uuid4())
-    )
+    await ncr_events._on_validation_errors_found(_validation_event(project_id=project_id, report_id=uuid.uuid4()))
+    await ncr_events._on_validation_errors_found(_validation_event(project_id=project_id, report_id=uuid.uuid4()))
     assert len(store) == 2
 
 

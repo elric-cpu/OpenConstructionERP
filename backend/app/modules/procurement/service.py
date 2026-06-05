@@ -688,8 +688,7 @@ class ProcurementService:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
-                    f"Cannot issue PO in status '{prior_status}'; "
-                    "a purchase order must be approved before it is issued"
+                    f"Cannot issue PO in status '{prior_status}'; a purchase order must be approved before it is issued"
                 ),
             )
         await self.po_repo.update(po_id, status="issued")

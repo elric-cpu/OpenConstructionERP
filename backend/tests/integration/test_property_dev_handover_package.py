@@ -154,9 +154,7 @@ async def _new_handover(client: AsyncClient, owner: dict, plot_id: str) -> str:
 
 
 @pytest.mark.asyncio
-async def test_complete_blocked_until_required_docs_delivered(
-    http_client: AsyncClient, owner: dict
-) -> None:
+async def test_complete_blocked_until_required_docs_delivered(http_client: AsyncClient, owner: dict) -> None:
     plot_id = await _new_plot(http_client, owner)
     handover_id = await _new_handover(http_client, owner, plot_id)
 
@@ -253,9 +251,7 @@ async def test_export_package_streams_zip(http_client: AsyncClient, owner: dict)
 
 
 @pytest.mark.asyncio
-async def test_stranger_cannot_export(
-    http_client: AsyncClient, owner: dict, stranger: dict
-) -> None:
+async def test_stranger_cannot_export(http_client: AsyncClient, owner: dict, stranger: dict) -> None:
     plot_id = await _new_plot(http_client, owner)
     handover_id = await _new_handover(http_client, owner, plot_id)
 

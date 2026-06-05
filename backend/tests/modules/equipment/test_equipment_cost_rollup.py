@@ -90,10 +90,14 @@ async def _seed_project(
 async def _equipment_lines(session: AsyncSession, project_id: uuid.UUID) -> list[BudgetLine]:
     """Return all budget lines for a project ordered by creation."""
     rows = (
-        await session.execute(
-            select(BudgetLine).where(BudgetLine.project_id == project_id).order_by(BudgetLine.created_at)
+        (
+            await session.execute(
+                select(BudgetLine).where(BudgetLine.project_id == project_id).order_by(BudgetLine.created_at)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return list(rows)
 
 

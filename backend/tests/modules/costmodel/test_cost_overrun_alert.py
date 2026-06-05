@@ -106,9 +106,13 @@ async def _seed_line(
 
 
 async def _count_alerts(session: AsyncSession, line_id: uuid.UUID) -> int:
-    stmt = select(func.count()).select_from(Notification).where(
-        Notification.notification_type == "cost_overrun_alert",
-        Notification.entity_id == str(line_id),
+    stmt = (
+        select(func.count())
+        .select_from(Notification)
+        .where(
+            Notification.notification_type == "cost_overrun_alert",
+            Notification.entity_id == str(line_id),
+        )
     )
     return (await session.execute(stmt)).scalar_one()
 
@@ -137,11 +141,7 @@ async def test_overrun_crossed_sends_one(session: AsyncSession) -> None:
 
     assert sent is True
     assert await _count_alerts(session, line.id) == 1
-    notif = (
-        await session.execute(
-            select(Notification).where(Notification.entity_id == str(line.id))
-        )
-    ).scalar_one()
+    notif = (await session.execute(select(Notification).where(Notification.entity_id == str(line.id)))).scalar_one()
     assert notif.user_id == owner_id
     assert notif.title_key == "notifications.costmodel.overrun_alert.title"
     assert notif.action_url == f"/costmodel?line={line.id}"
@@ -213,11 +213,7 @@ async def test_body_context_accuracy(session: AsyncSession) -> None:
 
     await CostOverrunAlertService(session).check_and_alert(line.id)
 
-    notif = (
-        await session.execute(
-            select(Notification).where(Notification.entity_id == str(line.id))
-        )
-    ).scalar_one()
+    notif = (await session.execute(select(Notification).where(Notification.entity_id == str(line.id)))).scalar_one()
     ctx = notif.body_context
     assert ctx["category"] == "labor"
     assert ctx["threshold_pct"] == "15"
@@ -228,17 +224,11 @@ async def test_body_context_accuracy(session: AsyncSession) -> None:
 
 async def test_body_context_uncategorised_label(session: AsyncSession) -> None:
     project_id, _ = await _seed_project(session)
-    line = await _seed_line(
-        session, project_id, planned="100", actual="200", threshold="10", category=""
-    )
+    line = await _seed_line(session, project_id, planned="100", actual="200", threshold="10", category="")
 
     await CostOverrunAlertService(session).check_and_alert(line.id)
 
-    notif = (
-        await session.execute(
-            select(Notification).where(Notification.entity_id == str(line.id))
-        )
-    ).scalar_one()
+    notif = (await session.execute(select(Notification).where(Notification.entity_id == str(line.id)))).scalar_one()
     assert notif.body_context["category"] == "uncategorised"
 
 

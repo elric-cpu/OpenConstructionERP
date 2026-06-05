@@ -1230,8 +1230,7 @@ async def test_compute_monthly_rating_from_event_basis() -> None:
     assert rating.overall_score < Decimal("100")
     # Event published with the monthly_compute trigger.
     assert any(
-        name == "subcontractors.rating.updated" and data.get("trigger") == "monthly_compute"
-        for name, data in published
+        name == "subcontractors.rating.updated" and data.get("trigger") == "monthly_compute" for name, data in published
     )
     # Sub's rolled-up score == new overall.
     assert svc.subs.rating_score == rating.overall_score  # type: ignore[attr-defined]

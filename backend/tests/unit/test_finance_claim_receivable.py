@@ -58,9 +58,7 @@ async def session():
 # ── Seed helpers ─────────────────────────────────────────────────────────────
 
 
-async def _make_project(
-    s, *, currency: str = "USD", fx_rates: list[dict[str, str]] | None = None
-) -> Project:
+async def _make_project(s, *, currency: str = "USD", fx_rates: list[dict[str, str]] | None = None) -> Project:
     project = Project(
         id=uuid.uuid4(),
         name="Gap E Project",
@@ -153,7 +151,18 @@ def _patch_spine(monkeypatch) -> list[dict]:
     """Capture every ``post_actual_to_budget_line`` call instead of running it."""
     calls: list[dict] = []
 
-    async def _fake_post(self, project_id, cost_line_id, cost_category, amount_base, currency, source_kind, source_ref, *, idempotency_key):  # noqa: ANN001, ANN002, ANN003, E501
+    async def _fake_post(
+        self,
+        project_id,
+        cost_line_id,
+        cost_category,
+        amount_base,
+        currency,
+        source_kind,
+        source_ref,
+        *,
+        idempotency_key,
+    ):  # noqa: ANN001, ANN002, ANN003, E501
         # Idempotent capture keyed on (source_kind, source_ref) — a replay of
         # the same posting must not double-record, mirroring the real sink.
         key = (source_kind, source_ref)
@@ -208,9 +217,7 @@ async def test_receivable_invoice_multi_currency_gbp_to_usd(session) -> None:
     # Project base USD; claim priced in GBP at 1.25 → net 10,000 GBP = 12,500 USD.
     project = await _make_project(session, currency="USD", fx_rates=[{"code": "GBP", "rate": "1.25"}])
     contract = await _make_contract(session, project, currency="GBP")
-    claim = await _make_claim(
-        session, contract, currency="GBP", gross="10500", retention="500", net="10000"
-    )
+    claim = await _make_claim(session, contract, currency="GBP", gross="10500", retention="500", net="10000")
 
     svc = FinanceService(session)
     invoice = await svc.create_receivable_from_claim(claim.id)
@@ -230,9 +237,7 @@ async def test_currency_mismatch_missing_fx_keeps_value(session) -> None:
     # never zeroed (domain money rule).
     project = await _make_project(session, currency="USD", fx_rates=[])
     contract = await _make_contract(session, project, currency="GBP")
-    claim = await _make_claim(
-        session, contract, currency="GBP", gross="10500", retention="500", net="10000"
-    )
+    claim = await _make_claim(session, contract, currency="GBP", gross="10500", retention="500", net="10000")
 
     svc = FinanceService(session)
     invoice = await svc.create_receivable_from_claim(claim.id)
@@ -251,9 +256,7 @@ async def test_receivable_invoice_idempotency_same_claim_twice(session) -> None:
     second = await svc.create_receivable_from_claim(claim.id)
     assert first.id == second.id
 
-    rows = (await session.execute(
-        Invoice.__table__.select().where(Invoice.source_claim_id == claim.id)
-    )).fetchall()
+    rows = (await session.execute(Invoice.__table__.select().where(Invoice.source_claim_id == claim.id))).fetchall()
     assert len(rows) == 1
 
 
@@ -378,9 +381,7 @@ async def test_payment_idempotency_key_deduplication(session, monkeypatch) -> No
         RecordClaimPaymentRequest(payment_date="2026-06-10", idempotency_key="K1"),
     )
     assert p1.id == p2.id
-    rows = (await session.execute(
-        Payment.__table__.select().where(Payment.invoice_id == invoice.id)
-    )).fetchall()
+    rows = (await session.execute(Payment.__table__.select().where(Payment.invoice_id == invoice.id))).fetchall()
     assert len(rows) == 1
     # Spine posted exactly once across both calls.
     assert len(calls) == 1
@@ -400,9 +401,7 @@ async def test_post_actual_to_budget_line_idempotency(session, monkeypatch) -> N
         invoice.id, RecordClaimPaymentRequest(payment_date="2026-06-10")
     )
     # Manually replay the spine posting for the same payment.
-    await svc._post_claim_payment_to_spine(
-        project_id=project.id, payment=payment, currency=invoice.currency_code
-    )
+    await svc._post_claim_payment_to_spine(project_id=project.id, payment=payment, currency=invoice.currency_code)
     assert len(calls) == 1  # still one — idempotent on source_ref
 
 
@@ -449,9 +448,7 @@ async def test_withholding_release_date_round_trips(session, monkeypatch) -> Non
 
     payment = await svc.record_payment_with_withholding(
         invoice.id,
-        RecordClaimPaymentRequest(
-            payment_date="2026-06-10", withholding_release_date="2027-03-31"
-        ),
+        RecordClaimPaymentRequest(payment_date="2026-06-10", withholding_release_date="2027-03-31"),
     )
     reloaded = await session.get(Payment, payment.id)
     assert reloaded.withholding_release_date == "2027-03-31"

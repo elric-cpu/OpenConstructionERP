@@ -245,18 +245,14 @@ def _gl_csv(rows: list[tuple[str, str, str, str]]) -> bytes:
 async def test_pull_writes_balanced_pair(session: AsyncSession) -> None:
     project_id = uuid.uuid4()
     storage = _FakeStorage()
-    storage.blobs["in/gl.csv"] = _gl_csv(
-        [("TXN-100", "1000", "500", "0"), ("TXN-100", "2000", "0", "500")]
-    )
+    storage.blobs["in/gl.csv"] = _gl_csv([("TXN-100", "1000", "500", "0"), ("TXN-100", "2000", "0", "500")])
     cfg = _config(direction="pull", settings={"format": "csv", "inbound_key": "in/gl.csv"}, project_id=project_id)
     conn = FileConnector(cfg, storage=storage, session=session)
 
     res = await conn.pull(dry_run=False)
     assert res.status == "success", res.errors
     assert res.records_out == 1
-    rows = (
-        await session.execute(select(LedgerEntry).where(LedgerEntry.project_id == project_id))
-    ).scalars().all()
+    rows = (await session.execute(select(LedgerEntry).where(LedgerEntry.project_id == project_id))).scalars().all()
     assert len(rows) == 2  # one debit + one credit
     by_account = {r.account_code: r for r in rows}
     assert by_account["1000"].debit_amount == Decimal("500")
@@ -267,36 +263,28 @@ async def test_pull_writes_balanced_pair(session: AsyncSession) -> None:
 async def test_pull_dry_run_writes_no_ledger(session: AsyncSession) -> None:
     project_id = uuid.uuid4()
     storage = _FakeStorage()
-    storage.blobs["in/gl.csv"] = _gl_csv(
-        [("TXN-200", "1000", "300", "0"), ("TXN-200", "2000", "0", "300")]
-    )
+    storage.blobs["in/gl.csv"] = _gl_csv([("TXN-200", "1000", "300", "0"), ("TXN-200", "2000", "0", "300")])
     cfg = _config(direction="pull", settings={"format": "csv", "inbound_key": "in/gl.csv"}, project_id=project_id)
     conn = FileConnector(cfg, storage=storage, session=session)
 
     res = await conn.pull(dry_run=True)
     assert res.records_in == 2
     assert res.records_out == 1  # would-write count
-    rows = (
-        await session.execute(select(LedgerEntry).where(LedgerEntry.project_id == project_id))
-    ).scalars().all()
+    rows = (await session.execute(select(LedgerEntry).where(LedgerEntry.project_id == project_id))).scalars().all()
     assert rows == []
 
 
 async def test_pull_rejects_unbalanced(session: AsyncSession) -> None:
     project_id = uuid.uuid4()
     storage = _FakeStorage()
-    storage.blobs["in/gl.csv"] = _gl_csv(
-        [("TXN-300", "1000", "500", "0"), ("TXN-300", "2000", "0", "499")]
-    )
+    storage.blobs["in/gl.csv"] = _gl_csv([("TXN-300", "1000", "500", "0"), ("TXN-300", "2000", "0", "499")])
     cfg = _config(direction="pull", settings={"format": "csv", "inbound_key": "in/gl.csv"}, project_id=project_id)
     conn = FileConnector(cfg, storage=storage, session=session)
 
     res = await conn.pull(dry_run=False)
     assert res.records_out == 0
     assert any("unbalanced" in e.lower() for e in res.errors)
-    rows = (
-        await session.execute(select(LedgerEntry).where(LedgerEntry.project_id == project_id))
-    ).scalars().all()
+    rows = (await session.execute(select(LedgerEntry).where(LedgerEntry.project_id == project_id))).scalars().all()
     assert rows == []
 
 
@@ -322,9 +310,7 @@ async def test_pull_skips_multi_leg(session: AsyncSession) -> None:
 async def test_pull_is_idempotent(session: AsyncSession) -> None:
     project_id = uuid.uuid4()
     storage = _FakeStorage()
-    storage.blobs["in/gl.csv"] = _gl_csv(
-        [("TXN-500", "1000", "750", "0"), ("TXN-500", "2000", "0", "750")]
-    )
+    storage.blobs["in/gl.csv"] = _gl_csv([("TXN-500", "1000", "750", "0"), ("TXN-500", "2000", "0", "750")])
     cfg = _config(direction="pull", settings={"format": "csv", "inbound_key": "in/gl.csv"}, project_id=project_id)
     conn = FileConnector(cfg, storage=storage, session=session)
 
@@ -333,9 +319,7 @@ async def test_pull_is_idempotent(session: AsyncSession) -> None:
     second = await conn.pull(dry_run=False)
     assert second.records_out == 0
     assert second.details["skipped_already_imported"] == 1
-    rows = (
-        await session.execute(select(LedgerEntry).where(LedgerEntry.project_id == project_id))
-    ).scalars().all()
+    rows = (await session.execute(select(LedgerEntry).where(LedgerEntry.project_id == project_id))).scalars().all()
     assert len(rows) == 2  # not duplicated
 
 

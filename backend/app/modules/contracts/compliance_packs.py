@@ -62,8 +62,7 @@ RULE_PACKS: dict[str, dict[str, Any]] = {
     "uk_compliance": {
         "id": "uk_compliance",
         "name": "United Kingdom Compliance",
-        "description": "NRM measurement-rule compliance plus the universal "
-        "quality baseline.",
+        "description": "NRM measurement-rule compliance plus the universal quality baseline.",
         "jurisdiction": "GB",
         "enforced_workflows": [WORKFLOW_CONTRACT_SIGNATURE],
         "rule_sets": ["boq_quality", "nrm"],
@@ -71,8 +70,7 @@ RULE_PACKS: dict[str, dict[str, Any]] = {
     "us_compliance": {
         "id": "us_compliance",
         "name": "United States Compliance",
-        "description": "MasterFormat classification checks plus the universal "
-        "quality baseline.",
+        "description": "MasterFormat classification checks plus the universal quality baseline.",
         "jurisdiction": "US",
         "enforced_workflows": [WORKFLOW_CONTRACT_SIGNATURE],
         "rule_sets": ["boq_quality", "masterformat"],

@@ -142,9 +142,7 @@ async def test_sign_blocked_on_compliance_errors() -> None:
     detail = exc.value.detail
     assert detail["error"] == "compliance_gate_failed"
     assert detail["counts"]["errors"] >= 1
-    assert any(
-        e["rule_id"] == "boq_quality.position_has_quantity" for e in detail["errors"]
-    )
+    assert any(e["rule_id"] == "boq_quality.position_has_quantity" for e in detail["errors"])
     # Contract must NOT have transitioned.
     assert contract.status == "draft"
     assert contract.signed_at is None

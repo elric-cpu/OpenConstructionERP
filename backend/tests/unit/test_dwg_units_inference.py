@@ -89,12 +89,7 @@ def test_infer_units_none_for_empty_or_missing() -> None:
     assert infer_units_from_extents(None) is None
     assert infer_units_from_extents({}) is None
     assert infer_units_from_extents({"min_x": 0.0, "max_x": 5000.0}) is None
-    assert (
-        infer_units_from_extents(
-            {"min_x": 0.0, "min_y": 0.0, "max_x": 0.0, "max_y": 0.0}
-        )
-        is None
-    )
+    assert infer_units_from_extents({"min_x": 0.0, "min_y": 0.0, "max_x": 0.0, "max_y": 0.0}) is None
 
 
 def test_infer_units_handles_negative_origin() -> None:
@@ -366,9 +361,7 @@ async def test_push_quantity_none_value_is_noop(session: AsyncSession) -> None:
 
     position = await _seed_boq_position(session, project_id, unit="m", qty="7", rate="10")
     position_id = position.id  # capture before the push expires the session
-    ann = await _make_annotation(
-        session, project_id, drawing.id, annotation_type="distance", value=None
-    )
+    ann = await _make_annotation(session, project_id, drawing.id, annotation_type="distance", value=None)
 
     service = DwgTakeoffService(session)
     await service._push_quantity_to_position(str(position_id), ann)  # noqa: SLF001

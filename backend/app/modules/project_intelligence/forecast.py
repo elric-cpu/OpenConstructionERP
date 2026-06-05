@@ -346,9 +346,7 @@ def project_schedule_slip(
     if spi_t <= ZERO:
         projected_remaining = remaining_days * 2
     else:
-        projected_remaining = int(
-            (Decimal(remaining_days) / spi_t).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-        )
+        projected_remaining = int((Decimal(remaining_days) / spi_t).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
     from datetime import timedelta
 

@@ -139,9 +139,7 @@ async def test_activation_allowed_for_approved_sub(session: AsyncSession) -> Non
 async def test_payment_submission_blocked_for_suspended_sub(session: AsyncSession) -> None:
     # An agreement that went live while the sub was approved, but the sub has
     # since been suspended: the next payment must still be refused.
-    _sub_row, agreement = await _seed_agreement(
-        session, prequal="suspended", agreement_status="active"
-    )
+    _sub_row, agreement = await _seed_agreement(session, prequal="suspended", agreement_status="active")
     svc = SubcontractorService(session)
     with pytest.raises(HTTPException) as exc:
         await svc.submit_payment_application(

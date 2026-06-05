@@ -115,9 +115,7 @@ async def compute_all_monthly_ratings(period: str | None = None) -> int:
     processed = 0
     async with async_session_factory() as session:
         rows = (
-            (await session.execute(select(Subcontractor.id).where(Subcontractor.is_active.is_(True))))
-            .scalars()
-            .all()
+            (await session.execute(select(Subcontractor.id).where(Subcontractor.is_active.is_(True)))).scalars().all()
         )
         svc = SubcontractorService(session)
         for sub_id in rows:

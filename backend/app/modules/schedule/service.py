@@ -798,9 +798,7 @@ class ScheduleService:
         active_ids = {a.id for a in activities}
 
         existing_rels = await self.relationship_repo.list_for_schedule(schedule_id)
-        canonical_pairs: set[tuple[uuid.UUID, uuid.UUID]] = {
-            (r.predecessor_id, r.successor_id) for r in existing_rels
-        }
+        canonical_pairs: set[tuple[uuid.UUID, uuid.UUID]] = {(r.predecessor_id, r.successor_id) for r in existing_rels}
 
         edges_created = 0
         # 1. Promote orphan JSON edges into the canonical table.

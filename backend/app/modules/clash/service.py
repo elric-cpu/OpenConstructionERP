@@ -3954,7 +3954,7 @@ def _disc_system(disc: object, system: object) -> str:
     (so a partially-tagged model still groups meaningfully).
     """
     d = _disc(disc)
-    s = (str(system or "").strip())
+    s = str(system or "").strip()
     return f"{d} · {s}" if s else d
 
 
@@ -4060,8 +4060,7 @@ def _build_grouped_summary(results: list[ClashResult], dimension: str) -> dict:
                 cell["open_count"] += 1
         out["systems"] = sorted(systems)
         out["system_matrix"] = [
-            {"a": a, "b": b, "count": v["count"], "open_count": v["open_count"]}
-            for (a, b), v in sorted(cell_s.items())
+            {"a": a, "b": b, "count": v["count"], "open_count": v["open_count"]} for (a, b), v in sorted(cell_s.items())
         ]
         return out
 

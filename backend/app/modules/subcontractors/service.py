@@ -216,9 +216,7 @@ def _is_payment_waiver(waiver_type: str) -> bool:
     (``w9`` / ``w8``) are excluded. Also tolerates the bare ``conditional`` /
     ``unconditional`` bases for forward-compatibility.
     """
-    return waiver_type not in _TAX_FORM_WAIVER_TYPES and (
-        waiver_type.startswith(("conditional", "unconditional"))
-    )
+    return waiver_type not in _TAX_FORM_WAIVER_TYPES and (waiver_type.startswith(("conditional", "unconditional")))
 
 
 def lien_waiver_blocked(
@@ -1278,10 +1276,7 @@ class SubcontractorService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail={
                     "code": result.reasons[0] if result.reasons else "missing_waiver",
-                    "message": (
-                        "This payment is blocked until a signed lien waiver covering the "
-                        "amount is on file."
-                    ),
+                    "message": ("This payment is blocked until a signed lien waiver covering the amount is on file."),
                     "reasons": result.reasons,
                 },
             )

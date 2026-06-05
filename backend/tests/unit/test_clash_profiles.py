@@ -226,9 +226,7 @@ async def test_duplicate_name_rejected(db_session):
 async def test_update_profile_changes_fields(db_session):
     project_id, _ = await _seed_project(db_session)
     svc = ClashService(db_session)
-    profile = await svc.create_profile(
-        project_id, ClashProfileCreate(name="Tune", tolerance_m=0.01), str(uuid.uuid4())
-    )
+    profile = await svc.create_profile(project_id, ClashProfileCreate(name="Tune", tolerance_m=0.01), str(uuid.uuid4()))
     updated = await svc.update_profile(
         project_id,
         profile.id,

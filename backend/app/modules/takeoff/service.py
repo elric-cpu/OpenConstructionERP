@@ -1631,9 +1631,7 @@ class TakeoffService:
 
         summary = {
             "measurements": _tally(rows),
-            "net_cost_impact": str(net_impact.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
-            if has_cost
-            else None,
+            "net_cost_impact": str(net_impact.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) if has_cost else None,
             "cost_currency": cost_currency_out,
             "from_measurement_count": len(from_measurements),
             "to_measurement_count": len(to_measurements),

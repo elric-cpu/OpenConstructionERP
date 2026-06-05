@@ -98,9 +98,7 @@ async def _fire_due_agent(service: AgentService, agent: CustomAgent, now: _dt.da
 
     schedule_input = auto.get("schedule_input")
     user_input = (
-        schedule_input.strip()
-        if isinstance(schedule_input, str) and schedule_input.strip()
-        else DEFAULT_SCHEDULE_INPUT
+        schedule_input.strip() if isinstance(schedule_input, str) and schedule_input.strip() else DEFAULT_SCHEDULE_INPUT
     )
 
     try:

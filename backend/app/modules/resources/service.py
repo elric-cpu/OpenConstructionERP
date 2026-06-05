@@ -152,9 +152,7 @@ def _build_capacity_buckets(
 # Assignment states that consume capacity for leveling purposes. Cancelled
 # bookings never consumed the resource; completed bookings are in the past and
 # cannot be re-levelled, so neither contributes to a forward-looking overload.
-_LEVELING_ACTIVE_STATES: frozenset[str] = frozenset(
-    {"proposed", "confirmed", "in_progress"}
-)
+_LEVELING_ACTIVE_STATES: frozenset[str] = frozenset({"proposed", "confirmed", "in_progress"})
 
 
 def build_leveling_suggestions(
@@ -191,9 +189,7 @@ def build_leveling_suggestions(
 
     suggestions: list[dict[str, Any]] = []
     # Sort smallest-first for the shift candidate, largest-first for spread.
-    by_alloc_asc = sorted(
-        bucket_bookings, key=lambda b: int(b.get("allocation_percent") or 0)
-    )
+    by_alloc_asc = sorted(bucket_bookings, key=lambda b: int(b.get("allocation_percent") or 0))
     smallest = by_alloc_asc[0]
     smallest_alloc = int(smallest.get("allocation_percent") or 0)
 
@@ -1359,9 +1355,7 @@ class ResourcesService:
         end = _as_aware(end)
         bucket = bucket if bucket in ("week", "month") else "week"
         buckets = _build_capacity_buckets(start, end, bucket)
-        bucket_dicts = [
-            {"index": i, "start": bs, "end": be, "label": label} for (i, bs, be, label) in buckets
-        ]
+        bucket_dicts = [{"index": i, "start": bs, "end": be, "label": label} for (i, bs, be, label) in buckets]
         empty = {
             "start": start,
             "end": end,
@@ -1387,9 +1381,7 @@ class ResourcesService:
             from app.modules.projects.models import Project
 
             rows = (
-                await self.session.execute(
-                    select(Project.id, Project.name).where(Project.id.in_(project_ids))
-                )
+                await self.session.execute(select(Project.id, Project.name).where(Project.id.in_(project_ids)))
             ).all()
             name_by_project = {pid: pname for (pid, pname) in rows}
 
@@ -1411,14 +1403,12 @@ class ResourcesService:
             cells: list[dict[str, Any]] = []
             peak = 0
             has_conflict = False
-            for (bi, b_start, b_end, _label) in buckets:
+            for bi, b_start, b_end, _label in buckets:
                 # Per-project tally inside this bucket.
                 per_project: dict[uuid.UUID | None, int] = {}
                 for a in asgns:
                     if _intervals_overlap(_as_aware(a.start_at), _as_aware(a.end_at), b_start, b_end):
-                        per_project[a.project_id] = per_project.get(a.project_id, 0) + int(
-                            a.allocation_percent or 0
-                        )
+                        per_project[a.project_id] = per_project.get(a.project_id, 0) + int(a.allocation_percent or 0)
                 if not per_project:
                     continue
                 total = sum(per_project.values())
@@ -1438,15 +1428,11 @@ class ResourcesService:
                             {
                                 "project_id": pid,
                                 "project_name": (
-                                    name_by_project.get(pid, "Unknown project")
-                                    if pid is not None
-                                    else "Unassigned"
+                                    name_by_project.get(pid, "Unknown project") if pid is not None else "Unassigned"
                                 ),
                                 "allocation_percent": pct,
                             }
-                            for pid, pct in sorted(
-                                per_project.items(), key=lambda kv: kv[1], reverse=True
-                            )
+                            for pid, pct in sorted(per_project.items(), key=lambda kv: kv[1], reverse=True)
                         ],
                     }
                 )
@@ -1511,9 +1497,7 @@ class ResourcesService:
         end = _as_aware(end)
         bucket = bucket if bucket in ("week", "month") else "week"
         buckets = _build_capacity_buckets(start, end, bucket)
-        bucket_dicts = [
-            {"index": i, "start": bs, "end": be, "label": label} for (i, bs, be, label) in buckets
-        ]
+        bucket_dicts = [{"index": i, "start": bs, "end": be, "label": label} for (i, bs, be, label) in buckets]
         empty = {
             "start": start,
             "end": end,
@@ -1541,9 +1525,7 @@ class ResourcesService:
             from app.modules.projects.models import Project
 
             rows = (
-                await self.session.execute(
-                    select(Project.id, Project.name).where(Project.id.in_(project_ids))
-                )
+                await self.session.execute(select(Project.id, Project.name).where(Project.id.in_(project_ids)))
             ).all()
             name_by_project = {pid: pname for (pid, pname) in rows}
 
@@ -1572,7 +1554,7 @@ class ResourcesService:
             suggestions: list[dict[str, Any]] = []
             peak = 0
             overload_buckets = 0
-            for (bi, b_start, b_end, _label) in buckets:
+            for bi, b_start, b_end, _label in buckets:
                 bucket_bookings: list[dict[str, Any]] = []
                 per_project_projects: set[uuid.UUID] = set()
                 for a in asgns:
@@ -1599,7 +1581,9 @@ class ResourcesService:
                 if over:
                     overload_buckets += 1
                     cell_suggestions = build_leveling_suggestions(
-                        bi, int(capacity), bucket_bookings  # type: ignore[arg-type]
+                        bi,
+                        int(capacity),
+                        bucket_bookings,  # type: ignore[arg-type]
                     )
                     suggestions.extend(cell_suggestions)
                 cells.append(

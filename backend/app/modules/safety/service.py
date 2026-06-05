@@ -689,9 +689,7 @@ class SafetyService:
 
         from sqlalchemy import select
 
-        inc_result = await self.session.execute(
-            select(SafetyIncident).where(SafetyIncident.project_id == project_id)
-        )
+        inc_result = await self.session.execute(select(SafetyIncident).where(SafetyIncident.project_id == project_id))
         incidents = list(inc_result.scalars().all())
 
         obs_result = await self.session.execute(

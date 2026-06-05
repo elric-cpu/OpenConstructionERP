@@ -283,10 +283,10 @@ async def _untag_pack_projects(slug: str) -> int:
         untagged = 0
         async with async_session_factory() as session:
             rows = (
-                await session.execute(
-                    select(Project).where(Project.metadata_["partner_pack"].as_string() == slug)
-                )
-            ).scalars().all()
+                (await session.execute(select(Project).where(Project.metadata_["partner_pack"].as_string() == slug)))
+                .scalars()
+                .all()
+            )
             for proj in rows:
                 md = dict(proj.metadata_ or {})
                 if md.pop("partner_pack", None) is not None:

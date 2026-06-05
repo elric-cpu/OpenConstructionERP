@@ -155,8 +155,7 @@ def test_compute_trend_direction() -> None:
 @pytest.mark.asyncio
 async def test_trends_extended_happy_path_12_months() -> None:
     incidents = [
-        _inc(f"2025-{m:02d}-15", man_hours=50000, days_lost=2, treatment_type="hospital")
-        for m in range(1, 13)
+        _inc(f"2025-{m:02d}-15", man_hours=50000, days_lost=2, treatment_type="hospital") for m in range(1, 13)
     ]
     svc = _make_service(incidents)
     resp = await svc.get_trends_extended(PROJECT_ID, period="monthly")

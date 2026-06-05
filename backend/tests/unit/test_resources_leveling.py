@@ -408,9 +408,7 @@ async def test_project_scoped_view_filters_to_one_project(session: AsyncSession)
     await _mk_assignment(session, resource_id=r.id, project_id=p1.id, day_start=1, day_end=3, alloc=70)
     await _mk_assignment(session, resource_id=r.id, project_id=p2.id, day_start=1, day_end=3, alloc=60)
 
-    payload = await svc.portfolio_leveling(
-        ANCHOR, ANCHOR + timedelta(days=7), bucket="week", project_id=p1.id
-    )
+    payload = await svc.portfolio_leveling(ANCHOR, ANCHOR + timedelta(days=7), bucket="week", project_id=p1.id)
     assert payload["project_id"] == p1.id
     row = _row_for(payload, r.id)
     assert row is not None

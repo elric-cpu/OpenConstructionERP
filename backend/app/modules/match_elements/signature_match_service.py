@@ -152,8 +152,7 @@ def _ratio_score(
                 "weight": round(rng.weight, 4),
                 "contribution": round(fit, 4),
                 "detail": (
-                    f"{rng.name}={value:g} vs [{rng.low:g}, {rng.high:g}] "
-                    f"(±{rng.tolerance:g}) -> fit {fit:.2f}"
+                    f"{rng.name}={value:g} vs [{rng.low:g}, {rng.high:g}] (±{rng.tolerance:g}) -> fit {fit:.2f}"
                 ),
             },
         )
@@ -213,9 +212,7 @@ class SignatureMatchService:
                 tests for the empty-library / custom-library cases). When
                 ``None``, the built-in :func:`seed_library` is used.
         """
-        self._library: tuple[SymbolArchetype, ...] = (
-            seed_library() if library is None else library
-        )
+        self._library: tuple[SymbolArchetype, ...] = seed_library() if library is None else library
 
     @property
     def library(self) -> tuple[SymbolArchetype, ...]:
@@ -253,9 +250,7 @@ class SignatureMatchService:
             ratio, ratio_factors = _ratio_score(signature, archetype)
             keyword, keyword_factors = _keyword_score(signature, archetype)
 
-            confidence = (
-                _W_CATEGORY * cat + _W_RATIOS * ratio + _W_KEYWORDS * keyword
-            )
+            confidence = _W_CATEGORY * cat + _W_RATIOS * ratio + _W_KEYWORDS * keyword
             # Clamp defensively — the blend is already bounded, but a future
             # weight edit must never leak a value outside [0, 1].
             confidence = max(0.0, min(1.0, confidence))
@@ -267,10 +262,7 @@ class SignatureMatchService:
                         "name": "category",
                         "weight": round(_W_CATEGORY, 4),
                         "contribution": round(cat, 4),
-                        "detail": (
-                            f"category '{signature.category or '∅'}' vs "
-                            f"{sorted(archetype.categories)}"
-                        ),
+                        "detail": (f"category '{signature.category or '∅'}' vs {sorted(archetype.categories)}"),
                     },
                 )
             factors.extend(ratio_factors)

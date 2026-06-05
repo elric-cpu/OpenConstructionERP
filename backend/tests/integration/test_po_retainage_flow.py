@@ -124,9 +124,7 @@ async def test_retainage_release_cascades_on_po_delete(session: AsyncSession) ->
     await session.delete(po)
     await session.flush()
     remaining = (
-        (await session.execute(select(PORetainageRelease).where(PORetainageRelease.po_id == po.id)))
-        .scalars()
-        .all()
+        (await session.execute(select(PORetainageRelease).where(PORetainageRelease.po_id == po.id))).scalars().all()
     )
     assert remaining == []
 

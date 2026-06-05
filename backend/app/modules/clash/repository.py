@@ -304,9 +304,7 @@ class ClashRepository:
     async def list_profiles(self, project_id: uuid.UUID) -> list[ClashProfile]:
         """Every profile in a project's library (newest first)."""
         stmt = (
-            select(ClashProfile)
-            .where(ClashProfile.project_id == project_id)
-            .order_by(ClashProfile.created_at.desc())
+            select(ClashProfile).where(ClashProfile.project_id == project_id).order_by(ClashProfile.created_at.desc())
         )
         return list((await self.session.execute(stmt)).scalars().all())
 

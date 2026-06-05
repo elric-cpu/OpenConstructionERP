@@ -116,9 +116,7 @@ def upgrade() -> None:
             sa.Column("source_claim_id", sa.String(length=36), nullable=True),
         )
         if "ix_invoice_source_claim" not in _idx(insp, "oe_finance_invoice"):
-            op.create_index(
-                "ix_invoice_source_claim", "oe_finance_invoice", ["source_claim_id"]
-            )
+            op.create_index("ix_invoice_source_claim", "oe_finance_invoice", ["source_claim_id"])
 
     pay = _cols(insp, "oe_finance_payment")
     if pay:
@@ -183,9 +181,7 @@ def upgrade() -> None:
                 ),
             )
         if "ix_po_retention_percent" not in _idx(insp, "oe_procurement_po"):
-            op.create_index(
-                "ix_po_retention_percent", "oe_procurement_po", ["retention_percent"]
-            )
+            op.create_index("ix_po_retention_percent", "oe_procurement_po", ["retention_percent"])
 
     if "oe_procurement_po_retainage_release" not in tables:
         op.create_table(
@@ -209,9 +205,7 @@ def upgrade() -> None:
             sa.Column("release_reason", sa.String(length=255), nullable=True),
             sa.Column("released_by_id", sa.String(length=36), nullable=True),
             sa.Column("metadata", sa.JSON(), nullable=False, server_default="{}"),
-            sa.ForeignKeyConstraint(
-                ["po_id"], ["oe_procurement_po.id"], ondelete="CASCADE"
-            ),
+            sa.ForeignKeyConstraint(["po_id"], ["oe_procurement_po.id"], ondelete="CASCADE"),
         )
         op.create_index(
             "ix_retainage_po_date",
@@ -246,9 +240,7 @@ def upgrade() -> None:
                 ),
             )
             if "ix_oe_risk_register_escalated" not in _idx(insp, "oe_risk_register"):
-                op.create_index(
-                    "ix_oe_risk_register_escalated", "oe_risk_register", ["escalated"]
-                )
+                op.create_index("ix_oe_risk_register_escalated", "oe_risk_register", ["escalated"])
         if "escalated_at" not in rk:
             op.add_column(
                 "oe_risk_register",
@@ -295,9 +287,7 @@ def upgrade() -> None:
                 ["oe_subcontractors_subcontractor.id"],
                 ondelete="CASCADE",
             ),
-            sa.UniqueConstraint(
-                "subcontractor_id", "period", name="uq_subcontractors_rating_period"
-            ),
+            sa.UniqueConstraint("subcontractor_id", "period", name="uq_subcontractors_rating_period"),
         )
         op.create_index(
             "ix_oe_subcontractors_rating_subcontractor_id",

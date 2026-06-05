@@ -60,9 +60,7 @@ def test_compute_payment_withholding_rounds_half_up() -> None:
 
 
 def test_compute_payment_withholding_explicit_amount() -> None:
-    pay, held = compute_payment_withholding(
-        Decimal("80000"), withholding_amount=Decimal("4000")
-    )
+    pay, held = compute_payment_withholding(Decimal("80000"), withholding_amount=Decimal("4000"))
     assert held == Decimal("4000.00")
     assert pay == Decimal("76000.00")
 
@@ -77,9 +75,7 @@ def test_compute_payment_withholding_explicit_amount_overrides_pct() -> None:
 
 
 def test_compute_payment_withholding_explicit_over_gross_clamped() -> None:
-    pay, held = compute_payment_withholding(
-        Decimal("5000"), withholding_amount=Decimal("9999")
-    )
+    pay, held = compute_payment_withholding(Decimal("5000"), withholding_amount=Decimal("9999"))
     assert held == Decimal("5000.00")
     assert pay == Decimal("0.00")
 
@@ -108,9 +104,7 @@ class _FakeProject:
 def test_convert_to_base_gbp_to_usd() -> None:
     # 1 GBP = 1.25 USD; a 10,000 GBP claim converts to 12,500 USD base.
     fx = _project_fx_map(_FakeProject([{"code": "GBP", "rate": "1.25"}]))
-    converted, missing = _convert_to_base(
-        {"GBP": 10000.0}, base_currency="USD", fx_rates_map=fx
-    )
+    converted, missing = _convert_to_base({"GBP": 10000.0}, base_currency="USD", fx_rates_map=fx)
     assert converted == pytest.approx(12500.0)
     assert missing == []
 
@@ -119,18 +113,14 @@ def test_convert_to_base_missing_rate_keeps_value_not_zero() -> None:
     # No FX rate for GBP → keep the value in its own units, never zero it, and
     # surface the missing code so the UI can warn.
     fx = _project_fx_map(_FakeProject([]))
-    converted, missing = _convert_to_base(
-        {"GBP": 10000.0}, base_currency="USD", fx_rates_map=fx
-    )
+    converted, missing = _convert_to_base({"GBP": 10000.0}, base_currency="USD", fx_rates_map=fx)
     assert converted == pytest.approx(10000.0)
     assert missing == ["GBP"]
 
 
 def test_convert_to_base_same_currency_passthrough() -> None:
     fx = _project_fx_map(_FakeProject([]))
-    converted, missing = _convert_to_base(
-        {"USD": 5000.0}, base_currency="USD", fx_rates_map=fx
-    )
+    converted, missing = _convert_to_base({"USD": 5000.0}, base_currency="USD", fx_rates_map=fx)
     assert converted == pytest.approx(5000.0)
     assert missing == []
 

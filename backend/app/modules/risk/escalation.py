@@ -320,9 +320,7 @@ class RiskEscalationService:
             now: injectable current time for deterministic tests.
         """
         now = now or datetime.now(UTC)
-        stmt = select(RiskItem).where(
-            or_(RiskItem.escalated.is_(False), RiskItem.escalated.is_(None))
-        )
+        stmt = select(RiskItem).where(or_(RiskItem.escalated.is_(False), RiskItem.escalated.is_(None)))
         if project_id is not None:
             stmt = stmt.where(RiskItem.project_id == project_id)
         rows = list((await self.session.execute(stmt)).scalars().all())
@@ -330,9 +328,7 @@ class RiskEscalationService:
         escalated = 0
         triggers: dict[str, int] = {}
         for risk in rows:
-            did = await self._evaluate_and_apply(
-                risk, default_threshold=default_threshold, now=now
-            )
+            did = await self._evaluate_and_apply(risk, default_threshold=default_threshold, now=now)
             if did and risk.escalation_trigger:
                 escalated += 1
                 triggers[risk.escalation_trigger] = triggers.get(risk.escalation_trigger, 0) + 1
