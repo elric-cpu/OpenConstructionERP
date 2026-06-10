@@ -1211,7 +1211,7 @@ def _position_currency(pos: Position) -> str:
     ``position_currency`` are accepted as legacy fallbacks so older
     imported rows keep converting. Empty → "" (caller treats as base).
     """
-    meta = pos.metadata_ if isinstance(pos.metadata_, dict) else {}
+    meta = pos.metadata_ if isinstance(getattr(pos, "metadata_", None), dict) else {}
     for key in ("currency", "position_currency", "project_currency"):
         val = meta.get(key)
         if isinstance(val, str) and val.strip():

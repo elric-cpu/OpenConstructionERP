@@ -42,8 +42,12 @@ class _StubInspectionRepo:
         self._counter = 0
 
     async def create(self, inspection: Any) -> Any:
+        # The real repository assigns the human-facing number inside create()
+        # (with a per-project collision retry), so the stub must do the same;
+        # the service no longer calls next_inspection_number() itself.
         if getattr(inspection, "id", None) is None:
             inspection.id = uuid.uuid4()
+        inspection.inspection_number = await self.next_inspection_number(inspection.project_id)
         now = datetime.now(UTC)
         inspection.created_at = now
         inspection.updated_at = now

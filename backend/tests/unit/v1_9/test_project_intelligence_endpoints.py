@@ -90,6 +90,9 @@ def _make_position(
         unit_rate=str(unit_rate),
         total=str(total),
         classification=classification or {},
+        # Mirror the real Position model: the cost-rollup path reads
+        # ``pos.metadata_`` (currency / resources) when bucketing totals.
+        metadata_={},
         sort_order=sort_order,
     )
 

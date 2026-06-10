@@ -58,8 +58,12 @@ class _StubIncidentRepo:
         self._counter = 0
 
     async def create(self, incident: Any) -> Any:
+        # The real repository assigns incident_number inside create() (with a
+        # per-project collision retry), so the stub must do the same; the
+        # service no longer calls next_incident_number() itself.
         if getattr(incident, "id", None) is None:
             incident.id = uuid.uuid4()
+        incident.incident_number = await self.next_incident_number(incident.project_id)
         now = datetime.now(UTC)
         incident.created_at = now
         incident.updated_at = now
@@ -96,8 +100,9 @@ class _StubIncidentRepo:
         self.rows.pop(incident_id, None)
 
     async def next_incident_number(self, project_id: uuid.UUID) -> str:
+        # Match the real repository's INC-NNN zero-padded-to-3 format.
         self._counter += 1
-        return f"INC-{self._counter:04d}"
+        return f"INC-{self._counter:03d}"
 
 
 class _StubObservationRepo:
@@ -106,8 +111,12 @@ class _StubObservationRepo:
         self._counter = 0
 
     async def create(self, obs: Any) -> Any:
+        # The real repository assigns observation_number inside create() (with a
+        # per-project collision retry), so the stub must do the same; the
+        # service no longer calls next_observation_number() itself.
         if getattr(obs, "id", None) is None:
             obs.id = uuid.uuid4()
+        obs.observation_number = await self.next_observation_number(obs.project_id)
         now = datetime.now(UTC)
         obs.created_at = now
         obs.updated_at = now
@@ -144,8 +153,9 @@ class _StubObservationRepo:
         self.rows.pop(obs_id, None)
 
     async def next_observation_number(self, project_id: uuid.UUID) -> str:
+        # Match the real repository's OBS-NNN zero-padded-to-3 format.
         self._counter += 1
-        return f"OBS-{self._counter:04d}"
+        return f"OBS-{self._counter:03d}"
 
 
 def _incident_data(**overrides: Any) -> IncidentCreate:
@@ -206,7 +216,7 @@ async def test_create_incident() -> None:
         incident = await svc.create_incident(_incident_data(), user_id="safety-mgr")
 
     assert incident.id is not None
-    assert incident.incident_number == "INC-0001"
+    assert incident.incident_number == "INC-001"
     assert incident.incident_type == "injury"
     assert incident.severity == "major"
     assert incident.status == "reported"
@@ -428,7 +438,7 @@ class _StatsSession:
 def _incident_row(incident_date: str, *, days_lost: int = 5) -> SimpleNamespace:
     return SimpleNamespace(
         id=uuid.uuid4(),
-        incident_number="INC-0001",
+        incident_number="INC-001",
         incident_date=incident_date,
         incident_type="injury",
         status="reported",

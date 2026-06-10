@@ -78,7 +78,7 @@ def _inc(
         metadata["man_hours_total"] = man_hours
     return SimpleNamespace(
         id=uuid.uuid4(),
-        incident_number="INC-0001",
+        incident_number="INC-001",
         incident_date=incident_date,
         incident_type="injury",
         status="reported",
@@ -394,10 +394,13 @@ async def test_create_incident_unaffected() -> None:
 
     class _Repo:
         async def next_incident_number(self, _pid: uuid.UUID) -> str:
-            return "INC-0001"
+            return "INC-001"
 
         async def create(self, inc: Any) -> Any:
+            # Mirror the real repository: the number is assigned inside
+            # create(), not by a separate service call.
             inc.id = uuid.uuid4()
+            inc.incident_number = await self.next_incident_number(inc.project_id)
             return inc
 
     class _Sess:
@@ -414,4 +417,4 @@ async def test_create_incident_unaffected() -> None:
     )
     with patch("app.modules.safety.service.event_bus.publish_detached", new_callable=AsyncMock):
         inc = await svc.create_incident(data, user_id="u1")
-    assert inc.incident_number == "INC-0001"
+    assert inc.incident_number == "INC-001"

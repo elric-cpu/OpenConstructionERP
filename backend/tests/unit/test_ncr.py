@@ -46,8 +46,12 @@ class _StubNCRRepo:
         self._counter = 0
 
     async def create(self, ncr: Any) -> Any:
+        # The real repository assigns ncr_number inside create() (with a
+        # per-project collision retry), so the stub must do the same; the
+        # service no longer calls next_ncr_number() itself.
         if getattr(ncr, "id", None) is None:
             ncr.id = uuid.uuid4()
+        ncr.ncr_number = await self.next_ncr_number(ncr.project_id)
         now = datetime.now(UTC)
         ncr.created_at = now
         ncr.updated_at = now
@@ -87,8 +91,9 @@ class _StubNCRRepo:
         self.rows.pop(ncr_id, None)
 
     async def next_ncr_number(self, project_id: uuid.UUID) -> str:
+        # Match the real repository's NCR-NNN zero-padded-to-3 format.
         self._counter += 1
-        return f"NCR-{self._counter:04d}"
+        return f"NCR-{self._counter:03d}"
 
 
 def _create_data(**overrides: Any) -> NCRCreate:
@@ -113,7 +118,7 @@ async def test_create_ncr() -> None:
         ncr = await svc.create_ncr(_create_data(), user_id="inspector-1")
 
     assert ncr.id is not None
-    assert ncr.ncr_number == "NCR-0001"
+    assert ncr.ncr_number == "NCR-001"
     assert ncr.ncr_type == "material"
     assert ncr.severity == "major"
     assert ncr.status == "identified"

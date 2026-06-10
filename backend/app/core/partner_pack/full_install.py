@@ -315,30 +315,51 @@ def _pack_country(slug: str) -> str | None:
     return (row.get("country") or "").strip() or None
 
 
+def _country_fill(slug: str, ordered: list[str]) -> None:
+    """Append every other ``DEMO_CATALOG`` demo sharing the pack's country.
+
+    Mutates ``ordered`` in place, preserving its existing order and skipping
+    ids already present, so the flagship (or the manifest's explicit picks)
+    always lead and the same-country siblings follow. No-op when the pack has
+    no derivable country.
+    """
+    from app.core.demo_projects import DEMO_CATALOG
+
+    country = _pack_country(slug)
+    if not country:
+        return
+    for row in DEMO_CATALOG:
+        demo_id = row.get("demo_id")
+        if demo_id and demo_id not in ordered and (row.get("country") or "").strip() == country:
+            ordered.append(demo_id)
+
+
 def _demo_install_list(slug: str, demo_count: int, country_fill: bool = True) -> list[str]:
     """Build the ordered, de-duplicated demo install list for the pack.
 
     A pack's manifest may declare an explicit ``demo_template_ids`` list. When
     present, those ids (in order, de-duplicated, filtered to ids that resolve to
-    a loaded ``DemoTemplate``) are used verbatim - this guarantees every pack can
-    pin exactly the market-appropriate demos it ships, even when no second demo
-    shares the flagship's country (e.g. the cross-region modular / renewables
-    packs). When the manifest declares none, fall back to the historical
-    behaviour: flagship (``PACK_DEMO_PROJECT[slug]``) first, then every other
-    ``DEMO_CATALOG`` demo sharing the flagship's ``country``. The result is
-    truncated to ``demo_count``.
+    a loaded ``DemoTemplate``) lead the list - this lets a pack pin exactly the
+    market-appropriate demos it ships. When the manifest under-pins (fewer ids
+    than ``demo_count``), the list is padded with other ``DEMO_CATALOG`` demos
+    sharing the flagship's country so the one-click installer still lands the
+    asserted number of in-market projects (the documented "always land two"
+    guarantee). When the manifest declares none, the flagship
+    (``PACK_DEMO_PROJECT[slug]``) leads and the same country-fill follows. The
+    result is truncated to ``demo_count``.
 
     Args:
         slug: The pack slug to build the install list for.
         demo_count: Maximum number of demos to return.
-        country_fill: When True (default) and the manifest declares no explicit
-            ``demo_template_ids``, the flagship is padded with other demos
-            sharing its country. When False, the list is restricted to exactly
-            what the pack pins - the manifest's ``demo_template_ids`` or, if it
-            declares none, only the single ``PACK_DEMO_PROJECT[slug]`` flagship.
-            Use False to seed a pack's own project(s) and nothing else.
+        country_fill: When True (default) the list is padded with other demos
+            sharing the flagship's country (whether the manifest pins an
+            explicit list or relies on the flagship). When False, the list is
+            restricted to exactly what the pack pins - the manifest's
+            ``demo_template_ids`` or, if it declares none, only the single
+            ``PACK_DEMO_PROJECT[slug]`` flagship. Use False to seed a pack's own
+            project(s) and nothing else.
     """
-    from app.core.demo_projects import DEMO_CATALOG, DEMO_TEMPLATES, PACK_DEMO_PROJECT
+    from app.core.demo_projects import DEMO_TEMPLATES, PACK_DEMO_PROJECT
     from app.core.partner_pack.discovery import get_pack_by_slug
 
     if demo_count <= 0:
@@ -348,13 +369,18 @@ def _demo_install_list(slug: str, demo_count: int, country_fill: bool = True) ->
     # ids that resolve to a real template so a typo never seeds a phantom demo.
     m = get_pack_by_slug(slug)
     explicit = list(getattr(m, "demo_template_ids", []) or []) if m else []
-    if explicit:
-        ordered: list[str] = []
-        for demo_id in explicit:
-            if demo_id in DEMO_TEMPLATES and demo_id not in ordered:
-                ordered.append(demo_id)
-        if ordered:
-            return ordered[:demo_count]
+    ordered: list[str] = []
+    for demo_id in explicit:
+        if demo_id in DEMO_TEMPLATES and demo_id not in ordered:
+            ordered.append(demo_id)
+
+    if ordered:
+        # Manifest pinned at least one valid id. Honour it verbatim in pack-only
+        # mode; otherwise pad with same-country siblings so an under-pinned
+        # manifest (a single explicit id) still lands ``demo_count`` projects.
+        if country_fill:
+            _country_fill(slug, ordered)
+        return ordered[:demo_count]
 
     flagship = PACK_DEMO_PROJECT.get(slug)
 
@@ -362,16 +388,9 @@ def _demo_install_list(slug: str, demo_count: int, country_fill: bool = True) ->
     if not country_fill:
         return [flagship][:demo_count] if flagship else []
 
-    country = _pack_country(slug)
-
-    ordered = []
     if flagship:
         ordered.append(flagship)
-    if country:
-        for row in DEMO_CATALOG:
-            demo_id = row.get("demo_id")
-            if demo_id and demo_id not in ordered and (row.get("country") or "").strip() == country:
-                ordered.append(demo_id)
+    _country_fill(slug, ordered)
     return ordered[:demo_count]
 
 

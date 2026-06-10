@@ -139,8 +139,14 @@ async def test_remove_photo_valid_index_removes_entry() -> None:
 
 
 @pytest.mark.asyncio
-async def test_self_verify_blocked_when_assigned() -> None:
-    """A user who is assigned the item cannot also verify it (different-user rule)."""
+async def test_self_verify_blocked_for_resolver() -> None:
+    """The user who resolved the item cannot also verify it (four-eyes rule).
+
+    The guard keys off the recorded resolver (metadata_.resolved_by), not
+    assigned_to - a null or mismatched assignee must never silently disable
+    the four-eyes gate. So we first drive in_progress -> resolved as the
+    resolver, then attempt resolved -> verified as that same user.
+    """
     from fastapi import HTTPException
 
     svc = _make_service()
@@ -148,6 +154,14 @@ async def test_self_verify_blocked_when_assigned() -> None:
     user = str(uuid.uuid4())
     item = repo._make_item(status="in_progress", assigned_to=user)
 
+    # in_progress -> resolved records resolved_by = user.
+    await svc.transition_status(
+        item.id,
+        PunchStatusTransition(new_status="resolved"),
+        user,
+    )
+
+    # resolved -> verified by the same user must be rejected.
     with pytest.raises(HTTPException) as exc_info:
         await svc.transition_status(
             item.id,
@@ -160,14 +174,22 @@ async def test_self_verify_blocked_when_assigned() -> None:
 
 @pytest.mark.asyncio
 async def test_different_user_can_verify() -> None:
-    """A different user (not the assignee) can transition to verified."""
+    """A different user (not the resolver) can transition to verified."""
     svc = _make_service()
     repo: _StubRepo = svc.repo  # type: ignore[assignment]
     resolver = str(uuid.uuid4())
     verifier = str(uuid.uuid4())
     item = repo._make_item(status="in_progress", assigned_to=resolver)
 
-    # Should succeed — verifier != resolver
+    # Record the resolver first so the four-eyes gate has something to
+    # compare against.
+    await svc.transition_status(
+        item.id,
+        PunchStatusTransition(new_status="resolved"),
+        resolver,
+    )
+
+    # Should succeed - verifier != resolver.
     result = await svc.transition_status(
         item.id,
         PunchStatusTransition(new_status="verified"),

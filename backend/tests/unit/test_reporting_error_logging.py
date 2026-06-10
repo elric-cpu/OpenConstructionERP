@@ -211,7 +211,10 @@ class TestKpiRecalcLogging:
         happy_fin = MagicMock()
         happy_fin.get_dashboard = AsyncMock(return_value={"total_budget": "100", "total_actual": "75"})
         happy_cm = MagicMock()
-        happy_cm.get_dashboard = AsyncMock(return_value={"cpi": 1.0, "spi": 0.95})
+        # CostModelService.get_dashboard returns a DashboardResponse (Pydantic
+        # model), so the reporting service reads cpi/spi as attributes - mirror
+        # that here with an attribute-style object, not a dict.
+        happy_cm.get_dashboard = AsyncMock(return_value=SimpleNamespace(cpi=1.0, spi=0.95))
         happy_safety = MagicMock()
         happy_safety.get_stats = AsyncMock(
             return_value=SimpleNamespace(total_observations=5, closed_observations=3, total_incidents=1)

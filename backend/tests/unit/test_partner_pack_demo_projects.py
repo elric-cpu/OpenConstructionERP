@@ -31,7 +31,11 @@ from app.core.demo_projects import (
 # Units accepted by the BOQ position model / demo installer.
 # Includes locale-authentic codes the flagship country demos use on purpose:
 # Brazil "vb" (verba / lump sum), "un" (unidade), "mes" (month); India "MT"
-# (metric tonne), "rm" (running metre); Canada "suite".
+# (metric tonne), "rm" (running metre); Canada "suite". The China GB/T
+# 50500-2013 demo uses the standard Chinese measurement words: "项" (xiang,
+# lump-sum work item, like "lsum"), "台" (tai, a machine/equipment set), "樘"
+# (tang, a door/window leaf), "组" (zu, a group/set), "套" (tao, a set/system),
+# "根" (gen, a long single piece such as a pile or rod).
 _ALLOWED_UNITS = {
     "m2",
     "m3",
@@ -52,6 +56,12 @@ _ALLOWED_UNITS = {
     "vb",
     "mes",
     "suite",
+    "项",
+    "台",
+    "樘",
+    "组",
+    "套",
+    "根",
 }
 
 _CATALOG_BY_ID = {c["demo_id"]: c for c in DEMO_CATALOG}

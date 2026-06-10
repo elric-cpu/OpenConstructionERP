@@ -121,7 +121,7 @@ describe('aggregator normalisation', () => {
     expect(u.page).toBe(2);
     expect(u.type).toBe('cloud');
     expect(u.deepLink).toContain('/markups');
-    expect(u.deepLink).toContain('documentId=doc-a');
+    expect(u.deepLink).toContain('openDoc=doc-a');
   });
 
   it('normalises a DWG annotation - no page, drawing file name, deep link', () => {
