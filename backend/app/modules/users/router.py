@@ -8,6 +8,7 @@ Endpoints:
     POST /auth/reset-password   - Reset password with token
     GET  /me                    - Current user profile
     PATCH /me                   - Update own profile
+    DELETE /me                  - Erase own account (GDPR Art. 17)
     POST /me/change-password    - Change own password
     GET  /me/api-keys           - List own API keys
     POST /me/api-keys           - Create API key
@@ -46,6 +47,8 @@ from app.modules.users.schemas import (
     APIKeyCreatedResponse,
     APIKeyResponse,
     ChangePasswordRequest,
+    DeleteAccountRequest,
+    DeleteAccountResponse,
     FirstRunResponse,
     ForgotPasswordRequest,
     ForgotPasswordResponse,
@@ -490,6 +493,37 @@ async def change_password(
     pair so the client can stay authenticated without a forced re-login.
     """
     return await service.change_password(uuid.UUID(user_id), data)
+
+
+@router.delete("/me/", response_model=DeleteAccountResponse)
+@router.delete("/me", response_model=DeleteAccountResponse, include_in_schema=False)
+async def delete_me(
+    data: DeleteAccountRequest,
+    user_id: CurrentUserId,
+    service: UserService = Depends(_get_service),
+) -> DeleteAccountResponse:
+    """Erase the current user's own account (GDPR Art. 17, right to erasure).
+
+    Self-service only: it always targets the authenticated caller (``user_id``
+    comes from the token, the body has no id), so a caller can never erase
+    another user through this route.
+
+    The request body must confirm intent so an account is never erased by
+    accident or by a replayed token alone: a password account re-supplies its
+    ``current_password``; a passwordless / SSO account types ``DELETE`` into
+    ``confirm``. A bad confirmation returns 400.
+
+    Erasure anonymises the row in place rather than hard-deleting it, so the
+    user's projects and audit/activity history keep resolving while every
+    personal field is nulled, the password hash is invalidated, all API keys
+    are revoked and the account can no longer log in. The last active admin of
+    a workspace cannot erase itself (409) so the workspace is never orphaned.
+
+    Declared before the ``/{user_id}`` admin routes so ``DELETE /users/me``
+    resolves here and not as a UUID-path 422 on the literal ``"me"``.
+    """
+    await service.erase_account(uuid.UUID(user_id), data)
+    return DeleteAccountResponse()
 
 
 # ── Regional Preferences ──────────────────────────────────────────────────

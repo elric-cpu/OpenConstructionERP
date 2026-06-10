@@ -30,6 +30,12 @@ class User(Base):
     # this timestamp are considered invalid - see dependencies.get_current_user.
     # Used to invalidate existing sessions on password change.
     password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # GDPR Art. 17 erasure marker. When the account holder self-erases via
+    # DELETE /api/v1/users/me the row is anonymised in place (PII nulled,
+    # password hash invalidated, is_active flipped False) rather than hard
+    # deleted, so foreign-key references (projects, activity, audit) survive.
+    # This timestamp records when that happened; NULL means a live account.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
         "metadata",
         JSON,

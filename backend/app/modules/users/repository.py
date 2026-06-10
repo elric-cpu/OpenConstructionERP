@@ -138,6 +138,26 @@ class UserRepository:
         )
         return (await self.session.execute(stmt)).scalar_one_or_none() is not None
 
+    async def count_active_admins(self, *, exclude_id: uuid.UUID | None = None) -> int:
+        """Count active admin users, optionally excluding one id.
+
+        Used by the self-erasure guard so the workspace is never left without
+        an administrator: the caller passes its own id as ``exclude_id`` and a
+        result of 0 means it is the last admin and erasure must be refused.
+        Rows already marked erased (``deleted_at`` set) are not counted - an
+        anonymised admin row is not a real administrator.
+        """
+        from sqlalchemy import func
+
+        stmt = (
+            select(func.count())
+            .select_from(User)
+            .where(User.role == "admin", User.is_active.is_(True), User.deleted_at.is_(None))
+        )
+        if exclude_id is not None:
+            stmt = stmt.where(User.id != exclude_id)
+        return (await self.session.execute(stmt)).scalar_one()
+
     async def get_local_desktop_owner(self) -> User | None:
         """Return the desktop bootstrap owner row, or None if it doesn't exist.
 
@@ -193,6 +213,16 @@ class APIKeyRepository:
         """Soft-delete an API key."""
         stmt = update(APIKey).where(APIKey.id == key_id).values(is_active=False)
         await self.session.execute(stmt)
+
+    async def deactivate_all_for_user(self, user_id: uuid.UUID) -> None:
+        """Revoke (deactivate) every API key owned by a user.
+
+        Used by account erasure so no programmatic session outlives the
+        anonymised account. Idempotent - already-inactive keys stay inactive.
+        """
+        stmt = update(APIKey).where(APIKey.user_id == user_id).values(is_active=False)
+        await self.session.execute(stmt)
+        await self.session.flush()
 
     async def update_last_used(self, key_id: uuid.UUID) -> None:
         """Update the last_used_at timestamp and persist it."""

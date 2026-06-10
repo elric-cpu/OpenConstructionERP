@@ -47,6 +47,7 @@ from app.modules.users.schemas import (
     APIKeyCreate,
     APIKeyCreatedResponse,
     ChangePasswordRequest,
+    DeleteAccountRequest,
     FirstRunResponse,
     ForgotPasswordRequest,
     ForgotPasswordResponse,
@@ -73,6 +74,16 @@ def hash_password(password: str) -> str:
 def verify_password(plain: str, hashed: str) -> bool:
     """‌⁠‍Verify a plaintext password against a bcrypt hash."""
     return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+
+
+def _is_usable_password_hash(hashed: str | None) -> bool:
+    """True when ``hashed`` looks like a real bcrypt hash we can verify against.
+
+    SSO / passwordless rows may carry an empty or sentinel value rather than a
+    bcrypt digest. ``erase_account`` uses this to decide whether to require the
+    current password or the typed confirmation phrase.
+    """
+    return bool(hashed) and (hashed.startswith("$2a$") or hashed.startswith("$2b$") or hashed.startswith("$2y$"))
 
 
 # ── Token utilities ────────────────────────────────────────────────────────
@@ -947,6 +958,143 @@ class UserService:
     ) -> tuple[list[User], int]:
         """List users with pagination."""
         return await self.user_repo.list_all(offset=offset, limit=limit, is_active=is_active)
+
+    # ── Self-service erasure (GDPR Art. 17) ────────────────────────────
+
+    async def erase_account(
+        self,
+        user_id: uuid.UUID,
+        data: DeleteAccountRequest,
+    ) -> None:
+        """Erase (anonymise in place) the caller's own account. GDPR Art. 17.
+
+        The signup UI promises users can delete their account at any time, so
+        this is the self-service path behind that promise. It never touches
+        another user - the caller's id comes from the authenticated token, and
+        the request body carries no id.
+
+        Erasure model: ANONYMIZE in place rather than hard delete. The user row
+        is referenced by other tables (projects via owner_id, activity / audit
+        rows via actor_id) and the projects FK is ON DELETE CASCADE, so a hard
+        delete would silently drag the user's projects (and their BOQs, costs,
+        documents) into the grave with it. Instead we null every PII field,
+        replace the email with a non-reversible placeholder, invalidate the
+        password hash, flip ``is_active`` False and stamp ``deleted_at``. The
+        row survives so foreign keys stay intact, but it holds no personal data
+        and can no longer authenticate.
+
+        Confirmation guard:
+          - A password account must re-supply ``current_password``; we verify
+            it against the stored hash and raise 400 on a mismatch.
+          - A passwordless / SSO account (no usable hash) must instead type the
+            literal ``DELETE`` into ``confirm``; anything else raises 400.
+
+        Tenant safety: refuses to erase the last remaining active admin so the
+        workspace is never orphaned without an administrator - returns 409 with
+        guidance to promote another admin first.
+
+        Raises:
+            HTTPException 404 if the user does not exist (or is already erased).
+            HTTPException 400 if the confirmation guard is not satisfied.
+            HTTPException 409 if the caller is the last active admin.
+        """
+        user = await self.get_user(user_id)
+
+        if user.deleted_at is not None:
+            # Already erased - nothing left to do, and we must not leak a second
+            # audit row or re-randomise the placeholder. Treat as gone.
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+
+        # ── Confirmation guard ──────────────────────────────────────────
+        has_password = bool(user.hashed_password) and _is_usable_password_hash(user.hashed_password)
+        if has_password:
+            supplied = data.current_password or ""
+            if not supplied or not verify_password(supplied, user.hashed_password):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Current password is incorrect",
+                )
+        else:
+            # Passwordless / SSO account: require the typed confirmation phrase.
+            if (data.confirm or "").strip() != "DELETE":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=("This account has no password. Type DELETE in the confirm field to erase it."),
+                )
+
+        # ── Tenant safety: never orphan the workspace ───────────────────
+        if user.role == "admin":
+            other_admins = await self.user_repo.count_active_admins(exclude_id=user_id)
+            if other_admins == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "You are the last active administrator. Promote another "
+                        "user to admin before erasing your own account so the "
+                        "workspace is not left without an administrator."
+                    ),
+                )
+
+        # Eagerly read the fields we still need before update_fields expires
+        # the instance (avoids MissingGreenlet on async re-access).
+        user_uuid = user.id
+
+        # ── Anonymise in place ──────────────────────────────────────────
+        placeholder_email = f"deleted+{uuid.uuid4().hex}@deleted.invalid"
+        now = datetime.now(UTC)
+        await self.user_repo.update_fields(
+            user_id,
+            email=placeholder_email,
+            full_name="",
+            # A bcrypt hash of a fresh random secret nobody holds: the column is
+            # NOT NULL, and ``_is_usable_password_hash`` still reads it as a hash
+            # so a re-erasure won't fall through to the SSO branch. The user can
+            # never authenticate with it because the plaintext is discarded.
+            hashed_password=hash_password(secrets.token_urlsafe(32)),
+            # Bump password_changed_at so any access/refresh token issued before
+            # now is rejected by get_current_user_payload - the user is logged
+            # out everywhere immediately.
+            password_changed_at=now,
+            is_active=False,
+            deleted_at=now,
+            # Drop all profile PII held in the JSON column (company, job title,
+            # registration ip / user-agent / referrer, avatar, phone, etc.).
+            metadata_={"erased": True},
+            locale="en",
+        )
+
+        # Revoke every API key the user owns so no programmatic session survives.
+        await self.api_key_repo.deactivate_all_for_user(user_uuid)
+
+        # ── Audit trail (no PII in the record) ──────────────────────────
+        try:
+            from app.core.audit_log import log_activity as _log_activity
+
+            await _log_activity(
+                self.session,
+                actor_id=str(user_uuid),
+                entity_type="user",
+                entity_id=str(user_uuid),
+                action="account_erasure",
+                module="users",
+                # Deliberately store NO personal data here - just the fact and
+                # the timestamp. The whole point of erasure is that the record
+                # must not re-store what we just removed.
+                after_state={"erased": True},
+            )
+        except Exception:  # noqa: BLE001
+            logger.debug("audit log skipped for account_erasure (non-fatal)")
+
+        await _safe_publish(
+            "users.user.erased",
+            {"user_id": str(user_uuid)},
+            source_module="oe_users",
+        )
+
+        logger.info("Account erased (self-service GDPR Art. 17): user=%s", user_uuid)
 
     # ── API Keys ───────────────────────────────────────────────────────
 

@@ -336,6 +336,36 @@ class ChangePasswordRequest(BaseModel):
         return self
 
 
+class DeleteAccountRequest(BaseModel):
+    """Confirmation body for self-service account erasure (GDPR Art. 17).
+
+    The caller must prove intent so an account is never erased by accident or
+    by a leaked/replayed token alone:
+
+      - Password accounts re-supply their ``current_password``; the service
+        verifies it against the stored bcrypt hash and rejects a mismatch.
+      - SSO / passwordless accounts (no usable password hash) instead type the
+        literal confirmation phrase into ``confirm`` - the service checks it
+        equals ``DELETE``.
+
+    Both fields are optional at the schema layer because which one is required
+    depends on whether the account has a password; the service decides and
+    returns 400 when neither satisfies the guard.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    current_password: str | None = Field(default=None, max_length=128)
+    confirm: str | None = Field(default=None, max_length=64)
+
+
+class DeleteAccountResponse(BaseModel):
+    """Confirmation returned after a successful self-erasure."""
+
+    status: str = "erased"
+    detail: str = "Your account has been erased."
+
+
 class ForgotPasswordRequest(BaseModel):
     """Forgot password request - triggers reset token generation."""
 
