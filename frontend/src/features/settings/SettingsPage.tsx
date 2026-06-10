@@ -31,6 +31,7 @@ import {
   SlidersHorizontal,
   Layers,
   LogOut,
+  Trash2,
   ChevronRight,
   Wrench,
   LayoutGrid,
@@ -40,7 +41,7 @@ import { PageHeader } from '@/shared/ui/PageHeader';
 import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 import { DashboardLayoutManager } from '@/features/dashboard/DashboardLayoutManager';
 import { UpdateNotification } from '@/shared/ui/UpdateChecker';
-import { apiGet, apiPatch, apiPost } from '@/shared/lib/api';
+import { apiGet, apiPatch, apiPost, apiDelete } from '@/shared/lib/api';
 import { SUPPORTED_LANGUAGES } from '@/app/i18n';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useThemeStore } from '@/stores/useThemeStore';
@@ -48,6 +49,7 @@ import { useToastStore } from '@/stores/useToastStore';
 import { useViewModeStore } from '@/stores/useViewModeStore';
 import { aiApi, type AIProvider, type AIConnectionStatus, type AISettings } from '@/features/ai/api';
 import { BIMConverterStatusBanner } from '@/features/bim/BIMConverterStatusBanner';
+import { DeleteAccountDialog } from './DeleteAccountDialog';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -1089,6 +1091,26 @@ export function SettingsPage() {
 
   const [editingProfile, setEditingProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({ full_name: '' });
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const deleteAccountMutation = useMutation({
+    mutationFn: (secret: string) =>
+      apiDelete('/v1/users/me/', { current_password: secret, confirm: secret }),
+    onSuccess: () => {
+      logout();
+      window.location.href = '/login';
+    },
+    onError: (err: unknown) => {
+      const msg = err instanceof Error ? err.message : '';
+      setDeleteError(
+        msg ||
+          t('settings.delete_account_error', {
+            defaultValue: 'Could not erase the account. Check the value you entered and try again.',
+          }),
+      );
+    },
+  });
 
   const { data: profile, isPending: profileLoading } = useQuery({
     queryKey: ['me'],
@@ -1491,6 +1513,32 @@ export function SettingsPage() {
                       {t('settings.sign_out', { defaultValue: 'Sign Out' })}
                     </Button>
                   </div>
+
+                  <div className="mt-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg border border-semantic-error/20 bg-surface-elevated px-4 py-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-content-primary">
+                        {t('settings.delete_account_row_title', { defaultValue: 'Delete account' })}
+                      </p>
+                      <p className="text-xs text-content-secondary mt-0.5">
+                        {t('settings.delete_account_row_desc', { defaultValue: 'Permanently erase your personal data. Your projects and history stay in the workspace but are no longer tied to your name.' })}
+                      </p>
+                    </div>
+                    <Button
+                      variant="danger"
+                      icon={<Trash2 size={14} />}
+                      onClick={() => { setDeleteError(null); setShowDeleteAccount(true); }}
+                    >
+                      {t('settings.delete_account_confirm', { defaultValue: 'Delete account' })}
+                    </Button>
+                  </div>
+
+                  <DeleteAccountDialog
+                    open={showDeleteAccount}
+                    loading={deleteAccountMutation.isPending}
+                    error={deleteError}
+                    onCancel={() => { if (!deleteAccountMutation.isPending) setShowDeleteAccount(false); }}
+                    onConfirm={(value) => { setDeleteError(null); deleteAccountMutation.mutate(value); }}
+                  />
                 </CardContent>
               </Card>
             </>

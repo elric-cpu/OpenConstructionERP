@@ -559,9 +559,10 @@ export async function apiPut<TResponse, TBody = unknown>(
  */
 export async function apiDelete<TResponse = void>(
   path: string,
+  body?: unknown,
   init?: ApiRequestInit,
 ): Promise<TResponse> {
-  return request<TResponse>('DELETE', path, undefined, init);
+  return request<TResponse>('DELETE', path, body, init);
 }
 
 /**
