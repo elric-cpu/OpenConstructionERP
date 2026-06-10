@@ -76,7 +76,7 @@ export function LatestSitePhotosCard() {
             {Array.from({ length: 6 }).map((_unused, i) => (
               <div
                 key={i}
-                className="aspect-square w-full animate-pulse rounded-xl bg-surface-secondary"
+                className="aspect-[3/2] w-full animate-pulse rounded-xl bg-surface-secondary"
               />
             ))}
           </div>
@@ -133,7 +133,7 @@ export function LatestSitePhotosCard() {
                   defaultValue: 'Open photos for {{project}}',
                   project: photo.project_name,
                 })}
-                className="group relative block aspect-square w-full overflow-hidden rounded-xl border border-border-light bg-surface-secondary text-left shadow-xs transition-all duration-normal ease-oe hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-oe-blue/40 animate-stagger-in"
+                className="group relative block aspect-[3/2] w-full overflow-hidden rounded-xl border border-border-light bg-surface-secondary text-left shadow-xs transition-all duration-normal ease-oe hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-oe-blue/40 animate-stagger-in"
                 style={{ animationDelay: `${180 + index * 40}ms` }}
               >
                 <AuthImage

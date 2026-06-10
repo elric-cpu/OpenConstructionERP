@@ -508,7 +508,8 @@ export function LoginPage() {
         <h2 className="text-[32px] xl:text-[36px] font-semibold text-content-primary leading-[1.08] tracking-[-0.025em] animate-stagger-in" style={{ animationDelay: '60ms' }}>
           {t('login.hero_h_a', { defaultValue: 'The' })}{' '}
           <span className="bg-gradient-to-r from-oe-blue to-sky-500 bg-clip-text text-transparent">#1</span>{' '}
-          {t('login.hero_h_b', { defaultValue: 'open-source workspace for' })}{' '}
+          {t('login.hero_h_b', { defaultValue: 'open-source workspace for' })}
+          <br />
           <span className="bg-gradient-to-r from-oe-blue to-sky-500 bg-clip-text text-transparent">
             {t('login.hero_h_c', { defaultValue: 'construction project management' })}
           </span>
