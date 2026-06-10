@@ -36,9 +36,17 @@ Thank you to everyone who has contributed.
   proposals for the PDF takeoff module, in-canvas measurement editing and LLM-assisted
   plan reading
   ([#194](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/194)).
-- **mohandshamada** ([@mohandshamada](https://github.com/mohandshamada)): issue reports on the
-  converters version-check payload shape ([#195](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/195))
-  and IFC zero-elements processing ([#197](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/197)).
+- **mohandshamada** ([@mohandshamada](https://github.com/mohandshamada)): issue reports and
+  proposals on the converters version-check payload shape
+  ([#195](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/195),
+  [#196](https://github.com/datadrivenconstruction/OpenConstructionERP/pull/196)), IFC
+  zero-elements processing ([#197](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/197)),
+  BIM empty-state and upload messaging
+  ([#198](https://github.com/datadrivenconstruction/OpenConstructionERP/pull/198)), and
+  resumable CAD uploads ([#199](https://github.com/datadrivenconstruction/OpenConstructionERP/pull/199)).
+- **leval907** ([@leval907](https://github.com/leval907)): flagged that qdrant-client removed
+  its `.search()` API and that the remaining call sites needed migrating to `query_points()`
+  ([#201](https://github.com/datadrivenconstruction/OpenConstructionERP/pull/201)).
 
 See the full list of everyone who has contributed:
 
