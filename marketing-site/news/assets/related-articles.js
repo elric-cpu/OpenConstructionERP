@@ -14,6 +14,15 @@
   // for "draw the on-brand SVG placeholder".
   var ARTICLES = [
     {
+      slug: 'v7-6-0',
+      href: '/news/v7-6-0.html',
+      title: 'v7.6.0 - A built-in general ledger and room for larger files.',
+      date: '2026-06-11',
+      tag: 'Release',
+      tagClass: 'release',
+      thumb: null
+    },
+    {
       slug: 'v7-5-0',
       href: '/news/v7-5-0.html',
       title: 'v7.5.0 - WordPress for construction companies.',
