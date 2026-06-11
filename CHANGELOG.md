@@ -5,6 +5,37 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.6.0] - 2026-06-11
+
+### Added
+
+- A general ledger built on double-entry accounting. A new finance ledger keeps a chart of accounts, posts balanced journal entries, and produces a trial balance, an income statement, a balance sheet and a direct-method cash flow statement. Every journal is checked to balance before it posts, so the books never drift.
+- Self-service account erasure. You can erase your own account and personal data from the Settings danger zone, covering the right to erasure, with a clear confirmation before anything is removed.
+- AI plan reading for PDF takeoff. The takeoff tool can read a drawing with a vision model and propose what it finds as labelled suggestions you confirm, and the server still re-derives every billed quantity on save.
+- Resumable uploads for large CAD and PDF files. A big upload now goes up in chunks and resumes where it left off if the connection drops, instead of starting over.
+- A saved-views module, so a filtered and sorted view of a list can be saved and reopened later.
+- A point cloud upload page for the reality-capture beta, with the dashboard and login polish that goes with it.
+- Privacy, terms and cookie policy pages.
+
+### Changed
+
+- Higher limits across the board. Large uploads, longer lists per page and bigger bulk actions all have more room: chunked uploads accept much larger files, spreadsheet imports allow more data, and pagination and bulk operations carry more rows in one go. The sign-in rate limit is unchanged.
+- The module navigation tabs and key dialog buttons are now translated in all 27 languages, closing another wave of interface-text gaps.
+- Integration copy uses neutral, format-level names instead of specific product names.
+
+### Fixed
+
+- A hardening pass across twelve modules tightened tenant isolation and money math, so amounts compute consistently and every request stays inside the right workspace.
+- The onboarding Full Enterprise profile installs the right module set regardless of what the client sends.
+- The production Docker deployment accepts larger drawing uploads, and takeoff cost figures are carried as exact decimal strings.
+- The built-in SQLite to PostgreSQL copy survives a newer target schema instead of failing on a column it did not expect.
+- The remaining vector-search calls moved to the current query API after the search client dropped its old method.
+
+### Security
+
+- A user can remove their own account and personal data through the right-to-erasure flow.
+- Tenant isolation and money handling were hardened across twelve modules.
+
 ## [7.5.0] - 2026-06-10
 
 ### Added
