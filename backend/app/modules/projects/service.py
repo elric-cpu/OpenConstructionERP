@@ -89,6 +89,73 @@ from app.modules.projects.schemas import ProjectCreate, ProjectUpdate
 logger = logging.getLogger(__name__)
 
 
+async def purge_project_children_without_cascade(
+    session: AsyncSession,
+    project_ids: list[uuid.UUID],
+) -> None:
+    """Delete child rows that a ``DELETE FROM project`` does NOT cascade to.
+
+    Many modules link to projects through bare ``project_id`` columns with
+    no DB foreign key at all (BIM models, procurement POs, element groups,
+    federations, ...) or with ``ON DELETE SET NULL`` (resources). Deleting
+    just the Project rows orphans those children, and because the demo
+    installers use deterministic ids and unique business keys, the next
+    re-seed then collides on the leftovers (seen with the flagship BIM
+    model and PO numbers after a demo-data purge).
+
+    Rather than enumerating modules, sweep every mapped table that carries
+    a ``project_id`` column, children before parents (reverse FK-dependency
+    order), so DB-level cascades and RESTRICT constraints both behave.
+    Tables that DO have a proper cascading FK are also swept - that merely
+    pre-empts the cascade with the same end state.
+    """
+    import importlib
+    import pkgutil
+
+    from sqlalchemy import String as SAString
+    from sqlalchemy import delete as sa_delete
+
+    from app.database import Base
+
+    if not project_ids:
+        return
+
+    # Base.metadata only knows tables whose models have been imported. The
+    # running app loads every module at startup, but CLI scripts and tests
+    # may call this with a partial model set - import the rest so the sweep
+    # is complete. Already-imported modules make this a cheap no-op.
+    try:
+        import app.modules as _modules_pkg
+
+        for mod_info in pkgutil.iter_modules(_modules_pkg.__path__):
+            try:
+                importlib.import_module(f"app.modules.{mod_info.name}.models")
+            except Exception:  # noqa: BLE001, PERF203 - optional module without models
+                continue
+    except Exception:  # noqa: BLE001 - discovery is best-effort
+        logger.debug("Module model discovery failed during purge", exc_info=True)
+
+    id_strs = [str(p) for p in project_ids]
+    for table in reversed(Base.metadata.sorted_tables):
+        if table.name == Project.__tablename__:
+            continue
+        col = table.c.get("project_id")
+        if col is None:
+            continue
+        values = id_strs if isinstance(col.type, SAString) else list(project_ids)
+        await session.execute(table.delete().where(col.in_(values)))
+
+    try:
+        from app.modules.resources.models import Resource
+
+        # Resource links via home_project_id (ON DELETE SET NULL) - demo
+        # resources carry deterministic ids, so drop them instead of
+        # orphaning.
+        await session.execute(sa_delete(Resource).where(Resource.home_project_id.in_(project_ids)))
+    except ImportError:
+        logger.debug("resources models unavailable - skipping resource purge")
+
+
 class ProjectService:
     """‌⁠‍Business logic for project operations."""
 
@@ -461,6 +528,23 @@ class ProjectService:
                     ),
                 )
 
+        # ``metadata.allow_currency_change`` is a transient command consumed
+        # by the guard above - strip it before the write so it never ends up
+        # persisted in the stored metadata.
+        metadata_payload = fields.get("metadata_")
+        if isinstance(metadata_payload, dict) and "allow_currency_change" in metadata_payload:
+            stripped_metadata = {
+                key: value for key, value in metadata_payload.items() if key != "allow_currency_change"
+            }
+            if stripped_metadata:
+                fields["metadata_"] = stripped_metadata
+            else:
+                # The patch carried only the command flag - drop the metadata
+                # write entirely so the stored metadata is not wiped to {}.
+                fields.pop("metadata_")
+                if not fields:
+                    return project
+
         # Snapshot the prior address so we can detect a meaningful change
         # after the update (and notify the geo_hub auto-anchor subscriber
         # only when the user actually changed it).
@@ -678,7 +762,11 @@ class ProjectService:
             fx_rates=list(source.fx_rates or []),
             default_vat_rate=source.default_vat_rate,
             custom_units=list(source.custom_units or []),
-            metadata_=dict(source.metadata_ or {}),
+            # Drop seed/workspace tags from the copy: a user who duplicates a
+            # showcase project to start real work must not inherit demo_id
+            # (the demo-data purge hard-deletes everything tagged with it)
+            # or the partner_pack workspace tag.
+            metadata_={k: v for k, v in dict(source.metadata_ or {}).items() if k not in ("demo_id", "partner_pack")},
             # v2.9.4 per-project storage override
             storage_path_override=source.storage_path_override,
             storage_uses_default=source.storage_uses_default,
@@ -961,6 +1049,53 @@ class ProjectService:
             logger.debug("FSM audit log skipped for project archive %s", project_id)
 
         logger.info("Project archived: %s", project_id)
+
+    # ── Demo data purge (hard delete) ────────────────────────────────────
+
+    async def purge_demo_projects(self) -> int:
+        """Hard-delete every seeded demo / showcase project.
+
+        Targets all projects whose ``metadata_`` carries a ``demo_id`` -
+        the tag every showcase installer writes (``install_demo_project``,
+        the flagship seeder, partner-pack demos). Archived demo projects
+        are included: the match is on metadata, not status.
+
+        Deletion goes through a real ``DELETE`` so the DB-level
+        ``ondelete=CASCADE`` foreign keys remove BOQs, positions, schedule
+        rows, documents and other children - the same machinery the admin
+        qa-reset relies on. Demo *user* accounts are intentionally kept.
+
+        Returns:
+            Number of deleted projects.
+        """
+        from sqlalchemy import delete as sa_delete
+        from sqlalchemy import select as sa_select
+
+        rows = (await self.session.execute(sa_select(Project))).scalars().all()
+        demo_pks = [p.id for p in rows if isinstance(p.metadata_, dict) and p.metadata_.get("demo_id")]
+        if not demo_pks:
+            return 0
+
+        # Children with bare/no-cascade FK columns first - otherwise the
+        # deterministic-id demo installers PK-collide on a later re-seed.
+        await purge_project_children_without_cascade(self.session, demo_pks)
+
+        result = await self.session.execute(sa_delete(Project).where(Project.id.in_(demo_pks)))
+        await self.session.flush()
+        # Bulk DELETE bypasses ORM-identity sync; drop any cached instances
+        # so follow-up queries in this session re-read from the database.
+        self.session.expire_all()
+        deleted = int(result.rowcount or 0)
+
+        await _safe_audit(
+            self.session,
+            action="purge_demo_data",
+            entity_type="project",
+            details={"deleted_projects": deleted},
+        )
+
+        logger.info("Demo data purge: %d demo project(s) hard-deleted", deleted)
+        return deleted
 
     # ── Restore (un-archive) ─────────────────────────────────────────────
 

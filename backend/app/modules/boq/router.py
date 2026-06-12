@@ -1501,6 +1501,7 @@ async def unlock_boq(
 async def create_budget_from_boq(
     boq_id: uuid.UUID,
     user_id: CurrentUserId,
+    payload: CurrentUserPayload,
     session: SessionDep,
     service: BOQService = Depends(_get_service),
 ) -> dict:
@@ -1508,9 +1509,16 @@ async def create_budget_from_boq(
 
     Groups positions by WBS (if set) or by section, creates a
     ProjectBudget entry for each group with original_budget = section total.
-    Returns the list of created budget IDs.
+    Idempotent on both sides: finance budgets already created from this BOQ
+    (matched by the boq_id stamped in their metadata plus the group key) are
+    skipped, and the costmodel BudgetLine generation skips positions already
+    wired to a line, so the 5D Cost Spine gets its EVM baseline exactly once.
+    Returns the created budget IDs plus the number of new costmodel budget
+    lines.
     """
     from decimal import Decimal
+
+    await _verify_boq_owner(session, boq_id, user_id, payload)
 
     boq = await service.get_boq(boq_id)
     if not boq.is_locked:
@@ -1548,10 +1556,31 @@ async def create_budget_from_boq(
 
     # Lazy import finance module
     created_ids: list[str] = []
+    skipped_existing = 0
     try:
+        from sqlalchemy import select as sa_select
+
         from app.modules.finance.models import ProjectBudget
 
+        # Idempotency guard (audit M2): the docstring promises re-running
+        # this endpoint never doubles the finance budget. Load the groups
+        # already materialized from this BOQ (stamped with boq_id in their
+        # metadata) and skip them instead of stacking duplicates.
+        existing_rows = (
+            (await session.execute(sa_select(ProjectBudget).where(ProjectBudget.project_id == boq.project_id)))
+            .scalars()
+            .all()
+        )
+        existing_group_keys = {
+            row.wbs_id or "ungrouped"
+            for row in existing_rows
+            if isinstance(row.metadata_, dict) and row.metadata_.get("boq_id") == str(boq_id)
+        }
+
         for group_key, total_amount in groups.items():
+            if group_key in existing_group_keys:
+                skipped_existing += 1
+                continue
             budget = ProjectBudget(
                 project_id=boq.project_id,
                 wbs_id=group_key if group_key != "ungrouped" else None,
@@ -1570,25 +1599,45 @@ async def create_budget_from_boq(
             detail="Failed to create budget lines. Finance module may not be available.",
         )
 
+    # 5D Cost Spine baseline: one costmodel BudgetLine per BOQ position so
+    # progress entries have a row to land earned value on. The costmodel
+    # service is idempotent (positions already wired to a budget line are
+    # skipped), so re-running this endpoint never doubles the BAC.
+    try:
+        from app.modules.costmodel.service import CostModelService
+
+        budget_lines = await CostModelService(session).generate_budget_from_boq(boq.project_id, boq_id)
+        budget_lines_created = len(budget_lines)
+    except Exception as exc:
+        _log.exception("Failed to create costmodel budget lines from BOQ %s: %s", boq_id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create costmodel budget lines. Cost model module may not be available.",
+        )
+
     await _log_activity(
         service,
         user_id=user_id,
         action="boq.budget_created",
         target_type="boq",
-        description=f"Created {len(created_ids)} budget lines from BOQ",
+        description=(f"Created {len(created_ids)} budgets and {budget_lines_created} costmodel budget lines from BOQ"),
         boq_id=boq_id,
         project_id=boq.project_id,
     )
 
     _log.info(
-        "Created %d budget lines from BOQ %s (project %s)",
+        "Created %d budgets (%d already existed) and %d costmodel budget lines from BOQ %s (project %s)",
         len(created_ids),
+        skipped_existing,
+        budget_lines_created,
         boq_id,
         boq.project_id,
     )
     return {
         "created": len(created_ids),
+        "skipped_existing": skipped_existing,
         "budget_ids": created_ids,
+        "budget_lines_created": budget_lines_created,
         "project_id": str(boq.project_id),
     }
 

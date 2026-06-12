@@ -948,6 +948,16 @@ const EVMDashboard = memo(function EVMDashboard({
 
 /* ── Editable Budget Lines Table ──────────────────────────────────────── */
 
+/**
+ * Coerce a budget line's EVM earned value (Decimal-encoded string from the
+ * backend) to a number. null = no field progress recorded yet.
+ */
+function earnedValueOf(line: { earned_amount?: number | string | null }): number | null {
+  if (line.earned_amount == null) return null;
+  const n = Number(line.earned_amount);
+  return Number.isFinite(n) ? n : null;
+}
+
 interface EditingBudgetLine {
   id: string;
   category: string;
@@ -969,12 +979,63 @@ function BudgetLinesEditor({
   const addToast = useToastStore((s) => s.addToast);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<EditingBudgetLine | null>(null);
+  // Inline field-progress recording for lines wired to a BOQ position. The
+  // recorded percent becomes the line's earned value (BCWP) server-side.
+  const [progressId, setProgressId] = useState<string | null>(null);
+  const [progressPct, setProgressPct] = useState('');
 
   const { data: budgetLines, isLoading } = useQuery({
     queryKey: ['costmodel', 'budget-lines', projectId],
     queryFn: () => costModelApi.getBudgetLines(projectId),
     retry: false,
   });
+
+  const progressMutation = useMutation({
+    mutationFn: (data: { boqPositionId: string; pct: number }) =>
+      costModelApi.recordProgress({
+        project_id: projectId,
+        boq_position_id: data.boqPositionId,
+        percent_complete: data.pct,
+        period_label: new Date().toISOString().slice(0, 7),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['costmodel'] });
+      setProgressId(null);
+      setProgressPct('');
+      addToast({
+        type: 'success',
+        title: t('costmodel.progress_recorded', { defaultValue: 'Progress recorded' }),
+      });
+    },
+    onError: (err: Error) => {
+      addToast({
+        type: 'error',
+        title: t('costmodel.progress_record_failed', { defaultValue: 'Failed to record progress' }),
+        message: err.message,
+      });
+    },
+  });
+
+  const submitProgress = useCallback(
+    (boqPositionId: string) => {
+      if (progressMutation.isPending) return;
+      // An empty input must not coerce to 0 - recording 0% is a real write
+      // that wipes the line's earned value.
+      if (progressPct.trim() === '') return;
+      const pct = Number(progressPct.replace(',', '.'));
+      if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+        addToast({
+          type: 'error',
+          title: t('costmodel.progress_pct_invalid', {
+            defaultValue: 'Percent complete must be between 0 and 100',
+          }),
+        });
+        return;
+      }
+      progressMutation.mutate({ boqPositionId, pct });
+    },
+    [progressPct, progressMutation, addToast, t],
+  );
 
   const updateMutation = useMutation({
     mutationFn: (data: { id: string; updates: Partial<EditingBudgetLine> }) =>
@@ -1053,12 +1114,19 @@ function BudgetLinesEditor({
   }
 
   const lineTotal = budgetLines.reduce(
-    (acc, l) => ({
-      planned: acc.planned + l.planned_amount,
-      actual: acc.actual + l.actual_amount,
-      forecast: acc.forecast + l.forecast_amount,
-    }),
-    { planned: 0, actual: 0, forecast: 0 },
+    (acc, l) => {
+      const earned = earnedValueOf(l);
+      return {
+        // Number() guards against the backend's Decimal-as-string money
+        // encoding (string + string would concatenate, not add).
+        planned: acc.planned + (Number(l.planned_amount) || 0),
+        actual: acc.actual + (Number(l.actual_amount) || 0),
+        forecast: acc.forecast + (Number(l.forecast_amount) || 0),
+        earned: acc.earned + (earned ?? 0),
+        hasEarned: acc.hasEarned || earned != null,
+      };
+    },
+    { planned: 0, actual: 0, forecast: 0, earned: 0, hasEarned: false },
   );
 
   return (
@@ -1074,6 +1142,17 @@ function BudgetLinesEditor({
             </th>
             <th className="py-3 px-4 text-right text-xs font-semibold uppercase tracking-wider text-content-secondary">
               {t('costmodel.planned', 'Planned')}
+            </th>
+            <th className="py-3 px-4 text-right text-xs font-semibold uppercase tracking-wider text-content-secondary">
+              <span
+                className="inline-flex items-center gap-1 cursor-help"
+                title={t('costmodel.bl_earned_hint', {
+                  defaultValue: 'Earned value is calculated automatically from recorded field progress',
+                })}
+              >
+                {t('costmodel.bl_earned', 'Earned')}
+                <Activity size={11} className="shrink-0 text-content-tertiary" />
+              </span>
             </th>
             <th className="py-3 px-4 text-right text-xs font-semibold uppercase tracking-wider text-content-secondary">
               {t('costmodel.actual', 'Actual')}
@@ -1093,6 +1172,10 @@ function BudgetLinesEditor({
           {budgetLines.map((line) => {
             const isEditing = editingId === line.id;
             const variance = line.planned_amount - line.forecast_amount;
+            const earned = earnedValueOf(line);
+            const earnedHint = t('costmodel.bl_earned_hint', {
+              defaultValue: 'Earned value is calculated automatically from recorded field progress',
+            });
 
             if (isEditing && editForm) {
               return (
@@ -1128,6 +1211,13 @@ function BudgetLinesEditor({
                       }
                       className="h-8 w-full rounded border border-oe-blue/40 bg-surface-primary px-2 text-sm text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-oe-blue/30"
                     />
+                  </td>
+                  {/* Earned value is system-maintained (field progress), not editable. */}
+                  <td
+                    className="py-2 px-4 text-right tabular-nums text-content-tertiary cursor-help"
+                    title={earnedHint}
+                  >
+                    {earned == null ? '-' : formatCurrency(earned, currency)}
                   </td>
                   <td className="py-2 px-4">
                     <input
@@ -1184,7 +1274,7 @@ function BudgetLinesEditor({
                   </td>
                 </tr>
                 <tr className="bg-oe-blue-subtle/10">
-                  <td colSpan={7} className="px-4 pb-3">
+                  <td colSpan={8} className="px-4 pb-3">
                     <BudgetLineThresholdEditor
                       lineId={line.id}
                       initialThresholdPct={line.overrun_alert_threshold_pct}
@@ -1215,10 +1305,56 @@ function BudgetLinesEditor({
                   </span>
                 </td>
                 <td className="py-3.5 px-4 text-content-secondary text-xs">
-                  {line.description || '\u2014'}
+                  {line.description || '-'}
                 </td>
                 <td className="py-3.5 px-4 text-right tabular-nums text-content-secondary">
                   {formatCurrency(line.planned_amount, currency)}
+                </td>
+                <td
+                  className="py-3.5 px-4 text-right tabular-nums text-content-secondary cursor-help"
+                  title={earnedHint}
+                >
+                  {progressId === line.id && line.boq_position_id ? (
+                    <span className="inline-flex items-center justify-end gap-1">
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step="1"
+                        autoFocus
+                        value={progressPct}
+                        onChange={(e) => setProgressPct(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') submitProgress(line.boq_position_id as string);
+                          if (e.key === 'Escape') setProgressId(null);
+                        }}
+                        placeholder="%"
+                        className="h-7 w-16 rounded border border-oe-blue/40 bg-surface-primary px-1.5 text-right text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-oe-blue/30"
+                        aria-label={t('costmodel.record_progress', { defaultValue: 'Record progress' })}
+                      />
+                      <button
+                        onClick={() => submitProgress(line.boq_position_id as string)}
+                        disabled={progressMutation.isPending}
+                        className="flex h-7 w-7 items-center justify-center rounded-md text-semantic-success hover:bg-semantic-success-bg transition-colors"
+                        title={t('common.save', { defaultValue: 'Save' })}
+                      >
+                        {progressMutation.isPending ? (
+                          <Loader2 size={13} className="animate-spin" />
+                        ) : (
+                          <Check size={13} />
+                        )}
+                      </button>
+                      <button
+                        onClick={() => setProgressId(null)}
+                        className="flex h-7 w-7 items-center justify-center rounded-md text-semantic-error hover:bg-semantic-error-bg transition-colors"
+                        title={t('common.cancel', { defaultValue: 'Cancel' })}
+                      >
+                        <X size={13} />
+                      </button>
+                    </span>
+                  ) : (
+                    (earned == null ? '-' : formatCurrency(earned, currency))
+                  )}
                 </td>
                 <td className="py-3.5 px-4 text-right tabular-nums text-content-secondary">
                   {formatCurrency(line.actual_amount, currency)}
@@ -1233,13 +1369,27 @@ function BudgetLinesEditor({
                   {formatCurrency(variance, currency)}
                 </td>
                 <td className="py-3.5 pl-4 text-center">
-                  <button
-                    onClick={() => startEditing(line)}
-                    className="invisible group-hover:visible flex h-7 w-7 mx-auto items-center justify-center rounded-md text-content-tertiary hover:text-oe-blue-text hover:bg-oe-blue-subtle/40 transition-colors"
-                    title={t('common.edit', { defaultValue: 'Edit' })}
-                  >
-                    <Pencil size={13} />
-                  </button>
+                  <span className="flex items-center justify-center gap-0.5">
+                    {line.boq_position_id && (
+                      <button
+                        onClick={() => {
+                          setProgressId(line.id);
+                          setProgressPct('');
+                        }}
+                        className="invisible group-hover:visible flex h-7 w-7 items-center justify-center rounded-md text-content-tertiary hover:text-oe-blue-text hover:bg-oe-blue-subtle/40 transition-colors"
+                        title={t('costmodel.record_progress', { defaultValue: 'Record progress' })}
+                      >
+                        <Activity size={13} />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => startEditing(line)}
+                      className="invisible group-hover:visible flex h-7 w-7 items-center justify-center rounded-md text-content-tertiary hover:text-oe-blue-text hover:bg-oe-blue-subtle/40 transition-colors"
+                      title={t('common.edit', { defaultValue: 'Edit' })}
+                    >
+                      <Pencil size={13} />
+                    </button>
+                  </span>
                 </td>
               </tr>
             );
@@ -1252,6 +1402,9 @@ function BudgetLinesEditor({
             </td>
             <td className="py-3.5 px-4 text-right tabular-nums text-content-primary">
               {formatCurrency(lineTotal.planned, currency)}
+            </td>
+            <td className="py-3.5 px-4 text-right tabular-nums text-content-primary">
+              {lineTotal.hasEarned ? formatCurrency(lineTotal.earned, currency) : '-'}
             </td>
             <td className="py-3.5 px-4 text-right tabular-nums text-content-primary">
               {formatCurrency(lineTotal.actual, currency)}
@@ -1900,7 +2053,7 @@ function MonteCarloPanel({ projectId, currency }: { projectId: string; currency:
               <div className="flex flex-wrap gap-3 text-xs text-content-tertiary">
                 <span>{t('costmodel.mc_mean', { defaultValue: 'Mean' })}: {fmt(result.mean)}</span>
                 <span>{t('costmodel.mc_stddev', { defaultValue: 'Std Dev' })}: {fmt(result.std_dev)}</span>
-                <span>{t('costmodel.mc_range', { defaultValue: 'Range' })}: {fmt(result.min)} — {fmt(result.max)}</span>
+                <span>{t('costmodel.mc_range', { defaultValue: 'Range' })}: {fmt(result.min)} - {fmt(result.max)}</span>
                 <span>{result.iterations} {t('costmodel.mc_iterations', { defaultValue: 'iterations' })}</span>
               </div>
             </div>
@@ -2482,7 +2635,7 @@ const ProjectCard = memo(function ProjectCard({
           {project.currency || 'EUR'}
         </Badge>
         <Badge variant="neutral" size="sm">
-          {project.classification_standard === 'din276' ? 'DIN 276' : project.classification_standard?.toUpperCase() || '—'}
+          {project.classification_standard === 'din276' ? 'DIN 276' : project.classification_standard?.toUpperCase() || '-'}
         </Badge>
         <ChevronRight size={16} className="shrink-0 text-content-tertiary" />
       </div>

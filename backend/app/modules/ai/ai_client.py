@@ -484,9 +484,10 @@ _OPENAI_COMPAT_CONFIG = {
     # Local LLM runtimes - OpenAI-compatible REST API, no key required.
     # Override base URL via OE_OLLAMA_URL / OE_VLLM_URL env vars to point at
     # a non-default host (default Ollama :11434, default VLLM :8001 to avoid
-    # colliding with our backend on :8000). The "api_key" field stored in
-    # user settings is sent as bearer regardless - Ollama ignores it; VLLM
-    # may require it depending on `--api-key` startup flag.
+    # colliding with our backend on :8000). An "api_key" stored in user
+    # settings is sent as bearer when present; without one the Authorization
+    # header is omitted entirely (vLLM may still require a key depending on
+    # its `--api-key` startup flag).
     "ollama": {
         "url": os.environ.get("OE_OLLAMA_URL", "http://localhost:11434/v1/chat/completions"),
         "model": os.environ.get("OE_OLLAMA_MODEL", "llama3.1"),
@@ -543,9 +544,14 @@ async def call_openai_compatible(
         raise ValueError(msg)
 
     headers: dict[str, str] = {
-        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
+    # Keyless self-hosted runtimes (Ollama, vLLM without auth) resolve to an
+    # empty api_key; an "Authorization: Bearer " header with an empty token is
+    # an illegal header value for httpx and gets rejected by some servers, so
+    # only send the header when there is an actual credential.
+    if api_key and api_key.strip():
+        headers["Authorization"] = f"Bearer {api_key}"
     if "extra_headers" in config:
         headers.update(config["extra_headers"])
 
@@ -933,6 +939,11 @@ def resolve_provider_and_key(
         (["gemini", "google"], "gemini", "gemini_api_key"),
         (["openrouter", "router"], "openrouter", "openrouter_api_key"),
         (["mistral"], "mistral", "mistral_api_key"),
+        # Self-hosted keyless runtimes must be matched BEFORE the generic
+        # "llama" keyword below: "ollama" contains "llama", so a user picking
+        # preferred_model=ollama would otherwise be routed to Groq.
+        (["ollama"], "ollama", None),  # self-hosted: no stored key
+        (["vllm"], "vllm", None),  # self-hosted: no stored key
         (["groq", "llama"], "groq", "groq_api_key"),
         (["deepseek"], "deepseek", "deepseek_api_key"),
         (["together"], "together", "together_api_key"),
@@ -945,8 +956,6 @@ def resolve_provider_and_key(
         (["baidu", "ernie"], "baidu", "baidu_api_key"),
         (["yandex"], "yandex", "yandex_api_key"),
         (["gigachat"], "gigachat", "gigachat_api_key"),
-        (["ollama"], "ollama", None),  # self-hosted: no stored key
-        (["vllm"], "vllm", None),  # self-hosted: no stored key
         (["kimi", "moonshot"], "kimi", "kimi_api_key"),  # Moonshot AI
     ]
 

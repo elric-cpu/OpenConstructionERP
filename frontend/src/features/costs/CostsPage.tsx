@@ -30,20 +30,23 @@ import {
   Layers,
   TrendingUp,
   Trash2,
+  Pencil,
+  AlertTriangle,
 } from 'lucide-react';
 import { Button, Card, Badge, EmptyState, SkeletonTable, CountryFlag, CountryFlagBackdrop, Breadcrumb, ConfirmDialog, DismissibleInfo, IntroRichText } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { useConfirm } from '@/shared/hooks/useConfirm';
-import { apiGet, apiPost, apiDelete, triggerDownload, extractErrorMessageFromBody } from '@/shared/lib/api';
+import { apiGet, apiPost, apiPatch, apiDelete, triggerDownload, extractErrorMessageFromBody } from '@/shared/lib/api';
 import { getIntlLocale } from '@/shared/lib/formatters';
 import { copyToClipboard } from '@/shared/lib/browser';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useCostDatabaseStore, REGION_MAP } from '@/stores/useCostDatabaseStore';
 import { useAuthStore } from '@/stores/useAuthStore';
-import type { CostItemMetadata, CertaintyBadge as CertaintyBadgeData } from './api';
+import type { CostItemMetadata, CertaintyBadge as CertaintyBadgeData, CostCatalog } from './api';
 import { buildBoqPositionDraft, type FullCostItem } from './addToBoqHelpers';
-import { fetchUsageCounts } from './api';
+import { fetchUsageCounts, fetchCostCatalogs } from './api';
+import { CatalogsSection } from './CatalogsSection';
 import { UsageBadge } from './UsageBadge';
 import { EscalationCalculator } from './EscalationCalculator';
 import { RegionalAdjustPanel } from './RegionalAdjustPanel';
@@ -87,7 +90,15 @@ interface CostItem {
   components_count?: number;
   metadata_: CostItemMetadata;
   source: string;
+  /** Owning user catalog, when the item belongs to one (manual create with
+   *  a catalog picked, or file import into a catalog). */
+  catalog_id?: string | null;
 }
+
+/** Sources whose rows the user owns and may edit / delete inline. Regional
+ *  CWICR rows (source 'cwicr') stay read-only - they are re-importable
+ *  reference data, not user data. */
+const EDITABLE_SOURCES = new Set(['manual', 'file_import', 'custom']);
 
 interface CostSearchResponse {
   items: CostItem[];
@@ -144,7 +155,19 @@ async function downloadExcelExport(): Promise<void> {
 
   const blob = await response.blob();
   const disposition = response.headers.get('Content-Disposition');
-  const filename = disposition?.match(/filename="?(.+)"?/)?.[1] || 'cost_database_export.xlsx';
+  const utf8Name = disposition?.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  // A malformed filename* (bad percent-encoding) must not turn a successful
+  // download into an error toast - fall back to the plain filename match.
+  let decodedName: string | undefined;
+  try {
+    decodedName = utf8Name ? decodeURIComponent(utf8Name) : undefined;
+  } catch {
+    decodedName = undefined;
+  }
+  const filename =
+    decodedName ||
+    disposition?.match(/filename="?([^";]+)"?/)?.[1] ||
+    'cost_database_export.xlsx';
   triggerDownload(blob, filename);
 }
 
@@ -439,6 +462,7 @@ function buildSearchUrl(
   offset: number,
   category?: string,
   classificationPath?: string,
+  catalogId?: string,
 ): string {
   const params = new URLSearchParams();
   if (query) params.set('q', query);
@@ -447,6 +471,7 @@ function buildSearchUrl(
   if (region) params.set('region', region);
   if (category) params.set('category', category);
   if (classificationPath) params.set('classification_path', classificationPath);
+  if (catalogId) params.set('catalog_id', catalogId);
   params.set('limit', String(PAGE_SIZE));
   params.set('offset', String(offset));
   // Slim payload — CWICR rows can be 38 KB each (31 KB components + 6.6 KB
@@ -494,6 +519,11 @@ export function CostsPage() {
   const [showAddToBOQ, setShowAddToBOQ] = useState(false);
   const [showCreateAssembly, setShowCreateAssembly] = useState(false);
   const [showCreateItem, setShowCreateItem] = useState(false);
+  // Item being edited inline (manual / file_import / custom rows only).
+  const [editItem, setEditItem] = useState<CostItem | null>(null);
+  // Selected user catalog ('' = no catalog filter). Filters the items list
+  // via the backend's catalog_id query param, mirroring the region filter.
+  const [catalogId, setCatalogId] = useState('');
   const [showEscalation, setShowEscalation] = useState(false);
   const [showRegionalAdjust, setShowRegionalAdjust] = useState(false);
   const [semanticSearch, setSemanticSearch] = useState(false);
@@ -548,16 +578,40 @@ export function CostsPage() {
   // already populated rows — the page just hadn't been told which one to
   // show. We only auto-pick once, and only if the user has not already
   // chosen something via the global store or the URL.
+  // User catalogs (also needed here: items imported into a catalog carry a
+  // region tag named after the catalog, and auto-picking such a tag as the
+  // page-wide region scope silently filters search down to one catalog).
+  const { data: userCatalogs } = useQuery<CostCatalog[]>({
+    queryKey: ['costs', 'catalogs'],
+    queryFn: fetchCostCatalogs,
+    retry: false,
+    staleTime: 60_000,
+  });
+
+  // One-shot latch for the auto-pick below. Without it the effect re-arms
+  // whenever userCatalogs / loadedRegions change identity (every ['costs']
+  // invalidation) and snaps the page back to the first region right after
+  // the user explicitly chose "All regions" or a catalog chip. Any
+  // user-driven choice (including '') also sets the latch.
+  const regionAutoPickDone = useRef(false);
+
   useEffect(() => {
+    if (regionAutoPickDone.current) return;
     if (region) return;
     if (regionFromUrl) return;
     if (activeRegion) return;
-    const first = loadedRegions?.[0];
+    // A selected catalog chip intentionally clears the region scope; query
+    // invalidations (edit/delete) re-run this effect, and re-picking a
+    // region here would intersect with catalog_id down to an empty list.
+    if (catalogId) return;
+    const catalogNames = new Set((userCatalogs ?? []).map((c) => c.name));
+    const first = loadedRegions?.find((r) => !catalogNames.has(r));
     if (!first) return;
+    regionAutoPickDone.current = true;
     setRegion(first);
     setActiveRegion(first);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadedRegions]);
+  }, [loadedRegions, userCatalogs, catalogId]);
 
   // Fetch per-region stats (for item counts in tabs)
   const { data: regionStats } = useQuery({
@@ -597,10 +651,10 @@ export function CostsPage() {
     return () => clearTimeout(timer);
   }, [query]);
 
-  const searchUrl = buildSearchUrl(debouncedQuery, unit, source, region, offset, category, classificationPath);
+  const searchUrl = buildSearchUrl(debouncedQuery, unit, source, region, offset, category, classificationPath, catalogId);
 
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ['costs', debouncedQuery, unit, source, category, classificationPath, region, offset, semanticSearch],
+    queryKey: ['costs', debouncedQuery, unit, source, category, classificationPath, region, offset, semanticSearch, catalogId],
     queryFn: async () => {
       // Use vector semantic search when toggled and query is present
       if (semanticSearch && debouncedQuery.length >= 2) {
@@ -741,7 +795,11 @@ export function CostsPage() {
   });
 
   // Active filter count & clear all
-  const activeFilterCount = [query, unit, source, category].filter(Boolean).length + (region ? 1 : 0) + (specialTab ? 1 : 0);
+  const activeFilterCount =
+    [query, unit, source, category, classificationPath].filter(Boolean).length +
+    (region ? 1 : 0) +
+    (specialTab ? 1 : 0) +
+    (catalogId ? 1 : 0);
 
   const clearAllFilters = useCallback(() => {
     setQuery('');
@@ -749,9 +807,37 @@ export function CostsPage() {
     setUnit('');
     setSource('');
     setCategory('');
+    setClassificationPath('');
     setOffset(0);
     setSpecialTab('');
-  }, []);
+    setCatalogId('');
+    // Region counts as a filter, so "Clear all" drops it too. Latch the
+    // auto-pick so the effect above does not immediately re-pick a region.
+    regionAutoPickDone.current = true;
+    setRegion('');
+    setActiveRegion('');
+  }, [setActiveRegion]);
+
+  const handleSelectCatalog = useCallback(
+    (id: string) => {
+      // Any user-driven catalog choice (including deselecting a chip)
+      // disarms the region auto-pick - re-picking here would override an
+      // explicit decision.
+      regionAutoPickDone.current = true;
+      setCatalogId(id);
+      setOffset(0);
+      // A catalog and a region tab are alternative scopes over the same
+      // list; keeping a stale region filter alongside catalog_id silently
+      // intersects to an empty result (the import flow also tags items
+      // with a region named after the catalog, so the region auto-pick
+      // can land on a DIFFERENT catalog's tag).
+      if (id) {
+        setRegion('');
+        setActiveRegion('');
+      }
+    },
+    [setActiveRegion],
+  );
 
   const handleSearch = useCallback((value: string) => {
     setQuery(value);
@@ -780,9 +866,15 @@ export function CostsPage() {
 
   const handleRegionChange = useCallback(
     (value: string) => {
+      // Explicit user choice (including "All regions" = '') - disarm the
+      // auto-pick so it cannot snap the page back to the first region.
+      regionAutoPickDone.current = true;
       setRegion(value);
       setOffset(0);
       setActiveRegion(value);
+      // Mirror of handleSelectCatalog: picking a region drops the catalog
+      // scope so the two filters never intersect to an empty list.
+      if (value) setCatalogId('');
     },
     [setActiveRegion],
   );
@@ -1041,6 +1133,10 @@ export function CostsPage() {
         totalItemCount={total}
         isLoadingRegions={isLoadingRegions}
       />
+
+      {/* My catalogs - user-owned price books (create / edit / delete /
+          export, click to filter the items list to one catalog) */}
+      <CatalogsSection selectedId={catalogId} onSelect={handleSelectCatalog} />
 
       {/* Favourites & Recent Quick Filters */}
       <div className="mb-4 flex items-center gap-2">
@@ -1340,6 +1436,7 @@ export function CostsPage() {
                         onBenchmark={() => handleBenchmark(item)}
                         onToggleFavourite={() => toggleFavourite(item.id)}
                         onDelete={(id) => deleteMutation.mutate(id)}
+                        onEdit={() => setEditItem(item)}
                         fmt={fmt}
                         fmtMoney={fmtMoney}
                         t={t}
@@ -1509,9 +1606,22 @@ export function CostsPage() {
       {/* Create Custom Item Modal */}
       {showCreateItem && (
         <CreateCostItemModal
+          defaultCatalogId={catalogId}
           onClose={() => setShowCreateItem(false)}
           onCreated={() => {
             setShowCreateItem(false);
+            queryClient.invalidateQueries({ queryKey: ['costs'] });
+          }}
+        />
+      )}
+
+      {/* Edit Item Modal (manual / file_import / custom rows) */}
+      {editItem && (
+        <EditCostItemModal
+          item={editItem}
+          onClose={() => setEditItem(null)}
+          onSaved={() => {
+            setEditItem(null);
             queryClient.invalidateQueries({ queryKey: ['costs'] });
           }}
         />
@@ -1539,6 +1649,14 @@ function AddToBOQModal({
   const [projectId, setProjectId] = useState(activeProjectId ?? '');
   const [boqId, setBoqId] = useState('');
   const [isAdding, setIsAdding] = useState(false);
+
+  // Follow the global project switcher. Without this the modal captured the
+  // project once at mount, so switching project in the top bar left it pointed
+  // at the old one (part of the "selection only affects one tab" report).
+  useEffect(() => {
+    if (activeProjectId && activeProjectId !== projectId) setProjectId(activeProjectId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProjectId]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -1723,6 +1841,31 @@ function AddToBOQModal({
   const itemCurrencyOf = (it: CostItem) =>
     (it.currency || REGION_MAP[it.region ?? '']?.currency || '').trim().toUpperCase();
 
+  // FX mismatch check: when an item's currency differs from the target
+  // project's currency, the rate is copied as-is (no conversion at add
+  // time - the BOQ rollup converts only via configured fx_rates). Surface
+  // a clear, NON-blocking warning so the estimator is not surprised by a
+  // foreign-denominated rate landing under the project base.
+  const projectCurrency = (
+    projects?.find((p) => p.id === projectId)?.currency ?? ''
+  ).trim().toUpperCase();
+  const mismatchedCurrencies = useMemo(() => {
+    if (!projectCurrency) return [] as string[];
+    const set = new Set<string>();
+    for (const it of items) {
+      const c = itemCurrencyOf(it);
+      if (c && c !== projectCurrency) set.add(c);
+    }
+    return Array.from(set);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, projectCurrency]);
+  const mismatchedCount = projectCurrency
+    ? items.filter((it) => {
+        const c = itemCurrencyOf(it);
+        return c !== '' && c !== projectCurrency;
+      }).length
+    : 0;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 animate-fade-in" onClick={onClose}>
       <div
@@ -1859,6 +2002,39 @@ function AddToBOQModal({
                   )}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* FX mismatch warning - non-blocking. Rendered only when at least
+              one selected item is denominated in a currency different from
+              the target project's currency. */}
+          {mismatchedCount > 0 && (
+            <div
+              className="flex items-start gap-2 rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/40 dark:bg-amber-900/20 dark:text-amber-200"
+              data-testid="add-to-boq-fx-warning"
+            >
+              <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+              <span>
+                <span className="font-semibold block mb-0.5">
+                  {t('costs_catalogs.fx_mismatch_title', {
+                    defaultValue: 'Currency differs from the project',
+                  })}
+                </span>
+                {mismatchedCount === 1 && items.length === 1
+                  ? t('costs_catalogs.fx_mismatch_one', {
+                      defaultValue:
+                        'Item currency {{itemCurrency}}, project currency {{projectCurrency}}. The rate is copied as-is without conversion.',
+                      itemCurrency: mismatchedCurrencies.join(', '),
+                      projectCurrency,
+                    })
+                  : t('costs_catalogs.fx_mismatch_many', {
+                      defaultValue:
+                        '{{count}} of the selected items are priced in {{itemCurrencies}}, while the project currency is {{projectCurrency}}. Rates are copied as-is without conversion.',
+                      count: mismatchedCount,
+                      itemCurrencies: mismatchedCurrencies.join(', '),
+                      projectCurrency,
+                    })}
+              </span>
             </div>
           )}
         </div>
@@ -2152,9 +2328,12 @@ const INITIAL_COST_ITEM_FORM = {
 };
 
 function CreateCostItemModal({
+  defaultCatalogId,
   onClose,
   onCreated,
 }: {
+  /** Pre-selected catalog: the catalog filter active on the page, if any. */
+  defaultCatalogId?: string;
   onClose: () => void;
   onCreated: () => void;
 }) {
@@ -2167,15 +2346,26 @@ function CreateCostItemModal({
     retry: false,
     staleTime: 5 * 60_000,
   });
+  // User catalogs for the optional catalog picker. When a catalog is chosen
+  // and the currency is left empty, the backend stamps the catalog currency
+  // onto the item at creation time.
+  const { data: catalogs } = useQuery<CostCatalog[]>({
+    queryKey: ['costs', 'catalogs'],
+    queryFn: fetchCostCatalogs,
+    retry: false,
+    staleTime: 60_000,
+  });
   const projectCurrency =
     projects?.find((p) => p.id === activeProjectId)?.currency ?? '';
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [itemCatalogId, setItemCatalogId] = useState(defaultCatalogId ?? '');
   // Seed the currency from the active project context — if no project is
   // active, the user must pick one in the form select. No EUR/USD baked in.
   const [form, setForm] = useState(() => ({
     ...INITIAL_COST_ITEM_FORM,
     currency: projectCurrency,
   }));
+  const selectedCatalog = catalogs?.find((c) => c.id === itemCatalogId) ?? null;
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -2206,10 +2396,13 @@ function CreateCostItemModal({
         description: form.description.trim(),
         unit: form.unit,
         rate: parseFloat(form.rate) || 0,
+        // Empty currency + a chosen catalog = the item inherits the catalog
+        // currency server-side (CostItemCreate.catalog_id contract).
         currency: form.currency,
         source: 'custom',
         region: 'CUSTOM',
         classification: {},
+        ...(itemCatalogId ? { catalog_id: itemCatalogId } : {}),
       });
       addToast({ type: 'success', title: t('costs.item_created', { defaultValue: 'Cost item created' }) });
       onCreated();
@@ -2218,7 +2411,7 @@ function CreateCostItemModal({
     } finally {
       setIsSubmitting(false);
     }
-  }, [form, addToast, t, onCreated]);
+  }, [form, itemCatalogId, addToast, t, onCreated]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
@@ -2305,7 +2498,223 @@ function CreateCostItemModal({
                 onChange={(e) => setForm({ ...form, currency: e.target.value })}
                 className="h-9 w-full rounded-lg border border-border bg-surface-primary px-2 text-sm focus:outline-none focus:ring-2 focus:ring-oe-blue"
               >
+                <option value="">{t('costs_catalogs.currency_not_set', { defaultValue: 'Not set' })}</option>
                 {['EUR', 'USD', 'GBP', 'CHF', 'CAD', 'AUD', 'AED', 'RUB', 'CNY', 'INR', 'BRL'].map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Optional catalog picker - the item lands in the chosen user
+              catalog; with an empty currency the catalog currency applies. */}
+          {catalogs && catalogs.length > 0 && (
+            <div>
+              <label className="text-xs font-medium text-content-secondary mb-1 block">
+                {t('costs_catalogs.catalog_label', { defaultValue: 'Catalog' })}
+                <span className="text-content-quaternary ml-1">({t('costs.optional', 'optional')})</span>
+              </label>
+              <select
+                value={itemCatalogId}
+                onChange={(e) => setItemCatalogId(e.target.value)}
+                className="h-9 w-full rounded-lg border border-border bg-surface-primary px-2 text-sm focus:outline-none focus:ring-2 focus:ring-oe-blue"
+              >
+                <option value="">{t('costs_catalogs.no_catalog_option', { defaultValue: 'No catalog' })}</option>
+                {catalogs.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} ({c.currency})
+                  </option>
+                ))}
+              </select>
+              {selectedCatalog && !form.currency && (
+                <p className="text-2xs text-content-tertiary mt-1">
+                  {t('costs_catalogs.inherit_currency_hint', {
+                    defaultValue:
+                      'Currency left empty: the item will use the catalog currency {{currency}}.',
+                    currency: selectedCatalog.currency,
+                  })}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 px-6 py-3 border-t border-border-light bg-surface-secondary/30">
+          <Button variant="secondary" size="sm" onClick={onClose}>
+            {t('common.cancel', 'Cancel')}
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            disabled={!form.description.trim() || isSubmitting}
+            icon={isSubmitting ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+            onClick={handleSubmit}
+          >
+            {isSubmitting ? t('costs.creating', { defaultValue: 'Creating...' }) : t('costs.create', { defaultValue: 'Create Item' })}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Edit Cost Item Modal ──────────────────────────────────────────────── */
+
+/**
+ * Inline editor for user-owned cost items (source manual / file_import /
+ * custom). Mirrors the Add Item form fields and PATCHes /v1/costs/{id}.
+ * Regional CWICR reference rows never reach this modal - the row action is
+ * gated by EDITABLE_SOURCES.
+ */
+function EditCostItemModal({
+  item,
+  onClose,
+  onSaved,
+}: {
+  item: CostItem;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { t } = useTranslation();
+  const addToast = useToastStore((s) => s.addToast);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [form, setForm] = useState(() => ({
+    code: item.code,
+    description: item.description,
+    unit: item.unit,
+    rate: String(item.rate ?? ''),
+    currency: (item.currency || '').trim().toUpperCase(),
+  }));
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  const UNITS = ['m', 'm2', 'm3', 'kg', 't', 'pcs', 'lsum', 'h', 'set', 'lm'];
+  const currencyOptions = ['EUR', 'USD', 'GBP', 'CHF', 'CAD', 'AUD', 'AED', 'RUB', 'CNY', 'INR', 'BRL'];
+  // Keep a non-standard existing code selectable so opening + saving without
+  // touching the currency never silently rewrites it.
+  if (form.currency && !currencyOptions.includes(form.currency)) {
+    currencyOptions.unshift(form.currency);
+  }
+
+  const handleSubmit = useCallback(async () => {
+    if (!form.description.trim()) return;
+    setIsSubmitting(true);
+    try {
+      await apiPatch(`/v1/costs/${item.id}`, {
+        code: form.code.trim() || item.code,
+        description: form.description.trim(),
+        unit: form.unit,
+        rate: parseFloat(form.rate) || 0,
+        currency: form.currency,
+      });
+      addToast({
+        type: 'success',
+        title: t('costs_catalogs.item_updated', { defaultValue: 'Cost item updated' }),
+      });
+      onSaved();
+    } catch (err) {
+      addToast({
+        type: 'error',
+        title: t('costs_catalogs.item_update_failed', { defaultValue: 'Failed to update item' }),
+        message: err instanceof Error ? err.message : t('common.unknown_error', { defaultValue: 'Unknown error' }),
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [form, item.id, item.code, addToast, t, onSaved]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="edit-cost-item-modal-title"
+        className="bg-surface-elevated rounded-2xl border border-border shadow-2xl w-full max-w-md mx-4 overflow-hidden animate-fade-in"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border-light">
+          <div>
+            <h2 id="edit-cost-item-modal-title" className="text-base font-semibold text-content-primary">
+              {t('costs_catalogs.edit_item_title', { defaultValue: 'Edit cost item' })}
+            </h2>
+            <p className="text-xs text-content-tertiary">
+              {t('costs_catalogs.edit_item_desc', { defaultValue: 'Update your own cost item' })}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label={t('common.close', { defaultValue: 'Close' })}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-content-tertiary hover:bg-surface-secondary"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="px-6 py-4 space-y-3">
+          <div>
+            <label className="text-xs font-medium text-content-secondary mb-1 block">
+              {t('costs.code', 'Code')}
+            </label>
+            <input
+              type="text"
+              value={form.code}
+              onChange={(e) => setForm({ ...form, code: e.target.value })}
+              className="h-9 w-full rounded-lg border border-border bg-surface-primary px-3 text-sm focus:outline-none focus:ring-2 focus:ring-oe-blue"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-content-secondary mb-1 block">
+              {t('boq.description')} *
+            </label>
+            <input
+              autoFocus
+              type="text"
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              className="h-9 w-full rounded-lg border border-border bg-surface-primary px-3 text-sm focus:outline-none focus:ring-2 focus:ring-oe-blue"
+            />
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs font-medium text-content-secondary mb-1 block">{t('boq.unit')}</label>
+              <select
+                value={form.unit}
+                onChange={(e) => setForm({ ...form, unit: e.target.value })}
+                className="h-9 w-full rounded-lg border border-border bg-surface-primary px-2 text-sm focus:outline-none focus:ring-2 focus:ring-oe-blue"
+              >
+                {(UNITS.includes(form.unit) ? UNITS : [form.unit, ...UNITS]).map((u) => (
+                  <option key={u} value={u}>{u}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-content-secondary mb-1 block">{t('costs.rate', 'Rate')}</label>
+              <input
+                type="number"
+                step="0.01"
+                value={form.rate}
+                onChange={(e) => setForm({ ...form, rate: e.target.value })}
+                placeholder="0.00"
+                className="h-9 w-full rounded-lg border border-border bg-surface-primary px-3 text-sm text-right focus:outline-none focus:ring-2 focus:ring-oe-blue"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-content-secondary mb-1 block">{t('costs.currency', 'Currency')}</label>
+              <select
+                value={form.currency}
+                onChange={(e) => setForm({ ...form, currency: e.target.value })}
+                className="h-9 w-full rounded-lg border border-border bg-surface-primary px-2 text-sm focus:outline-none focus:ring-2 focus:ring-oe-blue"
+              >
+                <option value="">{t('costs_catalogs.currency_not_set', { defaultValue: 'Not set' })}</option>
+                {currencyOptions.map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
@@ -2321,10 +2730,12 @@ function CreateCostItemModal({
             variant="primary"
             size="sm"
             disabled={!form.description.trim() || isSubmitting}
-            icon={isSubmitting ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+            icon={isSubmitting ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
             onClick={handleSubmit}
           >
-            {isSubmitting ? t('costs.creating', { defaultValue: 'Creating...' }) : t('costs.create', { defaultValue: 'Create Item' })}
+            {isSubmitting
+              ? t('costs_catalogs.saving', { defaultValue: 'Saving...' })
+              : t('costs_catalogs.save', { defaultValue: 'Save changes' })}
           </Button>
         </div>
       </div>
@@ -2542,6 +2953,7 @@ function CostItemRow({
   onBenchmark,
   onToggleFavourite,
   onDelete,
+  onEdit,
   fmt,
   fmtMoney,
   t,
@@ -2567,6 +2979,9 @@ function CostItemRow({
   onBenchmark: () => void;
   onToggleFavourite: () => void;
   onDelete?: (id: string) => void;
+  /** Open the inline editor - only offered for user-owned rows (source
+   *  manual / file_import / custom). */
+  onEdit?: () => void;
   fmt: (n: number) => string;
   /** Currency-aware money formatter — renders the ISO code with the figure. */
   fmtMoney: (n: number, currency?: string | null) => string;
@@ -2741,21 +3156,30 @@ function CostItemRow({
             >
               <Sparkles size={13} />
             </button>
-            {item.source === 'custom' && (
-              <button
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  const ok = await confirm({
-                    title: t('costs.confirm_delete_title', { defaultValue: 'Delete cost item?' }),
-                    message: t('costs.confirm_delete', { defaultValue: 'Delete this custom cost item?' }),
-                  });
-                  if (ok) onDelete?.(item.id);
-                }}
-                title={t('common.delete', { defaultValue: 'Delete' })}
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-content-tertiary hover:text-semantic-error hover:bg-semantic-error-bg transition-colors"
-              >
-                <Trash2 size={13} />
-              </button>
+            {EDITABLE_SOURCES.has(item.source) && (
+              <>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onEdit?.(); }}
+                  title={t('common.edit', { defaultValue: 'Edit' })}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-content-tertiary hover:text-oe-blue-text hover:bg-oe-blue-subtle transition-colors"
+                >
+                  <Pencil size={13} />
+                </button>
+                <button
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    const ok = await confirm({
+                      title: t('costs.confirm_delete_title', { defaultValue: 'Delete cost item?' }),
+                      message: t('costs_catalogs.confirm_delete_item', { defaultValue: 'Delete this cost item? It is removed from search and from its catalog.' }),
+                    });
+                    if (ok) onDelete?.(item.id);
+                  }}
+                  title={t('common.delete', { defaultValue: 'Delete' })}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-content-tertiary hover:text-semantic-error hover:bg-semantic-error-bg transition-colors"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </>
             )}
           </div>
         </td>

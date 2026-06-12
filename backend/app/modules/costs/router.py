@@ -18,14 +18,18 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import logging
+import math as _math
 import re as _re
+import urllib.parse
 import uuid
+import zipfile
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -68,6 +72,9 @@ from app.modules.costs.schemas import (
     CategoryTreeNode,
     CertaintyBadge,
     CostAutocompleteItem,
+    CostCatalogCreate,
+    CostCatalogResponse,
+    CostCatalogUpdate,
     CostItemCreate,
     CostItemResponse,
     CostItemUpdate,
@@ -80,15 +87,22 @@ from app.modules.costs.schemas import (
     RegionalIndexResponse,
     SuggestCostsForElementRequest,
 )
-from app.modules.costs.service import CostBenchmarkService, CostItemService
+from app.modules.costs.service import CostBenchmarkService, CostCatalogService, CostItemService
 from app.modules.costs.translations import localize_cost_row
 
-# Round-7 upload safety: cap incoming bulk imports at 25 MB so a renamed
+# Round-7 upload safety: cap incoming bulk imports at 100 MB so a renamed
 # binary can't waste arbitrary memory on the parse path before the
 # magic-byte gate has a chance to reject it. A real-world CWICR
-# CSV/Excel of 55K rows is ~8 MB; 25 MB leaves comfortable headroom for
+# CSV/Excel of 55K rows is ~8 MB; 100 MB leaves comfortable headroom for
 # annotated columns without exposing the parser to multi-GB blobs.
 _MAX_COST_UPLOAD_BYTES = 100 * 1024 * 1024
+
+# Zip-bomb guard for OOXML (.xlsx) uploads: openpyxl inflates archive
+# entries in memory, so a tiny upload that decompresses to gigabytes
+# would bypass the on-the-wire size cap above. Reject archives whose
+# declared UNCOMPRESSED payload or entry count is absurd for a workbook.
+_MAX_COST_ZIP_UNCOMPRESSED_BYTES = 500 * 1024 * 1024
+_MAX_COST_ZIP_ENTRIES = 10_000
 
 # Magic-byte allow-list for the /import/file/ endpoint. ZIP covers OOXML
 # (xlsx); OLE covers legacy .xls; pure CSV has no magic so we accept the
@@ -252,6 +266,20 @@ def _resolve_currency(
 
 def _get_service(session: SessionDep) -> CostItemService:
     return CostItemService(session)
+
+
+def _get_catalog_service(session: SessionDep) -> CostCatalogService:
+    return CostCatalogService(session)
+
+
+def _parse_user_uuid(user_id: str | None) -> uuid.UUID | None:
+    """Best-effort UUID parse of the auth user id (None for non-UUID ids)."""
+    if not user_id:
+        return None
+    try:
+        return uuid.UUID(str(user_id))
+    except (ValueError, AttributeError, TypeError):
+        return None
 
 
 # ── Autocomplete metadata helpers (Phase F v2.7.0) ────────────────────────
@@ -600,6 +628,10 @@ async def search_cost_items(
             "AND-combined with the other filters."
         ),
     ),
+    catalog_id: uuid.UUID | None = Query(
+        default=None,
+        description="Filter to items in one user-owned cost catalog.",
+    ),
     min_rate: Decimal | None = Query(default=None, ge=0, description="Minimum rate"),
     max_rate: Decimal | None = Query(default=None, ge=0, description="Maximum rate"),
     limit: int = Query(default=50, ge=1, le=100),
@@ -665,6 +697,7 @@ async def search_cost_items(
         region=region,
         category=category,
         classification_path=classification_path,
+        catalog_id=catalog_id,
         min_rate=min_rate,
         max_rate=max_rate,
         limit=limit,
@@ -686,6 +719,7 @@ async def search_cost_items(
         and not description
         and not category
         and not classification_path
+        and catalog_id is None
         and not unit
         and not source
         and min_rate is None
@@ -2430,6 +2464,166 @@ async def list_loaded_databases(
     return out
 
 
+# ── User cost catalogs ─────────────────────────────────────────────────────
+#
+# A catalog is the user's own named "справочник работ и расценок": a
+# first-class container with a REQUIRED currency that imported / manually
+# created items belong to. Routes are registered BEFORE the ``/{item_id}``
+# wildcard below so ``/catalogs/...`` never gets swallowed by it.
+
+
+def _catalog_response(catalog: Any, item_count: int) -> CostCatalogResponse:
+    """Build a CostCatalogResponse with the live item count attached."""
+    response = CostCatalogResponse.model_validate(catalog)
+    response.item_count = item_count
+    return response
+
+
+@router.post(
+    "/catalogs/",
+    response_model=CostCatalogResponse,
+    status_code=201,
+    dependencies=[Depends(RequirePermission("costs.create"))],
+)
+async def create_cost_catalog(
+    data: CostCatalogCreate,
+    user_id: CurrentUserId,
+    service: CostCatalogService = Depends(_get_catalog_service),
+) -> CostCatalogResponse:
+    """Create a user-owned cost catalog (name + currency required)."""
+    catalog = await service.create_catalog(data, created_by=_parse_user_uuid(user_id), source="manual")
+    return _catalog_response(catalog, 0)
+
+
+@router.get(
+    "/catalogs/",
+    response_model=list[CostCatalogResponse],
+    dependencies=[Depends(RequirePermission("costs.list"))],
+)
+async def list_cost_catalogs(
+    _user_id: CurrentUserId,
+    service: CostCatalogService = Depends(_get_catalog_service),
+) -> list[CostCatalogResponse]:
+    """List all cost catalogs with their active item counts."""
+    return [_catalog_response(catalog, count) for catalog, count in await service.list_catalogs()]
+
+
+@router.patch(
+    "/catalogs/{catalog_id}",
+    response_model=CostCatalogResponse,
+    dependencies=[Depends(RequirePermission("costs.update"))],
+)
+async def update_cost_catalog(
+    catalog_id: uuid.UUID,
+    data: CostCatalogUpdate,
+    _user_id: CurrentUserId,
+    service: CostCatalogService = Depends(_get_catalog_service),
+) -> CostCatalogResponse:
+    """Update a catalog's name / description / currency.
+
+    A currency change is rejected (409) while the catalog has items: the
+    stored rates are denominated in the old currency and would be silently
+    corrupted by a re-label.
+    """
+    catalog = await service.update_catalog(catalog_id, data)
+    return _catalog_response(catalog, await service.count_items(catalog_id))
+
+
+@router.delete(
+    "/catalogs/{catalog_id}",
+    dependencies=[Depends(RequirePermission("costs.delete"))],
+)
+async def delete_cost_catalog(
+    catalog_id: uuid.UUID,
+    _user_id: CurrentUserId,
+    mode: str = Query(
+        default="keep_items",
+        pattern="^(keep_items|delete_items)$",
+        description=(
+            "keep_items detaches the items (they stay in the global cost table); "
+            "delete_items soft-deletes them together with the catalog."
+        ),
+    ),
+    service: CostCatalogService = Depends(_get_catalog_service),
+) -> dict[str, Any]:
+    """Delete a catalog, either keeping or soft-deleting its items."""
+    affected = await service.delete_catalog(catalog_id, mode=mode)
+    _invalidate_cost_cache()
+    return {"deleted": str(catalog_id), "mode": mode, "items_affected": affected}
+
+
+@router.get(
+    "/catalogs/{catalog_id}/export-excel/",
+    dependencies=[Depends(RequirePermission("costs.list"))],
+)
+async def export_cost_catalog_excel(
+    catalog_id: uuid.UUID,
+    session: SessionDep,
+    _user_id: CurrentUserId,
+    service: CostCatalogService = Depends(_get_catalog_service),
+) -> StreamingResponse:
+    """Export ONE catalog's items as an Excel file.
+
+    Columns: code, description, unit, rate, currency, classification.
+    Text cells go through ``_excel_safe`` so user-supplied values can not
+    smuggle spreadsheet formulas into the export. Batched fetch keeps
+    memory flat for large catalogs.
+    """
+    from openpyxl import Workbook
+
+    catalog = await service.get_catalog(catalog_id)
+
+    wb = Workbook(write_only=True)
+    ws = wb.create_sheet(title="Catalog")
+    ws.append(["Code", "Description", "Unit", "Rate", "Currency", "Classification"])
+
+    batch_size = 1000
+    offset = 0
+    base_stmt = (
+        select(CostItem)
+        .where(CostItem.catalog_id == catalog_id, CostItem.is_active.is_(True))
+        .order_by(CostItem.code, CostItem.id)
+    )
+    while True:
+        result = await session.execute(base_stmt.offset(offset).limit(batch_size))
+        items = result.scalars().all()
+        if not items:
+            break
+        for item in items:
+            try:
+                rate_val: object = float(item.rate)
+            except (ValueError, TypeError):
+                rate_val = 0
+            classification = json.dumps(item.classification, ensure_ascii=False) if item.classification else ""
+            ws.append(
+                [
+                    _excel_safe(item.code),
+                    _excel_safe(item.description),
+                    _excel_safe(item.unit),
+                    rate_val,
+                    _excel_safe(item.currency or catalog.currency),
+                    _excel_safe(classification),
+                ]
+            )
+        if len(items) < batch_size:
+            break
+        offset += batch_size
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    # ASCII slug as the legacy fallback plus RFC 5987 filename* so non-Latin
+    # catalog names ("Моя смета 2026") keep their real name in the download.
+    slug = _re.sub(r"[^A-Za-z0-9]+", "-", catalog.name).strip("-").lower() or "catalog"
+    utf8_name = urllib.parse.quote(f"{catalog.name}.xlsx", safe="")
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": (f"attachment; filename=\"{slug}.xlsx\"; filename*=UTF-8''{utf8_name}")},
+    )
+
+
 # ── Get by ID ─────────────────────────────────────────────────────────────
 
 
@@ -2515,6 +2709,12 @@ async def bulk_import_cost_items(
 # ── File import (CSV / Excel) ────────────────────────────────────────────
 
 # Column name aliases for flexible matching (all lowercased)
+# Header aliases for auto-detecting columns in a user-uploaded catalogue.
+# Covers EN, DE and RU so a Russian estimator's Excel (Наименование / Цена /
+# Ед.изм / Шифр) maps without a manual step. When auto-detection still misses a
+# column (any other language, an unusual header), the import endpoint accepts an
+# explicit ``column_map`` from the mapping UI - so import never silently drops a
+# column the user needs.
 _COST_COLUMN_ALIASES: dict[str, list[str]] = {
     "code": [
         "code",
@@ -2530,6 +2730,24 @@ _COST_COLUMN_ALIASES: dict[str, list[str]] = {
         "#",
         "id",
         "position",
+        # RU
+        "код",
+        "шифр",
+        "артикул",
+        "№",
+        "номер",
+        "позиция",
+        "обоснование",
+        # FR / ES / IT / PT / PL / TR
+        "réf",
+        "référence",
+        "código",
+        "codice",
+        "kod",
+        "lp",
+        "lp.",
+        "poz",
+        "partida",
     ],
     "description": [
         "description",
@@ -2540,6 +2758,26 @@ _COST_COLUMN_ALIASES: dict[str, list[str]] = {
         "item description",
         "name",
         "title",
+        # RU
+        "наименование",
+        "наименование работ",
+        "описание",
+        "работа",
+        "работы",
+        "наименование работ и затрат",
+        # FR / ES / IT / PT / PL / TR
+        "désignation",
+        "libellé",
+        "descripción",
+        "designación",
+        "concepto",
+        "descrizione",
+        "voce",
+        "descrição",
+        "opis",
+        "nazwa",
+        "açıklama",
+        "tanım",
     ],
     "unit": [
         "unit",
@@ -2548,6 +2786,27 @@ _COST_COLUMN_ALIASES: dict[str, list[str]] = {
         "uom",
         "unit of measure",
         "measure",
+        # RU
+        "ед",
+        "ед.",
+        "ед.изм",
+        "ед. изм.",
+        "ед.изм.",
+        "единица",
+        "единица измерения",
+        "изм",
+        # FR / ES / IT / PT / PL / TR
+        "unité",
+        "unidad",
+        "ud",
+        "unità",
+        "um",
+        "u.m.",
+        "unidade",
+        "un",
+        "jedn",
+        "j.m.",
+        "birim",
     ],
     "rate": [
         "rate",
@@ -2561,12 +2820,58 @@ _COST_COLUMN_ALIASES: dict[str, list[str]] = {
         "preis",
         "amount",
         "value",
+        # RU
+        "цена",
+        "расценка",
+        "стоимость",
+        "цена за единицу",
+        "цена за ед.",
+        "цена за ед",
+        "цена ед.",
+        "цена/ед",
+        "стоимость единицы",
+        "стоимость ед.",
+        "сметная стоимость",
+        "тариф",
+        # FR / ES / IT / PT / PL / TR
+        "prix",
+        "prix unitaire",
+        "pu",
+        "tarif",
+        "coût",
+        "precio",
+        "precio unitario",
+        "importe",
+        "coste",
+        "prezzo",
+        "prezzo unitario",
+        "costo",
+        "importo",
+        "preço",
+        "custo",
+        "cena",
+        "stawka",
+        "koszt",
+        "fiyat",
+        "birim fiyat",
+        "tutar",
     ],
     "currency": [
         "currency",
         "währung",
         "curr",
         "cur",
+        # RU
+        "валюта",
+        # FR / ES / IT / PT / PL / TR
+        "devise",
+        "monnaie",
+        "moneda",
+        "divisa",
+        "valuta",
+        "moeda",
+        "waluta",
+        "para birimi",
     ],
     "classification": [
         "classification",
@@ -2579,8 +2884,26 @@ _COST_COLUMN_ALIASES: dict[str, list[str]] = {
         "class",
         "category",
         "group",
+        # RU
+        "классификация",
+        "класс",
+        "раздел",
+        "гэсн",
+        "фер",
+        "категория",
+        "группа",
     ],
 }
+
+# Canonical column keys the importer understands, in display order.
+_COST_CANONICAL_COLUMNS: tuple[str, ...] = (
+    "code",
+    "description",
+    "unit",
+    "rate",
+    "currency",
+    "classification",
+)
 
 
 def _match_cost_column(header: str) -> str | None:
@@ -2599,6 +2922,40 @@ def _match_cost_column(header: str) -> str | None:
     return None
 
 
+def _resolve_cost_column_map(
+    raw_headers: list[Any],
+    overrides: dict[str, str] | None = None,
+) -> dict[int, str]:
+    """Build a {column_index -> canonical_key} map for a header row.
+
+    ``overrides`` (from the mapping UI) maps a canonical key to the exact raw
+    header text the user chose; it wins over alias auto-detection so any-language
+    columns import correctly. Without an override a column falls back to the
+    EN/DE/RU alias map.
+    """
+    # Normalise overrides to {raw_header_lower -> canonical} for lookup.
+    override_by_header: dict[str, str] = {}
+    if overrides:
+        for canonical, header in overrides.items():
+            if canonical in _COST_CANONICAL_COLUMNS and header:
+                override_by_header[str(header).strip().lower()] = canonical
+
+    column_map: dict[int, str] = {}
+    for idx, hdr in enumerate(raw_headers):
+        if hdr is None:
+            continue
+        key = str(hdr).strip().lower()
+        if not key:
+            continue
+        canonical = override_by_header.get(key) or _match_cost_column(str(hdr))
+        if canonical:
+            # First column wins for a given canonical key (avoid a later
+            # duplicate header silently overwriting the chosen one).
+            if canonical not in column_map.values():
+                column_map[idx] = canonical
+    return column_map
+
+
 def _safe_float(value: Any, default: float = 0.0) -> float:
     """Parse a value to float, returning *default* on failure.
 
@@ -2611,6 +2968,26 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
     text = str(value).strip()
     if not text:
         return default
+    # Scientific notation ("1E+05") parses directly but would be mangled by
+    # the separator stripping below ("1E+05" -> "+05" -> 5), so try the raw
+    # string first. Reject non-finite results ("inf", "nan") - those are not
+    # rates and must fall through to the default.
+    try:
+        direct = float(text)
+    except (ValueError, TypeError):
+        pass
+    else:
+        if _math.isfinite(direct):
+            return direct
+    # Strip everything that is not part of the number itself: whitespace
+    # thousands separators ("8 500,00" incl. non-breaking/thin spaces),
+    # apostrophe thousands ("1'250.00", Swiss), ANY currency symbol or
+    # code in any language (₽ € $ £ ₺ ¥ kr zł Kč RUB ...), and percent.
+    # Keeping only digits, separators and sign is locale-agnostic, so no
+    # currency list to maintain.
+    text = _re.sub(r"[^0-9.,+-]", "", text)
+    if not text:
+        return default
     # Handle European-style numbers: "1.234,56" -> "1234.56"
     if "," in text and "." in text:
         last_comma = text.rfind(",")
@@ -2620,17 +2997,39 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         else:
             text = text.replace(",", "")
     elif "," in text:
-        text = text.replace(",", ".")
+        # Comma-only: treat commas as thousands separators ONLY when there
+        # are MULTIPLE 3-digit groups ("1,234,567"). A SINGLE comma is
+        # always the decimal separator, even with exactly 3 digits after
+        # it ("0,500", "12,345") - European 3-decimal rates are far more
+        # common in cost files than a lone English thousands group, and
+        # inflating a rate 1000x is the worse failure mode. Mixed
+        # comma+dot inputs ("1,234.56") are handled by the branch above.
+        if text.count(",") > 1 and _re.fullmatch(r"[+-]?\d{1,3}(,\d{3})+", text):
+            text = text.replace(",", "")
+        else:
+            text = text.replace(",", ".")
+    elif text.count(".") > 1:
+        # Multiple dots can only be thousands groups ("12.345.678").
+        text = text.replace(".", "")
     try:
         return float(text)
     except (ValueError, TypeError):
         return default
 
 
-def _parse_cost_rows_from_csv(content_bytes: bytes) -> list[dict[str, Any]]:
+def _parse_cost_rows_from_csv(
+    content_bytes: bytes,
+    overrides: dict[str, str] | None = None,
+) -> tuple[list[dict[str, Any]], set[str]]:
     """Parse rows from a CSV file for cost import.
 
     Tries UTF-8 first, then Latin-1 as fallback (common for DACH region files).
+
+    Returns:
+        ``(rows, mapped_keys)`` where ``mapped_keys`` is the set of canonical
+        column names the header row resolved to (auto-detection + overrides),
+        so the caller can enforce required-column coverage with a clear error
+        instead of silently dropping unmapped columns.
     """
     for encoding in ("utf-8-sig", "utf-8", "latin-1"):
         try:
@@ -2652,11 +3051,7 @@ def _parse_cost_rows_from_csv(content_bytes: bytes) -> list[dict[str, Any]]:
     if not raw_headers:
         raise ValueError("CSV file is empty or has no header row")
 
-    column_map: dict[int, str] = {}
-    for idx, hdr in enumerate(raw_headers):
-        canonical = _match_cost_column(hdr)
-        if canonical:
-            column_map[idx] = canonical
+    column_map = _resolve_cost_column_map(list(raw_headers), overrides)
 
     rows: list[dict[str, Any]] = []
     for raw_row in reader:
@@ -2668,11 +3063,44 @@ def _parse_cost_rows_from_csv(content_bytes: bytes) -> list[dict[str, Any]]:
         if row:
             rows.append(row)
 
-    return rows
+    return rows, set(column_map.values())
 
 
-def _parse_cost_rows_from_excel(content_bytes: bytes) -> list[dict[str, Any]]:
-    """Parse rows from an Excel (.xlsx) file for cost import."""
+def _csv_headers_and_sample(content_bytes: bytes, sample: int = 5) -> tuple[list[str], list[list[str]]]:
+    """Return (raw_headers, first ``sample`` data rows) for the mapping preview."""
+    text = None
+    for encoding in ("utf-8-sig", "utf-8", "latin-1"):
+        try:
+            text = content_bytes.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    if text is None:
+        raise ValueError("Unable to decode CSV file -- unsupported encoding")
+    try:
+        dialect = csv.Sniffer().sniff(text[:4096], delimiters=",;\t|")
+    except csv.Error:
+        dialect = csv.excel  # type: ignore[assignment]
+    reader = csv.reader(io.StringIO(text), dialect)
+    raw_headers = next(reader, None)
+    if not raw_headers:
+        raise ValueError("CSV file is empty or has no header row")
+    rows: list[list[str]] = []
+    for raw_row in reader:
+        rows.append([str(c) for c in raw_row])
+        if len(rows) >= sample:
+            break
+    return [str(h) for h in raw_headers], rows
+
+
+def _parse_cost_rows_from_excel(
+    content_bytes: bytes,
+    overrides: dict[str, str] | None = None,
+) -> tuple[list[dict[str, Any]], set[str]]:
+    """Parse rows from an Excel (.xlsx) file for cost import.
+
+    Returns ``(rows, mapped_keys)`` - see :func:`_parse_cost_rows_from_csv`.
+    """
     from openpyxl import load_workbook
 
     wb = load_workbook(io.BytesIO(content_bytes), read_only=True, data_only=True)
@@ -2685,12 +3113,7 @@ def _parse_cost_rows_from_excel(content_bytes: bytes) -> list[dict[str, Any]]:
     if not raw_headers:
         raise ValueError("Excel file is empty or has no header row")
 
-    column_map: dict[int, str] = {}
-    for idx, hdr in enumerate(raw_headers):
-        if hdr is not None:
-            canonical = _match_cost_column(str(hdr))
-            if canonical:
-                column_map[idx] = canonical
+    column_map = _resolve_cost_column_map(list(raw_headers), overrides)
 
     rows: list[dict[str, Any]] = []
     for raw_row in rows_iter:
@@ -2703,7 +3126,173 @@ def _parse_cost_rows_from_excel(content_bytes: bytes) -> list[dict[str, Any]]:
             rows.append(row)
 
     wb.close()
-    return rows
+    return rows, set(column_map.values())
+
+
+def _excel_headers_and_sample(content_bytes: bytes, sample: int = 5) -> tuple[list[str], list[list[str]]]:
+    """Return (raw_headers, first ``sample`` data rows) for the mapping preview."""
+    from openpyxl import load_workbook
+
+    wb = load_workbook(io.BytesIO(content_bytes), read_only=True, data_only=True)
+    ws = wb.active
+    if ws is None:
+        raise ValueError("Excel file has no worksheets")
+    rows_iter = ws.iter_rows(values_only=True)
+    raw_headers = next(rows_iter, None)
+    if not raw_headers:
+        wb.close()
+        raise ValueError("Excel file is empty or has no header row")
+    rows: list[list[str]] = []
+    for raw_row in rows_iter:
+        rows.append(["" if c is None else str(c) for c in raw_row])
+        if len(rows) >= sample:
+            break
+    wb.close()
+    return ["" if h is None else str(h) for h in raw_headers], rows
+
+
+def _validate_cost_upload(content: bytes, filename: str) -> bool:
+    """Run the size + magic-byte gate on an upload; return True if CSV.
+
+    Shared by preview and import so both reject renamed binaries identically.
+    Raises HTTPException on any violation.
+    """
+    if not content:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty.")
+    if len(content) > _MAX_COST_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=(
+                f"Uploaded file is too large ({len(content) / (1024 * 1024):.1f} MB > "
+                f"{_MAX_COST_UPLOAD_BYTES / (1024 * 1024):.0f} MB limit). Split the catalogue into smaller batches."
+            ),
+        )
+    head = content[:SIGNATURE_BYTES_REQUIRED]
+    signature = detect_signature(head)
+    is_csv = filename.endswith(".csv")
+    if is_csv:
+        if signature is not None and signature not in {"xml"}:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail=f"File extension is .csv but the content is a {signature} container. Re-upload as a real CSV.",
+            )
+        if b"\x00" in head:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="CSV upload contains NUL bytes - likely a binary file with a renamed extension.",
+            )
+    else:
+        try:
+            require_signature(head, _ALLOWED_COST_IMPORT_SIGNATURES, filename=filename)
+        except FileSignatureMismatch as exc:
+            raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=str(exc)) from exc
+        # Zip-bomb gate for OOXML containers: sum the DECLARED uncompressed
+        # sizes before openpyxl inflates anything. Legacy OLE .xls is not a
+        # zip - BadZipFile falls through and the signature gate above stays
+        # the authority for those.
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                infos = zf.infolist()
+                if len(infos) > _MAX_COST_ZIP_ENTRIES:
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail=(
+                            f"Excel archive contains {len(infos)} entries "
+                            f"(> {_MAX_COST_ZIP_ENTRIES} limit) - not a valid workbook."
+                        ),
+                    )
+                total_uncompressed = sum(info.file_size for info in infos)
+                if total_uncompressed > _MAX_COST_ZIP_UNCOMPRESSED_BYTES:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail=(
+                            f"Excel archive decompresses to "
+                            f"{total_uncompressed / (1024 * 1024):.0f} MB "
+                            f"(> {_MAX_COST_ZIP_UNCOMPRESSED_BYTES / (1024 * 1024):.0f} MB limit). "
+                            f"Split the catalogue into smaller batches."
+                        ),
+                    )
+        except zipfile.BadZipFile:
+            pass
+    return is_csv
+
+
+@router.post(
+    "/import/preview/",
+    dependencies=[Depends(RequirePermission("costs.create"))],
+)
+async def preview_cost_file(
+    _user_id: CurrentUserId,
+    file: UploadFile = File(..., description="Excel (.xlsx) or CSV (.csv) file"),
+    catalog_id: str | None = Form(
+        default=None,
+        description="Optional target catalog UUID; echoed back with its name/currency so the import UI can confirm the destination.",
+    ),
+    catalog_service: CostCatalogService = Depends(_get_catalog_service),
+) -> dict[str, Any]:
+    """Inspect an uploaded catalogue and return its columns + a suggested mapping.
+
+    The mapping UI calls this first: it shows the file's real headers and a few
+    sample rows next to a suggested column->field mapping (auto-detected in
+    EN/DE/RU). The user confirms or corrects the mapping, then calls
+    ``/import/file/`` with the chosen ``column_map`` so columns in any language
+    import correctly instead of being silently dropped.
+
+    ``has_currency_column`` tells the UI whether the file carries its own
+    currency values - when it does not, importing into a NEW catalog requires
+    an explicit ``catalog_currency``.
+    """
+    filename = (file.filename or "").lower()
+    if not filename.endswith((".xlsx", ".csv", ".xls")):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported file type. Please upload an Excel (.xlsx) or CSV (.csv) file.",
+        )
+    content = await file.read()
+    is_csv = _validate_cost_upload(content, filename)
+    try:
+        headers, sample = _csv_headers_and_sample(content) if is_csv else _excel_headers_and_sample(content)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Failed to read file: {exc}") from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Cost preview parse failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Could not read the file headers. Check that the first row contains column names.",
+        ) from exc
+
+    # Suggested mapping: canonical field -> the raw header we auto-detected.
+    detected = _resolve_cost_column_map(headers, None)
+    suggested: dict[str, str] = {}
+    for idx, canonical in detected.items():
+        if canonical not in suggested and idx < len(headers):
+            suggested[canonical] = headers[idx]
+
+    # Echo the target catalog (when given) so the UI can confirm the
+    # destination + default currency before the user hits import.
+    catalog_info: dict[str, str] | None = None
+    if catalog_id:
+        try:
+            catalog_uuid = uuid.UUID(catalog_id)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"catalog_id is not a valid UUID: {catalog_id!r}",
+            ) from exc
+        catalog = await catalog_service.get_catalog(catalog_uuid)
+        catalog_info = {"id": str(catalog.id), "name": catalog.name, "currency": catalog.currency}
+
+    return {
+        "headers": headers,
+        "sample_rows": sample,
+        "suggested_map": suggested,
+        "target_fields": list(_COST_CANONICAL_COLUMNS),
+        # Import rejects files where the mapping does not cover description
+        # AND rate - surface that contract to the mapping UI up front.
+        "required_fields": ["description", "rate"],
+        "has_currency_column": "currency" in detected.values(),
+        "catalog": catalog_info,
+    }
 
 
 @router.post(
@@ -2711,21 +3300,54 @@ def _parse_cost_rows_from_excel(content_bytes: bytes) -> list[dict[str, Any]]:
     dependencies=[Depends(RequirePermission("costs.create"))],
 )
 async def import_cost_file(
-    _user_id: CurrentUserId,
+    user_id: CurrentUserId,
     file: UploadFile = File(..., description="Excel (.xlsx) or CSV (.csv) file"),
+    column_map: str | None = Form(
+        default=None,
+        description='Optional JSON mapping of canonical field to raw header, e.g. {"description":"Наименование","rate":"Цена"}.',
+    ),
+    catalog_id: str | None = Form(
+        default=None,
+        description="Import into this EXISTING catalog (UUID). Mutually exclusive with catalog_name.",
+    ),
+    catalog_name: str | None = Form(
+        default=None,
+        description=(
+            "Create a NEW catalog with this name and import into it. Also stamped "
+            "as the items' region tag so they are findable as one database."
+        ),
+    ),
+    catalog_currency: str | None = Form(
+        default=None,
+        description=(
+            "ISO 4217 currency of the new catalog. REQUIRED with catalog_name when "
+            "the file has no mapped currency column."
+        ),
+    ),
     service: CostItemService = Depends(_get_service),
+    catalog_service: CostCatalogService = Depends(_get_catalog_service),
 ) -> dict[str, Any]:
     """Import cost items from an Excel or CSV file upload.
 
     Accepts a multipart file upload. The file must be .xlsx or .csv.
 
     Expected columns (flexible auto-detection):
-    - **Code / Item Code / Nr.** -- unique cost item code (required)
+    - **Code / Item Code / Nr.** -- unique cost item code (auto-generated when missing)
     - **Description / Beschreibung / Text** -- description (required)
     - **Unit / Einheit / ME** -- unit of measurement
-    - **Rate / Price / Cost / EP** -- unit rate or price
-    - **Currency / Wahrung** -- currency code (defaults to EUR)
+    - **Rate / Price / Cost / EP** -- unit rate or price (required)
+    - **Currency / Wahrung** -- currency code (defaults to the catalog currency)
     - **Classification / DIN 276 / KG** -- classification code
+
+    The mapping (auto-detection + user ``column_map``) MUST cover
+    ``description`` and ``rate`` - otherwise the import is rejected with
+    422 instead of silently importing rows with empty text or zero rates.
+
+    Catalog targeting: pass ``catalog_id`` to import into an existing
+    catalog, or ``catalog_name`` (+ ``catalog_currency`` when the file has
+    no currency column) to create one inline. Rows without a currency
+    inherit the catalog currency; rows carrying a DIFFERENT currency are
+    imported as-is and counted in ``mixed_currency_count``.
 
     Returns:
         Summary with counts of imported, skipped, and error details per row.
@@ -2747,65 +3369,29 @@ async def import_cost_file(
             detail="Uploaded file is empty.",
         )
 
-    # Round-7 audit: cap upload size BEFORE any parsing so a renamed
-    # binary can't exhaust memory on the openpyxl path. A real-world
-    # CWICR import of 55K rows is well under 10 MB; 25 MB leaves
-    # headroom for richly annotated user catalogs.
-    if len(content) > _MAX_COST_UPLOAD_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=(
-                f"Uploaded file is too large "
-                f"({len(content) / (1024 * 1024):.1f} MB > "
-                f"{_MAX_COST_UPLOAD_BYTES / (1024 * 1024):.0f} MB limit). "
-                "Split the catalogue into smaller batches."
-            ),
-        )
+    # Size cap + magic-byte gate (shared with the preview endpoint): a renamed
+    # binary can't exhaust memory on the openpyxl path or slip past the .csv/.exe
+    # vector.
+    is_csv_request = _validate_cost_upload(content, filename)
 
-    # Round-7 magic-byte gate: filename extension lies; sniff the first
-    # 16 bytes against a hard allow-list. Excel files (xlsx) are ZIP
-    # containers ("PK\x03\x04"); .xls are OLE compound docs; CSVs have
-    # no magic - we accept ``None`` ONLY when the body decodes as text
-    # with a common delimiter.
-    head = content[:SIGNATURE_BYTES_REQUIRED]
-    signature = detect_signature(head)
-    is_csv_request = filename.endswith(".csv")
-    if is_csv_request:
-        # CSV body must decode as text and look like a delimited file.
-        # Reject anything that's actually a binary container masquerading
-        # as ".csv" (the classic .exe → .csv renamed-malware vector).
-        if signature is not None and signature not in {"xml"}:
-            # A real CSV would sniff as None (no magic) - anything we
-            # recognised as a container is a mismatch.
-            raise HTTPException(
-                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                detail=(f"File extension is .csv but the content is a {signature} container. Re-upload as a real CSV."),
-            )
-        if b"\x00" in head:
-            raise HTTPException(
-                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                detail="CSV upload contains NUL bytes - likely a binary file with a renamed extension.",
-            )
-    else:
-        # .xlsx / .xls - must be a real ZIP or OLE container.
+    # An explicit column_map from the mapping UI overrides alias auto-detection,
+    # so headers in any language (Russian, French, ...) import instead of being
+    # dropped. Tolerate a malformed map by ignoring it rather than 500-ing.
+    overrides: dict[str, str] | None = None
+    if column_map:
         try:
-            require_signature(
-                head,
-                _ALLOWED_COST_IMPORT_SIGNATURES,
-                filename=file.filename,
-            )
-        except FileSignatureMismatch as exc:
-            raise HTTPException(
-                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                detail=str(exc),
-            ) from exc
+            parsed_map = json.loads(column_map)
+            if isinstance(parsed_map, dict):
+                overrides = {str(k): str(v) for k, v in parsed_map.items() if v}
+        except (ValueError, TypeError):
+            logger.warning("Ignoring malformed column_map on cost import")
 
     # Parse rows based on file type
     try:
         if filename.endswith(".xlsx") or filename.endswith(".xls"):
-            rows = _parse_cost_rows_from_excel(content)
+            rows, mapped_keys = _parse_cost_rows_from_excel(content, overrides)
         else:
-            rows = _parse_cost_rows_from_csv(content)
+            rows, mapped_keys = _parse_cost_rows_from_csv(content, overrides)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -2818,17 +3404,108 @@ async def import_cost_file(
             detail="Failed to parse file. Please check the format and try again.",
         )
 
+    # Required-column gate: silently importing a file whose mapping missed the
+    # description or rate column produces rows of empty text / zero prices, so
+    # reject with an actionable message instead. Other columns stay optional.
+    missing_required = [key for key in ("description", "rate") if key not in mapped_keys]
+    if missing_required:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Required column(s) not mapped: {', '.join(missing_required)}. "
+                f"Neither auto-detection nor your column mapping covered them. "
+                f"Use the import preview to map a file column to each of "
+                f"'description' and 'rate', then retry."
+            ),
+        )
+
     if not rows:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No data rows found in file. Check that the first row contains column headers.",
         )
 
+    # ── Resolve the target catalog ─────────────────────────────────────────
+    #
+    # Either an existing catalog (catalog_id) or a new one created inline
+    # (catalog_name [+ catalog_currency]). The catalog currency is the
+    # default for rows that carry none of their own.
+    if catalog_id and catalog_name and catalog_name.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Pass either catalog_id (existing catalog) or catalog_name (new catalog), not both.",
+        )
+
+    catalog: Any = None
+    if catalog_id:
+        try:
+            catalog_uuid = uuid.UUID(catalog_id)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"catalog_id is not a valid UUID: {catalog_id!r}",
+            ) from exc
+        catalog = await catalog_service.get_catalog(catalog_uuid)
+    elif catalog_name and catalog_name.strip():
+        file_has_currency = "currency" in mapped_keys
+        resolved_currency = (catalog_currency or "").strip().upper()
+        if not resolved_currency and file_has_currency:
+            # Derive the catalog currency from the file: the most common
+            # non-empty currency value across the parsed rows.
+            counts: dict[str, int] = {}
+            for row in rows:
+                value = str(row.get("currency", "")).strip().upper()
+                if value:
+                    counts[value] = counts.get(value, 0) + 1
+            if counts:
+                resolved_currency = max(counts, key=lambda k: counts[k])
+        if not resolved_currency:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "catalog_currency is required when creating a new catalog from a "
+                    "file that has no mapped currency column. Pass a 3-letter ISO 4217 "
+                    "code (e.g. EUR, USD)."
+                ),
+            )
+        try:
+            create_payload = CostCatalogCreate(
+                name=catalog_name.strip(),
+                currency=resolved_currency,
+                description=None,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid catalog_currency {resolved_currency!r}: expected a 3-letter ISO 4217 code.",
+            ) from exc
+        catalog = await catalog_service.create_catalog(
+            create_payload,
+            created_by=_parse_user_uuid(user_id),
+            source="import",
+        )
+
+    # A user-supplied catalogue name groups the imported rows under one findable
+    # region so the user sees their own catalogue (instead of items vanishing
+    # into an unnamed bucket). Sanitised to a short region tag. When importing
+    # into an existing catalog, its name plays the same role.
+    catalog_region: str | None = None
+    if catalog is not None:
+        catalog_region = str(catalog.name).strip()[:50] or None
+    elif catalog_name and catalog_name.strip():
+        catalog_region = catalog_name.strip()[:50]
+
     # Convert rows to CostItemCreate objects and import via service
     items_to_import: list[CostItemCreate] = []
     skipped = 0
     errors: list[dict[str, Any]] = []
     auto_code = 1
+    # Auto-generated codes are salted with a request-unique prefix: a bare
+    # counter restarts at 1 per request, so a second code-less file into the
+    # same catalog would dedupe against the first and silently import 0 rows.
+    auto_code_salt = uuid.uuid4().hex[:6]
+    mixed_currency_count = 0
+    rate_parse_failures = 0
 
     for row_idx, row in enumerate(rows, start=2):
         try:
@@ -2842,7 +3519,7 @@ async def import_cost_file(
 
             # Auto-generate code if missing
             if not code:
-                code = f"IMPORT-{auto_code:06d}"
+                code = f"IMPORT-{auto_code_salt}-{auto_code:04d}"
             auto_code += 1
 
             # Skip obvious summary rows
@@ -2864,11 +3541,26 @@ async def import_cost_file(
             if not unit:
                 unit = "pcs"
 
-            # Parse rate
-            rate = _safe_float(row.get("rate"), default=0.0)
+            # Parse rate. NaN sentinel distinguishes "value present but
+            # unparseable" from a genuine 0 - _safe_float itself never
+            # returns NaN (non-finite direct parses fall to the default).
+            raw_rate = row.get("rate")
+            rate = _safe_float(raw_rate, default=_math.nan)
+            if _math.isnan(rate):
+                if raw_rate is not None and str(raw_rate).strip():
+                    rate_parse_failures += 1
+                rate = 0.0
 
-            # Parse currency - empty if absent, never country-default.
+            # Parse currency - empty if absent, never country-default. Inside
+            # a catalog, an empty row currency inherits the CATALOG currency;
+            # a different non-empty currency is kept as-is but counted so the
+            # caller can surface a mixed-currency warning.
             currency = str(row.get("currency", "")).strip().upper()
+            if catalog is not None:
+                if not currency:
+                    currency = catalog.currency
+                elif currency != catalog.currency:
+                    mixed_currency_count += 1
 
             # Build classification
             classification: dict[str, str] = {}
@@ -2885,6 +3577,8 @@ async def import_cost_file(
                     currency=currency,
                     source="file_import",
                     classification=classification,
+                    region=catalog_region,
+                    catalog_id=catalog.id if catalog is not None else None,
                 )
             )
 
@@ -2919,6 +3613,15 @@ async def import_cost_file(
         "skipped": skipped + skipped_by_duplicate,
         "errors": errors,
         "total_rows": len(rows),
+        "catalog": catalog_region,
+        "catalog_id": str(catalog.id) if catalog is not None else None,
+        "catalog_currency": catalog.currency if catalog is not None else None,
+        # Rows whose own currency differs from the catalog currency. Imported
+        # as-is (never silently rewritten) - this is a warning, not a block.
+        "mixed_currency_count": mixed_currency_count,
+        # Rows whose rate cell held a value that could not be parsed to a
+        # number (imported with rate 0). Surfaced as a warning, not a block.
+        "rate_parse_failures": rate_parse_failures,
     }
 
 
@@ -2978,8 +3681,21 @@ CWICR_SEARCH_PATHS = [
     str(Path.home() / "Desktop" / "CodeProjects" / "DDC_Toolkit" / "pricing" / "data" / "excel"),
 ]
 
-# Local cache directory for downloaded parquet files
+# Local cache directory for downloaded parquet files. The cache is
+# persistent: a successfully downloaded regional parquet is kept and reused
+# on the next load, so a region survives GitHub being unreachable later
+# (fresh offline installs were left with no rates at all when the runtime
+# download failed).
 _CWICR_CACHE_DIR = Path.home() / ".openestimator" / "cache"
+
+# Optional bundled CWICR parquet files inside the installed package. The
+# regional workitems parquet files are 25-60 MB each (30 regions, ~1 GB
+# total), far beyond any sane wheel budget, so this directory ships empty.
+# It exists as a lookup hook: partner packs, installers or operators can
+# drop ``{db_id}*.parquet`` files here (or in a source checkout) to make
+# regional rates fully offline. The resource *catalog* CSVs, which are
+# small, ARE bundled - see app/data/catalog/regions and the catalog module.
+_BUNDLED_CWICR_DIR = Path(__file__).resolve().parents[2] / "data" / "cwicr"
 
 
 def _download_to_file(url: str, dest: Path, timeout: float = 120.0) -> None:
@@ -3037,11 +3753,11 @@ def _download_cwicr_from_github_sync(db_id: str) -> Path | None:
     cache_dir.mkdir(parents=True, exist_ok=True)
     local_path = cache_dir / f"{db_id}.parquet"
 
-    # No-cache mode: always re-download. Any leftover from a previous run
-    # (whole or partial) is wiped before the fetch so we never serve stale
-    # bytes or get stuck behind a 0-byte file. The caller in
-    # ``load_cwicr_database`` removes the file again after processing,
-    # keeping the cache directory empty.
+    # ``_find_cwicr_file`` already consulted the cache before calling this
+    # helper, so anything still on disk here is a stale or partial leftover
+    # (e.g. a stuck 0-byte file from an interrupted fetch). Wipe it before
+    # the download so we never serve stale bytes. On success the fresh file
+    # STAYS in the cache and is reused by later loads (offline resilience).
     if local_path.exists():
         local_path.unlink(missing_ok=True)
 
@@ -3083,12 +3799,13 @@ async def _download_cwicr_from_github(db_id: str) -> Path | None:
 async def _find_cwicr_file(db_id: str) -> Path | None:
     """Find a CWICR database file by database ID (e.g., DE_BERLIN).
 
-    Priority: Local DDC_Toolkit Parquet > Local Excel SIMPLE > Local Excel any > GitHub download.
-
-    No-cache mode: ``~/.openestimator/cache/`` is no longer consulted on
-    lookup. The download helper writes there as a transient staging area,
-    and ``load_cwicr_database`` deletes the file in its ``finally`` block
-    so nothing accumulates between runs.
+    Lookup order, offline-first so a region only needs the network once:
+      1. Local DDC_Toolkit checkout (Parquet > Excel SIMPLE > Excel any).
+      2. Persistent local cache (``~/.openestimator/cache/{db_id}.parquet``,
+         written by a previous successful GitHub download).
+      3. Parquet bundled/dropped into the installed package at
+         ``app/data/cwicr`` (empty by default - see ``_BUNDLED_CWICR_DIR``).
+      4. GitHub download as the last resort.
     """
     # Priority 1: Parquet files in local DDC_Toolkit (fastest and most reliable)
     for search_path in CWICR_SEARCH_PATHS:
@@ -3116,7 +3833,29 @@ async def _find_cwicr_file(db_id: str) -> Path | None:
             if f.name.startswith(db_id) and f.suffix == ".xlsx":
                 return f
 
-    # Priority 4: Download from GitHub (fallback - runs in thread to not block event loop)
+    # Priority 4: Persistent local cache from a previous download. The 1 KB
+    # floor skips a stuck 0-byte/partial file (the download helper re-fetches
+    # and replaces it in that case).
+    cached = _CWICR_CACHE_DIR / f"{db_id}.parquet"
+    try:
+        if cached.is_file() and cached.stat().st_size > 1000:
+            logger.info("Using cached CWICR parquet for %s: %s", db_id, cached)
+            return cached
+    except OSError:
+        logger.warning("Unreadable cached CWICR parquet at %s, ignoring", cached)
+
+    # Priority 5: Parquet shipped inside (or dropped into) the package data dir.
+    try:
+        if _BUNDLED_CWICR_DIR.is_dir():
+            for f in sorted(_BUNDLED_CWICR_DIR.iterdir()):
+                if f.name.startswith(db_id) and f.suffix == ".parquet":
+                    logger.info("Using bundled CWICR parquet for %s: %s", db_id, f)
+                    return f
+    except OSError:
+        logger.warning("Unreadable bundled CWICR dir at %s, ignoring", _BUNDLED_CWICR_DIR)
+
+    # Priority 6: Download from GitHub (last resort - runs in thread to not
+    # block the event loop; the result is cached for the next run)
     downloaded = await _download_cwicr_from_github(db_id)
     if downloaded:
         return downloaded
@@ -3235,8 +3974,12 @@ async def load_cwicr_region(db_id: str, session: AsyncSession) -> dict:
             detail = f"{detail} {last_error}"
         else:
             detail = (
-                f"{detail} Install DDC_Toolkit at ~/Desktop/CodeProjects/DDC_Toolkit "
-                f"or check your internet connection for GitHub download."
+                f"{detail} No local copy was found (DDC_Toolkit checkout, "
+                f"{_CWICR_CACHE_DIR / (db_id + '.parquet')}, or bundled package data) "
+                f"and the GitHub download did not succeed. Check that this server can "
+                f"reach https://github.com/datadrivenconstruction/"
+                f"OpenConstructionEstimate-DDC-CWICR, or place the regional parquet "
+                f"in the cache directory and retry."
             )
         raise HTTPException(status_code=404, detail=detail)
 
@@ -3279,16 +4022,10 @@ async def load_cwicr_region(db_id: str, session: AsyncSession) -> dict:
             status_code=500,
             detail=f"Failed to import CWICR database '{db_id}'. Check server logs.",
         )
-    finally:
-        # No-cache mode: if this file was downloaded into the transient
-        # cache dir for this request, delete it. A locally-installed
-        # DDC_Toolkit parquet (Priority 1) lives outside the cache dir
-        # and is left untouched.
-        try:
-            if cwicr_path.is_relative_to(_CWICR_CACHE_DIR):
-                cwicr_path.unlink(missing_ok=True)
-        except (OSError, ValueError):
-            logger.debug("Could not delete transient CWICR file %s", cwicr_path)
+    # Note: a parquet downloaded into ~/.openestimator/cache is deliberately
+    # KEPT (persistent cache). Reloading the region - or reinstalling into a
+    # fresh database - then works without the network. The download helper
+    # replaces stale/partial leftovers before each fresh fetch.
 
     duration = round(time.monotonic() - start, 1)
     result_data["duration_seconds"] = duration
@@ -4165,6 +4902,19 @@ async def clear_cost_database(
 # ── Export cost database as Excel ────────────────────────────────────────────
 
 
+def _excel_safe(value: object) -> object:
+    """Neutralize spreadsheet formula injection in exported text cells.
+
+    Imported catalogues are user-supplied, so a cell starting with ``=``,
+    ``+``, ``-``, ``@``, tab or CR would execute as a formula (or DDE
+    payload) when another user opens the export in Excel/LibreOffice.
+    Prefixing with an apostrophe makes Excel render it as literal text.
+    """
+    if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + value
+    return value
+
+
 @router.get(
     "/actions/export-excel/",
     dependencies=[Depends(RequirePermission("costs.list"))],
@@ -4207,13 +4957,13 @@ async def export_cost_database(
                 rate_val = 0
             ws.append(
                 [
-                    item.code,
-                    item.description,
-                    item.unit,
+                    _excel_safe(item.code),
+                    _excel_safe(item.description),
+                    _excel_safe(item.unit),
                     rate_val,
-                    item.currency,
-                    item.source,
-                    getattr(item, "region", ""),
+                    _excel_safe(item.currency),
+                    _excel_safe(item.source),
+                    _excel_safe(getattr(item, "region", "")),
                 ]
             )
 

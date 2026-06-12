@@ -492,6 +492,69 @@ def _persist_demo_credentials(creds: dict[str, str]) -> Path | None:
         return None
 
 
+_DEMO_BACKFILL_MARKER_FILENAME = "demo_backfill_marker.json"
+
+
+def _demo_backfill_marker_path() -> Path:
+    """Resolve the demo-backfill sentinel file in the active data dir.
+
+    Reuses the partner-pack state resolution so a custom ``serve
+    --data-dir`` instance keeps its own marker instead of sharing the
+    default install's (same lesson as partner_pack_state.json).
+    """
+    from app.core.partner_pack.state import _resolve_state_dir
+
+    return _resolve_state_dir() / _DEMO_BACKFILL_MARKER_FILENAME
+
+
+def _read_demo_backfill_version() -> str | None:
+    """Return the app version stamped by the last completed demo backfill.
+
+    Crash-safe: any read/parse failure returns ``None`` so the seeds run
+    exactly as they did before the sentinel existed.
+    """
+    import json as _json
+
+    try:
+        path = _demo_backfill_marker_path()
+        if not path.exists():
+            return None
+        raw = _json.loads(path.read_text(encoding="utf-8"))
+        version = raw.get("app_version") if isinstance(raw, dict) else None
+        return version if isinstance(version, str) and version else None
+    except Exception:  # noqa: BLE001 - unreadable marker just means "run the seeds"
+        logger.debug("Demo backfill marker unreadable - running seeds", exc_info=True)
+        return None
+
+
+def _write_demo_backfill_version(version: str) -> None:
+    """Stamp the demo-backfill sentinel with the current app version.
+
+    Best-effort: a failed write only means the (idempotent) seeds run
+    again on the next boot.
+    """
+    import json as _json
+    from datetime import datetime as _datetime
+
+    try:
+        path = _demo_backfill_marker_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(
+            _json.dumps(
+                {
+                    "app_version": version,
+                    "completed_at": _datetime.now(UTC).isoformat(),
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        tmp.replace(path)
+    except Exception:  # noqa: BLE001 - never let the sentinel block startup
+        logger.debug("Could not write demo backfill marker", exc_info=True)
+
+
 async def _seed_demo_account() -> None:
     """Create demo user + showcase projects if they don't exist yet.
 
@@ -511,8 +574,14 @@ async def _seed_demo_account() -> None:
     they can recover from the credentials file.
 
     Disable demo creation entirely with ``SEED_DEMO=false`` in production.
+    When ``SEED_DEMO`` is unset, the persisted first-run choice (the CLI's
+    "Load demo projects?" prompt / ``serve --no-demo`` / the demo-data
+    purge endpoint) in ``<data-dir>/demo_seed_choice.json`` decides - see
+    ``app.core.demo_seed``.
     """
-    if os.environ.get("SEED_DEMO", "true").lower() in ("false", "0", "no"):
+    from app.core.demo_seed import seed_demo_enabled
+
+    if not seed_demo_enabled():
         return
 
     from sqlalchemy import func, select
@@ -784,13 +853,40 @@ async def _seed_demo_account() -> None:
         # Quantities) is present out of the box. Idempotent, so it also
         # backfills existing databases on the next startup. Runs regardless of
         # project_count so an upgrade picks it up.
-        if os.environ.get("OE_TEST_FAST_STARTUP", "").lower() in ("1", "true", "yes"):
+        #
+        # Version sentinel: the whole backfill block below (flagship 6640-
+        # element model + ~16MB geometry, Heilbronn showcase, equipment +
+        # subcontractor demos, enrich_all) is idempotent but costs real time
+        # on EVERY boot just to conclude "nothing to do". After a completed
+        # run we stamp the app version into a small marker file in the data
+        # dir; while the marker matches the running version the block is
+        # skipped entirely. An upgrade changes app_version, so the backfills
+        # still run once per version to pick up new demo content. Crash-safe:
+        # an unreadable/missing marker (or a fresh DB - project_count == 0)
+        # runs the seeds exactly as before.
+        _seed_fast_startup = os.environ.get("OE_TEST_FAST_STARTUP", "").lower() in ("1", "true", "yes")
+        _running_version = get_settings().app_version
+        _backfill_current = (
+            not _seed_fast_startup and project_count > 0 and _read_demo_backfill_version() == _running_version
+        )
+        if _seed_fast_startup:
             # The flagship installer writes a 6640-element model and ~16MB of
             # geometry; no test needs it, and it adds several seconds to every
             # per-module app startup. Skip it when the test suite asks for a
             # fast startup.
             logger.debug("Flagship seed skipped (OE_TEST_FAST_STARTUP)")
+        elif _backfill_current:
+            logger.info(
+                "Demo backfill seeds skipped - already completed for version %s",
+                _running_version,
+            )
         else:
+            # Tracks whether every named seeder below completed. A failed
+            # seeder must NOT stamp the version marker - otherwise a
+            # transient failure (DB hiccup mid-seed) would be skipped on
+            # every subsequent boot until the next app upgrade instead of
+            # self-healing on the next start.
+            _backfill_ok = True
             try:
                 from app.scripts.seed_flagship import install_flagship
 
@@ -798,6 +894,7 @@ async def _seed_demo_account() -> None:
                     fl_result = await install_flagship(fl_session, demo_user_id)
                     logger.info("Flagship seed: %s", fl_result)
             except Exception:
+                _backfill_ok = False
                 logger.warning("Flagship seed skipped (non-fatal)", exc_info=True)
 
             # Retail Market Heilbronn - the ninth showcase project. Backfilled
@@ -822,6 +919,7 @@ async def _seed_demo_account() -> None:
                                 rh_result.get("positions"),
                             )
                 except Exception:
+                    _backfill_ok = False
                     logger.warning(
                         "Retail Market Heilbronn showcase backfill skipped (non-fatal)",
                         exc_info=True,
@@ -841,6 +939,7 @@ async def _seed_demo_account() -> None:
                     if any(eq_counts.values()):
                         logger.info("Equipment demo seed: %s", eq_counts)
             except Exception:
+                _backfill_ok = False
                 logger.warning("Equipment demo seed skipped (non-fatal)", exc_info=True)
 
             # Subcontractor demo - 50 firms with varied prequalification states
@@ -864,6 +963,7 @@ async def _seed_demo_account() -> None:
                     if any(sub_counts.values()):
                         logger.info("Subcontractor demo seed: %s", sub_counts)
             except Exception:
+                _backfill_ok = False
                 logger.warning("Subcontractor demo seed skipped (non-fatal)", exc_info=True)
 
             # ── Remaining feature-module demos ──────────────────────────────
@@ -879,6 +979,15 @@ async def _seed_demo_account() -> None:
             from app.core.demo_enrichment import enrich_all
 
             await enrich_all()
+
+            # Stamp the sentinel only when every named seeder completed.
+            # On a failed pass the marker stays absent/stale, so the next
+            # boot retries the (idempotent) seeds instead of skipping them
+            # until the next app upgrade.
+            if _backfill_ok:
+                _write_demo_backfill_version(_running_version)
+            else:
+                logger.info("Demo backfill marker not stamped - at least one seeder failed; will retry next boot")
     except Exception:
         logger.exception("Failed to seed demo account (non-fatal)")
 
@@ -1313,12 +1422,20 @@ def create_app() -> FastAPI:
             logger.warning("Alembic head check failed: %s", _exc)
             result["alembic_head_matches"] = None
 
-        # Frontend dist presence - the wheel ships ``app/_frontend_dist/``;
-        # a missing ``index.html`` means the SPA shell will 404 and users
-        # see a blank page even though /api endpoints work.
+        # Frontend dist presence - the wheel ships ``app/_frontend_dist/``,
+        # a repo checkout serves ``frontend/dist``; a missing ``index.html``
+        # in BOTH locations means the SPA shell will 404 and users see a
+        # blank page even though /api endpoints work. Mirror the lookup
+        # order of ``cli_static.get_frontend_dir`` so dev mode is not
+        # falsely reported as degraded.
         try:
-            _dist_index = _Path(__file__).resolve().parent / "_frontend_dist" / "index.html"
-            result["frontend_dist_present"] = _dist_index.is_file()
+            from app.cli_static import get_frontend_dir
+
+            try:
+                get_frontend_dir()
+                result["frontend_dist_present"] = True
+            except FileNotFoundError:
+                result["frontend_dist_present"] = False
             if not result["frontend_dist_present"]:
                 result["status"] = "degraded"
         except Exception:
@@ -2274,7 +2391,7 @@ def create_app() -> FastAPI:
 
                 migrated = await postgres_auto_migrate(engine, Base)
                 if migrated:
-                    logger.info("PostgreSQL auto-migration: %d columns added", migrated)
+                    logger.info("PostgreSQL auto-migration: %d schema objects (columns + indexes) added", migrated)
 
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
@@ -2509,21 +2626,34 @@ def create_app() -> FastAPI:
             # operator opted in. See ``app.core.embedding_pool`` for the
             # full rationale and trade-offs.
             #
-            # We unconditionally call get_embedder() here as well: the
-            # auto-backfill task (scheduled below) and /match-elements
-            # vector matcher both call ``encode_texts_async`` from worker
-            # threads. On Windows + Anaconda the first SentenceTransformer
-            # load from a worker thread can race with concurrent torch
-            # imports and silently leave the singleton at None - every
-            # subsequent encode then raises "No embedding model available".
-            # Loading on the main thread once primes the singleton so
-            # later calls just hit the cache.
-            try:
-                from app.core.vector import get_embedder as _ge
+            # Prime the embedder in a DETACHED background task. Loading the
+            # SentenceTransformer blocks for up to ~45s, and doing it inline
+            # here meant the server could not answer a single request until
+            # the model finished loading. ``get_embedder()`` is lazy + cached
+            # (see app/core/vector.py), so any caller that needs embeddings
+            # before the prime completes simply loads the model on demand and
+            # semantic search lights up the moment the model is ready. The
+            # load itself is CPU/IO-blocking, so the task hands it to a
+            # worker thread via ``asyncio.to_thread`` - same detached pattern
+            # as ``_auto_backfill_vector_collections`` below.
+            async def _prime_embedder_background() -> None:
+                import asyncio as _asyncio_emb
 
-                _ge()
-            except Exception as exc:  # noqa: BLE001 - never fatal for startup
-                logger.info("Embedder main-thread prime skipped: %s", exc)
+                try:
+                    from app.core.vector import get_embedder as _ge
+
+                    embedder = await _asyncio_emb.to_thread(_ge)
+                    if embedder is not None:
+                        logger.info("Embedder background prime complete - semantic search ready")
+                except Exception as exc:  # noqa: BLE001 - never fatal for startup
+                    logger.info("Embedder background prime skipped: %s", exc)
+
+            try:
+                import asyncio as _asyncio_emb_sched
+
+                _asyncio_emb_sched.create_task(_prime_embedder_background())
+            except Exception:
+                logger.debug("Could not schedule embedder prime", exc_info=True)
 
             try:
                 from app.core.embedding_pool import init_pool, maybe_preload_in_process
