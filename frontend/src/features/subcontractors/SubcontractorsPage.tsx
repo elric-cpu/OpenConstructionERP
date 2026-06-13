@@ -267,6 +267,7 @@ export function SubcontractorsPage() {
       />
 
       <PageHeader
+        srTitle={t('nav.subcontractors', { defaultValue: 'Subcontractors' })}
         subtitle={t('subcontractors.subtitle', {
           defaultValue:
             'Manage subcontractor prequalifications, scopes, payments and ratings.',

@@ -798,6 +798,7 @@ const ContactCard = React.memo(function ContactCard({
               onClick={() => onOpenDetail(contact)}
               className="!p-1 text-content-quaternary hover:text-oe-blue h-auto"
               title={t('contacts.open_detail', { defaultValue: 'Linked records & actions' })}
+              aria-label={t('contacts.open_detail', { defaultValue: 'Linked records & actions' })}
             >
               <MoreVertical size={12} />
             </Button>
@@ -807,6 +808,7 @@ const ContactCard = React.memo(function ContactCard({
               onClick={() => onEdit(contact)}
               className="!p-1 text-content-quaternary hover:text-oe-blue h-auto"
               title={t('common.edit', { defaultValue: 'Edit' })}
+              aria-label={t('common.edit', { defaultValue: 'Edit' })}
             >
               <Pencil size={12} />
             </Button>
@@ -816,6 +818,7 @@ const ContactCard = React.memo(function ContactCard({
               onClick={() => onDelete(contact.id)}
               className="!p-1 text-content-quaternary hover:text-red-500 h-auto"
               title={t('common.delete', { defaultValue: 'Delete' })}
+              aria-label={t('common.delete', { defaultValue: 'Delete' })}
             >
               <Trash2 size={12} />
             </Button>

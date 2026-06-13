@@ -438,6 +438,7 @@ export function ContractsPage() {
       />
 
       <PageHeader
+        srTitle={t('nav.contracts', { defaultValue: 'Contracts' })}
         subtitle={t('contracts.subtitle', {
           defaultValue:
             'Type-aware contracts with schedule of values, retention, claims and final accounts.',

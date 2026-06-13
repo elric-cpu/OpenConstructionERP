@@ -3883,9 +3883,9 @@ export default function TakeoffViewerModule({
               {/* RIGHT — Hero text + supported formats cards */}
               <div className="flex flex-col justify-center gap-4">
                 <div>
-                  <h1 className="text-2xl font-bold text-content-primary tracking-tight leading-tight">
+                  <h2 className="text-2xl font-bold text-content-primary tracking-tight leading-tight">
                     {t('takeoff.landing_hero_title', { defaultValue: 'PDF Takeoff' })}
-                  </h1>
+                  </h2>
                   <p className="text-base text-content-secondary mt-3 leading-relaxed">
                     {t('takeoff.landing_hero_subtitle', {
                       defaultValue: 'Click-to-measure on any drawing \u2014 lengths, areas, counts \u2014 with AI that suggests quantities and sends them straight into your BOQ.',
@@ -4916,6 +4916,7 @@ export default function TakeoffViewerModule({
                       onClick={saveNow}
                       className="p-1 rounded hover:bg-surface-secondary text-content-tertiary transition-colors"
                       title={t('takeoff_viewer.save_measurements', { defaultValue: 'Save measurements' })}
+                      aria-label={t('takeoff_viewer.save_measurements', { defaultValue: 'Save measurements' })}
                     >
                       <Save className="h-3.5 w-3.5" />
                     </button>
@@ -4959,6 +4960,14 @@ export default function TakeoffViewerModule({
                         <button
                           onClick={() => toggleGroupCollapse(groupName)}
                           className="p-0.5 rounded hover:bg-surface-secondary text-content-tertiary transition-colors"
+                          aria-label={isCollapsed
+                            ? t('takeoff_viewer.expand_group', { defaultValue: 'Expand group' })
+                            : t('takeoff_viewer.collapse_group', { defaultValue: 'Collapse group' })
+                          }
+                          title={isCollapsed
+                            ? t('takeoff_viewer.expand_group', { defaultValue: 'Expand group' })
+                            : t('takeoff_viewer.collapse_group', { defaultValue: 'Collapse group' })
+                          }
                         >
                           {isCollapsed ? <ChevronDown size={10} /> : <ChevronUp size={10} />}
                         </button>
@@ -5123,6 +5132,8 @@ export default function TakeoffViewerModule({
                                     <button
                                       onClick={() => setLinkingMeasurementId(null)}
                                       className="text-content-tertiary hover:text-content-primary transition-colors"
+                                      aria-label={t('common.close', { defaultValue: 'Close' })}
+                                      title={t('common.close', { defaultValue: 'Close' })}
                                     >
                                       <X size={10} />
                                     </button>
@@ -5370,6 +5381,14 @@ export default function TakeoffViewerModule({
                         <button
                           onClick={() => toggleGroupCollapse('__annotations__')}
                           className="p-0.5 rounded hover:bg-surface-secondary text-content-tertiary transition-colors"
+                          aria-label={annoCollapsed
+                            ? t('takeoff_viewer.expand_group', { defaultValue: 'Expand group' })
+                            : t('takeoff_viewer.collapse_group', { defaultValue: 'Collapse group' })
+                          }
+                          title={annoCollapsed
+                            ? t('takeoff_viewer.expand_group', { defaultValue: 'Expand group' })
+                            : t('takeoff_viewer.collapse_group', { defaultValue: 'Collapse group' })
+                          }
                         >
                           {annoCollapsed ? <ChevronDown size={10} /> : <ChevronUp size={10} />}
                         </button>

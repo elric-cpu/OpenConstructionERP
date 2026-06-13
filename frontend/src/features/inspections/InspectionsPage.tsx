@@ -1400,6 +1400,7 @@ export function InspectionsPage() {
 
       {/* Header */}
       <PageHeader
+        srTitle={t('inspections.title', { defaultValue: 'Inspections' })}
         subtitle={t('inspections.subtitle', {
           defaultValue: 'Schedule and record quality inspections, then raise punch items or NCRs',
         })}

@@ -2326,6 +2326,7 @@ export function MeetingsPage() {
 
       {/* Header */}
       <PageHeader
+        srTitle={t('meetings.title', { defaultValue: 'Meetings' })}
         subtitle={t('meetings.subtitle', { defaultValue: 'Schedule, track, and document project meetings with action items' })}
         actions={
           <>

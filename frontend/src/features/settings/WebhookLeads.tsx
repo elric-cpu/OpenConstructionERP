@@ -244,7 +244,7 @@ export function WebhookLeads() {
         <h2 className="text-lg font-semibold">
           {t('webhook_leads.title', { defaultValue: 'Webhook Leads' })}
         </h2>
-        <p className="text-sm text-gray-500 mt-1">
+        <p className="text-sm text-content-tertiary mt-1">
           {t('webhook_leads.subtitle', {
             defaultValue:
               'Secure incoming webhook endpoints that auto-create CRM leads from external sources.',
@@ -266,7 +266,7 @@ export function WebhookLeads() {
               </p>
               <div className="mt-2 space-y-2 text-sm">
                 <div className="flex items-center gap-2">
-                  <code className="bg-white px-2 py-1 rounded border break-all flex-1">
+                  <code className="bg-surface-primary px-2 py-1 rounded border break-all flex-1">
                     {revealedSecret.secret}
                   </code>
                   <Button
@@ -278,7 +278,7 @@ export function WebhookLeads() {
                   </Button>
                 </div>
                 <div className="flex items-center gap-2">
-                  <code className="bg-white px-2 py-1 rounded border break-all flex-1">
+                  <code className="bg-surface-primary px-2 py-1 rounded border break-all flex-1">
                     {revealedSecret.url}
                   </code>
                   <Button
@@ -323,13 +323,16 @@ export function WebhookLeads() {
             onChange={(e) => setNewSlug(e.target.value)}
           />
           <select
-            className="border rounded-md px-3 py-2 text-sm bg-white"
+            className="border rounded-md px-3 py-2 text-sm bg-surface-primary"
             value={newAuth}
             onChange={(e) =>
               setNewAuth(e.target.value as 'api_key' | 'hmac' | 'jwt')
             }
           >
-            <option value="api_key">API Key</option>
+            <option value="api_key">
+              {t('webhook_leads.auth_api_key', { defaultValue: 'API Key' })}
+            </option>
+            {/* HMAC-SHA256 and JWT are protocol identifiers, shown verbatim. */}
             <option value="hmac">HMAC-SHA256</option>
             <option value="jwt">JWT</option>
           </select>
@@ -365,7 +368,7 @@ export function WebhookLeads() {
           {t('webhook_leads.sources', { defaultValue: 'Sources' })}
         </h3>
         {sources.length === 0 ? (
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-content-tertiary">
             {t('webhook_leads.no_sources', {
               defaultValue: 'No webhook sources configured yet.',
             })}
@@ -377,14 +380,14 @@ export function WebhookLeads() {
                 key={s.id}
                 className={`flex items-center gap-3 p-3 rounded-md border cursor-pointer ${
                   selectedId === s.id
-                    ? 'border-blue-400 bg-blue-50'
-                    : 'border-gray-200'
+                    ? 'border-oe-blue bg-oe-blue-subtle'
+                    : 'border-border'
                 }`}
                 onClick={() => setSelectedId(s.id)}
               >
                 <div className="flex-1 min-w-0">
                   <div className="font-medium">{s.name}</div>
-                  <div className="text-xs text-gray-500 truncate">
+                  <div className="text-xs text-content-tertiary truncate">
                     /api/v1/webhook-leads/incoming/{s.slug}/ · {s.auth_method} ·{' '}
                     {s.rate_limit_per_min}/min
                   </div>
@@ -459,7 +462,7 @@ export function WebhookLeads() {
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-5 gap-2 mb-3">
               <select
-                className="border rounded-md px-3 py-2 text-sm bg-white"
+                className="border rounded-md px-3 py-2 text-sm bg-surface-primary"
                 value={mapField}
                 onChange={(e) => setMapField(e.target.value)}
               >
@@ -477,7 +480,7 @@ export function WebhookLeads() {
                 onChange={(e) => setMapPath(e.target.value)}
               />
               <select
-                className="border rounded-md px-3 py-2 text-sm bg-white"
+                className="border rounded-md px-3 py-2 text-sm bg-surface-primary"
                 value={mapTransform}
                 onChange={(e) => setMapTransform(e.target.value)}
               >
@@ -510,12 +513,12 @@ export function WebhookLeads() {
               {(mappingsQ.data ?? []).map((m) => (
                 <div
                   key={m.id}
-                  className="flex items-center gap-2 text-sm p-2 rounded border border-gray-100"
+                  className="flex items-center gap-2 text-sm p-2 rounded border border-border-light"
                 >
-                  <code className="bg-gray-50 px-2 py-0.5 rounded">
+                  <code className="bg-surface-secondary px-2 py-0.5 rounded">
                     {m.source_path}
                   </code>
-                  <span className="text-gray-400">→</span>
+                  <span className="text-content-tertiary">→</span>
                   <span className="font-medium">{m.target_field}</span>
                   {m.transform && (
                     <Badge variant="neutral">{m.transform}</Badge>
@@ -538,7 +541,7 @@ export function WebhookLeads() {
                 </div>
               ))}
               {(mappingsQ.data ?? []).length === 0 && (
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-content-tertiary">
                   {t('webhook_leads.no_mappings', {
                     defaultValue: 'No mappings - add at least one required rule.',
                   })}
@@ -566,7 +569,7 @@ export function WebhookLeads() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-left text-gray-500 border-b">
+                  <tr className="text-left text-content-tertiary border-b">
                     <th className="py-2 pr-3">
                       {t('webhook_leads.col_time', { defaultValue: 'Time' })}
                     </th>
@@ -588,8 +591,8 @@ export function WebhookLeads() {
                 </thead>
                 <tbody>
                   {(logsQ.data ?? []).map((l) => (
-                    <tr key={l.id} className="border-b border-gray-100">
-                      <td className="py-2 pr-3 whitespace-nowrap text-gray-500">
+                    <tr key={l.id} className="border-b border-border-light">
+                      <td className="py-2 pr-3 whitespace-nowrap text-content-tertiary">
                         {l.received_at?.slice(0, 19).replace('T', ' ') ??
                           l.created_at.slice(0, 19).replace('T', ' ')}
                       </td>
@@ -617,7 +620,7 @@ export function WebhookLeads() {
                     <tr>
                       <td
                         colSpan={5}
-                        className="py-4 text-center text-gray-500"
+                        className="py-4 text-center text-content-tertiary"
                       >
                         {t('webhook_leads.no_logs', {
                           defaultValue: 'No ingestion attempts yet.',

@@ -556,6 +556,13 @@ function AIConfigurationCard() {
         subtitle={t('settings.ai_subtitle', {
           defaultValue: 'Choose your AI provider for estimation and analysis',
         })}
+        action={
+          hasUnsavedKey || modelTouched || baseUrlTouched ? (
+            <Badge variant="warning" size="sm" dot>
+              {t('settings.ai_unsaved_changes', { defaultValue: 'Unsaved changes' })}
+            </Badge>
+          ) : undefined
+        }
       />
       <CardContent>
         <div className="space-y-6">
@@ -911,9 +918,10 @@ interface ProfileCardProps {
   setFormName: (v: string) => void;
   onSave: () => void;
   saving: boolean;
+  onRetry: () => void;
 }
 
-function ProfileCard({ profile, loading, editing, setEditing, formName, setFormName, onSave, saving }: ProfileCardProps) {
+function ProfileCard({ profile, loading, editing, setEditing, formName, setFormName, onSave, saving, onRetry }: ProfileCardProps) {
   const { t } = useTranslation();
 
   return (
@@ -1037,9 +1045,14 @@ function ProfileCard({ profile, loading, editing, setEditing, formName, setFormN
             </div>
           </div>
         ) : (
-          <p className="text-sm text-content-secondary">
-            {t('settings.profile_error', { defaultValue: 'Could not load profile' })}
-          </p>
+          <div className="flex flex-col items-start gap-3">
+            <p className="text-sm text-content-secondary">
+              {t('settings.profile_error', { defaultValue: 'Could not load profile' })}
+            </p>
+            <Button variant="secondary" size="sm" onClick={onRetry}>
+              {t('common.retry', { defaultValue: 'Retry' })}
+            </Button>
+          </div>
         )}
       </CardContent>
     </Card>
@@ -1405,6 +1418,7 @@ export function SettingsPage() {
                 setFormName={(v) => setProfileForm({ full_name: v })}
                 onSave={() => profileMutation.mutate({ full_name: profileForm.full_name })}
                 saving={profileMutation.isPending}
+                onRetry={() => queryClient.invalidateQueries({ queryKey: ['me'] })}
               />
               <AppearanceCard />
               <InterfaceModeCard />
@@ -1638,8 +1652,12 @@ export function SettingsPage() {
                               : 'border-2 border-transparent hover:bg-surface-secondary text-content-secondary hover:text-content-primary'
                           }`}
                         >
-                          <span className="text-lg">{lang.flag}</span>
-                          <span className="text-2xs font-medium truncate w-full" title={lang.name}>
+                          <span className="text-lg" aria-hidden="true">{lang.flag}</span>
+                          {/* Visually-hidden accessible name so screen readers
+                              announce the language even though the flag emoji
+                              is hidden from the a11y tree. */}
+                          <span className="sr-only">{lang.name}</span>
+                          <span className="text-2xs font-medium truncate w-full" title={lang.name} aria-hidden="true">
                             {lang.name}
                           </span>
                         </button>

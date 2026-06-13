@@ -14,7 +14,7 @@ import { Card, Button, Badge, Breadcrumb, DismissibleInfo, IntroRichText } from 
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { APP_VERSION } from '@/shared/lib/version';
 import { UpdateNotification } from '@/shared/ui/UpdateChecker';
-import { Changelog } from './Changelog';
+import { Changelog, getRecentReleases } from './Changelog';
 
 export function AboutPage() {
   const { t } = useTranslation();
@@ -75,7 +75,7 @@ export function AboutPage() {
             </span>
             <span className="text-xs font-semibold uppercase tracking-widest text-emerald-600">Open Source</span>
           </div>
-          <h1 className="text-3xl font-bold text-content-primary tracking-tight">OpenConstructionERP</h1>
+          <h2 className="text-3xl font-bold text-content-primary tracking-tight">OpenConstructionERP</h2>
           <p className="mt-2 text-base text-content-secondary">
             {t('about.tagline', { defaultValue: 'The #1 open-source platform for construction cost estimation, project management and resource control' })}
           </p>
@@ -116,11 +116,7 @@ export function AboutPage() {
               </a>
             </div>
             <ul className="space-y-1.5">
-              {[
-                { v: '3.12.0', date: '2026-05-20', note: t('about.recent_3_12_0', { defaultValue: 'Wave 5/6/7 pro-grade - BOQ + Cost Intel + Clash A4 + Files CDE' }) },
-                { v: '3.11.0', date: '2026-05-20', note: t('about.recent_3_11_0', { defaultValue: 'Wave 3/4 modules · Validation@Import · X84 export · /about redesign' }) },
-                { v: '3.10.0', date: '2026-05-19', note: t('about.recent_3_10_0', { defaultValue: '/files CDE-grade wave · Clash collab/metadata · match polish' }) },
-              ].map(r => (
+              {getRecentReleases(3).map(entry => ({ v: entry.version, date: entry.date, note: entry.summary })).map(r => (
                 <li key={r.v} className="flex items-start gap-2 text-2xs leading-snug">
                   <span className="shrink-0 inline-flex items-center rounded-md bg-oe-blue/10 text-oe-blue font-mono font-semibold px-1.5 py-0.5">
                     v{r.v}
@@ -215,7 +211,7 @@ export function AboutPage() {
                 href="https://t.me/datadrivenconstruction"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group flex items-center gap-3 rounded-lg border border-[#26A5E4]/25 bg-[#26A5E4]/[0.04] px-3.5 py-3 hover:border-[#26A5E4]/50 hover:bg-[#26A5E4]/[0.08] transition-all"
+                className="group flex items-center gap-3 rounded-lg border border-[#26A5E4]/25 bg-[#26A5E4]/[0.04] px-3.5 py-3 hover:border-[#26A5E4]/50 hover:bg-[#26A5E4]/[0.08] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue focus-visible:ring-offset-1"
               >
                 <span className="shrink-0 h-10 w-10 rounded-lg bg-[#26A5E4]/15 text-[#26A5E4] flex items-center justify-center">
                   <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5" aria-hidden>
@@ -245,7 +241,7 @@ export function AboutPage() {
                   href="https://www.linkedin.com/company/78381569"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="group flex items-center gap-2.5 rounded-lg border border-border-light bg-surface-primary px-3 py-2.5 hover:border-[#0A66C2]/50 hover:bg-[#0A66C2]/[0.04] transition-all"
+                  className="group flex items-center gap-2.5 rounded-lg border border-border-light bg-surface-primary px-3 py-2.5 hover:border-[#0A66C2]/50 hover:bg-[#0A66C2]/[0.04] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue focus-visible:ring-offset-1"
                 >
                   <span className="shrink-0 h-9 w-9 rounded-lg bg-[#0A66C2]/10 text-[#0A66C2] flex items-center justify-center">
                     <Linkedin size={16} />
@@ -264,7 +260,7 @@ export function AboutPage() {
                   href="https://x.com/datadrivenconst"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="group flex items-center gap-2.5 rounded-lg border border-border-light bg-surface-primary px-3 py-2.5 hover:border-slate-700/50 hover:bg-slate-900/[0.04] dark:hover:border-slate-300/40 transition-all"
+                  className="group flex items-center gap-2.5 rounded-lg border border-border-light bg-surface-primary px-3 py-2.5 hover:border-slate-700/50 hover:bg-slate-900/[0.04] dark:hover:border-slate-300/40 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue focus-visible:ring-offset-1"
                 >
                   <span className="shrink-0 h-9 w-9 rounded-lg bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 flex items-center justify-center">
                     <svg viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5" aria-hidden>
@@ -406,7 +402,7 @@ export function AboutPage() {
                       href="https://www.linkedin.com/in/boikoartem/"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-oe-blue transition-colors hover:bg-oe-blue/10"
+                      className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-oe-blue transition-colors hover:bg-oe-blue/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue focus-visible:ring-offset-1"
                       title={t('about.founder_linkedin', { defaultValue: 'Artem Boiko on LinkedIn' })}
                       aria-label={t('about.founder_linkedin', { defaultValue: 'Artem Boiko on LinkedIn' })}
                     >
@@ -459,7 +455,7 @@ export function AboutPage() {
                     href={item.href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="group flex items-start gap-3 rounded-lg border border-border-light bg-surface-secondary/40 px-3.5 py-3.5 hover:border-oe-blue/40 hover:bg-oe-blue/[0.04] transition-all"
+                    className="group flex items-start gap-3 rounded-lg border border-border-light bg-surface-secondary/40 px-3.5 py-3.5 hover:border-oe-blue/40 hover:bg-oe-blue/[0.04] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue focus-visible:ring-offset-1"
                   >
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-semibold text-content-primary leading-tight group-hover:text-oe-blue transition-colors">
@@ -490,7 +486,7 @@ export function AboutPage() {
                     href={item.href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="group flex items-start gap-3 rounded-lg border border-border-light bg-surface-secondary/40 px-3.5 py-3.5 hover:border-oe-blue/40 hover:bg-oe-blue/[0.04] transition-all"
+                    className="group flex items-start gap-3 rounded-lg border border-border-light bg-surface-secondary/40 px-3.5 py-3.5 hover:border-oe-blue/40 hover:bg-oe-blue/[0.04] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue focus-visible:ring-offset-1"
                   >
                     <Github size={14} className="mt-0.5 shrink-0 text-content-tertiary group-hover:text-content-primary transition-colors" />
                     <div className="min-w-0 flex-1">
@@ -529,7 +525,7 @@ export function AboutPage() {
                     rel="noopener noreferrer"
                     title={label}
                     aria-label={label}
-                    className="group flex h-11 w-11 items-center justify-center rounded-lg border border-border-light bg-surface-secondary/40 hover:border-oe-blue/40 hover:bg-oe-blue/[0.06] transition-all"
+                    className="group flex h-11 w-11 items-center justify-center rounded-lg border border-border-light bg-surface-secondary/40 hover:border-oe-blue/40 hover:bg-oe-blue/[0.06] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue focus-visible:ring-offset-1"
                   >
                     <Icon size={17} className="text-content-tertiary group-hover:text-oe-blue transition-colors" />
                   </a>
@@ -707,7 +703,7 @@ export function AboutPage() {
                   href="https://github.com/datadrivenconstruction/OpenConstructionERP"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="group flex items-center gap-3 rounded-lg border border-border-light bg-surface-primary/80 backdrop-blur-sm px-3.5 py-3 hover:border-amber-400/60 hover:bg-amber-50/60 dark:hover:bg-amber-900/15 transition-colors"
+                  className="group flex items-center gap-3 rounded-lg border border-border-light bg-surface-primary/80 backdrop-blur-sm px-3.5 py-3 hover:border-amber-400/60 hover:bg-amber-50/60 dark:hover:bg-amber-900/15 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue focus-visible:ring-offset-1"
                 >
                   <Star size={22} className="shrink-0 text-amber-500 group-hover:scale-110 group-hover:-rotate-6 transition-transform" fill="currentColor" />
                   <div className="min-w-0 flex-1">
@@ -725,7 +721,7 @@ export function AboutPage() {
                   href="https://github.com/sponsors/datadrivenconstruction"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="group flex items-center gap-3 rounded-lg border border-border-light bg-surface-primary/80 backdrop-blur-sm px-3.5 py-3 hover:border-rose-400/60 hover:bg-rose-50/60 dark:hover:bg-rose-900/15 transition-colors"
+                  className="group flex items-center gap-3 rounded-lg border border-border-light bg-surface-primary/80 backdrop-blur-sm px-3.5 py-3 hover:border-rose-400/60 hover:bg-rose-50/60 dark:hover:bg-rose-900/15 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue focus-visible:ring-offset-1"
                 >
                   <Coffee size={22} className="shrink-0 text-rose-500 group-hover:scale-110 transition-transform" />
                   <div className="min-w-0 flex-1">
@@ -743,7 +739,7 @@ export function AboutPage() {
                   href="https://datadrivenconstruction.io/contact-support/"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="group flex items-center gap-3 rounded-lg border border-border-light bg-surface-primary/80 backdrop-blur-sm px-3.5 py-3 hover:border-oe-blue/50 hover:bg-oe-blue/[0.06] dark:hover:bg-blue-900/15 transition-colors"
+                  className="group flex items-center gap-3 rounded-lg border border-border-light bg-surface-primary/80 backdrop-blur-sm px-3.5 py-3 hover:border-oe-blue/50 hover:bg-oe-blue/[0.06] dark:hover:bg-blue-900/15 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue focus-visible:ring-offset-1"
                 >
                   <Rocket size={22} className="shrink-0 text-oe-blue group-hover:scale-110 group-hover:-translate-y-0.5 transition-transform" />
                   <div className="min-w-0 flex-1">
@@ -947,7 +943,7 @@ export function AboutPage() {
                   href={topic.href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="group flex items-center justify-between gap-2 rounded-lg border border-border-light bg-surface-secondary/40 px-3 py-2 hover:border-oe-blue/40 hover:bg-oe-blue/[0.04] transition-all"
+                  className="group flex items-center justify-between gap-2 rounded-lg border border-border-light bg-surface-secondary/40 px-3 py-2 hover:border-oe-blue/40 hover:bg-oe-blue/[0.04] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue focus-visible:ring-offset-1"
                 >
                   <span className="text-2xs text-content-secondary group-hover:text-content-primary leading-snug">
                     {topic.label}

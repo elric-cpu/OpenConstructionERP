@@ -1769,6 +1769,7 @@ function LandingPage({ projectId, onUploadComplete: _onUploadComplete, breadcrum
                     <span
                       role="button"
                       tabIndex={0}
+                      aria-label={t('bim.delete_model', { defaultValue: 'Delete model' })}
                       onClick={(e) => { e.stopPropagation(); onDeleteModel(m.id, m.name); }}
                       onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); onDeleteModel(m.id, m.name); } }}
                       className="absolute top-1.5 right-1.5 p-1 rounded text-content-quaternary hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 opacity-0 group-hover:opacity-100 transition-all z-10"

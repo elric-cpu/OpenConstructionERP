@@ -208,8 +208,10 @@ export function ProcurementPage() {
       />
 
       {/* Header — the module name + icon live in the global top bar; the
-          page renders only its subtitle. Project selection is global too. */}
+          page renders only its subtitle. Project selection is global too.
+          srTitle gives the page its single semantic <h1> (sr-only) for a11y. */}
       <PageHeader
+        srTitle={t('procurement.title', { defaultValue: 'Procurement' })}
         subtitle={t('procurement.subtitle', {
           defaultValue: 'Purchase orders and goods receipts',
         })}

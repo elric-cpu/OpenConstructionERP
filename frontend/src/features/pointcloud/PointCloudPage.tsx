@@ -67,6 +67,18 @@ const STATUS_VARIANT: Record<string, BadgeVariant> = {
   failed: 'error',
 };
 
+/* i18n label per scan status. The backend hands us a lowercase enum
+   ("ready", "failed", ...) which would otherwise render as raw English
+   in every locale. Translation keys default to a capitalised English
+   word; unknown statuses fall back to the raw value. */
+const STATUS_LABEL_KEY: Record<string, { key: string; fallback: string }> = {
+  uploading: { key: 'pointcloud.status_uploading', fallback: 'Uploading' },
+  uploaded: { key: 'pointcloud.status_uploaded', fallback: 'Uploaded' },
+  converting: { key: 'pointcloud.status_converting', fallback: 'Converting' },
+  ready: { key: 'pointcloud.status_ready', fallback: 'Ready' },
+  failed: { key: 'pointcloud.status_failed', fallback: 'Failed' },
+};
+
 const ACCURACY_LABEL: Record<string, string> = {
   survey: 'Survey grade, +/-3-6 mm',
   standard: 'Standard, +/-15 mm',
@@ -270,6 +282,16 @@ export function PointCloudPage() {
     queryClient,
     t,
   ]);
+
+  // Translate a backend scan-status enum for display. Falls back to the
+  // raw value for any status not in the label map.
+  const statusLabel = useCallback(
+    (status: string): string => {
+      const entry = STATUS_LABEL_KEY[status];
+      return entry ? t(entry.key, { defaultValue: entry.fallback }) : status;
+    },
+    [t],
+  );
 
   const stageLabel = useMemo(() => {
     if (!progress) return '';
@@ -651,7 +673,7 @@ export function PointCloudPage() {
                     </p>
                   </div>
                   <Badge variant={STATUS_VARIANT[scan.status] ?? 'neutral'} size="sm">
-                    {scan.status}
+                    {statusLabel(scan.status)}
                   </Badge>
                   {viewable && (
                     <button
@@ -693,7 +715,7 @@ export function PointCloudPage() {
                 </p>
               </div>
               <Badge variant={STATUS_VARIANT[activeScan.status] ?? 'neutral'} size="sm">
-                {activeScan.status}
+                {statusLabel(activeScan.status)}
               </Badge>
             </div>
             <PointCloudViewer

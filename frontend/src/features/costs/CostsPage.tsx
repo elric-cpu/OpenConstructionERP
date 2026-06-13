@@ -346,6 +346,7 @@ function RegionTabBar({
       {canScrollLeft && (
         <button
           onClick={() => scroll('left')}
+          aria-label={t('common.scroll_left', { defaultValue: 'Scroll left' })}
           className="absolute left-0 top-0 bottom-0 z-10 flex items-center pl-0.5 pr-3 bg-gradient-to-r from-surface-primary via-surface-primary/90 to-transparent"
         >
           <ChevronLeft size={16} className="text-content-tertiary" />
@@ -356,6 +357,7 @@ function RegionTabBar({
       {canScrollRight && (
         <button
           onClick={() => scroll('right')}
+          aria-label={t('common.scroll_right', { defaultValue: 'Scroll right' })}
           className="absolute right-0 top-0 bottom-0 z-10 flex items-center pr-0.5 pl-3 bg-gradient-to-l from-surface-primary via-surface-primary/90 to-transparent"
         >
           <ChevronRight size={16} className="text-content-tertiary" />
@@ -1246,6 +1248,7 @@ export function CostsPage() {
               {query && (
                 <button
                   onClick={() => { setQuery(''); setDebouncedQuery(''); setOffset(0); }}
+                  aria-label={t('common.clear_search', { defaultValue: 'Clear search' })}
                   className="absolute inset-y-0 right-0 flex items-center pr-3 text-content-tertiary hover:text-content-primary"
                 >
                   <X size={14} />
@@ -1381,6 +1384,7 @@ export function CostsPage() {
                         <Star size={14} className="text-content-quaternary ml-1" />
                         <button
                           onClick={toggleSelectAll}
+                          aria-label={t('costs.select_all', { defaultValue: 'Select all' })}
                           className="flex h-5 w-5 items-center justify-center rounded text-content-tertiary hover:text-oe-blue transition-colors"
                         >
                           {selectedIds.size > 0 && selectedIds.size === items.length ? (
@@ -1484,6 +1488,7 @@ export function CostsPage() {
                     <button
                       onClick={() => goToPage(currentPage - 1)}
                       disabled={currentPage === 1 || isFetching}
+                      aria-label={t('common.previous_page', { defaultValue: 'Previous page' })}
                       className="flex h-8 w-8 items-center justify-center rounded-lg text-content-tertiary hover:bg-surface-secondary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                     >
                       <ChevronLeft size={16} />
@@ -1517,6 +1522,7 @@ export function CostsPage() {
                     <button
                       onClick={() => goToPage(currentPage + 1)}
                       disabled={currentPage === totalPages || isFetching}
+                      aria-label={t('common.next_page', { defaultValue: 'Next page' })}
                       className="flex h-8 w-8 items-center justify-center rounded-lg text-content-tertiary hover:bg-surface-secondary disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                     >
                       <ChevronRight size={16} />
@@ -3071,6 +3077,8 @@ function CostItemRow({
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); onSelect(); }}
+              aria-label={t('costs.select_item', { defaultValue: 'Select item' })}
+              aria-pressed={isSelected}
               className="flex h-5 w-5 items-center justify-center rounded text-content-tertiary hover:text-oe-blue transition-colors"
             >
               {isSelected ? (

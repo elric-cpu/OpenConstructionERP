@@ -494,6 +494,7 @@ export function VariationsPage() {
       {/* Header — project selection lives in the global top bar; no in-page
           project picker. The page reads the shared project context. */}
       <PageHeader
+        srTitle={t('nav.variations', { defaultValue: 'Variations' })}
         subtitle={t('variations.subtitle', {
           defaultValue:
             'Track variation notices, requests, orders, daywork and EoT claims through to final account.',

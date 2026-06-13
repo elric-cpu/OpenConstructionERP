@@ -265,6 +265,7 @@ export function QMSPage() {
       />
 
       <PageHeader
+        srTitle={t('nav.qms', { defaultValue: 'Quality Management' })}
         subtitle={t('qms.subtitle', {
           defaultValue: 'ITP plans, inspections, NCRs, punch list and audits in one place.',
         })}

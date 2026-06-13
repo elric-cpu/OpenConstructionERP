@@ -35,10 +35,12 @@ import {
   Unlock,
   Save,
 } from 'lucide-react';
-import { Card, Badge, Button, WideModal, Breadcrumb, DismissibleInfo, IntroRichText } from '@/shared/ui';
+import { Card, Badge, Button, WideModal, Breadcrumb, ConfirmDialog, DismissibleInfo, IntroRichText } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { useConfirm } from '@/shared/hooks/useConfirm';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useToastStore } from '@/stores/useToastStore';
+import { apiGet } from '@/shared/lib/api';
 import {
   fetchUsers,
   updateUser,
@@ -106,6 +108,15 @@ const ROLE_CONFIG: Record<UserRole, RoleConfigEntry> = {
 };
 
 const ROLES: UserRole[] = ['admin', 'manager', 'editor', 'viewer'];
+
+// Privilege ranking (higher = more access). Used to detect a role DOWNGRADE,
+// which is treated as a destructive action and gated behind a confirmation.
+const ROLE_RANK: Record<UserRole, number> = {
+  admin: 3,
+  manager: 2,
+  editor: 1,
+  viewer: 0,
+};
 
 const ACCESS_LEVELS: {
   value: ModuleAccessLevel;
@@ -264,10 +275,14 @@ function InviteModal({
     >
       <div className="space-y-4">
         <div>
-          <label className="block text-xs font-medium text-content-secondary mb-1">
+          <label
+            htmlFor="invite_full_name"
+            className="block text-xs font-medium text-content-secondary mb-1"
+          >
             {t('users.full_name', { defaultValue: 'Full Name' })}
           </label>
           <input
+            id="invite_full_name"
             className={inputCls}
             value={form.full_name}
             onChange={(e) => setForm({ ...form, full_name: e.target.value })}
@@ -278,10 +293,14 @@ function InviteModal({
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-content-secondary mb-1">
+          <label
+            htmlFor="invite_email"
+            className="block text-xs font-medium text-content-secondary mb-1"
+          >
             {t('users.email', { defaultValue: 'Email' })}
           </label>
           <input
+            id="invite_email"
             className={inputCls}
             type="email"
             value={form.email}
@@ -292,10 +311,14 @@ function InviteModal({
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-content-secondary mb-1">
+          <label
+            htmlFor="invite_password"
+            className="block text-xs font-medium text-content-secondary mb-1"
+          >
             {t('users.password', { defaultValue: 'Password' })}
           </label>
           <input
+            id="invite_password"
             className={inputCls}
             type="password"
             value={form.password}
@@ -360,19 +383,24 @@ function ModuleAccessPanel({
   const [customRoleName, setCustomRoleName] = useState('');
   const [modules, setModules] = useState<Record<string, ModuleAccess>>({});
   const [dirty, setDirty] = useState(false);
-  const [initialized, setInitialized] = useState(false);
 
   const { data: accessData, isLoading } = useQuery({
     queryKey: ['user-module-access', user.id],
     queryFn: () => getUserModuleAccess(user.id),
   });
 
-  // Sync state from query data
-  if (accessData && !initialized) {
+  // Resync local edit state whenever the server data changes (initial load,
+  // reopen for a different user, or a post-save refetch). We skip the resync
+  // while there are unsaved edits so an in-flight refetch doesn't clobber what
+  // the admin is typing; a fresh panel open starts with `dirty === false`, so
+  // the freshly fetched data is always applied. Depending only on `accessData`
+  // (a referentially-stable react-query result) avoids an update loop.
+  useEffect(() => {
+    if (!accessData || dirty) return;
     setModules(accessData.modules || {});
     setCustomRoleName(accessData.custom_role_name || '');
-    setInitialized(true);
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessData]);
 
   const saveMut = useMutation({
     mutationFn: () =>
@@ -586,10 +614,14 @@ function RoleDropdown({
   currentRole,
   userId,
   onUpdate,
+  disabled = false,
+  disabledTitle,
 }: {
   currentRole: UserRole;
   userId: string;
   onUpdate: (userId: string, role: UserRole) => void;
+  disabled?: boolean;
+  disabledTitle?: string;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -632,21 +664,44 @@ function RoleDropdown({
     };
   }, [open]);
 
+  // Close the popover on Escape while it is open.
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        setOpen(false);
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [open]);
+
   return (
     <>
       <button
         ref={buttonRef}
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors hover:bg-surface-secondary cursor-pointer"
+        disabled={disabled}
+        title={disabled ? disabledTitle : undefined}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={clsx(
+          'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
+          disabled
+            ? 'cursor-not-allowed opacity-60'
+            : 'hover:bg-surface-secondary cursor-pointer',
+        )}
       >
         <Icon size={13} className={cfg.color} />
         {t(`users.roles.${cfg.labelKey}`)}
-        <ChevronDown size={12} className="text-content-quaternary" />
+        {!disabled && <ChevronDown size={12} className="text-content-quaternary" />}
       </button>
       {open && pos && createPortal(
         <>
           <div className="fixed inset-0 z-[60]" onClick={() => setOpen(false)} />
           <div
+            role="listbox"
             className="fixed z-[61] w-36 bg-surface-primary rounded-lg shadow-lg border border-border py-1 animate-fade-in"
             style={{ top: pos.top, left: pos.left }}
           >
@@ -656,6 +711,8 @@ function RoleDropdown({
               return (
                 <button
                   key={r}
+                  role="option"
+                  aria-selected={r === currentRole}
                   onClick={() => {
                     onUpdate(userId, r);
                     setOpen(false);
@@ -690,6 +747,7 @@ export function UserManagementPage() {
   // Managers can view the page (users.list) but must not see the invite control,
   // since the call would 403. Server-side gate is authoritative regardless.
   const isAdmin = useAuthStore((s) => s.userRole) === 'admin';
+  const { confirm, ...confirmProps } = useConfirm();
   const [search, setSearch] = useState('');
   const [filterActive, setFilterActive] = useState<'all' | 'active' | 'inactive'>('all');
   const [showInvite, setShowInvite] = useState(false);
@@ -703,6 +761,19 @@ export function UserManagementPage() {
         limit: 100,
       }),
   });
+
+  // Identify the currently logged-in user so we can lock down self-demotion and
+  // self-deactivation (prevents an admin from accidentally locking themselves
+  // out). The id comes from the authoritative /me endpoint; if it can't be
+  // resolved the guards simply never match and nothing crashes.
+  const { data: currentUser } = useQuery({
+    // Distinct namespace so invalidating ['users'] after an edit doesn't churn
+    // this self-identity lookup.
+    queryKey: ['current-user', 'me'],
+    queryFn: () => apiGet<User>('/v1/users/me/'),
+    staleTime: 5 * 60 * 1000,
+  });
+  const currentUserId = currentUser?.id ?? null;
 
   const updateMut = useMutation({
     mutationFn: ({ id, data }: { id: string; data: { role?: UserRole; is_active?: boolean } }) =>
@@ -740,17 +811,52 @@ export function UserManagementPage() {
   });
 
   const handleRoleChange = useCallback(
-    (userId: string, role: UserRole) => {
+    async (userId: string, role: UserRole) => {
+      // Never let the signed-in user change their own role from this list.
+      if (userId === currentUserId) return;
+      const target = users.find((u) => u.id === userId);
+      const isDowngrade = !!target && ROLE_RANK[role] < ROLE_RANK[target.role];
+      if (isDowngrade) {
+        const ok = await confirm({
+          title: t('users.confirm_downgrade_title', { defaultValue: 'Lower this role?' }),
+          message: t('users.confirm_downgrade', {
+            defaultValue:
+              "Change {{name}} from {{from}} to {{to}}? They will immediately lose the higher role's access.",
+            name: target.full_name,
+            from: t(`users.roles.${target.role}`),
+            to: t(`users.roles.${role}`),
+          }),
+          variant: 'warning',
+          confirmLabel: t('users.change_role', { defaultValue: 'Change role' }),
+        });
+        if (!ok) return;
+      }
       updateMut.mutate({ id: userId, data: { role } });
     },
-    [updateMut],
+    [updateMut, users, currentUserId, confirm, t],
   );
 
   const handleToggleActive = useCallback(
-    (user: User) => {
+    async (user: User) => {
+      // Never let the signed-in user deactivate themselves.
+      if (user.id === currentUserId) return;
+      // Activation is non-destructive; only deactivation needs confirmation.
+      if (user.is_active) {
+        const ok = await confirm({
+          title: t('users.confirm_deactivate_title', { defaultValue: 'Deactivate user?' }),
+          message: t('users.confirm_deactivate', {
+            defaultValue:
+              'Deactivate {{name}}? They will lose access immediately. You can reactivate them later.',
+            name: user.full_name,
+          }),
+          variant: 'danger',
+          confirmLabel: t('users.deactivate', { defaultValue: 'Deactivate' }),
+        });
+        if (!ok) return;
+      }
       updateMut.mutate({ id: user.id, data: { is_active: !user.is_active } });
     },
-    [updateMut],
+    [updateMut, currentUserId, confirm, t],
   );
 
   const filtered = useMemo(() => {
@@ -912,7 +1018,9 @@ export function UserManagementPage() {
                   </td>
                 </tr>
               ) : (
-                filtered.map((user) => (
+                filtered.map((user) => {
+                  const isSelf = user.id === currentUserId;
+                  return (
                   <tr
                     key={user.id}
                     className="border-b border-border/50 hover:bg-surface-secondary/30 transition-colors"
@@ -941,6 +1049,10 @@ export function UserManagementPage() {
                         currentRole={user.role}
                         userId={user.id}
                         onUpdate={handleRoleChange}
+                        disabled={isSelf}
+                        disabledTitle={t('users.cannot_change_own_role', {
+                          defaultValue: 'You cannot change your own role.',
+                        })}
                       />
                     </td>
                     <td className="px-4 py-2.5">
@@ -974,11 +1086,21 @@ export function UserManagementPage() {
                         </button>
                         <button
                           onClick={() => handleToggleActive(user)}
+                          disabled={isSelf}
+                          title={
+                            isSelf
+                              ? t('users.cannot_deactivate_self', {
+                                  defaultValue: 'You cannot deactivate your own account.',
+                                })
+                              : undefined
+                          }
                           className={clsx(
                             'flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors',
-                            user.is_active
-                              ? 'text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30'
-                              : 'text-green-600 hover:bg-green-50 dark:hover:bg-green-950/30',
+                            isSelf
+                              ? 'text-content-quaternary cursor-not-allowed opacity-60'
+                              : user.is_active
+                                ? 'text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30'
+                                : 'text-green-600 hover:bg-green-50 dark:hover:bg-green-950/30',
                           )}
                         >
                           {user.is_active ? <Lock size={13} /> : <Unlock size={13} />}
@@ -989,7 +1111,8 @@ export function UserManagementPage() {
                       </div>
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -1032,6 +1155,9 @@ export function UserManagementPage() {
 
       {/* Module Access Panel */}
       {accessUser && <ModuleAccessPanel user={accessUser} onClose={() => setAccessUser(null)} />}
+
+      {/* Confirmation dialog for destructive actions (deactivate, role downgrade) */}
+      <ConfirmDialog {...confirmProps} />
     </div>
   );
 }

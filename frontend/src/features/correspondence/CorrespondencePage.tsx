@@ -1351,6 +1351,7 @@ export function CorrespondencePage() {
 
       {/* Header */}
       <PageHeader
+        srTitle={t('correspondence.title', { defaultValue: 'Correspondence' })}
         subtitle={t('correspondence.subtitle', {
           defaultValue: 'A contemporaneous register of every formal letter, notice, email, and memo',
         })}

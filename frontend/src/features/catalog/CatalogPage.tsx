@@ -1295,6 +1295,7 @@ function BuildAssemblyModal({
                     <td className="px-1 py-2 text-center">
                       <button
                         onClick={() => handleRemoveEntry(idx)}
+                        aria-label={t('catalog.remove_resource', { defaultValue: 'Remove resource' })}
                         className="flex h-6 w-6 items-center justify-center rounded text-content-quaternary hover:text-red-500 hover:bg-red-50 transition-colors"
                       >
                         <X size={12} />

@@ -1558,6 +1558,7 @@ export function TenderingPage() {
           reads the shared project context, so there is no in-page project
           picker. */}
       <PageHeader
+        srTitle={t('tendering.title', 'Tendering')}
         subtitle={t(
           'tendering.subtitle',
           'Manage bid packages, collect and compare subcontractor offers',

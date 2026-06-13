@@ -15,6 +15,7 @@ import {
   Scale,
   Download,
   ExternalLink,
+  AlertTriangle,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
@@ -345,6 +346,22 @@ export default function PayrollPage() {
             <div className="space-y-2 p-4">
               <Skeleton className="h-12 w-full" />
               <Skeleton className="h-12 w-full" />
+            </div>
+          ) : batchesQuery.isError ? (
+            <div className="p-6">
+              <EmptyState
+                icon={<AlertTriangle size={28} />}
+                title={t('payroll.load_error', {
+                  defaultValue: 'Could not load pay batches',
+                })}
+                description={getErrorMessage(batchesQuery.error)}
+                action={{
+                  label: t('common.retry', { defaultValue: 'Retry' }),
+                  onClick: () => {
+                    void batchesQuery.refetch();
+                  },
+                }}
+              />
             </div>
           ) : batches.length === 0 ? (
             <div className="p-6">

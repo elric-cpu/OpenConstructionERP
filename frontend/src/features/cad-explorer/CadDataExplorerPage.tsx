@@ -4154,6 +4154,7 @@ export function CadDataExplorerPage() {
             data-testid="explorer-save-view-btn"
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-colors border text-content-secondary bg-surface-secondary border-border-light hover:bg-surface-tertiary"
             title={t('explorer.save_view', { defaultValue: 'Save view' })}
+            aria-label={t('explorer.save_view', { defaultValue: 'Save view' })}
           >
             <Bookmark size={13} />
             <span className="hidden sm:inline">{t('explorer.save_view', { defaultValue: 'Save view' })}</span>
@@ -4163,6 +4164,7 @@ export function CadDataExplorerPage() {
             data-testid="explorer-views-btn"
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-colors border text-content-secondary bg-surface-secondary border-border-light hover:bg-surface-tertiary"
             title={t('explorer.views', { defaultValue: 'Views' })}
+            aria-label={t('explorer.views', { defaultValue: 'Views' })}
           >
             <Layers size={13} />
             <span className="hidden sm:inline">{t('explorer.views', { defaultValue: 'Views' })}</span>
@@ -4189,13 +4191,19 @@ export function CadDataExplorerPage() {
             title={t('explorer.save_to_project_hint', {
               defaultValue: 'Save these elements as a BIM model in a project so you can view them in the BIM Viewer.',
             })}
+            aria-label={t('explorer.save_to_project', { defaultValue: 'Save to Project (BIM Hub)' })}
           >
             <Box size={13} />
             <span className="hidden sm:inline">{t('explorer.save_to_project', { defaultValue: 'Save to Project (BIM Hub)' })}</span>
           </button>
           <button
             onClick={() => { setSearchParams({}); }}
+            data-testid="explorer-new-file-btn"
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-colors border text-content-secondary bg-surface-secondary border-border-light hover:bg-surface-tertiary"
+            title={t('explorer.new_file_hint', {
+              defaultValue: 'Close this session and upload a different CAD or BIM file',
+            })}
+            aria-label={t('explorer.new_file', { defaultValue: 'New File' })}
           >
             <Upload size={13} />
             <span className="hidden sm:inline">{t('explorer.new_file', { defaultValue: 'New File' })}</span>

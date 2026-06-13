@@ -245,15 +245,23 @@ function compareVersionsDesc(a: ChangelogEntry, b: ChangelogEntry): number {
   return 0;
 }
 
-// Older releases (> 6 months ago relative to "today") fade slightly so the
-// recent ones pop. We use a stable date constant, not Date.now(), so the
-// muted band doesn't silently drift between builds.
-const TODAY = new Date('2026-05-21T00:00:00Z');
+/**
+ * Top N changelog entries, newest version first. Single source of truth for
+ * the /about header's "Recent releases" list so it never drifts from the
+ * changelog below. Reuses the semver-aware {@link compareVersionsDesc}.
+ */
+export function getRecentReleases(count = 3): ChangelogEntry[] {
+  return [...CHANGELOG].sort(compareVersionsDesc).slice(0, Math.max(0, count));
+}
+
+// Older releases (> 6 months ago relative to the real current date) fade
+// slightly so the recent ones pop. Computed at render time against the
+// actual "now" so the newest releases never get muted.
 const FRESH_WINDOW_DAYS = 30 * 6;
 function isStale(date: string): boolean {
   const d = new Date(`${date}T00:00:00Z`);
   if (Number.isNaN(d.getTime())) return false;
-  const ageDays = (TODAY.getTime() - d.getTime()) / 86_400_000;
+  const ageDays = (new Date().getTime() - d.getTime()) / 86_400_000;
   return ageDays > FRESH_WINDOW_DAYS;
 }
 

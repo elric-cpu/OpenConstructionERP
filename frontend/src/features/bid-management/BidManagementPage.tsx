@@ -450,6 +450,7 @@ export function BidManagementPage() {
       {/* Header — project selection lives in the global top bar; no in-page
           project picker. The page reads the shared project context. */}
       <PageHeader
+        srTitle={t('nav.bid_management', { defaultValue: 'Bid Management' })}
         subtitle={t('bid_management.subtitle', {
           defaultValue:
             'Run end-to-end tendering: packages, invitations, submissions, Q&A, and bid leveling.',

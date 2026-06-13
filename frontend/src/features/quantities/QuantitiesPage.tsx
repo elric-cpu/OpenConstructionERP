@@ -396,6 +396,8 @@ function ConverterCard({
                   onUninstall();
                 }}
                 disabled={installing || disabled}
+                aria-label={t('quantities.uninstall', { defaultValue: 'Uninstall' })}
+                title={t('quantities.uninstall', { defaultValue: 'Uninstall' })}
                 className="inline-flex items-center gap-1 rounded bg-red-50 dark:bg-red-900/20 px-2 py-1 text-2xs font-medium text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
               >
                 <Trash2 size={10} />
@@ -743,6 +745,8 @@ function InstalledConvertersTable({
                   <button
                     onClick={() => onUninstall(c.id)}
                     disabled={uninstalling === c.id}
+                    aria-label={t('quantities.uninstall', { defaultValue: 'Uninstall' })}
+                    title={t('quantities.uninstall', { defaultValue: 'Uninstall' })}
                     className="inline-flex items-center gap-1 rounded px-2 py-1 text-2xs text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                   >
                     {uninstalling === c.id ? (

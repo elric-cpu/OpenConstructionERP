@@ -493,6 +493,7 @@ export function FileManagerPage() {
   if (!projectId) {
     return (
       <div className="flex items-center justify-center h-full">
+        <h1 className="sr-only">{t('nav.project_files', { defaultValue: 'Project Files' })}</h1>
         <EmptyState
           icon={<HardDrive size={28} />}
           title={t('files.no_project_title', { defaultValue: 'No active project' })}
@@ -523,6 +524,10 @@ export function FileManagerPage() {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Accessible page heading. The visible module title lives in the
+          global top bar (shown lg+), so this sr-only h1 gives the page the
+          single semantic heading screen readers and a11y checks expect. */}
+      <h1 className="sr-only">{t('nav.project_files', { defaultValue: 'Project Files' })}</h1>
       {isFirstLoad && (
         <InitialLoadProgress
           storageDone={!!locations}

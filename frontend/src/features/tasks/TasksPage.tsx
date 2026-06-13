@@ -646,7 +646,7 @@ const TaskCard = React.memo(function TaskCard({
         <div className="flex items-center gap-0 opacity-0 group-hover:opacity-100 transition-opacity">
           {task.status !== 'completed' ? (
             <>
-              <Button variant="ghost" size="sm" onClick={() => onComplete(task.id)} className="!p-0.5 text-green-600 hover:text-green-700 h-auto" title={t('tasks.mark_complete', { defaultValue: 'Complete' })}>
+              <Button variant="ghost" size="sm" onClick={() => onComplete(task.id)} className="!p-0.5 text-green-600 hover:text-green-700 h-auto" title={t('tasks.mark_complete', { defaultValue: 'Complete' })} aria-label={t('tasks.mark_complete', { defaultValue: 'Complete' })}>
                 <CheckCircle2 size={10} />
               </Button>
               {/* Only offer transitions the backend state machine accepts
@@ -680,11 +680,11 @@ const TaskCard = React.memo(function TaskCard({
             <CheckCircle2 size={10} className="text-green-500" />
           )}
           {task.status !== 'completed' && (
-            <Button variant="ghost" size="sm" onClick={() => onEdit(task)} className="!p-0.5 text-content-quaternary hover:text-oe-blue h-auto" title={t('common.edit', { defaultValue: 'Edit' })}>
+            <Button variant="ghost" size="sm" onClick={() => onEdit(task)} className="!p-0.5 text-content-quaternary hover:text-oe-blue h-auto" title={t('common.edit', { defaultValue: 'Edit' })} aria-label={t('common.edit', { defaultValue: 'Edit' })}>
               <Pencil size={10} />
             </Button>
           )}
-          <Button variant="ghost" size="sm" onClick={() => onDelete(task.id)} className="!p-0.5 text-content-quaternary hover:text-red-500 h-auto">
+          <Button variant="ghost" size="sm" onClick={() => onDelete(task.id)} className="!p-0.5 text-content-quaternary hover:text-red-500 h-auto" title={t('common.delete', { defaultValue: 'Delete' })} aria-label={t('common.delete', { defaultValue: 'Delete' })}>
             <Trash2 size={10} />
           </Button>
         </div>
@@ -1496,6 +1496,7 @@ export function TasksPage() {
               onClick={() => handleRemoveCategory(cat.name)}
               className="hidden group-hover:flex items-center justify-center w-4 h-4 rounded-full bg-surface-tertiary text-content-tertiary hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400 transition-colors -ml-1"
               title={t('tasks.remove_category', { defaultValue: 'Remove category' })}
+              aria-label={t('tasks.remove_category_named', { defaultValue: 'Remove {{name}} category', name: cat.label })}
             >
               <X size={10} />
             </button>

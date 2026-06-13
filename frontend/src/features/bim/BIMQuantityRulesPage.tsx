@@ -2707,10 +2707,14 @@ function RequirementsTabContent({
                   <PackIcon size={18} strokeWidth={1.85} />
                 </span>
                 <span className="text-sm font-semibold text-content-primary group-hover:text-oe-blue">
-                  {pack.title}
+                  {t(`bim_rules.req_pack_${pack.id}_title`, {
+                    defaultValue: pack.title,
+                  })}
                 </span>
                 <span className="text-[11px] leading-snug text-content-secondary">
-                  {pack.subtitle}
+                  {t(`bim_rules.req_pack_${pack.id}_subtitle`, {
+                    defaultValue: pack.subtitle,
+                  })}
                 </span>
                 <span className="mt-1 flex items-center gap-1 text-[11px] font-medium text-oe-blue">
                   <Plus size={12} />
@@ -3757,10 +3761,14 @@ export function BIMQuantityRulesPage() {
                     <PresetIcon size={18} strokeWidth={1.85} />
                   </span>
                   <span className="text-sm font-semibold text-content-primary group-hover:text-oe-blue">
-                    {preset.title}
+                    {t(`bim_rules.preset_${preset.id}_title`, {
+                      defaultValue: preset.title,
+                    })}
                   </span>
                   <span className="text-[11px] leading-snug text-content-secondary">
-                    {preset.subtitle}
+                    {t(`bim_rules.preset_${preset.id}_subtitle`, {
+                      defaultValue: preset.subtitle,
+                    })}
                   </span>
                   <span className="mt-1 flex items-center gap-1 text-[11px] font-medium text-oe-blue">
                     <Plus size={12} />

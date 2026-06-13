@@ -320,8 +320,14 @@ export function DailyDiaryPage() {
         ]}
       />
 
+      {/* Single semantic <h1> for the page. The module name + icon live in the
+          global top app bar, so this is sr-only (matches AdvisorPage). It is a
+          direct, unconditional child of the page root - not nested inside
+          PageHeader - so it is always present in the a11y tree. PageHeader
+          therefore omits srTitle to avoid a duplicate h1. */}
+      <h1 className="sr-only">{t('daily_diary.title', { defaultValue: 'Daily Site Diary' })}</h1>
+
       <PageHeader
-        srTitle={t('daily_diary.title', { defaultValue: 'Daily Site Diary' })}
         subtitle={t('daily_diary.subtitle', {
           defaultValue:
             'Weather, photos, drone surveys and signed daily records.',

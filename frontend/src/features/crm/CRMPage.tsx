@@ -775,6 +775,7 @@ function DealCard({
   onClick?: () => void;
   dragging?: boolean;
 }) {
+  const { t } = useTranslation();
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: opp.id,
   });
@@ -790,7 +791,7 @@ function DealCard({
       <div className="flex items-start gap-1.5">
         <button
           type="button"
-          aria-label="drag"
+          aria-label={t('crm.drag_deal', { defaultValue: 'Drag to move deal' })}
           className="mt-0.5 cursor-grab text-content-tertiary opacity-0 group-hover:opacity-100 touch-none"
           {...attributes}
           {...listeners}

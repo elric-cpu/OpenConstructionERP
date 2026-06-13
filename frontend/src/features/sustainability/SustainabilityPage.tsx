@@ -74,6 +74,7 @@ const DONUT_COLORS = [
 /* ── Donut Chart ───────────────────────────────────────────────────── */
 
 function DonutChart({ data }: { data: { label: string; value: number; pct: number }[] }) {
+  const { t } = useTranslation();
   const size = 180;
   const cx = size / 2, cy = size / 2;
   const outerR = 80, innerR = 52;
@@ -111,7 +112,7 @@ function DonutChart({ data }: { data: { label: string; value: number; pct: numbe
       <circle cx={cx} cy={cy} r={innerR - 1} fill="var(--color-surface-primary, white)" />
       <text x={cx} y={cy - 4} textAnchor="middle" fontSize={11} className="fill-content-tertiary" fontFamily="system-ui">CO2e</text>
       <text x={cx} y={cy + 12} textAnchor="middle" fontSize={14} fontWeight="bold" className="fill-content-primary" fontFamily="system-ui">{segments.length}</text>
-      <text x={cx} y={cy + 24} textAnchor="middle" fontSize={9} className="fill-content-tertiary" fontFamily="system-ui">categories</text>
+      <text x={cx} y={cy + 24} textAnchor="middle" fontSize={9} className="fill-content-tertiary" fontFamily="system-ui">{t('sustainability.donut_categories', { defaultValue: 'categories' })}</text>
     </svg>
   );
 }

@@ -19,6 +19,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
+  AlertTriangle,
   ArrowUpRight,
   Cuboid,
   Download,
@@ -226,6 +227,27 @@ export function AssetsPage() {
           <div className="p-6 text-sm text-content-secondary">
             {t('common.loading', { defaultValue: 'Loading…' })}
           </div>
+        ) : assetsQuery.isError ? (
+          <EmptyState
+            icon={<AlertTriangle size={40} />}
+            title={t('assets.load_error', {
+              defaultValue: 'Could not load assets',
+            })}
+            description={t('assets.load_error_desc', {
+              defaultValue:
+                'The asset register could not be loaded. Check your connection and try again.',
+            })}
+            action={
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  void assetsQuery.refetch();
+                }}
+              >
+                {t('common.retry', { defaultValue: 'Retry' })}
+              </Button>
+            }
+          />
         ) : items.length === 0 ? (
           <EmptyState
             icon={<Package size={40} />}
@@ -304,7 +326,10 @@ export function AssetsPage() {
                           asset.asset_info.operational_status,
                         )}`}
                       >
-                        {asset.asset_info.operational_status.replace('_', ' ')}
+                        {t(`assets.status.${asset.asset_info.operational_status}`, {
+                          defaultValue:
+                            asset.asset_info.operational_status.replace('_', ' '),
+                        })}
                       </span>
                     ) : (
                       <span className="text-content-quaternary">—</span>

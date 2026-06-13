@@ -1806,6 +1806,7 @@ export function RFIPage() {
 
       {/* Header */}
       <PageHeader
+        srTitle={t('rfi.title', { defaultValue: 'RFIs' })}
         subtitle={t('rfi.subtitle', { defaultValue: 'Submit, track, and resolve design and construction queries' })}
         actions={
           <>

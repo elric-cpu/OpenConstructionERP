@@ -962,6 +962,7 @@ export function NCRPage() {
 
       {/* Header */}
       <PageHeader
+        srTitle={t('ncr.title', { defaultValue: 'NCR' })}
         subtitle={t('ncr.subtitle', {
           defaultValue: 'Document non-conforming work, root causes, and corrective actions',
         })}
