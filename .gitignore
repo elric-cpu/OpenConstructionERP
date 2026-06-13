@@ -250,6 +250,11 @@ backend/*.err
 # Deep-QA sweep working artifacts (progress + per-module findings; durable on disk, not committed)
 qa-sweep/
 
+# QA wave working dir: audit reports, walk/crawl probes, one-shot i18n scripts,
+# pr-body drafts and a local token file. Internal only, never published
+# (constraint #9). Also in the hygiene denylist as a second guard.
+qa-wave/
+
 # Scratch/debug artifacts (never commit)
 __diag.txt
 _ddltest.py
@@ -365,3 +370,14 @@ frontend/scripts/_i18n_stage2_state.cjs
 frontend/scripts/_stage2_tx/
 frontend/scripts/_validate_out.cjs
 frontend/scripts/_vite.out
+# Session-throwaway Playwright walks, verify/debug probes and one-shot i18n
+# key generators. Internal only, kept local (constraint #9). Glob-scoped so it
+# never touches tracked helpers like _stream-a-test.mjs.
+frontend/scripts/_walk_*.mjs
+frontend/scripts/_verify-*.mjs
+frontend/scripts/_verify_*.mjs
+frontend/scripts/_debug-*.mjs
+frontend/scripts/_workflow-walk.mjs
+frontend/scripts/_shot-*.mjs
+frontend/scripts/_import-map-*.mjs
+frontend/scripts/_i18n_*.py

@@ -46,6 +46,8 @@ DENY_PATTERNS = [
     r"(^|/)docs/MONEY_FLOAT[^/]*\.md$",
     r"(^|/)docs/validation_report\.md$",
     r"(^|/)qa/",
+    r"(^|/)qa-wave/",
+    r"(^|/)qa-sweep/",
     r"(^|/)qa-screenshots/",
     r"(^|/)scripts/[^/]*_report\.(json|txt)$",
     r"(^|/)[^/]*__audit_report\.md$",
