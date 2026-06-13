@@ -5724,7 +5724,7 @@ const resource = {
     "boq.desc_density_tooltip": "विवरण की ऊँचाई: एक पंक्ति और बहु-पंक्ति Langtext दृश्य के बीच स्विच करें। पूरा पाठ संपादित करने के लिए विवरण पर डबल-क्लिक करें।",
     "boq.desc_density_compact": "सघन",
     "boq.desc_density_comfortable": "आरामदायक",
-    "boq.desc_density_tall": "Langtext",
+    "boq.desc_density_tall": "विस्तृत विवरण",
     "boq.start_from": "इससे शुरू करें",
     "boq.start_empty": "खाली BOQ",
     "boq.start_import": "फ़ाइल आयात करें",

@@ -5721,7 +5721,7 @@ const resource = {
     "boq.desc_density_tooltip": "描述高度：在单行与多行 Langtext 视图之间切换。双击描述可编辑完整文本。",
     "boq.desc_density_compact": "紧凑",
     "boq.desc_density_comfortable": "宽松",
-    "boq.desc_density_tall": "Langtext",
+    "boq.desc_density_tall": "详述文本",
     "boq.start_from": "起始方式",
     "boq.start_empty": "空白清单",
     "boq.start_import": "导入文件",
@@ -13381,6 +13381,13 @@ const resource = {
     "takeoff_viewer.plan_read.reason_rasterize_failed": "此页无法渲染为图像。PDF 可能已损坏或受密码保护。",
     "branding.tab_logo": "标识",
     "branding.tab_name": "公司名称",
+    "costs_import.import_success_catalog_one": "已将 {{count}} 个条目导入到\"{{catalog}}\"。",
+    "costs_import.import_success_count_one": "已成功导入 {{count}} 个条目。",
+    "settings.demo_data_removed_message_one": "已删除 {{count}} 个演示项目。重启后不会再次创建。",
+    "takeoff.bulk_add_confirm_one": "创建 {{count}} 个清单项",
+    "takeoff.bulk_add_success_msg_one": "已创建 {{count}} 个清单项，起始于 {{first}}",
+    "takeoff.bulk_add_title_one": "将 {{count}} 项测量添加到 BOQ",
+    "takeoff.bulk_link_partial_msg_one": "{{count}} 项测量无法关联回其新清单项。该清单项仍以测量工程量创建。",
   }
 } as { translation: Record<string, string> };
 

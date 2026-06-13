@@ -5721,7 +5721,7 @@ const resource = {
     "boq.desc_density_tooltip": "説明の高さ：1行表示と複数行のLangtext表示を切り替えます。説明をダブルクリックすると全文を編集できます。",
     "boq.desc_density_compact": "コンパクト",
     "boq.desc_density_comfortable": "ゆったり",
-    "boq.desc_density_tall": "Langtext",
+    "boq.desc_density_tall": "詳細記述（Langtext）",
     "boq.start_from": "開始方法",
     "boq.start_empty": "空の数量明細書",
     "boq.start_import": "ファイルをインポート",
@@ -13381,6 +13381,13 @@ const resource = {
     "takeoff_viewer.plan_read.reason_rasterize_failed": "このページを画像にレンダリングできませんでした。PDFが破損しているか、パスワード保護されている可能性があります。",
     "branding.tab_logo": "ロゴ",
     "branding.tab_name": "会社名",
+    "costs_import.import_success_catalog_one": "{{count}} 件のアイテムを「{{catalog}}」にインポートしました。",
+    "costs_import.import_success_count_one": "{{count}} 件のアイテムを正常にインポートしました。",
+    "settings.demo_data_removed_message_one": "{{count}} 件のデモプロジェクトを削除しました。再起動時に再作成されません。",
+    "takeoff.bulk_add_confirm_one": "{{count}} 件の項目を作成",
+    "takeoff.bulk_add_success_msg_one": "{{count}} 件の項目を作成しました（開始番号 {{first}}）",
+    "takeoff.bulk_add_title_one": "{{count}} 件の数量をBOQに追加",
+    "takeoff.bulk_link_partial_msg_one": "{{count}} 件の数量を新しい項目に再リンクできませんでした。項目は測定数量とともに作成されています。",
   }
 } as { translation: Record<string, string> };
 

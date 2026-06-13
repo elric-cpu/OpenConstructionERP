@@ -2064,7 +2064,7 @@ const resource = {
     "boq.desc_density_tooltip": "Тайлбарын өндөр: нэг мөр болон олон мөрт Langtext харагдацын хооронд шилжинэ. Бүх текстийг засахын тулд тайлбар дээр давхар товшино уу.",
     "boq.desc_density_compact": "Авсаархан",
     "boq.desc_density_comfortable": "Цэлгэр",
-    "boq.desc_density_tall": "Langtext",
+    "boq.desc_density_tall": "Дэлгэрэнгүй бичвэр",
     "boq.start_from": "Эхлэх сонголт",
     "boq.start_empty": "Хоосон БМЖ",
     "boq.start_import": "Файл импортлох",
