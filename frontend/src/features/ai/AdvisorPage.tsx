@@ -14,8 +14,9 @@ import {
   Info,
   Bot,
   ArrowUpRight,
+  RefreshCw,
 } from 'lucide-react';
-import { Breadcrumb, AIDisclaimerBanner, DismissibleInfo, IntroRichText } from '@/shared/ui';
+import { Breadcrumb, AIDisclaimerBanner, DismissibleInfo, IntroRichText, ConfirmDialog } from '@/shared/ui';
 import { apiGet, apiPost } from '@/shared/lib/api';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useToastStore } from '@/stores/useToastStore';
@@ -296,7 +297,7 @@ function ChatBubble({
         <div className="mt-2 flex flex-wrap gap-1.5 max-w-[85%] sm:max-w-[75%]">
           {msg.options.map((opt, i) => (
             <button
-              key={opt}
+              key={i}
               onClick={() => onOptionClick(opt)}
               className="inline-flex items-center gap-1.5 rounded-full border border-oe-blue/30
                 bg-oe-blue/[0.06] px-3.5 py-[7px] text-[13px] font-medium text-oe-blue
@@ -423,6 +424,9 @@ export function AdvisorPage() {
   const [region, setRegion] = useState(
     regionFromUrl && ADVISOR_REGION_OPTIONS.has(regionFromUrl) ? regionFromUrl : '',
   );
+  // Gate the destructive "New chat" action behind a confirmation so an
+  // accidental click does not wipe the whole conversation context.
+  const [confirmClearOpen, setConfirmClearOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const activeProjectId = useProjectContextStore((s) => s.activeProjectId);
@@ -503,8 +507,11 @@ export function AdvisorPage() {
   // bit-identical — only the source of truth changed.
   const loading = advisorRun.isPending;
 
-  // Check if AI is configured on mount
-  useEffect(() => {
+  // Fetch the AI settings and derive configured/provider state. Extracted so
+  // the warning banner can re-run it: a transient failure (network blip, 500)
+  // would otherwise pin `aiConfigured=false` until a full page reload.
+  const checkAiSettings = useCallback(() => {
+    setAiConfigured(null); // back to "loading" so the warning hides while we retry
     apiGet<Record<string, unknown>>('/v1/ai/settings/')
       .then((s) => {
         // Every provider whose key is set (and decryptable) reports a
@@ -522,6 +529,11 @@ export function AdvisorPage() {
       })
       .catch(() => setAiConfigured(false));
   }, []);
+
+  // Check if AI is configured on mount
+  useEffect(() => {
+    checkAiSettings();
+  }, [checkAiSettings]);
 
   // The ?q / ?region seeds have been copied into state above; strip them so a
   // reload does not re-pin the prefill over the user's edits.
@@ -576,6 +588,7 @@ export function AdvisorPage() {
   const clearConversation = useCallback(() => {
     setMessages([]);
     setInput('');
+    setConfirmClearOpen(false);
     inputRef.current?.focus();
   }, []);
 
@@ -636,6 +649,14 @@ export function AdvisorPage() {
               {t('ai.not_configured_desc', { defaultValue: 'Add your API key (Anthropic, OpenAI, or other) to use the AI Cost Advisor.' })}
             </p>
           </div>
+          <button
+            type="button"
+            onClick={checkAiSettings}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 dark:border-amber-700 bg-transparent px-3 py-1.5 text-xs font-medium text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors shrink-0"
+          >
+            <RefreshCw size={13} />
+            {t('common.retry', { defaultValue: 'Retry' })}
+          </button>
           <Link
             to="/settings"
             className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700 transition-colors shrink-0"
@@ -691,7 +712,7 @@ export function AdvisorPage() {
 
           {messages.length > 0 && (
             <button
-              onClick={clearConversation}
+              onClick={() => setConfirmClearOpen(true)}
               className="flex items-center gap-1.5 rounded-lg border border-border-light bg-surface-primary px-2.5 py-1.5 text-2xs font-medium text-content-secondary hover:text-content-primary hover:border-border transition-colors shrink-0"
               title={t('ai.advisor_new_chat', { defaultValue: 'Start a new conversation' })}
             >
@@ -862,6 +883,20 @@ export function AdvisorPage() {
           </div>
         </div>
       </div>
+
+      {/* Confirm before wiping the conversation (destructive, no undo). */}
+      <ConfirmDialog
+        open={confirmClearOpen}
+        onConfirm={clearConversation}
+        onCancel={() => setConfirmClearOpen(false)}
+        variant="warning"
+        title={t('ai.advisor_confirm_clear_title', { defaultValue: 'Clear all messages?' })}
+        message={t('ai.advisor_confirm_clear_message', {
+          defaultValue:
+            'This starts a new conversation and removes the current chat history. This cannot be undone.',
+        })}
+        confirmLabel={t('ai.advisor_confirm_clear_confirm', { defaultValue: 'Start new chat' })}
+      />
     </div>
   );
 }

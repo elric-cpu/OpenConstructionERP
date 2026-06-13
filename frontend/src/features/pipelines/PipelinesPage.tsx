@@ -20,6 +20,7 @@ import { Workflow } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { BetaBanner, EmptyState, OnboardingTour } from '@/shared/ui';
 import type { TourStep } from '@/shared/ui';
@@ -33,6 +34,8 @@ import { NodePalette } from './components/NodePalette';
 import { RunDock } from './components/RunDock';
 import {
   isTerminalRunStatus,
+  pipelineKeys,
+  requiredInputIds,
   useCreatePipeline,
   useNodeTypes,
   usePipeline,
@@ -49,6 +52,7 @@ export function PipelinesPage() {
   const projectId = searchParams.get('project');
   const pipelineIdParam = searchParams.get('id') ?? undefined;
   const addToast = useToastStore((s) => s.addToast);
+  const queryClient = useQueryClient();
 
   const [paletteCollapsed, setPaletteCollapsed] = useState(false);
   const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
@@ -79,6 +83,7 @@ export function PipelinesPage() {
   // ── Store wiring ────────────────────────────────────────────────────────
   const nodeCount = usePipelineStore((s) => s.nodes.length);
   const edgeCount = usePipelineStore((s) => s.edges.length);
+  const dirty = usePipelineStore((s) => s.dirty);
   const loadGraphMeta = usePipelineStore((s) => s.loadGraph);
   const markSaved = usePipelineStore((s) => s.markSaved);
   const patchMeta = usePipelineStore((s) => s.patchMeta);
@@ -91,6 +96,19 @@ export function PipelinesPage() {
 
   // Reset the store on unmount so a fresh visit starts clean.
   useEffect(() => () => reset(), [reset]);
+
+  // Warn before closing / reloading the tab while there are unsaved edits, so
+  // a stray Ctrl+W doesn't silently drop a half-built pipeline. The browser
+  // shows its own generic prompt; returnValue must be set for it to fire.
+  useEffect(() => {
+    if (!dirty) return undefined;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [dirty]);
 
   // The explain summary is a point-in-time snapshot of the graph, so drop it
   // whenever the graph changes — a stale summary would misrepresent the canvas.
@@ -137,21 +155,53 @@ export function PipelinesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runDetailQuery.data]);
 
+  // Safety net: if a run never reaches a terminal status, log a single warning
+  // after 5 minutes so a stuck poller is visible in the console rather than
+  // silently churning forever. Resets whenever the active run changes.
+  useEffect(() => {
+    if (!activeRunId) return undefined;
+    const timer = window.setTimeout(
+      () => {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[pipelines] run ${activeRunId} has been in-flight for over 5 minutes; the backend may have stopped reporting progress.`,
+        );
+      },
+      5 * 60 * 1000,
+    );
+    return () => window.clearTimeout(timer);
+  }, [activeRunId]);
+
   // ── Authoring-time issues (lightweight linter) ─────────────────────────
   const issueCount = useMemo(() => {
-    // Phase-1 heuristic: a node with required inputs but no incoming edge.
+    // A node is flagged only when one of its *required* input ports has no
+    // incoming edge. Optional inputs (e.g. a port the step can also read from
+    // its params) are ignored, so we don't manufacture false issues. The
+    // required-port set comes from the node-type catalogue (see
+    // requiredInputIds); ports map to incoming edges by their targetHandle.
     const edges = usePipelineStore.getState().edges;
     const nodes = usePipelineStore.getState().nodes;
+    const defByType = new Map(nodeTypes.map((d) => [d.type, d]));
     let count = 0;
     for (const n of nodes) {
-      if (n.inputs.length > 0 && !edges.some((e) => e.target === n.id)) {
-        count += 1;
-      }
+      const required = requiredInputIds(defByType.get(n.type));
+      if (required.length === 0) continue;
+      const incoming = edges.filter((e) => e.target === n.id);
+      const wired = new Set(incoming.map((e) => e.targetHandle));
+      // If the catalogue can't resolve specific port ids on this node, fall
+      // back to "any incoming edge satisfies it" so an unknown type isn't
+      // permanently red.
+      const portIds = new Set(n.inputs.map((p) => p.id));
+      const requiresKnownPorts = required.some((id) => portIds.has(id));
+      const unmet = requiresKnownPorts
+        ? required.some((id) => portIds.has(id) && !wired.has(id))
+        : incoming.length === 0;
+      if (unmet) count += 1;
     }
     return count;
     // recompute when the node OR edge set changes (an unconnected
     // required input is an edge-level fact, so edgeCount must be a dep)
-  }, [nodeCount, edgeCount, loadToken, runDetailQuery.dataUpdatedAt]);
+  }, [nodeCount, edgeCount, loadToken, nodeTypes, runDetailQuery.dataUpdatedAt]);
 
   // ── Actions ─────────────────────────────────────────────────────────────
   const handleSave = useCallback(async () => {
@@ -168,6 +218,9 @@ export function PipelinesPage() {
           graph,
           is_published: meta.isPublished,
         });
+        // Clear the dirty flag (and keep the id) so the unsaved-changes
+        // warning / badge resolves after a successful update too.
+        markSaved(meta.id);
       } else {
         const created = await createMut.mutateAsync({
           name,
@@ -241,9 +294,16 @@ export function PipelinesPage() {
   const handleStop = useCallback(() => {
     // Phase-1: no cancel endpoint in the pinned contract — just detach the
     // poller and clear the local overlay (run continues server-side).
+    const runId = activeRunId;
     setActiveRunId(undefined);
     clearRun();
-  }, [clearRun]);
+    // Cancel + drop the cached run-detail query so polling stops immediately
+    // instead of riding out the current refetch interval.
+    if (runId) {
+      void queryClient.cancelQueries({ queryKey: pipelineKeys.run(runId) });
+      queryClient.removeQueries({ queryKey: pipelineKeys.run(runId) });
+    }
+  }, [activeRunId, clearRun, queryClient]);
 
   const handleExplain = useCallback(() => {
     // Deterministic plain-language summary built from the current graph JSON.
@@ -401,6 +461,7 @@ export function PipelinesPage() {
           busy={busy}
           running={isRunning}
           issueCount={issueCount}
+          dirty={dirty}
         />
         <div
           className="relative min-h-0 flex-1"

@@ -101,9 +101,6 @@ export function useChatFullPage(): UseChatFullPageReturn {
   const [loadingSessionId, setLoadingSessionId] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
-  // Tracks the session id created by the most recent stream so we only
-  // refresh the sidebar list once a new conversation is actually persisted.
-  const lastStreamSessionRef = useRef<string | null>(null);
 
   const activeProjectId = useProjectContextStore((s) => s.activeProjectId);
 
@@ -150,6 +147,11 @@ export function useChatFullPage(): UseChatFullPageReturn {
   const loadSession = useCallback(
     async (id: string) => {
       if (abortRef.current) abortRef.current.abort();
+      // Aborting the in-flight stream does not run its finally block
+      // synchronously, so clear the streaming flag here. Otherwise loading a
+      // past session mid-stream leaves the UI locked (input disabled, spinner
+      // active) against a stream that no longer exists.
+      setIsStreaming(false);
       setLoadingSessionId(id);
       try {
         const rows = (await fetchSessionMessages(id)) as PersistedMessage[];
@@ -187,6 +189,10 @@ export function useChatFullPage(): UseChatFullPageReturn {
             ts: new Date(),
           },
         ]);
+        // Deselect the broken session so the sidebar no longer highlights it
+        // as active. Otherwise the UI is inconsistent: a session is "active"
+        // but its messages never loaded, and the user has no way to tell.
+        setSessionId(null);
       } finally {
         setLoadingSessionId(null);
       }
@@ -270,6 +276,14 @@ export function useChatFullPage(): UseChatFullPageReturn {
       abortRef.current = controller;
 
       const aiMsgId = aiMsg.id;
+      // Set once the backend confirms the assistant turn was persisted (the
+      // 'done' event carries the DB row id). Preferred signal to refresh the
+      // sidebar. Not every provider path includes it though: the fallback
+      // provider branch emits an empty 'done' payload, so we also capture the
+      // session id (always emitted) as a backstop - by the time the stream
+      // finishes the session row is committed, so it is a safe refresh signal.
+      let persistedMessageId: string | undefined;
+      let streamSessionId: string | undefined;
 
       (async () => {
         try {
@@ -292,6 +306,23 @@ export function useChatFullPage(): UseChatFullPageReturn {
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === aiMsgId ? { ...m, content: `Error: ${response.status} - ${errText}` } : m,
+              ),
+            );
+            setIsStreaming(false);
+            return;
+          }
+
+          // A 200 OK is not enough: a misbehaving backend (or a proxy error
+          // page) can return HTML/JSON with a 2xx status. The SSE parser would
+          // then read garbage, silently drop every frame and leave a blank
+          // bubble. Fail fast if the stream is not text/event-stream.
+          const contentType = response.headers.get('content-type') ?? '';
+          if (!contentType.includes('text/event-stream')) {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === aiMsgId
+                  ? { ...m, content: 'Error: unexpected response format from the AI service.' }
+                  : m,
               ),
             );
             setIsStreaming(false);
@@ -353,8 +384,8 @@ export function useChatFullPage(): UseChatFullPageReturn {
                 case 'session_id': {
                   const sid = payload.session_id as string | undefined;
                   if (sid) {
+                    streamSessionId = sid;
                     setSessionId(sid);
-                    lastStreamSessionRef.current = sid;
                   }
                   break;
                 }
@@ -464,6 +495,7 @@ export function useChatFullPage(): UseChatFullPageReturn {
                   // UUID, which silently broke the T8 feedback pipeline).
                   const persistedId = payload.message_id as string | undefined;
                   if (persistedId) {
+                    persistedMessageId = persistedId;
                     setMessages((prev) =>
                       prev.map((m) => (m.id === aiMsgId ? { ...m, id: persistedId } : m)),
                     );
@@ -491,8 +523,12 @@ export function useChatFullPage(): UseChatFullPageReturn {
           abortRef.current = null;
           // A turn just persisted (and possibly created + auto-titled) a
           // session. Refresh the sidebar so the conversation shows up and
-          // its title reflects the first prompt.
-          if (lastStreamSessionRef.current) {
+          // its title reflects the first prompt. Prefer the persisted message
+          // id from the 'done' event, but fall back to the stream's session
+          // id: the fallback provider path emits an empty 'done' payload, and
+          // by the time this finally runs the stream has closed and the row
+          // is committed, so any started conversation still refreshes.
+          if (persistedMessageId || streamSessionId) {
             void refreshSessions();
           }
         }
@@ -508,7 +544,6 @@ export function useChatFullPage(): UseChatFullPageReturn {
     setMessages([]);
     setIsStreaming(false);
     setSessionId(null);
-    lastStreamSessionRef.current = null;
     setSuggestions(DEFAULT_SUGGESTIONS);
     setDataPanelEntries([]);
     setActivePanelIndex(-1);

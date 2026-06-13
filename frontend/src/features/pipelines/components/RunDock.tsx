@@ -9,7 +9,7 @@
  */
 import clsx from 'clsx';
 import { ChevronDown, ChevronUp, Inbox } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { DateDisplay, EmptyState, StatusDot } from '@/shared/ui';
@@ -20,6 +20,14 @@ import type { PipelineRunSummary, RunStatus } from '../api';
 
 type RunDockTab = 'run' | 'history';
 const RUN_DOCK_TAB_IDS: readonly RunDockTab[] = ['run', 'history'];
+
+/**
+ * How many history rows to render at a time. The list endpoint returns runs
+ * newest-first; rather than mounting hundreds of rows for a busy pipeline we
+ * window the rendered slice client-side and reveal older runs on demand. This
+ * keeps the DOM small without changing the API contract.
+ */
+const HISTORY_PAGE_SIZE = 20;
 
 export interface RunDockProps {
   runs: PipelineRunSummary[];
@@ -67,6 +75,21 @@ export function RunDock({
   const nodes = usePipelineStore((s) => s.nodes);
 
   const tone = statusTone(run.status);
+
+  // Client-side windowing of the (newest-first) run history. Collapse back to
+  // the first page whenever the underlying list shrinks below what we were
+  // showing (e.g. switched pipeline) so we never render a stale slice.
+  const [historyVisible, setHistoryVisible] = useState(HISTORY_PAGE_SIZE);
+  useEffect(() => {
+    if (historyVisible > runs.length && runs.length > HISTORY_PAGE_SIZE) {
+      setHistoryVisible(HISTORY_PAGE_SIZE);
+    }
+  }, [runs.length, historyVisible]);
+  const visibleRuns = useMemo(
+    () => runs.slice(0, historyVisible),
+    [runs, historyVisible],
+  );
+  const hasMoreRuns = runs.length > visibleRuns.length;
 
   return (
     <div
@@ -231,44 +254,66 @@ export function RunDock({
                 })}
               />
             ) : (
-              <ul className="space-y-1" data-testid="pipeline-run-history">
-                {runs.map((r) => {
-                  const rt = statusTone(r.status);
-                  const triggerType =
-                    r.trigger && typeof r.trigger === 'object'
-                      ? r.trigger.type
-                      : undefined;
-                  return (
-                    <li
-                      key={r.id}
-                      className="flex items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-surface-secondary"
-                    >
-                      <StatusDot variant={rt} />
-                      <span className="text-content-primary">
-                        {triggerType
-                          ? t(`pipeline.trigger.${triggerType}`, {
-                              defaultValue: triggerType,
-                            })
-                          : t('pipeline.dock.manual', {
-                              defaultValue: 'Manual',
-                            })}
-                      </span>
-                      <span className="text-content-tertiary">
-                        {r.status
-                          ? t(`pipeline.runstatus.${r.status}`, {
-                              defaultValue: String(r.status),
-                            })
-                          : ''}
-                      </span>
-                      {r.started_at && (
-                        <span className="ms-auto text-content-tertiary">
-                          <DateDisplay value={r.started_at} format="relative" />
+              <>
+                <ul className="space-y-1" data-testid="pipeline-run-history">
+                  {visibleRuns.map((r) => {
+                    const rt = statusTone(r.status);
+                    const triggerType =
+                      r.trigger && typeof r.trigger === 'object'
+                        ? r.trigger.type
+                        : undefined;
+                    return (
+                      <li
+                        key={r.id}
+                        className="flex items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-surface-secondary"
+                      >
+                        <StatusDot variant={rt} />
+                        <span className="text-content-primary">
+                          {triggerType
+                            ? t(`pipeline.trigger.${triggerType}`, {
+                                defaultValue: triggerType,
+                              })
+                            : t('pipeline.dock.manual', {
+                                defaultValue: 'Manual',
+                              })}
                         </span>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
+                        <span className="text-content-tertiary">
+                          {r.status
+                            ? t(`pipeline.runstatus.${r.status}`, {
+                                defaultValue: String(r.status),
+                              })
+                            : ''}
+                        </span>
+                        {r.started_at && (
+                          <span className="ms-auto text-content-tertiary">
+                            <DateDisplay
+                              value={r.started_at}
+                              format="relative"
+                            />
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+                {hasMoreRuns && (
+                  <div className="pt-2 text-center">
+                    <button
+                      type="button"
+                      data-testid="pipeline-run-history-more"
+                      onClick={() =>
+                        setHistoryVisible((v) => v + HISTORY_PAGE_SIZE)
+                      }
+                      className="rounded-md border border-border bg-surface-primary px-3 py-1 text-xs font-medium text-content-secondary hover:bg-surface-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-oe-blue/30"
+                    >
+                      {t('pipeline.dock.show_more', {
+                        defaultValue: 'Show older runs ({{count}} more)',
+                        count: runs.length - visibleRuns.length,
+                      })}
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>

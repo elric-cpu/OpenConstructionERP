@@ -136,10 +136,33 @@ export interface NodeTypeDef {
   label?: string;
   description?: string;
   module?: string;
-  inputs?: Array<{ id: string; label?: string; type?: string }>;
+  /**
+   * Input ports. `required` marks a port that must be wired before the node
+   * can run; when the backend omits it, the linter treats the port as required
+   * only when it is the node's sole input (see {@link requiredInputIds}).
+   */
+  inputs?: Array<{ id: string; label?: string; type?: string; required?: boolean }>;
   outputs?: Array<{ id: string; label?: string; type?: string }>;
   params_schema?: Record<string, unknown>;
   side_effecting?: boolean;
+}
+
+/**
+ * The set of input-port ids a node-type *requires* to be wired before it can
+ * run. Derived from the catalogue (the linter's authoring-issue heuristic):
+ *   1. ports explicitly flagged `required: true` win;
+ *   2. otherwise, when no port is explicitly flagged, a single-input node
+ *      needs that one port wired (a lone input is the data the step consumes),
+ *      while a multi-input node is treated as "any one input is enough" so we
+ *      don't flag steps that legitimately read from params instead of a wire.
+ */
+export function requiredInputIds(def: NodeTypeDef | undefined): string[] {
+  const inputs = def?.inputs ?? [];
+  if (inputs.length === 0) return [];
+  const explicit = inputs.filter((p) => p.required).map((p) => p.id);
+  if (explicit.length > 0) return explicit;
+  const sole = inputs.length === 1 ? inputs[0] : undefined;
+  return sole ? [sole.id] : [];
 }
 
 // ── Query keys ─────────────────────────────────────────────────────────────
@@ -268,6 +291,10 @@ export function usePipelineRuns(
 /**
  * Poll a single run's detail while it is live. Polling stops automatically
  * once the run reaches a terminal status (no websocket — polling by design).
+ *
+ * Resilience: polling pauses while the query is in an error state (backend
+ * unreachable / 4xx-5xx) so a flapping backend can't spin the poller forever,
+ * and bounded retries keep a transient blip from looking like a hang.
  */
 export function usePipelineRun(
   runId: string | undefined,
@@ -275,7 +302,12 @@ export function usePipelineRun(
   return useQuery({
     queryKey: pipelineKeys.run(runId ?? ''),
     enabled: Boolean(runId),
+    retry: 3,
     refetchInterval: (query) => {
+      // Pause polling once the query has errored — refetchIntervalPausedFilter
+      // resumes it after a successful refetch, so a recovered backend picks the
+      // poll back up without leaving it spinning during the outage.
+      if (query.state.status === 'error') return false;
       const data = query.state.data as PipelineRunDetail | undefined;
       if (!data) return 1500;
       return isTerminalRunStatus(data.status) ? false : 1500;

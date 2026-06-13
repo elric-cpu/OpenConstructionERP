@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import DOMPurify from 'isomorphic-dompurify';
 import clsx from 'clsx';
 import {
@@ -339,9 +340,21 @@ function useFailureLabel(run: AgentRun, steps: AgentStep[]): string | null {
 
 export function RunTimeline({ run }: { run: AgentRun }): JSX.Element {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const steps = useMemo(() => run.steps ?? [], [run.steps]);
   const failureLabel = useFailureLabel(run, steps);
   const statusBadge = STATUS_BADGE[run.status];
+
+  // The run can finish while the user is watching its timeline. The proposals
+  // query (read by ApplyActionButton) has a 60s staleTime, so without this it
+  // would not pick up the freshly-recovered proposals until that window
+  // expires. Invalidate it the moment the run reaches a terminal completed
+  // state so the proposal count reflects reality immediately.
+  useEffect(() => {
+    if (run.status === 'completed') {
+      void queryClient.invalidateQueries({ queryKey: ['ai-agents', 'proposals', run.id] });
+    }
+  }, [run.status, run.id, queryClient]);
 
   return (
     <div className="space-y-4 rounded-xl border border-border-light bg-surface-elevated p-5 shadow-xs">

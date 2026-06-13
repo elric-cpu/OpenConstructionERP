@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ToolCallInfo } from '../../types';
 
 const TOOL_LABELS: Record<string, string> = {
@@ -46,6 +47,7 @@ function StatusIcon({ status }: { status: ToolCallInfo['status'] }) {
 }
 
 export default function ToolCallCard({ tool }: { tool: ToolCallInfo }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const label = TOOL_LABELS[tool.name] ?? tool.name;
 
@@ -130,7 +132,9 @@ export default function ToolCallCard({ tool }: { tool: ToolCallInfo }) {
         >
           {tool.input && (
             <div style={{ marginBottom: 6 }}>
-              <div style={{ color: 'var(--chat-text-tertiary)', fontSize: 10, marginBottom: 2 }}>INPUT</div>
+              <div style={{ color: 'var(--chat-text-tertiary)', fontSize: 10, marginBottom: 2 }}>
+                {t('chat.tool_input', { defaultValue: 'INPUT' })}
+              </div>
               <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
                 {JSON.stringify(tool.input, null, 2)}
               </pre>
@@ -138,7 +142,9 @@ export default function ToolCallCard({ tool }: { tool: ToolCallInfo }) {
           )}
           {tool.result?.data !== undefined && (
             <div>
-              <div style={{ color: 'var(--chat-text-tertiary)', fontSize: 10, marginBottom: 2 }}>OUTPUT</div>
+              <div style={{ color: 'var(--chat-text-tertiary)', fontSize: 10, marginBottom: 2 }}>
+                {t('chat.tool_output', { defaultValue: 'OUTPUT' })}
+              </div>
               <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
                 {JSON.stringify(tool.result.data, null, 2).slice(0, 2000)}
               </pre>

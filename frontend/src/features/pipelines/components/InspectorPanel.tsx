@@ -15,8 +15,10 @@
  * All strings via `t(...)`. Logical props for RTL. Footer: Duplicate / Delete.
  */
 import { ChevronRight, Copy, Trash2 } from 'lucide-react';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { ConfirmDialog } from '@/shared/ui';
 
 import { getCategoryTokens } from '../tokens';
 import {
@@ -96,6 +98,12 @@ export function InspectorPanel({
   const copySelection = usePipelineStore((s) => s.copySelection);
   const pasteClipboard = usePipelineStore((s) => s.pasteClipboard);
   const patchMeta = usePipelineStore((s) => s.patchMeta);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+
+  const confirmDelete = useCallback(() => {
+    if (selected) removeNode(selected.id);
+    setConfirmDeleteOpen(false);
+  }, [removeNode, selected]);
 
   const def = useMemo(
     () => nodeTypes.find((d) => d.type === selected?.type),
@@ -153,6 +161,20 @@ export function InspectorPanel({
       className="flex h-full w-[320px] shrink-0 flex-col border-s border-border bg-surface-secondary"
       aria-label={t('pipeline.inspector.aria', { defaultValue: 'Inspector' })}
     >
+      <ConfirmDialog
+        open={confirmDeleteOpen && Boolean(selected)}
+        onConfirm={confirmDelete}
+        onCancel={() => setConfirmDeleteOpen(false)}
+        variant="danger"
+        title={t('pipeline.inspector.delete_confirm_title', {
+          defaultValue: 'Delete this step?',
+        })}
+        message={t('pipeline.inspector.delete_confirm_body', {
+          defaultValue:
+            'This removes the step from the canvas. Any connections into or out of it are removed too.',
+        })}
+        confirmLabel={t('pipeline.inspector.delete', { defaultValue: 'Delete' })}
+      />
       <header className="flex items-center justify-between border-b border-border px-3 py-2">
         {/* Context indicator (NOT a tablist — the mode is driven by the
             canvas selection, not by clicking here; a non-operable ARIA
@@ -324,7 +346,7 @@ export function InspectorPanel({
               </button>
               <button
                 type="button"
-                onClick={() => removeNode(selected.id)}
+                onClick={() => setConfirmDeleteOpen(true)}
                 data-testid="pipeline-inspector-delete"
                 className="inline-flex items-center gap-1.5 rounded-md border border-semantic-error/40 bg-semantic-error-bg px-2.5 py-1.5 text-xs font-medium text-semantic-error hover:opacity-90"
               >

@@ -231,6 +231,10 @@ export function AgentsPage(): JSX.Element {
     onSuccess: (run) => {
       setActiveRunId(run.id);
       queryClient.invalidateQueries({ queryKey: ['ai-agents', 'runs'] });
+      // Flush any cached run timelines so the freshly-started run's query
+      // begins from fresh data instead of briefly showing a stale timeline
+      // left over from a prior selection that shared the same key.
+      queryClient.invalidateQueries({ queryKey: ['ai-agents', 'run'] });
     },
   });
 
