@@ -57,7 +57,8 @@ import {
   Palette,
   Footprints,
 } from 'lucide-react';
-import { Badge, EmptyState, Breadcrumb, ConfirmDialog, ModuleHelpButton, DismissibleInfo, IntroRichText } from '@/shared/ui';
+import { Badge, EmptyState, Breadcrumb, ConfirmDialog, ModuleHelpButton, ModuleGuideButton, DismissibleInfo, IntroRichText } from '@/shared/ui';
+import { bimGuide } from './bimGuide';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { BIMViewer } from '@/shared/ui/BIMViewer';
 import type { BIMElementData, BIMModelData } from '@/shared/ui/BIMViewer';
@@ -3063,6 +3064,10 @@ export function BIMPage() {
             <Plus size={13} /> {t('bim.add_model', { defaultValue: 'Add Model' })}
           </button>
           <ModuleHelpButton tourId="bim" />
+          <ModuleGuideButton
+            content={bimGuide}
+            onCta={() => setUploadOpen(true)}
+          />
           {elements.length > 0 && (
             <a
               href="/bim/rules?mode=requirements"
@@ -3111,6 +3116,7 @@ export function BIMPage() {
                 }
                 aria-label={t('bim.summary_toggle', { defaultValue: 'Toggle summary panel' })}
                 aria-pressed={summaryPanelOpen}
+                data-guide="bim-summary-button"
               >
                 <LayoutGrid size={13} />
                 {t('bim.summary_button', { defaultValue: 'Summary' })}

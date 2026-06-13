@@ -13063,7 +13063,7 @@ const resource = {
     "bim.issue_on_elements": "요소 {{count}}개에 대한 이슈",
     "bim.just_now": "방금 전",
     "bim.landing_dropzone_aria": "BIM 모델 파일을 여기에 드롭하거나 클릭하여 찾아보세요. 지원 형식: .rvt, .ifc, .csv, .xlsx",
-    "bim.landing_formats_detailed": "Revit 2015\\u20132026 (.rvt) \\u00B7 IFC 2x3, 4.0, 4.1, 4.3 (.ifc) \\u00B7 CSV \\u00B7 Excel. DWG \\u2192 DWG Takeoff.",
+    "bim.landing_formats_detailed": "Revit 2015–2026 (.rvt) · IFC 2x3, 4.0, 4.1, 4.3 (.ifc) · CSV · Excel. DWG → DWG Takeoff.",
     "bim.landing_what_you_get": "제공 기능",
     "bim.layers_hide_category": "{{category}} 숨기기",
     "bim.layers_opacity": "{{category}} 불투명도",
@@ -13381,6 +13381,13 @@ const resource = {
     "takeoff_viewer.plan_read.reason_rasterize_failed": "이 페이지를 이미지로 렌더링할 수 없었습니다. PDF가 손상되었거나 비밀번호로 보호되어 있을 수 있습니다.",
     "branding.tab_logo": "로고",
     "branding.tab_name": "회사명",
+    "costs_import.import_success_catalog_one": "{{count}}개 항목을 \"{{catalog}}\"에 가져왔습니다.",
+    "costs_import.import_success_count_one": "{{count}}개 항목을 성공적으로 가져왔습니다.",
+    "settings.demo_data_removed_message_one": "데모 프로젝트 {{count}}개가 삭제되었습니다. 재시작 시 다시 생성되지 않습니다.",
+    "takeoff.bulk_add_confirm_one": "{{count}}개 항목 생성",
+    "takeoff.bulk_add_success_msg_one": "{{count}}개 항목이 생성되었습니다 ({{first}}부터 시작)",
+    "takeoff.bulk_add_title_one": "측정값 {{count}}개를 BOQ에 추가",
+    "takeoff.bulk_link_partial_msg_one": "측정값 {{count}}개를 새 항목에 다시 연결할 수 없습니다. 항목은 측정된 수량으로 생성되었습니다.",
   }
 } as { translation: Record<string, string> };
 

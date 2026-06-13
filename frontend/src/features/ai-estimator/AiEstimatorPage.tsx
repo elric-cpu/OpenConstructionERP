@@ -27,9 +27,10 @@ import { projectsApi, type Project } from '@/features/projects/api';
 import { matchElementsApi } from '@/features/match-elements/api';
 import { fetchDocuments, uploadDocument } from '@/features/documents/api';
 import { getIntlLocale } from '@/shared/lib/formatters';
-import { BetaBanner, Button, Card, DismissibleInfo } from '@/shared/ui';
+import { BetaBanner, Button, Card, DismissibleInfo, ModuleGuideButton } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 
+import { ai_estimatorGuide } from './ai_estimatorGuide';
 import {
   aiEstimatorApi,
   type GroupUpdate,
@@ -664,6 +665,7 @@ export function AiEstimatorPage() {
             defaultValue:
               'A full AI-driven estimate from any source. The agent groups quantities and finds catalogue rates, and you confirm every step.',
           })}
+          actions={<ModuleGuideButton content={ai_estimatorGuide} onCta={openWizardNew} />}
         />
         <BetaNotice />
         <IntroBanner />
@@ -694,14 +696,17 @@ export function AiEstimatorPage() {
             'A full AI-driven estimate from any source. The agent groups quantities and finds catalogue rates, and you confirm every step.',
         })}
         actions={
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={<ArrowLeft className="h-4 w-4" />}
-            onClick={backToList}
-          >
-            {t('aiest.wizard.back_to_runs', { defaultValue: 'All estimates' })}
-          </Button>
+          <>
+            <ModuleGuideButton content={ai_estimatorGuide} onCta={openWizardNew} />
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<ArrowLeft className="h-4 w-4" />}
+              onClick={backToList}
+            >
+              {t('aiest.wizard.back_to_runs', { defaultValue: 'All estimates' })}
+            </Button>
+          </>
         }
       />
       <BetaNotice />

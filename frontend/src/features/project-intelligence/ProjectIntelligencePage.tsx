@@ -19,8 +19,9 @@ import { useAuthStore } from '@/stores/useAuthStore';
 import { useToastStore } from '@/stores/useToastStore';
 import { apiGet, apiPost } from '@/shared/lib/api';
 import { isModuleLoaded, _resetModuleProbeCache } from '@/shared/lib/moduleProbe';
-import { Breadcrumb, DismissibleInfo } from '@/shared/ui';
+import { Breadcrumb, DismissibleInfo, ModuleGuideButton } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { project_intelligenceGuide } from './project_intelligenceGuide';
 import { ScoreRing } from './ScoreRing';
 import { GapCard } from './GapCard';
 import { AIAdvisorPanel } from './AIAdvisorPanel';
@@ -533,6 +534,7 @@ export function ProjectIntelligencePage() {
         })}
         actions={
           <>
+            <ModuleGuideButton content={project_intelligenceGuide} />
             <select
               value={role}
               onChange={(e) => setRole(e.target.value)}

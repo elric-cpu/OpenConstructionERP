@@ -30,8 +30,9 @@ import {
   AlertTriangle,
   type LucideIcon,
 } from 'lucide-react';
-import { Button, Card, Badge, ConfirmDialog, EmptyState, Skeleton, DismissibleInfo, IntroRichText, CountryFlag, CountryFlagBackdrop, Breadcrumb } from '@/shared/ui';
+import { Button, Card, Badge, ConfirmDialog, EmptyState, Skeleton, DismissibleInfo, IntroRichText, CountryFlag, CountryFlagBackdrop, Breadcrumb, ModuleGuideButton } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { catalogGuide } from './catalogGuide';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { apiGet, apiPost, apiPatch, apiDelete } from '@/shared/lib/api';
 import { getIntlLocale } from '@/shared/lib/formatters';
@@ -1626,6 +1627,11 @@ export function CatalogPage() {
         }
         actions={
           <>
+          {/* How it works guide - explains the catalog concepts and the
+              import / search / apply-to-BOQ flow. Sits at the head of the
+              action cluster as the leading help pill. */}
+          <ModuleGuideButton content={catalogGuide} onCta={() => setShowImportGrid(true)} />
+
           {/* Region selector dropdown */}
           {hasAnyRegions && (
             <div className="relative">
@@ -1683,6 +1689,7 @@ export function CatalogPage() {
             size="sm"
             icon={<Plus size={14} />}
             onClick={() => setShowCreateResource(true)}
+            data-guide="catalog-add-resource"
           >
             {t('catalog.add_resource', { defaultValue: 'Add Resource' })}
           </Button>
@@ -1693,6 +1700,7 @@ export function CatalogPage() {
             size="sm"
             icon={<Upload size={14} />}
             onClick={() => setShowImportGrid(!showImportGrid)}
+            data-guide="catalog-import"
           >
             {t('catalog.import_region', { defaultValue: 'Import Region' })}
           </Button>
@@ -1733,7 +1741,7 @@ export function CatalogPage() {
       )}
 
       {/* Type Filter Pills */}
-      <div className="mb-5">
+      <div className="mb-5" data-guide="catalog-type-filters">
         <div className="flex items-center gap-1.5 flex-wrap">
           {TYPE_TABS.map((tab) => {
             const isActive = resourceType === tab.key;
@@ -1789,6 +1797,7 @@ export function CatalogPage() {
               type="text"
               value={query}
               onChange={(e) => handleSearch(e.target.value)}
+              data-guide="catalog-search"
               aria-label={t('catalog.search_resources', { defaultValue: 'Search resources' })}
               placeholder={
                 regionInfo
@@ -2025,7 +2034,7 @@ export function CatalogPage() {
       ) : (
         <>
           <Card padding="none" className="overflow-hidden">
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto" data-guide="catalog-table">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border-light bg-surface-tertiary text-left">

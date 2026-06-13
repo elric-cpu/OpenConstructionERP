@@ -510,15 +510,26 @@ def check_optional_extras() -> list[Check]:
             )
         )
 
-    # PDF parsing for takeoff / document extraction.
+    # PDF takeoff: PyMuPDF (vector reader) + OpenCV (raster detector) are base
+    # deps now, so a healthy install always has them. PaddleOCR (dimension-text
+    # reading) is the only optional piece left.
     if _present("pymupdf") or _present("fitz"):
-        out.append(Check("PDF takeoff [cv]", "ok", "pymupdf installed"))
+        out.append(Check("PDF takeoff", "ok", "pymupdf + opencv installed"))
     else:
         out.append(
             Check(
-                "PDF takeoff [cv]",
+                "PDF takeoff",
                 "warn",
-                "not installed (PDF takeoff disabled)",
+                "PyMuPDF missing - PDF takeoff disabled (broken install?)",
+                "pip install --upgrade openconstructionerp",
+            )
+        )
+    if not _present("paddleocr"):
+        out.append(
+            Check(
+                "PDF dimension OCR [cv]",
+                "warn",
+                "not installed (geometry detection still works; dimension-text reading disabled)",
                 "pip install 'openconstructionerp[cv]'",
             )
         )

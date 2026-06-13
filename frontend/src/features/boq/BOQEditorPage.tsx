@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 // lucide-react icons used by sub-components (BOQToolbar, BOQGrid, etc.) — none needed directly here
 import { Database, Download, ExternalLink, X, Sparkles, AlertTriangle as WarnTriangle, Lock, Copy, Wallet, Keyboard, GitCompare, RefreshCw, ShieldCheck } from 'lucide-react';
-import { Button, Badge, Breadcrumb, ModuleHelpButton, ConfirmDialog, DismissibleInfo, IntroRichText } from '@/shared/ui';
+import { Button, Badge, Breadcrumb, ModuleHelpButton, ModuleGuideButton, ConfirmDialog, DismissibleInfo, IntroRichText } from '@/shared/ui';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { useProgressStore } from '@/shared/ui/GlobalProgress';
 import { apiGet, apiPost, triggerDownload, extractErrorMessageFromBody } from '@/shared/lib/api';
@@ -54,6 +54,7 @@ import { exportBOQToExcel } from './exportExcel';
 import { generateBOQPdf } from './pdfReport';
 import type { BOQGridHandle } from './BOQGrid';
 import { BatchActionBar } from './BatchActionBar';
+import { boqGuide } from './boqGuide';
 // evaluateFormula used in BOQGrid, not directly here
 // import { evaluateFormula } from './grid/cellEditors';
 
@@ -2465,6 +2466,10 @@ export function BOQEditorPage() {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
+      if (!r.ok) {
+        const errBody = await r.json().catch(() => ({}));
+        throw new Error(errBody?.detail || `Validation request failed (HTTP ${r.status})`);
+      }
       const result = await r.json();
       const scoreNum = typeof result?.score === 'number' ? Math.round(result.score * 100) : null;
       setLastValidationScore(scoreNum);
@@ -2501,11 +2506,14 @@ export function BOQEditorPage() {
         message: parts.join('\n'),
       });
       invalidateAll();
-    } catch {
+    } catch (err) {
       addToast({
         type: 'error',
         title: t('boq.validation_failed', { defaultValue: 'Validation failed' }),
-        message: t('boq.validation_failed_hint', { defaultValue: 'Could not connect to validation service.' }),
+        message:
+          err instanceof Error && err.message
+            ? err.message
+            : t('boq.validation_failed_hint', { defaultValue: 'Could not connect to validation service.' }),
       });
     } finally {
       setIsValidating(false);
@@ -2625,10 +2633,16 @@ export function BOQEditorPage() {
       });
       setExcelPasteOpen(false);
       invalidateAll();
-    } catch {
+    } catch (err) {
       addToast({
         type: 'error',
         title: t('boq.paste_import_failed', { defaultValue: 'Import failed' }),
+        message:
+          err instanceof Error && err.message
+            ? err.message
+            : t('boq.paste_import_failed_hint', {
+                defaultValue: 'Some rows could not be imported. Check the values and try again.',
+              }),
       });
     } finally {
       setIsExcelPasteImporting(false);
@@ -4069,8 +4083,15 @@ export function BOQEditorPage() {
             </Button>
             {/* Per-module Tour CTA — launches the BOQ-specific guided tour
                 via the registered TOUR_REGISTRY entry, independent of any
-                global / first-login tour state. */}
+                global / first-login tour state. The Guide button sits in the
+                same cluster: Tour walks the live UI, Guide explains the
+                concepts and the data-entry flow. Its closing CTA opens the
+                Add position flow. */}
             <ModuleHelpButton tourId="boq" />
+            <ModuleGuideButton
+              content={boqGuide}
+              onCta={() => handleAddPosition()}
+            />
           </div>
         </div>
 

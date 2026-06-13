@@ -167,6 +167,11 @@ test-screenshots/
 !desktop/src-tauri/icons/**/*.png
 !frontend/public/favicon.png
 !frontend/public/logo.png
+# Public brand assets ship in the wheel (About page founder avatar, book
+# cover, logo). The global *.png ignore above kept these untracked, so CI
+# built the frontend without them and a fresh install served the SPA
+# index.html in their place - the founder avatar rendered as a broken image.
+!frontend/public/brand/*.png
 !docs/screenshots/*.png
 !docs/screenshots/*.jpg
 !docs/screenshots/*.jpeg
@@ -254,6 +259,11 @@ qa-sweep/
 # pr-body drafts and a local token file. Internal only, never published
 # (constraint #9). Also in the hygiene denylist as a second guard.
 qa-wave/
+
+# Persona testing machine: company/role/region personas, Playwright runner,
+# screenshots, assertions, improvement-finder output. Internal only, never
+# published (constraint #9). Also in the hygiene denylist as a second guard.
+qa-personas/
 
 # Scratch/debug artifacts (never commit)
 __diag.txt

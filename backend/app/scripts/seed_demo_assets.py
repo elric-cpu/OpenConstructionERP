@@ -486,49 +486,40 @@ async def _attach_dwg_drawing(
     owner: str,
     spec: dict,
 ) -> bool:
-    """Attach the 2D DWG drawing reference to the DWG Takeoff module.
+    """Attach the 2D drawing to the DWG Takeoff module as a ready DXF.
 
-    DWG carries no 3D mesh, so (exactly like the flagship seed) it is routed to
-    the dedicated ``DwgDrawing`` table, never the BIM 3D hub. This is a
-    metadata-only row (status ``uploaded``, no parsed entities) so the DWG
-    Takeoff module lists the drawing without pretending geometry was parsed.
-    Idempotent on a deterministic id. Returns True when a row exists afterwards.
+    DWG/DXF carries no 3D mesh, so (exactly like the flagship seed) it is
+    routed to the dedicated ``DwgDrawing`` table, never the BIM 3D hub.
+
+    The drawing is seeded as an already-converted DXF (status ``ready`` with
+    parsed entities on disk) so a first-time user opens ``/dwg-takeoff`` and
+    sees a working viewer immediately - no DDC converter needed and no
+    perpetual "Converting..." spinner. DXF parses out of the box via ezdxf
+    (a base dependency). When ezdxf is somehow unavailable the helper falls
+    back to a metadata-only reference row, which the backend reports as
+    ``needs_conversion`` (a clear convert CTA, still never a spinner).
+
+    Idempotent on a deterministic id. Returns True when a drawing exists
+    afterwards.
     """
-    from app.modules.dwg_takeoff.models import DwgDrawing
-
     src = _source_model(spec, _DWG_MODEL["source_format"])
     if src is None:
         return False
 
     did = _u(str(pid), "dwg", _DWG_MODEL["model_format"])
-    if await session.get(DwgDrawing, did) is not None:
-        return True  # already attached on a previous run
 
-    fmt = _DWG_MODEL["model_format"]
-    session.add(
-        DwgDrawing(
-            id=did,
-            project_id=pid,
-            name=_DWG_MODEL["model_name"],
-            filename=f"{_DWG_MODEL['model_name']}.{fmt}",
-            file_format=fmt,
-            # No source file ships in the package; a metadata-only reference row
-            # lists the drawing in the DWG Takeoff module. Status "uploaded"
-            # (not "ready") keeps the UI honest: no parsed entities to render.
-            file_path="",
-            size_bytes=0,
-            status="uploaded",
-            discipline=_DWG_MODEL.get("discipline"),
-            created_by=owner,
-            metadata_={
-                "source": "demo_asset_seed",
-                "seed_reference_only": True,
-                "element_count": src.get("element_count", 0),
-            },
-        )
+    from app.scripts.seed_dwg_drawing import seed_ready_dwg_drawing
+
+    return await seed_ready_dwg_drawing(
+        session,
+        drawing_id=did,
+        project_id=pid,
+        owner=owner,
+        name=_DWG_MODEL["model_name"],
+        discipline=_DWG_MODEL.get("discipline"),
+        source="demo_asset_seed",
+        element_count=src.get("element_count", 0),
     )
-    await session.flush()
-    return True
 
 
 async def _link_positions_to_pool(

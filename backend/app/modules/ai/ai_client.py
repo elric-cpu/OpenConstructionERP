@@ -1013,6 +1013,20 @@ def resolve_provider_and_key(
                     return provider_name, decrypted
                 undecryptable = True
 
+    # Local-runtime fallback: a user who configured ONLY Ollama / vLLM (saved a
+    # base_url, no cloud key) keeps the default preferred_model="claude-sonnet",
+    # so the primary model->provider match above never routes to them. Honour
+    # the saved local endpoint here - keyless, returning an empty api_key - so a
+    # local-only setup is genuinely usable rather than collapsing into the
+    # "No AI API key configured" error. An explicit cloud key still wins (above).
+    if settings:
+        meta = getattr(settings, "metadata_", None)
+        if isinstance(meta, dict):
+            for local_provider in ("ollama", "vllm"):
+                candidate = meta.get(f"{local_provider}_base_url")
+                if isinstance(candidate, str) and candidate.strip():
+                    return local_provider, ""  # keyless local runtime
+
     # Fallback to environment variables / ~/.openestimate/config.json. Tried
     # AFTER the DB (an explicitly-saved key wins) but BEFORE raising - a working
     # env/config key should take effect even if a stale, undecryptable DB key

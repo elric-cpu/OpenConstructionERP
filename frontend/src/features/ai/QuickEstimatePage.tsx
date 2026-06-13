@@ -49,6 +49,7 @@ import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { aiApi, type QuickEstimateRequest, type EstimateJobResponse, type EstimateItem, type CadExtractResponse, type EnrichResult, type EnrichedItem, type CostMatch, type CadColumnsResponse, type CadGroupResponse, type CadDynamicGroup, type CadGroupElementsResponse } from './api';
 import { apiGet, apiPost } from '@/shared/lib/api';
+import { hasLlmKey } from '@/features/ai-estimator/useAiReadiness';
 import {
   formatFileSize,
   formatNumber,
@@ -1609,11 +1610,11 @@ export function QuickEstimatePage() {
     staleTime: 5 * 60_000,
   });
 
-  const isConfigured = !!(
-    aiSettings?.anthropic_api_key_set ||
-    aiSettings?.openai_api_key_set ||
-    aiSettings?.gemini_api_key_set
-  );
+  // AI is ready when a usable cloud key is set OR a local runtime (Ollama /
+  // vLLM) is configured via its base_url. Prefer the backend's authoritative
+  // flag; fall back to the shared local-aware helper for older payloads.
+  const isConfigured =
+    typeof aiSettings?.ai_ready === 'boolean' ? aiSettings.ai_ready : hasLlmKey(aiSettings);
 
   // ── Converter status (for CAD tab) ────────────────────────────────────
   interface ConverterFull {

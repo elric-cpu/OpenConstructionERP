@@ -12991,7 +12991,7 @@ const resource = {
     "bim.issue_on_elements": "Vấn đề trên {{count}} phần tử",
     "bim.just_now": "vừa xong",
     "bim.landing_dropzone_aria": "Thả tệp mô hình BIM vào đây hoặc bấm để duyệt. Định dạng hỗ trợ: .rvt, .ifc, .csv, .xlsx",
-    "bim.landing_formats_detailed": "Revit 2015\\u20132026 (.rvt) \\u00B7 IFC 2x3, 4.0, 4.1, 4.3 (.ifc) \\u00B7 CSV \\u00B7 Excel. DWG \\u2192 DWG Takeoff.",
+    "bim.landing_formats_detailed": "Revit 2015–2026 (.rvt) · IFC 2x3, 4.0, 4.1, 4.3 (.ifc) · CSV · Excel. DWG → DWG Takeoff.",
     "bim.landing_what_you_get": "Những gì bạn nhận được",
     "bim.layers_hide_category": "Ẩn {{category}}",
     "bim.layers_opacity": "Độ mờ {{category}}",
@@ -13387,6 +13387,13 @@ const resource = {
     "takeoff_viewer.ledger_add_to_boq": "Thêm vào BOQ",
     "takeoff_viewer.ledger_add_to_boq_hint": "Gửi khối lượng của số đo này vào một hạng mục BOQ",
     "takeoff_viewer.ledger_relink_to_boq": "Đã liên kết với {{posOrdinal}} - liên kết lại hoặc bỏ liên kết",
+    "costs_import.import_success_catalog_one": "Đã nhập {{count}} hạng mục vào \"{{catalog}}\".",
+    "costs_import.import_success_count_one": "Đã nhập thành công {{count}} hạng mục.",
+    "settings.demo_data_removed_message_one": "Đã xóa {{count}} dự án demo. Dự án sẽ không được tạo lại khi khởi động lại.",
+    "takeoff.bulk_add_confirm_one": "Tạo {{count}} hạng mục",
+    "takeoff.bulk_add_success_msg_one": "Đã tạo {{count}} hạng mục, bắt đầu từ {{first}}",
+    "takeoff.bulk_add_title_one": "Thêm {{count}} phép đo vào BOQ",
+    "takeoff.bulk_link_partial_msg_one": "Không thể liên kết lại {{count}} phép đo với hạng mục mới. Hạng mục vẫn được tạo với khối lượng đã đo.",
   }
 } as { translation: Record<string, string> };
 

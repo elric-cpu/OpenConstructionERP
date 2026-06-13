@@ -190,7 +190,9 @@ async def compute_boq_summary(
     active_count = 0
     latest_boq: dict[str, Any] | None = None
     latest_ts: float = float("-inf")
-    project_currency_by_id = {p.id: getattr(p, "currency", "EUR") or "EUR" for p in projects}
+    # Use the owning project's real currency, never a hardcoded "EUR"; stays
+    # empty when the project has no currency so the UI omits the symbol.
+    project_currency_by_id = {p.id: getattr(p, "currency", "") or "" for p in projects}
     project_name_by_id = {p.id: p.name for p in projects}
 
     for boq_id, project_id, boq_name, status_, updated_at in boq_meta_rows:
@@ -216,7 +218,7 @@ async def compute_boq_summary(
                 "name": boq_name or "-",
                 "project_id": str(project_id),
                 "project_name": project_name_by_id.get(project_id, "-"),
-                "currency": project_currency_by_id.get(project_id, "EUR"),
+                "currency": project_currency_by_id.get(project_id, ""),
                 "status": status_,
                 "updated_at": iso,
                 # Position counts + totals filled in below from the position pass.
@@ -294,7 +296,7 @@ async def compute_boq_summary(
                 "zero_price": 0,
             },
         )
-        currency = getattr(p, "currency", "EUR") or "EUR"
+        currency = getattr(p, "currency", "") or ""
         by_project.append(
             {
                 "project_id": str(p.id),
@@ -829,7 +831,10 @@ async def compute_budget_variance(
         return {"over_budget_count": 0, "top_over": []}
 
     project_name_by_id = {p.id: p.name for p in projects}
-    project_currency_by_id = {p.id: getattr(p, "currency", "EUR") or "EUR" for p in projects}
+    # Fall back to the owning project's real currency (never a hardcoded
+    # "EUR") when a budget row didn't stamp one; stays empty when the
+    # project itself has no currency so the UI renders without a symbol.
+    project_currency_by_id = {p.id: getattr(p, "currency", "") or "" for p in projects}
 
     stmt = select(
         ProjectBudget.project_id,
@@ -867,7 +872,7 @@ async def compute_budget_variance(
             {
                 "project_id": str(project_id),
                 "project_name": project_name_by_id.get(project_id, "-"),
-                "currency": bucket["currency"] or project_currency_by_id.get(project_id, "EUR"),
+                "currency": bucket["currency"] or project_currency_by_id.get(project_id, ""),
                 "planned": _money(bucket["planned"]),
                 "actual": _money(bucket["actual"]),
                 "variance": _money(variance),

@@ -56,7 +56,7 @@ import { hasLlmKey } from '@/features/ai-estimator/useAiReadiness';
 import { Button } from '@/shared/ui/Button';
 import { Card } from '@/shared/ui/Card';
 import { BIMModelPicker } from '@/shared/ui/BIMModelPicker';
-import { DismissibleInfo, Breadcrumb } from '@/shared/ui';
+import { DismissibleInfo, Breadcrumb, ModuleGuideButton } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 
 import {
@@ -67,6 +67,7 @@ import {
   type GroupSummary,
   type MatchSession,
 } from './api';
+import { matchGuide } from './matchGuide';
 import { QdrantHealthCard } from './QdrantHealthCard';
 import { MatchProgressCard, type MatchProgressStatus } from './MatchProgressCard';
 import { MatchDetailPanel } from './MatchDetailPanel';
@@ -807,6 +808,15 @@ export function MatchWizardFlow() {
           defaultValue:
             'A guided flow that turns a BIM model into a priced bill of quantities.',
         })}
+        actions={
+          // "How it works" guide - concept-first walkthrough of the
+          // matching flow. Lives in the page-header action cluster (the
+          // canonical spot a Tour / help button would sit); on this page
+          // it is the only member of that cluster.
+          <div className="flex flex-wrap items-center gap-2">
+            <ModuleGuideButton content={matchGuide} onCta={() => goto('model')} />
+          </div>
+        }
       />
 
       <DismissibleInfo
@@ -936,7 +946,7 @@ export function MatchWizardFlow() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[260px_1fr]">
         {/* The ONE step rail */}
-        <aside className="lg:sticky lg:top-4 lg:self-start">
+        <aside className="lg:sticky lg:top-4 lg:self-start" data-guide="match-rail">
           <Card padding="sm">
             <StageRail current={stage} furthest={furthest} onJump={jumpTo} />
           </Card>
@@ -1753,6 +1763,7 @@ export function MatchWizardFlow() {
               {stage !== 'apply' ? (
                 <Button
                   variant="primary"
+                  data-guide="match-next"
                   icon={<ArrowRight className="h-4 w-4" />}
                   iconPosition="right"
                   disabled={!canAdvance}

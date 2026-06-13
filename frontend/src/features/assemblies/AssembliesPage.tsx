@@ -9,7 +9,7 @@ import {
   Upload, Tag, Eye, Share2, LayoutGrid, Table2, ArrowUpDown, BarChart3, AlertCircle,
   CheckSquare, Square as SquareIcon, Library,
 } from 'lucide-react';
-import { Button, Card, Badge, DismissibleInfo, IntroRichText, EmptyState, SkeletonGrid, Breadcrumb } from '@/shared/ui';
+import { Button, Card, Badge, DismissibleInfo, IntroRichText, EmptyState, SkeletonGrid, Breadcrumb, ModuleGuideButton } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { apiGet, apiPost, apiDelete } from '@/shared/lib/api';
 import { getIntlLocale } from '@/shared/lib/formatters';
@@ -22,6 +22,7 @@ import {
   type AIGeneratedAssembly,
 } from './api';
 import { CreateAssemblyModal } from './CreateAssemblyPage';
+import { assembliesGuide } from './assembliesGuide';
 
 /* -- Sort + view types --------------------------------------------------- */
 
@@ -450,6 +451,7 @@ export function AssembliesPage() {
             {t('assemblies.import', { defaultValue: 'Import' })}
           </Button>
           <Button
+            data-guide="assemblies-ai-generate"
             variant="secondary"
             size="sm"
             icon={<Sparkles size={14} />}
@@ -458,6 +460,7 @@ export function AssembliesPage() {
             {t('assemblies.ai_generate', { defaultValue: 'AI Generate' })}
           </Button>
           <Button
+            data-guide="assemblies-new"
             variant="primary"
             size="sm"
             icon={<Plus size={14} />}
@@ -465,6 +468,14 @@ export function AssembliesPage() {
           >
             {t('assemblies.new_assembly', 'New Assembly')}
           </Button>
+          {/* "How it works" guide — explains the assembly recipe concept,
+              the component/factor model and the data-entry flow. Its closing
+              CTA opens the New Assembly modal. This module has no separate
+              guided Tour, so the Guide button stands on its own here. */}
+          <ModuleGuideButton
+            content={assembliesGuide}
+            onCta={() => setCreateModalOpen(true)}
+          />
           </>
         }
       />

@@ -1216,3 +1216,32 @@ class ProjectModulePresence(BaseModel):
     advisor: bool = False
     estimation_dashboard: bool = False
     erp_chat: bool = False
+
+
+class ProjectCardMetrics(BaseModel):
+    """Lightweight per-project KPI summary for the dashboard cards endpoint.
+
+    Mirrors the dict assembled by ``GET /dashboard/cards/`` exactly. Declaring
+    it as the endpoint ``response_model`` makes FastAPI validate and serialise
+    the output (so non-ASCII names and numeric fields are encoded safely)
+    instead of returning a raw ``list[dict]``. Timestamps are pre-serialised
+    ISO-8601 strings on the wire, so they are typed ``str | None`` here.
+    """
+
+    id: str
+    name: str
+    description: str = ""
+    region: str = ""
+    currency: str = ""
+    classification_standard: str = ""
+    status: str = "active"
+    phase: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    boq_total_value: float = 0.0
+    boq_count: int = 0
+    position_count: int = 0
+    open_tasks: int = 0
+    open_rfis: int = 0
+    safety_incidents: int = 0
+    progress_pct: float = 0.0

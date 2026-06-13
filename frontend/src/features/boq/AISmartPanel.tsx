@@ -89,11 +89,21 @@ export function AISmartPanel({
     if (!isOpen) return;
     apiGet<Record<string, unknown>>('/v1/ai/settings/')
       .then((s) => {
-        const hasKey =
+        // Prefer the backend's authoritative readiness flag. It already counts
+        // local runtimes (Ollama / vLLM) configured via base_url, which carry
+        // no api_key; fall back to scanning key flags + local base urls so an
+        // older payload without the flag still treats local setups as ready.
+        const hasCloudKey =
           !!s.anthropic_api_key_set || !!s.openai_api_key_set || !!s.gemini_api_key_set ||
           !!s.openrouter_api_key_set || !!s.mistral_api_key_set || !!s.groq_api_key_set ||
-          !!s.deepseek_api_key_set;
-        setAiConfigured(hasKey);
+          !!s.deepseek_api_key_set || !!s.together_api_key_set || !!s.fireworks_api_key_set ||
+          !!s.perplexity_api_key_set || !!s.cohere_api_key_set || !!s.ai21_api_key_set ||
+          !!s.xai_api_key_set || !!s.zhipu_api_key_set || !!s.baidu_api_key_set ||
+          !!s.yandex_api_key_set || !!s.gigachat_api_key_set || !!s.kimi_api_key_set;
+        const hasLocal = !!s.ollama_base_url || !!s.vllm_base_url;
+        const ready =
+          typeof s.ai_ready === 'boolean' ? s.ai_ready : hasCloudKey || hasLocal;
+        setAiConfigured(ready);
         setAiProvider((s.provider as string) || '');
       })
       .catch(() => setAiConfigured(false));

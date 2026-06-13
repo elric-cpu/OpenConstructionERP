@@ -148,6 +148,16 @@ export type { ProductTourStep, ProductTourProps, TourId } from './ProductTour';
 export { ModuleHelpButton } from './ModuleHelpButton';
 export type { ModuleHelpButtonProps } from './ModuleHelpButton';
 
+export { ModuleGuide } from './ModuleGuide';
+export type {
+  ModuleGuideProps,
+  ModuleGuideContent,
+  ModuleGuideSection,
+} from './ModuleGuide';
+
+export { ModuleGuideButton } from './ModuleGuideButton';
+export type { ModuleGuideButtonProps } from './ModuleGuideButton';
+
 export { GlobalProgress, useProgressStore } from './GlobalProgress';
 
 export { MoneyDisplay } from './MoneyDisplay';

@@ -6449,6 +6449,8 @@ def _get_position_co2(pos: Any) -> dict[str, Any] | None:
 )
 async def get_resource_summary(
     boq_id: uuid.UUID,
+    _user_id: CurrentUserId,
+    payload: CurrentUserPayload,
     session: SessionDep,
     service: BOQService = Depends(_get_service),
 ) -> ResourceSummaryResponse:
@@ -6466,6 +6468,7 @@ async def get_resource_summary(
         ResourceSummaryResponse with per-type counts/totals and a flat
         resource list sorted by total_cost descending.
     """
+    await _verify_boq_owner(session, boq_id, _user_id, payload)
     boq_data = await service.get_boq_with_positions(boq_id)
 
     # Aggregation key: (name_lower, type_lower) → accumulator
@@ -6725,6 +6728,8 @@ async def get_resource_summary(
 )
 async def enrich_resources(
     boq_id: uuid.UUID,
+    _user_id: CurrentUserId,
+    payload: CurrentUserPayload,
     session: SessionDep,
     service: BOQService = Depends(_get_service),
 ) -> dict[str, Any]:
@@ -6736,6 +6741,7 @@ async def enrich_resources(
 
     Returns count of enriched positions.
     """
+    await _verify_boq_owner(session, boq_id, _user_id, payload)
     boq_data = await service.get_boq_with_positions(boq_id)
     cost_repo = CostItemRepository(session)
     enriched_count = 0
@@ -6828,6 +6834,8 @@ async def list_epd_materials(
 )
 async def enrich_co2(
     boq_id: uuid.UUID,
+    _user_id: CurrentUserId,
+    payload: CurrentUserPayload,
     session: SessionDep,
     service: BOQService = Depends(_get_service),
 ) -> CO2EnrichResponse:
@@ -6837,6 +6845,7 @@ async def enrich_co2(
     calculates GWP totals, and stores results in position metadata.
     Skips positions that already have manually assigned CO2 data.
     """
+    await _verify_boq_owner(session, boq_id, _user_id, payload)
     boq_data = await service.get_boq_with_positions(boq_id)
     enriched = 0
     skipped = 0
@@ -6892,6 +6901,8 @@ async def assign_position_co2(
     position_id: uuid.UUID,
     payload: CO2AssignRequest,
     session: SessionDep,
+    _user_id: CurrentUserId,
+    auth_payload: CurrentUserPayload,
     service: BOQService = Depends(_get_service),
 ) -> dict[str, Any]:
     """Manually assign an EPD material to a BOQ position.
@@ -6910,6 +6921,8 @@ async def assign_position_co2(
     pos = await service.position_repo.get_by_id(position_id)
     if not pos:
         raise HTTPException(status_code=404, detail=translate("errors.position_not_found", locale=get_locale()))
+
+    await _verify_boq_owner(session, pos.boq_id, _user_id, auth_payload)
 
     meta = dict(pos.metadata_) if pos.metadata_ else {}
     qty = float(pos.quantity) if pos.quantity else 0.0
@@ -6940,6 +6953,9 @@ async def assign_position_co2(
 )
 async def get_sustainability(
     boq_id: uuid.UUID,
+    _user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
     area_m2: float = Query(default=0.0, ge=0.0, description="Project gross floor area in m2"),
     service: BOQService = Depends(_get_service),
 ) -> SustainabilityResponse:
@@ -6951,6 +6967,7 @@ async def get_sustainability(
 
     Returns per-position detail, category breakdown, benchmarks, and EU CPR compliance.
     """
+    await _verify_boq_owner(session, boq_id, _user_id, payload)
     boq_data = await service.get_boq_with_positions(boq_id)
 
     positions_detail: list[PositionCO2Detail] = []
@@ -7096,6 +7113,9 @@ async def get_sustainability(
 )
 async def get_cost_breakdown(
     boq_id: uuid.UUID,
+    _user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
     service: BOQService = Depends(_get_service),
 ) -> CostBreakdownResponse:
     """Get a cost breakdown for a BOQ split by resource category.
@@ -7109,6 +7129,7 @@ async def get_cost_breakdown(
         CostBreakdownResponse with direct cost categories, markup lines,
         grand total, and top 10 most expensive resources.
     """
+    await _verify_boq_owner(session, boq_id, _user_id, payload)
     return await service.get_cost_breakdown(boq_id)
 
 
@@ -7122,6 +7143,9 @@ async def get_cost_breakdown(
 )
 async def get_boq_statistics(
     boq_id: uuid.UUID,
+    _user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
     service: BOQService = Depends(_get_service),
 ) -> dict:
     """Get aggregated statistics for a BOQ.
@@ -7130,7 +7154,7 @@ async def get_boq_statistics(
     unit rate, completion percentage, unit/source breakdowns, and
     classification coverage.
     """
-
+    await _verify_boq_owner(session, boq_id, _user_id, payload)
     result = await service.get_statistics(boq_id)
     return result.model_dump()
 
@@ -7146,6 +7170,9 @@ async def get_boq_statistics(
 )
 async def get_sensitivity(
     boq_id: uuid.UUID,
+    _user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
     variation_pct: float = Query(default=10.0, gt=0.0, le=100.0, description="Cost variation percentage"),
     top_n: int = Query(default=15, ge=1, le=50, description="Number of top positions to return"),
     service: BOQService = Depends(_get_service),
@@ -7164,6 +7191,7 @@ async def get_sensitivity(
     Returns:
         SensitivityResponse with base_total, variation_pct, and ranked items.
     """
+    await _verify_boq_owner(session, boq_id, _user_id, payload)
     boq_data = await service.get_boq_with_positions(boq_id)
 
     # Filter to non-section positions (positions that have a unit)
@@ -7222,6 +7250,9 @@ async def get_sensitivity(
 )
 async def get_estimate_classification(
     boq_id: uuid.UUID,
+    _user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
     service: BOQService = Depends(_get_service),
 ) -> EstimateClassificationResponse:
     """Get the AACE 18R-97 estimate classification for a BOQ.
@@ -7233,6 +7264,7 @@ async def get_estimate_classification(
         EstimateClassificationResponse with class, accuracy range, definition
         level, methodology description, and underlying metrics.
     """
+    await _verify_boq_owner(session, boq_id, _user_id, payload)
     return await service.get_estimate_classification(boq_id)
 
 
@@ -7269,6 +7301,9 @@ def _pert_sample(low: float, mode: float, high: float) -> float:
 )
 async def get_cost_risk(
     boq_id: uuid.UUID,
+    _user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
     iterations: int = Query(default=1000, ge=100, le=10000, description="Number of Monte Carlo iterations"),
     optimistic_pct: float = Query(default=15.0, ge=0.0, le=50.0, description="Optimistic cost reduction %"),
     pessimistic_pct: float = Query(default=25.0, ge=0.0, le=100.0, description="Pessimistic cost increase %"),
@@ -7297,6 +7332,7 @@ async def get_cost_risk(
     Returns:
         CostRiskResponse with percentiles, histogram, contingency, and risk drivers.
     """
+    await _verify_boq_owner(session, boq_id, _user_id, payload)
     boq_data = await service.get_boq_with_positions(boq_id)
 
     # Filter to non-section positions (positions that have a unit)
@@ -7439,9 +7475,13 @@ async def get_cost_risk(
 )
 async def list_custom_columns(
     boq_id: uuid.UUID,
+    _user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
     service: BOQService = Depends(_get_service),
 ) -> list[dict]:
     """List custom column definitions for a BOQ."""
+    await _verify_boq_owner(session, boq_id, _user_id, payload)
     boq = await service.get_boq(boq_id)
     meta = boq.metadata_ if isinstance(boq.metadata_, dict) else {}
     return meta.get("custom_columns", [])
@@ -7670,9 +7710,13 @@ def _coerce_variable_value(var: BOQVariable) -> str | float | int | None:
 )
 async def list_boq_variables(
     boq_id: uuid.UUID,
+    _user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
     service: BOQService = Depends(_get_service),
 ) -> list[dict]:
     """Return the variables registered on this BOQ."""
+    await _verify_boq_owner(session, boq_id, _user_id, payload)
     boq = await service.get_boq(boq_id)
     meta = boq.metadata_ if isinstance(boq.metadata_, dict) else {}
     raw = meta.get("variables", [])
@@ -7943,6 +7987,7 @@ async def boq_position_similar(
     position_id: uuid.UUID,
     session: SessionDep,
     _user_id: CurrentUserId,
+    payload: CurrentUserPayload,
     limit: int = Query(default=10, ge=1, le=100),
     cross_project: bool = Query(default=True),
 ) -> dict[str, Any]:
@@ -7967,6 +8012,11 @@ async def boq_position_similar(
     row = (await session.execute(stmt)).scalar_one_or_none()
     if row is None:
         raise HTTPException(status_code=404, detail=translate("errors.position_not_found", locale=get_locale()))
+
+    # Cross-tenant guard: you may only seed a similarity search from a
+    # position whose BOQ you own (or are a project member of). Without this
+    # any caller could probe arbitrary position ids and trigger a search.
+    await _verify_boq_owner(session, row.boq_id, _user_id, payload)
 
     project_id = str(row.boq.project_id) if row.boq is not None and row.boq.project_id is not None else None
     hits = await find_similar(

@@ -791,6 +791,33 @@ class CostCatalogService:
             )
         return catalog
 
+    async def get_owned_catalog(
+        self,
+        catalog_id: uuid.UUID,
+        *,
+        owner_id: uuid.UUID | None,
+        is_admin: bool = False,
+    ) -> CostCatalog:
+        """Get a catalog the caller is allowed to write to. Raises 404 otherwise.
+
+        Ownership is checked against ``CostCatalog.created_by`` (the same
+        ownership model used across the codebase). A non-admin caller who is
+        not the owner gets a 404 - not a 403 - so the response is
+        indistinguishable from a missing catalog and cannot be used as a
+        UUID-existence oracle, matching ``verify_project_access``. Admins
+        bypass the ownership check.
+        """
+        catalog = await self.get_catalog(catalog_id)
+        if is_admin:
+            return catalog
+        if owner_id is not None and catalog.created_by == owner_id:
+            return catalog
+        # Mask access-denied as not-found to avoid leaking existence.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Cost catalog not found",
+        )
+
     async def count_items(self, catalog_id: uuid.UUID) -> int:
         """Count ACTIVE items currently attached to the catalog."""
         result = await self.session.execute(
@@ -801,8 +828,21 @@ class CostCatalogService:
         )
         return int(result.scalar_one())
 
-    async def list_catalogs(self) -> list[tuple[CostCatalog, int]]:
-        """List all catalogs with their active item count (single query)."""
+    async def list_catalogs(
+        self,
+        *,
+        owner_id: uuid.UUID | None = None,
+        is_admin: bool = False,
+    ) -> list[tuple[CostCatalog, int]]:
+        """List catalogs with their active item count (single query).
+
+        Ownership scoping (mirrors the project access model elsewhere in the
+        codebase): a non-admin caller sees ONLY the catalogs they created
+        (``CostCatalog.created_by == owner_id``). Admins (and callers passed
+        ``is_admin=True``) see every catalog. When ``owner_id`` is ``None``
+        and the caller is not an admin the result is empty rather than
+        leaking other users' catalogs.
+        """
         stmt = (
             select(CostCatalog, func.count(CostItem.id))
             .outerjoin(
@@ -812,6 +852,10 @@ class CostCatalogService:
             .group_by(CostCatalog.id)
             .order_by(CostCatalog.created_at.desc())
         )
+        if not is_admin:
+            # Non-admins are restricted to their own catalogs. A missing
+            # owner id (unparseable / absent subject) sees nothing.
+            stmt = stmt.where(CostCatalog.created_by == owner_id)
         result = await self.session.execute(stmt)
         return [(catalog, int(count)) for catalog, count in result.all()]
 

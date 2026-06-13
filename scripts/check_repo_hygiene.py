@@ -48,6 +48,7 @@ DENY_PATTERNS = [
     r"(^|/)qa/",
     r"(^|/)qa-wave/",
     r"(^|/)qa-sweep/",
+    r"(^|/)qa-personas/",
     r"(^|/)qa-screenshots/",
     r"(^|/)scripts/[^/]*_report\.(json|txt)$",
     r"(^|/)[^/]*__audit_report\.md$",

@@ -33,7 +33,7 @@ import {
   Pencil,
   AlertTriangle,
 } from 'lucide-react';
-import { Button, Card, Badge, EmptyState, SkeletonTable, CountryFlag, CountryFlagBackdrop, Breadcrumb, ConfirmDialog, DismissibleInfo, IntroRichText } from '@/shared/ui';
+import { Button, Card, Badge, EmptyState, SkeletonTable, CountryFlag, CountryFlagBackdrop, Breadcrumb, ConfirmDialog, DismissibleInfo, IntroRichText, ModuleGuideButton } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { apiGet, apiPost, apiPatch, apiDelete, triggerDownload, extractErrorMessageFromBody } from '@/shared/lib/api';
@@ -47,6 +47,7 @@ import type { CostItemMetadata, CertaintyBadge as CertaintyBadgeData, CostCatalo
 import { buildBoqPositionDraft, type FullCostItem } from './addToBoqHelpers';
 import { fetchUsageCounts, fetchCostCatalogs } from './api';
 import { CatalogsSection } from './CatalogsSection';
+import { costsGuide } from './costsGuide';
 import { UsageBadge } from './UsageBadge';
 import { EscalationCalculator } from './EscalationCalculator';
 import { RegionalAdjustPanel } from './RegionalAdjustPanel';
@@ -1029,6 +1030,10 @@ export function CostsPage() {
         }
         actions={
           <>
+            {/* "How it works" guide — explains the cost database concepts and
+                the add-item flow. Sits at the head of the action cluster (this
+                page has no UI Tour button); its closing CTA opens Add Item. */}
+            <ModuleGuideButton content={costsGuide} onCta={() => setShowCreateItem(true)} />
             {total > 0 && (
               <Button
                 variant="secondary"
@@ -1069,6 +1074,7 @@ export function CostsPage() {
               size="sm"
               icon={<Plus size={14} />}
               onClick={() => setShowCreateItem(true)}
+              data-guide="costs-add-item"
             >
               {t('costs.add_item', { defaultValue: 'Add Item' })}
             </Button>
@@ -1091,6 +1097,7 @@ export function CostsPage() {
               size="sm"
               icon={<Upload size={14} />}
               onClick={() => navigate('/costs/import')}
+              data-guide="costs-import"
             >
               {t('costs.import_database', { defaultValue: 'Import' })}
             </Button>
@@ -1125,18 +1132,22 @@ export function CostsPage() {
       )}
 
       {/* Region Tabs */}
-      <RegionTabBar
-        regions={loadedRegions ?? []}
-        regionStats={regionStats ?? []}
-        activeRegion={region}
-        onChangeRegion={handleRegionChange}
-        totalItemCount={total}
-        isLoadingRegions={isLoadingRegions}
-      />
+      <div data-guide="costs-region-tabs">
+        <RegionTabBar
+          regions={loadedRegions ?? []}
+          regionStats={regionStats ?? []}
+          activeRegion={region}
+          onChangeRegion={handleRegionChange}
+          totalItemCount={total}
+          isLoadingRegions={isLoadingRegions}
+        />
+      </div>
 
       {/* My catalogs - user-owned price books (create / edit / delete /
           export, click to filter the items list to one catalog) */}
-      <CatalogsSection selectedId={catalogId} onSelect={handleSelectCatalog} />
+      <div data-guide="costs-catalogs">
+        <CatalogsSection selectedId={catalogId} onSelect={handleSelectCatalog} />
+      </div>
 
       {/* Favourites & Recent Quick Filters */}
       <div className="mb-4 flex items-center gap-2">
@@ -1211,7 +1222,7 @@ export function CostsPage() {
       <Card padding="none" className="mb-6">
         <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-end">
           {/* Search input + AI toggle */}
-          <div className="relative flex-1 flex gap-2">
+          <div className="relative flex-1 flex gap-2" data-guide="costs-search">
             <div className="relative flex-1">
               <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-content-tertiary">
                 <Search size={16} />

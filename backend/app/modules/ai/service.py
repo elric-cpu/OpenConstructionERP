@@ -485,6 +485,34 @@ def _build_settings_response(settings: AISettings) -> AISettingsResponse:
         str(raw_vllm_base_url).strip() if isinstance(raw_vllm_base_url, str) and raw_vllm_base_url.strip() else None
     )
 
+    # Authoritative readiness: any usable cloud key OR a configured local
+    # runtime (Ollama / vLLM). Local providers carry no api_key by design, so
+    # a present base_url is what marks them ready - the "if not api_key" gate
+    # used for cloud providers must NOT mark a local provider unconfigured.
+    _CLOUD_KEY_ATTRS = (
+        "anthropic_api_key",
+        "openai_api_key",
+        "gemini_api_key",
+        "kimi_api_key",
+        "openrouter_api_key",
+        "mistral_api_key",
+        "groq_api_key",
+        "deepseek_api_key",
+        "together_api_key",
+        "fireworks_api_key",
+        "perplexity_api_key",
+        "cohere_api_key",
+        "ai21_api_key",
+        "xai_api_key",
+        "zhipu_api_key",
+        "baidu_api_key",
+        "yandex_api_key",
+        "gigachat_api_key",
+    )
+    has_cloud_key = any(_usable(getattr(settings, attr, None)) for attr in _CLOUD_KEY_ATTRS)
+    has_local_provider = bool(ollama_url) or bool(vllm_url)
+    ai_ready = has_cloud_key or has_local_provider
+
     return AISettingsResponse(
         id=settings.id,
         user_id=settings.user_id,
@@ -508,6 +536,7 @@ def _build_settings_response(settings: AISettings) -> AISettingsResponse:
         gigachat_api_key_set=_usable(getattr(settings, "gigachat_api_key", None)),
         ollama_base_url=ollama_url,
         vllm_base_url=vllm_url,
+        ai_ready=ai_ready,
         preferred_model=settings.preferred_model,
         model_overrides=model_overrides,
         default_models=dict(DEFAULT_MODELS),

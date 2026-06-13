@@ -102,6 +102,12 @@ class AISettingsResponse(BaseModel):
     # Echo back any saved self-hosted endpoints so the UI can prefill them.
     ollama_base_url: str | None = None  # saved Ollama host root
     vllm_base_url: str | None = None  # saved vLLM host root
+    # Authoritative "is AI usable" flag computed server-side. True when a
+    # usable cloud key is set OR a local provider (Ollama / vLLM) is configured
+    # via its base_url - local runtimes legitimately need no api_key. The
+    # frontend reads this instead of re-deriving readiness from individual
+    # key flags, so chat / estimate gating stays in sync with the backend.
+    ai_ready: bool = False
     preferred_model: str
     # Effective per-provider model id the platform will send (override if the
     # user set one, otherwise the built-in default). Drives the editable

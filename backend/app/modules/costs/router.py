@@ -2501,11 +2501,19 @@ async def create_cost_catalog(
     dependencies=[Depends(RequirePermission("costs.list"))],
 )
 async def list_cost_catalogs(
-    _user_id: CurrentUserId,
+    user: CurrentUserPayload,
     service: CostCatalogService = Depends(_get_catalog_service),
 ) -> list[CostCatalogResponse]:
-    """List all cost catalogs with their active item counts."""
-    return [_catalog_response(catalog, count) for catalog, count in await service.list_catalogs()]
+    """List the caller's own cost catalogs with their active item counts.
+
+    Scoped by ownership (``CostCatalog.created_by``): a non-admin caller
+    sees only the catalogs they created; admins see all. This prevents
+    cross-tenant disclosure of other users' catalog names / item counts.
+    """
+    owner_id = _parse_user_uuid((user or {}).get("sub"))
+    is_admin = (user or {}).get("role") == "admin"
+    catalogs = await service.list_catalogs(owner_id=owner_id, is_admin=is_admin)
+    return [_catalog_response(catalog, count) for catalog, count in catalogs]
 
 
 @router.patch(
@@ -3171,7 +3179,12 @@ def _validate_cost_upload(content: bytes, filename: str) -> bool:
     signature = detect_signature(head)
     is_csv = filename.endswith(".csv")
     if is_csv:
-        if signature is not None and signature not in {"xml"}:
+        # A genuine CSV is plain text and carries no magic-byte signature
+        # (``detect`` returns None). ANY recognised signature - including
+        # "xml" - means the .csv is really a binary / structured container
+        # with a renamed extension, so reject it. XML payloads belong on the
+        # .xlsx path, not here.
+        if signature is not None:
             raise HTTPException(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
                 detail=f"File extension is .csv but the content is a {signature} container. Re-upload as a real CSV.",
@@ -3300,7 +3313,7 @@ async def preview_cost_file(
     dependencies=[Depends(RequirePermission("costs.create"))],
 )
 async def import_cost_file(
-    user_id: CurrentUserId,
+    user: CurrentUserPayload,
     file: UploadFile = File(..., description="Excel (.xlsx) or CSV (.csv) file"),
     column_map: str | None = Form(
         default=None,
@@ -3436,6 +3449,9 @@ async def import_cost_file(
             detail="Pass either catalog_id (existing catalog) or catalog_name (new catalog), not both.",
         )
 
+    owner_uuid = _parse_user_uuid((user or {}).get("sub"))
+    is_admin = (user or {}).get("role") == "admin"
+
     catalog: Any = None
     if catalog_id:
         try:
@@ -3445,7 +3461,14 @@ async def import_cost_file(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"catalog_id is not a valid UUID: {catalog_id!r}",
             ) from exc
-        catalog = await catalog_service.get_catalog(catalog_uuid)
+        # Ownership gate: importing into an EXISTING catalog requires the
+        # caller to own it (or be an admin). A non-owner gets a 404 so the
+        # catalog's existence is not leaked, matching the module convention.
+        catalog = await catalog_service.get_owned_catalog(
+            catalog_uuid,
+            owner_id=owner_uuid,
+            is_admin=is_admin,
+        )
     elif catalog_name and catalog_name.strip():
         file_has_currency = "currency" in mapped_keys
         resolved_currency = (catalog_currency or "").strip().upper()
@@ -3481,7 +3504,7 @@ async def import_cost_file(
             ) from exc
         catalog = await catalog_service.create_catalog(
             create_payload,
-            created_by=_parse_user_uuid(user_id),
+            created_by=owner_uuid,
             source="import",
         )
 

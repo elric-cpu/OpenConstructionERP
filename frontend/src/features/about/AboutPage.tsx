@@ -400,8 +400,18 @@ export function AboutPage() {
                   loading="lazy"
                 />
                 <div className="min-w-0 flex-1">
-                  <h3 className="text-base font-bold text-content-primary leading-tight">
+                  <h3 className="flex items-center gap-1.5 text-base font-bold text-content-primary leading-tight">
                     {t('about.founder_name', { defaultValue: 'Artem Boiko' })}
+                    <a
+                      href="https://www.linkedin.com/in/boikoartem/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-oe-blue transition-colors hover:bg-oe-blue/10"
+                      title={t('about.founder_linkedin', { defaultValue: 'Artem Boiko on LinkedIn' })}
+                      aria-label={t('about.founder_linkedin', { defaultValue: 'Artem Boiko on LinkedIn' })}
+                    >
+                      <Linkedin size={15} />
+                    </a>
                   </h3>
                   <p className="text-xs text-oe-blue font-medium mt-0.5">
                     {t('about.founder_role', { defaultValue: 'Consultant for Automation & Data in Construction' })}

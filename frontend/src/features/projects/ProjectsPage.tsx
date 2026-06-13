@@ -8,7 +8,7 @@ import {
   Building2, DollarSign, Euro, PoundSterling, Globe2, MapPin, Layers, AlertTriangle,
 } from 'lucide-react';
 import { formatDistanceToNowStrict, isValid as isValidDate, parseISO } from 'date-fns';
-import { Button, Card, Badge, EmptyState, Skeleton, SkeletonGrid, Breadcrumb, ProjectMap, ProjectWeather, FileTypeChips, ConfirmDialog, type LatLng } from '@/shared/ui';
+import { Button, Card, Badge, EmptyState, Skeleton, SkeletonGrid, Breadcrumb, ProjectMap, ProjectWeather, FileTypeChips, ConfirmDialog, ModuleGuideButton, type LatLng } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { DismissibleInfo, IntroRichText } from '@/shared/ui/DismissibleInfo';
 import { useWidgetSettingsStore } from '@/stores/useWidgetSettingsStore';
@@ -19,6 +19,7 @@ import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useLocalStorage } from '@/shared/hooks/useLocalStorage';
 import { CreateProjectModal } from './CreateProjectPage';
+import { projectsGuide } from './projectsGuide';
 import { BIMConverterStatusBanner } from '../bim/BIMConverterStatusBanner';
 
 interface ProjectBOQStats {
@@ -442,14 +443,24 @@ export function ProjectsPage() {
             : t('common.loading', { defaultValue: 'Loading...' })
         }
         actions={
-          <Button
-            variant="primary"
-            size="sm"
-            icon={<FolderPlus size={16} />}
-            onClick={() => setCreateModalOpen(true)}
-          >
-            {t('projects.new_project')}
-          </Button>
+          <div className="flex items-center gap-2">
+            {/* "How it works" guide — explains what a project is and how to
+                fill it in. Sibling to the primary action so the header reads
+                as one control cluster. Its closing CTA opens the create
+                modal, matching the guide's "Create your first project" call. */}
+            <ModuleGuideButton
+              content={projectsGuide}
+              onCta={() => setCreateModalOpen(true)}
+            />
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<FolderPlus size={16} />}
+              onClick={() => setCreateModalOpen(true)}
+            >
+              {t('projects.new_project')}
+            </Button>
+          </div>
         }
       />
 

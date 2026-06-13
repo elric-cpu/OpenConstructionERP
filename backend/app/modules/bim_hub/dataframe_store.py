@@ -18,6 +18,7 @@ Dependencies:
 from __future__ import annotations
 
 import logging
+import math
 import re
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,24 @@ logger = logging.getLogger(__name__)
 
 # Default storage root -- matches existing BIM file storage layout.
 _DATA_ROOT = Path("data/bim")
+
+
+def _json_safe(value: Any) -> Any:
+    """Recursively replace NaN / Infinity floats with None.
+
+    Parquet numeric columns can hold NaN or +/-Infinity (e.g. a divide-by-zero
+    derived quantity). These are valid Python floats but are NOT valid in
+    strict JSON, so they make ``json.dumps(..., allow_nan=False)`` and the
+    default FastAPI response encoder raise. Converting them to ``None`` keeps
+    the row JSON-serialisable while leaving every finite value untouched.
+    """
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    return value
 
 
 class ParquetWriteError(RuntimeError):
@@ -248,7 +267,7 @@ def query_parquet(
     try:
         result = conn.execute(sql, params).fetchall()
         col_names = [desc[0] for desc in conn.description]
-        return [dict(zip(col_names, row, strict=False)) for row in result]
+        return [_json_safe(dict(zip(col_names, row, strict=False))) for row in result]
     finally:
         conn.close()
 
@@ -348,4 +367,4 @@ def _fallback_pyarrow_query(
             elif op == "IS NULL":
                 rows = [r for r in rows if r.get(col) is None]
 
-    return rows[:limit]
+    return [_json_safe(r) for r in rows[:limit]]

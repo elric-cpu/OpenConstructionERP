@@ -48,6 +48,10 @@ from app.modules.costs.service import CostCatalogService, CostItemService
 from tests._pg import transactional_session
 
 _USER_ID = str(uuid.uuid4())
+# JWT-claims payload for the endpoints that now take ``CurrentUserPayload``
+# (the owner-scoped catalog list + file import read ``sub`` and ``role`` off
+# the dict). Endpoints still taking ``CurrentUserId`` keep the bare ``_USER_ID``.
+_USER_PAYLOAD = {"sub": _USER_ID, "role": "admin"}
 
 
 @pytest_asyncio.fixture
@@ -75,7 +79,7 @@ async def _import_file(
     ``Form(...)`` sentinel objects, so this wrapper always passes real values.
     """
     return await import_cost_file(
-        _USER_ID,
+        _USER_PAYLOAD,
         file=_upload(content),
         column_map=column_map,
         catalog_id=catalog_id,
@@ -120,7 +124,7 @@ async def test_create_and_list_catalogs(session: AsyncSession) -> None:
     )
     await item_service.delete_cost_item(inactive.id)
 
-    listed = await list_cost_catalogs(_USER_ID, service=catalog_service)
+    listed = await list_cost_catalogs(_USER_PAYLOAD, service=catalog_service)
     assert len(listed) == 1
     assert listed[0].id == created.id
     assert listed[0].item_count == 1

@@ -13,8 +13,9 @@ import { useQueries } from '@tanstack/react-query';
 import { ArrowLeft, ChevronRight, HardDrive, UploadCloud, Search, Send } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import clsx from 'clsx';
-import { EmptyState } from '@/shared/ui';
+import { EmptyState, ModuleGuideButton } from '@/shared/ui';
 import { Breadcrumb } from '@/shared/ui/Breadcrumb';
+import { filesGuide } from './filesGuide';
 import { fetchTagsForFile } from '@/features/file-tags/api';
 import { fileTagsKeys } from '@/features/file-tags/hooks';
 import type { TagRecord } from '@/features/file-tags/types';
@@ -574,6 +575,13 @@ export function FileManagerPage() {
         </nav>
 
         <div className="flex items-center gap-2">
+          {/* "How it works" guide — concepts + how to upload and feed
+              takeoff/BOQ. Sits in the page action cluster; its closing CTA
+              opens the upload dialog. */}
+          <ModuleGuideButton
+            content={filesGuide}
+            onCta={() => handleOpenUpload(selectedKind)}
+          />
           {/* W10 — cross-project search */}
           <Link
             to="/files/search"
@@ -588,6 +596,7 @@ export function FileManagerPage() {
           {/* W7 — transmittal log entry point */}
           <Link
             to="/files/transmittals"
+            data-guide="files-transmittal-link"
             className="hidden sm:inline-flex items-center gap-1.5 h-9 px-2.5 rounded-lg text-xs font-medium text-content-secondary hover:text-content-primary hover:bg-surface-secondary transition-colors"
             title={t('files.transmittals.open_log', { defaultValue: 'Transmittal log' })}
           >
@@ -598,6 +607,7 @@ export function FileManagerPage() {
           </Link>
           <button
             type="button"
+            data-guide="files-upload-button"
             onClick={() => handleOpenUpload(selectedKind)}
             className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-semibold bg-oe-blue text-white hover:bg-oe-blue-hover transition-colors shrink-0"
           >

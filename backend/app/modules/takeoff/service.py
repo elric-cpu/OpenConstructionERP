@@ -1311,14 +1311,14 @@ class TakeoffService:
             )
 
         try:
-            import pymupdf  # noqa: PLC0415 - lazy: optional 'cv' extra, absent on default installs
+            import pymupdf  # noqa: PLC0415 - base dep; lazy-imported so a broken wheel degrades to a clear 400
         except ImportError as exc:
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    "Vector recognition needs PyMuPDF, which is part of the optional 'cv' "
-                    "extra. Install it with `pip install openconstructionerp[cv]`, or use the "
-                    "online AI analysis instead."
+                    "Vector recognition could not load its PDF reader (PyMuPDF). It ships with "
+                    "the platform, so this usually means a broken install. Reinstall "
+                    "openconstructionerp, or use the online AI analysis instead."
                 ),
             ) from exc
 

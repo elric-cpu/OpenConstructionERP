@@ -5,6 +5,27 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.0.0] - 2026-06-13
+
+### Added
+
+- In-app guides for every major module. A help button opens a short panel that explains what the module is for, walks through the main steps and lists a few tips, translated like the rest of the interface. Guides ship for the bill of quantities, BIM viewer, takeoff, DWG takeoff, cost database, catalogue, assemblies, element matching, the AI estimator, projects, files, the dashboard, cost benchmarks and project intelligence.
+
+### Fixed
+
+- DWG takeoff drawings on a fresh install. A drawing that was uploaded but not yet converted reported the wrong state and could stay stuck, so the viewer now resolves the real status and a fresh install seeds a working example drawing.
+- Deleting a bill of quantities position now clears the reference to it from any DWG takeoff annotation or matched element, so nothing keeps pointing at a row that no longer exists.
+- Listing the files in a project no longer fails on some installs because of a missing import.
+- The bill of quantities editor now shows the actual error when validation or another action fails, instead of failing with no message.
+
+### Security
+
+- Closed cross-tenant gaps on the bill of quantities analytics and enrichment endpoints and on the AI estimator run list, so one account cannot read or change another account's data by guessing an identifier. Regression tests lock the owner checks in place.
+
+### Changed
+
+- Filled the interface strings that were missing in several languages and translated the ones that still showed English, so the whole interface reads in the chosen language.
+
 ## [7.10.0] - 2026-06-13
 
 ### Changed

@@ -388,6 +388,79 @@ async def test_link_annotation_to_boq_cross_tenant_is_404(client: AsyncClient) -
     assert resp.status_code == 404, resp.text
 
 
+async def _seed_boq_position_directly(project_id: str) -> str:
+    """Insert a BOQ with one position directly and return the position id."""
+    from app.database import async_session_factory
+    from app.modules.boq.models import BOQ, Position
+
+    async with async_session_factory() as session:
+        boq = BOQ(project_id=uuid.UUID(project_id), name="Cross-project BOQ")
+        session.add(boq)
+        await session.flush()
+        pos = Position(
+            boq_id=boq.id,
+            ordinal="01.001",
+            description="Concrete wall",
+            unit="m2",
+            quantity="10",
+            unit_rate="25",
+            total="250",
+        )
+        session.add(pos)
+        await session.flush()
+        pos_id = str(pos.id)
+        await session.commit()
+        return pos_id
+
+
+@pytest.mark.asyncio
+async def test_link_annotation_to_other_project_position_is_404(client: AsyncClient) -> None:
+    """An annotation may only link to a BOQ position in its OWN project.
+
+    Distinct from the cross-tenant gate above: here the SAME user owns both
+    projects, but linking a project-1 annotation to a project-2 BOQ position
+    must still 404. _assert_position_in_project rejects the foreign-project
+    position so push_quantity can never overwrite a position that belongs to a
+    different project's BOQ.
+    """
+    a_headers, a_id = await _register_user(client, admin=False)
+
+    project_1 = await _create_project(client, a_headers, name="Link P1")
+    drawing_1 = await _seed_drawing_directly(project_1, created_by=a_id)
+    ann_id = await _seed_annotation_directly(project_1, drawing_1, created_by=a_id)
+
+    project_2 = await _create_project(client, a_headers, name="Link P2")
+    foreign_pos_id = await _seed_boq_position_directly(project_2)
+
+    resp = await client.post(
+        f"/api/v1/dwg-takeoff/annotations/{ann_id}/link-boq/",
+        json={"position_id": foreign_pos_id, "push_quantity": True},
+        headers=a_headers,
+    )
+    assert resp.status_code == 404, resp.text
+
+
+@pytest.mark.asyncio
+async def test_link_annotation_to_same_project_position_succeeds(client: AsyncClient) -> None:
+    """Control: linking to a position in the annotation's OWN project works,
+    proving the cross-project guard does not blanket-reject legitimate links.
+    """
+    a_headers, a_id = await _register_user(client, admin=False)
+
+    project = await _create_project(client, a_headers, name="Link OK")
+    drawing_id = await _seed_drawing_directly(project, created_by=a_id)
+    ann_id = await _seed_annotation_directly(project, drawing_id, created_by=a_id)
+    own_pos_id = await _seed_boq_position_directly(project)
+
+    resp = await client.post(
+        f"/api/v1/dwg-takeoff/annotations/{ann_id}/link-boq/",
+        json={"position_id": own_pos_id, "push_quantity": False},
+        headers=a_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["linked_boq_position_id"] == own_pos_id
+
+
 # ── IDOR — entity groups ───────────────────────────────────────────────────
 
 

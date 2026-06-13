@@ -2670,6 +2670,14 @@ class MatchElementsService:
         # Cross-project library - write a template row when requested.
         # Only meaningful when we have a real cost-item id to link to.
         if spec.save_to_template_library and row.signature and cid is not None:
+            # The unique constraint is (tenant_id, signature) and tenant_id
+            # is always NULL here, so at most one template row can exist per
+            # signature. We must therefore reuse an existing row rather than
+            # insert a per-user duplicate (which would hit the constraint).
+            # A fresh row is stamped with the confirming user (created_by);
+            # a pre-existing row keeps its original owner and we only bump
+            # its counters. The read paths filter by created_by, so a user
+            # never sees a row another user owns.
             existing = (
                 await db.execute(
                     select(MatchTemplate).where(
@@ -2679,8 +2687,13 @@ class MatchElementsService:
             ).scalar_one_or_none()
             if existing is None:
                 sess = await db.get(MatchSession, session_id)
+                # Ownership is carried by created_by, not tenant_id. The
+                # tenant_id column never partitions data in this app (it
+                # is the empty-string non-mechanism), so the library is
+                # scoped by the confirming user instead - that is what the
+                # /templates and /templates/lookup read paths filter on.
                 tmpl = MatchTemplate(
-                    tenant_id=None,  # Phase A.10 wires tenant resolution
+                    tenant_id=None,
                     signature=row.signature,
                     label=row.group_key,
                     cwicr_position_id=cid,
@@ -2799,14 +2812,45 @@ class MatchElementsService:
 
     # ── Templates ─────────────────────────────────────────────────────
 
+    async def _is_admin(self, db: AsyncSession, user_id: uuid.UUID | None) -> bool:
+        """Return True when ``user_id`` resolves to an active admin user.
+
+        Mirrors the admin bypass in ``verify_project_access`` so the
+        template library follows the same ownership-plus-admin policy used
+        everywhere else. Never raises: a lookup failure is treated as
+        "not an admin" so the caller still gets their own rows.
+        """
+        if user_id is None:
+            return False
+        try:
+            from app.modules.users.repository import UserRepository
+
+            user = await UserRepository(db).get_by_id(user_id)
+        except Exception:  # noqa: BLE001 - defensive, fall back to non-admin
+            logger.exception("Admin-role lookup failed during template access check")
+            return False
+        return user is not None and getattr(user, "role", "") == "admin"
+
     async def list_templates(
         self,
         db: AsyncSession,
-        tenant_id: uuid.UUID | None,
+        owner_id: uuid.UUID | None,
     ) -> list[schemas.TemplateRead]:
+        """List the caller's own templates (admins see all).
+
+        The cross-project library is scoped by ``created_by`` - the real
+        ownership column - so an estimator only sees the mappings they
+        confirmed, never another user's. Admins bypass the filter to keep
+        the library administrable. ``owner_id=None`` is treated as an
+        anonymous caller and returns nothing rather than the whole table.
+        """
         stmt = select(MatchTemplate)
-        if tenant_id is not None:
-            stmt = stmt.where(MatchTemplate.tenant_id == tenant_id)
+        if not await self._is_admin(db, owner_id):
+            # Non-admins (and anonymous callers) only ever see their own
+            # rows. An anonymous caller (owner_id is None) matches no row
+            # because created_by is never None for templates written
+            # through the confirm path.
+            stmt = stmt.where(MatchTemplate.created_by == owner_id)
         stmt = stmt.order_by(MatchTemplate.use_count.desc()).limit(500)
         rows = (await db.execute(stmt)).scalars().all()
         return [schemas.TemplateRead.model_validate(r) for r in rows]
@@ -2814,16 +2858,23 @@ class MatchElementsService:
     async def lookup_templates(
         self,
         db: AsyncSession,
-        tenant_id: uuid.UUID | None,
+        owner_id: uuid.UUID | None,
         signatures: list[str],
     ) -> schemas.TemplateLookupResponse:
+        """Bulk signature lookup scoped to the caller's own templates.
+
+        Same ownership policy as ``list_templates``: only the caller's
+        ``created_by`` rows are returned (admins see all), so the
+        "previously matched" hint can never surface another user's
+        confidential cost mapping.
+        """
         if not signatures:
             return schemas.TemplateLookupResponse(matches={})
         stmt = select(MatchTemplate).where(
             MatchTemplate.signature.in_(signatures),
         )
-        if tenant_id is not None:
-            stmt = stmt.where(MatchTemplate.tenant_id == tenant_id)
+        if not await self._is_admin(db, owner_id):
+            stmt = stmt.where(MatchTemplate.created_by == owner_id)
         rows = (await db.execute(stmt)).scalars().all()
         return schemas.TemplateLookupResponse(
             matches={r.signature: schemas.TemplateRead.model_validate(r) for r in rows},
@@ -2833,10 +2884,20 @@ class MatchElementsService:
         self,
         db: AsyncSession,
         template_id: uuid.UUID,
+        owner_id: uuid.UUID | None = None,
     ) -> None:
-        await db.execute(
-            delete(MatchTemplate).where(MatchTemplate.id == template_id),
-        )
+        """Delete one template the caller owns (admins may delete any).
+
+        Scoped by ``created_by`` for the same reason the read paths are:
+        without it any user could delete another user's library row by
+        guessing its id. The DELETE simply no-ops when the row is not the
+        caller's, which keeps the 204 response shape and avoids leaking
+        whether the id exists.
+        """
+        stmt = delete(MatchTemplate).where(MatchTemplate.id == template_id)
+        if not await self._is_admin(db, owner_id):
+            stmt = stmt.where(MatchTemplate.created_by == owner_id)
+        await db.execute(stmt)
 
     # ── Group operations (split / merge / skip) ──────────────────────
 

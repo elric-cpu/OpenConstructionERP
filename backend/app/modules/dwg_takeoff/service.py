@@ -1281,6 +1281,80 @@ class DwgTakeoffService:
             )
         return item
 
+    @staticmethod
+    def resolve_view_status(
+        *,
+        status_value: str | None,
+        file_format: str | None,
+        has_entities: bool,
+        converter_present: bool | None = None,
+    ) -> str:
+        """Resolve a definitive viewer status for a drawing.
+
+        DWG is an open format we open directly. The frontend asks "what
+        should the viewer show right now?" and must always get a terminal
+        answer so it never spins forever (the fresh-install bug: demo DWG
+        rows are seeded ``status="uploaded"`` and, with no DDC DwgExporter
+        on disk, nothing ever transitions them).
+
+        Resolution:
+
+        * If parsed entities already exist -> ``ready`` (open it FAST,
+          regardless of the stored lifecycle status).
+        * A genuine terminal status (``ready`` / ``empty`` / ``error``) is
+          passed through untouched.
+        * A ``.dxf`` row still sitting at ``uploaded`` parses out of the
+          box via ezdxf, so ``processing`` is the honest "give me a moment"
+          state (the inline parse normally finishes before the first poll).
+        * A ``.dwg`` row at ``uploaded`` with no entities and no available
+          converter is reported as ``needs_conversion`` - a clear, friendly,
+          actionable state ("Convert with cad2data") instead of a perpetual
+          spinner. If the converter IS present the row is genuinely mid-flight,
+          so we keep ``processing``.
+
+        ``converter_present`` lets a batch caller (the list endpoint) probe the
+        converter once and pass it in, avoiding a per-row filesystem probe.
+        """
+        if has_entities:
+            return "ready"
+
+        normalized = (status_value or "").lower()
+        if normalized in ("ready", "empty", "error", "processing", "needs_conversion"):
+            return normalized
+
+        fmt = (file_format or "").lower().lstrip(".")
+        # ``uploaded`` (or any unknown pre-terminal state) with no entities.
+        if fmt == "dwg":
+            present = (
+                converter_present
+                if converter_present is not None
+                else DwgTakeoffService.get_offline_readiness().get("converter_available", False)
+            )
+            return "processing" if present else "needs_conversion"
+        # DXF parses locally; treat the brief pre-parse window as processing.
+        return "processing"
+
+    async def get_drawing_with_view_status(
+        self,
+        drawing_id: uuid.UUID,
+    ) -> tuple[DwgDrawing, DwgDrawingVersion | None, str]:
+        """Resolve a drawing, its latest version, and a definitive view status.
+
+        Single read used by the single-drawing GET so the viewer always
+        receives a terminal answer (see :meth:`resolve_view_status`). The
+        latest version is fetched through :meth:`get_latest_version` so the
+        lazy units backfill still runs.
+        """
+        drawing = await self.get_drawing(drawing_id)
+        version = await self.get_latest_version(drawing_id)
+        has_entities = version is not None and (version.entity_count or 0) > 0 and version.entities_key is not None
+        view_status = self.resolve_view_status(
+            status_value=drawing.status,
+            file_format=drawing.file_format,
+            has_entities=has_entities,
+        )
+        return drawing, version, view_status
+
     async def list_drawings(
         self,
         project_id: uuid.UUID,
@@ -1992,6 +2066,13 @@ class DwgTakeoffService:
         """
         item = await self.get_annotation(annotation_id)
 
+        # Cross-tenant safety: the target BOQ position must live in the SAME
+        # project as the annotation. ``position_id`` arrives from the request
+        # body and the router only authorises the annotation's own project, so
+        # without this gate a caller could link to - and, with push_quantity,
+        # overwrite the quantity of - a foreign tenant's BOQ position.
+        await self._assert_position_in_project(position_id, item.project_id)
+
         await self.annotation_repo.update_fields(annotation_id, linked_boq_position_id=position_id)
         await self.session.refresh(item)
 
@@ -2000,6 +2081,36 @@ class DwgTakeoffService:
         if push_quantity:
             await self._push_quantity_to_position(position_id, item)
         return item
+
+    async def _assert_position_in_project(
+        self,
+        position_id: str,
+        project_id: uuid.UUID,
+    ) -> None:
+        """Raise 404 unless ``position_id`` belongs to a BOQ in ``project_id``.
+
+        Mirrors the read-side guard in :meth:`_resolve_position_rate`: a
+        foreign-project (or missing) position is reported as "not found" so the
+        endpoint never confirms the existence of, links to, or writes into
+        another tenant's BOQ position.
+        """
+        try:
+            position_uuid = uuid.UUID(str(position_id))
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise HTTPException(status_code=404, detail="BOQ position not found") from exc
+
+        from app.modules.boq.service import BOQService
+
+        boq_service = BOQService(self.session)
+        position = await boq_service.position_repo.get_by_id(position_uuid)
+        if position is None:
+            raise HTTPException(status_code=404, detail="BOQ position not found")
+        try:
+            boq = await boq_service.get_boq(position.boq_id)
+        except HTTPException as exc:
+            raise HTTPException(status_code=404, detail="BOQ position not found") from exc
+        if boq is None or str(boq.project_id) != str(project_id):
+            raise HTTPException(status_code=404, detail="BOQ position not found")
 
     async def _push_quantity_to_position(self, position_id: str, annotation: DwgAnnotation) -> None:
         """Copy an annotation's value into a BOQ position's quantity.

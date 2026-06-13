@@ -13,8 +13,6 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-import pytest
-
 from app.modules.finance.service import (
     _convert_to_base,
     _project_fx_map,
@@ -105,7 +103,9 @@ def test_convert_to_base_gbp_to_usd() -> None:
     # 1 GBP = 1.25 USD; a 10,000 GBP claim converts to 12,500 USD base.
     fx = _project_fx_map(_FakeProject([{"code": "GBP", "rate": "1.25"}]))
     converted, missing = _convert_to_base({"GBP": 10000.0}, base_currency="USD", fx_rates_map=fx)
-    assert converted == pytest.approx(12500.0)
+    # _convert_to_base returns a quantized 2-place Decimal string (money never
+    # round-trips through a binary float); callers parse it back with Decimal().
+    assert converted == "12500.00"
     assert missing == []
 
 
@@ -114,14 +114,14 @@ def test_convert_to_base_missing_rate_keeps_value_not_zero() -> None:
     # surface the missing code so the UI can warn.
     fx = _project_fx_map(_FakeProject([]))
     converted, missing = _convert_to_base({"GBP": 10000.0}, base_currency="USD", fx_rates_map=fx)
-    assert converted == pytest.approx(10000.0)
+    assert converted == "10000.00"
     assert missing == ["GBP"]
 
 
 def test_convert_to_base_same_currency_passthrough() -> None:
     fx = _project_fx_map(_FakeProject([]))
     converted, missing = _convert_to_base({"USD": 5000.0}, base_currency="USD", fx_rates_map=fx)
-    assert converted == pytest.approx(5000.0)
+    assert converted == "5000.00"
     assert missing == []
 
 
