@@ -89,11 +89,11 @@ def _project_fx_map(project: object | None) -> dict[str, str]:
 
 
 def _convert_to_base(
-    amounts_by_currency: dict[str, float],
+    amounts_by_currency: dict[str, object],
     *,
     base_currency: str,
     fx_rates_map: dict[str, str],
-) -> tuple[float, list[str]]:
+) -> tuple[str, list[str]]:
     """Convert per-currency subtotals into the project base currency.
 
     Mirrors :func:`app.modules.boq.service._position_total_in_base`: an amount
@@ -102,6 +102,10 @@ def _convert_to_base(
     no configured FX rate is summed in its own units anyway (never zeroed) so
     the rollup degrades visibly, and its code is returned in the second tuple
     element so the caller can surface a "missing FX rate" hint.
+
+    The converted total is returned as a quantized (2-place) Decimal string so
+    money never round-trips through a binary float. Callers parse it back into a
+    Decimal where they need to do further arithmetic.
     """
     base = (base_currency or "").strip().upper()
     total = Decimal("0")
@@ -118,7 +122,7 @@ def _convert_to_base(
             elif norm not in missing:
                 missing.append(norm)
         total += value
-    return round(float(total), 2), missing
+    return str(total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)), missing
 
 
 # ── Allowed status transitions ──────────────────────────────────────────────
@@ -1652,10 +1656,10 @@ class FinanceService:
         mixed_currencies = len(currencies_in_play) > 1
         missing: set[str] = set()
 
-        def _to_base(amounts: dict[str, float]) -> float:
+        def _to_base(amounts: dict[str, object]) -> Decimal:
             converted, miss = _convert_to_base(amounts, base_currency=currency, fx_rates_map=fx_rates_map)
             missing.update(miss)
-            return converted
+            return Decimal(converted)
 
         # ── Invoices ───────────────────────────────────────────────────
         total_payable = _to_base(inv_agg["payable_by_currency"])
@@ -1669,7 +1673,9 @@ class FinanceService:
         total_actual = _to_base(budget_agg["actual_by_currency"])
 
         total_variance = total_budget_revised - total_actual
-        budget_consumed_pct = total_actual / total_budget_revised * 100 if total_budget_revised > 0 else 0.0
+        budget_consumed_pct = (
+            total_actual / total_budget_revised * 100 if total_budget_revised > 0 else Decimal("0")
+        )
 
         # Budget warning level
         if budget_consumed_pct >= 95:

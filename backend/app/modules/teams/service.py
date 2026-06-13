@@ -165,9 +165,17 @@ class TeamService:
         self,
         project_id: uuid.UUID,
         *,
+        actor_id: str | uuid.UUID | None = None,
         include_inactive: bool = False,
     ) -> list[Team]:
-        """List teams for a project."""
+        """List teams for a project.
+
+        Gated on project access (same policy as ``list_members``): team
+        structure reveals who is on a project, so a caller must own / admin /
+        belong to the parent project. ``actor_id is None`` is a SYSTEM call
+        and skips the check, so existing internal callers keep working.
+        """
+        await self._assert_project_access(project_id, actor_id)
         return await self.team_repo.list_for_project(
             project_id,
             include_inactive=include_inactive,

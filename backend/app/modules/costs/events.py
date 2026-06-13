@@ -26,7 +26,8 @@ import asyncio
 import logging
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import bindparam, select, text
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.events import Event, event_bus
 from app.database import async_session_factory
@@ -34,6 +35,12 @@ from app.modules.costs import vector_adapter as cost_vector
 from app.modules.costs.models import CostItem
 
 logger = logging.getLogger(__name__)
+
+# Upper bound on how many referencing BOQ positions we enumerate per
+# cost-item update. The handler is advisory (detect + notify), so a huge
+# fan-out is capped to keep the detached task cheap; the warning still
+# tells the operator the reference count is at least this many.
+_MAX_REFERENCING_POSITIONS = 500
 
 
 # ── Bulk debounce ────────────────────────────────────────────────────────
@@ -106,10 +113,113 @@ async def _on_cost_item_created(event: Event) -> None:
         await _index_one_by_id(item_id)
 
 
+async def _find_referencing_boq_positions(item_id: uuid.UUID) -> list[uuid.UUID]:
+    """Find BOQ positions whose ``metadata.cost_item_id`` references *item_id*.
+
+    BOQ positions store the linked cost item under ``metadata.cost_item_id``
+    (a UUID string), see ``app.modules.boq``. We deliberately do NOT import
+    the BOQ ORM model here - this module must stay decoupled and must not
+    break when the ``oe_boq`` module is not loaded. Instead we run a portable
+    text-match query against the ``oe_boq_position`` table's JSON ``metadata``
+    column and confirm matches in Python (LIKE is a cheap prefilter; the JSON
+    holds the canonical UUID string).
+
+    Returns an empty list when the table is absent or the query fails for any
+    reason - detection is best-effort and never raises into the caller.
+    """
+    # Match on the canonical UUID string via a LIKE prefilter, then verify in
+    # Python. The ``metadata`` column is generic JSON (JSONB on PostgreSQL,
+    # TEXT on SQLite); JSONB has no LIKE operator, so we CAST it to text first.
+    # ``CAST(... AS TEXT)`` is portable across both dialects.
+    needle = str(item_id)
+    like_pattern = f"%{needle}%"
+    stmt = text(
+        "SELECT id, metadata FROM oe_boq_position WHERE CAST(metadata AS TEXT) LIKE :pat LIMIT :lim"
+    ).bindparams(
+        bindparam("pat", value=like_pattern),
+        bindparam("lim", value=_MAX_REFERENCING_POSITIONS),
+    )
+    matched: list[uuid.UUID] = []
+    try:
+        async with async_session_factory() as session:
+            rows = (await session.execute(stmt)).all()
+    except SQLAlchemyError:
+        # Table missing (BOQ module not loaded) or dialect quirk - stay quiet.
+        logger.debug("BOQ reference scan skipped for cost item %s", item_id, exc_info=True)
+        return matched
+    except Exception:
+        logger.debug("BOQ reference scan failed for cost item %s", item_id, exc_info=True)
+        return matched
+
+    for row in rows:
+        meta = getattr(row, "metadata", None)
+        # metadata may come back as a dict (JSON column) or a raw string
+        # depending on the driver; normalise to a comparable cost_item_id.
+        ref: object = None
+        if isinstance(meta, dict):
+            ref = meta.get("cost_item_id")
+        if ref is None:
+            # Fall back to confirming the LIKE hit really contained the UUID.
+            ref = needle if needle in str(meta) else None
+        if ref is None:
+            continue
+        try:
+            if uuid.UUID(str(ref)) == item_id:
+                matched.append(uuid.UUID(str(row.id)))
+        except (ValueError, AttributeError, TypeError):
+            continue
+    return matched
+
+
 async def _on_cost_item_updated(event: Event) -> None:
     item_id = _extract_item_id(event)
-    if item_id is not None:
-        await _index_one_by_id(item_id)
+    if item_id is None:
+        return
+
+    # 1) Keep the vector store in sync (existing behaviour).
+    await _index_one_by_id(item_id)
+
+    # 2) Detect BOQ positions that reference this cost item so a rate /
+    #    component change does not silently leave linked estimates stale.
+    #    NON-DESTRUCTIVE: we only notify (log + publish a follow-up event).
+    #    Recomputing or rewriting position rates is intentionally left to a
+    #    human-confirmed flow, per the "AI-augmented, human-confirmed" and
+    #    "no destructive cascade" project rules.
+    try:
+        position_ids = await _find_referencing_boq_positions(item_id)
+    except Exception:
+        logger.debug("BOQ reference detection errored for %s", item_id, exc_info=True)
+        return
+
+    if not position_ids:
+        return
+
+    capped = len(position_ids) >= _MAX_REFERENCING_POSITIONS
+    logger.warning(
+        "Cost item %s changed and is referenced by %s%d BOQ position(s) "
+        "(metadata.cost_item_id); their stored unit rates may now be stale and "
+        "should be reviewed. No automatic re-pricing was applied.",
+        item_id,
+        "at least " if capped else "",
+        len(position_ids),
+    )
+
+    # Emit a follow-up event so any interested consumer (BOQ module, audit
+    # log, notification service) can act on the stale linkage. We are already
+    # running in a detached handler (no request transaction is open here), so
+    # awaiting publish directly is safe and delivers to subscribers in order.
+    try:
+        await event_bus.publish(
+            "costs.item.references_stale",
+            {
+                "item_id": str(item_id),
+                "position_ids": [str(pid) for pid in position_ids],
+                "position_count": len(position_ids),
+                "capped": capped,
+            },
+        )
+    except Exception:
+        logger.debug("Failed to publish costs.item.references_stale for %s", item_id, exc_info=True)
 
 
 async def _on_cost_item_deleted(event: Event) -> None:

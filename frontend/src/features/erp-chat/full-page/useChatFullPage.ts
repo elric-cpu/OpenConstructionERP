@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { aiApi, type AISettings } from '@/features/ai/api';
+import { hasLlmKey } from '@/features/ai-estimator/useAiReadiness';
 import { uuid } from '@/shared/lib/browser';
 import {
   fetchChatSessions,
@@ -113,16 +114,12 @@ export function useChatFullPage(): UseChatFullPageReturn {
       .getSettings()
       .then((settings: AISettings) => {
         if (cancelled) return;
-        const hasKey =
-          settings.anthropic_api_key_set ||
-          settings.openai_api_key_set ||
-          settings.gemini_api_key_set ||
-          settings.openrouter_api_key_set ||
-          settings.mistral_api_key_set ||
-          settings.groq_api_key_set ||
-          settings.deepseek_api_key_set ||
-          settings.cohere_api_key_set;
-        setAiConfigured(hasKey);
+        // Prefer the backend's authoritative readiness flag (counts local
+        // Ollama / vLLM via base_url, which carry no api_key). Fall back to the
+        // shared local-aware helper for older payloads without the flag.
+        const ready =
+          typeof settings.ai_ready === 'boolean' ? settings.ai_ready : hasLlmKey(settings);
+        setAiConfigured(ready);
       })
       .catch(() => {
         if (!cancelled) setAiConfigured(false);

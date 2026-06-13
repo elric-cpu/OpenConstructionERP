@@ -7,6 +7,7 @@ No business logic - pure data access.
 from __future__ import annotations
 
 import uuid
+from decimal import Decimal
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -330,7 +331,7 @@ class PaymentRepository:
         self,
         *,
         project_id: uuid.UUID | None = None,
-    ) -> dict[str, float]:
+    ) -> dict[str, Decimal]:
         """Sum payment amounts grouped by currency, scoped to a project.
 
         Payments inherit their currency from ``currency_code`` (or "" when
@@ -358,9 +359,10 @@ class PaymentRepository:
         base = base.group_by(Payment.currency_code)
 
         rows = (await self.session.execute(base)).all()
-        out: dict[str, float] = {}
+        out: dict[str, Decimal] = {}
         for currency_code, total in rows:
-            out[currency_code or ""] = out.get(currency_code or "", 0.0) + float(total or 0)
+            key = currency_code or ""
+            out[key] = out.get(key, Decimal("0")) + Decimal(str(total or 0))
         return out
 
     async def get_by_idempotency_key(self, key: str) -> Payment | None:

@@ -184,17 +184,10 @@ export function BOQToolbar({
   const [showExportMenu, setShowExportMenu] = useState(false);
   const exportRef = useRef<HTMLDivElement>(null);
 
-  /* ── Grid Settings dropdown state ────────────────────────────────── */
-  const [gridSettingsOpen, setGridSettingsOpen] = useState(false);
-  const gridSettingsRef = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (exportRef.current && !exportRef.current.contains(e.target as Node)) {
         setShowExportMenu(false);
-      }
-      if (gridSettingsRef.current && !gridSettingsRef.current.contains(e.target as Node)) {
-        setGridSettingsOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -220,8 +213,17 @@ export function BOQToolbar({
   return (
     <div
       data-testid="boq-toolbar"
-      className="sticky top-[52px] z-20 bg-surface-primary flex flex-wrap items-center gap-x-1.5 gap-y-2 px-1 py-2 border-b border-border-light mb-3"
+      className="sticky top-[52px] z-20 bg-surface-primary flex flex-col gap-2 px-1 py-2 border-b border-border-light mb-3"
     >
+      {/* ── Row 1: primary action groups (left ~80%) + Grand-Total summary
+          card (right ~20%). The left zone wraps internally so on a narrow
+          viewport its buttons spill onto extra lines here instead of pushing
+          the Grand-Total card onto its own empty row. ──────────────────── */}
+      <div className="flex items-start gap-3">
+      {/* Left zone (~80%): every action group wraps inside this flex-1 column,
+          so on a narrow viewport the buttons spill onto a second line here
+          instead of shoving the Grand Total card onto its own empty row. */}
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-2">
       {/* ── Row-group: Quality + Undo/Redo ─────────────────────────────── */}
       <div className="flex items-center gap-1.5" data-testid="boq-quality-ring">
         {hasPositions && qualityScoreRing}
@@ -329,98 +331,6 @@ export function BOQToolbar({
             </div>
           )}
         </div>
-        {/* ── Grid Settings dropdown (Columns + Renumber) ─────────────── */}
-        {(onManageColumns || onRenumber || onManageVariables || onToggleResourceSplit) && (
-          <div ref={gridSettingsRef} className="relative">
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={<Settings size={15} />}
-              onClick={() => setGridSettingsOpen((prev) => !prev)}
-              aria-expanded={gridSettingsOpen}
-              aria-haspopup="true"
-              title={t('boq.grid_settings', { defaultValue: 'Grid Settings' })}
-            >
-              <span className="hidden xl:inline">
-                {t('boq.grid_settings', { defaultValue: 'Grid Settings' })}
-              </span>
-              {customColumnCount != null && customColumnCount > 0 && (
-                <span className="ml-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-surface-tertiary px-1 text-2xs font-semibold text-content-secondary tabular-nums">
-                  {customColumnCount}
-                </span>
-              )}
-              <ChevronDown size={12} className={`transition-transform ${gridSettingsOpen ? 'rotate-180' : ''}`} />
-            </Button>
-            {gridSettingsOpen && (
-              <div role="menu" className="absolute left-0 top-full mt-1 z-50 w-64 rounded-lg border border-border-light bg-surface-elevated shadow-md animate-fade-in">
-                {onManageColumns && (
-                  <button
-                    role="menuitem"
-                    onClick={() => { setGridSettingsOpen(false); onManageColumns(); }}
-                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm text-content-primary hover:bg-surface-secondary transition-colors rounded-t-lg"
-                  >
-                    <Columns3 size={15} className="text-content-tertiary" />
-                    {t('boq.manage_columns', { defaultValue: 'Manage Columns' })}
-                    {customColumnCount != null && customColumnCount > 0 && (
-                      <span className="ml-auto inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-surface-tertiary px-1 text-2xs font-semibold text-content-secondary tabular-nums">
-                        {customColumnCount}
-                      </span>
-                    )}
-                  </button>
-                )}
-                {onManageVariables && (
-                  <button
-                    role="menuitem"
-                    onClick={() => { setGridSettingsOpen(false); onManageVariables(); }}
-                    className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-sm text-content-primary hover:bg-surface-secondary transition-colors ${!onManageColumns ? 'rounded-t-lg' : ''}`}
-                  >
-                    <VariableIcon size={15} className="text-content-tertiary" />
-                    {t('boq.manage_variables', { defaultValue: 'Manage Variables' })}
-                  </button>
-                )}
-                {onRenumber && (
-                  <button
-                    role="menuitem"
-                    onClick={() => { setGridSettingsOpen(false); onRenumber(); }}
-                    disabled={isRenumbering}
-                    className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-sm text-content-primary hover:bg-surface-secondary transition-colors ${!onManageColumns && !onManageVariables ? 'rounded-t-lg' : ''} rounded-b-lg ${isRenumbering ? 'opacity-40 pointer-events-none' : ''}`}
-                  >
-                    <ListOrdered size={15} className={`text-content-tertiary ${isRenumbering ? 'animate-pulse' : ''}`} />
-                    {isRenumbering
-                      ? t('boq.renumbering', { defaultValue: 'Renumbering...' })
-                      : t('boq.renumber', { defaultValue: 'Renumber Positions' })}
-                  </button>
-                )}
-                {onToggleResourceSplit && (
-                  <button
-                    role="menuitemcheckbox"
-                    aria-checked={!!showResourceSplit}
-                    onClick={() => { setGridSettingsOpen(false); onToggleResourceSplit(); }}
-                    className={`flex w-full items-center gap-2.5 px-3 py-2.5 text-sm text-content-primary hover:bg-surface-secondary transition-colors rounded-b-lg ${onManageColumns || onManageVariables || onRenumber ? 'border-t border-border-light' : 'rounded-t-lg'}`}
-                    title={t('boq.resource_split_tip', {
-                      defaultValue: 'Show Material, Labor and Equipment percentage columns for each position',
-                    })}
-                    data-testid="boq-resource-split-toggle"
-                  >
-                    <PieChart size={15} className="text-content-tertiary" />
-                    <span className="flex-1 text-left">
-                      {t('boq.resource_split', { defaultValue: 'Resource split (MAT/LAB/EQU)' })}
-                    </span>
-                    <span
-                      className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-                        showResourceSplit
-                          ? 'bg-oe-blue border-oe-blue text-white'
-                          : 'border-border-default bg-surface-primary'
-                      }`}
-                    >
-                      {showResourceSplit && <Check size={11} />}
-                    </span>
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        )}
         {onCarbonFootprint && (
           <Button
             variant="ghost"
@@ -481,6 +391,8 @@ export function BOQToolbar({
           </>
         )}
       </div>
+      </div>
+      {/* end left zone (~80%) */}
 
       {/* ── Inline mini-summary (right side, merged from the old second row).
           Sits at `ml-auto` so on wide screens the toolbar reads as a single
@@ -490,9 +402,9 @@ export function BOQToolbar({
           when `summary` is provided and the BOQ has at least one row. */}
       {summary && hasPositions && (
         <div
-          className="ml-auto flex shrink-0 items-center gap-2 whitespace-nowrap
+          className="flex shrink-0 items-center gap-2 self-stretch whitespace-nowrap
                      rounded-lg border border-border-light bg-surface-secondary/60
-                     px-2.5 py-1 tabular-nums"
+                     px-3 py-1.5 tabular-nums"
           title={
             t('boq.toolbar_summary_aria', {
               defaultValue: '{{sections}} sections · {{positions}} positions',
@@ -562,7 +474,7 @@ export function BOQToolbar({
             <span className="w-px h-5 bg-border-light" />
           )}
           <span
-            className="flex items-baseline gap-1.5 whitespace-nowrap"
+            className="flex flex-col items-end leading-tight whitespace-nowrap"
             title={
               summary.displayRate != null && summary.displayCurrency
                 ? t('boq.grand_total_conversion_tooltip_v2', {
@@ -581,7 +493,7 @@ export function BOQToolbar({
             <span className="text-2xs font-medium uppercase tracking-wide text-content-tertiary">
               {t('boq.grand_total', { defaultValue: 'Grand Total' })}
             </span>
-            <span className="text-sm font-bold text-content-primary">
+            <span className="text-base font-bold text-content-primary">
               {summary.displaySymbol}{' '}
               {summary.grossTotalDisplay.toLocaleString(undefined, {
                 minimumFractionDigits: 2,
@@ -589,6 +501,146 @@ export function BOQToolbar({
               })}
             </span>
           </span>
+        </div>
+      )}
+      </div>
+      {/* end Row 1 */}
+
+      {/* ── Row 2: grid & view controls surfaced inline ──────────────────────
+          The functions that used to hide inside the "Grid settings" dropdown
+          (Manage Columns, Manage Variables, Renumber Positions, Resource
+          split) now live directly on a second toolbar row as labelled buttons
+          and toggles. Wraps gracefully on narrow widths via `flex-wrap`.
+          Renders only when at least one such control is wired in. */}
+      {(onManageColumns ||
+        onManageVariables ||
+        onRenumber ||
+        onToggleResourceSplit) && (
+        <div
+          data-testid="boq-toolbar-row2"
+          className="flex flex-wrap items-center gap-x-1.5 gap-y-2"
+        >
+          {/* Section label keeps the second row readable as a distinct band.
+              Reuses `boq.grid_settings` (already translated in every locale) so
+              the band is fully localized without a new translation key. */}
+          <span className="hidden sm:inline-flex items-center gap-1.5 pl-0.5 pr-1 text-2xs font-semibold uppercase tracking-wider text-content-quaternary">
+            <Settings size={13} className="text-content-tertiary" />
+            {t('boq.grid_settings', { defaultValue: 'Grid Settings' })}
+          </span>
+
+          {(onManageColumns || onManageVariables || onRenumber) && (
+            <div className="w-px h-6 bg-border-light hidden sm:block" />
+          )}
+
+          {/* ── Columns / Variables / Renumber group ──────────────────────── */}
+          <div className="flex items-center gap-1.5">
+            {onManageColumns && (
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={<Columns3 size={15} />}
+                onClick={onManageColumns}
+                title={t('boq.manage_columns', { defaultValue: 'Manage Columns' })}
+                aria-label={t('boq.manage_columns', { defaultValue: 'Manage Columns' })}
+                data-testid="boq-manage-columns-button"
+              >
+                {t('boq.manage_columns', { defaultValue: 'Manage Columns' })}
+                {customColumnCount != null && customColumnCount > 0 && (
+                  <span className="ml-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-surface-tertiary px-1 text-2xs font-semibold text-content-secondary tabular-nums">
+                    {customColumnCount}
+                  </span>
+                )}
+              </Button>
+            )}
+            {onManageVariables && (
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={<VariableIcon size={15} />}
+                onClick={onManageVariables}
+                title={t('boq.manage_variables', { defaultValue: 'Manage Variables' })}
+                aria-label={t('boq.manage_variables', { defaultValue: 'Manage Variables' })}
+                data-testid="boq-manage-variables-button"
+              >
+                <span className="hidden lg:inline">
+                  {t('boq.manage_variables', { defaultValue: 'Manage Variables' })}
+                </span>
+                <span className="lg:hidden">
+                  {t('boq.variables_short', { defaultValue: 'Variables' })}
+                </span>
+              </Button>
+            )}
+            {onRenumber && (
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={
+                  <ListOrdered
+                    size={15}
+                    className={isRenumbering ? 'animate-pulse' : ''}
+                  />
+                }
+                onClick={onRenumber}
+                loading={isRenumbering}
+                disabled={isRenumbering}
+                title={t('boq.renumber', { defaultValue: 'Renumber Positions' })}
+                aria-label={t('boq.renumber', { defaultValue: 'Renumber Positions' })}
+                data-testid="boq-renumber-button"
+              >
+                <span className="hidden lg:inline">
+                  {isRenumbering
+                    ? t('boq.renumbering', { defaultValue: 'Renumbering...' })
+                    : t('boq.renumber', { defaultValue: 'Renumber Positions' })}
+                </span>
+                <span className="lg:hidden">
+                  {t('boq.renumber_short', { defaultValue: 'Renumber' })}
+                </span>
+              </Button>
+            )}
+          </div>
+
+          {onToggleResourceSplit && (
+            <div className="w-px h-6 bg-border-light hidden sm:block" />
+          )}
+
+          {/* ── View toggles (resource split) ─────────────────────────────── */}
+          {onToggleResourceSplit && (
+            <Button
+              variant={showResourceSplit ? 'secondary' : 'ghost'}
+              size="sm"
+              aria-pressed={!!showResourceSplit}
+              icon={
+                <PieChart
+                  size={15}
+                  className={showResourceSplit ? 'text-oe-blue' : 'text-content-tertiary'}
+                />
+              }
+              onClick={onToggleResourceSplit}
+              title={
+                showResourceSplit
+                  ? t('boq.resource_split_hide_tip', {
+                      defaultValue: 'Hide the Material, Labor and Equipment percentage columns',
+                    })
+                  : t('boq.resource_split_show_tip', {
+                      defaultValue:
+                        'Show Material, Labor and Equipment percentage columns for each position',
+                    })
+              }
+              aria-label={t('boq.resource_split', { defaultValue: 'Resource split (MAT/LAB/EQU)' })}
+              data-testid="boq-resource-split-toolbar-toggle"
+            >
+              {t('boq.resource_split_short', { defaultValue: 'MAT/LAB/EQU' })}
+              <span
+                className={`ml-1 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                  showResourceSplit
+                    ? 'bg-oe-blue border-oe-blue text-white'
+                    : 'border-border-default bg-surface-primary'
+                }`}
+              >
+                {showResourceSplit && <Check size={11} />}
+              </span>
+            </Button>
+          )}
         </div>
       )}
     </div>

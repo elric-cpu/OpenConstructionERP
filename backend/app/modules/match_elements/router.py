@@ -806,8 +806,12 @@ async def list_templates(
     session: SessionDep,
     current_user_id: CurrentUserId,
 ) -> list[schemas.TemplateRead]:
+    # Scope the library to the caller's own templates (admins see all).
+    # The cross-project mapping library is owned per user via created_by;
+    # there is no working tenant partition in this app, so we never expose
+    # another user's confidential cost mappings.
     try:
-        return await get_service().list_templates(session, tenant_id=None)
+        return await get_service().list_templates(session, owner_id=_u(current_user_id))
     except NotImplementedError as exc:
         raise HTTPException(status_code=501, detail=str(exc)) from exc
 
@@ -821,10 +825,12 @@ async def lookup_templates(
     session: SessionDep,
     current_user_id: CurrentUserId,
 ) -> schemas.TemplateLookupResponse:
+    # Same ownership scoping as GET /templates - the bulk lookup must not
+    # surface another user's "previously matched" mappings.
     try:
         return await get_service().lookup_templates(
             session,
-            tenant_id=None,
+            owner_id=_u(current_user_id),
             signatures=spec.signatures,
         )
     except NotImplementedError as exc:
@@ -837,8 +843,15 @@ async def delete_template(
     session: SessionDep,
     current_user_id: CurrentUserId,
 ) -> None:
+    # Only the owner (or an admin) may delete a library row; the service
+    # scopes the DELETE by created_by and no-ops otherwise, so the 204
+    # response shape is unchanged and id existence is never leaked.
     try:
-        await get_service().delete_template(session, template_id)
+        await get_service().delete_template(
+            session,
+            template_id,
+            owner_id=_u(current_user_id),
+        )
     except NotImplementedError as exc:
         raise HTTPException(status_code=501, detail=str(exc)) from exc
 

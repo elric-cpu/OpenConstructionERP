@@ -600,7 +600,6 @@ async def install_flagship(
     from app.modules.bim_hub.models import BIMElement, BIMModel, BOQElementLink, is_non_3d_format
     from app.modules.boq.models import BOQ, Position
     from app.modules.documents.models import Document
-    from app.modules.dwg_takeoff.models import DwgDrawing
     from app.modules.geo_hub.models import GeoAnchor
     from app.modules.projects.models import Project
     from app.modules.resources.models import Resource
@@ -671,33 +670,26 @@ async def install_flagship(
         mid = uuid.UUID(m["id"])
 
         # Route 2D drawings to the DWG Takeoff module, never the BIM 3D Hub.
+        # Seed an already-converted DXF (status "ready" with parsed entities)
+        # so the flagship project opens a working drawing in /dwg-takeoff on a
+        # fresh install - no DDC converter needed, no perpetual spinner. DXF
+        # parses out of the box via ezdxf. The helper falls back to a
+        # metadata-only row if ezdxf is unavailable; the backend then reports
+        # "needs_conversion" so the UI shows a convert CTA, still never a spinner.
         if is_non_3d_format(m.get("model_format")):
-            fmt = (m.get("model_format") or "dwg").lower().lstrip(".")
-            session.add(
-                DwgDrawing(
-                    id=mid,
-                    project_id=pid,
-                    name=m["name"],
-                    filename=f"{m['name']}.{fmt}",
-                    file_format=fmt,
-                    # No source file ships with the flagship assets - this is a
-                    # metadata-only reference row so the DWG Takeoff module
-                    # lists the drawing. Status "uploaded" (not "ready") keeps
-                    # the UI honest: there are no parsed entities to render yet.
-                    file_path="",
-                    size_bytes=0,
-                    status="uploaded",
-                    discipline=m.get("discipline"),
-                    created_by=str(owner),
-                    metadata_={
-                        "source": "flagship_seed",
-                        "seed_reference_only": True,
-                        "element_count": m.get("element_count", 0),
-                    },
-                )
+            from app.scripts.seed_dwg_drawing import seed_ready_dwg_drawing
+
+            await seed_ready_dwg_drawing(
+                session,
+                drawing_id=mid,
+                project_id=pid,
+                owner=str(owner),
+                name=m["name"],
+                discipline=m.get("discipline"),
+                source="flagship_seed",
+                element_count=m.get("element_count", 0),
             )
             dwg_count += 1
-            await session.flush()
             continue
 
         canonical_key: str | None = None

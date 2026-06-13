@@ -39,7 +39,8 @@ import {
   Activity,
   LayoutGrid,
 } from 'lucide-react';
-import { Card, CardHeader, CardContent, Button, Badge, Skeleton, ActivityFeed as CrossModuleActivityFeed, EmptyState, ModuleHelpButton, PartnerLogoBadge } from '@/shared/ui';
+import { Card, CardHeader, CardContent, Button, Badge, Skeleton, ActivityFeed as CrossModuleActivityFeed, EmptyState, ModuleHelpButton, ModuleGuideButton, PartnerLogoBadge } from '@/shared/ui';
+import { dashboardGuide } from './dashboardGuide';
 import { MultiCurrencyTotal } from '@/shared/ui/MultiCurrencyTotal';
 import { WhatsNewCard } from '@/shared/ui/WhatsNewCard';
 import BIMCoverageCard from './BIMCoverageCard';
@@ -2367,6 +2368,18 @@ function DashboardPageInner() {
           </Button>
           {/* Per-module Tour CTA — launches the Dashboard guided tour. */}
           <ModuleHelpButton tourId="dashboard" />
+          {/* "How it works" guide — concept walkthrough; CTA starts a new estimate. */}
+          <ModuleGuideButton
+            content={dashboardGuide}
+            onCta={() => {
+              const firstProject = projects?.[0];
+              if (firstProject) {
+                navigate(`/projects/${firstProject.id}/boq/new`);
+              } else {
+                navigate('/projects/new');
+              }
+            }}
+          />
         </div>
       </div>
 

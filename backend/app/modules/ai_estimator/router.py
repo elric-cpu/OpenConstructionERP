@@ -312,11 +312,18 @@ async def list_runs(
     limit: int = Query(50, ge=1, le=1000),
     offset: int = Query(0, ge=0),
 ) -> schemas.RunListResponse:
+    repo = AiEstimatorRunRepository(session)
     if project_id is not None:
         await verify_project_access(project_id, current_user_id, session)
-    repo = AiEstimatorRunRepository(session)
-    runs = await repo.list_runs(project_id=project_id, limit=limit, offset=offset)
-    total = await repo.count_runs(project_id=project_id)
+        runs = await repo.list_runs(project_id=project_id, limit=limit, offset=offset)
+        total = await repo.count_runs(project_id=project_id)
+    else:
+        # Cross-tenant guard: with no project filter the listing previously
+        # returned every tenant's runs. Scope it to the projects the caller
+        # owns or is a member of.
+        scope = _uid(current_user_id)
+        runs = await repo.list_runs(accessible_to=scope, limit=limit, offset=offset)
+        total = await repo.count_runs(accessible_to=scope)
     service = AiEstimatorService(session)
     summaries = [await service.run_to_summary(r) for r in runs]
     return schemas.RunListResponse(total=total, runs=summaries)

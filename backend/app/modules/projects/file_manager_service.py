@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import os
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterable, Sequence
@@ -475,10 +476,85 @@ async def _collect_dwg_drawings(
 # ── Public API ───────────────────────────────────────────────────────────
 
 
+async def _filter_rows_by_folder_permissions(
+    session: AsyncSession,
+    project_id: str,
+    user_id: str,
+    rows: list[FileRow],
+) -> list[FileRow]:
+    """Drop document rows the caller has no folder-permission grant for.
+
+    Mirrors the per-folder authorization the documents list endpoint
+    enforces (``effective_permissions_for`` + ``restricted_scopes_for_project``):
+    when a document folder ``(kind, path)`` has any grant on the project,
+    only callers with an exact-scope or wildcard grant may see rows in it.
+    Owners and project admins bypass filtering entirely.
+
+    Only ``document``-kind rows are scoped, because folder permissions are
+    tracked against the ``oe_documents_document`` table (via
+    ``Document.category``); photos, sheets, BIM and DWG rows are not managed
+    by the folder-permission system and therefore pass through unchanged -
+    matching the documents module, which only scopes documents.
+
+    On any lookup failure we fail closed for documents (return non-document
+    rows only) so a broken permission check never widens visibility.
+    """
+    try:
+        from app.modules.documents.folder_permissions_service import (
+            effective_permissions_for,
+            is_project_owner,
+            kind_and_path_for_document,
+            restricted_scopes_for_project,
+        )
+
+        project_uuid = uuid.UUID(str(project_id))
+        user_uuid = uuid.UUID(str(user_id))
+    except (ValueError, TypeError, ImportError):
+        # Can't evaluate permissions - drop document rows (fail closed)
+        # but keep the unmanaged kinds visible.
+        return [r for r in rows if r.kind != "document"]
+
+    # Owner bypass.
+    if await is_project_owner(session, project_uuid, user_uuid):
+        return rows
+
+    # Admin bypass - admins can read every folder.
+    try:
+        from app.modules.users.repository import UserRepository
+
+        user = await UserRepository(session).get_by_id(user_uuid)
+        if user is not None and getattr(user, "role", "") == "admin":
+            return rows
+    except Exception:  # noqa: BLE001 - admin lookup is best-effort
+        logger.debug("file-manager: admin lookup failed for %s", user_id, exc_info=True)
+
+    grants = await effective_permissions_for(
+        session,
+        project_id=project_uuid,
+        user_id=user_uuid,
+    )
+    restricted = await restricted_scopes_for_project(session, project_uuid)
+
+    visible: list[FileRow] = []
+    for r in rows:
+        if r.kind != "document":
+            visible.append(r)
+            continue
+        kind, path = kind_and_path_for_document(r.category)
+        is_restricted = (kind, path) in restricted or (kind, None) in restricted
+        if not is_restricted:
+            visible.append(r)
+            continue
+        if (kind, path) in grants or (kind, None) in grants:
+            visible.append(r)
+    return visible
+
+
 async def list_project_files(
     session: AsyncSession,
     project_id: str,
     *,
+    user_id: str | None = None,
     category: FileKind | None = None,
     extension: str | None = None,
     query: str | None = None,
@@ -490,6 +566,12 @@ async def list_project_files(
 
     Each module is queried independently - failure or absence of one module
     only loses its slice; the other slices still surface.
+
+    When ``user_id`` is supplied, document rows are filtered down to the
+    folders that user's folder permissions allow (owners / admins see
+    everything). ``user_id is None`` is a SYSTEM/internal call (e.g. the
+    bundle exporter, ``file_tree`` counts) and skips per-file filtering so
+    existing callers keep working unchanged.
     """
     collectors = (
         ("document", _collect_documents),
@@ -510,6 +592,11 @@ async def list_project_files(
                 kind,
                 project_id,
             )
+
+    # Per-file authorization: keep only the document folders the caller may
+    # see. Skipped for SYSTEM callers (user_id is None).
+    if user_id is not None:
+        rows = await _filter_rows_by_folder_permissions(session, project_id, user_id, rows)
 
     # Filters
     if extension:
@@ -550,6 +637,7 @@ async def file_tree(
     session: AsyncSession,
     project_id: str,
     *,
+    user_id: str | None = None,
     query: str | None = None,
     extension: str | None = None,
 ) -> list[FileTreeNode]:
@@ -560,10 +648,15 @@ async def file_tree(
     category has 9 files when a free-text search would return 0 - the
     historical UX bug where users clicked "Documents 9" with ``?q=foo``
     active and saw an empty list with no explanation.
+
+    ``user_id`` is forwarded so the sidebar counts apply the same
+    per-folder authorization as the file list (a member only counts the
+    document folders they may see). ``None`` keeps the SYSTEM behaviour.
     """
     listing = await list_project_files(
         session,
         project_id,
+        user_id=user_id,
         query=query,
         extension=extension,
         limit=100_000,

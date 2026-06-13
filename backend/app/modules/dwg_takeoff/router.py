@@ -121,8 +121,17 @@ async def _gate_by_group(
 def _drawing_to_response(
     item: object,
     latest_version: object | None = None,
+    *,
+    view_status: str | None = None,
 ) -> DwgDrawingResponse:
-    """‌⁠‍Build a DwgDrawingResponse from a DwgDrawing ORM object."""
+    """‌⁠‍Build a DwgDrawingResponse from a DwgDrawing ORM object.
+
+    ``view_status`` overrides the stored lifecycle status with a definitive
+    viewer state (see ``DwgTakeoffService.resolve_view_status``) so the page
+    never sits on a perpetual spinner: a seeded ``.dwg`` row with no parsed
+    entities and no converter resolves to ``needs_conversion`` rather than a
+    stuck ``uploaded``/``processing``.
+    """
     version_resp = None
     if latest_version is not None:
         version_resp = _version_to_response(latest_version)
@@ -133,7 +142,7 @@ def _drawing_to_response(
         filename=item.filename,  # type: ignore[attr-defined]
         file_format=item.file_format,  # type: ignore[attr-defined]
         size_bytes=item.size_bytes,  # type: ignore[attr-defined]
-        status=item.status,  # type: ignore[attr-defined]
+        status=view_status or item.status,  # type: ignore[attr-defined]
         discipline=item.discipline,  # type: ignore[attr-defined]
         sheet_number=item.sheet_number,  # type: ignore[attr-defined]
         thumbnail_key=item.thumbnail_key,  # type: ignore[attr-defined]
@@ -318,7 +327,9 @@ async def import_drawing_from_document(
 @router.get("/drawings/", response_model=list[DwgDrawingResponse])
 async def list_drawings(
     project_id: uuid.UUID = Query(...),
-    status_filter: Literal["uploaded", "processing", "ready", "error"] | None = Query(default=None, alias="status"),
+    status_filter: Literal["uploaded", "processing", "ready", "empty", "error", "needs_conversion"] | None = Query(
+        default=None, alias="status"
+    ),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
     user_id: CurrentUserId = None,  # type: ignore[assignment]
@@ -339,7 +350,24 @@ async def list_drawings(
         limit=limit,
         status_filter=status_filter,
     )
-    return [_drawing_to_response(i) for i in items]
+    # Resolve a definitive view status per row so the list reflects the same
+    # terminal state the viewer will (a seeded DWG with no converter reads
+    # ``needs_conversion``, never a stuck ``uploaded``). The list does not
+    # load each row's parsed version for speed; ``resolve_view_status``
+    # passes terminal stored states (ready/empty/error) straight through and
+    # only re-maps the pre-terminal ``uploaded`` case.
+    # Probe converter availability once for the whole list (not per row).
+    converter_present = service.get_offline_readiness().get("converter_available", False)
+    out: list[DwgDrawingResponse] = []
+    for i in items:
+        view_status = service.resolve_view_status(
+            status_value=i.status,
+            file_format=i.file_format,
+            has_entities=False,
+            converter_present=converter_present,
+        )
+        out.append(_drawing_to_response(i, view_status=view_status))
+    return out
 
 
 @router.get("/drawings/{drawing_id}", response_model=DwgDrawingResponse)
@@ -354,9 +382,9 @@ async def get_drawing(
 
     Audit B-DWG-IDOR - was IDOR. The ``drawing_id`` was trusted blindly.
     """
-    drawing = await _gate_by_drawing(drawing_id, user_id, service, session)
-    version = await service.get_latest_version(drawing_id)
-    return _drawing_to_response(drawing, version)
+    await _gate_by_drawing(drawing_id, user_id, service, session)
+    drawing, version, view_status = await service.get_drawing_with_view_status(drawing_id)
+    return _drawing_to_response(drawing, version, view_status=view_status)
 
 
 @router.delete("/drawings/{drawing_id}", status_code=204)

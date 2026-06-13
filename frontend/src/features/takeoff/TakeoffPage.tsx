@@ -29,9 +29,10 @@ import {
   BrainCircuit,
 } from 'lucide-react';
 
-import { Button, Card, Badge, Input, Skeleton, DismissibleInfo, IntroRichText, Breadcrumb } from '@/shared/ui';
+import { Button, Card, Badge, Input, Skeleton, DismissibleInfo, IntroRichText, Breadcrumb, ModuleGuideButton } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { PdfCompareDrawer } from './PdfCompareDrawer';
+import { takeoffGuide } from './takeoffGuide';
 import { apiGet, apiPost } from '@/shared/lib/api';
 import { formatFileSize } from '@/shared/lib/formatters';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -1954,6 +1955,12 @@ export function TakeoffPage() {
           defaultValue:
             'Measure areas, lengths and counts on PDF drawings and send them to a BOQ',
         })}
+        actions={
+          <ModuleGuideButton
+            content={takeoffGuide}
+            onCta={() => setActiveTab('documents')}
+          />
+        }
       />
 
       <DismissibleInfo
@@ -2165,7 +2172,7 @@ export function TakeoffPage() {
           )}
 
           {/* Upload Area */}
-          <div className="mb-6">
+          <div className="mb-6" data-guide="takeoff-upload">
             <DropZone onFilesSelected={handleFilesSelected} disabled={false} />
           </div>
 

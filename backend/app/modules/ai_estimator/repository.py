@@ -23,6 +23,21 @@ from app.modules.ai_estimator.models import (
 )
 
 
+def _accessible_project_ids_subquery(user_id: uuid.UUID):
+    """Scalar subquery of project ids the user owns or is a member of.
+
+    Used to scope cross-project listings (e.g. the unfiltered runs list) so a
+    caller only ever sees runs in projects they can access, never another
+    tenant's data.
+    """
+    from app.modules.projects.models import Project
+    from app.modules.teams.access import member_project_ids_subquery
+
+    return select(Project.id).where(
+        (Project.owner_id == user_id) | (Project.id.in_(member_project_ids_subquery(user_id)))
+    )
+
+
 class AiEstimatorRunRepository:
     """CRUD-style helpers for :class:`AiEstimatorRun`."""
 
@@ -44,15 +59,23 @@ class AiEstimatorRunRepository:
         *,
         project_id: uuid.UUID | None = None,
         user_id: uuid.UUID | None = None,
+        accessible_to: uuid.UUID | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[AiEstimatorRun]:
-        """Return runs ordered newest-first, scoped by project/user."""
+        """Return runs ordered newest-first, scoped by project/user.
+
+        ``accessible_to`` restricts the result to runs in projects the given
+        user owns or is a member of. Pass it for the unfiltered (no
+        ``project_id``) listing so a caller never sees another tenant's runs.
+        """
         stmt = select(AiEstimatorRun).order_by(AiEstimatorRun.created_at.desc()).limit(limit).offset(offset)
         if project_id is not None:
             stmt = stmt.where(AiEstimatorRun.project_id == project_id)
         if user_id is not None:
             stmt = stmt.where(AiEstimatorRun.user_id == user_id)
+        if accessible_to is not None:
+            stmt = stmt.where(AiEstimatorRun.project_id.in_(_accessible_project_ids_subquery(accessible_to)))
         return list((await self.session.execute(stmt)).scalars().all())
 
     async def count_runs(
@@ -60,12 +83,15 @@ class AiEstimatorRunRepository:
         *,
         project_id: uuid.UUID | None = None,
         user_id: uuid.UUID | None = None,
+        accessible_to: uuid.UUID | None = None,
     ) -> int:
         stmt = select(func.count()).select_from(AiEstimatorRun)
         if project_id is not None:
             stmt = stmt.where(AiEstimatorRun.project_id == project_id)
         if user_id is not None:
             stmt = stmt.where(AiEstimatorRun.user_id == user_id)
+        if accessible_to is not None:
+            stmt = stmt.where(AiEstimatorRun.project_id.in_(_accessible_project_ids_subquery(accessible_to)))
         return int((await self.session.execute(stmt)).scalar_one() or 0)
 
     async def update_fields(self, run_id: uuid.UUID, **fields: object) -> None:

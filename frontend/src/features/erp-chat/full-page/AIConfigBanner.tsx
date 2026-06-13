@@ -3,11 +3,14 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { Settings } from 'lucide-react';
 import { aiApi, type AISettings } from '@/features/ai/api';
+import { hasLlmKey } from '@/features/ai-estimator/useAiReadiness';
 
 /**
  * Banner shown above the chat panel when the user has not configured an
- * AI provider. Without an API key the chat returns a 500-style error and
- * the page feels broken — this banner explains exactly what to do.
+ * AI provider. Without a usable provider the chat returns a 500-style error
+ * and the page feels broken - this banner explains exactly what to do.
+ * A configured local runtime (Ollama / vLLM) counts as ready even without a
+ * cloud API key, so the banner stays hidden for local-only setups.
  */
 export default function AIConfigBanner() {
   const { t } = useTranslation();
@@ -34,19 +37,14 @@ export default function AIConfigBanner() {
 
   if (loading) return null;
 
-  // Determine if any provider has a key set
-  const hasKey =
+  // AI is ready when a usable cloud key is set OR a local runtime (Ollama /
+  // vLLM) is configured via its base_url. Prefer the backend's authoritative
+  // flag; fall back to the shared local-aware helper for older payloads.
+  const ready =
     !!settings &&
-    (settings.anthropic_api_key_set ||
-      settings.openai_api_key_set ||
-      settings.gemini_api_key_set ||
-      settings.openrouter_api_key_set ||
-      settings.mistral_api_key_set ||
-      settings.groq_api_key_set ||
-      settings.deepseek_api_key_set ||
-      settings.cohere_api_key_set);
+    (typeof settings.ai_ready === 'boolean' ? settings.ai_ready : hasLlmKey(settings));
 
-  if (hasKey) return null;
+  if (ready) return null;
 
   return (
     <div

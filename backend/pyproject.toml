@@ -61,6 +61,16 @@ dependencies = [
     "openpyxl>=3.1.0",
     "reportlab>=4.0.0",
     "pdfplumber>=0.11.0",
+    # PDF takeoff works out of the box. PyMuPDF reads a page's vector drawings
+    # (page.get_drawings) for the deterministic vector detector, and
+    # opencv-python-headless powers the room/wall detector on scanned/raster
+    # pages (raster_recognize needs only cv2 + numpy, and numpy is already a
+    # base dep via pandas/pyarrow). These used to live in the optional 'cv'
+    # extra, which left vector recognition dead on a plain install and could
+    # never be installed at all in the frozen desktop app. The heavy OCR
+    # engine (paddleocr) stays optional - it only adds dimension-text reading.
+    "pymupdf>=1.25.0",
+    "opencv-python-headless>=4.10.0",
     "httpx>=0.28.0,<1",
     "orjson>=3.10.0",
     "python-dateutil>=2.9.0",
@@ -146,11 +156,13 @@ semantic = [
 ai = [
     "openconstructionerp[semantic]",
 ]
-# Computer vision for PDF takeoff
+# Optional OCR for PDF takeoff. PyMuPDF (vector reader) and
+# opencv-python-headless (raster room/wall detector) are base dependencies
+# now, so vector and scanned-page recognition both work without this extra.
+# Installing it adds PaddleOCR, which reads dimension strings and annotation
+# text off the page on top of the geometry the base install already detects.
 cv = [
     "paddleocr>=2.9.0",
-    "opencv-python-headless>=4.10.0",
-    "pymupdf>=1.25.0",
     "Pillow>=12.1.1",
 ]
 # Deprecated alias since v2.5.0 — `duckdb` is in base deps now.

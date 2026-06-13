@@ -955,7 +955,9 @@ export function DwgTakeoffPage() {
     refetchInterval: (q) => {
       const s = (q.state.data as { status?: string } | undefined)?.status;
       // Stop polling once the backend has reached a terminal state.
-      if (s === 'ready' || s === 'error' || s === 'empty') return false;
+      // `needs_conversion` is terminal: nothing on the server will move it
+      // until the user installs the converter and re-uploads.
+      if (s === 'ready' || s === 'error' || s === 'empty' || s === 'needs_conversion') return false;
       return 3500;
     },
     // Keep polling even when the tab is backgrounded so a long DWG/IFC
@@ -1033,8 +1035,12 @@ export function DwgTakeoffPage() {
    *  briefly drop back into "loading…" between first paint and first poll. */
   const _listStatus = selectedDrawingFromList?.status;
   const _pollStatus = liveDrawing?.status;
+  // `needs_conversion` is terminal too: a .dwg with no entities and no
+  // converter on the server will never transition on its own, so it must win
+  // over a stale `processing`/`uploaded` and surface the convert CTA instead
+  // of pinning the spinner open.
   const _isTerminalStatus = (s: string | null | undefined) =>
-    s === 'ready' || s === 'error' || s === 'empty';
+    s === 'ready' || s === 'error' || s === 'empty' || s === 'needs_conversion';
   const drawingStatus =
     (_isTerminalStatus(_listStatus) ? _listStatus : undefined) ??
     (_isTerminalStatus(_pollStatus) ? _pollStatus : undefined) ??
@@ -1044,6 +1050,7 @@ export function DwgTakeoffPage() {
   const isConverting =
     !!selectedDrawingId &&
     (drawingStatus === 'processing' || drawingStatus === 'uploaded');
+  const isNeedsConversion = drawingStatus === 'needs_conversion';
   const isErrorStatus = drawingStatus === 'error';
   const isEmptyStatus = drawingStatus === 'empty';
   const drawingErrorMessage =
@@ -2892,6 +2899,22 @@ export function DwgTakeoffPage() {
                 </div>
               </div>
             </div>
+          ) : isNeedsConversion ? (
+            <NeedsConversionCard
+              drawingName={selectedDrawingFromList?.name || selectedDrawingFromList?.filename || ''}
+              filename={selectedDrawingFromList?.filename || ''}
+              converterAvailable={!!offlineReadiness?.converter_available}
+              onConverted={() => {
+                // The converter just installed. Re-upload semantics match the
+                // error card: the backend has no in-place reconvert endpoint,
+                // so the user re-picks the file (or a fresh one) and the new
+                // upload runs through the now-present converter.
+                if (selectedDrawingId) deleteMutation.mutate(selectedDrawingId);
+                setShowUpload(true);
+              }}
+              onUploadAnother={() => setShowUpload(true)}
+              onDelete={() => setConfirmDeleteId(selectedDrawingId)}
+            />
           ) : isConverting ? (
             <ConversionProgressCard
               drawingName={selectedDrawingFromList?.name || selectedDrawingFromList?.filename || ''}
@@ -5976,6 +5999,113 @@ function ConversionEmptyCard({
                 )}
               </div>
             )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Needs-conversion card ──────────────────────────────────────────────
+ *
+ * Shown for a .dwg drawing that has no parsed entities and no DDC cad2data
+ * converter on this server, so nothing will ever transition it on its own
+ * (the fresh-install case: demo DWG rows seeded without a converter present).
+ * This replaces the old behaviour where such a drawing span on the
+ * "Converting your drawing…" spinner indefinitely.
+ *
+ * DWG is an open format we open directly once cad2data is present. The card
+ * offers a one-click "Convert with cad2data" install (reusing the same
+ * installer the error card and the offline-readiness pill use). If the
+ * converter is somehow already present the file is simply mid-flight, so the
+ * card nudges the user to re-upload to kick the conversion. Never a spinner. */
+function NeedsConversionCard({
+  drawingName,
+  filename,
+  converterAvailable,
+  onConverted,
+  onUploadAnother,
+  onDelete,
+}: {
+  drawingName: string;
+  filename: string;
+  converterAvailable: boolean;
+  onConverted?: () => void;
+  onUploadAnother?: () => void;
+  onDelete?: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-1 items-center justify-center p-6">
+      <div
+        data-testid="dwg-needs-conversion-card"
+        className="w-full max-w-xl rounded-2xl border border-oe-blue/30 bg-oe-blue/5 p-6 shadow-xl"
+        role="status"
+        aria-live="polite"
+      >
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-oe-blue/15 border border-oe-blue/30 flex items-center justify-center shrink-0">
+            <FileUp size={20} className="text-oe-blue" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-base font-semibold text-content-primary leading-tight">
+              {t('dwg_takeoff.needs_conv_title', {
+                defaultValue: 'This drawing needs conversion',
+              })}
+            </h2>
+            <p className="text-xs text-content-tertiary mt-1 truncate" title={drawingName || filename}>
+              {drawingName || filename}
+            </p>
+            <p className="text-xs text-content-secondary mt-3 leading-relaxed">
+              {t('dwg_takeoff.needs_conv_message', {
+                defaultValue:
+                  'DWG is an open format and we open it directly once the cad2data converter is set up. This drawing has not been converted yet, and the converter is not installed on this server. Install it once and every DWG you open after will render here automatically. DXF files render without any converter.',
+              })}
+            </p>
+
+            {!converterAvailable && <InstallDwgConverterCTA onInstalled={onConverted} />}
+
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              {converterAvailable && onUploadAnother && (
+                <button
+                  type="button"
+                  onClick={onUploadAnother}
+                  data-testid="dwg-needs-conversion-upload"
+                  className="inline-flex items-center gap-1.5 rounded-md bg-oe-blue text-white text-[11px] font-semibold px-3 py-1.5 hover:bg-oe-blue-dark transition-colors"
+                >
+                  <Upload size={12} />
+                  {t('dwg_takeoff.needs_conv_reupload', {
+                    defaultValue: 'Re-upload to convert',
+                  })}
+                </button>
+              )}
+              {onUploadAnother && (
+                <button
+                  type="button"
+                  onClick={onUploadAnother}
+                  data-testid="dwg-needs-conversion-upload-dxf"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-oe-blue/30 text-oe-blue text-[11px] font-medium px-3 py-1.5 hover:bg-oe-blue/10 transition-colors"
+                >
+                  <FileText size={12} />
+                  {t('dwg_takeoff.needs_conv_upload_dxf', {
+                    defaultValue: 'Upload a DXF instead',
+                  })}
+                </button>
+              )}
+              {onDelete && (
+                <button
+                  type="button"
+                  onClick={onDelete}
+                  data-testid="dwg-needs-conversion-delete"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border-light text-content-tertiary text-[11px] font-medium px-3 py-1.5 hover:bg-surface-secondary transition-colors"
+                >
+                  <Trash2 size={12} />
+                  {t('dwg_takeoff.conv_delete', {
+                    defaultValue: 'Delete drawing',
+                  })}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>

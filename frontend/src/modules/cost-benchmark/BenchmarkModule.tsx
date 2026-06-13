@@ -2,7 +2,9 @@ import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { BarChart3, Info, FolderOpen, X } from 'lucide-react';
+import { ModuleGuideButton } from '@/shared/ui';
 import { projectsApi } from '@/features/projects/api';
+import { benchmarksGuide } from '@/features/benchmarks/benchmarksGuide';
 import {
   BUILDING_TYPES,
   BENCHMARK_REGIONS,
@@ -169,7 +171,7 @@ export default function BenchmarkModule() {
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 dark:bg-indigo-900/30">
           <BarChart3 className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
         </div>
-        <div>
+        <div className="min-w-0">
           <h1 className="text-xl font-bold text-content-primary">
             {t('benchmarks.title', { defaultValue: 'Cost Benchmarks' })}
           </h1>
@@ -177,10 +179,17 @@ export default function BenchmarkModule() {
             {t('benchmarks.subtitle', { defaultValue: 'Compare your estimate against industry benchmarks' })}
           </p>
         </div>
+        {/* Guidance cluster. No guided Tour is registered for this module, so
+            the "How it works" guide is the single entry point here. It keeps
+            the shared pill geometry so it reads like the Tour button on other
+            module headers. */}
+        <div className="ml-auto flex items-center gap-2">
+          <ModuleGuideButton content={benchmarksGuide} />
+        </div>
       </div>
 
       {/* Source line + data-basis honesty note */}
-      <div className="rounded-xl border border-border bg-surface-secondary/40 px-4 py-3">
+      <div data-guide="benchmarks-source" className="rounded-xl border border-border bg-surface-secondary/40 px-4 py-3">
         <p className="text-xs text-content-tertiary">
           <span className="font-medium text-content-secondary">
             {t('benchmarks.source', { defaultValue: 'Source' })}:
@@ -196,7 +205,7 @@ export default function BenchmarkModule() {
       </div>
 
       {/* Input controls */}
-      <div className="rounded-xl border border-border bg-surface-primary p-5">
+      <div data-guide="benchmarks-inputs" className="rounded-xl border border-border bg-surface-primary p-5">
         {/* Project picker (Phase 2): auto-fill from a real project.
             Hidden entirely when the tenant has no projects, so the page
             behaves exactly as the manual-only flow. */}
@@ -310,7 +319,7 @@ export default function BenchmarkModule() {
       </div>
 
       {/* Results */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div data-guide="benchmarks-results" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Cost per m2 */}
         <div className="rounded-xl border border-border bg-surface-primary p-5">
           <p className="text-xs text-content-tertiary mb-1">
@@ -385,7 +394,7 @@ export default function BenchmarkModule() {
       </div>
 
       {/* Visual benchmark bar */}
-      <div className="rounded-xl border border-border bg-surface-primary p-5">
+      <div data-guide="benchmarks-bar" className="rounded-xl border border-border bg-surface-primary p-5">
         <h3 className="text-sm font-semibold text-content-primary mb-4">
           {buildingInfo.label}, {regionInfo.label} ({benchmarkRange.source} {benchmarkRange.sourceYear})
         </h3>
@@ -509,7 +518,7 @@ export default function BenchmarkModule() {
       {/* KG300 / KG400 split strip + optional secondary metric */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {/* KG split strip */}
-        <div className={`rounded-xl border border-border bg-surface-primary p-5 ${buildingInfo.secondaryUnitId ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
+        <div data-guide="benchmarks-split" className={`rounded-xl border border-border bg-surface-primary p-5 ${buildingInfo.secondaryUnitId ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
           <h3 className="mb-1 text-sm font-semibold text-content-primary">
             {t('benchmarks.kg_split_title', { defaultValue: 'Cost group split of your cost / m2' })}
           </h3>

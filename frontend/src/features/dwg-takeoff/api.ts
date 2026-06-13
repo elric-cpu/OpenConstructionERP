@@ -17,8 +17,18 @@ export type DwgScaleMode = 'preset' | 'calibrated' | 'per_annotation';
  *    long step — a medium DWG can stay here for 3–8 minutes.
  *  - `ready`: entities + thumbnail are available. The viewer can render.
  *  - `empty`: file parsed cleanly but produced 0 entities.
+ *  - `needs_conversion`: a `.dwg` with no parsed entities and no converter
+ *    available on this server. Definitive (not a spinner) — the UI shows a
+ *    one-click "Convert with cad2data" / install CTA instead of waiting
+ *    forever for a transition that will never come.
  *  - `error`: conversion failed. `error_message` carries the reason. */
-export type DwgDrawingStatus = 'uploaded' | 'processing' | 'ready' | 'empty' | 'error';
+export type DwgDrawingStatus =
+  | 'uploaded'
+  | 'processing'
+  | 'ready'
+  | 'empty'
+  | 'needs_conversion'
+  | 'error';
 
 export interface DwgDrawing {
   id: string;

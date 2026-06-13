@@ -48,6 +48,13 @@ export interface AISettings {
   gigachat_api_key_set: boolean; kimi_api_key_set: boolean;
   // Self-hosted runtimes carry an endpoint instead of a key flag; null when unset.
   ollama_base_url: string | null; vllm_base_url: string | null;
+  /**
+   * Authoritative "AI is usable" flag from the backend. True when a usable
+   * cloud key is set OR a local provider (Ollama / vLLM) is configured via its
+   * base_url. Prefer reading this over re-deriving readiness from key flags so
+   * local-only setups are not falsely treated as unconfigured.
+   */
+  ai_ready: boolean;
   preferred_model: string;
   /** Per-provider model-id override the user has saved (provider -> model id). */
   model_overrides: Record<string, string>;

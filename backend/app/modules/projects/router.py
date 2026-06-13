@@ -74,6 +74,7 @@ from app.modules.projects.schemas import (
     MilestoneUpdate,
     PresetRead,
     ProfileSpec,
+    ProjectCardMetrics,
     ProjectCreate,
     ProjectModulePresence,
     ProjectModuleRead,
@@ -1613,6 +1614,7 @@ async def project_activity(
 
 @router.get(
     "/dashboard/cards/",
+    response_model=list[ProjectCardMetrics],
     summary="Get dashboard summary cards for all projects",
     description="Returns lightweight per-project summary metrics for dashboard cards: "
     "BOQ total value, open tasks count, open RFIs count, active safety incidents, "
@@ -1622,7 +1624,7 @@ async def dashboard_cards(
     session: SessionDep,
     user_id: CurrentUserId,
     payload: CurrentUserPayload,
-) -> list[dict]:
+) -> list[ProjectCardMetrics]:
     """Dashboard summary cards - lightweight per-project KPIs in a single call.
 
     Returns a list of project summaries with key metrics aggregated from
@@ -2487,6 +2489,7 @@ async def file_manager_tree(
     return await fm_file_tree(
         session,
         str(project_id),
+        user_id=str(user_id) if user_id else None,
         query=q,
         extension=extension,
     )
@@ -2521,6 +2524,7 @@ async def file_manager_list(
     return await fm_list_files(
         session,
         str(project_id),
+        user_id=str(user_id) if user_id else None,
         category=category,
         extension=extension,
         query=q,
@@ -2830,25 +2834,45 @@ async def post_email_link(
             detail="File not found",
         )
 
-    # Project ownership gate.
+    # Project access gate: owner OR any project team member may share a
+    # file. Mirrors the team-readable policy used by the file-manager and
+    # document endpoints (owner / admin / member), instead of owner-only.
+    # Non-members stay denied.
+    from app.modules.teams.access import is_project_member
+
     project = (
         await session.execute(
             select(ProjectModel).where(ProjectModel.id == target_project_id),
         )
     ).scalar_one_or_none()
-    if project is None or str(project.owner_id) != user_id:
+    is_owner = project is not None and str(project.owner_id) == user_id
+    is_member = False
+    if project is not None and not is_owner:
+        try:
+            is_member = await is_project_member(
+                session,
+                project.id,
+                uuid.UUID(str(user_id)),
+            )
+        except (ValueError, TypeError):
+            is_member = False
+    if project is None or not (is_owner or is_member):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not own the project this file belongs to",
+            detail="You do not have access to the project this file belongs to",
         )
 
     # Build token: base64url(payload).hmac
     expiry = int(time.time()) + ttl_hours * 3600
+    # NOTE: the original-owner uid was carried here but never validated on
+    # the download side (the share endpoint is public + HMAC-only), so it
+    # was dead weight that leaked the issuer's user id into the token. Drop
+    # it; signature, file id, kind and expiry are all that the download
+    # endpoint needs.
     payload_obj = {
         "fid": str(file_id),
         "kind": found_kind,
         "exp": expiry,
-        "uid": user_id,
     }
     import json as _json
 
@@ -2896,7 +2920,7 @@ async def get_share_file(
     """Public download endpoint - no auth, just HMAC verification.
 
     Token format: ``base64url(payload).base64url(signature)``. Payload
-    encodes file id, kind, expiry, owner. We re-derive the signature from
+    encodes file id, kind, and expiry. We re-derive the signature from
     the payload and the server secret, constant-time compare, then stream
     the file straight from disk. No DB rows are written or updated.
     """
