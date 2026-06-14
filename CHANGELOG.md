@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A comment that carries a viewpoint now checks the viewpoint's entity type against the same allowlist the standalone viewpoint path uses, so an unsupported value can no longer slip in through a comment and leave an orphaned reference.
 - Quantity takeoff now reports how many PDF pages came back with no text layer, usually scanned drawings, instead of silently treating them as empty, so it is clear which pages need OCR.
 - DWG drawing previews render again on newer ezdxf builds (1.1 and later), which changed how the preview SVG is produced.
+- The DIN 276 completeness and hierarchy checks now also fold dotted CAD codes such as 330.10 to their three-digit cost group, so a model classified with deeper codes is scored against the right group instead of being undercounted or wrongly flagged as out of hierarchy.
 
 ## [8.1.0] - 2026-06-14
 

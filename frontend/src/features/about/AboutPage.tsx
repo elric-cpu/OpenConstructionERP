@@ -2,6 +2,7 @@
  * AboutPage — Application info, author, license, consulting services.
  */
 
+import { useEffect } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -19,6 +20,20 @@ import { Changelog, getRecentReleases } from './Changelog';
 export function AboutPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+
+  // When arriving via /about#changelog (from the header News button or the
+  // sidebar What's-new card) scroll the changelog section into view on mount.
+  // The in-page "View all" link does the same on click; this covers the
+  // cross-route navigation case where there is no click on this page.
+  useEffect(() => {
+    if (window.location.hash !== '#changelog') return;
+    // Defer to the next frame so the changelog section is laid out first.
+    const frame = window.requestAnimationFrame(() => {
+      const changelog = document.querySelector('[data-changelog-anchor]');
+      if (changelog) changelog.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
 
   return (
     <div className="space-y-5 animate-fade-in">

@@ -251,7 +251,7 @@ function FxRateModal({
             <Input
               label={t('project.settings.fx.rate_label', {
                 defaultValue: 'Rate (1 unit of this currency = X {{base}})',
-                base: baseCurrency || '—',
+                base: baseCurrency || '-',
               })}
               type="text"
               inputMode="decimal"
@@ -949,7 +949,7 @@ export function ProjectSettingsPage() {
                 <th className="px-4 py-2 font-medium text-right">
                   {t('project.settings.fx.col_rate', {
                     defaultValue: 'Rate to {{base}}',
-                    base: baseCurrency || '—',
+                    base: baseCurrency || '-',
                   })}
                 </th>
                 <th className="px-4 py-2 w-24" />
@@ -995,7 +995,7 @@ export function ProjectSettingsPage() {
                     <td className="px-4 py-2.5 text-content-secondary">
                       {row.label || (
                         <span className="text-content-tertiary italic">
-                          {t('project.settings.fx.no_label', { defaultValue: '—' })}
+                          {t('project.settings.fx.no_label', { defaultValue: '-' })}
                         </span>
                       )}
                     </td>
