@@ -183,7 +183,7 @@ async def test_update_catalog_rejects_currency_change_with_items(session: AsyncS
     updated = await update_cost_catalog(
         catalog.id,
         CostCatalogUpdate(name="Guarded v2"),
-        _USER_ID,
+        _USER_PAYLOAD,
         service=catalog_service,
     )
     assert updated.name == "Guarded v2"
@@ -194,7 +194,7 @@ async def test_update_catalog_rejects_currency_change_with_items(session: AsyncS
         await update_cost_catalog(
             catalog.id,
             CostCatalogUpdate(currency="USD"),
-            _USER_ID,
+            _USER_PAYLOAD,
             service=catalog_service,
         )
     assert exc_info.value.status_code == 409
@@ -205,7 +205,7 @@ async def test_update_catalog_rejects_currency_change_with_items(session: AsyncS
     changed = await update_cost_catalog(
         empty.id,
         CostCatalogUpdate(currency="USD"),
-        _USER_ID,
+        _USER_PAYLOAD,
         service=catalog_service,
     )
     assert changed.currency == "USD"
@@ -355,7 +355,7 @@ async def test_export_catalog_excel_roundtrip(session: AsyncSession) -> None:
     response = await export_cost_catalog_excel(
         catalog.id,
         session,
-        _USER_ID,
+        _USER_PAYLOAD,
         service=catalog_service,
     )
     disposition = response.headers["content-disposition"]
@@ -383,7 +383,7 @@ async def test_export_unknown_catalog_404(session: AsyncSession) -> None:
         await export_cost_catalog_excel(
             uuid.uuid4(),
             session,
-            _USER_ID,
+            _USER_PAYLOAD,
             service=CostCatalogService(session),
         )
     assert exc_info.value.status_code == 404
@@ -400,7 +400,7 @@ async def test_delete_catalog_keep_items_detaches(session: AsyncSession) -> None
         CostItemCreate(code="K-1", description="Kept", unit="m", rate=5, catalog_id=catalog.id)
     )
 
-    result = await delete_cost_catalog(catalog.id, _USER_ID, mode="keep_items", service=catalog_service)
+    result = await delete_cost_catalog(catalog.id, _USER_PAYLOAD, mode="keep_items", service=catalog_service)
     assert result["items_affected"] == 1
 
     assert await session.get(CostCatalog, catalog.id) is None
@@ -418,7 +418,7 @@ async def test_delete_catalog_delete_items_soft_deletes(session: AsyncSession) -
         CostItemCreate(code="D-1", description="Doomed", unit="m", rate=5, catalog_id=catalog.id)
     )
 
-    result = await delete_cost_catalog(catalog.id, _USER_ID, mode="delete_items", service=catalog_service)
+    result = await delete_cost_catalog(catalog.id, _USER_PAYLOAD, mode="delete_items", service=catalog_service)
     assert result["items_affected"] == 1
 
     assert await session.get(CostCatalog, catalog.id) is None
@@ -429,5 +429,5 @@ async def test_delete_catalog_delete_items_soft_deletes(session: AsyncSession) -
 
 async def test_delete_unknown_catalog_404(session: AsyncSession) -> None:
     with pytest.raises(HTTPException) as exc_info:
-        await delete_cost_catalog(uuid.uuid4(), _USER_ID, mode="keep_items", service=CostCatalogService(session))
+        await delete_cost_catalog(uuid.uuid4(), _USER_PAYLOAD, mode="keep_items", service=CostCatalogService(session))
     assert exc_info.value.status_code == 404

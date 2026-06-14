@@ -2313,8 +2313,13 @@ class DIN276Hierarchy(ValidationRule):
             # The parent KG prefix (ignoring trailing zeros) should match.
             # parent=300 (3 chars) → child should start with "3"
             # parent=330 (3 chars) → child should start with "33"
-            parent_prefix = parent_kg.rstrip("0") or parent_kg[0]
-            passed = kg.startswith(parent_prefix)
+            # Fold dotted CAD codes ("330.10") to their 3-digit head before
+            # comparing, so a dotted parent does not produce a wrong prefix
+            # (e.g. "330.10".rstrip("0") -> "330.1") and a false hierarchy warning.
+            kg_norm = _normalize_din276_code(kg)
+            parent_norm = _normalize_din276_code(parent_kg)
+            parent_prefix = parent_norm.rstrip("0") or parent_norm[:1]
+            passed = kg_norm.startswith(parent_prefix)
             if passed:
                 message = _ok(locale)
                 suggestion = None
@@ -2371,9 +2376,12 @@ class DIN276Completeness(ValidationRule):
         # Collect all top-level KG groups (first digit × 100) present in the BOQ
         present_groups: set[str] = set()
         for pos in positions:
-            kg = str((pos.get("classification") or {}).get("din276", ""))
-            if kg and len(kg) >= 3 and kg.isdigit():
-                # Normalize to top-level group: e.g., 331 → 300, 421 → 400
+            # Fold dotted CAD codes ("330.10") to their 3-digit head first so
+            # they are still counted toward their top-level group instead of
+            # being dropped by the .isdigit() check.
+            kg = _normalize_din276_code((pos.get("classification") or {}).get("din276", ""))
+            if len(kg) >= 3 and kg[:3].isdigit():
+                # Normalize to top-level group: e.g., 331 -> 300, 421 -> 400
                 top_group = kg[0] + "00"
                 present_groups.add(top_group)
 

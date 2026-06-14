@@ -89,7 +89,11 @@ def _derive_ledger_idempotency_key(
             source_id or "",
         )
     )
-    return "auto:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    # Trim to the column width: "auto:" (5) + a full sha256 hex (64) is 69
+    # chars, which overflows the String(64) ``idempotency_key`` column. 59 hex
+    # chars (236 bits) keep collisions negligible, and the truncation is
+    # deterministic so the same posting still derives the same key.
+    return ("auto:" + hashlib.sha256(raw.encode("utf-8")).hexdigest())[:64]
 
 
 def _project_fx_map(project: object | None) -> dict[str, str]:
@@ -1916,7 +1920,8 @@ class FinanceService:
         # :rev suffix is the canonical naming convention for corrective entries
         reversal_ref = f"{transaction_ref}:rev"
         # Deterministic key shared by both reversal legs - one reversal per ref.
-        reversal_idem_key = "rev:" + hashlib.sha256(reversal_ref.encode("utf-8")).hexdigest()
+        # Trimmed to the String(64) column width ("rev:" + full hex = 68 chars).
+        reversal_idem_key = ("rev:" + hashlib.sha256(reversal_ref.encode("utf-8")).hexdigest())[:64]
 
         # ── Idempotency: bail out if this transaction is already reversed ─────
         rev_existing_stmt = (

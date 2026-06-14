@@ -188,12 +188,17 @@ class ModuleLoader:
         # Load router if exists
         try:
             router_module_name = f"{package_path}.router"
-            # Clear stale import cache entry (handles hot-reload after new files added)
+            # Always import the router from a clean module object. A router left
+            # in sys.modules by an earlier import in the same process (another
+            # test, or a prior hot-reload after new files were added) must be
+            # dropped and re-imported, NOT importlib.reload()-ed: reload
+            # re-executes the module in its existing namespace, which under
+            # accumulated process state can yield a router that mounts zero
+            # routes. Pop + fresh import gives a deterministic, fully populated
+            # router every time and still picks up newly added files.
             if router_module_name in sys.modules:
-                importlib.reload(sys.modules[router_module_name])
-                router_mod = sys.modules[router_module_name]
-            else:
-                router_mod = importlib.import_module(router_module_name)
+                del sys.modules[router_module_name]
+            router_mod = importlib.import_module(router_module_name)
             router = getattr(router_mod, "router", None)
             if router:
                 # URL convention: kebab-case (hyphens), not snake_case.
