@@ -2170,7 +2170,10 @@ export function BOQEditorPage() {
         let amount = 0;
         if (m.markup_type === 'fixed') {
           amount = m.fixed_amount ?? 0;
-        } else if (m.apply_to === 'cumulative') {
+        } else if (m.apply_to === 'cumulative' || m.apply_to === 'subtotal') {
+          // 'subtotal' shares the cumulative base on the server (direct cost +
+          // preceding markups); keep the footer Net Total / VAT / gross in step
+          // with the authoritative grand total for GAEB-imported tax markups.
           amount = running * (m.percentage / 100);
         } else {
           amount = directCost * (m.percentage / 100);

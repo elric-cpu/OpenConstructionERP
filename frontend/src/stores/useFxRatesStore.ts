@@ -105,7 +105,23 @@ export const useFxRatesStore = create<FxRatesState>()(
         }),
       reset: () => set({ ratesVsUsd: { ...SEED_RATES_VS_USD } }),
     }),
-    { name: 'oe-fx-rates-v1' },
+    {
+      name: 'oe-fx-rates-v1',
+      // Builds up to v8.1.0 seeded ~34 currencies under this same key. zustand's
+      // default persist merge is a shallow top-level spread, so a returning
+      // user's stored ratesVsUsd map wholly replaces the expanded seed on
+      // rehydration: the currencies added later (ARS, CLP, COP, LBP, ...) would
+      // be absent, getFxRate returns undefined for them and the inversion guard
+      // silently skips the very rates it was built to catch. Bump the version
+      // and backfill any seed code the stored map lacks, without overwriting a
+      // rate the user set themselves.
+      version: 1,
+      migrate: (persisted: unknown) => {
+        const prev = (persisted ?? {}) as Partial<FxRatesState>;
+        const stored = (prev.ratesVsUsd ?? {}) as Record<string, number>;
+        return { ...prev, ratesVsUsd: { ...SEED_RATES_VS_USD, ...stored } };
+      },
+    },
   ),
 );
 

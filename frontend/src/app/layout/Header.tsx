@@ -591,7 +591,10 @@ function BugReportMenu() {
     {
       icon: Github,
       iconColor: 'text-content-primary',
-      title: t('bug.channel_github', { defaultValue: 'Open a GitHub issue' }),
+      // Labelled "Report a bug (with logs)" so the primary action people knew
+      // from the Help menu lives here, in the dedicated bug menu. It opens a
+      // GitHub issue pre-filled with the last error and environment.
+      title: t('app.report_bug', { defaultValue: 'Report a bug (with logs)' }),
       desc: t('bug.channel_github_desc', { defaultValue: 'Pre-filled with the last error and environment. Public.' }),
       onClick: handleGithub,
     },

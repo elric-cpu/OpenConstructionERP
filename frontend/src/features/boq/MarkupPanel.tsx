@@ -146,7 +146,11 @@ export function MarkupPanel({ boqId, markups, directCost, currencySymbol, curren
         const pct = typeof m.percentage === 'number' && Number.isFinite(m.percentage) ? m.percentage : 0;
         if (m.markup_type === 'fixed') {
           amount = typeof m.fixed_amount === 'number' && Number.isFinite(m.fixed_amount) ? m.fixed_amount : 0;
-        } else if (m.apply_to === 'cumulative') {
+        } else if (m.apply_to === 'cumulative' || m.apply_to === 'subtotal') {
+          // The backend treats 'subtotal' identically to 'cumulative' (base =
+          // direct cost + the markups before it); GAEB import persists tax
+          // markups as 'subtotal', so basing it on directCost here would
+          // under-state the Amount column and the net total against the server.
           amount = running * (pct / 100);
         } else {
           amount = directCost * (pct / 100);

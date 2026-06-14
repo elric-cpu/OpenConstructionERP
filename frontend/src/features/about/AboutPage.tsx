@@ -20,13 +20,14 @@ import { Changelog, getRecentReleases } from './Changelog';
 export function AboutPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { hash } = useLocation();
+  const { hash, key } = useLocation();
 
   // When arriving via /about#changelog (from the header News button or the
-  // sidebar What's-new card) scroll the changelog section into view. Driving
-  // this off the router hash (not mount) means a hash-only same-route nav,
-  // i.e. clicking "View in-app changelog" while already on /about, still
-  // scrolls; React Router does not remount the page for a hash-only change.
+  // sidebar What's-new card) scroll the changelog section into view. We key the
+  // effect on the router location key as well as the hash: react-router mints a
+  // fresh key on every navigation, so clicking "View in-app changelog" again
+  // while already at /about#changelog (same hash value, after the user scrolled
+  // away) still re-fires the scroll instead of silently doing nothing.
   useEffect(() => {
     if (hash !== '#changelog') return;
     // Defer to the next frame so the changelog section is laid out first.
@@ -35,7 +36,7 @@ export function AboutPage() {
       if (changelog) changelog.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [hash]);
+  }, [hash, key]);
 
   return (
     <div className="space-y-5 animate-fade-in">
