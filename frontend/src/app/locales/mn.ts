@@ -6,6 +6,7 @@ const resource = {
     "journey.button.default": "Төслийн аян",
     "journey.button.title": "Төслийн аян - та хаана байгаа болон дараа нь юу болохыг харна уу",
     "journey.button.prefix": "Алхам",
+    "journey.button.step": "Алхам {{n}}",
     "journey.title": "Таны төслийн аян",
     "journey.subtitle": "Барилгын төслийн анхны боломжоос эхлээд хүлээлгэн өгөх хүртэлх бүх үе шат, мөн та одоо хаана байгаа. Тэнд шилжихийн тулд аль ч алхмыг сонгоно уу.",
     "journey.you_are_here_named": "Та энд байна: {{phase}}",

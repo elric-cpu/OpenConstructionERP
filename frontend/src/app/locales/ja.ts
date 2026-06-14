@@ -6,6 +6,7 @@ const resource = {
     "journey.button.default": "プロジェクトの工程",
     "journey.button.title": "プロジェクトの工程 - 現在地と次のステップを確認",
     "journey.button.prefix": "ステップ",
+    "journey.button.step": "ステップ {{n}}",
     "journey.title": "プロジェクトの工程",
     "journey.subtitle": "受注から引き渡しまで、建設プロジェクトの全段階と現在地を示します。任意のステップを選んで移動できます。",
     "journey.you_are_here_named": "現在地: {{phase}}",

@@ -121,7 +121,9 @@ export const JOURNEY_PHASES: readonly JourneyPhase[] = [
     desc: 'Create the project, set standards and base currency, invite the team.',
     modules: [
       { to: '/projects', labelKey: 'projects.title', label: 'Projects' },
+      { to: '/users', labelKey: 'sidebar.admin_grid.users', label: 'Users & teams' },
       { to: '/files', labelKey: 'nav.project_files', label: 'Files' },
+      { to: '/governance', labelKey: 'sidebar.admin_grid.governance', label: 'Governance' },
     ],
     extraRoutes: ['/settings'],
   },
@@ -279,7 +281,7 @@ export const JOURNEY_PHASES: readonly JourneyPhase[] = [
       { to: '/bi-dashboards', labelKey: 'nav.bi_dashboards', label: 'BI Dashboards' },
       { to: '/reports', labelKey: 'nav.reports', label: 'Reports' },
     ],
-    extraRoutes: ['/analytics', '/reporting', '/dashboards'],
+    extraRoutes: ['/analytics', '/reporting', '/dashboards', '/admin/audit-log'],
   },
   {
     key: 'close',

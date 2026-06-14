@@ -6,6 +6,7 @@ const resource = {
     "journey.button.default": "Perjalanan proyek",
     "journey.button.title": "Perjalanan proyek - lihat posisi Anda dan langkah berikutnya",
     "journey.button.prefix": "Langkah",
+    "journey.button.step": "Langkah {{n}}",
     "journey.title": "Perjalanan proyek Anda",
     "journey.subtitle": "Setiap tahap proyek konstruksi, dari prospek pertama hingga serah terima, dan posisi Anda saat ini. Pilih langkah mana pun untuk langsung menuju ke sana.",
     "journey.you_are_here_named": "Anda di sini: {{phase}}",

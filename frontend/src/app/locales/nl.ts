@@ -6,6 +6,7 @@ const resource = {
     "journey.button.default": "Projectreis",
     "journey.button.title": "Projectreis - zie waar u bent en wat er hierna komt",
     "journey.button.prefix": "Stap",
+    "journey.button.step": "Stap {{n}}",
     "journey.title": "Uw projectreis",
     "journey.subtitle": "Elke fase van een bouwproject, van eerste lead tot oplevering, en waar u nu staat. Kies een stap om daarheen te springen.",
     "journey.you_are_here_named": "U bent hier: {{phase}}",

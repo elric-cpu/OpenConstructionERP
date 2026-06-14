@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
@@ -33,10 +34,36 @@ import {
 
 // Per-arc accent. The CURRENT phase always uses the brand blue ring so "you
 // are here" is unmistakable regardless of which arc it sits in.
-const ARC_ACCENT: Record<JourneyArcKey, { dot: string; text: string; bar: string }> = {
-  plan: { dot: 'bg-oe-blue', text: 'text-oe-blue', bar: 'bg-oe-blue' },
-  procure: { dot: 'bg-violet-500', text: 'text-violet-500', bar: 'bg-violet-500' },
-  deliver: { dot: 'bg-emerald-500', text: 'text-emerald-500', bar: 'bg-emerald-500' },
+const ARC_ACCENT: Record<
+  JourneyArcKey,
+  { dot: string; text: string; bar: string; wash: string; glyph: string }
+> = {
+  // ``wash`` is the gradient start tint behind a phase card (kept extremely
+  // low so it reads as a hint of colour, never a fill); ``glyph`` tints the
+  // faint phase-icon watermark. Together they give each stage a quiet, themed
+  // backdrop without touching text contrast. Plan = blue, procure = violet,
+  // deliver = emerald, so the three arcs read as three colour families.
+  plan: {
+    dot: 'bg-oe-blue',
+    text: 'text-oe-blue',
+    bar: 'bg-oe-blue',
+    wash: 'from-oe-blue/[0.08]',
+    glyph: 'text-oe-blue',
+  },
+  procure: {
+    dot: 'bg-violet-500',
+    text: 'text-violet-500',
+    bar: 'bg-violet-500',
+    wash: 'from-violet-500/[0.08]',
+    glyph: 'text-violet-500',
+  },
+  deliver: {
+    dot: 'bg-emerald-500',
+    text: 'text-emerald-500',
+    bar: 'bg-emerald-500',
+    wash: 'from-emerald-500/[0.08]',
+    glyph: 'text-emerald-500',
+  },
 };
 
 export function ProjectJourneyButton() {
@@ -48,14 +75,19 @@ export function ProjectJourneyButton() {
     () => resolveJourneyPhaseKey(location.pathname),
     [location.pathname],
   );
-  const currentPhase = useMemo(
-    () => JOURNEY_PHASES.find((p) => p.key === currentPhaseKey),
-    [currentPhaseKey],
-  );
+  // The trigger stays deliberately small: just the word "Step" plus the
+  // current step number. The full phase names live inside the panel, so the
+  // top bar is a calm, fixed-width orientation chip, not a label that shifts
+  // width every time you move between screens. Click it to open the full map.
+  const phaseNumber = useMemo(() => {
+    const idx = JOURNEY_PHASES.findIndex((p) => p.key === currentPhaseKey);
+    return idx >= 0 ? idx + 1 : 0;
+  }, [currentPhaseKey]);
 
-  const label = currentPhase
-    ? t(currentPhase.nameKey, { defaultValue: currentPhase.name })
-    : t('journey.button.default', { defaultValue: 'Project journey' });
+  const label =
+    phaseNumber > 0
+      ? t('journey.button.step', { defaultValue: 'Step {{n}}', n: phaseNumber })
+      : t('journey.button.default', { defaultValue: 'Project journey' });
 
   return (
     <>
@@ -75,14 +107,7 @@ export function ProjectJourneyButton() {
         )}
       >
         <RouteIcon size={14} strokeWidth={1.75} className="shrink-0 text-oe-blue" aria-hidden />
-        {currentPhase && (
-          <span className="hidden text-[10px] font-medium uppercase tracking-wide text-content-quaternary md:inline">
-            {t('journey.button.prefix', { defaultValue: 'Step' })}
-          </span>
-        )}
-        <span className="hidden max-w-[10rem] truncate text-xs font-semibold sm:inline">
-          {label}
-        </span>
+        <span className="whitespace-nowrap text-xs font-semibold">{label}</span>
         <ChevronDown size={12} strokeWidth={2} className="shrink-0 text-content-quaternary" aria-hidden />
       </button>
       {open && (
@@ -129,8 +154,13 @@ function ProjectJourneyPanel({
   // Global 1-based number for each phase, in lifecycle order.
   const phaseNumber = (key: string) => JOURNEY_PHASES.findIndex((p) => p.key === key) + 1;
 
-  return (
-    <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto p-3 sm:p-6">
+  // Render through a portal on document.body. The header and several page
+  // shells create their own stacking contexts (sticky + isolate/transform),
+  // which would otherwise trap this overlay *underneath* page content even at
+  // a high z-index. A body-level portal escapes all of them, so the map always
+  // paints on top of everything.
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto p-3 sm:p-6">
       <div
         className="fixed inset-0 bg-black/60 backdrop-blur-sm animate-fade-in"
         onClick={onClose}
@@ -207,56 +237,73 @@ function ProjectJourneyPanel({
                       <div
                         key={phase.key}
                         className={clsx(
-                          'flex flex-col rounded-xl border p-3 transition-colors',
+                          'relative flex flex-col overflow-hidden rounded-xl border p-3',
+                          'bg-gradient-to-br to-surface-primary transition-shadow',
                           isCurrent
-                            ? 'border-oe-blue bg-oe-blue/5 ring-1 ring-oe-blue/30'
-                            : 'border-border-light bg-surface-primary',
+                            ? 'border-oe-blue from-oe-blue/[0.12] shadow-sm ring-1 ring-oe-blue/30'
+                            : clsx('border-border-light hover:shadow-sm', accent.wash),
                         )}
                       >
-                        <div className="flex items-center gap-2.5">
-                          <span
-                            className={clsx(
-                              'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
-                              isCurrent
-                                ? 'bg-oe-blue text-white'
-                                : 'bg-surface-tertiary text-content-secondary',
-                            )}
-                          >
-                            <Icon size={16} strokeWidth={1.75} />
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-2xs font-semibold text-content-quaternary">
-                                {num}
-                              </span>
-                              <h4
-                                className={clsx(
-                                  'truncate text-sm font-semibold',
-                                  isCurrent ? 'text-oe-blue' : 'text-content-primary',
-                                )}
-                              >
-                                {t(phase.nameKey, { defaultValue: phase.name })}
-                              </h4>
-                            </div>
-                          </div>
-                          {isCurrent && (
-                            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-oe-blue/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-oe-blue">
-                              {t('journey.here', { defaultValue: 'Here' })}
-                            </span>
+                        {/* Themed watermark: the phase's own icon, oversized and
+                            barely-there, clipped to the card corner so each stage
+                            quietly "feels like" itself. */}
+                        <Icon
+                          size={104}
+                          strokeWidth={1}
+                          aria-hidden
+                          className={clsx(
+                            'pointer-events-none absolute -bottom-6 -right-5 z-0',
+                            isCurrent
+                              ? 'text-oe-blue opacity-[0.10]'
+                              : clsx(accent.glyph, 'opacity-[0.07]'),
                           )}
-                        </div>
-                        <p className="mt-2 text-xs leading-relaxed text-content-secondary">
-                          {t(phase.descKey, { defaultValue: phase.desc })}
-                        </p>
-                        <div className="mt-2.5 flex flex-wrap gap-1.5">
-                          {phase.modules.map((m) => (
-                            <ModuleChip
-                              key={m.to}
-                              module={m}
-                              active={isOnRoute(location.pathname, m.to)}
-                              onClick={() => go(m.to)}
-                            />
-                          ))}
+                        />
+                        <div className="relative z-10 flex flex-1 flex-col">
+                          <div className="flex items-center gap-2.5">
+                            <span
+                              className={clsx(
+                                'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
+                                isCurrent
+                                  ? 'bg-oe-blue text-white'
+                                  : 'bg-surface-tertiary text-content-secondary',
+                              )}
+                            >
+                              <Icon size={16} strokeWidth={1.75} />
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-2xs font-semibold text-content-quaternary">
+                                  {num}
+                                </span>
+                                <h4
+                                  className={clsx(
+                                    'truncate text-sm font-semibold',
+                                    isCurrent ? 'text-oe-blue' : 'text-content-primary',
+                                  )}
+                                >
+                                  {t(phase.nameKey, { defaultValue: phase.name })}
+                                </h4>
+                              </div>
+                            </div>
+                            {isCurrent && (
+                              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-oe-blue/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-oe-blue">
+                                {t('journey.here', { defaultValue: 'Here' })}
+                              </span>
+                            )}
+                          </div>
+                          <p className="mt-2 text-xs leading-relaxed text-content-secondary">
+                            {t(phase.descKey, { defaultValue: phase.desc })}
+                          </p>
+                          <div className="mt-2.5 flex flex-wrap gap-1.5">
+                            {phase.modules.map((m) => (
+                              <ModuleChip
+                                key={m.to}
+                                module={m}
+                                active={isOnRoute(location.pathname, m.to)}
+                                onClick={() => go(m.to)}
+                              />
+                            ))}
+                          </div>
                         </div>
                       </div>
                     );
@@ -297,7 +344,8 @@ function ProjectJourneyPanel({
           </section>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

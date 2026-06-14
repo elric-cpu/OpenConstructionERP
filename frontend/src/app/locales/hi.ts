@@ -6,6 +6,7 @@ const resource = {
     "journey.button.default": "परियोजना यात्रा",
     "journey.button.title": "परियोजना यात्रा - देखें आप कहाँ हैं और आगे क्या आता है",
     "journey.button.prefix": "चरण",
+    "journey.button.step": "चरण {{n}}",
     "journey.title": "आपकी परियोजना यात्रा",
     "journey.subtitle": "किसी निर्माण परियोजना का हर चरण, पहली लीड से लेकर हैंडओवर तक, और आप अभी कहाँ हैं। वहाँ जाने के लिए कोई भी चरण चुनें।",
     "journey.you_are_here_named": "आप यहाँ हैं: {{phase}}",

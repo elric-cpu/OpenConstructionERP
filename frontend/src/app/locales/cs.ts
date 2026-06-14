@@ -6,6 +6,7 @@ const resource = {
     "journey.button.default": "Průběh projektu",
     "journey.button.title": "Průběh projektu - podívejte se, kde jste a co bude následovat",
     "journey.button.prefix": "Krok",
+    "journey.button.step": "Krok {{n}}",
     "journey.title": "Průběh vašeho projektu",
     "journey.subtitle": "Každá fáze stavebního projektu, od prvního kontaktu po předání, a kde se právě nacházíte. Vyberte libovolný krok a přejděte na něj.",
     "journey.you_are_here_named": "Nacházíte se zde: {{phase}}",

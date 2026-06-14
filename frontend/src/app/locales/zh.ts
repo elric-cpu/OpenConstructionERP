@@ -6,6 +6,7 @@ const resource = {
     "journey.button.default": "项目历程",
     "journey.button.title": "项目历程 - 查看您所处的阶段以及接下来的步骤",
     "journey.button.prefix": "步骤",
+    "journey.button.step": "步骤 {{n}}",
     "journey.title": "您的项目历程",
     "journey.subtitle": "建设项目从首个线索到竣工移交的每个阶段，以及您当前所处的位置。点击任意步骤即可跳转。",
     "journey.you_are_here_named": "您在此处：{{phase}}",

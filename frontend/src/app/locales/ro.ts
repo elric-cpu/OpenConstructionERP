@@ -6,6 +6,7 @@ const resource = {
     "journey.button.default": "Parcursul proiectului",
     "journey.button.title": "Parcursul proiectului - vezi unde te afli si ce urmeaza",
     "journey.button.prefix": "Pasul",
+    "journey.button.step": "Pasul {{n}}",
     "journey.title": "Parcursul proiectului tau",
     "journey.subtitle": "Fiecare etapa a unui proiect de constructii, de la primul lead pana la predare, si unde te afli chiar acum. Alege orice pas pentru a sari acolo.",
     "journey.you_are_here_named": "Te afli aici: {{phase}}",

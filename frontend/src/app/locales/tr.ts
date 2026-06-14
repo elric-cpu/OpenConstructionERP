@@ -6,6 +6,7 @@ const resource = {
     "journey.button.default": "Proje yolculugu",
     "journey.button.title": "Proje yolculugu - nerede oldugunuzu ve sirada ne oldugunu gorun",
     "journey.button.prefix": "Adim",
+    "journey.button.step": "Adim {{n}}",
     "journey.title": "Proje yolculugunuz",
     "journey.subtitle": "Bir insaat projesinin ilk firsattan teslime kadar her asamasi ve su anda nerede oldugunuz. Oraya gitmek icin herhangi bir adimi secin.",
     "journey.you_are_here_named": "Buradasiniz: {{phase}}",

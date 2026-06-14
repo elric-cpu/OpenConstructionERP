@@ -73,6 +73,7 @@ class _StubInvoiceRepo:
         self,
         *,
         project_id: uuid.UUID | None = None,
+        project_ids: set[uuid.UUID] | None = None,
         direction: str | None = None,
         status: str | None = None,
         limit: int = 50,
@@ -81,6 +82,8 @@ class _StubInvoiceRepo:
         rows = list(self.rows.values())
         if project_id is not None:
             rows = [r for r in rows if r.project_id == project_id]
+        if project_ids is not None:
+            rows = [r for r in rows if r.project_id in project_ids]
         if direction is not None:
             rows = [r for r in rows if r.invoice_direction == direction]
         if status is not None:
@@ -136,6 +139,7 @@ class _StubPaymentRepo:
         self,
         *,
         project_id: uuid.UUID | None = None,
+        project_ids: set[uuid.UUID] | None = None,
     ) -> dict[str, float]:
         # Mirrors PaymentRepository.aggregate_by_currency: {currency_code: amount},
         # blank code under "". Default empty so the dashboard math stays zero
@@ -160,16 +164,21 @@ class _StubBudgetRepo:
         self,
         *,
         project_id: uuid.UUID | None = None,
+        project_ids: set[uuid.UUID] | None = None,
         category: str | None = None,
     ) -> tuple[list[Any], int]:
         rows = list(self.rows.values())
         if project_id is not None:
             rows = [r for r in rows if r.project_id == project_id]
+        if project_ids is not None:
+            rows = [r for r in rows if r.project_id in project_ids]
         if category is not None:
             rows = [r for r in rows if r.category == category]
         return rows, len(rows)
 
-    async def aggregate_for_dashboard(self, *, project_id: uuid.UUID | None = None) -> dict[str, Any]:
+    async def aggregate_for_dashboard(
+        self, *, project_id: uuid.UUID | None = None, project_ids: set[uuid.UUID] | None = None
+    ) -> dict[str, Any]:
         # EVM zero-input fallback path (service.create_evm_snapshot) calls
         # this when any of BAC/PV/EV/AC is "0". Mirror the production repo's
         # per-currency dict shape (original/revised/committed/actual_by_currency
@@ -209,10 +218,13 @@ class _StubEVMRepo:
         self,
         *,
         project_id: uuid.UUID | None = None,
+        project_ids: set[uuid.UUID] | None = None,
     ) -> tuple[list[Any], int]:
         rows = self.rows
         if project_id is not None:
             rows = [s for s in rows if s.project_id == project_id]
+        if project_ids is not None:
+            rows = [s for s in rows if s.project_id in project_ids]
         return rows, len(rows)
 
 
@@ -433,7 +445,9 @@ async def test_get_dashboard_returns_invoices_and_budgets() -> None:
     logic is exercised without a real DB."""
     service = _make_service()
 
-    async def _inv_agg(*, project_id: uuid.UUID | None = None) -> dict[str, Any]:
+    async def _inv_agg(
+        *, project_id: uuid.UUID | None = None, project_ids: set[uuid.UUID] | None = None
+    ) -> dict[str, Any]:
         # Per-currency shape mirrors InvoiceRepository.aggregate_for_dashboard.
         # Single currency (EUR) keeps the dashboard FX conversion a no-op so
         # the totals below match the raw figures.
@@ -451,7 +465,9 @@ async def test_get_dashboard_returns_invoices_and_budgets() -> None:
             "currency": "EUR",
         }
 
-    async def _budget_agg(*, project_id: uuid.UUID | None = None) -> dict[str, Any]:
+    async def _budget_agg(
+        *, project_id: uuid.UUID | None = None, project_ids: set[uuid.UUID] | None = None
+    ) -> dict[str, Any]:
         return {
             "original_by_currency": {"EUR": 100_000.0},
             "revised_by_currency": {"EUR": 110_000.0},
@@ -460,7 +476,9 @@ async def test_get_dashboard_returns_invoices_and_budgets() -> None:
             "currency": "EUR",
         }
 
-    async def _payments_by_currency(*, project_id: uuid.UUID | None = None) -> dict[str, float]:
+    async def _payments_by_currency(
+        *, project_id: uuid.UUID | None = None, project_ids: set[uuid.UUID] | None = None
+    ) -> dict[str, float]:
         return {"EUR": 15_000.0}
 
     service.invoices.aggregate_for_dashboard = _inv_agg  # type: ignore[attr-defined]

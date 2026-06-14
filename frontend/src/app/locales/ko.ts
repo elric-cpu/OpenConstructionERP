@@ -6,6 +6,7 @@ const resource = {
     "journey.button.default": "프로젝트 여정",
     "journey.button.title": "프로젝트 여정 - 현재 위치와 다음 단계를 확인하세요",
     "journey.button.prefix": "단계",
+    "journey.button.step": "단계 {{n}}",
     "journey.title": "나의 프로젝트 여정",
     "journey.subtitle": "최초 리드부터 인계까지 건설 프로젝트의 모든 단계와 현재 위치를 보여줍니다. 원하는 단계를 선택해 이동하세요.",
     "journey.you_are_here_named": "현재 위치: {{phase}}",

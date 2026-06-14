@@ -6,6 +6,7 @@ const resource = {
     "journey.button.default": "Projektresa",
     "journey.button.title": "Projektresa - se var du befinner dig och vad som kommer härnäst",
     "journey.button.prefix": "Steg",
+    "journey.button.step": "Steg {{n}}",
     "journey.title": "Din projektresa",
     "journey.subtitle": "Varje skede i ett byggprojekt, från första lead till överlämning, och var du befinner dig just nu. Välj vilket steg som helst för att hoppa dit.",
     "journey.you_are_here_named": "Du är här: {{phase}}",

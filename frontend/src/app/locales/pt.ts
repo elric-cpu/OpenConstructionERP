@@ -6,6 +6,7 @@ const resource = {
     "journey.button.default": "Jornada do projeto",
     "journey.button.title": "Jornada do projeto - veja onde você está e o que vem a seguir",
     "journey.button.prefix": "Etapa",
+    "journey.button.step": "Etapa {{n}}",
     "journey.title": "A jornada do seu projeto",
     "journey.subtitle": "Cada fase de um projeto de construção, do primeiro lead à entrega, e onde você está agora. Escolha qualquer etapa para ir até ela.",
     "journey.you_are_here_named": "Você está aqui: {{phase}}",

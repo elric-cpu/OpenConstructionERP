@@ -6,6 +6,7 @@ const resource = {
     "journey.button.default": "Путь проекта",
     "journey.button.title": "Путь проекта - посмотрите, где вы находитесь и что дальше",
     "journey.button.prefix": "Шаг",
+    "journey.button.step": "Шаг {{n}}",
     "journey.title": "Путь вашего проекта",
     "journey.subtitle": "Каждый этап строительного проекта, от первого лида до сдачи, и то, где вы находитесь сейчас. Выберите любой шаг, чтобы перейти к нему.",
     "journey.you_are_here_named": "Вы здесь: {{phase}}",

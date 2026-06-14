@@ -6,6 +6,7 @@ const resource = {
     "journey.button.default": "Tijek projekta",
     "journey.button.title": "Tijek projekta - pogledajte gdje se nalazite i što slijedi",
     "journey.button.prefix": "Korak",
+    "journey.button.step": "Korak {{n}}",
     "journey.title": "Tijek vašeg projekta",
     "journey.subtitle": "Svaka faza građevinskog projekta, od prvog kontakta do primopredaje, i gdje se trenutačno nalazite. Odaberite bilo koji korak da biste skočili na njega.",
     "journey.you_are_here_named": "Ovdje se nalazite: {{phase}}",

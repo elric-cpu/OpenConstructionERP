@@ -6,6 +6,7 @@ const resource = {
     "journey.button.default": "Hành trình dự án",
     "journey.button.title": "Hành trình dự án - xem bạn đang ở đâu và bước tiếp theo là gì",
     "journey.button.prefix": "Bước",
+    "journey.button.step": "Bước {{n}}",
     "journey.title": "Hành trình dự án của bạn",
     "journey.subtitle": "Mọi giai đoạn của một dự án xây dựng, từ cơ hội đầu tiên đến bàn giao, và bạn đang ở đâu ngay lúc này. Chọn bất kỳ bước nào để chuyển đến đó.",
     "journey.you_are_here_named": "Bạn đang ở đây: {{phase}}",

@@ -6,6 +6,7 @@ const resource = {
     "journey.button.default": "Projektin polku",
     "journey.button.title": "Projektin polku - katso missä olet ja mitä on seuraavaksi",
     "journey.button.prefix": "Vaihe",
+    "journey.button.step": "Vaihe {{n}}",
     "journey.title": "Projektisi polku",
     "journey.subtitle": "Rakennushankkeen jokainen vaihe ensimmäisestä liidistä luovutukseen, ja missä olet juuri nyt. Valitse mikä tahansa vaihe siirtyäksesi siihen.",
     "journey.you_are_here_named": "Olet tässä: {{phase}}",
