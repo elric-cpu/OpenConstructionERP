@@ -18,7 +18,7 @@ import {
   resolveJourneyPhaseKey,
   type JourneyArcKey,
   type JourneyModule,
-} from './projectJourney';
+} from './projectJourneyData';
 
 /**
  * ProjectJourney - a whole-platform lifecycle map opened from the top bar.
