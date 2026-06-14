@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { boqApi, type Markup, type CreateMarkupData, type UpdateMarkupData } from './api';
@@ -131,6 +131,32 @@ export function MarkupPanel({ boqId, markups, directCost, currencySymbol, curren
     },
   });
 
+  // Cascading calculation, used both for the per-row Amount column and for the
+  // toggle flash so the flash matches what a row actually contributes (fixed
+  // amounts and cumulative bases included). Memoised so the toggle handler can
+  // read a row's real contribution without recomputing. Defensive against
+  // malformed server payloads - Apply-Regional-Template used to crash the panel
+  // when a markup came back without a numeric percentage.
+  const { calcMap, netTotal, calculated } = useMemo(() => {
+    let running = directCost;
+    const calculated = (Array.isArray(markups) ? markups : [])
+      .filter((m) => m && m.is_active !== false)
+      .map((m) => {
+        let amount = 0;
+        const pct = typeof m.percentage === 'number' && Number.isFinite(m.percentage) ? m.percentage : 0;
+        if (m.markup_type === 'fixed') {
+          amount = typeof m.fixed_amount === 'number' && Number.isFinite(m.fixed_amount) ? m.fixed_amount : 0;
+        } else if (m.apply_to === 'cumulative') {
+          amount = running * (pct / 100);
+        } else {
+          amount = directCost * (pct / 100);
+        }
+        running += amount;
+        return { id: m.id, amount };
+      });
+    return { calcMap: new Map(calculated.map((c) => [c.id, c.amount])), netTotal: running, calculated };
+  }, [markups, directCost]);
+
   const handleAddMarkup = useCallback(() => {
     addMutation.mutate({
       name: t('boq.new_markup', { defaultValue: 'New Markup' }),
@@ -142,9 +168,22 @@ export function MarkupPanel({ boqId, markups, directCost, currencySymbol, curren
 
   const handleToggleActive = useCallback(
     (markup: Markup) => {
-      // Calculate impact for visual feedback
-      const pct = markup.percentage ?? 0;
-      const impact = directCost * (pct / 100);
+      // Impact for the brief visual flash. Prefer the exact cascade amount the
+      // panel already computed for this row (this respects fixed_amount markups
+      // and cumulative bases); fall back to a flat estimate only when the row is
+      // currently inactive and therefore absent from the cascade map.
+      let impact = calcMap.get(markup.id);
+      if (impact === undefined) {
+        if (markup.markup_type === 'fixed') {
+          impact =
+            typeof markup.fixed_amount === 'number' && Number.isFinite(markup.fixed_amount)
+              ? markup.fixed_amount
+              : 0;
+        } else {
+          const pct = markup.percentage ?? 0;
+          impact = directCost * (pct / 100);
+        }
+      }
       const sign = markup.is_active ? '-' : '+';
       updateMutation.mutate(
         { markupId: markup.id, data: { is_active: !markup.is_active } },
@@ -164,7 +203,7 @@ export function MarkupPanel({ boqId, markups, directCost, currencySymbol, curren
         },
       );
     },
-    [updateMutation, directCost, fmt, currencySymbol],
+    [updateMutation, directCost, calcMap, fmt, currencySymbol],
   );
 
   const handleStartEdit = useCallback((markupId: string, field: 'name' | 'percentage' | 'category', value: string) => {
@@ -179,14 +218,27 @@ export function MarkupPanel({ boqId, markups, directCost, currencySymbol, curren
       updateMutation.mutate({ markupId, data: { name: value } });
     } else if (field === 'percentage') {
       const num = parseFloat(value);
-      if (!isNaN(num) && num >= 0 && num <= 100) {
-        updateMutation.mutate({ markupId, data: { percentage: num } });
+      if (isNaN(num) || num < 0 || num > 100) {
+        // Keep the editor open and explain, rather than silently reverting the
+        // typed value with no feedback (a number input's min/max does not block
+        // out-of-range typing).
+        addToast({
+          type: 'error',
+          title: t('boq.markup_pct_invalid_title', {
+            defaultValue: 'Enter a percentage from 0 to 100',
+          }),
+          message: t('boq.markup_pct_invalid_msg', {
+            defaultValue: 'The markup percentage must be a number between 0 and 100.',
+          }),
+        });
+        return; // leave editState intact so the field stays editable
       }
+      updateMutation.mutate({ markupId, data: { percentage: num } });
     } else if (field === 'category') {
       updateMutation.mutate({ markupId, data: { category: value } });
     }
     setEditState(null);
-  }, [editState, updateMutation]);
+  }, [editState, updateMutation, addToast, t]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -195,29 +247,6 @@ export function MarkupPanel({ boqId, markups, directCost, currencySymbol, curren
     },
     [handleCommitEdit],
   );
-
-  // Cascading calculation for preview. Defensive against malformed server
-  // payloads — Apply-Regional-Template used to crash the panel when a markup
-  // came back without a numeric percentage (Bug 3).
-  let running = directCost;
-  const calculated = (Array.isArray(markups) ? markups : [])
-    .filter((m) => m && m.is_active !== false)
-    .map((m) => {
-      let amount = 0;
-      const pct = typeof m.percentage === 'number' && Number.isFinite(m.percentage) ? m.percentage : 0;
-      if (m.markup_type === 'fixed') {
-        amount = typeof m.fixed_amount === 'number' && Number.isFinite(m.fixed_amount) ? m.fixed_amount : 0;
-      } else if (m.apply_to === 'cumulative') {
-        amount = running * (pct / 100);
-      } else {
-        amount = directCost * (pct / 100);
-      }
-      running += amount;
-      return { id: m.id, amount };
-    });
-
-  const calcMap = new Map(calculated.map((c) => [c.id, c.amount]));
-  const netTotal = running;
 
   const categoryLabel = (cat: string) => {
     const key = `boq.markup_${cat}`;

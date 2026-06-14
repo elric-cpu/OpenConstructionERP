@@ -735,46 +735,14 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
           class="flex flex-1 flex-wrap items-center gap-1.5 min-w-0"
         >
           <button
-            aria-controls="whatsnew-chip-field-popover"
+            aria-controls="whatsnew-chip-journey-popover"
             aria-expanded="false"
             class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
-            title="Field time and payroll"
+            title="Project journey map in the top bar"
             type="button"
           >
             <svg
-              class="lucide lucide-clock"
-              fill="none"
-              height="11"
-              stroke="currentColor"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2.25"
-              viewBox="0 0 24 24"
-              width="11"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <circle
-                cx="12"
-                cy="12"
-                r="10"
-              />
-              <polyline
-                points="12 6 12 12 16 14"
-              />
-            </svg>
-            <span>
-              Field time
-            </span>
-          </button>
-          <button
-            aria-controls="whatsnew-chip-controls-popover"
-            aria-expanded="false"
-            class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
-            title="Project controls dashboard"
-            type="button"
-          >
-            <svg
-              class="lucide lucide-gauge"
+              class="lucide lucide-map"
               fill="none"
               height="11"
               stroke="currentColor"
@@ -786,21 +754,60 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
               xmlns="http://www.w3.org/2000/svg"
             >
               <path
-                d="m12 14 4-4"
+                d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"
               />
               <path
-                d="M3.34 19a10 10 0 1 1 17.32 0"
+                d="M15 5.764v15"
+              />
+              <path
+                d="M9 3.236v15"
               />
             </svg>
             <span>
-              Controls
+              Journey map
             </span>
           </button>
           <button
-            aria-controls="whatsnew-chip-compliance-popover"
+            aria-controls="whatsnew-chip-fx-popover"
             aria-expanded="false"
             class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
-            title="Compliance gates and ITP hold points"
+            title="Currency inversion guard"
+            type="button"
+          >
+            <svg
+              class="lucide lucide-arrow-left-right"
+              fill="none"
+              height="11"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2.25"
+              viewBox="0 0 24 24"
+              width="11"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M8 3 4 7l4 4"
+              />
+              <path
+                d="M4 7h16"
+              />
+              <path
+                d="m16 21 4-4-4-4"
+              />
+              <path
+                d="M20 17H4"
+              />
+            </svg>
+            <span>
+              FX guard
+            </span>
+          </button>
+          <button
+            aria-controls="whatsnew-chip-bim-popover"
+            aria-expanded="false"
+            class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
+            title="BIM bulk-import validation"
             type="button"
           >
             <svg
@@ -823,14 +830,92 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
               />
             </svg>
             <span>
-              Gates
+              BIM import
             </span>
           </button>
           <button
-            aria-controls="whatsnew-chip-owner-popover"
+            aria-controls="whatsnew-chip-takeoff-popover"
             aria-expanded="false"
             class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
-            title="Owner billing and progress reports"
+            title="Takeoff flags scanned pages"
+            type="button"
+          >
+            <svg
+              class="lucide lucide-scan-line"
+              fill="none"
+              height="11"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2.25"
+              viewBox="0 0 24 24"
+              width="11"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M3 7V5a2 2 0 0 1 2-2h2"
+              />
+              <path
+                d="M17 3h2a2 2 0 0 1 2 2v2"
+              />
+              <path
+                d="M21 17v2a2 2 0 0 1-2 2h-2"
+              />
+              <path
+                d="M7 21H5a2 2 0 0 1-2-2v-2"
+              />
+              <path
+                d="M7 12h10"
+              />
+            </svg>
+            <span>
+              Scanned pages
+            </span>
+          </button>
+          <button
+            aria-controls="whatsnew-chip-din276-popover"
+            aria-expanded="false"
+            class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
+            title="DIN 276 dotted CAD codes"
+            type="button"
+          >
+            <svg
+              class="lucide lucide-list-tree"
+              fill="none"
+              height="11"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2.25"
+              viewBox="0 0 24 24"
+              width="11"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M21 12h-8"
+              />
+              <path
+                d="M21 6H8"
+              />
+              <path
+                d="M21 18h-8"
+              />
+              <path
+                d="M3 6v4c0 1.1.9 2 2 2h3"
+              />
+              <path
+                d="M3 10v6c0 1.1.9 2 2 2h3"
+              />
+            </svg>
+            <span>
+              DIN 276
+            </span>
+          </button>
+          <button
+            aria-controls="whatsnew-chip-fixes-popover"
+            aria-expanded="false"
+            class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
+            title="Comment and DWG preview fixes"
             type="button"
           >
             <svg
@@ -862,85 +947,7 @@ exports[`Visual Regression - DashboardPage > renders loading/skeleton state 1`] 
               />
             </svg>
             <span>
-              Owner billing
-            </span>
-          </button>
-          <button
-            aria-controls="whatsnew-chip-agents-popover"
-            aria-expanded="false"
-            class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
-            title="No-code agent builder"
-            type="button"
-          >
-            <svg
-              class="lucide lucide-bot"
-              fill="none"
-              height="11"
-              stroke="currentColor"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2.25"
-              viewBox="0 0 24 24"
-              width="11"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M12 8V4H8"
-              />
-              <rect
-                height="12"
-                rx="2"
-                width="16"
-                x="4"
-                y="8"
-              />
-              <path
-                d="M2 14h2"
-              />
-              <path
-                d="M20 14h2"
-              />
-              <path
-                d="M15 13v2"
-              />
-              <path
-                d="M9 13v2"
-              />
-            </svg>
-            <span>
-              Agents
-            </span>
-          </button>
-          <button
-            aria-controls="whatsnew-chip-photos-popover"
-            aria-expanded="false"
-            class="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium ring-1 transition-colors bg-white/65 dark:bg-slate-900/45 text-blue-900 dark:text-sky-100 ring-sky-500/25 hover:bg-sky-500/15 dark:hover:bg-sky-400/15"
-            title="Jobsite photo intelligence"
-            type="button"
-          >
-            <svg
-              class="lucide lucide-camera"
-              fill="none"
-              height="11"
-              stroke="currentColor"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2.25"
-              viewBox="0 0 24 24"
-              width="11"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"
-              />
-              <circle
-                cx="12"
-                cy="13"
-                r="3"
-              />
-            </svg>
-            <span>
-              Photos
+              Fixes
             </span>
           </button>
         </div>

@@ -719,3 +719,13 @@ async def import_clashes_bcfzip(
         ) from exc
 
     return report.to_dict()
+
+
+# OpenCDE BCF-API 3.0 sub-router. Composed inline, like every other module's
+# sub-routers, so it is part of this router on a normal import (served under
+# /api/v1/bcf/...). The module loader imports this file once and does not
+# reload it, so the routes persist without any importlib monkeypatching. The
+# import sits at the end so the main router is fully built first.
+from app.modules.bcf.opencde_router import opencde_router  # noqa: E402
+
+router.include_router(opencde_router)

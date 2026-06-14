@@ -17,9 +17,23 @@ import {
   JOURNEY_PHASES,
   JOURNEY_ALWAYS_ON,
   resolveJourneyPhaseKey,
+  journeyRouteCandidate,
   type JourneyArcKey,
   type JourneyModule,
 } from './projectJourneyData';
+import { useModuleStore } from '@/stores/useModuleStore';
+
+// Journey chips for plugin-backed routes must hide when their module is
+// disabled, exactly as the Sidebar does. Otherwise the chip is a dead link:
+// Pipelines is a default-disabled plugin module with no hardcoded route, so
+// clicking it would fall through to the catch-all and 404. Routes absent from
+// this map are plain app routes and are always shown.
+const CHIP_MODULE_ID: Record<string, string> = {
+  '/pipelines': 'pipelines',
+  '/collaboration': 'collaboration',
+  '/benchmarks': 'cost-benchmark',
+  '/sustainability': 'sustainability',
+};
 
 /**
  * ProjectJourney - a whole-platform lifecycle map opened from the top bar.
@@ -130,6 +144,7 @@ function ProjectJourneyPanel({
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
+  const isModuleEnabled = useModuleStore((s) => s.isModuleEnabled);
   const closeRef = useRef<HTMLButtonElement>(null);
 
   // Close on Escape; focus the close button on open for keyboard users.
@@ -148,6 +163,17 @@ function ProjectJourneyPanel({
       onClose();
     },
     [navigate, onClose],
+  );
+
+  // A chip is shown only when its plugin module is enabled (default-true for
+  // plain app routes not in the map), so the map never surfaces a dead link
+  // the Sidebar deliberately hides.
+  const chipEnabled = useCallback(
+    (to: string) => {
+      const moduleId = CHIP_MODULE_ID[to.split('?')[0]!];
+      return !moduleId || isModuleEnabled(moduleId);
+    },
+    [isModuleEnabled],
   );
 
   const currentPhase = JOURNEY_PHASES.find((p) => p.key === currentPhaseKey);
@@ -295,7 +321,7 @@ function ProjectJourneyPanel({
                             {t(phase.descKey, { defaultValue: phase.desc })}
                           </p>
                           <div className="mt-2.5 flex flex-wrap gap-1.5">
-                            {phase.modules.map((m) => (
+                            {phase.modules.filter((m) => chipEnabled(m.to)).map((m) => (
                               <ModuleChip
                                 key={m.to}
                                 module={m}
@@ -332,7 +358,7 @@ function ProjectJourneyPanel({
               </span>
             </div>
             <div className="mt-2.5 flex flex-wrap gap-1.5">
-              {JOURNEY_ALWAYS_ON.map((m) => (
+              {JOURNEY_ALWAYS_ON.filter((m) => chipEnabled(m.to)).map((m) => (
                 <ModuleChip
                   key={m.to}
                   module={m}
@@ -380,8 +406,12 @@ function ModuleChip({
   );
 }
 
-/** True when ``pathname`` is on (or under) the module route ``to``. */
+/** True when ``pathname`` is on (or under) the module route ``to``. Normalises
+ *  the pathname the same way phase detection does, so a project-scoped route
+ *  (``/projects/<id>/finance``) highlights its chip instead of silently
+ *  failing the equality test. */
 function isOnRoute(pathname: string, to: string): boolean {
   const target = to.split('?')[0]!;
-  return pathname === target || pathname.startsWith(target + '/');
+  const candidate = journeyRouteCandidate(pathname);
+  return candidate === target || candidate.startsWith(target + '/');
 }

@@ -4,7 +4,7 @@
 
 import { useEffect } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Mail, Shield, BookOpen, Users, Award,
   Briefcase, Globe, ExternalLink,
@@ -20,20 +20,22 @@ import { Changelog, getRecentReleases } from './Changelog';
 export function AboutPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { hash } = useLocation();
 
   // When arriving via /about#changelog (from the header News button or the
-  // sidebar What's-new card) scroll the changelog section into view on mount.
-  // The in-page "View all" link does the same on click; this covers the
-  // cross-route navigation case where there is no click on this page.
+  // sidebar What's-new card) scroll the changelog section into view. Driving
+  // this off the router hash (not mount) means a hash-only same-route nav,
+  // i.e. clicking "View in-app changelog" while already on /about, still
+  // scrolls; React Router does not remount the page for a hash-only change.
   useEffect(() => {
-    if (window.location.hash !== '#changelog') return;
+    if (hash !== '#changelog') return;
     // Defer to the next frame so the changelog section is laid out first.
     const frame = window.requestAnimationFrame(() => {
       const changelog = document.querySelector('[data-changelog-anchor]');
       if (changelog) changelog.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
     return () => window.cancelAnimationFrame(frame);
-  }, []);
+  }, [hash]);
 
   return (
     <div className="space-y-5 animate-fade-in">

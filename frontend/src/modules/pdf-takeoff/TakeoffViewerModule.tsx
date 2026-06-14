@@ -497,6 +497,13 @@ export default function TakeoffViewerModule({
 
   // Document persistence + server sync
   const [fileName, setFileName] = useState<string | null>(null);
+  // Per-page text-layer audit (8.2.0). When a document was opened from the
+  // server we fetch its metadata to learn how many pages came back with no
+  // text layer (likely scanned drawings that need OCR) so the viewer can flag
+  // them instead of presenting them as silently empty. ``null`` = not loaded /
+  // not applicable (e.g. a freshly dropped local file).
+  const [noTextLayer, setNoTextLayer] = useState<{ count: number; pages: number[] } | null>(null);
+  const [noTextBannerDismissed, setNoTextBannerDismissed] = useState(false);
   const activeProjectId = useProjectContextStore((s) => s.activeProjectId);
   const activeProjectName = useProjectContextStore((s) => s.activeProjectName);
 
@@ -673,6 +680,35 @@ export default function TakeoffViewerModule({
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialPdfUrl, initialPdfName]);
+
+  /* ── Fetch server-side document metadata (text-layer audit) ───────── */
+  // When a PDF is opened from the server (filmstrip / deep link) the URL is
+  // ``/v1/takeoff/documents/{id}/download/``. We pull the document metadata so
+  // the viewer can flag pages that came back with no text layer (likely
+  // scanned drawings that need OCR). Best-effort: any failure leaves the
+  // banner hidden rather than blocking the drawing.
+  useEffect(() => {
+    setNoTextLayer(null);
+    setNoTextBannerDismissed(false);
+    if (!initialPdfUrl) return;
+    const match = initialPdfUrl.match(/\/documents\/([^/?#]+)/);
+    const docId = match?.[1];
+    if (!docId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const meta = await takeoffApi.getDocument(decodeURIComponent(docId));
+        if (cancelled || !meta) return;
+        const count = meta.pages_without_text ?? 0;
+        if (count > 0) {
+          setNoTextLayer({ count, pages: meta.pages_without_text_list ?? [] });
+        }
+      } catch {
+        /* metadata is advisory - ignore and leave the banner hidden */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [initialPdfUrl]);
 
   /* ── Warn on unsaved changes (tab close / navigation) ────────────── */
 
@@ -4352,6 +4388,49 @@ export default function TakeoffViewerModule({
               </label>
               </div>
             </div>
+
+            {/* No-text-layer banner (8.2.0) — surfaces how many pages came back
+                with no text layer (usually scanned drawings) so a partly- or
+                fully-scanned PDF is clearly flagged for OCR instead of being
+                silently treated as empty. Dismissible per opened document. */}
+            {noTextLayer && noTextLayer.count > 0 && !noTextBannerDismissed && (
+              <div
+                className="mb-2 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] text-amber-800 dark:border-amber-700/60 dark:bg-amber-900/20 dark:text-amber-200"
+                role="status"
+                data-testid="takeoff-needs-ocr-banner"
+              >
+                <Scan size={15} className="mt-0.5 shrink-0" aria-hidden="true" />
+                <div className="flex-1">
+                  <span className="font-semibold">
+                    {totalPages > 0 && noTextLayer.count >= totalPages
+                      ? t('takeoff.needs_ocr_banner_all', {
+                          defaultValue: 'No text layer found - this looks like a scanned drawing and likely needs OCR.',
+                        })
+                      : t('takeoff.needs_ocr_banner', {
+                          defaultValue: '{{n}} of {{total}} pages have no text layer and likely need OCR.',
+                          n: noTextLayer.count,
+                          total: totalPages || noTextLayer.count,
+                        })}
+                  </span>
+                  {noTextLayer.pages.length > 0 && noTextLayer.pages.length <= 30 && (
+                    <span className="ml-1 opacity-80">
+                      {t('takeoff.needs_ocr_banner_pages', {
+                        defaultValue: 'Pages: {{pages}}',
+                        pages: noTextLayer.pages.join(', '),
+                      })}
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setNoTextBannerDismissed(true)}
+                  className="shrink-0 rounded p-0.5 text-amber-700 hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-900/40"
+                  aria-label={t('takeoff.needs_ocr_banner_dismiss', { defaultValue: 'Dismiss' })}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            )}
 
             {/* Canvas — the PDF render surface is a genuinely-needed internal
                 scroll region (drawings are far larger than any viewport).

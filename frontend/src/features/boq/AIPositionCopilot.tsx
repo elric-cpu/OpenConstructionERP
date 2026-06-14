@@ -255,17 +255,33 @@ export function AIPositionCopilot({
     mutationFn: ({ action }: { action: CopilotAction; key: string }) =>
       boqApi.positionCopilotApply(positionId, action),
     onSuccess: (response, { action, key }) => {
-      const base = positionRef.current;
-      if (base) {
-        // Use the server-returned action (status flipped to "applied") so the
-        // mirror writes the authoritative after-state.
-        onApplyAction(response.action ?? action, base);
-      }
+      // The apply endpoint returns HTTP 200 even when the change could not be
+      // persisted: it rolls the write back and reports status="failed" with an
+      // error note. Only treat a genuinely-applied action as applied, otherwise
+      // the card would flip to a green "Applied" badge over a write that never
+      // landed (and push a phantom undo entry).
+      const applied = response.action ?? action;
       setApplyingKeys((prev) => {
         const next = new Set(prev);
         next.delete(key);
         return next;
       });
+      if (applied.status === 'failed') {
+        const detail =
+          applied.error ||
+          t('boq.copilot.apply_failed', { defaultValue: 'Could not apply this change.' });
+        setMessages((prev) => [
+          ...prev,
+          { id: `error-${Date.now()}`, role: 'error', content: detail },
+        ]);
+        return;
+      }
+      const base = positionRef.current;
+      if (base) {
+        // Use the server-returned action (status flipped to "applied") so the
+        // mirror writes the authoritative after-state.
+        onApplyAction(applied, base);
+      }
       setAppliedKeys((prev) => new Set(prev).add(key));
     },
     onError: (error: unknown, { key }) => {

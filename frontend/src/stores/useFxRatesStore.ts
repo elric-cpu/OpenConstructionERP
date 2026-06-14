@@ -50,6 +50,35 @@ const SEED_RATES_VS_USD: Record<string, number> = {
   MYR: 0.221,
   PHP: 0.0177,
   VND: 0.0000405,
+  // Approximate reference rates for the remaining picker currencies.
+  // These exist only so the inversion sanity check has a magnitude to
+  // compare against — they are rough mid-2020s figures, not for conversion.
+  BGN: 0.556, // ~1.8 per USD
+  HRK: 0.143, // ~7.0 per USD
+  ISK: 0.00725, // ~138 per USD
+  ARS: 0.001, // ~1000 per USD
+  CLP: 0.00105, // ~950 per USD
+  PEN: 0.267, // ~3.75 per USD
+  COP: 0.00025, // ~4000 per USD
+  BHD: 2.63, // ~0.38 per USD
+  KWD: 3.23, // ~0.31 per USD
+  OMR: 2.63, // ~0.38 per USD
+  TWD: 0.0313, // ~32 per USD
+  JOD: 1.41, // ~0.71 per USD
+  LBP: 0.0000112, // ~89000 per USD
+  PKR: 0.0036, // ~278 per USD
+  BDT: 0.00909, // ~110 per USD
+  LKR: 0.00333, // ~300 per USD
+  EGP: 0.0208, // ~48 per USD
+  NGN: 0.000667, // ~1500 per USD
+  KES: 0.00775, // ~129 per USD
+  MAD: 0.1, // ~10 per USD
+  TND: 0.323, // ~3.1 per USD
+  GHS: 0.0667, // ~15 per USD
+  TZS: 0.000385, // ~2600 per USD
+  UGX: 0.000263, // ~3800 per USD
+  ETB: 0.0175, // ~57 per USD
+  FJD: 0.444, // ~2.25 per USD
 };
 
 interface FxRatesState {

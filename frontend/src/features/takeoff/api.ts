@@ -167,6 +167,11 @@ export interface TakeoffDocumentResponse {
   size_bytes: number;
   status: string;
   uploaded_at: string | null;
+  /** How many pages came back with no text layer (likely scanned drawings
+   *  that need OCR). 0 / absent for a fully text-based PDF (8.2.0). */
+  pages_without_text?: number;
+  /** The 1-based page numbers with no text layer (8.2.0). */
+  pages_without_text_list?: number[];
 }
 
 /* ── Revision compare (Item 17) ────────────────────────────────────────── */
@@ -319,6 +324,17 @@ export const takeoffApi = {
       ? `/v1/takeoff/documents/?project_id=${encodeURIComponent(projectId)}`
       : '/v1/takeoff/documents/';
     return apiGet<TakeoffDocumentResponse[]>(url);
+  },
+
+  /** Fetch a single takeoff document's metadata (status + the per-page
+   *  text-layer audit). Returns null when the optional `oe_takeoff` module is
+   *  disabled so the caller can degrade silently. Used by the viewer to flag
+   *  pages with no text layer that likely need OCR. */
+  getDocument: async (docId: string): Promise<TakeoffDocumentResponse | null> => {
+    if (!(await isModuleLoaded('oe_takeoff'))) return null;
+    return apiGet<TakeoffDocumentResponse>(
+      `/v1/takeoff/documents/${encodeURIComponent(docId)}`,
+    );
   },
 
   /** Delete an uploaded takeoff document. */

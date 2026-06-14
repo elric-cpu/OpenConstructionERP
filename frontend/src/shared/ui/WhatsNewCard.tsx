@@ -36,12 +36,12 @@ import {
   Sparkles,
   X,
   ArrowRight,
-  Clock,
-  Gauge,
   ShieldCheck,
   FileText,
-  Bot,
-  Camera,
+  Map,
+  ArrowLeftRight,
+  ScanLine,
+  ListTree,
   type LucideIcon,
 } from 'lucide-react';
 import { APP_VERSION } from '@/shared/lib/version';
@@ -83,158 +83,139 @@ interface Section {
   bullets: { key: string; default: string }[];
 }
 
-/* ── v6.10.0 release content ────────────────────────────────────────────
-   Six chips for the v6.10 wave: field time & payroll, project controls,
-   compliance gates, owner billing, the agent builder and jobsite photo
-   intelligence. Bullets surface only when the chip is expanded. */
-const SECTIONS_V6100: Section[] = [
+/* ── v8.2.0 release content ─────────────────────────────────────────────
+   Six chips for the v8.2 wave: the project journey map (headline), the
+   currency inversion guard, BIM bulk-import validation, takeoff scanned-page
+   flagging, DIN 276 dotted CAD codes, and the comment/DWG-preview fixes.
+   Bullets surface only when the chip is expanded. */
+const SECTIONS_V820: Section[] = [
   {
-    id: 'field',
-    icon: Clock,
-    titleKey: 'whatsnew.v6100.field.title',
-    titleDefault: 'Field time and payroll',
-    chipKey: 'whatsnew.v6100.field.chip',
-    chipDefault: 'Field time',
+    id: 'journey',
+    icon: Map,
+    titleKey: 'whatsnew.v820.journey.title',
+    titleDefault: 'Project journey map in the top bar',
+    chipKey: 'whatsnew.v820.journey.chip',
+    chipDefault: 'Journey map',
     bullets: [
       {
-        key: 'whatsnew.v6100.field.b1',
+        key: 'whatsnew.v820.journey.b1',
         default:
-          'Crews log time on the jobsite from the field app, online or offline.',
+          'A control in the top bar names the lifecycle phase the screen you are on belongs to.',
       },
       {
-        key: 'whatsnew.v6100.field.b2',
+        key: 'whatsnew.v820.journey.b2',
         default:
-          'Approved timesheets flow straight into payroll runs with rates and allowances.',
+          'Open it to see the whole project from first lead to handover: three arcs and eleven numbered phases.',
       },
       {
-        key: 'whatsnew.v6100.field.b3',
+        key: 'whatsnew.v820.journey.b3',
         default:
-          'A subcontractor payment portal lets trades submit and track their payments.',
+          'Every major module sits on its phase as a link, and it is translated in every language.',
       },
     ],
   },
   {
-    id: 'controls',
-    icon: Gauge,
-    titleKey: 'whatsnew.v6100.controls.title',
-    titleDefault: 'Project controls dashboard',
-    chipKey: 'whatsnew.v6100.controls.chip',
-    chipDefault: 'Controls',
+    id: 'fx',
+    icon: ArrowLeftRight,
+    titleKey: 'whatsnew.v820.fx.title',
+    titleDefault: 'Currency inversion guard',
+    chipKey: 'whatsnew.v820.fx.chip',
+    chipDefault: 'FX guard',
     bullets: [
       {
-        key: 'whatsnew.v6100.controls.b1',
+        key: 'whatsnew.v820.fx.b1',
         default:
-          'One dashboard ties cost, schedule and earned-value signals together.',
+          'The currency dialog warns when a project exchange rate looks entered upside down.',
       },
       {
-        key: 'whatsnew.v6100.controls.b2',
+        key: 'whatsnew.v820.fx.b2',
         default:
-          'Takt planning lays out repetitive work as zones moving on a steady beat.',
+          'It also flags a rate that sits far from a typical market rate, and shows it the right way round.',
       },
       {
-        key: 'whatsnew.v6100.controls.b3',
+        key: 'whatsnew.v820.fx.b3',
         default:
-          'An equipment maintenance forecast flags upcoming service before it bites.',
+          'A slip no longer quietly skews rolled-up totals.',
       },
     ],
   },
   {
-    id: 'compliance',
+    id: 'bim',
     icon: ShieldCheck,
-    titleKey: 'whatsnew.v6100.compliance.title',
-    titleDefault: 'Compliance gates and ITP hold points',
-    chipKey: 'whatsnew.v6100.compliance.chip',
-    chipDefault: 'Gates',
+    titleKey: 'whatsnew.v820.bim.title',
+    titleDefault: 'BIM bulk-import validation',
+    chipKey: 'whatsnew.v820.bim.chip',
+    chipDefault: 'BIM import',
     bullets: [
       {
-        key: 'whatsnew.v6100.compliance.b1',
+        key: 'whatsnew.v820.bim.b1',
         default:
-          'Compliance gates block a step until its required checks pass.',
+          'Models imported from a spreadsheet or a bulk element file now run the same validation pass as the CAD path.',
       },
       {
-        key: 'whatsnew.v6100.compliance.b2',
+        key: 'whatsnew.v820.bim.b2',
         default:
-          'ITP hold points stop work until an inspection is signed off.',
-      },
-      {
-        key: 'whatsnew.v6100.compliance.b3',
-        default:
-          'Every gate links back to the document or inspection that cleared it.',
+          'Every imported model gets a validation report, not only the ones brought in through a converter.',
       },
     ],
   },
   {
-    id: 'owner',
+    id: 'takeoff',
+    icon: ScanLine,
+    titleKey: 'whatsnew.v820.takeoff.title',
+    titleDefault: 'Takeoff flags scanned pages',
+    chipKey: 'whatsnew.v820.takeoff.chip',
+    chipDefault: 'Scanned pages',
+    bullets: [
+      {
+        key: 'whatsnew.v820.takeoff.b1',
+        default:
+          'Quantity takeoff now reports how many PDF pages came back with no text layer, usually scanned drawings.',
+      },
+      {
+        key: 'whatsnew.v820.takeoff.b2',
+        default:
+          'They are no longer treated silently as empty, so it is clear which pages need OCR.',
+      },
+    ],
+  },
+  {
+    id: 'din276',
+    icon: ListTree,
+    titleKey: 'whatsnew.v820.din276.title',
+    titleDefault: 'DIN 276 dotted CAD codes',
+    chipKey: 'whatsnew.v820.din276.chip',
+    chipDefault: 'DIN 276',
+    bullets: [
+      {
+        key: 'whatsnew.v820.din276.b1',
+        default:
+          'Completeness and hierarchy checks now fold dotted CAD codes such as 330.10 to their three-digit cost group.',
+      },
+      {
+        key: 'whatsnew.v820.din276.b2',
+        default:
+          'A model classified with deeper codes is scored against the right group instead of being undercounted.',
+      },
+    ],
+  },
+  {
+    id: 'fixes',
     icon: FileText,
-    titleKey: 'whatsnew.v6100.owner.title',
-    titleDefault: 'Owner billing and progress reports',
-    chipKey: 'whatsnew.v6100.owner.chip',
-    chipDefault: 'Owner billing',
+    titleKey: 'whatsnew.v820.fixes.title',
+    titleDefault: 'Comment and DWG preview fixes',
+    chipKey: 'whatsnew.v820.fixes.chip',
+    chipDefault: 'Fixes',
     bullets: [
       {
-        key: 'whatsnew.v6100.owner.b1',
+        key: 'whatsnew.v820.fixes.b1',
         default:
-          'AIA G702 and G703 owner billing for US, Canada and Australia.',
+          'A comment that carries a viewpoint now checks its entity type against the same allowlist as the standalone path.',
       },
       {
-        key: 'whatsnew.v6100.owner.b2',
+        key: 'whatsnew.v820.fixes.b2',
         default:
-          'Retention, stored materials and prior payments roll up automatically.',
-      },
-      {
-        key: 'whatsnew.v6100.owner.b3',
-        default:
-          'Client progress reports share status and photos with the owner.',
-      },
-    ],
-  },
-  {
-    id: 'agents',
-    icon: Bot,
-    titleKey: 'whatsnew.v6100.agents.title',
-    titleDefault: 'No-code agent builder',
-    chipKey: 'whatsnew.v6100.agents.chip',
-    chipDefault: 'Agents',
-    bullets: [
-      {
-        key: 'whatsnew.v6100.agents.b1',
-        default:
-          'Build agents from triggers and actions without writing code.',
-      },
-      {
-        key: 'whatsnew.v6100.agents.b2',
-        default:
-          'Triggers fire on events like a new RFI, an overdue task or a failed check.',
-      },
-      {
-        key: 'whatsnew.v6100.agents.b3',
-        default:
-          'Suggestions stay human-confirmed, so nothing acts on your behalf unasked.',
-      },
-    ],
-  },
-  {
-    id: 'photos',
-    icon: Camera,
-    titleKey: 'whatsnew.v6100.photos.title',
-    titleDefault: 'Jobsite photo intelligence',
-    chipKey: 'whatsnew.v6100.photos.chip',
-    chipDefault: 'Photos',
-    bullets: [
-      {
-        key: 'whatsnew.v6100.photos.b1',
-        default:
-          'Jobsite photos are read for context and tagged to the right location.',
-      },
-      {
-        key: 'whatsnew.v6100.photos.b2',
-        default:
-          'Findings link photos to inspections, punch items and the daily diary.',
-      },
-      {
-        key: 'whatsnew.v6100.photos.b3',
-        default:
-          'Every suggestion is yours to confirm before it lands on a record.',
+          'DWG drawing previews render again on newer ezdxf builds, version 1.1 and later.',
       },
     ],
   },
@@ -360,7 +341,7 @@ export function WhatsNewCard({ forceShow = false, versionOverride }: WhatsNewCar
     navigate('/about#changelog');
   }, [navigate, handleDismiss]);
 
-  const sections = useMemo(() => SECTIONS_V6100, []);
+  const sections = useMemo(() => SECTIONS_V820, []);
 
   if (mode === null) return null;
 

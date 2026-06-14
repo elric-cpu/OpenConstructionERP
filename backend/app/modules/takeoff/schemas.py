@@ -52,6 +52,13 @@ class TakeoffDocumentResponse(BaseModel):
     status: str
     content_type: str
     uploaded_at: datetime | None = Field(None, alias="created_at")
+    # Per-page text-layer audit (8.2.0). ``pages_without_text`` is how many
+    # pages came back with no text layer (usually scanned drawings that need
+    # OCR); ``pages_without_text_list`` is their 1-based page numbers. Both
+    # default to 0 / [] so a document with a full text layer - and any caller
+    # that ignores the fields - is unaffected.
+    pages_without_text: int = 0
+    pages_without_text_list: list[int] = Field(default_factory=list)
 
     model_config = {"from_attributes": True, "populate_by_name": True}
 

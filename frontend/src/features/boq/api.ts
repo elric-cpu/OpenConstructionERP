@@ -784,6 +784,8 @@ export interface CopilotAction {
   /** Catalog provenance — code + human label of the source cost row. */
   source: { code?: string; description?: string } | null;
   status: CopilotActionStatus;
+  /** Human-readable failure note when ``status === 'failed'`` (empty otherwise). */
+  error?: string;
 }
 
 export interface CopilotMessage {

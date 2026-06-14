@@ -327,6 +327,17 @@ const ROUTE_INDEX: ReadonlyArray<{ prefix: string; phaseKey: string }> = (() => 
 })();
 
 /**
+ * Normalise a pathname to its journey-comparable candidate by stripping the
+ * ``/projects/<id>/`` prefix, so a project-scoped route matches its plain
+ * module route (``/projects/abc/finance`` -> ``/finance``). Shared by phase
+ * detection and chip active-state so the two cannot drift apart.
+ */
+export function journeyRouteCandidate(pathname: string): string {
+  const projectNested = pathname.match(/^\/projects\/[^/]+\/(.+)$/);
+  return projectNested ? `/${projectNested[1]}` : pathname;
+}
+
+/**
  * Resolve the lifecycle phase key for a pathname, or ``null`` when the route
  * is not part of the journey (dashboard, admin, modules, about, ...).
  *
@@ -335,8 +346,7 @@ const ROUTE_INDEX: ReadonlyArray<{ prefix: string; phaseKey: string }> = (() => 
  */
 export function resolveJourneyPhaseKey(pathname: string): string | null {
   if (!pathname || pathname === '/') return null;
-  const projectNested = pathname.match(/^\/projects\/[^/]+\/(.+)$/);
-  const candidate = projectNested ? `/${projectNested[1]}` : pathname;
+  const candidate = journeyRouteCandidate(pathname);
   for (const { prefix, phaseKey } of ROUTE_INDEX) {
     if (candidate === prefix || candidate.startsWith(prefix + '/')) return phaseKey;
   }

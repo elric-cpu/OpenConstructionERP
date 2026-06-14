@@ -699,13 +699,20 @@ def _extract_pdf_pages(content: bytes, *, filename: str | None = None) -> list[d
                     if text:
                         page_text = text
 
-                if not page_text.strip():
+                has_text = bool(page_text.strip())
+                if not has_text:
                     empty_pages += 1
                 pages.append(
                     {
                         "page": i,
                         "text": page_text.strip(),
                         "tables": page_tables,
+                        # Per-page text-layer flag. A page with no text layer
+                        # (scanned/raster drawing) is the OCR candidate; we keep
+                        # the signal per page so a mixed PDF (some text pages,
+                        # some scanned) is not collapsed to a single all-or-
+                        # nothing verdict downstream.
+                        "has_text": has_text,
                     }
                 )
             if empty_pages:
@@ -736,9 +743,10 @@ def _extract_pdf_pages(content: bytes, *, filename: str | None = None) -> list[d
             empty_pages = 0
             for i, page in enumerate(doc, start=1):
                 text = page.get_text()
-                if not text.strip():
+                has_text = bool(text.strip())
+                if not has_text:
                     empty_pages += 1
-                pages.append({"page": i, "text": text.strip(), "tables": []})
+                pages.append({"page": i, "text": text.strip(), "tables": [], "has_text": has_text})
             doc.close()
             if empty_pages:
                 # A page with no text layer (e.g. a scanned/raster drawing)
@@ -759,6 +767,41 @@ def _extract_pdf_pages(content: bytes, *, filename: str | None = None) -> list[d
             )
 
     return pages
+
+
+def no_text_layer_info(doc: Any) -> tuple[int, list[int]]:
+    """Read the per-page text-layer audit for a takeoff document.
+
+    Returns ``(count, page_numbers)`` where ``page_numbers`` is the list of
+    1-based pages that came back with no text layer (likely scanned drawings
+    that need OCR). Both default to ``0`` / ``[]`` so a document uploaded
+    before this audit existed - or one stored without the metadata - reads as
+    "no missing text layer" instead of erroring. The count is recomputed from
+    ``page_data`` (the source of truth) when present so a re-extracted document
+    stays accurate even if the stored count drifts.
+    """
+    page_data = getattr(doc, "page_data", None) or []
+    if page_data:
+        missing = [
+            int(p.get("page", idx + 1))
+            for idx, p in enumerate(page_data)
+            if isinstance(p, dict)
+            and not (p.get("has_text") if "has_text" in p else bool(str(p.get("text", "")).strip()))
+        ]
+        if missing:
+            return len(missing), missing
+    # Fall back to the stored metadata snapshot (e.g. page_data trimmed off a
+    # list response, or all pages had text so the loop above found nothing).
+    meta = getattr(doc, "metadata_", None) or {}
+    if isinstance(meta, dict):
+        stored_list = meta.get("pages_without_text_list")
+        if isinstance(stored_list, list) and stored_list:
+            nums = [int(n) for n in stored_list if isinstance(n, int | float)]
+            return len(nums), nums
+        stored_count = meta.get("pages_without_text")
+        if isinstance(stored_count, int | float) and stored_count > 0:
+            return int(stored_count), []
+    return 0, []
 
 
 def validate_page_for_document(doc: Any, page: int) -> None:
@@ -996,14 +1039,28 @@ class TakeoffService:
         page_data = _extract_pdf_pages(content, filename=filename)
         full_text = "\n\n".join(p["text"] for p in page_data if p["text"])
 
-        # Scanned-PDF path: every page returns empty text. We persist
-        # the doc with ``needs_ocr`` so the user still sees it in the
-        # list and can either install [cv] (PaddleOCR) or share the
-        # source CAD with us. The OCR install hint is logged for the
-        # operator - not raised - because the upload should still
-        # succeed in this case.
+        # Per-page text-layer audit. A page is an OCR candidate when it has no
+        # text layer (scanned/raster drawing). We read the per-page ``has_text``
+        # flag set by ``_extract_pdf_pages`` and fall back to the page text when
+        # the flag is absent (older rows / a stubbed extractor), so a mixed PDF
+        # (some text pages, some scanned) keeps the page-level signal instead of
+        # being collapsed to a single all-or-nothing verdict.
+        pages_without_text: list[int] = [
+            int(p.get("page", idx + 1))
+            for idx, p in enumerate(page_data)
+            if not (p.get("has_text") if "has_text" in p else bool(str(p.get("text", "")).strip()))
+        ]
+        no_text_count = len(pages_without_text)
+
+        # Fully-scanned path: EVERY page returns empty text. We persist the doc
+        # with ``needs_ocr`` so the user still sees it in the list and can either
+        # install [cv] (PaddleOCR) or share the source CAD with us.
         is_scanned = bool(page_data) and not full_text.strip()
-        if is_scanned:
+        # Mixed path: at least one (but not every) content page lacks a text
+        # layer. The document still parses, but those pages would otherwise be
+        # silently treated as empty - so we surface the count to the user.
+        is_partial_no_text = no_text_count > 0 and not is_scanned
+        if is_scanned or is_partial_no_text:
             try:
                 import paddleocr  # noqa: F401
 
@@ -1012,11 +1069,13 @@ class TakeoffService:
                 paddle_available = False
             if not paddle_available:
                 logger.info(
-                    "takeoff.upload_document: scanned PDF with no text layer; "
+                    "takeoff.upload_document: %d of %d page(s) have no text layer; "
                     "install [cv] extra (paddleocr) to enable OCR fallback "
-                    "(filename=%r, pages=%d)",
-                    filename,
+                    "(filename=%r, scanned=%s)",
+                    no_text_count,
                     page_count,
+                    filename,
+                    is_scanned,
                 )
 
         if page_count == 0 and not page_data:
@@ -1047,6 +1106,16 @@ class TakeoffService:
         # presenting an empty extracted-text panel.
         doc_status = "needs_ocr" if is_scanned else "uploaded"
 
+        # Persist the per-page text-layer audit so the count survives the
+        # round-trip and a mixed (partly-scanned) document is not silently
+        # treated as empty. ``status`` stays ``needs_ocr`` only for the
+        # fully-scanned case, but the count + page list is stored either way
+        # so the API and UI can flag the OCR-candidate pages.
+        doc_metadata: dict[str, Any] = {
+            "pages_without_text": no_text_count,
+            "pages_without_text_list": pages_without_text,
+        }
+
         doc = TakeoffDocument(
             id=doc_id,
             filename=filename,
@@ -1059,6 +1128,7 @@ class TakeoffService:
             extracted_text=full_text,
             page_data=page_data,
             file_path=str(file_path),
+            metadata_=doc_metadata,
         )
 
         return await self.repo.create(doc)

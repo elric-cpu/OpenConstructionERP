@@ -2380,7 +2380,11 @@ class DIN276Completeness(ValidationRule):
             # they are still counted toward their top-level group instead of
             # being dropped by the .isdigit() check.
             kg = _normalize_din276_code((pos.get("classification") or {}).get("din276", ""))
-            if len(kg) >= 3 and kg[:3].isdigit():
+            # Require the whole folded head to be numeric, not just its first
+            # three chars: "330.10" folds to "330" and counts, but a malformed
+            # non-dotted code like "330x" must still be rejected the way the
+            # pre-fold full-string isdigit() check rejected it.
+            if len(kg) >= 3 and kg.isdigit():
                 # Normalize to top-level group: e.g., 331 -> 300, 421 -> 400
                 top_group = kg[0] + "00"
                 present_groups.add(top_group)

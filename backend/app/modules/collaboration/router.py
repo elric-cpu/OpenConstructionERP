@@ -283,13 +283,22 @@ async def create_comment(
 ) -> CommentResponse:
     """Create a comment with optional @mentions and viewpoint."""
     _validate_entity_type(data.entity_type)
-    # A comment can carry a nested viewpoint. The standalone POST /viewpoints/
-    # path runs the same allowlist check, so validate the nested one here too;
-    # otherwise an unsupported entity_type could be smuggled in through the
-    # comment path and persist an orphaned viewpoint row the query API rejects.
+    await _verify_entity_access(data.entity_type, data.entity_id, str(user_id), session)
+    # A comment can carry a nested viewpoint whose entity_type/entity_id are
+    # independent free-text fields the service persists verbatim. The standalone
+    # POST /viewpoints/ path runs both the allowlist check and the access check
+    # on those fields, so mirror it here. Otherwise an unsupported entity_type
+    # could be smuggled in, or the nested viewpoint could reference a missing or
+    # cross-tenant entity_id, persisting a dangling viewpoint row the query API
+    # rejects.
     if data.viewpoint is not None:
         _validate_entity_type(data.viewpoint.entity_type)
-    await _verify_entity_access(data.entity_type, data.entity_id, str(user_id), session)
+        await _verify_entity_access(
+            data.viewpoint.entity_type,
+            data.viewpoint.entity_id,
+            str(user_id),
+            session,
+        )
     try:
         comment = await service.create_comment(data, uuid.UUID(user_id))
         return CommentResponse.model_validate(comment)
