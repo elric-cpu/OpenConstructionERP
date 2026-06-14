@@ -682,6 +682,7 @@ def _extract_pdf_pages(content: bytes, *, filename: str | None = None) -> list[d
         import pdfplumber
 
         with pdfplumber.open(io.BytesIO(content)) as pdf:
+            empty_pages = 0
             for i, page in enumerate(pdf.pages, start=1):
                 page_text = ""
                 page_tables: list[list[list[str]]] = []
@@ -698,12 +699,25 @@ def _extract_pdf_pages(content: bytes, *, filename: str | None = None) -> list[d
                     if text:
                         page_text = text
 
+                if not page_text.strip():
+                    empty_pages += 1
                 pages.append(
                     {
                         "page": i,
                         "text": page_text.strip(),
                         "tables": page_tables,
                     }
+                )
+            if empty_pages:
+                # See the pymupdf branch: an empty page is most likely a
+                # scanned/raster drawing, not a parse failure. Surface the
+                # count so it isn't silently treated as "no content".
+                logger.info(
+                    "takeoff.pdf_extract pdfplumber: %d of %d page(s) had no "
+                    "text (likely scanned - OCR needed to recover content) (%s)",
+                    empty_pages,
+                    len(pages),
+                    input_fp,
                 )
     except Exception:
         # First-pass parser failed - log it with the full stack and fall
@@ -719,10 +733,25 @@ def _extract_pdf_pages(content: bytes, *, filename: str | None = None) -> list[d
             import pymupdf
 
             doc = pymupdf.open(stream=content, filetype="pdf")
+            empty_pages = 0
             for i, page in enumerate(doc, start=1):
                 text = page.get_text()
+                if not text.strip():
+                    empty_pages += 1
                 pages.append({"page": i, "text": text.strip(), "tables": []})
             doc.close()
+            if empty_pages:
+                # A page with no text layer (e.g. a scanned/raster drawing)
+                # extracts as an empty string, which looks the same as a parse
+                # failure downstream. Surface it so the gap isn't silent - the
+                # caller can route these pages through OCR (the [cv] extra).
+                logger.info(
+                    "takeoff.pdf_extract pymupdf: %d of %d page(s) had no text "
+                    "layer (likely scanned - OCR needed to recover content) (%s)",
+                    empty_pages,
+                    len(pages),
+                    input_fp,
+                )
         except Exception:
             logger.exception(
                 "takeoff.pdf_extract both pdfplumber and pymupdf failed (%s) - document will have no extracted pages",
