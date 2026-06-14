@@ -7,7 +7,7 @@
 # api.ts files that hit hyphenated paths like ``/api/v1/bi-dashboards``
 # and ``/api/v1/hse-advanced``. The loader, however, derived the URL
 # prefix straight from the Python package directory name (which uses
-# underscores) — so the frontend got a 404 on every request and the
+# underscores), so the frontend got a 404 on every request and the
 # user reported pages like /bi-dashboards and /hse-advanced as "не
 # работает полностью" (completely broken).
 #
@@ -16,143 +16,72 @@
 # test pins both behaviours against the real on-disk ``bi_dashboards``
 # and ``hse_advanced`` modules so a future loader refactor cannot
 # silently regress the public URL surface.
+#
+# Isolation note (why a subprocess): ``_load_module`` mounts
+# ``app.modules.<dir>.router.router`` straight from ``sys.modules`` and never
+# rebuilds it, which is correct for production where every module is imported
+# exactly once at startup. Under ``pytest-split`` a different slice of the unit
+# suite lands in each shard, and an unrelated earlier test in the same worker
+# could leave one of these router modules cached in a state that mounts zero
+# routes. In-process cures (reload, pop-and-reimport) could not be made reliable
+# across every shard ordering. Each test below therefore boots the loader in a
+# brand-new interpreter, which removes the whole class of cross-test import
+# contamination and exercises the loader the way the app actually starts.
 
 from __future__ import annotations
 
-import asyncio
-import importlib
+import json
+import subprocess
 import sys
-from collections.abc import Iterator
 
-import pytest
+# Program run in a fresh interpreter. It boots the real ModuleLoader, mounts one
+# module onto a throwaway FastAPI app, and prints the mounted paths as JSON on a
+# marked line. It only imports and mounts routes (no DB connection is made), so
+# it does not need the test database.
+_LOADER_PROBE = """\
+import asyncio
+import json
+import sys
+
 from fastapi import FastAPI
 
+from app.core.module_loader import ModuleLoader
 
-def _mounted_paths(app: FastAPI, prefix: str) -> list[str]:
-    return [getattr(route, "path", "") for route in app.routes if getattr(route, "path", "").startswith(prefix)]
-
-
-# The three real modules this file mounts through the loader. Their router
-# subtrees are the only ``sys.modules`` entries the tests below rebuild.
-_TARGET_MODULES = ("oe_bi_dashboards", "oe_hse_advanced", "oe_schedule_advanced")
-
-
-def _router_subtree_keys(module_name: str) -> list[str]:
-    """``sys.modules`` keys that belong to a module's ``router`` submodule."""
-    router_module_name = f"app.modules.{module_name.removeprefix('oe_')}.router"
-    return [k for k in list(sys.modules) if k == router_module_name or k.startswith(router_module_name + ".")]
+module_name = sys.argv[1]
+loader = ModuleLoader()
+loader.discover()
+app = FastAPI()
+asyncio.run(loader._load_module(module_name, app))
+paths = sorted({getattr(route, "path", "") for route in app.routes})
+sys.stdout.write("OE_MOUNTED_PATHS=" + json.dumps(paths) + "\\n")
+"""
 
 
-@pytest.fixture(autouse=True)
-def _isolate_router_modules() -> Iterator[None]:
-    """Snapshot and restore ONLY the target modules' ``router`` subtrees.
-
-    The four tests below rebuild three real module router subtrees from source
-    (see :func:`_pristine_import_router`). This fixture makes the file
-    order-independent in BOTH directions, scoped tightly to the router modules
-    it actually perturbs:
-
-    * inbound - whatever an earlier test in the same ``pytest-split`` shard left
-      in one of these ``...router`` entries (a half-imported router, an empty
-      ``router``, a reloaded module) is dropped and re-imported from source by
-      :func:`_pristine_import_router`, so it cannot bleed into the assertions;
-    * outbound - on teardown each ``...router`` entry is put back exactly as it
-      was before the test (restored to the original object, or removed if it was
-      not present), so the next test in the shard sees an unperturbed router.
-
-    Scope matters. We deliberately do NOT snapshot-and-restore the WHOLE
-    ``sys.modules`` table: ``_load_module`` incidentally imports the modules'
-    ``.models`` (and ``.events`` / ``.hooks`` / ``.kpis`` …) as a side effect,
-    and a blanket ``sys.modules.clear() + update(snapshot)`` would EVICT any of
-    those that were not already cached when the test started. A later test that
-    then re-imports such a ``.models`` module would re-run ``class X(Base)`` and
-    hit "Table already defined for this MetaData". Leaving correctly-imported
-    modules in place is harmless and avoids planting that landmine, so we touch
-    only the ``router`` subtrees here.
-    """
-    saved: dict[str, object] = {}
-    for module_name in _TARGET_MODULES:
-        for key in _router_subtree_keys(module_name):
-            saved[key] = sys.modules[key]
-    try:
-        yield
-    finally:
-        # Remove every current router-subtree entry, then re-instate exactly the
-        # objects that were present before the test (identity preserved).
-        for module_name in _TARGET_MODULES:
-            for key in _router_subtree_keys(module_name):
-                del sys.modules[key]
-        sys.modules.update(saved)
-
-
-def _pristine_import_router(module_name: str) -> None:
-    """Force a genuinely pristine import of the target module's ``router``.
-
-    Why this is needed (CI-only, sharding-dependent):
-    ``_load_module`` mounts ``app.modules.<dir>.router.router`` exactly as it
-    finds it in ``sys.modules`` and never rebuilds it (correct for production,
-    where every module is imported once at startup). Under ``pytest-split`` a
-    different slice of the unit suite lands in each shard, so an unrelated test
-    that ran earlier in the same worker can leave the router module cached in a
-    perturbed state - missing ``router``, an empty ``routes`` list, or, worst,
-    a half-initialised namespace from an import that was interrupted (a
-    transitive import raised, then a later test re-imported a stub). In that
-    last case ``importlib.reload`` is NOT enough: reload re-executes the body in
-    the SAME, already-polluted module ``__dict__``, so any name the new body
-    does not reassign survives from the broken run. We therefore drop the router
-    submodule (and any of its own sub-submodules) from ``sys.modules`` and
-    import it afresh, which builds a brand-new module object with a clean
-    namespace and route objects created against the live ``fastapi`` /
-    ``app.dependencies`` currently in the import table - exactly the state
-    production builds them in.
-
-    We deliberately pop ONLY ``<pkg>.router`` (and ``<pkg>.router.*``), never
-    ``<pkg>.models`` or any other SQLAlchemy-mapped module: re-importing
-    ``router.py`` only re-runs ``router = APIRouter()`` and the
-    ``@router.<verb>`` decorators, and its ``from .models import ...`` lines
-    re-bind names from the already-cached (untouched) models module, so no ORM
-    ``class X(Base)`` is ever re-executed and "Table already defined for this
-    MetaData" cannot fire. The surrounding ``_isolate_router_modules`` fixture
-    restores the popped entries after the test.
-    """
-    dir_name = module_name.removeprefix("oe_")
-    package_path = f"app.modules.{dir_name}"
-    router_module_name = f"{package_path}.router"
-    # Drop the router module and any sub-submodules so the next import rebuilds
-    # them from source into fresh module objects (not a reload of a possibly
-    # polluted namespace). Never touch .models / other mapped modules.
-    for cached in list(sys.modules):
-        if cached == router_module_name or cached.startswith(router_module_name + "."):
-            del sys.modules[cached]
-    # Importing the package is cheap (cached) and guarantees the parent exists
-    # before we import its router submodule from source.
-    importlib.import_module(package_path)
-    router_mod = importlib.import_module(router_module_name)
-    # Sanity: the freshly imported module must expose a populated router. If it
-    # does not, something is wrong with the module itself (not stale cache) and
-    # we want a clear failure rather than a misleading empty-routes assertion
-    # downstream.
-    assert getattr(getattr(router_mod, "router", None), "routes", None), (
-        f"{router_module_name} did not import a populated router"
+def _mounted_paths(module_name: str, prefix: str) -> list[str]:
+    """Mount one real module in a fresh interpreter; return its paths under ``prefix``."""
+    proc = subprocess.run(
+        [sys.executable, "-c", _LOADER_PROBE, module_name],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
     )
-
-
-def _load_real_module(module_name: str) -> FastAPI:
-    """Load a real backend module into a fresh FastAPI app and return it."""
-    from app.core.module_loader import ModuleLoader
-
-    _pristine_import_router(module_name)
-    loader = ModuleLoader()
-    loader.discover()
-    app = FastAPI()
-    asyncio.run(loader._load_module(module_name, app))
-    return app
+    assert proc.returncode == 0, (
+        f"loader probe for {module_name} exited {proc.returncode}.\nstderr tail:\n{proc.stderr[-3000:]}"
+    )
+    marker = "OE_MOUNTED_PATHS="
+    line = next((ln for ln in proc.stdout.splitlines() if ln.startswith(marker)), None)
+    assert line is not None, (
+        f"loader probe for {module_name} emitted no paths.\n"
+        f"stdout tail:\n{proc.stdout[-3000:]}\nstderr tail:\n{proc.stderr[-1500:]}"
+    )
+    all_paths: list[str] = json.loads(line[len(marker) :])
+    return [p for p in all_paths if p.startswith(prefix)]
 
 
 def test_bi_dashboards_mounted_on_kebab_case() -> None:
     """``bi_dashboards`` package must serve under ``/api/v1/bi-dashboards``."""
-    app = _load_real_module("oe_bi_dashboards")
-    paths = _mounted_paths(app, "/api/v1/bi-dashboards/")
+    paths = _mounted_paths("oe_bi_dashboards", "/api/v1/bi-dashboards/")
     assert paths, (
         "BI dashboards router must mount under /api/v1/bi-dashboards/* (frontend api.ts uses this kebab-case prefix)."
     )
@@ -164,18 +93,16 @@ def test_bi_dashboards_mounted_on_kebab_case() -> None:
 
 def test_bi_dashboards_legacy_underscore_mirror() -> None:
     """The underscore form is mirrored for callers that haven't migrated."""
-    app = _load_real_module("oe_bi_dashboards")
-    paths = _mounted_paths(app, "/api/v1/bi_dashboards/")
+    paths = _mounted_paths("oe_bi_dashboards", "/api/v1/bi_dashboards/")
     assert paths, (
-        "Legacy /api/v1/bi_dashboards mirror is missing — third-party "
+        "Legacy /api/v1/bi_dashboards mirror is missing - third-party "
         "callers that have not migrated to the kebab-case URL would 404."
     )
 
 
 def test_hse_advanced_mounted_on_kebab_case() -> None:
     """``hse_advanced`` package must serve under ``/api/v1/hse-advanced``."""
-    app = _load_real_module("oe_hse_advanced")
-    paths = _mounted_paths(app, "/api/v1/hse-advanced/")
+    paths = _mounted_paths("oe_hse_advanced", "/api/v1/hse-advanced/")
     assert paths, paths
     # Investigations list endpoint added during the same fix.
     assert any(p == "/api/v1/hse-advanced/investigations/" for p in paths), (
@@ -185,11 +112,10 @@ def test_hse_advanced_mounted_on_kebab_case() -> None:
 
 def test_schedule_advanced_mounted_on_kebab_case() -> None:
     """``schedule_advanced`` package must serve under
-    ``/api/v1/schedule-advanced`` — the user's "create doesn't work"
+    ``/api/v1/schedule-advanced``. The user's "create doesn't work"
     on /schedule-advanced was caused by this URL mismatch.
     """
-    app = _load_real_module("oe_schedule_advanced")
-    paths = _mounted_paths(app, "/api/v1/schedule-advanced/")
+    paths = _mounted_paths("oe_schedule_advanced", "/api/v1/schedule-advanced/")
     assert paths, paths
     assert any(p == "/api/v1/schedule-advanced/master-schedules/" for p in paths), (
         f"Missing POST /api/v1/schedule-advanced/master-schedules/: {paths!r}"
