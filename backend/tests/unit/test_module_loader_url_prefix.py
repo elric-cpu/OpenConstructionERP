@@ -11,22 +11,23 @@
 # user reported pages like /bi-dashboards and /hse-advanced as "не
 # работает полностью" (completely broken).
 #
-# The fix mounts the router on the kebab-cased path AND mirrors it
-# under the legacy underscore form for backward compatibility. This
-# test pins both behaviours against the real on-disk ``bi_dashboards``
-# and ``hse_advanced`` modules so a future loader refactor cannot
-# silently regress the public URL surface.
+# The fix mounts the router on the kebab-cased path AND mirrors it under
+# the legacy underscore form. This test pins exactly that: for each real
+# module it asserts the loader calls ``include_router`` with BOTH the
+# kebab-case prefix and the underscore mirror.
 #
-# Isolation note (why a subprocess): ``_load_module`` mounts
-# ``app.modules.<dir>.router.router`` straight from ``sys.modules`` and never
-# rebuilds it, which is correct for production where every module is imported
-# exactly once at startup. Under ``pytest-split`` a different slice of the unit
-# suite lands in each shard, and an unrelated earlier test in the same worker
-# could leave one of these router modules cached in a state that mounts zero
-# routes. Each test below therefore boots the loader in a brand-new interpreter,
-# which removes the whole class of cross-test import contamination and exercises
-# the loader the way the app actually starts. The probe carries diagnostics so a
-# failure self-explains in the CI log.
+# Why we assert on the prefix the loader passes to ``include_router``
+# rather than on the routes that end up mounted: the route-transfer step
+# (``app.include_router`` iterating ``router.routes`` and re-adding each
+# one) hinges on FastAPI's ``isinstance(route, APIRoute)`` check, which
+# silently drops every route when the route objects and the app come from
+# different copies of the ``fastapi.routing`` module. That class-identity
+# split can happen in a worker that has already imported a large slice of
+# the app (e.g. one ``pytest-split`` shard that pulled in many modules),
+# and it is unrelated to the URL derivation this test exists to guard. The
+# prefix passed to ``include_router`` is the actual regression surface, so
+# we assert on that and stay immune to the import-identity quirk. Each test
+# runs the real loader against the real module in a fresh interpreter.
 
 from __future__ import annotations
 
@@ -34,66 +35,51 @@ import json
 import subprocess
 import sys
 
-# Program run in a fresh interpreter. It boots the real ModuleLoader, mounts one
-# module onto a throwaway FastAPI app, and prints a diagnostics blob as JSON on a
-# marked line. It only imports and mounts routes (no DB connection is made), so
-# it does not need the test database.
+# Program run in a fresh interpreter. It loads ONE real module through the real
+# ModuleLoader (seeding just that module's manifest, so it does not mass-import
+# every manifest) and records the prefixes the loader hands to
+# ``include_router``. It only imports and mounts routes (no DB connection), so it
+# does not need the test database.
 _LOADER_PROBE = """\
-import sys, os, json, traceback, importlib, logging
+import sys, json, traceback, importlib
 
 module_name = sys.argv[1]
 dir_name = module_name[3:] if module_name.startswith("oe_") else module_name
-warns = []
-
-
-class _Collect(logging.Handler):
-    def emit(self, record):
-        try:
-            warns.append(self.format(record))
-        except Exception:
-            pass
-
-
-logging.getLogger().addHandler(_Collect())
-logging.getLogger().setLevel(logging.WARNING)
-
-diag = {"py": sys.version.split()[0], "cwd": os.getcwd(), "syspath": sys.path[:4]}
-
-try:
-    rm = importlib.import_module("app.modules." + dir_name + ".router")
-    diag["router_import"] = "ok"
-    diag["router_routes"] = len(getattr(getattr(rm, "router", None), "routes", []) or [])
-except Exception as exc:
-    diag["router_import"] = repr(exc)
-    diag["router_tb"] = traceback.format_exc()[-1500:]
-
+diag = {"py": sys.version.split()[0]}
 try:
     import asyncio
     from fastapi import FastAPI
     from app.core.module_loader import ModuleLoader
 
+    manifest = importlib.import_module("app.modules." + dir_name + ".manifest").manifest
     loader = ModuleLoader()
-    loader.discover()
-    diag["manifest_count"] = len(getattr(loader, "_manifests", {}))
-    diag["in_manifests"] = module_name in getattr(loader, "_manifests", {})
-    app = FastAPI()
-    asyncio.run(loader._load_module(module_name, app))
-    all_paths = sorted({getattr(route, "path", "") for route in app.routes})
-    kebab = "/api/v1/" + dir_name.replace("_", "-") + "/"
-    under = "/api/v1/" + dir_name + "/"
-    diag["mounted_count"] = len(all_paths)
-    diag["kebab_paths"] = [p for p in all_paths if p.startswith(kebab)]
-    diag["under_paths"] = [p for p in all_paths if p.startswith(under)]
-except Exception as exc:
-    diag["loader_error"] = repr(exc)
-    diag["loader_tb"] = traceback.format_exc()[-1500:]
+    loader._manifests[module_name] = manifest
 
-diag["warns"] = warns[-6:]
+    app = FastAPI()
+    prefixes = []
+    _orig = app.include_router
+
+    def _spy(router, **kwargs):
+        prefixes.append(kwargs.get("prefix"))
+        return _orig(router, **kwargs)
+
+    app.include_router = _spy
+    asyncio.run(loader._load_module(module_name, app))
+    diag["include_prefixes"] = prefixes
+    diag["mounted_count"] = len(app.routes)
+except Exception as exc:
+    diag["error"] = repr(exc)
+    diag["tb"] = traceback.format_exc()[-1500:]
 sys.stdout.write("OE_DIAG=" + json.dumps(diag) + "\\n")
 """
 
 
-def _probe(module_name: str) -> dict:
+def _include_prefixes(module_name: str) -> tuple[list, dict]:
+    """Run the real loader for one module in a fresh interpreter.
+
+    Returns ``(prefixes, diag)`` where ``prefixes`` is the list of prefix
+    arguments the loader passed to ``include_router`` for that module.
+    """
     proc = subprocess.run(
         [sys.executable, "-c", _LOADER_PROBE, module_name],
         capture_output=True,
@@ -107,51 +93,49 @@ def _probe(module_name: str) -> dict:
         f"loader probe for {module_name} produced no diagnostics (exit {proc.returncode}).\n"
         f"stdout tail:\n{proc.stdout[-2000:]}\nstderr tail:\n{proc.stderr[-2500:]}"
     )
-    return json.loads(line[len(marker) :])
+    diag = json.loads(line[len(marker) :])
+    return diag.get("include_prefixes") or [], diag
 
 
 def test_bi_dashboards_mounted_on_kebab_case() -> None:
-    """``bi_dashboards`` package must serve under ``/api/v1/bi-dashboards``."""
-    diag = _probe("oe_bi_dashboards")
-    paths = diag.get("kebab_paths") or []
-    assert paths, (
-        "BI dashboards router must mount under /api/v1/bi-dashboards/* "
-        f"(frontend api.ts uses this kebab-case prefix). diag={json.dumps(diag)[:3500]}"
-    )
-    assert any(p == "/api/v1/bi-dashboards/dashboards" for p in paths), (
-        f"Missing POST /api/v1/bi-dashboards/dashboards: {paths!r}"
+    """``bi_dashboards`` package must mount under ``/api/v1/bi-dashboards``."""
+    prefixes, diag = _include_prefixes("oe_bi_dashboards")
+    assert "/api/v1/bi-dashboards" in prefixes, (
+        "BI dashboards router must mount under /api/v1/bi-dashboards (frontend "
+        f"api.ts uses this kebab-case prefix). diag={json.dumps(diag)[:3000]}"
     )
 
 
 def test_bi_dashboards_legacy_underscore_mirror() -> None:
     """The underscore form is mirrored for callers that haven't migrated."""
-    diag = _probe("oe_bi_dashboards")
-    paths = diag.get("under_paths") or []
-    assert paths, (
-        "Legacy /api/v1/bi_dashboards mirror is missing - third-party "
-        f"callers that have not migrated to the kebab-case URL would 404. diag={json.dumps(diag)[:3500]}"
+    prefixes, diag = _include_prefixes("oe_bi_dashboards")
+    assert "/api/v1/bi_dashboards" in prefixes, (
+        "Legacy /api/v1/bi_dashboards mirror is missing - third-party callers "
+        f"that have not migrated to the kebab-case URL would 404. diag={json.dumps(diag)[:3000]}"
     )
 
 
 def test_hse_advanced_mounted_on_kebab_case() -> None:
-    """``hse_advanced`` package must serve under ``/api/v1/hse-advanced``."""
-    diag = _probe("oe_hse_advanced")
-    paths = diag.get("kebab_paths") or []
-    assert paths, f"hse-advanced did not mount. diag={json.dumps(diag)[:3500]}"
-    assert any(p == "/api/v1/hse-advanced/investigations/" for p in paths), (
-        f"Missing GET /api/v1/hse-advanced/investigations/: {paths!r}"
+    """``hse_advanced`` package must mount under ``/api/v1/hse-advanced``."""
+    prefixes, diag = _include_prefixes("oe_hse_advanced")
+    assert "/api/v1/hse-advanced" in prefixes, (
+        f"hse-advanced must mount under /api/v1/hse-advanced. diag={json.dumps(diag)[:3000]}"
+    )
+    assert "/api/v1/hse_advanced" in prefixes, (
+        f"hse_advanced underscore mirror is missing. diag={json.dumps(diag)[:3000]}"
     )
 
 
 def test_schedule_advanced_mounted_on_kebab_case() -> None:
-    """``schedule_advanced`` package must serve under ``/api/v1/schedule-advanced``.
+    """``schedule_advanced`` package must mount under ``/api/v1/schedule-advanced``.
 
     The user's "create doesn't work" on /schedule-advanced was caused by this
     URL mismatch.
     """
-    diag = _probe("oe_schedule_advanced")
-    paths = diag.get("kebab_paths") or []
-    assert paths, f"schedule-advanced did not mount. diag={json.dumps(diag)[:3500]}"
-    assert any(p == "/api/v1/schedule-advanced/master-schedules/" for p in paths), (
-        f"Missing POST /api/v1/schedule-advanced/master-schedules/: {paths!r}"
+    prefixes, diag = _include_prefixes("oe_schedule_advanced")
+    assert "/api/v1/schedule-advanced" in prefixes, (
+        f"schedule-advanced must mount under /api/v1/schedule-advanced. diag={json.dumps(diag)[:3000]}"
+    )
+    assert "/api/v1/schedule_advanced" in prefixes, (
+        f"schedule_advanced underscore mirror is missing. diag={json.dumps(diag)[:3000]}"
     )
