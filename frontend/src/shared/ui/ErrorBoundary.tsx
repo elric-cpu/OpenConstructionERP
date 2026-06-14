@@ -33,26 +33,35 @@ export class ErrorBoundary extends React.Component<Props, State> {
       componentStack: info.componentStack ?? '',
     });
     // "Failed to fetch dynamically imported module" is the canonical stale-
-    // chunk error: Vite/Rollup rebuilt chunks with new hashes but the user's
-    // browser is still holding references to the old hashed URLs.  A one-shot
-    // reload fetches the current index.html with fresh chunk hashes and the
-    // app recovers cleanly.  We guard with sessionStorage so an actual broken
-    // build doesn't loop reload forever.
+    // chunk error: the running build replaced chunks with new hashes (a fresh
+    // deploy, or active local development with the tab left open) but this
+    // browser still holds references to the old hashed URLs. A reload fetches
+    // the current index.html with the live chunk graph and the app recovers.
+    //
+    // The guard is time-based, not count-based, and shares its key with the
+    // vite:preloadError handler in main.tsx so the two recovery paths cannot
+    // double-reload. A stale chunk that recurs later in the same session (the
+    // next deploy, the next local rebuild) gets its own reload; but two chunk
+    // crashes inside the window mean the freshly fetched build is genuinely
+    // broken, so we stop and let the boundary render the recovery UI rather
+    // than loop. A count-based one-shot guard dead-ended the *second* distinct
+    // stale chunk of a session, which is exactly the case active development
+    // produces.
     const msg = String(error?.message ?? '');
     const isChunkError =
       msg.includes('Failed to fetch dynamically imported module') ||
       msg.includes('Importing a module script failed') ||
       /Loading chunk \d+ failed/i.test(msg);
     if (isChunkError) {
-      const flag = 'oe_chunk_reload_attempt';
-      const tries = Number(sessionStorage.getItem(flag) ?? '0');
-      if (tries < 1) {
-        sessionStorage.setItem(flag, String(tries + 1));
+      const KEY = 'oe_chunk_reload_at';
+      const last = Number(sessionStorage.getItem(KEY) ?? '0');
+      if (Date.now() - last > 10_000) {
+        sessionStorage.setItem(KEY, String(Date.now()));
         window.location.reload();
         return;
       }
-      // Second crash → real build problem; let the boundary render the UI.
-      sessionStorage.removeItem(flag);
+      // Reloaded moments ago for the same reason → the new build is broken;
+      // fall through and render the recovery UI instead of looping.
     }
   }
 

@@ -785,51 +785,6 @@ function HelpMenu() {
     window.open(`https://openconstructionerp.com/contact.html?${params}`, '_blank');
   };
 
-  // Download the JSON error report and open the contact form pre-tagged
-  // as a Report Issue. Mirrors the pre-consolidation top-level Bug
-  // button + the Report Issue item in the legacy More popover.
-  const handleReportIssue = () => {
-    setOpen(false);
-    const blob = exportErrorReport();
-    const blobUrl = URL.createObjectURL(blob);
-    const dl = document.createElement('a');
-    dl.href = blobUrl;
-    dl.download = `openconstructionerp-report-${new Date().toISOString().slice(0, 10)}.json`;
-    dl.click();
-    URL.revokeObjectURL(blobUrl);
-    const params = new URLSearchParams({
-      report: 'true',
-      app_version: APP_VERSION,
-      platform: navigator.userAgent.includes('Win') ? 'Windows' : navigator.userAgent.includes('Mac') ? 'macOS' : 'Linux',
-    });
-    window.open(`https://openconstructionerp.com/contact.html?${params}`, '_blank');
-  };
-
-  // GitHub-issue with the last captured error pre-filled. Same flow as
-  // the pre-consolidation "Report a bug" item from the user menu.
-  const handleReportBug = () => {
-    setOpen(false);
-    const { url, body } = buildBugReportUrl(t);
-    if (url) {
-      window.open(url, '_blank', 'noopener,noreferrer');
-      return;
-    }
-    void copyToClipboard(body).then((ok) => {
-      if (ok) {
-        addToast({
-          type: 'info',
-          title: t('app.report_bug_not_configured', { defaultValue: 'Bug reporting is not configured' }),
-          message: t('app.report_bug_copied', { defaultValue: 'Report contents copied to clipboard' }),
-        });
-      } else {
-        addToast({
-          type: 'warning',
-          title: t('app.report_bug_not_configured', { defaultValue: 'Bug reporting is not configured' }),
-        });
-      }
-    });
-  };
-
   return (
     <div className="relative hidden sm:block" ref={ref} data-testid="header-help-menu">
       <button
@@ -922,24 +877,11 @@ function HelpMenu() {
             <MessageSquarePlus size={14} className="text-content-tertiary shrink-0" />
             <span>{t('feedback.title', { defaultValue: 'Send feedback' })}</span>
           </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={handleReportIssue}
-            className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-content-primary hover:bg-surface-secondary transition-colors"
-          >
-            <Bug size={14} className="text-content-tertiary shrink-0" />
-            <span>{t('feedback.report_issue', { defaultValue: 'Report issue' })}</span>
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={handleReportBug}
-            className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-content-primary hover:bg-surface-secondary transition-colors"
-          >
-            <Bug size={14} className="text-content-tertiary shrink-0" />
-            <span>{t('app.report_bug', { defaultValue: 'Report a bug (with logs)' })}</span>
-          </button>
+          {/* Bug-reporting lives in the dedicated Bug menu (the bug-icon button
+              next to this one), which already offers a pre-filled GitHub issue,
+              the web form, an email channel and a log download. Keeping those
+              flows out of here leaves Help for docs and general feedback and
+              gives bug reporting a single, obvious home. */}
           <a
             role="menuitem"
             href="mailto:info@datadrivenconstruction.io?subject=OpenConstructionERP%20Issue%20Report"
