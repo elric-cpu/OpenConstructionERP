@@ -28,6 +28,7 @@ import { useI18nReady } from '@/shared/lib/useI18nReady';
 import { isTauri, openAppInBrowser } from '@/shared/lib/desktop';
 import { SupportUsButton } from './SupportUsButton';
 import { SubscribeButton } from './SubscribeButton';
+import { ProjectJourneyButton } from './ProjectJourney';
 import { getRouteIcon } from './routeIcons';
 
 /**
@@ -305,6 +306,13 @@ export function Header({ title, onMenuClick }: HeaderProps) {
           tension with the project switcher on the left; planted next
           to Support/Help, the two CTAs read as a coherent cluster. */}
       <div className="flex items-center gap-2 shrink-0">
+        {/* ── Journey (orientation) ─────────────────────────────────
+            Names the lifecycle phase the current screen belongs to and
+            opens the whole-platform journey map. First in the cluster so it
+            reads as "where am I" ahead of the action buttons. */}
+        <ProjectJourneyButton />
+        <div className="hidden sm:block h-4 w-px bg-border-light/70" aria-hidden />
+
         {/* ── Zone 2 (Search) ──────────────────────────────────────── */}
         <button
           onClick={openCommandPalette}
