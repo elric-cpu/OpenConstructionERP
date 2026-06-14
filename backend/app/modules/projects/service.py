@@ -156,6 +156,72 @@ async def purge_project_children_without_cascade(
         logger.debug("resources models unavailable - skipping resource purge")
 
 
+async def purge_demo_tagged_global_rows(
+    session: AsyncSession,
+    demo_ids: set[str],
+) -> dict[str, int]:
+    """Delete company-global demo rows tagged for the given demo projects.
+
+    A few company-level registries (the equipment fleet and the
+    subcontractor roster) live in tables that carry NO ``project_id`` - a
+    fleet asset or a vendor is shared across every project by design, so a
+    project-scoped sweep cannot reach them. But ``install_demo_project``
+    also seeds one Equipment unit and one Subcontractor *per demo project*
+    and stamps each with that project's ``metadata_.demo_id`` (codes like
+    ``DEMO-{pkey}-EQ1`` and legal names like ``... [demo {pkey}]``). Those
+    rows belong to a single demo project, not to the company, so when the
+    demo purge removes that project they must go with it - otherwise they
+    survive as orphans and the next re-seed PK/key-collides on them.
+
+    This deletes ONLY rows whose ``metadata_.demo_id`` is in ``demo_ids``;
+    the bulk fleet / vendor / catalogue registries seeded once at boot
+    (``seed_equipment_demo``, ``seed_subcontractors_demo``, ``seed_catalog``)
+    carry NO ``demo_id`` and are deliberately left untouched - they are
+    shared-by-design demo content, not per-project data. Children of the
+    deleted rows (rentals, agreements, contacts, certificates, ...) cascade
+    off the parent via their ``ondelete=CASCADE`` FKs.
+
+    ``metadata_`` is a JSON column whose nested-key query syntax differs
+    between SQLite (dev/tests) and PostgreSQL (prod), so we load the small
+    demo tables and filter the tag in Python - the same approach
+    ``purge_demo_projects`` uses for the Project rows themselves.
+    """
+    from sqlalchemy import delete as sa_delete
+    from sqlalchemy import select as sa_select
+
+    deleted: dict[str, int] = {}
+    if not demo_ids:
+        return deleted
+
+    # (module path, attribute) for each company-global table that
+    # install_demo_project tags with demo_id. Imported lazily and
+    # fail-soft so a minimal install without these modules is a no-op.
+    _targets = (
+        ("app.modules.equipment.models", "Equipment"),
+        ("app.modules.subcontractors.models", "Subcontractor"),
+    )
+    for module_path, attr in _targets:
+        try:
+            import importlib
+
+            model = getattr(importlib.import_module(module_path), attr)
+        except Exception:  # noqa: BLE001 - optional module / import failure
+            logger.debug("Demo-tagged purge skipped for %s (module unavailable)", attr)
+            continue
+        rows = (await session.execute(sa_select(model))).scalars().all()
+        pks = [
+            r.id
+            for r in rows
+            if isinstance(getattr(r, "metadata_", None), dict) and r.metadata_.get("demo_id") in demo_ids
+        ]
+        if not pks:
+            continue
+        await session.execute(sa_delete(model).where(model.id.in_(pks)))
+        deleted[model.__tablename__] = len(pks)
+
+    return deleted
+
+
 class ProjectService:
     """‌⁠‍Business logic for project operations."""
 
@@ -1076,9 +1142,23 @@ class ProjectService:
         if not demo_pks:
             return 0
 
+        # The exact set of demo_id tags being purged. Used below to also
+        # remove company-global rows (equipment / subcontractors) that
+        # install_demo_project seeded per demo project and stamped with the
+        # same tag - those carry no project_id, so the project-scoped sweep
+        # cannot reach them and they would otherwise orphan.
+        demo_ids = {
+            p.metadata_["demo_id"] for p in rows if isinstance(p.metadata_, dict) and p.metadata_.get("demo_id")
+        }
+
         # Children with bare/no-cascade FK columns first - otherwise the
         # deterministic-id demo installers PK-collide on a later re-seed.
         await purge_project_children_without_cascade(self.session, demo_pks)
+
+        # Company-global rows tagged for these demo projects (no project_id,
+        # so missed by the sweep above). Shared-by-design registries seeded
+        # at boot carry no demo_id and are intentionally left alone.
+        global_deleted = await purge_demo_tagged_global_rows(self.session, demo_ids)
 
         result = await self.session.execute(sa_delete(Project).where(Project.id.in_(demo_pks)))
         await self.session.flush()
@@ -1091,10 +1171,14 @@ class ProjectService:
             self.session,
             action="purge_demo_data",
             entity_type="project",
-            details={"deleted_projects": deleted},
+            details={"deleted_projects": deleted, "deleted_global_rows": global_deleted},
         )
 
-        logger.info("Demo data purge: %d demo project(s) hard-deleted", deleted)
+        logger.info(
+            "Demo data purge: %d demo project(s) hard-deleted (global rows removed: %s)",
+            deleted,
+            global_deleted or "none",
+        )
         return deleted
 
     # ── Restore (un-archive) ─────────────────────────────────────────────

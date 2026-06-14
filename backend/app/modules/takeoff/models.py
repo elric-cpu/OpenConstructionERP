@@ -153,6 +153,16 @@ class TakeoffMeasurement(Base):
     volume: Mapped[Decimal | None] = mapped_column(_MEASURE_NUMERIC, nullable=True)
     perimeter: Mapped[Decimal | None] = mapped_column(_MEASURE_NUMERIC, nullable=True)
     count_value: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Opening deduction (void / cut-out). When true this area measurement
+    # represents an opening (door, window, recess) that must be SUBTRACTED
+    # from the gross area of its group, so a net area = gross - openings.
+    # ``measurement_value`` is still stored as a positive gross area (the
+    # shoelace recompute is sign-agnostic); the subtraction lives in the
+    # rollup, and ``_pick_takeoff_value`` refuses to push a lone deduction
+    # into a BOQ position so a void can never masquerade as a gross quantity.
+    # Additive with a server_default so every existing row reads as a normal
+    # (non-deduction) measurement.
+    is_deduction: Mapped[bool] = mapped_column(default=False, server_default="0", nullable=False)
     # ``scale_pixels_per_unit`` stays Float - it's a UI calibration ratio
     # (px-per-metre) used as a divisor and never persisted into a money
     # rollup. Migrating it would force every existing PDF takeoff session

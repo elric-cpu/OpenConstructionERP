@@ -32,7 +32,7 @@ import {
   TriangleRight,
   ExternalLink,
 } from 'lucide-react';
-import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, RecoveryCard, SkeletonTable } from '@/shared/ui';
+import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, RecoveryCard, SkeletonTable, ModuleGuideButton } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { DismissibleInfo, IntroRichText } from '@/shared/ui/DismissibleInfo';
 import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
@@ -60,6 +60,7 @@ import type {
 import { InlinePdfAnnotator } from './InlinePdfAnnotator';
 import { UnifiedMarkupsList } from './UnifiedMarkupsList';
 import { EditMarkupModal } from './EditMarkupModal';
+import { markupsGuide } from './markupsGuide';
 import { ApprovalInstanceCard } from '@/features/approval-routes';
 
 /* ── Constants ─────────────────────────────────────────────────────────── */
@@ -1612,6 +1613,8 @@ export function MarkupsPage() {
         })}
         actions={
           <>
+            <ModuleGuideButton content={markupsGuide} />
+
             {/* Document selector — a within-project entity picker, stays. */}
             {projectId && (
               <select

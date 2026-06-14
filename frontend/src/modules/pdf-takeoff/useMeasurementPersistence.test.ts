@@ -5,6 +5,7 @@ import {
   getDocumentIndex,
   removeFromStorage,
 } from './useMeasurementPersistence';
+import { emptyPageScales, type PageScales } from './data/page-scales';
 
 // Mock measurements
 const makeMeasurement = (id: string, page = 1) => ({
@@ -20,6 +21,7 @@ const makeMeasurement = (id: string, page = 1) => ({
 });
 
 const defaultScale = { pixelsPerUnit: 100, unitLabel: 'm' };
+const basePageScales: PageScales = emptyPageScales();
 
 describe('useMeasurementPersistence', () => {
   beforeEach(() => {
@@ -28,31 +30,33 @@ describe('useMeasurementPersistence', () => {
 
   it('returns empty state when no fileName', () => {
     const setM = vi.fn();
-    const setS = vi.fn();
+    const setPS = vi.fn();
     const { result } = renderHook(() =>
       useMeasurementPersistence({
         fileName: null,
         measurements: [],
         setMeasurements: setM,
+        pageScales: basePageScales,
+        setPageScales: setPS,
         scale: defaultScale,
-        setScale: setS,
       }),
     );
     expect(result.current.hasPersistedData).toBe(false);
     expect(result.current.savedDocumentCount).toBe(0);
   });
 
-  it('saveNow persists measurements to localStorage', () => {
+  it('saveNow persists measurements + page scales to localStorage', () => {
     const m1 = makeMeasurement('m1');
     const setM = vi.fn();
-    const setS = vi.fn();
+    const setPS = vi.fn();
     const { result } = renderHook(() =>
       useMeasurementPersistence({
         fileName: 'test.pdf',
         measurements: [m1],
         setMeasurements: setM,
+        pageScales: basePageScales,
+        setPageScales: setPS,
         scale: defaultScale,
-        setScale: setS,
       }),
     );
 
@@ -66,14 +70,16 @@ describe('useMeasurementPersistence', () => {
     const parsed = JSON.parse(raw!);
     expect(parsed.measurements).toHaveLength(1);
     expect(parsed.measurements[0].id).toBe('m1');
+    // Both the new per-page model and the legacy single scale are written.
+    expect(parsed.pageScales.defaultScale.pixelsPerUnit).toBe(100);
     expect(parsed.scale.pixelsPerUnit).toBe(100);
     expect(parsed.savedAt).toBeGreaterThan(0);
   });
 
-  it('loads persisted data when fileName changes', () => {
-    // Pre-populate localStorage
+  it('migrates a legacy single-scale document into the page-scale default', () => {
+    // Pre-populate localStorage in the OLD format (only ``scale``).
     const m1 = makeMeasurement('m1');
-    const savedScale = { pixelsPerUnit: 50, unitLabel: 'ft' };
+    const savedScale = { pixelsPerUnit: 50, unitLabel: 'm' };
     localStorage.setItem(
       'oe_takeoff_plan.pdf',
       JSON.stringify({ measurements: [m1], scale: savedScale, savedAt: Date.now() }),
@@ -81,24 +87,59 @@ describe('useMeasurementPersistence', () => {
     localStorage.setItem('oe_takeoff_index', JSON.stringify(['plan.pdf']));
 
     const setM = vi.fn();
-    const setS = vi.fn();
+    const setPS = vi.fn();
     renderHook(() =>
       useMeasurementPersistence({
         fileName: 'plan.pdf',
         measurements: [],
         setMeasurements: setM,
+        pageScales: basePageScales,
+        setPageScales: setPS,
         scale: defaultScale,
-        setScale: setS,
       }),
     );
 
     expect(setM).toHaveBeenCalledWith([m1]);
-    expect(setS).toHaveBeenCalledWith(savedScale);
+    // The legacy single scale is promoted to the document default; no page
+    // override exists yet so every page reads 50 until re-calibrated.
+    const ps = setPS.mock.calls[0]![0] as PageScales;
+    expect(ps.defaultScale.pixelsPerUnit).toBe(50);
+    expect(ps.byPage).toEqual({});
+  });
+
+  it('reads back a new per-page scale document as-is', () => {
+    const m1 = makeMeasurement('m1', 3);
+    const pageScales: PageScales = {
+      defaultScale: { pixelsPerUnit: 100, unitLabel: 'm' },
+      byPage: { 3: { pixelsPerUnit: 25, unitLabel: 'm' } },
+    };
+    localStorage.setItem(
+      'oe_takeoff_multi.pdf',
+      JSON.stringify({ measurements: [m1], pageScales, scale: defaultScale, savedAt: Date.now() }),
+    );
+    localStorage.setItem('oe_takeoff_index', JSON.stringify(['multi.pdf']));
+
+    const setM = vi.fn();
+    const setPS = vi.fn();
+    renderHook(() =>
+      useMeasurementPersistence({
+        fileName: 'multi.pdf',
+        measurements: [],
+        setMeasurements: setM,
+        pageScales: basePageScales,
+        setPageScales: setPS,
+        scale: defaultScale,
+      }),
+    );
+
+    const ps = setPS.mock.calls[0]![0] as PageScales;
+    expect(ps.defaultScale.pixelsPerUnit).toBe(100);
+    expect(ps.byPage[3]!.pixelsPerUnit).toBe(25);
   });
 
   it('clearPersisted removes data from localStorage', () => {
     const setM = vi.fn();
-    const setS = vi.fn();
+    const setPS = vi.fn();
     // Save first
     localStorage.setItem(
       'oe_takeoff_test.pdf',
@@ -111,8 +152,9 @@ describe('useMeasurementPersistence', () => {
         fileName: 'test.pdf',
         measurements: [],
         setMeasurements: setM,
+        pageScales: basePageScales,
+        setPageScales: setPS,
         scale: defaultScale,
-        setScale: setS,
       }),
     );
 
@@ -145,15 +187,16 @@ describe('useMeasurementPersistence', () => {
     vi.useFakeTimers();
     const m1 = makeMeasurement('m1');
     const setM = vi.fn();
-    const setS = vi.fn();
+    const setPS = vi.fn();
 
     renderHook(() =>
       useMeasurementPersistence({
         fileName: 'auto.pdf',
         measurements: [m1],
         setMeasurements: setM,
+        pageScales: basePageScales,
+        setPageScales: setPS,
         scale: defaultScale,
-        setScale: setS,
       }),
     );
 
@@ -172,15 +215,16 @@ describe('useMeasurementPersistence', () => {
   it('savedDocumentCount reflects storage index size', () => {
     localStorage.setItem('oe_takeoff_index', JSON.stringify(['a.pdf', 'b.pdf', 'c.pdf']));
     const setM = vi.fn();
-    const setS = vi.fn();
+    const setPS = vi.fn();
 
     const { result } = renderHook(() =>
       useMeasurementPersistence({
         fileName: null,
         measurements: [],
         setMeasurements: setM,
+        pageScales: basePageScales,
+        setPageScales: setPS,
         scale: defaultScale,
-        setScale: setS,
       }),
     );
 
@@ -192,14 +236,15 @@ describe('useMeasurementPersistence', () => {
     localStorage.setItem('oe_takeoff_index', JSON.stringify(['bad.pdf']));
 
     const setM = vi.fn();
-    const setS = vi.fn();
+    const setPS = vi.fn();
     renderHook(() =>
       useMeasurementPersistence({
         fileName: 'bad.pdf',
         measurements: [],
         setMeasurements: setM,
+        pageScales: basePageScales,
+        setPageScales: setPS,
         scale: defaultScale,
-        setScale: setS,
       }),
     );
 

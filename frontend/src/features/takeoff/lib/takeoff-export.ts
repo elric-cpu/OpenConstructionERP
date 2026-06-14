@@ -145,7 +145,10 @@ export function summariseByGroupType(
     };
     existing.count += 1;
     if (!isAnnotationType(m.type)) {
-      existing.total += m.value;
+      // Opening deductions (area voids) subtract from the (group, type) total
+      // so the exported total is the NET area (gross - openings), matching the
+      // legend and ledger. Stored as a positive gross area; area-only.
+      existing.total += m.isDeduction ? -m.value : m.value;
       if (m.unit) existing.units[m.unit] = (existing.units[m.unit] ?? 0) + 1;
     }
     byKey.set(key, existing);
@@ -728,14 +731,20 @@ export async function buildTakeoffWorkbook(
       fgColor: { argb: color },
     };
 
-    // Data rows.
+    // Data rows. A deduction (opening / void) prints its value negative and
+    // flags the type so the sheet reconciles with the net subtotal below.
     for (const m of groupMs) {
+      const cellValue = isAnnotationType(m.type)
+        ? ''
+        : m.isDeduction
+          ? -m.value
+          : m.value;
       ws.addRow({
         group: groupName,
-        type: m.type,
+        type: m.isDeduction ? `${m.type} (deduction)` : m.type,
         annotation: m.annotation,
         page: m.page,
-        value: isAnnotationType(m.type) ? '' : m.value,
+        value: cellValue,
         unit: m.unit,
         linkedBoq: m.linkedPositionOrdinal ?? '',
       });
@@ -752,7 +761,8 @@ export async function buildTakeoffWorkbook(
     for (const t of subtotalTypes) {
       const subset = groupMs.filter((m) => m.type === t);
       if (subset.length === 0) continue;
-      const total = subset.reduce((s, m) => s + m.value, 0);
+      // Net out deductions so the area subtotal is gross - openings.
+      const total = subset.reduce((s, m) => s + (m.isDeduction ? -m.value : m.value), 0);
       const unit = subset[0]!.unit;
       const subtotalRow = ws.addRow({
         group: `${groupName} - Subtotal`,

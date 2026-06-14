@@ -22,7 +22,7 @@ import clsx from 'clsx';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useToastStore } from '@/stores/useToastStore';
 import { useConfirm } from '@/shared/hooks/useConfirm';
-import { SkeletonCard, EmptyState, ConfirmDialog, Button, DismissibleInfo, IntroRichText } from '@/shared/ui';
+import { SkeletonCard, EmptyState, ConfirmDialog, Button, DismissibleInfo, IntroRichText, ModuleGuideButton } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import {
   aiAgentsApi,
@@ -39,6 +39,7 @@ import {
 import { RunTimeline } from './components/RunTimeline';
 import { RecentRunsList } from './components/RecentRunsList';
 import { AutomatedRunsPanel } from './components/AutomatedRunsPanel';
+import { aiAgentsGuide } from './aiAgentsGuide';
 import {
   agentDisplayName,
   agentTagline,
@@ -411,9 +412,15 @@ export function AgentsPage(): JSX.Element {
             'Run autonomous AI agents that reason, call tools, and propose actions for your review.',
         })}
         actions={
-          <Button variant="primary" size="sm" icon={<Plus className="h-4 w-4" />} onClick={openCreate}>
-            {t('agents.builder.create_button', { defaultValue: 'Create your own agent' })}
-          </Button>
+          <>
+            {/* How it works guide - explains agents, the run console, the
+                reasoning timeline, applying proposals, and building your own.
+                Leads the action cluster as the help pill. */}
+            <ModuleGuideButton content={aiAgentsGuide} onCta={openCreate} />
+            <Button variant="primary" size="sm" icon={<Plus className="h-4 w-4" />} onClick={openCreate}>
+              {t('agents.builder.create_button', { defaultValue: 'Create your own agent' })}
+            </Button>
+          </>
         }
       />
 

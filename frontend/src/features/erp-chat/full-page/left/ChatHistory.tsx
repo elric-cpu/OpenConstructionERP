@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { History, Trash2, Loader2, Plus } from 'lucide-react';
+import { ModuleGuideButton } from '@/shared/ui';
 import type { ChatSession } from '../../types';
+import { erpChatGuide } from '../../erpChatGuide';
 
 interface ChatHistoryProps {
   sessions: ChatSession[];
@@ -77,6 +79,7 @@ export default function ChatHistory({
             &#9660;
           </span>
         </button>
+        <ModuleGuideButton content={erpChatGuide} />
         <button
           type="button"
           onClick={onNew}

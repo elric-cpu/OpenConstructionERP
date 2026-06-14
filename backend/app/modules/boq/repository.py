@@ -60,6 +60,30 @@ class BOQRepository:
 
         return boqs, total
 
+    async def active_markups_for_boqs(
+        self,
+        boq_ids: list[uuid.UUID],
+    ) -> dict[uuid.UUID, list[BOQMarkup]]:
+        """Fetch active markups for a set of BOQs grouped by BOQ id.
+
+        Ordered by ``sort_order`` so callers apply markups in the same order
+        the editor / structured rollup uses. Pure data access - the
+        FX-correct money arithmetic lives in the service layer (which holds
+        the project FX table); this just returns the rows.
+        """
+        if not boq_ids:
+            return {}
+        stmt = (
+            select(BOQMarkup)
+            .where(BOQMarkup.boq_id.in_(boq_ids), BOQMarkup.is_active.is_(True))
+            .order_by(BOQMarkup.sort_order)
+        )
+        result = await self.session.execute(stmt)
+        grouped: dict[uuid.UUID, list[BOQMarkup]] = {}
+        for markup in result.scalars().all():
+            grouped.setdefault(markup.boq_id, []).append(markup)
+        return grouped
+
     async def grand_totals_for_boqs(
         self,
         boq_ids: list[uuid.UUID],

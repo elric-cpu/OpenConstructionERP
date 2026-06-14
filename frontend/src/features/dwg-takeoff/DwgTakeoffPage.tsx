@@ -55,7 +55,7 @@ import {
   RotateCcw,
   GitCompare,
 } from 'lucide-react';
-import { Badge, ConfirmDialog, DismissibleInfo, ElementInfoPopover, type DWGElementPayload } from '@/shared/ui';
+import { Badge, ConfirmDialog, DismissibleInfo, ElementInfoPopover, ModuleGuideButton, type DWGElementPayload } from '@/shared/ui';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
@@ -103,6 +103,7 @@ import {
   DwgDrawingCompareDrawer,
   type DwgCompareOverlayState,
 } from './DwgDrawingCompareDrawer';
+import { dwgTakeoffGuide } from './dwgTakeoffGuide';
 import {
   deriveScale as deriveCalibration,
   type CalibrationState,
@@ -2848,6 +2849,7 @@ export function DwgTakeoffPage() {
                           isLoading={loadingOfflineReadiness}
                           data-testid="dwg-offline-badge"
                         />
+                        <ModuleGuideButton content={dwgTakeoffGuide} />
                       </div>
                       <p className="text-base text-gray-400 mt-3 leading-relaxed">
                         {t('dwg_takeoff.hero_subtitle', { defaultValue: 'Open DWG/DXF drawings, measure areas and lengths, annotate directly on the drawing, and link measurements to your BOQ positions.' })}
@@ -3161,6 +3163,7 @@ export function DwgTakeoffPage() {
                   glancing at converter status without stealing real estate
                   from the drawing. */}
               <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
+                <ModuleGuideButton content={dwgTakeoffGuide} />
                 <button
                   type="button"
                   onClick={() => setShowCompare(true)}

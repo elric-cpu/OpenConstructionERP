@@ -3,7 +3,15 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { AlertOctagon, AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
 
-import { Breadcrumb, Button, Card, EmptyState, DismissibleInfo, IntroRichText } from '@/shared/ui';
+import {
+  Breadcrumb,
+  Button,
+  Card,
+  EmptyState,
+  DismissibleInfo,
+  IntroRichText,
+  ModuleGuideButton,
+} from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 
@@ -11,6 +19,7 @@ import type { ControlsKPI } from './api';
 import { useControlsSnapshot } from './api';
 import { ControlsTile } from './ControlsTile';
 import { DrillDrawer } from './DrillDrawer';
+import { projectControlsGuide } from './projectControlsGuide';
 
 /**
  * Executive cross-module controls dashboard (connective-tissue feature 09).
@@ -82,6 +91,7 @@ export function ProjectControlsPage() {
         })}
         actions={
           <>
+            <ModuleGuideButton content={projectControlsGuide} />
             <span className="inline-flex items-center rounded-full bg-surface-tertiary px-2.5 py-1 text-xs font-medium text-content-tertiary">
               {projectId
                 ? t('controls.scope_project', { defaultValue: 'This project' })

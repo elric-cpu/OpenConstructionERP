@@ -81,6 +81,13 @@ import {
   formatScaleRatio,
 } from './data/scale-helpers';
 import {
+  type PageScales,
+  emptyPageScales,
+  scaleForPage,
+  setPageScale as setPageScaleIn,
+  pageIsCalibrated,
+} from './data/page-scales';
+import {
   hitTest,
   insertVertexAt,
   deleteVertexAt,
@@ -186,6 +193,11 @@ interface Measurement {
   height?: number; // Height for rectangle/highlight
   /** Free-form notes entered via the properties panel. */
   notes?: string;
+  /** Opening deduction: an `area` measurement that represents a void
+   *  (door, window, cut-out) whose area is SUBTRACTED from the gross area
+   *  of its group so a net area = gross - openings. Stored as a positive
+   *  gross area; only the rollup subtracts it. Only meaningful for area. */
+  isDeduction?: boolean;
   /** Server ID (set after first persistence sync). */
   serverId?: string;
   /** Linked BOQ position id — the canonical "this measurement feeds that position". */
@@ -314,8 +326,25 @@ export default function TakeoffViewerModule({
   const [activePoints, setActivePoints] = useState<Point[]>([]);
   const [countLabel, setCountLabel] = useState(t('takeoff_viewer.default_count_label', { defaultValue: 'Element' }));
 
-  // Scale
-  const [scale, setScale] = useState<ScaleConfig>({ pixelsPerUnit: 100, unitLabel: 'm' });
+  // Scale - PER PAGE (per sheet). A multi-sheet drawing set has a different
+  // scale per page (floor plan 1:50, site plan 1:500, ...), so the calibration
+  // is keyed by 1-indexed page with a single document default for pages that
+  // have not been calibrated yet. ``scale`` below is the effective scale for
+  // the *current* page; the rest of the module reads it unchanged.
+  const [pageScales, setPageScales] = useState<PageScales>(emptyPageScales);
+  const scale = useMemo(
+    () => scaleForPage(pageScales, currentPage),
+    [pageScales, currentPage],
+  );
+  /** Set the scale for the CURRENT page only (calibration applies to the
+   *  page it was set on). Other uncalibrated pages keep the document
+   *  default. */
+  const setScale = useCallback(
+    (next: ScaleConfig) => {
+      setPageScales((prev) => setPageScaleIn(prev, currentPage, next));
+    },
+    [currentPage],
+  );
   const [showScaleDialog, setShowScaleDialog] = useState(false);
   const [scaleRefPixels, setScaleRefPixels] = useState(0);
   const [scaleRefReal, setScaleRefReal] = useState(1);
@@ -328,13 +357,16 @@ export default function TakeoffViewerModule({
   const [showCalibrationDialog, setShowCalibrationDialog] = useState(false);
   const [calibrationPixels, setCalibrationPixels] = useState(0);
   const [calibrationMode, setCalibrationMode] = useState(false);
-  /** Cached last calibration (for badge display) — real length + unit.  */
-  const [lastCalibration, setLastCalibration] = useState<
-    { realLength: number; unit: 'm' | 'mm' | 'ft' | 'in' } | null
-  >(null);
-  /** True once the user has performed at least one two-click calibration
-   *  — drives the "Calibrated · 1:N @ Lm" status badge. */
-  const [isCalibrated, setIsCalibrated] = useState(false);
+  /** Cached last calibration PER PAGE (for badge display) - real length +
+   *  unit. Keyed by page so the badge always reflects the current sheet. */
+  const [lastCalibrationByPage, setLastCalibrationByPage] = useState<
+    Record<number, { realLength: number; unit: 'm' | 'mm' | 'ft' | 'in' }>
+  >({});
+  const lastCalibration = lastCalibrationByPage[currentPage] ?? null;
+  /** True when the CURRENT page has its own calibration - drives the
+   *  "Calibrated · 1:N @ Lm" status badge. Per-page so navigating to an
+   *  uncalibrated sheet correctly shows "not calibrated". */
+  const isCalibrated = pageIsCalibrated(pageScales, currentPage);
 
   // Sidebar right-panel tab: "Properties" (existing) or "Ledger" (new).
   // Persisted to localStorage so the choice survives reloads.
@@ -475,8 +507,14 @@ export default function TakeoffViewerModule({
     fileName,
     measurements,
     setMeasurements: (ms) => setMeasurements(ms),
+    // Per-page scale: the hook persists the whole page-scale model and
+    // migrates a legacy single-scale document into the default on load.
+    pageScales,
+    setPageScales: (ps) => setPageScales(ps),
+    // The current page's effective scale is still sent on each measurement
+    // (scale_pixels_per_unit) so the server-side B8 recompute uses the same
+    // ratio the row was drawn at.
     scale,
-    setScale: (s) => setScale(s),
     projectId: activeProjectId,
   });
 
@@ -838,15 +876,32 @@ export default function TakeoffViewerModule({
           ctx.lineTo(pt.x * dpr * zoom, pt.y * dpr * zoom);
         }
         ctx.closePath();
-        ctx.globalAlpha = 0.15;
-        ctx.fill();
-        ctx.globalAlpha = 1;
-        ctx.stroke();
+        // An opening deduction (area void) renders in a warning red with a
+        // dashed outline so the estimator can see at a glance which areas are
+        // being subtracted from the net.
+        const isVoid = m.type === 'area' && m.isDeduction;
+        if (isVoid) {
+          ctx.save();
+          ctx.fillStyle = '#ef4444';
+          ctx.strokeStyle = '#ef4444';
+          ctx.globalAlpha = 0.18;
+          ctx.fill();
+          ctx.globalAlpha = 1;
+          ctx.setLineDash([6 * dpr, 4 * dpr]);
+          ctx.stroke();
+          ctx.restore();
+        } else {
+          ctx.globalAlpha = 0.15;
+          ctx.fill();
+          ctx.globalAlpha = 1;
+          ctx.stroke();
+        }
         // Measurement value label at centroid
         const cx = m.points.reduce((s, p) => s + p.x, 0) / m.points.length * dpr * zoom;
         const cy = m.points.reduce((s, p) => s + p.y, 0) / m.points.length * dpr * zoom;
         ctx.font = `${12 * dpr}px sans-serif`;
-        ctx.fillText(m.label, cx, cy);
+        // Prefix a minus so the on-canvas number reads as a subtraction.
+        ctx.fillText(isVoid ? `- ${m.label}` : m.label, cx, cy);
         // Annotation above centroid
         drawAnnotationLabel(m.annotation, cx, cy - 14 * dpr, color);
       }
@@ -2057,23 +2112,25 @@ export default function TakeoffViewerModule({
    *  it's clear the conversion was honoured. */
   const handleCalibrationConfirm = useCallback(
     (nextScale: ScaleConfig, entry?: { realLength: number; unit: CalibrationUnit }) => {
+      // setScale targets the CURRENT page; that also marks the page as
+      // calibrated (isCalibrated derives from pageIsCalibrated).
+      const page = currentPage;
       setScale(nextScale);
       setShowCalibrationDialog(false);
       setScalePoints([]);
-      setIsCalibrated(true);
       const meters = calibrationPixels > 0 ? calibrationPixels / nextScale.pixelsPerUnit : 0;
       // Prefer the user's own entry/unit; fall back to derived metres.
       const badge = entry ?? { realLength: meters, unit: 'm' as const };
-      setLastCalibration(badge);
+      setLastCalibrationByPage((prev) => ({ ...prev, [page]: badge }));
       const metricSuffix =
         badge.unit === 'm' ? '' : ` (${meters.toFixed(2)} m)`;
       addToast({
         type: 'success',
         title: t('takeoff_viewer.calibrated', { defaultValue: 'Scale calibrated' }),
-        message: `${formatScaleRatio(nextScale)} · ${badge.realLength} ${badge.unit}${metricSuffix}`,
+        message: `${formatScaleRatio(nextScale)} · ${badge.realLength} ${badge.unit}${metricSuffix} · ${t('takeoff_viewer.calibrated_page', { defaultValue: 'page {{page}}', page })}`,
       });
     },
-    [addToast, t, calibrationPixels],
+    [addToast, t, calibrationPixels, currentPage, setScale],
   );
 
   const handleCalibrationCancel = useCallback(() => {
@@ -2081,18 +2138,29 @@ export default function TakeoffViewerModule({
     setScalePoints([]);
   }, []);
 
-  /* ── Recalculate measurements when scale changes ───────────────── */
+  /* ── Recalculate measurements when a PAGE'S scale changes ─────────────
+   * Per-page scale (per sheet) means a calibration on page 3 must re-derive
+   * only page-3 measurements, each against page 3's scale - not the whole
+   * document against one global scale. We diff the previous vs current
+   * ``pageScales`` and recompute every measurement whose OWN page's
+   * effective scale moved, using that page's old scale (to re-project
+   * volume depth) and new scale (for area / length). */
 
-  const scaleRef = useRef(scale);
+  const pageScalesRef = useRef(pageScales);
   useEffect(() => {
-    const prev = scaleRef.current;
-    scaleRef.current = scale;
-    // Skip if scale hasn't actually changed (same pixelsPerUnit)
-    if (prev.pixelsPerUnit === scale.pixelsPerUnit) return;
+    const prevPS = pageScalesRef.current;
+    pageScalesRef.current = pageScales;
+    if (prevPS === pageScales) return;
     setMeasurements((ms) =>
       ms.map((m) => {
         if (m.type === 'count') return m; // counts are scale-independent
         if (isAnnotationType(m.type)) return m; // annotations are scale-independent
+        // Each measurement uses ITS page's scale, old vs new. Skip rows on
+        // pages whose effective scale did not change so we never churn a
+        // sheet the user did not touch.
+        const prev = scaleForPage(prevPS, m.page);
+        const scale = scaleForPage(pageScales, m.page);
+        if (prev.pixelsPerUnit === scale.pixelsPerUnit) return m;
         if (m.type === 'distance' && m.points.length === 2) {
           const dist = pixelDistance(m.points[0]!.x, m.points[0]!.y, m.points[1]!.x, m.points[1]!.y);
           const realDist = toRealDistance(dist, scale);
@@ -2144,7 +2212,7 @@ export default function TakeoffViewerModule({
         return m;
       }),
     );
-  }, [scale]);
+  }, [pageScales]);
 
   /* ── Zoom controls ───────────────────────────────────────────────── */
 
@@ -2295,12 +2363,18 @@ export default function TakeoffViewerModule({
     for (const [groupName, groupMs] of Object.entries(byGroup)) {
       for (const m of groupMs) {
         const escapeCsv = (s: string) => `"${s.replace(/"/g, '""')}"`;
+        // Opening deductions are stored as a positive gross area but net out
+        // of the totals (net = gross - openings). Mirror the Excel and ledger
+        // exports: show the row value as negative and flag the type, so the
+        // CSV rows and subtotals reconcile instead of reporting inflated gross.
+        const signedValue = m.isDeduction ? -m.value : m.value;
+        const typeLabel = m.isDeduction ? `${m.type} (deduction)` : m.type;
         rows.push(
           [
             escapeCsv(groupName),
-            escapeCsv(m.type),
+            escapeCsv(typeLabel),
             escapeCsv(m.annotation),
-            m.value.toFixed(3),
+            signedValue.toFixed(3),
             escapeCsv(m.unit),
             String(m.page),
           ].join(','),
@@ -2311,17 +2385,20 @@ export default function TakeoffViewerModule({
       const areaMs = groupMs.filter((m) => m.type === 'area');
       const volMs = groupMs.filter((m) => m.type === 'volume');
       const countMs = groupMs.filter((m) => m.type === 'count');
+      // Subtotals net out opening deductions (gross - openings), matching the
+      // Excel subtotal and the legend. Only area carries the flag today, but
+      // the sign-flip is applied uniformly so it stays correct if that changes.
       if (distMs.length > 0) {
-        rows.push(`"${groupName} - Subtotal","distance","Total distance",${distMs.reduce((s, m) => s + m.value, 0).toFixed(3)},"${distMs[0]!.unit}",""`);
+        rows.push(`"${groupName} - Subtotal","distance","Total distance",${distMs.reduce((s, m) => s + (m.isDeduction ? -m.value : m.value), 0).toFixed(3)},"${distMs[0]!.unit}",""`);
       }
       if (areaMs.length > 0) {
-        rows.push(`"${groupName} - Subtotal","area","Total area",${areaMs.reduce((s, m) => s + m.value, 0).toFixed(3)},"${areaMs[0]!.unit}",""`);
+        rows.push(`"${groupName} - Subtotal","area","Total area",${areaMs.reduce((s, m) => s + (m.isDeduction ? -m.value : m.value), 0).toFixed(3)},"${areaMs[0]!.unit}",""`);
       }
       if (volMs.length > 0) {
-        rows.push(`"${groupName} - Subtotal","volume","Total volume",${volMs.reduce((s, m) => s + m.value, 0).toFixed(3)},"${volMs[0]!.unit}",""`);
+        rows.push(`"${groupName} - Subtotal","volume","Total volume",${volMs.reduce((s, m) => s + (m.isDeduction ? -m.value : m.value), 0).toFixed(3)},"${volMs[0]!.unit}",""`);
       }
       if (countMs.length > 0) {
-        rows.push(`"${groupName} - Subtotal","count","Total count",${countMs.reduce((s, m) => s + m.value, 0).toFixed(0)},"pcs",""`);
+        rows.push(`"${groupName} - Subtotal","count","Total count",${countMs.reduce((s, m) => s + (m.isDeduction ? -m.value : m.value), 0).toFixed(0)},"pcs",""`);
       }
     }
     const csvContent = rows.join('\n');
@@ -4828,6 +4905,28 @@ export default function TakeoffViewerModule({
                     </div>
                   </div>
                 </div>
+
+                {/* Opening deduction toggle - area measurements only. A
+                    deduction (door / window / cut-out) is subtracted from the
+                    group's gross area so a net area = gross - openings. */}
+                {selectedMeasurement.type === 'area' && (
+                  <label
+                    className="flex items-center gap-2 rounded border border-border/60 bg-surface-secondary/40 px-2 py-1.5 cursor-pointer"
+                    data-testid="prop-deduction-toggle"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={Boolean(selectedMeasurement.isDeduction)}
+                      onChange={(e) => updateSelectedMeasurement({ isDeduction: e.target.checked })}
+                      className="h-3.5 w-3.5 accent-semantic-error"
+                    />
+                    <span className="text-[11px] text-content-secondary">
+                      {t('takeoff_viewer.prop_deduction', {
+                        defaultValue: 'Opening / deduction (subtract from net area)',
+                      })}
+                    </span>
+                  </label>
+                )}
 
                 {/* Annotation / label */}
                 <div>

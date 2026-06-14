@@ -208,15 +208,29 @@ class WorkflowService:
         When a ``project_id`` filter is supplied with a *user_id* (public read
         path), verify project-scoped access first so a caller cannot enumerate
         workflows for a project they are not a member of (404 on denial).
+
+        When no ``project_id`` filter is supplied on the public read path,
+        scope the result to the caller's accessible projects (plus
+        workspace-level / NULL-project templates) instead of returning every
+        project's workflows. This closes the optional-scope IDOR: the repo
+        otherwise drops its WHERE clause and leaks all workflow configs
+        (step roles / assignees) across projects. Admins (helper returns
+        ``None``) keep the full, unscoped view.
         """
+        accessible: set[uuid.UUID] | None = None
         if project_id is not None and user_id is not None:
             from app.dependencies import verify_project_access
 
             await verify_project_access(project_id, str(user_id), self.session)
+        elif user_id is not None:
+            from app.dependencies import accessible_project_ids
+
+            accessible = await accessible_project_ids(self.session, str(user_id))
         return await self.workflows.list(
             project_id=project_id,
             entity_type=entity_type,
             is_active=is_active,
+            accessible_project_ids=accessible,
             limit=limit,
             offset=offset,
         )
@@ -325,14 +339,29 @@ class WorkflowService:
         path), load the owning workflow and verify project-scoped access first
         so a caller cannot enumerate approval requests for a workflow whose
         project they are not a member of (404 on denial).
+
+        When no ``workflow_id`` filter is supplied on the public read path,
+        scope the result to requests whose parent workflow belongs to one of
+        the caller's accessible projects (plus workspace-level / NULL-project
+        template workflows) instead of returning every project's requests.
+        This closes the optional-scope IDOR: the repo otherwise drops its
+        WHERE clause and leaks approval-request PII (requested_by, entity
+        refs, decision_notes, audit_log) across projects. Admins (helper
+        returns ``None``) keep the full, unscoped view.
         """
+        accessible: set[uuid.UUID] | None = None
         if workflow_id is not None and user_id is not None:
             workflow = await self.get_workflow(workflow_id)
             await self._verify_workflow_project_access(workflow, user_id)
+        elif user_id is not None:
+            from app.dependencies import accessible_project_ids
+
+            accessible = await accessible_project_ids(self.session, str(user_id))
         return await self.requests.list(
             workflow_id=workflow_id,
             entity_type=entity_type,
             status=request_status,
+            accessible_project_ids=accessible,
             limit=limit,
             offset=offset,
         )

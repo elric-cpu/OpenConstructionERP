@@ -19,6 +19,7 @@ Stateless service layer. Handles:
 
 import logging
 import math
+import re
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
@@ -308,6 +309,7 @@ from app.modules.boq.schemas import (
     QuantityLinkResponse,
     ResourceCodeLookupResponse,
     ResourceCodeMatch,
+    ScenarioCreate,
     SectionCreate,
     SectionResponse,
     TemplateInfo,
@@ -2473,6 +2475,91 @@ class BOQService:
         """List BOQs for a given project with pagination."""
         return await self.boq_repo.list_for_project(project_id, offset=offset, limit=limit)
 
+    async def compute_boq_totals(
+        self,
+        boq_ids: list[uuid.UUID],
+    ) -> dict[uuid.UUID, dict[str, Any]]:
+        """Currency-aware money breakdown per BOQ for list / detail endpoints.
+
+        Issue #111 sibling - the raw ``boq_repo.totals_for_boqs`` aggregates a
+        SQL ``SUM(Position.total)`` that blends per-position currencies into a
+        single meaningless number whenever a BOQ mixes (e.g.) EUR and USD
+        lines. This converts every leaf position into the project BASE
+        currency BEFORE summing, using exactly the same helper the
+        CSV/Excel/PDF export path uses (``_leaf_total_base_with_resources`` via
+        ``get_boq_structured``), so list / detail / export all report one
+        FX-correct figure.
+
+        For a single-currency BOQ (no position carries a foreign currency code
+        and no foreign-currency resource) the conversion is an identity, so the
+        returned ``direct_cost`` / ``markups_total`` / ``grand_total`` are
+        byte-identical to the previous raw-SQL behaviour - no regression.
+
+        Returns ``{boq_id: {direct_cost, markups_total, grand_total,
+        base_currency, currencies, is_mixed_currency}}``. The three money keys
+        keep their historical ``float`` type and meaning; the trailing keys are
+        additive metadata the callers may surface (a BOQ mixing currencies is
+        flagged so the UI can warn rather than trust a blended sum).
+        """
+        if not boq_ids:
+            return {}
+
+        from decimal import ROUND_HALF_UP
+
+        cent = Decimal("0.01")
+        breakdown: dict[uuid.UUID, dict[str, Any]] = {}
+
+        # Active markups for the whole set in one query (sort_order applied),
+        # so per-BOQ markup arithmetic reuses the canonical helper that powers
+        # get_boq_structured / the editor.
+        markups_by_boq = await self.boq_repo.active_markups_for_boqs(boq_ids)
+
+        for boq_id in boq_ids:
+            base_currency, fx_map = await self._resolve_project_fx(boq_id)
+            base = (base_currency or "").strip().upper()
+            positions = await self.position_repo.list_all_for_boq(boq_id)
+
+            direct_cost = Decimal("0")
+            currencies: set[str] = set()
+            for pos in positions:
+                if _is_section(pos):
+                    continue
+                # Same conversion the export/structured rollup applies.
+                direct_cost += _leaf_total_base_with_resources(pos, fx_map, base)
+                # Record every currency that actually contributes money so the
+                # caller can flag a genuinely mixed-currency BOQ. A position
+                # priced in base (or with no explicit code) counts as base.
+                pos_code = _position_currency(pos)
+                meta = pos.metadata_ if isinstance(getattr(pos, "metadata_", None), dict) else {}
+                res = meta.get("resources") if isinstance(meta, dict) else None
+                if isinstance(res, list):
+                    for r in res:
+                        if isinstance(r, dict):
+                            rc = str(r.get("currency") or "").strip().upper()
+                            if rc:
+                                currencies.add(rc)
+                currencies.add(pos_code or base or "")
+
+            markups = markups_by_boq.get(boq_id, [])
+            markup_results = _calculate_markup_amounts(direct_cost, markups)
+            markup_total = sum((amount for _, amount in markup_results), Decimal("0"))
+            grand_total = direct_cost + markup_total
+
+            non_base = {c for c in currencies if c and c != base}
+            breakdown[boq_id] = {
+                "direct_cost": float(direct_cost.quantize(cent, rounding=ROUND_HALF_UP)),
+                "markups_total": float(markup_total.quantize(cent, rounding=ROUND_HALF_UP)),
+                "grand_total": float(grand_total.quantize(cent, rounding=ROUND_HALF_UP)),
+                "base_currency": base,
+                "currencies": sorted(c for c in currencies if c),
+                # Mixed only when a foreign code is present alongside the base
+                # (or alongside another foreign code) - a wholly single-currency
+                # BOQ is never flagged.
+                "is_mixed_currency": bool(non_base) and len(currencies - {""}) > 1,
+            }
+
+        return breakdown
+
     async def update_boq(self, boq_id: uuid.UUID, data: BOQUpdate) -> BOQ:
         """Update BOQ metadata fields.
 
@@ -4114,7 +4201,7 @@ class BOQService:
         *,
         actor_id: uuid.UUID | None = None,
     ) -> BulkUpdateResult:
-        """Apply one of three bulk mutations to many positions atomically.
+        """Apply one of four bulk mutations to many positions atomically.
 
         See :class:`BulkPositionUpdate` for the payload contract. Each
         referenced position is loaded, its membership in ``boq_id`` is
@@ -4125,6 +4212,10 @@ class BOQService:
         :class:`BulkUpdateResult.failed_ids`; the umbrella action is
         always logged so the bulk action shows in the activity feed
         even when some rows skipped.
+
+        For the ``find_replace`` style, rows whose text held no match are
+        counted in ``unchanged`` (a benign no-op), kept apart from
+        ``failed_ids`` so the caller can word the two differently.
 
         Args:
             boq_id: BOQ that every supplied position must belong to.
@@ -4141,6 +4232,7 @@ class BOQService:
         boq = await self._ensure_not_locked(boq_id)
 
         updated = 0
+        unchanged = 0
         failed_ids: list[uuid.UUID] = []
         # Pre-load all positions in one pass to surface 404s early.
         # The membership check protects against cross-BOQ id smuggling.
@@ -4167,13 +4259,38 @@ class BOQService:
                     # re-introduce binary-floating-point rounding on large
                     # rates (BUG-B-bulk-float).
                     update_data = PositionUpdate(unit_rate=_quantize_money(new_rate))
+                elif payload.find_replace is not None:
+                    fr = payload.find_replace
+                    current_desc: str = row.description or ""
+                    if fr.case_sensitive:
+                        new_desc = current_desc.replace(fr.find, fr.replace)
+                    else:
+                        # Use a lambda replacement so that fr.replace is treated
+                        # as a literal string - re.sub normally interprets
+                        # backslash sequences in the replacement (e.g. \1, \g<n>)
+                        # which would corrupt arbitrary user text.
+                        _repl = fr.replace
+                        new_desc = re.sub(
+                            re.escape(fr.find),
+                            lambda _m: _repl,
+                            current_desc,
+                            flags=re.IGNORECASE,
+                        )
+                    # Skip rows where the text did not change - this is a
+                    # benign no-op (no match), not a failure. Track it in its
+                    # own counter so the caller can tell "no match" apart from
+                    # "could not be updated" (which lands in failed_ids).
+                    if new_desc == current_desc:
+                        unchanged += 1
+                        continue
+                    update_data = PositionUpdate(description=new_desc)
                 else:
                     # quantity_factor branch (validator guarantees one is set)
                     current_q = _to_decimal(row.quantity, default=Decimal("0"))
                     new_q = current_q * Decimal(str(payload.quantity_factor))
                     # quantity field is typed float; use the string-encoded
                     # Decimal so the schema coercion path (_quantize_money_str)
-                    # fires cleanly rather than going float → string → Decimal.
+                    # fires cleanly rather than going float -> string -> Decimal.
                     update_data = PositionUpdate(quantity=float(_quantize_money(new_q)))
                 await self.update_position(pid, update_data, actor_id=actor_id)
                 updated += 1
@@ -4192,12 +4309,16 @@ class BOQService:
                     else "rate_factor"
                     if payload.rate_factor is not None
                     else "quantity_factor"
+                    if payload.quantity_factor is not None
+                    else "find_replace"
                 )
                 entry = await self.log_activity(
                     user_id=actor_id,
                     action=f"position.bulk_{kind}",
                     target_type="boq",
-                    description=(f"Bulk {kind} on {updated} position(s) (skipped {len(failed_ids)})"),
+                    description=(
+                        f"Bulk {kind} on {updated} position(s) (unchanged {unchanged}, failed {len(failed_ids)})"
+                    ),
                     project_id=boq.project_id,
                     boq_id=boq_id,
                     target_id=None,
@@ -4208,6 +4329,16 @@ class BOQService:
                         "updates": payload.updates,
                         "rate_factor": payload.rate_factor,
                         "quantity_factor": payload.quantity_factor,
+                        "find_replace": (
+                            {
+                                "field": payload.find_replace.field,
+                                "find": payload.find_replace.find,
+                                "replace": payload.find_replace.replace,
+                                "case_sensitive": payload.find_replace.case_sensitive,
+                            }
+                            if payload.find_replace is not None
+                            else None
+                        ),
                     },
                 )
                 log_id = entry.id
@@ -4217,6 +4348,7 @@ class BOQService:
         return BulkUpdateResult(
             updated=updated,
             skipped=len(failed_ids),
+            unchanged=unchanged,
             failed_ids=failed_ids,
             log_id=log_id,
         )
@@ -5220,9 +5352,113 @@ class BOQService:
             source_module="oe_boq",
         )
 
-        logger.info("BOQ duplicated: %s → %s", boq_id, new_boq_id)
+        logger.info("BOQ duplicated: %s -> %s", boq_id, new_boq_id)
 
         # Re-fetch to ensure all attributes are loaded for serialization
+        return await self.get_boq(new_boq_id)
+
+    async def create_scenario(
+        self,
+        boq_id: uuid.UUID,
+        data: ScenarioCreate,
+        *,
+        actor_id: uuid.UUID | str,
+    ) -> "BOQ":
+        """Create a what-if scenario clone of a baseline BOQ.
+
+        Clones the source BOQ (positions + markups) via the existing
+        ``duplicate_boq`` machinery, then:
+
+        1. Renames the clone to ``data.name``.
+        2. Links it back to the baseline via ``parent_estimate_id``.
+        3. Writes a ``scenario`` block into ``metadata_`` (preserving any
+           existing keys the duplicate carried).
+        4. If ``data.rate_factor`` is set and differs from 1.0, applies it
+           to every position in the clone by delegating to the existing
+           ``bulk_update_positions`` path so rounding/audit invariants fire
+           identically to a manual bulk rate adjustment.
+        5. Writes one activity log entry with action ``scenario.created``.
+
+        Args:
+            boq_id: Baseline BOQ to clone.
+            data: Validated ScenarioCreate payload.
+            actor_id: User id to attribute the log entry to.
+
+        Returns:
+            The fully loaded new scenario BOQ.
+
+        Raises:
+            HTTPException 404: Baseline BOQ not found.
+        """
+        # Clone the BOQ - reuse the existing deep-copy helper.
+        new_boq = await self.duplicate_boq(boq_id)
+        new_boq_id = new_boq.id
+
+        # Build the scenario metadata block.
+        scenario_block: dict[str, Any] = {
+            "type": "what_if",
+            "region": data.region,
+            "rate_factor": data.rate_factor,
+            "note": data.note,
+            "created_from": str(boq_id),
+        }
+
+        # Preserve any metadata the duplicate already carries; just
+        # set/replace the "scenario" key.
+        existing_meta: dict[str, Any] = dict(new_boq.metadata_) if isinstance(new_boq.metadata_, dict) else {}
+        existing_meta["scenario"] = scenario_block
+
+        # Update: name, parent link, metadata.
+        await self.boq_repo.update_fields(
+            new_boq_id,
+            name=data.name,
+            parent_estimate_id=boq_id,
+            status="draft",
+            is_locked=False,
+            metadata_=existing_meta,
+        )
+
+        # Apply rate factor when set and not a no-op. Chunk the ids into
+        # batches that respect BulkPositionUpdate.ids' 2000-id cap - a large
+        # estimate (2000+ line items) would otherwise raise a pydantic
+        # ValidationError here that escapes as an opaque 500.
+        if data.rate_factor is not None and data.rate_factor != 1.0:
+            positions = await self.position_repo.list_all_for_boq(new_boq_id)
+            if positions:
+                from app.modules.boq.schemas import BulkPositionUpdate
+
+                pos_ids = [p.id for p in positions]
+                batch_size = 2000
+                for start in range(0, len(pos_ids), batch_size):
+                    bulk_payload = BulkPositionUpdate(
+                        ids=pos_ids[start : start + batch_size],
+                        rate_factor=data.rate_factor,
+                    )
+                    await self.bulk_update_positions(new_boq_id, bulk_payload, actor_id=actor_id)
+
+        # Log the scenario creation - mirror the pattern used by duplicate_boq
+        # callers (create_revision in the router) and bulk_update_positions.
+        try:
+            refreshed_for_log = await self.get_boq(new_boq_id)
+            await self.log_activity(
+                user_id=actor_id,
+                action="scenario.created",
+                target_type="boq",
+                target_id=new_boq_id,
+                description=f"Scenario '{data.name}' created from BOQ {boq_id}",
+                project_id=refreshed_for_log.project_id,
+                boq_id=new_boq_id,
+                changes={
+                    "created_from": str(boq_id),
+                    "region": data.region,
+                    "rate_factor": data.rate_factor,
+                    "note": data.note,
+                },
+            )
+        except Exception:  # noqa: BLE001 - logging must not block the return
+            logger.debug("scenario.created log failed", exc_info=True)
+
+        logger.info("Scenario '%s' created from BOQ %s -> %s", data.name, boq_id, new_boq_id)
         return await self.get_boq(new_boq_id)
 
     async def duplicate_position(self, position_id: uuid.UUID) -> Position:
@@ -5810,25 +6046,24 @@ class BOQService:
         boq = await self.get_boq(boq_id)
         positions = await self.position_repo.list_all_for_boq(boq_id)
 
-        # Build position responses with float conversions
+        # Build position responses + count (section headers carry no unit and
+        # are excluded from money / counts).
         position_responses = []
-        direct_cost = Decimal("0")
         position_count = 0
-
         for pos in positions:
             position_responses.append(_build_position_response(pos))
-            # Exclude section headers from totals + counts (sections have no unit)
             if not _is_section(pos):
-                total_val = _str_to_float(pos.total)
-                direct_cost += Decimal(str(total_val))
                 position_count += 1
 
-        # Apply active markups so detail matches the list endpoint
-        # (``boq_repo.grand_totals_for_boqs`` does the same arithmetic
-        #  for list-style responses; we share the result here).
-        totals = await self.boq_repo.grand_totals_for_boqs([boq_id])
-        grand_total_with_markups = Decimal(str(totals.get(boq_id, float(direct_cost))))
-        markups_total = grand_total_with_markups - direct_cost
+        # Money via the shared currency-aware path so detail matches the list
+        # endpoint (BUG-008) and foreign-currency positions are converted into
+        # the project base before summing (Issue #111 sibling) instead of being
+        # blended at face value as the old ``_str_to_float(pos.total)`` sum did.
+        totals = await self.compute_boq_totals([boq_id])
+        money = totals.get(boq_id, {"direct_cost": 0.0, "markups_total": 0.0, "grand_total": 0.0})
+        direct_cost = Decimal(str(money["direct_cost"]))
+        markups_total = Decimal(str(money["markups_total"]))
+        grand_total_with_markups = Decimal(str(money["grand_total"]))
 
         return BOQWithPositions(
             id=boq.id,

@@ -36,6 +36,7 @@ import {
   Trash2,
 } from 'lucide-react';
 
+import { ModuleGuideButton } from '@/shared/ui';
 import { BetaBanner } from '@/shared/ui/BetaBanner';
 import { Breadcrumb } from '@/shared/ui/Breadcrumb';
 import { DismissibleInfo, IntroRichText } from '@/shared/ui/DismissibleInfo';
@@ -71,6 +72,7 @@ import {
   type UpdateDeliverablePayload,
   type UpdateRequirementPayload,
 } from './api';
+import { requirementsGuide } from './requirementsGuide';
 
 // ── Constants ──────────────────────────────────────────────────────────
 
@@ -879,6 +881,10 @@ export function RequirementsMatrixPage() {
         subtitle={subtitle}
         actions={
           <>
+            {/* How it works guide - explains the EIR matrix, requirement
+                sets, deliverable columns and the coverage heatmap. Leading
+                help pill in the action cluster. */}
+            <ModuleGuideButton content={requirementsGuide} />
             {matrixQuery.data && totalRows > 0 && (
               <div className="flex items-center gap-2 rounded-lg border border-border-light bg-surface-elevated px-3 py-1.5 text-sm">
                 <span className="text-content-secondary">{t('requirements.matrix.project_coverage', { defaultValue: 'Project coverage' })}</span>

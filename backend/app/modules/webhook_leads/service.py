@@ -305,7 +305,141 @@ class WebhookLeadsService:
         self.mapping_repo = PayloadMappingRepository(session)
         self.log_repo = WebhookLogRepository(session)
 
+    # ── Per-row access control ───────────────────────────────────────────
+
+    async def _is_admin(self, user_id: str | None) -> bool:
+        """Return True when the caller resolves to an admin user.
+
+        ``accessible_project_ids`` already returns ``None`` (no filter) for
+        admins, but several access paths (source-less ``project_id``) need an
+        explicit admin check, so it is factored out here.
+        """
+        if user_id is None:
+            return False
+        from app.modules.users.repository import UserRepository
+
+        uid = _to_uuid_or_none(user_id)
+        if uid is None:
+            return False
+        try:
+            user = await UserRepository(self.session).get_by_id(uid)
+        except Exception:  # noqa: BLE001 - fail closed on lookup error
+            logger.exception("Admin-role lookup failed in webhook_leads access check")
+            return False
+        return user is not None and getattr(user, "role", "") == "admin"
+
+    async def _can_access_source(self, source: WebhookSource, user_id: str | None) -> bool:
+        """Decide whether ``user_id`` may read / mutate ``source``.
+
+        Rule (non-admin): the caller owns the source (``created_by`` matches)
+        OR the source is scoped to a project the caller can access (own /
+        team-member, via the platform-wide ``accessible_project_ids``).
+        Admins always pass. A source with neither a matching ``created_by``
+        nor an accessible ``project_id`` is invisible to the caller, closing
+        the cross-tenant IDOR.
+        """
+        if await self._is_admin(user_id):
+            return True
+        if user_id is None:
+            return False
+
+        # Primary: ownership by created_by.
+        caller_uid = _to_uuid_or_none(user_id)
+        if caller_uid is not None and source.created_by is not None and source.created_by == caller_uid:
+            return True
+
+        # Secondary: project access for project-scoped sources only.
+        if source.project_id:
+            from app.dependencies import accessible_project_ids
+
+            proj_uid = _to_uuid_or_none(source.project_id)
+            if proj_uid is not None:
+                allowed = await accessible_project_ids(self.session, user_id)
+                # ``None`` means admin/unrestricted (already handled above);
+                # here it can only be a concrete set for a non-admin caller.
+                if allowed is not None and proj_uid in allowed:
+                    return True
+
+        return False
+
+    async def _accessible_source_ids(self, user_id: str | None) -> set[uuid.UUID] | None:
+        """Source ids the caller may list, or ``None`` for admins.
+
+        A non-admin sees sources they created (``created_by``) plus sources
+        scoped to a project they can access (own / team-member). Mirrors the
+        per-row rule in :meth:`_can_access_source` but as a single set-level
+        query so the list endpoints scope in one round-trip. An empty set is
+        the safe default (no rows), never "all rows".
+        """
+        from sqlalchemy import or_, select
+
+        if await self._is_admin(user_id):
+            return None
+        if user_id is None:
+            return set()
+
+        from app.dependencies import accessible_project_ids
+
+        caller_uid = _to_uuid_or_none(user_id)
+        allowed_projects = await accessible_project_ids(self.session, user_id)
+        # ``None`` would mean admin, already handled above; for a non-admin it
+        # is always a concrete (possibly empty) set.
+        project_ids = {str(p) for p in (allowed_projects or set())}
+
+        conditions = []
+        if caller_uid is not None:
+            conditions.append(WebhookSource.created_by == caller_uid)
+        if project_ids:
+            conditions.append(WebhookSource.project_id.in_(project_ids))
+        if not conditions:
+            return set()
+
+        stmt = select(WebhookSource.id).where(or_(*conditions))
+        rows = (await self.session.execute(stmt)).scalars().all()
+        return {r if isinstance(r, uuid.UUID) else uuid.UUID(str(r)) for r in rows}
+
     # ── Source CRUD ──────────────────────────────────────────────────────
+
+    async def list_sources(
+        self,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        is_active: bool | None = None,
+        user_id: str | None = None,
+    ) -> tuple[list[WebhookSource], int]:
+        """List sources scoped to the caller's accessible set (admins: all)."""
+        allowed = await self._accessible_source_ids(user_id)
+        return await self.source_repo.list_all(offset=offset, limit=limit, is_active=is_active, allowed_ids=allowed)
+
+    async def list_logs(
+        self,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        source_id: uuid.UUID | None = None,
+        status_filter: str | None = None,
+        user_id: str | None = None,
+    ) -> tuple[list[WebhookLog], int]:
+        """List inbound-lead logs scoped to the caller's accessible sources.
+
+        When the caller passes a ``source_id`` filter they may only read logs
+        for a source they can access; a non-accessible (or unknown) source id
+        yields an empty result (404-equivalent for a list) rather than another
+        tenant's lead PII.
+        """
+        allowed = await self._accessible_source_ids(user_id)
+        if allowed is not None and source_id is not None and source_id not in allowed:
+            # Caller asked for a specific source they cannot see - return
+            # nothing instead of leaking its logs.
+            return [], 0
+        return await self.log_repo.list_all(
+            offset=offset,
+            limit=limit,
+            source_id=source_id,
+            status=status_filter,
+            allowed_source_ids=allowed,
+        )
 
     async def create_source(self, data: WebhookSourceCreate, user_id: str | None = None) -> tuple[WebhookSource, str]:
         """Create a source, returning the model + the one-time plaintext secret."""
@@ -332,39 +466,61 @@ class WebhookLeadsService:
         logger.info("Webhook source created: %s (%s)", source.slug, source.id)
         return source, secret
 
-    async def get_source(self, source_id: uuid.UUID) -> WebhookSource:
+    async def get_source(self, source_id: uuid.UUID, user_id: str | None = None) -> WebhookSource:
+        """Load a source, enforcing per-row access for non-admin callers.
+
+        Returns 404 - never 403 - when the source is missing OR the caller
+        is not allowed to see it, so a non-owner cannot use the response code
+        to probe which source ids exist (IDOR-404 convention, same as
+        ``verify_project_access``). Every get / patch / delete / rotate /
+        mapping path funnels through here, so the check is enforced once.
+
+        ``user_id`` defaults to ``None`` for backwards compatibility; admin
+        callers and internal callers that pass no identity keep full access.
+        Authenticated router endpoints always pass the caller id.
+        """
         source = await self.source_repo.get_by_id(source_id)
         if source is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Webhook source not found",
             )
+        if user_id is not None and not await self._can_access_source(source, user_id):
+            # 404, not 403 - do not reveal that the id exists.
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Webhook source not found",
+            )
         return source
 
-    async def update_source(self, source_id: uuid.UUID, data: WebhookSourceUpdate) -> WebhookSource:
-        source = await self.get_source(source_id)
+    async def update_source(
+        self, source_id: uuid.UUID, data: WebhookSourceUpdate, user_id: str | None = None
+    ) -> WebhookSource:
+        source = await self.get_source(source_id, user_id=user_id)
         fields = data.model_dump(exclude_unset=True)
         if fields:
             await self.source_repo.update_fields(source_id, **fields)
             await self.session.refresh(source)
         return source
 
-    async def rotate_secret(self, source_id: uuid.UUID) -> tuple[WebhookSource, str]:
-        source = await self.get_source(source_id)
+    async def rotate_secret(self, source_id: uuid.UUID, user_id: str | None = None) -> tuple[WebhookSource, str]:
+        source = await self.get_source(source_id, user_id=user_id)
         secret = generate_secret()
         await self.source_repo.update_fields(source_id, secret_hash=hash_secret(secret))
         await self.session.refresh(source)
         logger.info("Webhook source secret rotated: %s", source_id)
         return source, secret
 
-    async def delete_source(self, source_id: uuid.UUID) -> None:
-        await self.get_source(source_id)
+    async def delete_source(self, source_id: uuid.UUID, user_id: str | None = None) -> None:
+        await self.get_source(source_id, user_id=user_id)
         await self.source_repo.delete(source_id)
 
     # ── Mapping CRUD ─────────────────────────────────────────────────────
 
-    async def create_mapping(self, source_id: uuid.UUID, data: PayloadMappingCreate) -> PayloadMapping:
-        await self.get_source(source_id)  # 404 if missing
+    async def create_mapping(
+        self, source_id: uuid.UUID, data: PayloadMappingCreate, user_id: str | None = None
+    ) -> PayloadMapping:
+        await self.get_source(source_id, user_id=user_id)  # 404 if missing / not owned
         if data.target_field not in ALLOWED_TARGET_FIELDS:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -385,17 +541,40 @@ class WebhookLeadsService:
         await self.mapping_repo.create(mapping)
         return mapping
 
-    async def list_mappings(self, source_id: uuid.UUID) -> list[PayloadMapping]:
-        await self.get_source(source_id)
+    async def list_mappings(self, source_id: uuid.UUID, user_id: str | None = None) -> list[PayloadMapping]:
+        await self.get_source(source_id, user_id=user_id)
         return await self.mapping_repo.list_for_source(source_id)
 
-    async def update_mapping(self, mapping_id: uuid.UUID, data: PayloadMappingUpdate) -> PayloadMapping:
+    async def _load_owned_mapping(self, mapping_id: uuid.UUID, user_id: str | None) -> PayloadMapping:
+        """Load a mapping, enforcing access via its parent source.
+
+        Raises 404 ("Mapping not found") when the mapping is missing OR the
+        caller may not access the parent source, so a non-owner cannot edit
+        or delete another tenant's mapping or probe mapping-id existence.
+        """
         mapping = await self.mapping_repo.get_by_id(mapping_id)
         if mapping is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Mapping not found",
             )
+        try:
+            await self.get_source(mapping.source_id, user_id=user_id)
+        except HTTPException as exc:
+            # Re-frame the parent-source 404 as a mapping 404 so the error
+            # surface stays self-consistent and reveals nothing extra.
+            if exc.status_code == status.HTTP_404_NOT_FOUND:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Mapping not found",
+                ) from exc
+            raise
+        return mapping
+
+    async def update_mapping(
+        self, mapping_id: uuid.UUID, data: PayloadMappingUpdate, user_id: str | None = None
+    ) -> PayloadMapping:
+        mapping = await self._load_owned_mapping(mapping_id, user_id)
         fields = data.model_dump(exclude_unset=True)
         if "target_field" in fields and fields["target_field"] not in ALLOWED_TARGET_FIELDS:
             raise HTTPException(
@@ -412,13 +591,8 @@ class WebhookLeadsService:
             await self.session.refresh(mapping)
         return mapping
 
-    async def delete_mapping(self, mapping_id: uuid.UUID) -> None:
-        mapping = await self.mapping_repo.get_by_id(mapping_id)
-        if mapping is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Mapping not found",
-            )
+    async def delete_mapping(self, mapping_id: uuid.UUID, user_id: str | None = None) -> None:
+        await self._load_owned_mapping(mapping_id, user_id)
         await self.mapping_repo.delete(mapping_id)
 
     # ── Audit logging ────────────────────────────────────────────────────

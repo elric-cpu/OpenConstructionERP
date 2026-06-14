@@ -27,6 +27,7 @@ import {
   SkeletonTable,
   DismissibleInfo,
   IntroRichText,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { PageHeader } from '@/shared/ui/PageHeader';
@@ -38,6 +39,7 @@ import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { getPOMatchStatus, type POLineMatchTag } from './api';
+import { procurementGuide } from './procurementGuide';
 import { SupplierScorecardModal } from './SupplierScorecardModal';
 import { VendorPrequalBadge } from './VendorPrequalBadge';
 import { RetainagePanel, RetainageBadge } from './RetainagePanel';
@@ -215,6 +217,7 @@ export function ProcurementPage() {
         subtitle={t('procurement.subtitle', {
           defaultValue: 'Purchase orders and goods receipts',
         })}
+        actions={<ModuleGuideButton content={procurementGuide} />}
       />
 
       {/* Canonical info block — where procurement sits in the money flow,

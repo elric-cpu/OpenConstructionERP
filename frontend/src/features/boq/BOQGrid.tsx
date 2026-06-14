@@ -281,12 +281,37 @@ interface VariantHeaderRow {
   total: number;
 }
 
+/**
+ * Fixed height (px) of the injected inline AI copilot row. Compact by design:
+ * enough for the header, a few message bubbles (the list scrolls internally),
+ * the quick-prompt chips and the input, without dominating the grid.
+ */
+const BOQ_COPILOT_ROW_HEIGHT = 380;
+
+/**
+ * Synthetic full-width row that hosts the per-position AI copilot inline,
+ * injected directly beneath its position while the copilot is open for it.
+ * Rendered by ResourceFullWidthRenderer through ``ctx.renderInlineCopilot``.
+ */
+interface CopilotRow {
+  _isCopilot: true;
+  _copilotPositionId: string;
+  id: string;
+  description: string;
+  ordinal: string;
+  unit: string;
+  quantity: number;
+  unit_rate: number;
+  total: number;
+}
+
 type GridRow =
   | (Position & Partial<SectionRow>)
   | (FooterRow & Record<string, unknown>)
   | (ResourceRow & Record<string, unknown>)
   | (AddResourceRow & Record<string, unknown>)
-  | (VariantHeaderRow & Record<string, unknown>);
+  | (VariantHeaderRow & Record<string, unknown>)
+  | (CopilotRow & Record<string, unknown>);
 
 export interface ManualResource {
   name: string;
@@ -378,6 +403,23 @@ export interface BOQGridProps {
   onOpenCostDbForPosition?: (positionId: string) => void;
   onOpenCatalogForPosition?: (positionId: string) => void;
   /**
+   * Open the per-position AI copilot dock for this position. Optional — when
+   * omitted the context-menu item is hidden (graceful degrade).
+   */
+  onOpenAICopilot?: (positionId: string) => void;
+  /**
+   * Position id the AI copilot is currently open on. When set (and the
+   * position is visible), a full-width copilot row is injected directly under
+   * that position. Null/undefined ⇒ no inline copilot row.
+   */
+  aiCopilotPositionId?: string | null;
+  /**
+   * Render the inline copilot for a given position id. Supplied by the host so
+   * the grid stays decoupled from the copilot component; called from the
+   * full-width row renderer. Optional — when omitted no copilot row renders.
+   */
+  renderInlineCopilot?: (positionId: string) => JSX.Element | null;
+  /**
    * Re-pick the variant on an already-added resource row (v2.6.26+).
    * Reads ``available_variants`` cached on the resource entry and PATCHes
    * ``/positions/{id}/resources/{idx}/variant/`` server-side. Optional —
@@ -457,6 +499,13 @@ export interface BOQGridProps {
 export interface BOQGridHandle {
   clearSelection: () => void;
   /**
+   * Scroll the grid to a position or section row and flash it. Re-callable
+   * (an outline jump may target the same row twice in a row), unlike the
+   * `highlightPositionId` prop which only fires when its value changes. No-op
+   * when the row is not in the current model (e.g. filtered out).
+   */
+  scrollToPosition: (positionId: string) => void;
+  /**
    * Open a freshly-added leaf partida directly in inline edit on its
    * Description cell, so the user types straight away instead of hunting
    * for a cell to click ("Click any cell to edit" UX gap). Polls briefly
@@ -502,6 +551,9 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
   onSaveVariantHeaderToCatalog,
   onOpenCostDbForPosition,
   onOpenCatalogForPosition,
+  onOpenAICopilot,
+  aiCopilotPositionId,
+  renderInlineCopilot,
   onRepickResourceVariant,
   onAddManualResource,
   onLookupResourceByCode,
@@ -954,6 +1006,14 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
     clearSelection: () => {
       gridApiRef.current?.deselectAll();
     },
+    scrollToPosition: (positionId: string) => {
+      const api = gridApiRef.current;
+      if (!api) return;
+      const node = api.getRowNode(positionId);
+      if (!node) return;
+      api.ensureNodeVisible(node, 'middle');
+      api.flashCells({ rowNodes: [node] });
+    },
     beginEditDescription: (positionId: string) => {
       // Open a freshly-added leaf row directly in inline edit on its
       // Description cell. Two-phase, because:
@@ -1080,6 +1140,7 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
       },
       onDuplicatePosition: onDuplicatePosition ?? (() => {}),
       onShowContextMenu: showContextMenu,
+      renderInlineCopilot,
       anomalyMap,
       onApplyAnomalySuggestion,
       bimModelId,
@@ -1105,7 +1166,7 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
      onDeletePosition, onSaveToDatabase, onAddComment,
      onDuplicatePosition, showContextMenu, anomalyMap, onApplyAnomalySuggestion, bimModelId,
      onUpdatePosition, onHighlightBIMElements, onDeleteSection, onReorderSections, onFormulaApplied,
-     positions, customColumns, showResourceSplit],
+     positions, customColumns, showResourceSplit, renderInlineCopilot],
   );
 
   /* ── Column defs (standard + custom) ─────────────────────────────── */
@@ -1182,6 +1243,27 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
       });
     }
   }, [customColumns]);
+
+  /* ── Resource-split columns: drive visibility from the toolbar toggle ─
+   * AG Grid keeps each column's runtime visibility across columnDefs
+   * updates and does NOT reliably re-apply the colDef `hide` for columns
+   * that already exist. So rebuilding columnDefs with `hide: true` when the
+   * user switches the MAT/LAB/EQU toggle off leaves the Material / Labor /
+   * Equipment columns on screen (showing worked, hiding did not). Drive the
+   * three columns' visibility explicitly through the grid API so the toggle
+   * works in both directions regardless of AG Grid's columnDefs diffing. */
+  useEffect(() => {
+    const api = gridApiRef.current;
+    if (!api) return;
+    api.applyColumnState({
+      state: [
+        { colId: 'resource_split_material', hide: !showResourceSplit },
+        { colId: 'resource_split_labor', hide: !showResourceSplit },
+        { colId: 'resource_split_equipment', hide: !showResourceSplit },
+      ],
+      applyOrder: false,
+    });
+  }, [showResourceSplit]);
 
   /* ── Display-currency refresh (Issue #88) ────────────────────────────
    * When the user flips the active display currency the column-defs
@@ -1560,12 +1642,28 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
         for (const child of kids) emit(child, depth + 1);
       } else {
         insertResourceRows(rows, pos, depth);
+        // Inject the inline AI copilot directly beneath this position when it
+        // is the one the copilot is open on. Placed after the position's own
+        // resource rows so it reads as a panel belonging to the position above.
+        if (aiCopilotPositionId === pos.id) {
+          rows.push({
+            _isCopilot: true,
+            _copilotPositionId: pos.id,
+            id: `${pos.id}__copilot`,
+            description: '',
+            ordinal: '',
+            unit: '',
+            quantity: 0,
+            unit_rate: 0,
+            total: 0,
+          } as GridRow);
+        }
       }
     };
 
     for (const root of sortSiblings(childrenOf.get(null) ?? [])) emit(root, 0);
     return rows;
-  }, [positions, collapsedSections, insertResourceRows, currencyCode, fxRates]);
+  }, [positions, collapsedSections, insertResourceRows, currencyCode, fxRates, aiCopilotPositionId]);
 
   /* ── Bug #220: redraw section banners when subtotals change ───────────
    * Mirror of the displayCurrency effect above, but keyed on the actual
@@ -1675,7 +1773,7 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
   const isFullWidthRow = useCallback(
     (params: IsFullWidthRowParams) => {
       const d = params.rowNode.data;
-      return !!d?._isSection || !!d?._isResource || !!d?._isAddResource || !!d?._isVariantHeader;
+      return !!d?._isSection || !!d?._isResource || !!d?._isAddResource || !!d?._isVariantHeader || !!d?._isCopilot;
     },
     [],
   );
@@ -1685,6 +1783,7 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
     if (params.data?._isResource) return 28;
     if (params.data?._isAddResource) return 30;
     if (params.data?._isVariantHeader) return 36;
+    if (params.data?._isCopilot) return BOQ_COPILOT_ROW_HEIGHT;
     if (params.data?._isFooter) return 32;
     // Position rows grow with the description-density preference so a long
     // Langtext is readable inline; compact keeps the historical 32px row.
@@ -2661,6 +2760,12 @@ const BOQGrid = forwardRef<BOQGridHandle, BOQGridProps>(function BOQGrid({
                   label={t('boq.add_from_catalog', { defaultValue: 'Pick from Catalog' })}
                   onClick={() => { onOpenCatalogForPosition?.(d.id as string); closeContextMenu(); }}
                 />
+                {onOpenAICopilot && (
+                  <CtxItem icon={<Sparkles size={14} className="text-violet-500"/>}
+                    label={t('boq.ai_copilot', { defaultValue: 'AI Copilot' })}
+                    onClick={() => { onOpenAICopilot(d.id as string); closeContextMenu(); }}
+                  />
+                )}
                 <CtxSeparator />
                 <CtxItem icon={<Copy size={14}/>}
                   label={t('boq.duplicate_position', { defaultValue: 'Duplicate Position' })}

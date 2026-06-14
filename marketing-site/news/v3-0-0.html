@@ -4,6 +4,30 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 
+  <!-- Google Analytics with Consent Mode v2 (GDPR-compliant) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-JYQXK2652T"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    // Default: deny all until user makes a choice
+    gtag('consent', 'default', {
+      'ad_storage': 'denied',
+      'analytics_storage': 'denied',
+      'ad_user_data': 'denied',
+      'ad_personalization': 'denied',
+      'wait_for_update': 500
+    });
+    // Restore prior consent if user already chose
+    try {
+      var prior = localStorage.getItem('oce-cookie-consent');
+      if (prior === 'granted') {
+        gtag('consent', 'update', { 'analytics_storage': 'granted' });
+      }
+    } catch (e) {}
+    gtag('js', new Date());
+    gtag('config', 'G-JYQXK2652T', { 'anonymize_ip': true });
+  </script>
+
   <title>v3.0.0 - First stable v3 major. 18 modules, FSM engine, ISO 16739-1 IFC parser - OpenConstructionERP</title>
   <meta name="description" content="OpenConstructionERP v3.0.0 marks the first stable v3 major: an 18-module wave covering BIM Hub, Match Elements, contracts, finance and reporting, a deterministic FSM engine that replaces ad-hoc status fields, an ISO 16739-1 IFC parser that lands the IFC pipeline alongside the existing DDC cad2data bridges, and a Qdrant-backed cost-match pipeline with SearchPlan + 29-field filters and BGE rerank." />
   <meta name="robots" content="index,follow" />
@@ -141,6 +165,121 @@
     .pagefoot-inner { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
     .pagefoot a { color: var(--ink-2); } .pagefoot a:hover { color: var(--accent); }
     @media (max-width: 540px) { .article p, .article ul, .article ol { font-size: 16px; } }
+  
+    /* ================================================================ */
+    /* COOKIE BANNER - GDPR-compliant consent dialog                     */
+    /* ================================================================ */
+    .cookie-banner {
+      position: fixed;
+      left: 50%;
+      bottom: 20px;
+      transform: translateX(-50%) translateY(14px);
+      width: min(720px, calc(100vw - 32px));
+      z-index: 9999;
+      background: color-mix(in oklab, #ffffff 88%, transparent);
+      border: 1px solid var(--line-1);
+      border-radius: 18px;
+      backdrop-filter: blur(22px) saturate(180%);
+      -webkit-backdrop-filter: blur(22px) saturate(180%);
+      box-shadow: 0 24px 64px -28px rgba(15, 23, 42, 0.35);
+      padding: 18px 22px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.35s ease, transform 0.35s ease;
+    }
+    [data-theme="dark"] .cookie-banner {
+      background: color-mix(in oklab, #111a2c 88%, transparent);
+      box-shadow: 0 24px 64px -28px rgba(0, 0, 0, 0.7);
+    }
+    .cookie-banner.is-visible {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateX(-50%) translateY(0);
+    }
+    .cookie-banner-inner {
+      display: grid;
+      grid-template-columns: 32px 1fr auto;
+      grid-gap: 16px;
+      align-items: center;
+    }
+    .cookie-banner-icon {
+      font-size: 22px;
+      line-height: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+    }
+    .cookie-banner-body { min-width: 0; }
+    .cookie-banner-title {
+      font-family: 'Inter Tight', 'Inter', sans-serif;
+      font-weight: 650;
+      font-size: 14px;
+      color: var(--ink-0);
+      margin: 0 0 3px;
+      letter-spacing: -0.01em;
+    }
+    .cookie-banner-text {
+      font-size: 12.5px;
+      line-height: 1.5;
+      color: var(--ink-2);
+      margin: 0;
+    }
+    .cookie-banner-text a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 500;
+      border-bottom: 1px solid color-mix(in oklab, var(--accent) 40%, transparent);
+    }
+    .cookie-banner-text a:hover { border-bottom-color: var(--accent); }
+    .cookie-banner-actions {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: nowrap;
+    }
+    .cookie-btn {
+      padding: 9px 16px;
+      border-radius: 999px;
+      font-family: inherit;
+      font-size: 12.5px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .cookie-btn-reject {
+      background: transparent;
+      border: 1px solid var(--line-1);
+      color: var(--ink-1);
+    }
+    .cookie-btn-reject:hover {
+      border-color: color-mix(in oklab, var(--ink-0) 30%, var(--line-1));
+      background: color-mix(in oklab, var(--ink-0) 4%, transparent);
+    }
+    .cookie-btn-accept {
+      background: var(--accent);
+      border: 1px solid var(--accent);
+      color: #fff;
+      box-shadow: 0 6px 16px -6px color-mix(in oklab, var(--accent) 55%, transparent);
+    }
+    .cookie-btn-accept:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 20px -6px color-mix(in oklab, var(--accent) 70%, transparent);
+    }
+    @media (max-width: 640px) {
+      .cookie-banner-inner {
+        grid-template-columns: 28px 1fr;
+        grid-gap: 12px;
+      }
+      .cookie-banner-actions {
+        grid-column: 1 / -1;
+        margin-top: 4px;
+      }
+      .cookie-btn { flex: 1; text-align: center; }
+    }
   </style>
 </head>
 <body>
@@ -350,6 +489,25 @@
   </div>
 </footer>
 
+<!-- ================================================================ -->
+<!-- COOKIE CONSENT BANNER                                             -->
+<!-- ================================================================ -->
+<div class="cookie-banner" id="cookie-banner" role="dialog" aria-label="Cookie preferences" aria-live="polite">
+  <div class="cookie-banner-inner">
+    <div class="cookie-banner-icon" aria-hidden="true">🍪</div>
+    <div class="cookie-banner-body">
+      <div class="cookie-banner-title" data-i18n="cookie.title">Cookies &amp; analytics</div>
+      <p class="cookie-banner-text" data-i18n-html="cookie.text">
+        We use essential cookies and anonymised analytics to improve the site. No third-party trackers, no ads. <a href="/privacy-policy.html">Learn more</a>.
+      </p>
+    </div>
+    <div class="cookie-banner-actions">
+      <button type="button" class="cookie-btn cookie-btn-reject" id="cookie-reject" data-i18n="cookie.reject">Reject non-essential</button>
+      <button type="button" class="cookie-btn cookie-btn-accept" id="cookie-accept" data-i18n="cookie.accept">Accept all</button>
+    </div>
+  </div>
+</div>
+
 <script>
   (function () {
     var btn = document.getElementById('theme-toggle'); if (!btn) return;
@@ -368,6 +526,33 @@
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(cmd).then(done).catch(function () { var ta = document.createElement('textarea'); ta.value = cmd; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); } catch (e) {} document.body.removeChild(ta); done(); });
       } else { var ta = document.createElement('textarea'); ta.value = cmd; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); } catch (e) {} document.body.removeChild(ta); done(); }
+    });
+  })();
+  // Cookie consent banner - GDPR Consent Mode v2 integration
+  (function setupCookieBanner() {
+    const banner = document.getElementById('cookie-banner');
+    const accept = document.getElementById('cookie-accept');
+    const reject = document.getElementById('cookie-reject');
+    if (!banner) return;
+    let prior = null;
+    try { prior = localStorage.getItem('oce-cookie-consent'); } catch (e) {}
+    if (!prior) {
+      setTimeout(() => banner.classList.add('is-visible'), 800);
+    }
+    function apply(choice) {
+      try { localStorage.setItem('oce-cookie-consent', choice); } catch (e) {}
+      if (typeof gtag === 'function') {
+        gtag('consent', 'update', {
+          'analytics_storage': choice === 'granted' ? 'granted' : 'denied'
+        });
+      }
+      banner.classList.remove('is-visible');
+    }
+    accept?.addEventListener('click', () => apply('granted'));
+    reject?.addEventListener('click', () => apply('denied'));
+    // Allow re-opening via any element with data-open-cookies
+    document.querySelectorAll('[data-open-cookies]').forEach((el) => {
+      el.addEventListener('click', (e) => { e.preventDefault(); banner.classList.add('is-visible'); });
     });
   })();
 </script>

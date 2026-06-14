@@ -506,13 +506,112 @@ class PositionUpdate(BaseModel):
         return _serialise_money(v)
 
 
+# ── What-if scenario creation ─────────────────────────────────────────────────
+
+
+class ScenarioCreate(BaseModel):
+    """Request body for creating a what-if scenario from a baseline BOQ.
+
+    A scenario is a deep clone of the source BOQ with an optional rate
+    adjustment applied atomically. The clone is linked back to the baseline
+    via ``parent_estimate_id`` and carries a ``scenario`` block in its
+    metadata so callers can distinguish scenarios from plain revisions.
+
+    Attributes:
+        name: Display name for the new scenario BOQ.
+        rate_factor: When set, every unit_rate in the clone is multiplied by
+            this scalar (e.g. 1.05 = +5 %). Must be > 0. Omit to keep rates
+            identical to the baseline.
+        region: Optional free-text region tag (e.g. "Munich", "Southeast").
+        note: Optional note describing the scenario purpose (max 2000 chars).
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    name: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+        description="Display name for the new scenario BOQ.",
+        examples=["Scenario A - 5% cost increase"],
+    )
+    rate_factor: float | None = Field(
+        default=None,
+        description="Multiplicative factor applied to every unit_rate (must be > 0). Omit to keep rates unchanged.",
+        examples=[1.05],
+    )
+    region: str | None = Field(
+        default=None,
+        max_length=100,
+        description="Optional region tag for the scenario (e.g. 'Munich').",
+        examples=["Munich"],
+    )
+    note: str | None = Field(
+        default=None,
+        max_length=2000,
+        description="Optional note describing the scenario purpose.",
+        examples=["Material price escalation per Q3 market data."],
+    )
+
+    @field_validator("rate_factor", mode="after")
+    @classmethod
+    def _rate_factor_in_range(cls, v: float | None) -> float | None:
+        """Reject rate_factor outside (0, 1_000_000].
+
+        The upper bound mirrors ``BulkPositionUpdate.rate_factor`` - the path
+        the scenario clone reuses to apply the adjustment. Without it an
+        out-of-range value would only fail deep inside the bulk validator and
+        escape as an opaque 500 instead of a clean 422.
+        """
+        if v is None:
+            return v
+        if v <= 0:
+            raise ValueError("rate_factor must be greater than 0.")
+        if v > 1_000_000:
+            raise ValueError("rate_factor must be 1000000 or less.")
+        return v
+
+
 # ── v3.12.0 Stream A - bulk-update + per-field restore ───────────────────────
+
+
+class FindReplaceSpec(BaseModel):
+    """Specification for a find-and-replace operation on position descriptions.
+
+    Attributes:
+        field: Field to operate on. Currently only 'description' is supported.
+        find: Substring to search for. Must be non-empty.
+        replace: Replacement string. Defaults to empty string (deletion).
+        case_sensitive: When False (default), matching is case-insensitive.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    field: Literal["description"] = Field(
+        default="description",
+        description="Position field to search. Currently only 'description' is supported.",
+    )
+    find: str = Field(
+        ...,
+        min_length=1,
+        description="Substring to find. Must be non-empty.",
+        examples=["Reinforced concrete"],
+    )
+    replace: str = Field(
+        default="",
+        description="Replacement string. Defaults to empty string (removal of matched text).",
+        examples=["RC"],
+    )
+    case_sensitive: bool = Field(
+        default=False,
+        description="When False, matching ignores case. When True, exact case is required.",
+    )
 
 
 class BulkPositionUpdate(BaseModel):
     """Atomic bulk update for a set of positions within a BOQ.
 
-    Accepts one of three mutation styles, applied to every ``ids`` entry:
+    Accepts one of four mutation styles, applied to every ``ids`` entry:
 
     * ``updates`` - direct field assignment (e.g. ``{"unit": "m3"}`` or
       ``{"classification": {"din276": "330"}}``). The same payload is
@@ -522,10 +621,12 @@ class BulkPositionUpdate(BaseModel):
       back the product. ``quantity`` and ``total`` are recomputed by
       the service.
     * ``quantity_factor`` - same as ``rate_factor`` but for ``quantity``.
+    * ``find_replace`` - find-and-replace text within the ``description``
+      field. Rows with no match are skipped (not failed).
 
-    Exactly one of ``updates`` / ``rate_factor`` / ``quantity_factor``
-    must be supplied. Mixing styles is rejected with 422 so the audit
-    trail stays unambiguous (one log entry per row per kind).
+    Exactly one of ``updates`` / ``rate_factor`` / ``quantity_factor`` /
+    ``find_replace`` must be supplied. Mixing styles is rejected with 422
+    so the audit trail stays unambiguous (one log entry per row per kind).
     """
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -556,6 +657,10 @@ class BulkPositionUpdate(BaseModel):
         le=1_000_000.0,
         description="Multiplicative factor for quantity (must be > 0).",
     )
+    find_replace: FindReplaceSpec | None = Field(
+        default=None,
+        description="Find-and-replace specification for description text.",
+    )
 
     @model_validator(mode="after")
     def _exactly_one_mutation(self) -> "BulkPositionUpdate":
@@ -563,10 +668,11 @@ class BulkPositionUpdate(BaseModel):
             self.updates is not None,
             self.rate_factor is not None,
             self.quantity_factor is not None,
+            self.find_replace is not None,
         ]
         if sum(1 for s in styles if s) != 1:
             raise ValueError(
-                "Exactly one of 'updates', 'rate_factor', 'quantity_factor' must be supplied.",
+                "Exactly one of 'updates', 'rate_factor', 'quantity_factor', 'find_replace' must be supplied.",
             )
         if isinstance(self.updates, dict):
             # Tight allowlist - bulk operations must not silently rewrite
@@ -584,12 +690,22 @@ class BulkPositionUpdate(BaseModel):
 
 
 class BulkUpdateResult(BaseModel):
-    """Outcome of a bulk update - counts plus failed-id detail."""
+    """Outcome of a bulk update - counts plus failed-id detail.
+
+    ``skipped`` counts rows that could not be updated (errors); the same rows
+    are listed in ``failed_ids``. ``unchanged`` counts rows left untouched on
+    purpose - currently the find-and-replace rows whose text held no match.
+    Keeping the two apart lets the client tell a benign no-op ("3 rows had no
+    match") from a real failure ("3 rows could not be updated"). For every
+    distinct selected row exactly one of updated / unchanged / skipped applies,
+    so the three add up to the number of distinct rows.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
     updated: int = 0
     skipped: int = 0
+    unchanged: int = 0
     failed_ids: list[UUID] = Field(default_factory=list)
     log_id: UUID | None = Field(
         default=None,

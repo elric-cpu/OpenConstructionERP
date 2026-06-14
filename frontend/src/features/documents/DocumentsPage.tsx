@@ -6,7 +6,7 @@ import {
   Search, X, Loader2, FolderOpen, ChevronDown, HardDrive, Eye,
   MoreHorizontal, Pencil, Tag, Ruler, Send,
 } from 'lucide-react';
-import { Button, Badge, EmptyState, Breadcrumb, RecoveryCard, ViewInBIMButton } from '@/shared/ui';
+import { Button, Badge, EmptyState, Breadcrumb, RecoveryCard, ViewInBIMButton, ModuleGuideButton } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import SimilarItemsPanel from '@/shared/ui/SimilarItemsPanel';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
@@ -21,6 +21,7 @@ import { listSessions } from '../cad-explorer/api';
 import { fetchBIMModels } from '../bim/api';
 import { fetchDrawings } from '../dwg-takeoff/api';
 import { takeoffApi } from '../takeoff/api';
+import { documentsGuide } from './documentsGuide';
 
 /* ── Types ───────────────────────────────────────────────────────────── */
 
@@ -905,6 +906,7 @@ export function DocumentsPage() {
             }}
             aria-label={t('documents.upload_input', { defaultValue: 'Choose files to upload' })}
           />
+          <ModuleGuideButton content={documentsGuide} />
           <Button
             variant="primary"
             size="sm"

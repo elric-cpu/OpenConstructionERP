@@ -83,15 +83,56 @@ class Probe(NamedTuple):
                     The filter MUST bind ``:pid`` as the project UUID
                     (rendered as ``str(uuid)`` by the executor - works
                     for both PostgreSQL UUID and SQLite TEXT columns).
+                    When the scope is ``"company"`` the SQL has no
+                    ``:pid`` bind - it asks "does this register hold any
+                    row at all?" - so the executor binds ``:pid`` only
+                    when the statement references it.
+        scope:      How presence is decided for this module:
+
+                    * ``"project"`` (default) - project-scoped table; the
+                      module is present only when the active project has a
+                      linked row. Dims when the project is empty.
+                    * ``"company"`` - company-wide register (master tables
+                      such as the subcontractor directory, contacts, the
+                      supplier catalogue) that has no ``project_id`` column.
+                      Presence must NOT depend on the active project; it is
+                      present whenever the register holds any row. Never dim
+                      one of these just because the current project has no
+                      linked rows.
+                    * ``"hybrid"`` - rows may exist before being tied to a
+                      project (e.g. CRM opportunities, whose ``project_id``
+                      is nullable). Present when there is a project-linked
+                      row OR a global/unlinked (``project_id IS NULL``) row.
     """
 
     module_key: str
     sql: str
+    scope: str = "project"
 
 
 def _project_probe(table: str, *, column: str = "project_id") -> str:
     """Build a standard ``SELECT 1 ... LIMIT 1`` probe on a project column."""
     return f"SELECT 1 FROM {table} WHERE {column} = :pid LIMIT 1"  # noqa: S608
+
+
+def _company_probe(table: str) -> str:
+    """Build a company-wide ``SELECT 1 ... LIMIT 1`` probe (no project filter).
+
+    For master/register tables that have no ``project_id`` column. Presence
+    means "the register holds at least one row", independent of any project.
+    """
+    return f"SELECT 1 FROM {table} LIMIT 1"  # noqa: S608
+
+
+def _hybrid_probe(table: str, *, column: str = "project_id") -> str:
+    """Build a probe that is true for a project-linked OR a global row.
+
+    Used for tables whose ``project_id`` is nullable: a row counts as
+    present when it is linked to this project, or when it is global
+    (``project_id IS NULL``) and therefore visible regardless of the
+    active project. One indexed ``SELECT 1 ... LIMIT 1`` either way.
+    """
+    return f"SELECT 1 FROM {table} WHERE {column} = :pid OR {column} IS NULL LIMIT 1"  # noqa: S608
 
 
 # The order here is informational only - probes run concurrently. Keys
@@ -143,9 +184,23 @@ PRESENCE_PROBES: tuple[Probe, ...] = (
     Probe("procurement", _project_probe("oe_procurement_po")),
     Probe("tendering", _project_probe("oe_tendering_package")),
     Probe("changeorders", _project_probe("oe_changeorders_order")),
-    Probe("crm", _project_probe("oe_crm_opportunity")),
+    # CRM opportunities are hybrid: a deal can exist as a global/unlinked
+    # lead (``project_id IS NULL``) before it is ever tied to a delivery
+    # project. Probing only ``project_id = :pid`` dimmed CRM for any project
+    # that had no linked deals even though the pipeline held opportunities,
+    # so probe project-linked OR global rows (issue #228).
+    Probe("crm", _hybrid_probe("oe_crm_opportunity"), scope="hybrid"),
     Probe("contracts", _project_probe("oe_contracts_contract")),
-    Probe("subcontractors", _project_probe("oe_subcontractors_subcontractor")),
+    # The subcontractor directory (``oe_subcontractors_subcontractor``) is a
+    # company-wide master register with NO ``project_id`` column. The old
+    # ``project_id = :pid`` probe raised "column does not exist", was
+    # swallowed, and always read False - dimming the directory even when it
+    # held vendors (issue #228). Probe company-wide presence instead.
+    Probe(
+        "subcontractors",
+        _company_probe("oe_subcontractors_subcontractor"),
+        scope="company",
+    ),
     Probe("bid_management", _project_probe("oe_bid_management_package")),
     # A project has variations activity if it has either a variation request or
     # an executed variation order (demo data seeds orders), so probe both.
@@ -154,14 +209,18 @@ PRESENCE_PROBES: tuple[Probe, ...] = (
         "SELECT 1 FROM oe_variations_order WHERE project_id = :pid "
         "UNION ALL SELECT 1 FROM oe_variations_request WHERE project_id = :pid LIMIT 1",  # noqa: S608
     ),
-    # Supplier catalogs are vendor-scoped (global); sidebar treats them
-    # as present only if vendor records exist at all (cheap proxy).
-    Probe("supplier_catalogs", "SELECT 1 FROM oe_supplier_catalogs_vendor LIMIT 1"),
+    # Supplier catalogs are vendor-scoped (company-wide); sidebar treats
+    # them as present if any vendor record exists at all (cheap proxy).
+    Probe(
+        "supplier_catalogs",
+        _company_probe("oe_supplier_catalogs_vendor"),
+        scope="company",
+    ),
     Probe("property_dev", _project_probe("oe_property_dev_development")),
     # ── Communication & Docs ───────────────────────────────────────────
     # Contacts are an org-wide address book (the table has no project_id), so
-    # probe org-wide presence like supplier_catalogs rather than per-project.
-    Probe("contacts", "SELECT 1 FROM oe_contacts_contact LIMIT 1"),  # noqa: S608
+    # probe company-wide presence like supplier_catalogs rather than per-project.
+    Probe("contacts", _company_probe("oe_contacts_contact"), scope="company"),
     Probe("meetings", _project_probe("oe_meetings_meeting")),
     Probe("rfi", _project_probe("oe_rfi_rfi")),
     Probe("submittals", _project_probe("oe_submittals_submittal")),
@@ -218,7 +277,10 @@ async def _run_one_probe(
         # ``str(uuid)`` works for both PostgreSQL UUID columns (cast by
         # the driver) and SQLite TEXT columns. Binding the raw UUID
         # instance only works on asyncpg and breaks SQLite tests.
-        result = await session.execute(text(probe.sql), {"pid": str(project_id)})
+        # Company-wide probes have no ``:pid`` bind, so only supply the
+        # parameter when the statement actually references it.
+        params = {"pid": str(project_id)} if ":pid" in probe.sql else {}
+        result = await session.execute(text(probe.sql), params)
         row = result.first()
         return probe.module_key, row is not None
     except (OperationalError, ProgrammingError):

@@ -50,10 +50,19 @@ class WebhookSourceRepository:
         offset: int = 0,
         limit: int = 50,
         is_active: bool | None = None,
+        allowed_ids: set[uuid.UUID] | None = None,
     ) -> tuple[list[WebhookSource], int]:
+        """List sources, optionally scoped to ``allowed_ids``.
+
+        ``allowed_ids`` is the set of source ids the caller may see; pass
+        ``None`` for an unrestricted (admin) listing. An empty set yields no
+        rows - the safe default for a non-admin caller with no own sources.
+        """
         base = select(WebhookSource)
         if is_active is not None:
             base = base.where(WebhookSource.is_active == is_active)
+        if allowed_ids is not None:
+            base = base.where(WebhookSource.id.in_(allowed_ids))
 
         count_stmt = select(func.count()).select_from(base.subquery())
         total = (await self.session.execute(count_stmt)).scalar_one()
@@ -128,12 +137,23 @@ class WebhookLogRepository:
         limit: int = 50,
         source_id: uuid.UUID | None = None,
         status: str | None = None,
+        allowed_source_ids: set[uuid.UUID] | None = None,
     ) -> tuple[list[WebhookLog], int]:
+        """List logs, optionally scoped to ``allowed_source_ids``.
+
+        ``allowed_source_ids`` is the set of source ids whose logs the caller
+        may read; pass ``None`` for an unrestricted (admin) listing. An empty
+        set yields no rows. Logs whose ``source_id`` is NULL (probes against
+        an unknown slug, never tied to a configured source) are only visible
+        to admins, since they carry no owner to scope by.
+        """
         base = select(WebhookLog)
         if source_id is not None:
             base = base.where(WebhookLog.source_id == source_id)
         if status is not None:
             base = base.where(WebhookLog.status == status)
+        if allowed_source_ids is not None:
+            base = base.where(WebhookLog.source_id.in_(allowed_source_ids))
 
         count_stmt = select(func.count()).select_from(base.subquery())
         total = (await self.session.execute(count_stmt)).scalar_one()

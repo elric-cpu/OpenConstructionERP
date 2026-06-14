@@ -46,6 +46,7 @@ import {
   WideModalSection,
   WideModalField,
   SideDrawer,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { useConfirm } from '@/shared/hooks/useConfirm';
@@ -72,6 +73,7 @@ import {
   type ImportResult,
   type ContactModuleRows,
 } from './api';
+import { contactsGuide } from './contactsGuide';
 
 /* ── Constants ─────────────────────────────────────────────────────────── */
 
@@ -1501,6 +1503,7 @@ export function ContactsPage() {
         })}
         actions={
           <>
+            <ModuleGuideButton content={contactsGuide} />
             <Button
               variant="secondary"
               size="sm"

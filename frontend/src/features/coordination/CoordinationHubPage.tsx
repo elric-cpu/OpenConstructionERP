@@ -35,7 +35,7 @@ import { useNavigate } from 'react-router-dom';
 import { useToastStore } from '@/stores/useToastStore';
 
 import { DateDisplay } from '@/shared/ui/DateDisplay';
-import { BetaBanner, Breadcrumb, DismissibleInfo, EmptyState, IntroRichText, RecoveryCard } from '@/shared/ui';
+import { BetaBanner, Breadcrumb, DismissibleInfo, EmptyState, IntroRichText, ModuleGuideButton, RecoveryCard } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { useActiveProjectProfile } from '@/features/projects/useProjectProfile';
 import { projectsApi } from '@/features/projects/api';
@@ -48,6 +48,7 @@ import {
   fetchCoordinationTimeline,
   fetchTradeMatrix,
 } from './api';
+import { coordinationGuide } from './coordinationGuide';
 import { CoordinationKPICards } from './CoordinationKPICards';
 import { CoordinationTimeline } from './CoordinationTimeline';
 import { CoordinationTradeMatrix } from './CoordinationTradeMatrix';
@@ -429,6 +430,7 @@ export function CoordinationHubPage() {
           })}
           actions={
             <>
+              <ModuleGuideButton content={coordinationGuide} />
               {dashboardQuery.data ? (
                 <span
                   data-testid="coordination-as-of"

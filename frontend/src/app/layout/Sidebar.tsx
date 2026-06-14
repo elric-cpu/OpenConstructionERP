@@ -2261,7 +2261,11 @@ function SidebarItem({
                   ? t('nav.unpin', { defaultValue: 'Unpin {{label}}', label })
                   : t('nav.pin', { defaultValue: 'Pin {{label}}', label })
               }
-              title={isPinned ? t('nav.unpin', { defaultValue: 'Unpin' }) : t('nav.pin', { defaultValue: 'Pin' })}
+              title={
+                isPinned
+                  ? t('nav.unpin', { defaultValue: 'Unpin {{label}}', label })
+                  : t('nav.pin', { defaultValue: 'Pin {{label}}', label })
+              }
               className={clsx(
                 'oe-pin-btn ms-1 flex h-4 w-4 shrink-0 items-center justify-center rounded',
                 'text-content-quaternary hover:text-oe-blue hover:bg-oe-blue/10',

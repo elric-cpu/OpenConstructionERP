@@ -34,6 +34,7 @@ import {
   WideModal,
   WideModalSection,
   WideModalField,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { DismissibleInfo } from '@/shared/ui/DismissibleInfo';
@@ -79,6 +80,7 @@ import {
   type WidgetRenderResult,
   type WidgetType,
 } from './api';
+import { biDashboardsGuide } from './biDashboardsGuide';
 import { useDashboardFilters } from '@/stores/useDashboardFilters';
 
 type Tab = 'dashboards' | 'kpis' | 'reports' | 'schedules' | 'alerts';
@@ -326,20 +328,29 @@ export function BIDashboardsPage() {
             'KPIs, scheduled reports, executive dashboards and alert rules, all in one place.',
         })}
         actions={
-          (tab === 'dashboards' || tab === 'reports' || tab === 'alerts') ? (
-            <Button
-              variant="primary"
-              size="sm"
-              icon={<Plus size={14} />}
-              onClick={() => setCreateOpen(true)}
-            >
-              {tab === 'dashboards'
-                ? t('bi.new_dashboard', { defaultValue: 'New Dashboard' })
-                : tab === 'reports'
-                  ? t('bi.new_report', { defaultValue: 'New Report' })
-                  : t('bi.new_alert', { defaultValue: 'New Alert' })}
-            </Button>
-          ) : undefined
+          <>
+            {/* How it works guide - explains the tabs, the starter pack and
+                the KPI / report / schedule / alert workflow. Leads the action
+                cluster so it stays visible on every tab. */}
+            <ModuleGuideButton
+              content={biDashboardsGuide}
+              onCta={() => installStarterM.mutate()}
+            />
+            {(tab === 'dashboards' || tab === 'reports' || tab === 'alerts') && (
+              <Button
+                variant="primary"
+                size="sm"
+                icon={<Plus size={14} />}
+                onClick={() => setCreateOpen(true)}
+              >
+                {tab === 'dashboards'
+                  ? t('bi.new_dashboard', { defaultValue: 'New Dashboard' })
+                  : tab === 'reports'
+                    ? t('bi.new_report', { defaultValue: 'New Report' })
+                    : t('bi.new_alert', { defaultValue: 'New Alert' })}
+              </Button>
+            )}
+          </>
         }
       />
 

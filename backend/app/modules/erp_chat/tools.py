@@ -636,16 +636,39 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
 
 
 async def handle_get_all_projects(session: AsyncSession, args: dict[str, Any], user_id: str) -> dict[str, Any]:
-    """List all projects visible to the current user."""
+    """List all projects visible to the current user.
+
+    SECURITY: scope the listing to the *caller*. Previously this passed
+    ``is_admin=True`` unconditionally, which made ``list_for_user`` drop the
+    owner/member WHERE clause and leak every tenant project to any chat user.
+    We now resolve the caller's real global role (same lookup as
+    ``_require_project_access``) and pass their own id as ``owner_id`` so a
+    non-admin only sees projects they own or are a team member of.
+    """
     try:
         from app.config import get_settings
         from app.modules.projects.service import ProjectService
+        from app.modules.users.repository import UserRepository
+
+        # Resolve the caller's real admin status; never trust a hardcoded flag.
+        is_admin = False
+        owner_uuid: uuid.UUID | None = None
+        try:
+            owner_uuid = uuid.UUID(str(user_id))
+        except (TypeError, ValueError):
+            owner_uuid = None
+        try:
+            user = await UserRepository(session).get_by_id(owner_uuid) if owner_uuid else None
+            is_admin = bool(user and getattr(user, "role", "") == "admin")
+        except Exception:  # noqa: BLE001
+            logger.exception("Role lookup failed in handle_get_all_projects")
+            is_admin = False
 
         svc = ProjectService(session, get_settings())
         projects, total = await svc.list_projects(
-            owner_id=None,
-            is_admin=True,
-            limit=50,  # type: ignore[arg-type]
+            owner_id=owner_uuid,  # type: ignore[arg-type]
+            is_admin=is_admin,
+            limit=50,
         )
         return {
             "renderer": "projects_grid",

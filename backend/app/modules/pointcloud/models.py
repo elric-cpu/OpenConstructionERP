@@ -204,6 +204,25 @@ class ScanDataset(Base):
         default=dict,
         server_default="{}",
     )
+    # Cheap header-sniff summary captured the moment the upload finishes (plan
+    # section 3 step 1): which scalar fields the cloud carries, declared linear
+    # units, coordinate ranges, point-format id, scale/offset, plus the sniff's
+    # own provenance/status so the UI can tell "no RGB in this scan" apart from
+    # "metadata not read yet". Shape (all keys optional):
+    #   {"status": "ok|pending|unreadable",
+    #    "reader": "laspy",
+    #    "scalar_fields": {"rgb": true, "intensity": false, "classification": true},
+    #    "units": "m",
+    #    "coordinate_ranges": {"x": [..], "y": [..], "z": [..]},
+    #    "point_format_id": 7, "extra_dimensions": [...], ...}
+    # NOT a transform input - this is advisory preview metadata. The authoritative
+    # geometry still comes from the converter / the decode path.
+    scan_metadata: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
     # Lifecycle: ``uploading`` -> ``uploaded`` -> ``converting`` -> ``ready``,
     # with ``failed`` as a side-exit. Indexed for the "what is still
     # processing" filter.

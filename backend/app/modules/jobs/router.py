@@ -21,11 +21,11 @@ import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 
 from app.core.job_run import JobRun
-from app.dependencies import CurrentUserId
+from app.dependencies import CurrentUserId, RequireRole
 from app.modules.jobs.schemas import JobRunListResponse, JobRunRead
 
 if TYPE_CHECKING:
@@ -39,6 +39,18 @@ router = APIRouter(tags=["Background Jobs"])
 # pathological client from pulling the whole table in one request.
 _DEFAULT_LIMIT = 50
 _MAX_LIMIT = 200
+
+# INTERIM SECURITY GATE (IDOR fix). The JobRun table is per-tenant but carries
+# no created_by / owner column yet, so these introspection endpoints (read a
+# single job, list/filter jobs, cancel a job) cannot enforce per-row ownership.
+# Without a gate, any authenticated user could read or cancel ANY tenant's
+# JobRun, whose result_jsonb / error_jsonb hold business payloads (closeout,
+# finance connector pushes, CAD conversions, EAC). Until a per-row owner column
+# and a migration land, we admin-gate these three endpoints via the existing
+# RequireRole("admin") dependency so a non-admin cannot reach arbitrary jobs.
+# Job submission stays untouched: creation happens through
+# app.core.job_runner.submit_job in the owning modules, not via this router.
+_require_admin = Depends(RequireRole("admin"))
 
 
 def _get_session_factory() -> async_sessionmaker[AsyncSession]:
@@ -55,7 +67,9 @@ def _get_session_factory() -> async_sessionmaker[AsyncSession]:
 # ── GET /{id} ─────────────────────────────────────────────────────────────
 
 
-@router.get("/{job_id}", response_model=JobRunRead)
+# Admin-gated (interim IDOR fix): no per-row owner column on JobRun yet, so a
+# non-admin must not be able to read another tenant's job result/error blob.
+@router.get("/{job_id}", response_model=JobRunRead, dependencies=[_require_admin])
 async def get_job(job_id: uuid.UUID, _user_id: CurrentUserId) -> JobRunRead:
     """‌⁠‍Return the current state of a JobRun by id.
 
@@ -82,8 +96,11 @@ async def get_job(job_id: uuid.UUID, _user_id: CurrentUserId) -> JobRunRead:
 # ── GET / ─────────────────────────────────────────────────────────────────
 
 
-@router.get("", response_model=JobRunListResponse)
-@router.get("/", response_model=JobRunListResponse)
+# Admin-gated (interim IDOR fix): listing/filtering returns rows across every
+# tenant because JobRun has no per-row owner column yet. Both the "" alias and
+# the "/" path are gated so a non-admin cannot enumerate other tenants' jobs.
+@router.get("", response_model=JobRunListResponse, dependencies=[_require_admin])
+@router.get("/", response_model=JobRunListResponse, dependencies=[_require_admin])
 async def list_jobs(
     _user_id: CurrentUserId,
     kind: str | None = Query(default=None, description="Filter by JobRun.kind"),
@@ -133,7 +150,10 @@ async def list_jobs(
 # ── POST /{id}/cancel ─────────────────────────────────────────────────────
 
 
-@router.post("/{job_id}/cancel", response_model=JobRunRead)
+# Admin-gated (interim IDOR fix): without a per-row owner column, an
+# authenticated non-admin could cancel any tenant's active job by guessing its
+# UUID. RequireRole("admin") closes that until per-row ownership lands.
+@router.post("/{job_id}/cancel", response_model=JobRunRead, dependencies=[_require_admin])
 async def cancel_job(job_id: uuid.UUID, _user_id: CurrentUserId) -> JobRunRead:
     """Best-effort cancel of a still-active JobRun.
 

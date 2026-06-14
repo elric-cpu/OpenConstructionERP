@@ -40,6 +40,27 @@ export function navToPresenceKey(to: string): string {
   return pathOnly.replace(/^\/+/, '').replace(/[/-]/g, '_').toLowerCase();
 }
 
+/** Presence keys for company-wide registers and hybrid modules that must
+ *  NEVER be dimmed just because the *active project* has no linked rows.
+ *
+ *  These surfaces hold data that lives above any single project:
+ *   - company-wide registers (subcontractor directory, contacts,
+ *     supplier catalogues) have no ``project_id`` at all;
+ *   - hybrid modules (CRM opportunities) may hold global/unlinked rows
+ *     that exist before a deal is tied to a delivery project.
+ *
+ *  The backend already shapes their booleans correctly (company-wide /
+ *  hybrid probes - see ``module_presence.py``). This set is a frontend
+ *  safety net so a probe regression can never grey-out a register that
+ *  genuinely has data: for these keys we treat presence as "always show
+ *  at full weight" rather than trusting a per-project flag (issue #228). */
+const NEVER_DIM_BY_PROJECT_KEYS: ReadonlySet<string> = new Set([
+  'crm',
+  'subcontractors',
+  'contacts',
+  'supplier_catalogs',
+]);
+
 export interface ModulePresenceResult {
   /** Truthy when the project has data for this module. */
   isPopulated: (to: string) => boolean;
@@ -79,6 +100,10 @@ export function useModulePresence(): ModulePresenceResult {
       // While loading: default to "populated" so no dimming flash.
       if (!data) return true;
       const key = navToPresenceKey(to);
+      // Company-wide registers and hybrid modules are never dimmed by the
+      // active project - their data lives above any single project, so a
+      // project with no linked rows must still show them at full weight.
+      if (NEVER_DIM_BY_PROJECT_KEYS.has(key)) return true;
       // Unknown keys (modules outside the backend's known set) default
       // to populated — better to show a row at full weight than to dim
       // something we can't classify.

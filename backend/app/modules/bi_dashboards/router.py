@@ -7,8 +7,12 @@ Security model (v3.0.x IDOR sweep):
 
 * **KPI endpoints** (compute / history / drill-down): if a ``project_id``
   is supplied in the body or query, the caller must own that project
-  (``verify_project_access``). Project-less calls are tenant-wide and
-  remain gated only by ``RequirePermission``.
+  (``verify_project_access``). Project-less (portfolio) calls are scoped to
+  the caller's accessible projects via ``accessible_project_ids`` and the
+  ``allowed_project_ids`` set threaded into the KPI layer: a non-admin only
+  ever aggregates over projects they own or are a team member of, while an
+  admin (helper returns ``None``) keeps the tenant-wide portfolio view. An
+  empty accessible set yields empty/zero, never every project.
 * **Dashboards / Widgets / Reports / Schedules / Saved Filters**: these
   are *not* project-scoped - they belong to a single user
   (``owner_user_id``). We enforce ownership inline: load the object,
@@ -26,7 +30,13 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import FileResponse
 
-from app.dependencies import CurrentUserId, RequirePermission, SessionDep, verify_project_access
+from app.dependencies import (
+    CurrentUserId,
+    RequirePermission,
+    SessionDep,
+    accessible_project_ids,
+    verify_project_access,
+)
 from app.modules.bi_dashboards.models import (
     AlertRule,
     Dashboard,
@@ -268,9 +278,14 @@ async def compute_kpi(
     service: BIDashboardsService = Depends(_service),
 ) -> KPIComputeResponse:
     # IDOR guard - if the caller asks for a project-scoped computation,
-    # verify they own that project. Project-less calls remain tenant-wide.
+    # verify they own that project. A project-less (portfolio) call is
+    # scoped to the caller's accessible projects so a non-admin cannot
+    # aggregate across every tenant's projects (admins get None = no filter).
+    allowed: set[uuid.UUID] | None = None
     if payload.project_id is not None:
         await verify_project_access(payload.project_id, user_id, session)
+    else:
+        allowed = await accessible_project_ids(session, user_id)
     return await service.compute_kpi(
         code,
         project_id=payload.project_id,
@@ -278,6 +293,7 @@ async def compute_kpi(
         period_end=payload.period_end,
         filters=payload.filters,
         persist=payload.persist,
+        allowed_project_ids=allowed,
     )
 
 
@@ -294,12 +310,19 @@ async def kpi_history(
     project_id: uuid.UUID | None = Query(default=None),
     limit: int = Query(default=24, ge=1, le=500),
 ) -> KPIHistoryResponse:
+    # Same portfolio IDOR scope as compute_kpi: a specific project is
+    # access-checked; a project-less history is scoped to the caller's
+    # accessible projects (admins get None = unrestricted).
+    allowed: set[uuid.UUID] | None = None
     if project_id is not None:
         await verify_project_access(project_id, user_id, session)
+    else:
+        allowed = await accessible_project_ids(session, user_id)
     points = await service.kpi_history(
         code,
         project_id=project_id,
         limit=limit,
+        allowed_project_ids=allowed,
     )
     return KPIHistoryResponse(kpi_code=code, history=points)
 
@@ -340,8 +363,14 @@ async def drill_down(
     session: SessionDep,
     service: BIDashboardsService = Depends(_service),
 ) -> DrillDownResponse:
+    # Same portfolio IDOR scope as compute_kpi: a specific project is
+    # access-checked; a project-less drill-down is scoped to the caller's
+    # accessible projects (admins get None = unrestricted).
+    allowed: set[uuid.UUID] | None = None
     if payload.project_id is not None:
         await verify_project_access(payload.project_id, user_id, session)
+    else:
+        allowed = await accessible_project_ids(session, user_id)
     result = await service.drill_down(
         code,
         project_id=payload.project_id,
@@ -350,6 +379,7 @@ async def drill_down(
         filters=payload.filters,
         depth=payload.depth,
         limit=payload.limit,
+        allowed_project_ids=allowed,
     )
     return DrillDownResponse(
         kpi_code=result["kpi_code"],

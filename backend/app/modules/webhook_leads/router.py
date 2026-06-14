@@ -91,13 +91,14 @@ async def ingest_webhook(
 
 @router.get("/sources/", response_model=list[WebhookSourceResponse])
 async def list_sources(
+    user_id: CurrentUserId,
     is_active: bool | None = Query(default=None),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
     _perm: None = Depends(RequirePermission("webhook_leads.read")),
     service: WebhookLeadsService = Depends(_get_service),
 ) -> list[WebhookSourceResponse]:
-    items, _ = await service.source_repo.list_all(offset=offset, limit=limit, is_active=is_active)
+    items, _ = await service.list_sources(offset=offset, limit=limit, is_active=is_active, user_id=user_id)
     return [WebhookSourceResponse.model_validate(s) for s in items]
 
 
@@ -125,20 +126,22 @@ async def create_source(
 @router.get("/sources/{source_id}", response_model=WebhookSourceResponse)
 async def get_source(
     source_id: uuid.UUID,
+    user_id: CurrentUserId,
     _perm: None = Depends(RequirePermission("webhook_leads.read")),
     service: WebhookLeadsService = Depends(_get_service),
 ) -> WebhookSourceResponse:
-    return WebhookSourceResponse.model_validate(await service.get_source(source_id))
+    return WebhookSourceResponse.model_validate(await service.get_source(source_id, user_id=user_id))
 
 
 @router.patch("/sources/{source_id}", response_model=WebhookSourceResponse)
 async def update_source(
     source_id: uuid.UUID,
     data: WebhookSourceUpdate,
+    user_id: CurrentUserId,
     _perm: None = Depends(RequirePermission("webhook_leads.update")),
     service: WebhookLeadsService = Depends(_get_service),
 ) -> WebhookSourceResponse:
-    return WebhookSourceResponse.model_validate(await service.update_source(source_id, data))
+    return WebhookSourceResponse.model_validate(await service.update_source(source_id, data, user_id=user_id))
 
 
 @router.post(
@@ -148,10 +151,11 @@ async def update_source(
 async def rotate_secret(
     source_id: uuid.UUID,
     request: Request,
+    user_id: CurrentUserId,
     _perm: None = Depends(RequirePermission("webhook_leads.update")),
     service: WebhookLeadsService = Depends(_get_service),
 ) -> SecretRotateResponse:
-    source, secret = await service.rotate_secret(source_id)
+    source, secret = await service.rotate_secret(source_id, user_id=user_id)
     return SecretRotateResponse(
         id=source.id,
         secret=secret,
@@ -162,10 +166,11 @@ async def rotate_secret(
 @router.delete("/sources/{source_id}", status_code=204)
 async def delete_source(
     source_id: uuid.UUID,
+    user_id: CurrentUserId,
     _perm: None = Depends(RequirePermission("webhook_leads.delete")),
     service: WebhookLeadsService = Depends(_get_service),
 ) -> None:
-    await service.delete_source(source_id)
+    await service.delete_source(source_id, user_id=user_id)
 
 
 # ── Mappings CRUD (admin) ─────────────────────────────────────────────────
@@ -177,10 +182,11 @@ async def delete_source(
 )
 async def list_mappings(
     source_id: uuid.UUID,
+    user_id: CurrentUserId,
     _perm: None = Depends(RequirePermission("webhook_leads.read")),
     service: WebhookLeadsService = Depends(_get_service),
 ) -> list[PayloadMappingResponse]:
-    items = await service.list_mappings(source_id)
+    items = await service.list_mappings(source_id, user_id=user_id)
     return [PayloadMappingResponse.model_validate(m) for m in items]
 
 
@@ -192,29 +198,32 @@ async def list_mappings(
 async def create_mapping(
     source_id: uuid.UUID,
     data: PayloadMappingCreate,
+    user_id: CurrentUserId,
     _perm: None = Depends(RequirePermission("webhook_leads.create")),
     service: WebhookLeadsService = Depends(_get_service),
 ) -> PayloadMappingResponse:
-    return PayloadMappingResponse.model_validate(await service.create_mapping(source_id, data))
+    return PayloadMappingResponse.model_validate(await service.create_mapping(source_id, data, user_id=user_id))
 
 
 @router.patch("/mappings/{mapping_id}", response_model=PayloadMappingResponse)
 async def update_mapping(
     mapping_id: uuid.UUID,
     data: PayloadMappingUpdate,
+    user_id: CurrentUserId,
     _perm: None = Depends(RequirePermission("webhook_leads.update")),
     service: WebhookLeadsService = Depends(_get_service),
 ) -> PayloadMappingResponse:
-    return PayloadMappingResponse.model_validate(await service.update_mapping(mapping_id, data))
+    return PayloadMappingResponse.model_validate(await service.update_mapping(mapping_id, data, user_id=user_id))
 
 
 @router.delete("/mappings/{mapping_id}", status_code=204)
 async def delete_mapping(
     mapping_id: uuid.UUID,
+    user_id: CurrentUserId,
     _perm: None = Depends(RequirePermission("webhook_leads.delete")),
     service: WebhookLeadsService = Depends(_get_service),
 ) -> None:
-    await service.delete_mapping(mapping_id)
+    await service.delete_mapping(mapping_id, user_id=user_id)
 
 
 # ── Logs (admin, read-only audit) ─────────────────────────────────────────
@@ -222,6 +231,7 @@ async def delete_mapping(
 
 @router.get("/logs/", response_model=list[WebhookLogResponse])
 async def list_logs(
+    user_id: CurrentUserId,
     source_id: uuid.UUID | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias="status"),
     offset: int = Query(default=0, ge=0),
@@ -229,10 +239,11 @@ async def list_logs(
     _perm: None = Depends(RequirePermission("webhook_leads.read")),
     service: WebhookLeadsService = Depends(_get_service),
 ) -> list[WebhookLogResponse]:
-    items, _ = await service.log_repo.list_all(
+    items, _ = await service.list_logs(
         offset=offset,
         limit=limit,
         source_id=source_id,
-        status=status_filter,
+        status_filter=status_filter,
+        user_id=user_id,
     )
     return [WebhookLogResponse.model_validate(li) for li in items]

@@ -41,8 +41,9 @@ import {
   FileArchive,
   type LucideIcon,
 } from 'lucide-react';
-import { Card, Badge, Button, Input, InfoHint, Breadcrumb, ConfirmDialog, DismissibleInfo, IntroRichText } from '@/shared/ui';
+import { Card, Badge, Button, Input, InfoHint, Breadcrumb, ConfirmDialog, DismissibleInfo, IntroRichText, ModuleGuideButton } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { modulesGuide } from './modulesGuide';
 import { PartnerPackApplyDialog } from './PartnerPackApplyDialog';
 import { PartnerPackDeactivateDialog } from './PartnerPackDeactivateDialog';
 import {
@@ -323,16 +324,22 @@ export function ModulesPage() {
           defaultValue: 'Manage your company profile, data packages, and system modules.',
         })}
         actions={
-          <Link
-            to="/modules/developer-guide"
-            className="inline-flex items-center gap-2 h-9 px-3 rounded-lg border border-oe-blue/30 bg-oe-blue/5 text-xs font-medium text-oe-blue hover:bg-oe-blue/10 hover:border-oe-blue/50 transition-colors shrink-0"
-            title={t('modules.dev_guide_hint', {
-              defaultValue: 'Learn how to build your own module',
-            })}
-          >
-            <Info size={14} />
-            {t('modules.dev_guide', { defaultValue: 'Build a module - developer guide' })}
-          </Link>
+          <>
+            {/* How it works guide - explains the four tabs and the
+                profiles / packs / data-packages / system-modules flow.
+                Sits at the head of the action cluster as the leading help pill. */}
+            <ModuleGuideButton content={modulesGuide} />
+            <Link
+              to="/modules/developer-guide"
+              className="inline-flex items-center gap-2 h-9 px-3 rounded-lg border border-oe-blue/30 bg-oe-blue/5 text-xs font-medium text-oe-blue hover:bg-oe-blue/10 hover:border-oe-blue/50 transition-colors shrink-0"
+              title={t('modules.dev_guide_hint', {
+                defaultValue: 'Learn how to build your own module',
+              })}
+            >
+              <Info size={14} />
+              {t('modules.dev_guide', { defaultValue: 'Build a module - developer guide' })}
+            </Link>
+          </>
         }
       />
 

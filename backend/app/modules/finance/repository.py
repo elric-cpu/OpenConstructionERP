@@ -47,16 +47,25 @@ class InvoiceRepository:
         self,
         *,
         project_id: uuid.UUID | None = None,
+        project_ids: set[uuid.UUID] | None = None,
         direction: str | None = None,
         status: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[Invoice], int]:
-        """List invoices with filters and pagination."""
+        """List invoices with filters and pagination.
+
+        ``project_ids`` restricts the result to a set of projects (the
+        accessible-projects scope of a non-admin caller) when ``project_id`` is
+        not given. An empty set returns nothing, which is the safe default for a
+        caller with no projects - never fall back to "all rows".
+        """
         base = select(Invoice)
 
         if project_id is not None:
             base = base.where(Invoice.project_id == project_id)
+        elif project_ids is not None:
+            base = base.where(Invoice.project_id.in_(project_ids))
         if direction is not None:
             base = base.where(Invoice.invoice_direction == direction)
         if status is not None:
@@ -136,11 +145,17 @@ class InvoiceRepository:
         self,
         *,
         project_id: uuid.UUID | None = None,
+        project_ids: set[uuid.UUID] | None = None,
     ) -> dict:
         """Aggregate invoice KPIs using SQL instead of loading all rows.
 
         Returns dict with payable/receivable/overdue totals and status counts,
         computed entirely in the database for performance.
+
+        ``project_ids`` scopes the aggregation to a set of projects (the
+        accessible-projects scope of a non-admin caller) when ``project_id`` is
+        not given. An empty set aggregates nothing - the safe default for a
+        caller with no projects, never every tenant's rows.
         """
         from sqlalchemy import Numeric, cast
 
@@ -156,6 +171,8 @@ class InvoiceRepository:
         )
         if project_id is not None:
             base = base.where(Invoice.project_id == project_id)
+        elif project_ids is not None:
+            base = base.where(Invoice.project_id.in_(project_ids))
         base = base.group_by(
             Invoice.invoice_direction,
             Invoice.status,
@@ -212,6 +229,8 @@ class InvoiceRepository:
         )
         if project_id is not None:
             overdue_base = overdue_base.where(Invoice.project_id == project_id)
+        elif project_ids is not None:
+            overdue_base = overdue_base.where(Invoice.project_id.in_(project_ids))
         overdue_base = overdue_base.group_by(Invoice.currency_code)
 
         overdue_rows = (await self.session.execute(overdue_base)).all()
@@ -233,6 +252,8 @@ class InvoiceRepository:
         )
         if project_id is not None:
             cur_stmt = cur_stmt.where(Invoice.project_id == project_id)
+        elif project_ids is not None:
+            cur_stmt = cur_stmt.where(Invoice.project_id.in_(project_ids))
         cur_row = (await self.session.execute(cur_stmt)).first()
         currency = cur_row[0] if cur_row else ""
 
@@ -331,13 +352,16 @@ class PaymentRepository:
         self,
         *,
         project_id: uuid.UUID | None = None,
+        project_ids: set[uuid.UUID] | None = None,
     ) -> dict[str, Decimal]:
         """Sum payment amounts grouped by currency, scoped to a project.
 
         Payments inherit their currency from ``currency_code`` (or "" when
         blank → treated as base by the caller). Scoped to a single project by
         joining to the parent invoice so a project dashboard never blends in
-        other tenants' payments.
+        other tenants' payments. ``project_ids`` applies the same invoice-join
+        scope to a set of projects (the accessible-projects scope of a non-admin
+        caller) when ``project_id`` is not given; an empty set sums nothing.
         """
         from sqlalchemy import Numeric, case, cast
 
@@ -356,6 +380,8 @@ class PaymentRepository:
         )
         if project_id is not None:
             base = base.where(Payment.invoice_id.in_(select(Invoice.id).where(Invoice.project_id == project_id)))
+        elif project_ids is not None:
+            base = base.where(Payment.invoice_id.in_(select(Invoice.id).where(Invoice.project_id.in_(project_ids))))
         base = base.group_by(Payment.currency_code)
 
         rows = (await self.session.execute(base)).all()
@@ -401,12 +427,21 @@ class BudgetRepository:
         self,
         *,
         project_id: uuid.UUID | None = None,
+        project_ids: set[uuid.UUID] | None = None,
         category: str | None = None,
     ) -> tuple[list[ProjectBudget], int]:
-        """List budgets with filters."""
+        """List budgets with filters.
+
+        ``project_ids`` restricts the result to a set of projects (the
+        accessible-projects scope of a non-admin caller) when ``project_id`` is
+        not given. An empty set returns nothing, which is the safe default for a
+        caller with no projects - never fall back to "all rows".
+        """
         base = select(ProjectBudget)
         if project_id is not None:
             base = base.where(ProjectBudget.project_id == project_id)
+        elif project_ids is not None:
+            base = base.where(ProjectBudget.project_id.in_(project_ids))
         if category is not None:
             base = base.where(ProjectBudget.category == category)
 
@@ -423,10 +458,16 @@ class BudgetRepository:
         self,
         *,
         project_id: uuid.UUID | None = None,
+        project_ids: set[uuid.UUID] | None = None,
     ) -> dict:
         """Aggregate budget totals using SQL instead of loading all rows.
 
         Returns dict with original/revised/committed/actual totals.
+
+        ``project_ids`` scopes the aggregation to a set of projects (the
+        accessible-projects scope of a non-admin caller) when ``project_id`` is
+        not given. An empty set aggregates nothing - the safe default for a
+        caller with no projects, never every tenant's rows.
         """
         from sqlalchemy import Numeric, cast
 
@@ -442,6 +483,8 @@ class BudgetRepository:
         )
         if project_id is not None:
             base = base.where(ProjectBudget.project_id == project_id)
+        elif project_ids is not None:
+            base = base.where(ProjectBudget.project_id.in_(project_ids))
         base = base.group_by(ProjectBudget.currency_code)
 
         rows = (await self.session.execute(base)).all()
@@ -473,6 +516,8 @@ class BudgetRepository:
         )
         if project_id is not None:
             cur_stmt = cur_stmt.where(ProjectBudget.project_id == project_id)
+        elif project_ids is not None:
+            cur_stmt = cur_stmt.where(ProjectBudget.project_id.in_(project_ids))
         cur_row = (await self.session.execute(cur_stmt)).first()
         currency = cur_row[0] if cur_row else ""
 
@@ -508,11 +553,20 @@ class EVMSnapshotRepository:
         self,
         *,
         project_id: uuid.UUID | None = None,
+        project_ids: set[uuid.UUID] | None = None,
     ) -> tuple[list[EVMSnapshot], int]:
-        """List EVM snapshots for a project."""
+        """List EVM snapshots for a project.
+
+        ``project_ids`` restricts the result to a set of projects (the
+        accessible-projects scope of a non-admin caller) when ``project_id`` is
+        not given. An empty set returns nothing, which is the safe default for a
+        caller with no projects - never fall back to "all rows".
+        """
         base = select(EVMSnapshot)
         if project_id is not None:
             base = base.where(EVMSnapshot.project_id == project_id)
+        elif project_ids is not None:
+            base = base.where(EVMSnapshot.project_id.in_(project_ids))
 
         count_stmt = select(func.count()).select_from(base.subquery())
         total = (await self.session.execute(count_stmt)).scalar_one()

@@ -12,13 +12,15 @@ Endpoints:
     POST   /generate                              - Generate a report
     GET    /reports?project_id=X                  - List generated reports
     GET    /reports/{report_id}                   - Get a generated report
+    GET    /reports/{report_id}/content           - Rendered HTML body
+    GET    /reports/{report_id}/download?format=  - Download as pdf/xlsx/csv/html
 """
 
 import logging
 import uuid
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 
 from app.dependencies import CurrentUserId, RequirePermission, SessionDep, verify_project_access
 from app.modules.reporting.schemas import (
@@ -378,6 +380,68 @@ async def get_report_content(
     await verify_project_access(report.project_id, user_id, session)
     _, body_html = await service.get_report_content(report_id)
     return HTMLResponse(content=body_html, status_code=200)
+
+
+@router.get(
+    "/reports/{report_id}/download/",
+    responses={
+        200: {
+            "content": {
+                "application/pdf": {},
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {},
+                "text/csv": {},
+                "text/html": {},
+            },
+            "description": "Report rendered as a downloadable file",
+        },
+        400: {"description": "Unsupported export format"},
+        404: {"description": "Report not found"},
+    },
+)
+@router.get(
+    "/reports/{report_id}/download",
+    include_in_schema=False,
+)
+async def download_report(
+    report_id: uuid.UUID,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    format: str = Query(  # noqa: A002 - mirrors GenerateReportRequest.format wording
+        default="pdf",
+        pattern=r"^(pdf|xlsx|csv|html)$",
+        description="Export format: pdf, xlsx, csv, or html",
+    ),
+    service: ReportingService = Depends(_get_service),
+) -> Response:
+    """Download a generated report as a real PDF / Excel / CSV / HTML file.
+
+    The tabular report types (cost breakdown, BOQ-style summaries, KPI
+    sections, retainage roll-ups) export to ``xlsx`` and ``csv``; the
+    executive/summary view exports to ``pdf``. ``html`` serves the existing
+    rendered body unchanged so nothing regresses for callers that still want
+    HTML.
+
+    IDOR-guarded the same way as ``/content``: the report metadata row is
+    resolved first (404 if unknown) so we know which project to gate on, then
+    ``verify_project_access`` confirms the caller may read that project before
+    any body is rendered. A report therefore only ever contains the caller's
+    own project/tenant data.
+
+    The response carries a ``Content-Disposition: attachment`` header so the
+    browser downloads a file rather than rendering it inline, matching the
+    BOQ export endpoints' convention.
+    """
+    report = await service.get_report(report_id)
+    await verify_project_access(report.project_id, user_id, session)
+    filename, media_type, blob = await service.export_report_file(report_id, format)
+    return Response(
+        content=blob,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(len(blob)),
+        },
+    )
 
 
 @router.get("/reports/{report_id}", response_model=GeneratedReportResponse)

@@ -4,7 +4,7 @@
  * Backed by /api/v1/tendering/ — see backend/app/modules/tendering/router.py
  */
 
-import { apiGet, apiPost } from '@/shared/lib/api';
+import { apiGet, apiPost, apiDelete } from '@/shared/lib/api';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -135,5 +135,75 @@ export function levelBids(packageId: string): Promise<LevelBidsResponse> {
 export function getLevelingMatrix(packageId: string): Promise<LevelingMatrix> {
   return apiGet<LevelingMatrix>(
     `/v1/tendering/packages/${packageId}/leveling-matrix/`,
+  );
+}
+
+/* ── Distribution ─────────────────────────────────────────────────────── */
+
+export interface Recipient {
+  id: string;
+  company_name: string;
+  email: string;
+  subcontractor_id: string | null;
+  /** "pending" before the first send, then "sent" or "failed". */
+  status: string;
+  sent_at: string | null;
+  last_error: string | null;
+  created_at: string;
+}
+
+export interface DistributeResultEntry {
+  recipient_id: string;
+  company_name: string;
+  email: string;
+  status: 'sent' | 'failed' | 'skipped';
+  detail: string;
+}
+
+export interface DistributeResponse {
+  package_id: string;
+  package_name: string;
+  /** Resolved email backend ("console" | "smtp" | "noop" | "memory"). */
+  backend: string;
+  /** True only when EMAIL_BACKEND=smtp and SMTP_HOST is configured. */
+  smtp_configured: boolean;
+  sent_count: number;
+  failed_count: number;
+  skipped_count: number;
+  results: DistributeResultEntry[];
+}
+
+export function listRecipients(packageId: string): Promise<Recipient[]> {
+  return apiGet<Recipient[]>(
+    `/v1/tendering/packages/${packageId}/recipients/`,
+  );
+}
+
+export function addRecipient(
+  packageId: string,
+  body: { company_name: string; email: string; subcontractor_id?: string | null },
+): Promise<Recipient> {
+  return apiPost<Recipient>(
+    `/v1/tendering/packages/${packageId}/recipients/`,
+    body,
+  );
+}
+
+export function removeRecipient(
+  packageId: string,
+  recipientId: string,
+): Promise<void> {
+  return apiDelete(
+    `/v1/tendering/packages/${packageId}/recipients/${recipientId}`,
+  );
+}
+
+export function distributePackage(
+  packageId: string,
+  body: { recipient_ids?: string[]; resend?: boolean; message?: string },
+): Promise<DistributeResponse> {
+  return apiPost<DistributeResponse>(
+    `/v1/tendering/packages/${packageId}/distribute/`,
+    body,
   );
 }

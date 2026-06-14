@@ -45,7 +45,12 @@ from app.core.file_signature import (
 )
 from app.core.rate_limiter import approval_limiter
 from app.core.upload_guards import reject_if_xlsx_bomb
-from app.dependencies import CurrentUserId, RequirePermission, SessionDep
+from app.dependencies import (
+    CurrentUserId,
+    RequirePermission,
+    SessionDep,
+    accessible_project_ids,
+)
 from app.modules.contacts.models import Contact
 from app.modules.finance.connector_schemas import (
     ConnectorConfigCreate,
@@ -84,6 +89,7 @@ from app.modules.finance.schemas import (
     LedgerAccountResponse,
     LedgerAccountUpdate,
     LedgerEntryResponse,
+    LedgerTransactionResponse,
     PaymentCreate,
     PaymentListResponse,
     PaymentResponse,
@@ -332,8 +338,13 @@ async def list_invoices(
 ) -> InvoiceListResponse:
     """List invoices with optional filters."""
     await _require_project_access(session, project_id, user_id)
+    # When no project is named, scope the listing to the caller's accessible
+    # projects so a VIEWER does not receive every tenant's invoices. Admins get
+    # None (no filter -> full portfolio view).
+    scope = None if project_id is not None else await accessible_project_ids(session, user_id)
     items, total = await service.list_invoices(
         project_id=project_id,
+        project_ids=scope,
         direction=direction,
         invoice_status=status,
         offset=offset,
@@ -405,8 +416,12 @@ async def list_invoices_alias(
     it through Python) so that FastAPI dependency wiring resolves cleanly.
     """
     await _require_project_access(session, project_id, user_id)
+    # Mirror list_invoices: scope an unfiltered listing to the caller's
+    # accessible projects (admins -> None -> full portfolio).
+    scope = None if project_id is not None else await accessible_project_ids(session, user_id)
     items, total = await service.list_invoices(
         project_id=project_id,
+        project_ids=scope,
         direction=direction,
         invoice_status=status,
         offset=offset,
@@ -814,7 +829,10 @@ async def list_budgets(
 ) -> BudgetListResponse:
     """List project budgets."""
     await _require_project_access(session, project_id, user_id)
-    items, total = await service.list_budgets(project_id=project_id, category=category)
+    # Scope an unfiltered listing to the caller's accessible projects so a
+    # VIEWER does not receive every tenant's budgets (admins -> None -> all).
+    scope = None if project_id is not None else await accessible_project_ids(session, user_id)
+    items, total = await service.list_budgets(project_id=project_id, project_ids=scope, category=category)
     return BudgetListResponse(
         items=[BudgetResponse.model_validate(b) for b in items],
         total=total,
@@ -1295,7 +1313,10 @@ async def list_evm_snapshots(
 ) -> EVMListResponse:
     """List EVM snapshots for a project."""
     await _require_project_access(session, project_id, user_id)
-    items, total = await service.list_evm_snapshots(project_id=project_id)
+    # Scope an unfiltered listing to the caller's accessible projects so a
+    # VIEWER does not receive every tenant's snapshots (admins -> None -> all).
+    scope = None if project_id is not None else await accessible_project_ids(session, user_id)
+    items, total = await service.list_evm_snapshots(project_id=project_id, project_ids=scope)
     return EVMListResponse(
         items=[EVMSnapshotResponse.model_validate(s) for s in items],
         total=total,
@@ -1347,7 +1368,11 @@ async def finance_dashboard(
     Returns budget warning level ("normal", "caution" at 80%+, "critical" at 95%+).
     """
     await _require_project_access(session, project_id, user_id)
-    return await service.get_dashboard(project_id=project_id)
+    # Without an explicit project, aggregate only the caller's accessible
+    # projects so a VIEWER's portfolio KPIs never sum across every tenant
+    # (admins -> None -> full instance rollup).
+    scope = None if project_id is not None else await accessible_project_ids(session, user_id)
+    return await service.get_dashboard(project_id=project_id, project_ids=scope)
 
 
 # ── ERP / accounting connectors (TOP-30 #4) ─────────────────────────────────
@@ -1725,7 +1750,11 @@ async def list_ledger_accounts(
     service: FinanceService = Depends(_get_service),
 ) -> LedgerAccountListResponse:
     """List chart-of-accounts rows."""
-    await _require_project_access(session, project_id, user_id)
+    # project_id=None with include_workspace=True returns the company-wide
+    # workspace chart unioned with every project's accounts, so this is the
+    # consolidated GL view: admin-gate the None scope exactly like the GL
+    # statements (a project_id falls through to the normal per-project check).
+    await _require_gl_consolidated_scope(session, project_id, user_id)
     items, total = await service.list_accounts(
         project_id=project_id,
         account_type=account_type,
@@ -1753,7 +1782,10 @@ async def create_ledger_account(
     service: FinanceService = Depends(_get_service),
 ) -> LedgerAccountResponse:
     """Create a chart-of-accounts account."""
-    await _require_project_access(session, data.project_id, user_id)
+    # A null project_id writes a workspace-level (company-wide) chart account,
+    # so gate that path to admins like the consolidated GL; a project_id falls
+    # through to the normal per-project owner check.
+    await _require_gl_consolidated_scope(session, data.project_id, user_id)
     account = await service.create_account(data)
     return LedgerAccountResponse.model_validate(account)
 
@@ -1772,7 +1804,10 @@ async def seed_default_chart(
     service: FinanceService = Depends(_get_service),
 ) -> LedgerAccountListResponse:
     """Seed the default chart of accounts."""
-    await _require_project_access(session, project_id, user_id)
+    # A null project_id seeds the workspace-level (company-wide) chart, so gate
+    # that path to admins like the consolidated GL; a project_id falls through
+    # to the normal per-project owner check.
+    await _require_gl_consolidated_scope(session, project_id, user_id)
     accounts = await service.seed_default_chart(project_id=project_id)
     return LedgerAccountListResponse(
         items=[LedgerAccountResponse.model_validate(a) for a in accounts],
@@ -1825,6 +1860,39 @@ async def post_journal_entry(
         lines=[_ledger_entry_to_response(r) for r in rows],
         total_debits=format(total_debits, "f"),
         total_credits=format(total_credits, "f"),
+    )
+
+
+@gaap_router.post(
+    "/journal-entries/{transaction_ref}/reverse",
+    response_model=LedgerTransactionResponse,
+    status_code=201,
+    summary="Reverse a posted journal transaction",
+    description="Append a corrective reversal pair (accounts swapped, same magnitude) "
+    "for a posted transaction. Idempotent: a transaction is reversible exactly "
+    "once, so a repeat call returns the existing reversal rather than over-correcting "
+    "the account. MANAGER-only - a binding ledger write.",
+)
+async def reverse_journal_entry(
+    transaction_ref: str,
+    session: SessionDep,
+    user_id: CurrentUserId,
+    project_id: uuid.UUID = Query(..., description="Project that owns the transaction being reversed."),
+    description: str | None = Query(default=None, max_length=2000),
+    _perm: None = Depends(RequirePermission("finance.gl.post_journal")),
+    service: FinanceService = Depends(_get_service),
+) -> LedgerTransactionResponse:
+    """Reverse a posted ledger transaction by its reference."""
+    await _require_project_access(session, project_id, user_id)
+    rev_debit, rev_credit = await service.reverse_ledger_transaction(
+        transaction_ref,
+        project_id=project_id,
+        description=description,
+        created_by=user_id,
+    )
+    return LedgerTransactionResponse(
+        debit=_ledger_entry_to_response(rev_debit),
+        credit=_ledger_entry_to_response(rev_credit),
     )
 
 

@@ -146,8 +146,13 @@ export interface BIMCadUploadResponse {
   status:
     | 'processing'
     | 'ready'
+    | 'degraded'
     | 'needs_converter'
     | 'error'
+    // `empty_model`: the file was read cleanly but carries no physical
+    // building elements (only spatial containers). A graceful, non-failure
+    // outcome - not an error (#197).
+    | 'empty_model'
     | 'converter_required'
     | string;
   /** Number of BIM elements extracted by the processor.  Always

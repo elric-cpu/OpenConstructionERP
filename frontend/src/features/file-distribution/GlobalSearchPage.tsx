@@ -27,7 +27,9 @@ import { Button } from '@/shared/ui/Button';
 import { Input } from '@/shared/ui/Input';
 import { Breadcrumb } from '@/shared/ui/Breadcrumb';
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { ModuleGuideButton } from '@/shared/ui';
 import { useGlobalFileSearch } from './hooks';
+import { fileDistributionGuide } from './fileDistributionGuide';
 import type { SearchHit, SearchHitKind } from './types';
 
 const RECENT_SEARCHES_KEY = 'oe_files_search_recent_v1';
@@ -230,6 +232,7 @@ export function GlobalSearchPage() {
           defaultValue:
             'Find a document, sheet or photo by name across every project you can access.',
         })}
+        actions={<ModuleGuideButton content={fileDistributionGuide} />}
       />
 
       <form onSubmit={submit} className="flex flex-col gap-2 sm:flex-row sm:items-center">

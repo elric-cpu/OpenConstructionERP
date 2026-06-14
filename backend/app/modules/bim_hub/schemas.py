@@ -208,7 +208,8 @@ class BIMModelResponse(BaseModel):
     # ``error_code`` is a stable machine-readable identifier copied out of
     # ``metadata`` so the frontend can branch on it without parsing the
     # blob.  Common values: ``ddc_not_found``, ``ddc_failed``,
-    # ``zero_elements``, ``unexpected``.
+    # ``zero_elements``, ``no_products``, ``unclassified_rows``,
+    # ``no_entities``, ``convert_timeout``, ``unexpected``.
     error_code: str | None = None
     # Total disk usage of the conversion artifacts (GLB, DAE, parquet,
     # thumbnails) for this model, in megabytes.  ``None`` when the backend

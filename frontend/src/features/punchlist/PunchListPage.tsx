@@ -38,6 +38,7 @@ import {
   SkeletonTable,
   IntroRichText,
   KpiBand,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import type { KpiBandItem } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
@@ -65,6 +66,7 @@ import type {
   TeamMember,
   CreatePunchPayload,
 } from './api';
+import { punchlistGuide } from './punchlistGuide';
 
 /* ── Constants ─────────────────────────────────────────────────────────── */
 
@@ -1290,6 +1292,7 @@ export function PunchListPage() {
         })}
         actions={
           <>
+            <ModuleGuideButton content={punchlistGuide} />
             {projectId && (
               <Button
                 variant="secondary"

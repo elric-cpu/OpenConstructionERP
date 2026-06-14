@@ -11,7 +11,7 @@ Tables:
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import JSON, Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db_types import MoneyType
@@ -279,6 +279,24 @@ class LedgerEntry(Base):
     __table_args__ = (
         Index("ix_ledger_project_ref", "project_id", "transaction_ref"),
         Index("ix_ledger_posted_at", "posted_at"),
+        # Idempotency backstop (mirrors oe_finance_payment's unique index):
+        # a replayed journal/transaction post derives the SAME idempotency_key
+        # for all its legs, so a partial UNIQUE on (idempotency_key,
+        # account_code) rejects a duplicate write at the DB level. The
+        # service does the primary existence-check and returns the existing
+        # rows; this index is the race backstop. Partial (WHERE NOT NULL) so
+        # legacy rows that predate the key - and any row written without one -
+        # stay NULL and never collide. account_code is part of the key so the
+        # two (or more) distinct-account legs of one entry coexist while a
+        # full replay still collides.
+        Index(
+            "uq_finance_ledger_idempotency",
+            "idempotency_key",
+            "account_code",
+            unique=True,
+            sqlite_where=text("idempotency_key IS NOT NULL"),
+            postgresql_where=text("idempotency_key IS NOT NULL"),
+        ),
     )
 
     project_id: Mapped[uuid.UUID] = mapped_column(GUID(), nullable=False, index=True)
@@ -299,6 +317,12 @@ class LedgerEntry(Base):
         nullable=True,
     )
     created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # Idempotency token shared by every leg of one posting (journal entry or
+    # double-entry transaction). NULL on legacy rows and on any write that
+    # opts out. The service derives it from transaction_ref + source when the
+    # caller does not pass one, existence-checks it before inserting, and a
+    # partial UNIQUE index (see __table_args__) is the DB-level race backstop.
+    idempotency_key: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
     def __repr__(self) -> str:
         return f"<LedgerEntry ref={self.transaction_ref} dr={self.debit_amount} cr={self.credit_amount}>"

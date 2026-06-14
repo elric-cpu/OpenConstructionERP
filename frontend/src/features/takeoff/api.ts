@@ -31,6 +31,9 @@ export interface MeasurementCreate {
   count_value?: number | null;
   scale_pixels_per_unit?: number | null;
   linked_boq_position_id?: string | null;
+  /** Mark an area measurement as an opening / void; its area is subtracted
+   *  from the group's gross area (net = gross - openings). Area-only. */
+  is_deduction?: boolean;
   metadata?: Record<string, unknown>;
 }
 
@@ -52,6 +55,9 @@ export interface MeasurementResponse {
   count_value: number | null;
   scale_pixels_per_unit: number | null;
   linked_boq_position_id: string | null;
+  /** True when this area measurement is an opening / void subtracted from
+   *  its group's gross area. False / absent for normal measurements. */
+  is_deduction?: boolean;
   metadata: Record<string, unknown>;
   created_by: string;
   created_at: string;

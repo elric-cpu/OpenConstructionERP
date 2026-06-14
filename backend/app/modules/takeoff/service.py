@@ -553,7 +553,15 @@ def _pick_takeoff_value(measurement: Any) -> float | None:
     Returns ``None`` when the relevant column is empty or unparseable so
     the caller treats the push as a no-op and never zeroes the existing
     BOQ quantity.
+
+    A deduction (opening / void) carries a positive gross area but only
+    has meaning as a subtraction inside its group's net-area rollup. It is
+    never a standalone BOQ quantity, so we refuse to push it - otherwise a
+    void could silently overwrite a position with the area of the hole.
     """
+    if bool(getattr(measurement, "is_deduction", False)):
+        return None
+
     mtype = (getattr(measurement, "type", None) or "").strip().lower()
 
     if mtype == "volume":
@@ -1229,6 +1237,10 @@ class TakeoffService:
             count_value=data.count_value,
             scale_pixels_per_unit=data.scale_pixels_per_unit,
             linked_boq_position_id=data.linked_boq_position_id,
+            # A deduction only makes sense for an area; never tag a distance /
+            # count / annotation as a void so the rollup can't subtract a
+            # length from an area.
+            is_deduction=bool(data.is_deduction) and data.type == "area",
             metadata_=data.metadata,
             created_by=created_by,
         )
@@ -1442,6 +1454,15 @@ class TakeoffService:
         if "points" in fields and fields["points"] is not None:
             fields["points"] = [p.model_dump() for p in data.points]  # type: ignore[union-attr]
 
+        # A deduction (opening / void) only makes sense for an area. If the
+        # patch tries to flag a non-area measurement as a deduction, drop the
+        # flag so the rollup can't subtract a length / count from an area.
+        # The effective type is the patched type when present, else current.
+        if "is_deduction" in fields and fields["is_deduction"]:
+            effective_type_for_deduction = fields.get("type") if "type" in fields else item.type
+            if effective_type_for_deduction != "area":
+                fields["is_deduction"] = False
+
         # Recompute measurement_value if any geometry-relevant field
         # is touched. We need the *effective post-update* state, so
         # we merge patch over current.
@@ -1582,6 +1603,7 @@ class TakeoffService:
                 count_value=data.count_value,
                 scale_pixels_per_unit=data.scale_pixels_per_unit,
                 linked_boq_position_id=data.linked_boq_position_id,
+                is_deduction=bool(data.is_deduction) and data.type == "area",
                 metadata_=data.metadata,
                 created_by=created_by,
             )
@@ -1643,6 +1665,7 @@ class TakeoffService:
                     "count_value": m.count_value,
                     "scale_pixels_per_unit": m.scale_pixels_per_unit,
                     "linked_boq_position_id": m.linked_boq_position_id or "",
+                    "is_deduction": bool(m.is_deduction),
                     "created_by": m.created_by,
                     "created_at": m.created_at.isoformat() if m.created_at else "",
                 }

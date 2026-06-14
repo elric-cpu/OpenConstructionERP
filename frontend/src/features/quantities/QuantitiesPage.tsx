@@ -26,8 +26,9 @@ import {
 } from 'lucide-react';
 import { apiGet, apiPost } from '@/shared/lib/api';
 import { isModuleLoaded } from '@/shared/lib/moduleProbe';
-import { Breadcrumb, DismissibleInfo, IntroRichText } from '@/shared/ui';
+import { Breadcrumb, DismissibleInfo, IntroRichText, ModuleGuideButton } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { quantitiesGuide } from './quantitiesGuide';
 import { useToastStore } from '@/stores/useToastStore';
 import {
   fetchConverterVersionCheck,
@@ -963,6 +964,7 @@ export function QuantitiesPage() {
           defaultValue:
             'Collect project quantities, from AI text input, PDF drawings, or CAD/BIM models',
         })}
+        actions={<ModuleGuideButton content={quantitiesGuide} />}
       />
 
       <DismissibleInfo
@@ -1064,7 +1066,10 @@ export function QuantitiesPage() {
       {/* ── CAD/BIM Converter Modules ──────────────────────────────── */}
       <div className="space-y-4">
         {/* Header card */}
-        <div className="rounded-xl border border-border-light bg-surface-primary p-5">
+        <div
+          data-guide="quantities-converters"
+          className="rounded-xl border border-border-light bg-surface-primary p-5"
+        >
           <div className="flex items-start gap-4">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white">
               <HardDrive size={24} strokeWidth={1.75} />

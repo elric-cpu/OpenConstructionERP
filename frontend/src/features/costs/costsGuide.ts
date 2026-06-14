@@ -1,7 +1,7 @@
 // DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 // Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 //
-// costsGuide — "How it works" content for the Cost Database module.
+// costsGuide - "How it works" content for the Cost Database module.
 // Consumed by <ModuleGuideButton content={costsGuide} /> in CostsPage.
 //
 // i18n: every key carries its inline English default and is read via

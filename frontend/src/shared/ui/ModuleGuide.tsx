@@ -252,31 +252,45 @@ export function ModuleGuide({ open, onClose, content, onCta }: ModuleGuideProps)
       return;
     }
 
-    const recompute = () => {
+    let rafId = 0;
+    // First pass also scrolls the target to centre so a partially-scrolled or
+    // off-screen element is brought fully into view before we measure it.
+    // Subsequent recomputes (scroll / resize / layout shift) only re-measure
+    // so they never fight the user's own scrolling.
+    const measure = () => setSpotlight(measureSpotlight(selector));
+    const scrollAndMeasure = () => {
       const el = document.querySelector(selector);
       if (el) {
         try {
-          el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+          el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
         } catch {
-          /* older browsers — ignore */
+          /* older browsers - ignore */
         }
+        // Measure on the next frame so the rect reflects the settled layout.
+        rafId = window.requestAnimationFrame(measure);
+      } else {
+        // Target not on screen for this card. Degrade to a centred, fully
+        // dimmed modal instead of drawing a halo at the wrong spot.
+        // eslint-disable-next-line no-console
+        console.warn(`[ModuleGuide] spotlight target not found: ${selector}`);
+        setSpotlight(null);
       }
-      setSpotlight(measureSpotlight(selector));
     };
 
-    // Defer the first measure so a smooth scroll has time to settle.
-    const id = window.setTimeout(recompute, 160);
-    window.addEventListener('resize', recompute);
-    window.addEventListener('scroll', recompute, true);
+    // Defer the first measure so a smooth scroll has time to make progress.
+    const id = window.setTimeout(scrollAndMeasure, 160);
+    window.addEventListener('resize', measure);
+    window.addEventListener('scroll', measure, true);
     let ro: ResizeObserver | null = null;
     if (typeof ResizeObserver !== 'undefined') {
-      ro = new ResizeObserver(recompute);
+      ro = new ResizeObserver(measure);
       ro.observe(document.body);
     }
     return () => {
       window.clearTimeout(id);
-      window.removeEventListener('resize', recompute);
-      window.removeEventListener('scroll', recompute, true);
+      if (rafId) window.cancelAnimationFrame(rafId);
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('scroll', measure, true);
       if (ro) ro.disconnect();
     };
   }, [open, section]);

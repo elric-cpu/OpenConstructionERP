@@ -275,12 +275,15 @@ function ModelCard({ model, isActive, onClick, onDelete }: {
 }) {
   const { t } = useTranslation();
   const fmt = (model.model_format || model.format || '').toUpperCase();
+  // `empty_model` is a graceful, non-failure outcome (file read fine, no
+  // model objects) - keep it out of the red `isError` bucket (#197).
   const isError = model.status === 'error' || model.status === 'needs_converter';
   const isProcessing = model.status === 'processing';
 
   let statusDot = 'bg-gray-400';
   if (model.status === 'ready') statusDot = 'bg-emerald-500';
   else if (model.status === 'degraded') statusDot = 'bg-amber-500';
+  else if (model.status === 'empty_model') statusDot = 'bg-amber-500';
   else if (isProcessing) statusDot = 'bg-amber-400 animate-pulse';
   else if (isError) statusDot = 'bg-red-400';
 
@@ -289,6 +292,8 @@ function ModelCard({ model, isActive, onClick, onDelete }: {
     statusLabel = t('bim.status_ready', { defaultValue: 'Ready' });
   } else if (model.status === 'degraded') {
     statusLabel = t('bim.status_degraded', { defaultValue: 'Imported (no quantities)' });
+  } else if (model.status === 'empty_model') {
+    statusLabel = t('bim.status_empty_model', { defaultValue: 'No elements' });
   } else if (model.status === 'needs_converter') {
     statusLabel = t('bim.status_needs_converter', { defaultValue: 'Needs Converter' });
   } else if (model.status === 'processing') {
@@ -996,6 +1001,19 @@ function NonReadyOverlay({ model, onUploadConverted, onDelete, onRetry, onInstal
     title: t('bim.overlay_error_title'),
     desc: t('bim.overlay_error_desc'),
   };
+  // `empty_model` is NOT a failure: the file was read cleanly but carries no
+  // physical building elements (only spatial containers). Render it as a
+  // calm, informational state - amber, not red - so the user understands the
+  // file simply has nothing to convert rather than thinking it broke (#197).
+  const emptyModelConfig = {
+    icon: <AlertTriangle size={32} className="text-amber-500" />,
+    bg: 'bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800',
+    title: t('bim.overlay_empty_model_title', { defaultValue: 'No model elements found' }),
+    desc: t('bim.overlay_empty_model_desc', {
+      defaultValue:
+        'This file was read successfully but contains no physical building elements - only the spatial structure (project, site, building, storeys). Re-export it with the model objects included, then upload again.',
+    }),
+  };
   const configs: Record<string, typeof processingConfig> = {
     processing: processingConfig,
     pending: processingConfig,
@@ -1006,6 +1024,7 @@ function NonReadyOverlay({ model, onUploadConverted, onDelete, onRetry, onInstal
     converter_required: needsConverterConfig,
     no_geometry: needsConverterConfig,
     degraded: needsConverterConfig,
+    empty_model: emptyModelConfig,
     error: errorConfig,
     failed: errorConfig,
   };
@@ -1083,6 +1102,19 @@ function NonReadyOverlay({ model, onUploadConverted, onDelete, onRetry, onInstal
         })
       : null;
 
+  // `no_products` (status `empty_model`) is the explicitly-graceful sibling of
+  // `zero_elements`: the file parsed cleanly and only lacks model objects. It
+  // gets its own calm copy so it never borrows the red "conversion failed"
+  // wording (#197).
+  const emptyModelDescription =
+    !isProcessing && errorCode === 'no_products'
+      ? t('bim.overlay_empty_model_clean', {
+          defaultValue:
+            'We read this {{format}} file successfully, but it only carries the spatial structure (project, site, building, storeys) and no physical building elements. Re-export it from your authoring tool with the model objects included (walls, slabs, columns, MEP, and so on), then upload again.',
+          format: fmt || 'BIM',
+        })
+      : null;
+
   // We deliberately do NOT dump the raw backend error into the headline
   // paragraph any more. A failed CAD conversion typically means the DDC
   // cad2data converter is not installed in this environment (it is a
@@ -1095,6 +1127,7 @@ function NonReadyOverlay({ model, onUploadConverted, onDelete, onRetry, onInstal
   const calmFailureDescription =
     !isProcessing
     && errorCode !== 'zero_elements'
+    && errorCode !== 'no_products'
     && (errorCode === 'ddc_not_found' || !!backendMessage)
       ? t('bim.overlay_converter_unavailable_calm', {
           defaultValue:
@@ -1104,12 +1137,14 @@ function NonReadyOverlay({ model, onUploadConverted, onDelete, onRetry, onInstal
       : null;
 
   const description =
-    cleanDescription ?? zeroElementsDescription ?? calmFailureDescription ?? c.desc;
+    cleanDescription ?? zeroElementsDescription ?? emptyModelDescription ?? calmFailureDescription ?? c.desc;
   // The raw backend message is now ALWAYS surfaced through the collapsible
   // disclosure (when present) rather than inline — both for the outdated
-  // case and the generic failure case.
+  // case and the generic failure case. For `no_products` (empty_model) the
+  // backend message IS the clean description we already render, and the
+  // disclosure label ("Conversion failed…") would be wrong, so skip it.
   const technicalDetails =
-    !isProcessing && backendMessage ? backendMessage : null;
+    !isProcessing && errorCode !== 'no_products' && backendMessage ? backendMessage : null;
 
   const showInstallButton =
     !isProcessing
@@ -1746,17 +1781,19 @@ function LandingPage({ projectId, onUploadComplete: _onUploadComplete, breadcrum
               const status = m.status;
               const isReady = status === 'ready';
               const isDegraded = status === 'degraded';
+              const isEmptyModel = status === 'empty_model';
               const isProcessing = status === 'processing';
               const isError = status === 'error' || status === 'needs_converter';
               let statusDot = 'bg-gray-400';
               if (isReady) statusDot = 'bg-emerald-500';
-              else if (isDegraded) statusDot = 'bg-amber-500';
+              else if (isDegraded || isEmptyModel) statusDot = 'bg-amber-500';
               else if (isProcessing) statusDot = 'bg-amber-400 animate-pulse';
               else if (isError) statusDot = 'bg-red-400';
 
               let statusText: string = m.status;
               if (isReady) statusText = t('bim.status_ready', { defaultValue: 'Ready' });
               else if (isDegraded) statusText = t('bim.status_degraded', { defaultValue: 'Imported (no quantities)' });
+              else if (isEmptyModel) statusText = t('bim.status_empty_model', { defaultValue: 'No elements' });
               else if (isProcessing) statusText = t('bim.status_processing', { defaultValue: 'Processing' });
 
               return (
@@ -2978,6 +3015,9 @@ export function BIMPage() {
     'needs_converter',
     'converter_required',
     'no_geometry',
+    // `empty_model` carries no elements/geometry: render the inline
+    // informational overlay rather than blind-fetching a 404 mesh (#197).
+    'empty_model',
     'failed',
     'error',
   ]);

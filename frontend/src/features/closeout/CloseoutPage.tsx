@@ -24,8 +24,10 @@ import {
   DismissibleInfo,
   EmptyState,
   Skeleton,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { closeoutGuide } from './closeoutGuide';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import {
@@ -331,45 +333,52 @@ export default function CloseoutPage() {
                 })
         }
         actions={
-          pkg ? (
-            <>
-              <Button
-                variant="ghost"
-                size="sm"
-                icon={<Sparkles size={14} />}
-                onClick={() => suggestMutation.mutate()}
-                loading={suggestMutation.isPending}
-              >
-                {t('closeout.action.suggest', { defaultValue: 'Auto-suggest evidence' })}
-              </Button>
-              <Button
-                variant={pkg.ready ? 'primary' : 'secondary'}
-                size="sm"
-                icon={buildJobId ? <Loader2 size={14} className="animate-spin" /> : <Hammer size={14} />}
-                onClick={() => buildMutation.mutate()}
-                loading={buildMutation.isPending}
-                disabled={!!buildJobId}
-              >
-                {buildJobId
-                  ? t('closeout.action.building', {
-                      defaultValue: 'Building {{pct}}%',
-                      pct: buildProgress,
-                    })
-                  : t('closeout.action.build', { defaultValue: 'Build package' })}
-              </Button>
-              {pkg.has_built_package ? (
+          <>
+            {/* How it works guide - explains the checklist, binding and
+                verifying evidence, and the build-and-download flow. Sits at
+                the head of the action cluster as the leading help pill so it
+                is reachable whether or not a package exists yet. */}
+            <ModuleGuideButton content={closeoutGuide} />
+            {pkg ? (
+              <>
                 <Button
                   variant="ghost"
                   size="sm"
-                  icon={<Download size={14} />}
-                  onClick={() => downloadMutation.mutate()}
-                  loading={downloadMutation.isPending}
+                  icon={<Sparkles size={14} />}
+                  onClick={() => suggestMutation.mutate()}
+                  loading={suggestMutation.isPending}
                 >
-                  {t('closeout.action.download', { defaultValue: 'Download package' })}
+                  {t('closeout.action.suggest', { defaultValue: 'Auto-suggest evidence' })}
                 </Button>
-              ) : null}
-            </>
-          ) : undefined
+                <Button
+                  variant={pkg.ready ? 'primary' : 'secondary'}
+                  size="sm"
+                  icon={buildJobId ? <Loader2 size={14} className="animate-spin" /> : <Hammer size={14} />}
+                  onClick={() => buildMutation.mutate()}
+                  loading={buildMutation.isPending}
+                  disabled={!!buildJobId}
+                >
+                  {buildJobId
+                    ? t('closeout.action.building', {
+                        defaultValue: 'Building {{pct}}%',
+                        pct: buildProgress,
+                      })
+                    : t('closeout.action.build', { defaultValue: 'Build package' })}
+                </Button>
+                {pkg.has_built_package ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon={<Download size={14} />}
+                    onClick={() => downloadMutation.mutate()}
+                    loading={downloadMutation.isPending}
+                  >
+                    {t('closeout.action.download', { defaultValue: 'Download package' })}
+                  </Button>
+                ) : null}
+              </>
+            ) : null}
+          </>
         }
       />
 

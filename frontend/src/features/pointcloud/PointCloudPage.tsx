@@ -33,8 +33,15 @@ import {
   UploadCloud,
   CheckCircle2,
   X,
+  Palette,
+  Sun,
+  Tags,
+  Globe2,
+  Move3d,
+  Hourglass,
 } from 'lucide-react';
-import { Badge, Breadcrumb, Card, DismissibleInfo, EmptyState } from '@/shared/ui';
+import { Badge, Breadcrumb, Card, DismissibleInfo, EmptyState, ModuleGuideButton } from '@/shared/ui';
+import type { ScanDataset, ScanMetadata } from './api';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useToastStore } from '@/stores/useToastStore';
 import { projectsApi } from '@/features/projects/api';
@@ -50,6 +57,7 @@ import {
 } from './api';
 import { PointCloudBackground } from './PointCloudBackground';
 import { PointCloudViewer } from './PointCloudViewer';
+import { pointcloudGuide } from './pointcloudGuide';
 
 /* The accepted upload containers, mirrored from the backend allow-list
    (backend/app/modules/pointcloud/models.py ACCEPTED_SCAN_FORMATS). Proprietary
@@ -105,6 +113,142 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+/* Format a single linear span (max - min) with the scan's declared units. The
+   header sniff reports extents in the cloud's own units (metres by default);
+   we show a compact, locale-neutral number so a surveyor can sanity-check the
+   footprint at a glance. */
+function formatSpan(span: number, units: string): string {
+  const u = units || 'm';
+  if (!Number.isFinite(span)) return '-';
+  const abs = Math.abs(span);
+  const v = abs >= 100 ? abs.toFixed(0) : abs >= 1 ? abs.toFixed(2) : abs.toFixed(3);
+  return `${v} ${u}`;
+}
+
+/* Build the "W x D x H" extent string from header coordinate ranges, or null
+   when the header carried no usable bounding box. */
+function formatExtent(meta: ScanMetadata | undefined): string | null {
+  const r = meta?.coordinate_ranges;
+  if (!r || !r.x || !r.y || !r.z) return null;
+  const dx = r.x[1] - r.x[0];
+  const dy = r.y[1] - r.y[0];
+  const dz = r.z[1] - r.z[0];
+  const units = meta?.units || 'm';
+  return `${formatSpan(dx, units)} x ${formatSpan(dy, units)} x ${formatSpan(dz, units)}`;
+}
+
+/* A small scalar-field chip (RGB / Intensity / Classification). Present =
+   highlighted; absent = muted, so "this scan has no colour" reads clearly
+   rather than silently. */
+function FieldChip({
+  icon: Icon,
+  label,
+  present,
+}: {
+  icon: typeof Palette;
+  label: string;
+  present: boolean;
+}) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-2xs font-medium ${
+        present
+          ? 'border-oe-blue/30 bg-oe-blue/10 text-oe-blue'
+          : 'border-border-light bg-surface-secondary/50 text-content-quaternary line-through'
+      }`}
+    >
+      <Icon size={10} />
+      {label}
+    </span>
+  );
+}
+
+/* The per-scan header-sniff summary, shown under each registry row. Surfaces
+   the cheap preview the backend captures at upload: scalar fields, footprint,
+   declared CRS and point format. When no reader is installed (status
+   'pending') or the header was corrupt ('unreadable') it says so honestly
+   instead of pretending the scan is empty. */
+function ScanDetails({ scan }: { scan: ScanDataset }) {
+  const { t } = useTranslation();
+  const meta = scan.scan_metadata;
+  const status = meta?.status;
+
+  if (status === 'pending') {
+    return (
+      <div className="mt-1.5 flex items-start gap-1.5 text-2xs text-content-quaternary">
+        <Hourglass size={11} className="mt-px shrink-0" />
+        <span>
+          {t('pointcloud.meta_pending', {
+            defaultValue:
+              'Header preview not available yet - the server has no point-cloud reader installed. The scan uploaded fine; extents and channels will appear once a reader is enabled.',
+          })}
+        </span>
+      </div>
+    );
+  }
+
+  if (status === 'unreadable') {
+    return (
+      <div className="mt-1.5 flex items-start gap-1.5 text-2xs text-amber-600 dark:text-amber-400">
+        <AlertCircle size={11} className="mt-px shrink-0" />
+        <span>
+          {t('pointcloud.meta_unreadable', {
+            defaultValue:
+              'The scan header could not be read. The file uploaded, but its extents and channels are unknown - re-export and upload again if this persists.',
+          })}
+        </span>
+      </div>
+    );
+  }
+
+  if (status !== 'ok') return null;
+
+  const extent = formatExtent(meta);
+  const fields = meta?.scalar_fields ?? {};
+  const crsLabel =
+    scan.crs_epsg != null
+      ? `EPSG:${scan.crs_epsg}`
+      : t('pointcloud.meta_crs_local', { defaultValue: 'Local coordinates' });
+
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+      <div className="flex flex-wrap items-center gap-1">
+        <FieldChip
+          icon={Palette}
+          label={t('pointcloud.field_rgb', { defaultValue: 'RGB' })}
+          present={Boolean(fields.rgb)}
+        />
+        <FieldChip
+          icon={Sun}
+          label={t('pointcloud.field_intensity', { defaultValue: 'Intensity' })}
+          present={Boolean(fields.intensity)}
+        />
+        <FieldChip
+          icon={Tags}
+          label={t('pointcloud.field_classification', { defaultValue: 'Classified' })}
+          present={Boolean(fields.classification)}
+        />
+      </div>
+      {extent && (
+        <span
+          className="inline-flex items-center gap-1 text-2xs text-content-tertiary"
+          title={t('pointcloud.meta_extent_title', { defaultValue: 'Bounding-box extent (W x D x H)' })}
+        >
+          <Move3d size={11} className="text-content-quaternary" />
+          {extent}
+        </span>
+      )}
+      <span
+        className="inline-flex items-center gap-1 text-2xs text-content-tertiary"
+        title={t('pointcloud.meta_crs_title', { defaultValue: 'Coordinate reference system' })}
+      >
+        <Globe2 size={11} className="text-content-quaternary" />
+        {crsLabel}
+      </span>
+    </div>
+  );
 }
 
 /* The three things reality capture unlocks once a scan is registered against the
@@ -317,7 +461,7 @@ export function PointCloudPage() {
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-oe-blue/10 text-oe-blue">
           <ScanLine size={22} />
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-semibold text-content-primary">
               {t('nav.point_cloud', 'Point Cloud')}
@@ -333,6 +477,7 @@ export function PointCloudPage() {
             )}
           </p>
         </div>
+        <ModuleGuideButton content={pointcloudGuide} />
       </header>
 
       <DismissibleInfo
@@ -671,6 +816,7 @@ export function PointCloudPage() {
                       {' · '}
                       {formatPointCount(scan.point_count)}
                     </p>
+                    <ScanDetails scan={scan} />
                   </div>
                   <Badge variant={STATUS_VARIANT[scan.status] ?? 'neutral'} size="sm">
                     {statusLabel(scan.status)}

@@ -66,8 +66,10 @@ import {
   SkeletonTable,
   DismissibleInfo,
   IntroRichText,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { crmGuide } from './crmGuide';
 import {
   WideModal,
   WideModalSection,
@@ -349,15 +351,21 @@ export function CRMPage() {
             'Drag deals across the pipeline, log activity in a click. People come from Contacts, won deals link to Projects.',
         })}
         actions={
-          view !== 'insights' && (
-            <Button
-              variant="primary"
-              icon={<Plus size={14} />}
-              onClick={() => setCreateOpen(true)}
-            >
-              {newLabel}
-            </Button>
-          )
+          <>
+            <ModuleGuideButton
+              content={crmGuide}
+              onCta={() => setCreateOpen(true)}
+            />
+            {view !== 'insights' && (
+              <Button
+                variant="primary"
+                icon={<Plus size={14} />}
+                onClick={() => setCreateOpen(true)}
+              >
+                {newLabel}
+              </Button>
+            )}
+          </>
         }
       />
 

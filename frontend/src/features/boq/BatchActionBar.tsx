@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Trash2, Ruler, X, ChevronDown, Percent, Hash, Tag } from 'lucide-react';
+import { Trash2, Ruler, X, ChevronDown, Percent, Hash, Tag, Replace, Equal } from 'lucide-react';
+import { useFocusTrap } from '@/shared/hooks/useFocusTrap';
 import { getUnitsForLocale } from './boqHelpers';
 
 const UNITS = getUnitsForLocale();
@@ -33,6 +34,15 @@ export interface BatchActionBarProps {
     standard: BatchClassificationStandard,
     code: string,
   ) => void;
+  /** Find and replace text across the descriptions of all selected positions. */
+  onBatchFindReplace?: (
+    ids: string[],
+    find: string,
+    replace: string,
+    caseSensitive: boolean,
+  ) => void;
+  /** Set an exact unit_rate / quantity on all selected positions (Excel-style fill). */
+  onBatchSetValue?: (ids: string[], field: 'unit_rate' | 'quantity', value: number) => void;
 }
 
 interface FactorDialogState {
@@ -45,6 +55,17 @@ interface ClassificationDialogState {
   code: string;
 }
 
+interface FindReplaceDialogState {
+  find: string;
+  replace: string;
+  caseSensitive: boolean;
+}
+
+interface SetValueDialogState {
+  field: 'unit_rate' | 'quantity';
+  value: string;
+}
+
 export function BatchActionBar({
   selectedIds,
   onBatchDelete,
@@ -52,14 +73,30 @@ export function BatchActionBar({
   onClearSelection,
   onBatchFactor,
   onBatchSetClassification,
+  onBatchFindReplace,
+  onBatchSetValue,
 }: BatchActionBarProps) {
   const { t } = useTranslation();
   const [unitDropdownOpen, setUnitDropdownOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [factorDialog, setFactorDialog] = useState<FactorDialogState | null>(null);
   const [classDialog, setClassDialog] = useState<ClassificationDialogState | null>(null);
+  const [findReplaceDialog, setFindReplaceDialog] = useState<FindReplaceDialogState | null>(null);
+  const [setValueDialog, setSetValueDialog] = useState<SetValueDialogState | null>(null);
   const unitDropdownRef = useRef<HTMLDivElement>(null);
+  const findReplacePanelRef = useRef<HTMLDivElement>(null);
+  const setValuePanelRef = useRef<HTMLDivElement>(null);
   const count = selectedIds.length;
+
+  // Trap Tab / restore focus on close, matching the shared modal a11y pattern.
+  useFocusTrap(findReplacePanelRef, !!findReplaceDialog);
+  useFocusTrap(setValuePanelRef, !!setValueDialog);
+
+  // Set-value input validity. Number() (not parseFloat) so '1.2.3', '--' and
+  // 'abc' are rejected as NaN rather than silently truncated. Drives both the
+  // Apply button and the inline error, so invalid input never just no-ops.
+  const setValueParsed = setValueDialog ? Number(setValueDialog.value.replace(',', '.')) : NaN;
+  const setValueValid = Number.isFinite(setValueParsed) && setValueParsed >= 0;
 
   // Close unit dropdown on outside click
   useEffect(() => {
@@ -77,7 +114,8 @@ export function BatchActionBar({
 
   // Close any open dialog on Escape
   useEffect(() => {
-    if (!confirmDeleteOpen && !factorDialog && !classDialog) return;
+    if (!confirmDeleteOpen && !factorDialog && !classDialog && !findReplaceDialog && !setValueDialog)
+      return;
 
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
@@ -85,12 +123,14 @@ export function BatchActionBar({
         setConfirmDeleteOpen(false);
         setFactorDialog(null);
         setClassDialog(null);
+        setFindReplaceDialog(null);
+        setSetValueDialog(null);
       }
     }
 
     document.addEventListener('keydown', handleKeyDown, { capture: true });
     return () => document.removeEventListener('keydown', handleKeyDown, { capture: true });
-  }, [confirmDeleteOpen, factorDialog, classDialog]);
+  }, [confirmDeleteOpen, factorDialog, classDialog, findReplaceDialog, setValueDialog]);
 
   if (count === 0) return null;
 
@@ -122,6 +162,24 @@ export function BatchActionBar({
     if (!code) return;
     onBatchSetClassification(selectedIds, classDialog.standard, code);
     setClassDialog(null);
+  };
+
+  const handleConfirmFindReplace = () => {
+    if (!findReplaceDialog || !onBatchFindReplace) return;
+    if (!findReplaceDialog.find.trim()) return;
+    onBatchFindReplace(
+      selectedIds,
+      findReplaceDialog.find,
+      findReplaceDialog.replace,
+      findReplaceDialog.caseSensitive,
+    );
+    setFindReplaceDialog(null);
+  };
+
+  const handleConfirmSetValue = () => {
+    if (!setValueDialog || !onBatchSetValue || !setValueValid) return;
+    onBatchSetValue(selectedIds, setValueDialog.field, setValueParsed);
+    setSetValueDialog(null);
   };
 
   return (
@@ -225,6 +283,32 @@ export function BatchActionBar({
             >
               <Tag size={14} />
               {t('boq.batch_set_classification', { defaultValue: 'Classification' })}
+            </button>
+          )}
+
+          {/* Find & replace across the descriptions of the selected rows */}
+          {onBatchFindReplace && (
+            <button
+              type="button"
+              onClick={() => setFindReplaceDialog({ find: '', replace: '', caseSensitive: false })}
+              aria-label={t('boq.batch_find_replace', { defaultValue: 'Find and replace' })}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-sky-700 dark:text-sky-300 hover:bg-sky-500/20 transition-colors"
+            >
+              <Replace size={14} />
+              {t('boq.batch_find_replace_short', { defaultValue: 'Find & replace' })}
+            </button>
+          )}
+
+          {/* Set an exact rate / quantity on every selected row */}
+          {onBatchSetValue && (
+            <button
+              type="button"
+              onClick={() => setSetValueDialog({ field: 'unit_rate', value: '' })}
+              aria-label={t('boq.batch_set_value', { defaultValue: 'Set value' })}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500/10 px-3 py-1.5 text-xs font-medium text-indigo-700 dark:text-indigo-300 hover:bg-indigo-500/20 transition-colors"
+            >
+              <Equal size={14} />
+              {t('boq.batch_set_value_short', { defaultValue: 'Set value' })}
             </button>
           )}
 
@@ -448,6 +532,193 @@ export function BatchActionBar({
                 type="button"
                 onClick={handleConfirmClassification}
                 disabled={!classDialog.code.trim()}
+                className="flex-1 rounded-lg px-4 py-2.5 text-sm font-medium text-white bg-oe-blue hover:bg-oe-blue-hover transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {t('common.apply', { defaultValue: 'Apply' })}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Find & replace dialog (description text) */}
+      {findReplaceDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/70 backdrop-blur-lg animate-fade-in"
+            onClick={() => setFindReplaceDialog(null)}
+            aria-hidden="true"
+          />
+          <div
+            ref={findReplacePanelRef}
+            role="dialog"
+            aria-modal="true"
+            tabIndex={-1}
+            aria-label={t('boq.batch_find_replace', { defaultValue: 'Find and replace' })}
+            className="relative z-10 w-full max-w-sm mx-4 rounded-2xl border border-border-light bg-surface-elevated shadow-xl animate-scale-in focus:outline-none"
+          >
+            <div className="px-6 pt-6 pb-4">
+              <h2 className="text-base font-semibold text-content-primary">
+                {t('boq.batch_find_replace', { defaultValue: 'Find and replace' })}
+              </h2>
+              <p className="mt-1 text-xs text-content-secondary">
+                {t('boq.batch_find_replace_hint', {
+                  defaultValue:
+                    'Rewrites the description on the selected positions ({{count}}). Rows with no match stay unchanged.',
+                  count,
+                })}
+              </p>
+              <label className="mt-4 block">
+                <span className="text-xs font-medium text-content-secondary">
+                  {t('boq.batch_find_label', { defaultValue: 'Find' })}
+                </span>
+                <input
+                  autoFocus
+                  type="text"
+                  value={findReplaceDialog.find}
+                  onChange={(e) =>
+                    setFindReplaceDialog({ ...findReplaceDialog, find: e.target.value })
+                  }
+                  className="mt-1 w-full h-9 rounded-md border border-border bg-surface-primary px-3 text-sm text-content-primary focus:outline-none focus:ring-2 focus:ring-oe-blue/30"
+                  aria-label={t('boq.batch_find_label', { defaultValue: 'Find' })}
+                />
+              </label>
+              <label className="mt-3 block">
+                <span className="text-xs font-medium text-content-secondary">
+                  {t('boq.batch_replace_label', { defaultValue: 'Replace with' })}
+                </span>
+                <input
+                  type="text"
+                  value={findReplaceDialog.replace}
+                  onChange={(e) =>
+                    setFindReplaceDialog({ ...findReplaceDialog, replace: e.target.value })
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleConfirmFindReplace();
+                  }}
+                  className="mt-1 w-full h-9 rounded-md border border-border bg-surface-primary px-3 text-sm text-content-primary focus:outline-none focus:ring-2 focus:ring-oe-blue/30"
+                  aria-label={t('boq.batch_replace_label', { defaultValue: 'Replace with' })}
+                />
+              </label>
+              <label className="mt-3 flex items-center gap-2 text-xs text-content-secondary">
+                <input
+                  type="checkbox"
+                  checked={findReplaceDialog.caseSensitive}
+                  onChange={(e) =>
+                    setFindReplaceDialog({ ...findReplaceDialog, caseSensitive: e.target.checked })
+                  }
+                  className="accent-oe-blue"
+                />
+                {t('boq.batch_find_case', { defaultValue: 'Case sensitive' })}
+              </label>
+            </div>
+            <div className="flex gap-3 px-6 pb-6">
+              <button
+                type="button"
+                onClick={() => setFindReplaceDialog(null)}
+                className="flex-1 rounded-lg px-4 py-2.5 text-sm font-medium bg-surface-primary text-content-primary border border-border hover:bg-surface-secondary transition-all"
+              >
+                {t('common.cancel', { defaultValue: 'Cancel' })}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmFindReplace}
+                disabled={!findReplaceDialog.find.trim()}
+                className="flex-1 rounded-lg px-4 py-2.5 text-sm font-medium text-white bg-oe-blue hover:bg-oe-blue-hover transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {t('common.apply', { defaultValue: 'Apply' })}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Set an exact value (rate / quantity) on the selected rows */}
+      {setValueDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/70 backdrop-blur-lg animate-fade-in"
+            onClick={() => setSetValueDialog(null)}
+            aria-hidden="true"
+          />
+          <div
+            ref={setValuePanelRef}
+            role="dialog"
+            aria-modal="true"
+            tabIndex={-1}
+            aria-label={t('boq.batch_set_value', { defaultValue: 'Set value' })}
+            className="relative z-10 w-full max-w-sm mx-4 rounded-2xl border border-border-light bg-surface-elevated shadow-xl animate-scale-in focus:outline-none"
+          >
+            <div className="px-6 pt-6 pb-4">
+              <h2 className="text-base font-semibold text-content-primary">
+                {t('boq.batch_set_value', { defaultValue: 'Set value' })}
+              </h2>
+              <p className="mt-1 text-xs text-content-secondary">
+                {t('boq.batch_set_value_hint', {
+                  defaultValue:
+                    'Writes the same value to the selected positions ({{count}}), overwriting what is there.',
+                  count,
+                })}
+              </p>
+              <label className="mt-4 block">
+                <span className="text-xs font-medium text-content-secondary">
+                  {t('boq.batch_set_value_field', { defaultValue: 'Field' })}
+                </span>
+                <select
+                  value={setValueDialog.field}
+                  onChange={(e) =>
+                    setSetValueDialog({
+                      ...setValueDialog,
+                      field: e.target.value as 'unit_rate' | 'quantity',
+                    })
+                  }
+                  className="mt-1 w-full h-9 rounded-md border border-border bg-surface-primary px-2 text-sm text-content-primary focus:outline-none focus:ring-2 focus:ring-oe-blue/30"
+                >
+                  <option value="unit_rate">
+                    {t('boq.batch_set_value_rate', { defaultValue: 'Unit rate' })}
+                  </option>
+                  <option value="quantity">
+                    {t('boq.batch_set_value_qty', { defaultValue: 'Quantity' })}
+                  </option>
+                </select>
+              </label>
+              <label className="mt-3 block">
+                <span className="text-xs font-medium text-content-secondary">
+                  {t('boq.batch_set_value_value', { defaultValue: 'Value' })}
+                </span>
+                <input
+                  autoFocus
+                  type="text"
+                  inputMode="decimal"
+                  value={setValueDialog.value}
+                  onChange={(e) => setSetValueDialog({ ...setValueDialog, value: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleConfirmSetValue();
+                  }}
+                  className="mt-1 w-full h-9 rounded-md border border-border bg-surface-primary px-3 text-sm font-mono text-content-primary focus:outline-none focus:ring-2 focus:ring-oe-blue/30"
+                  aria-label={t('boq.batch_set_value_value', { defaultValue: 'Value' })}
+                />
+              </label>
+              {setValueDialog.value.trim() !== '' && !setValueValid && (
+                <p className="mt-1 text-xs text-semantic-error">
+                  {t('boq.batch_set_value_invalid', {
+                    defaultValue: 'Enter a number 0 or greater.',
+                  })}
+                </p>
+              )}
+            </div>
+            <div className="flex gap-3 px-6 pb-6">
+              <button
+                type="button"
+                onClick={() => setSetValueDialog(null)}
+                className="flex-1 rounded-lg px-4 py-2.5 text-sm font-medium bg-surface-primary text-content-primary border border-border hover:bg-surface-secondary transition-all"
+              >
+                {t('common.cancel', { defaultValue: 'Cancel' })}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSetValue}
+                disabled={!setValueValid}
                 className="flex-1 rounded-lg px-4 py-2.5 text-sm font-medium text-white bg-oe-blue hover:bg-oe-blue-hover transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {t('common.apply', { defaultValue: 'Apply' })}

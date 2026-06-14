@@ -45,6 +45,7 @@ import {
   SkeletonGrid,
   DismissibleInfo,
   IntroRichText,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
@@ -88,6 +89,7 @@ import {
 import { ManageTemplatesModal } from './ManageTemplatesModal';
 import { SiteLogEditor } from './SiteLogEditor';
 import { SignaturePad } from './SignaturePad';
+import { fieldreportsGuide } from './fieldreportsGuide';
 
 declare global {
   interface Window {
@@ -504,6 +506,7 @@ export function FieldReportsPage() {
         })}
         actions={
           <>
+          <ModuleGuideButton content={fieldreportsGuide} />
           {/* View toggle */}
           <div className="flex rounded-lg border border-border-light bg-surface-primary p-0.5">
             <button

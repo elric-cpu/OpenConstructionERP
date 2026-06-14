@@ -22,9 +22,10 @@ import {
   RefreshCw,
   Wallet,
 } from 'lucide-react';
-import { Breadcrumb, Button, Card, Badge, Skeleton, EmptyState } from '@/shared/ui';
+import { Breadcrumb, Button, Card, Badge, Skeleton, EmptyState, ModuleGuideButton } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { DismissibleInfo, IntroRichText } from '@/shared/ui/DismissibleInfo';
+import { analyticsGuide } from './analyticsGuide';
 
 /* ── Helpers ─────────────────────────────────────────────────────────── */
 
@@ -333,15 +334,18 @@ export function AnalyticsPage() {
           defaultValue: 'Aggregated KPIs across all projects',
         })}
         actions={
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={<Download size={14} />}
-            onClick={handleExportCSV}
-            disabled={!sortedProjects.length}
-          >
-            {t('analytics.export_csv', { defaultValue: 'Export CSV' })}
-          </Button>
+          <div className="flex items-center gap-2">
+            <ModuleGuideButton content={analyticsGuide} />
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<Download size={14} />}
+              onClick={handleExportCSV}
+              disabled={!sortedProjects.length}
+            >
+              {t('analytics.export_csv', { defaultValue: 'Export CSV' })}
+            </Button>
+          </div>
         }
       />
 

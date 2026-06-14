@@ -33,6 +33,7 @@ import {
   RecoveryCard,
   SkeletonTable,
   IntroRichText,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
@@ -40,6 +41,7 @@ import { PageHeader } from '@/shared/ui/PageHeader';
 import { SectionIntro } from '@/features/validation';
 import { SafetyTrendsChart } from './SafetyTrendsChart';
 import { SafetyThresholdWidget } from './SafetyThresholdWidget';
+import { safetyGuide } from './safetyGuide';
 import { apiGet, apiPost, triggerDownload, extractErrorMessageFromBody } from '@/shared/lib/api';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -625,18 +627,21 @@ export function SafetyPage() {
           defaultValue: 'Report incidents, record observations, and monitor site safety compliance',
         })}
         actions={
-          projectId && (
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={<Globe2 size={14} />}
-              onClick={() => navigate(`/projects/${projectId}/geo`)}
-              title={t('geo_hub.view_on_map', { defaultValue: 'View on map' })}
-              data-testid="safety-view-on-map"
-            >
-              {t('geo_hub.view_on_map', { defaultValue: 'View on map' })}
-            </Button>
-          )
+          <>
+            <ModuleGuideButton content={safetyGuide} />
+            {projectId && (
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<Globe2 size={14} />}
+                onClick={() => navigate(`/projects/${projectId}/geo`)}
+                title={t('geo_hub.view_on_map', { defaultValue: 'View on map' })}
+                data-testid="safety-view-on-map"
+              >
+                {t('geo_hub.view_on_map', { defaultValue: 'View on map' })}
+              </Button>
+            )}
+          </>
         }
       />
 

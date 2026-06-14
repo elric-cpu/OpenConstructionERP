@@ -26,7 +26,7 @@ import {
   Trash2,
   GripVertical,
 } from 'lucide-react';
-import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, RecoveryCard, ViewInBIMButton } from '@/shared/ui';
+import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, RecoveryCard, ViewInBIMButton, ModuleGuideButton } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { DismissibleInfo, IntroRichText } from '@/shared/ui/DismissibleInfo';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
@@ -52,6 +52,7 @@ import {
   type TaskPriority,
   type CreateTaskPayload,
 } from './api';
+import { tasksGuide } from './tasksGuide';
 
 /* ── Constants ─────────────────────────────────────────────────────────── */
 
@@ -1359,6 +1360,10 @@ export function TasksPage() {
         })}
         actions={
           <>
+            <ModuleGuideButton
+              content={tasksGuide}
+              onCta={() => setShowAddModal(true)}
+            />
             <Button
               variant="secondary"
               size="sm"

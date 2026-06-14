@@ -200,10 +200,19 @@ async def chat_message_similar(
 ) -> dict[str, Any]:
     """Return chat messages semantically similar to the given one.
 
-    Verifies the requesting user owns the parent ``ChatSession``. If the
-    message exists but belongs to another user, the endpoint returns 404
-    (not 403) to avoid leaking the existence of message UUIDs the caller
-    is not allowed to see - same convention as ``verify_project_access``.
+    SECURITY: chat is private to its owner. The unified vector payload for
+    chat carries no ``user_id`` (see ``vector_adapter.py``), so a raw
+    similarity search would surface other users' chat text - even within a
+    shared project, and across the whole tenant when ``cross_project`` is
+    set. This endpoint therefore enforces own-scope on two levels:
+
+    1. The source ``ChatMessage`` must belong to a ``ChatSession`` owned by
+       the caller (IDOR guard - 404 on mismatch, never leaking the
+       existence of another account's message UUID).
+    2. Every returned hit is re-resolved back to its owning ``ChatSession``
+       and dropped unless that session's ``user_id`` equals the caller's.
+       This is independent of the ``cross_project`` flag, so even a
+       same-project teammate's chat can never come back.
     """
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
@@ -223,13 +232,35 @@ async def chat_message_similar(
     project_id = (
         str(row.session.project_id) if row.session is not None and getattr(row.session, "project_id", None) else None
     )
-    hits = await find_similar(
+    # Over-fetch candidates so that post-filtering down to the caller's own
+    # sessions still leaves a useful number of results.
+    raw_hits = await find_similar(
         chat_message_adapter,
         row,
         project_id=project_id,
         cross_project=cross_project,
-        limit=limit,
+        limit=max(limit * 5, limit),
     )
+
+    # Re-resolve each hit's owning session and keep only the caller's own
+    # chat. We map hit message-id -> owning user via a single query rather
+    # than trusting the (user-less) vector payload.
+    hit_ids: list[uuid.UUID] = []
+    for h in raw_hits:
+        try:
+            hit_ids.append(uuid.UUID(str(h.id)))
+        except (TypeError, ValueError):
+            continue
+    owned_ids: set[str] = set()
+    if hit_ids:
+        owner_stmt = (
+            select(ChatMessage.id)
+            .join(ChatSession, ChatMessage.session_id == ChatSession.id)
+            .where(ChatMessage.id.in_(hit_ids), ChatSession.user_id == uuid.UUID(str(user_id)))
+        )
+        owned_ids = {str(mid) for mid in (await session.execute(owner_stmt)).scalars().all()}
+
+    hits = [h for h in raw_hits if str(h.id) in owned_ids][:limit]
     return {
         "source_id": str(message_id),
         "limit": limit,

@@ -53,6 +53,10 @@ Thank you to everyone who has contributed.
 - **alikhalilx** ([@alikhalilx](https://github.com/alikhalilx)): reported that ERP Chat
   rendered Markdown tables as raw pipe text and pointed at the hand-rolled chat renderers
   ([#224](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/224)).
+- **arvildev** ([@arvildev](https://github.com/arvildev)): pointed out that the required
+  `POSTGRES_PASSWORD` and `JWT_SECRET` interpolations in the quickstart Docker Compose file
+  needed quoting so the YAML parses before the fail-fast checks run
+  ([#227](https://github.com/datadrivenconstruction/OpenConstructionERP/pull/227)).
 
 See the full list of everyone who has contributed:
 

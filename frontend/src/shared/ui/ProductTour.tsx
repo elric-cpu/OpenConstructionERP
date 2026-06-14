@@ -24,6 +24,16 @@
  *     element even on long pages or zoom changes.
  *   - Esc handler is registered on mount (and only when active) and
  *     unregistered on close — no global leak.
+ *   - The whole overlay is rendered through `createPortal(..., document.body)`
+ *     with `position: fixed` so the spotlight + tooltip escape any ancestor
+ *     that establishes a containing block (a CSS `transform` / `filter` /
+ *     `will-change` on a parent re-anchors `fixed` to that parent, which
+ *     made the popup land in the wrong place). At body level there is no
+ *     transformed ancestor, so `getBoundingClientRect()` viewport coords map
+ *     1:1 to the fixed coordinate space.
+ *   - The target is scrolled to centre (`block: 'center', inline: 'center'`)
+ *     and measured on the next animation frame so the rect reflects the
+ *     settled layout, never an off-screen or mid-scroll position.
  *
  * NOTE: ProductTour is the canonical global onboarding tour. The
  * older `OnboardingTour` (which keys off `oe_tour_completed` — no
@@ -37,6 +47,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { X, ArrowLeft, ArrowRight, MapPin, Check } from 'lucide-react';
@@ -777,6 +788,28 @@ const STEP_FALLBACKS: Record<string, string> = {
 
 /* ── Geometry helpers ───────────────────────────────────────────────────── */
 
+/** Shared scroll options. Always centre the target in the viewport so a
+ *  partially-scrolled or off-screen element is brought fully into view before
+ *  we measure it. Using `center` (not `nearest`) is what guarantees the
+ *  spotlight lands on the element rather than at the viewport edge. */
+const SCROLL_INTO_VIEW_OPTS: ScrollIntoViewOptions = {
+  behavior: 'smooth',
+  block: 'center',
+  inline: 'center',
+};
+
+/** Resolve a selector and centre it in the viewport (best-effort). Guards for
+ *  a missing target and for browsers that throw on the options object. */
+function scrollTargetIntoView(selector: string): void {
+  const el = document.querySelector(selector);
+  if (!el) return;
+  try {
+    el.scrollIntoView(SCROLL_INTO_VIEW_OPTS);
+  } catch {
+    /* older browsers - ignore */
+  }
+}
+
 function measureSpotlight(selector: string): SpotlightRect | null {
   const el = document.querySelector(selector);
   if (!el) return null;
@@ -914,9 +947,15 @@ export function ProductTour({ steps, defaultTourId = 'global' }: ProductTourProp
   // sidebar group). Cleared on step change / unmount so a stale retry never
   // re-positions onto a newer step's target.
   const revealTimersRef = useRef<number[]>([]);
+  // Pending animation-frame handles used to measure after layout settles.
+  // Cancelled alongside the retry timers so a stale frame never re-positions
+  // onto a newer step's target.
+  const rafFramesRef = useRef<number[]>([]);
   const clearRevealTimers = useCallback(() => {
     for (const id of revealTimersRef.current) window.clearTimeout(id);
     revealTimersRef.current = [];
+    for (const id of rafFramesRef.current) window.cancelAnimationFrame(id);
+    rafFramesRef.current = [];
   }, []);
 
   const step = resolvedSteps[currentStep];
@@ -976,11 +1015,7 @@ export function ProductTour({ steps, defaultTourId = 'global' }: ProductTourProp
 
       const el = document.querySelector(selector);
       if (el) {
-        try {
-          (el as Element).scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
-        } catch {
-          /* older browsers — ignore */
-        }
+        scrollTargetIntoView(selector);
       } else if (s.revealGroupId) {
         // Target's sidebar group is collapsed (and possibly hidden in simple
         // view), so the row is unmounted. Ask the Sidebar to expand it; the
@@ -1012,18 +1047,17 @@ export function ProductTour({ steps, defaultTourId = 'global' }: ProductTourProp
       const attempt = (n: number) => {
         const rect = measureSpotlight(selector);
         if (rect) {
-          // The row may have just mounted/scrolled — ensure it's in view.
+          // The row may have just mounted/scrolled, so re-centre it, then
+          // measure on the next frame so we read the settled rect rather
+          // than the pre-scroll one.
           if (n > 0) {
-            const just = document.querySelector(selector);
-            try {
-              (just as Element | null)?.scrollIntoView({
-                behavior: 'smooth',
-                block: 'nearest',
-                inline: 'nearest',
-              });
-            } catch {
-              /* older browsers — ignore */
-            }
+            scrollTargetIntoView(selector);
+            const rafId = window.requestAnimationFrame(() => {
+              const settled = measureSpotlight(selector);
+              apply(settled ?? rect);
+            });
+            rafFramesRef.current.push(rafId);
+            return;
           }
           apply(rect);
           return;
@@ -1035,8 +1069,13 @@ export function ProductTour({ steps, defaultTourId = 'global' }: ProductTourProp
         const id = window.setTimeout(() => attempt(n + 1), 80);
         revealTimersRef.current.push(id);
       };
-      // First measurement deferred to let the initial smooth scroll settle.
-      const firstId = window.setTimeout(() => attempt(0), 180);
+      // First measurement deferred to let the initial smooth scroll settle:
+      // a short timeout to let scrolling progress, then a rAF so we measure
+      // after the browser has applied layout for that frame.
+      const firstId = window.setTimeout(() => {
+        const rafId = window.requestAnimationFrame(() => attempt(0));
+        rafFramesRef.current.push(rafId);
+      }, 180);
       revealTimersRef.current.push(firstId);
     },
     [resolvedSteps, clearRevealTimers],
@@ -1277,7 +1316,13 @@ export function ProductTour({ steps, defaultTourId = 'global' }: ProductTourProp
     ? 'rgba(2, 6, 23, 0.78)' /* slate-950 @ 78% — near-black, high contrast */
     : 'rgba(15, 23, 42, 0.42)'; /* slate-900 @ 42% — historical light value  */
 
-  return (
+  // Portal to <body> so the fixed-positioned overlay + tooltip escape any
+  // ancestor that establishes a containing block (a CSS transform / filter /
+  // will-change on a parent re-anchors `position: fixed` to that parent and
+  // the popup lands in the wrong place). At body level there is no transformed
+  // ancestor, so the viewport-relative getBoundingClientRect() coords we
+  // compute map 1:1 onto the fixed coordinate space.
+  return createPortal(
     <>
       {/* Dim backdrop with rectangular cutout via box-shadow.  When there's
           no spotlight (wrap-up step) we render a full-screen scrim that
@@ -1317,7 +1362,9 @@ export function ProductTour({ steps, defaultTourId = 'global' }: ProductTourProp
                 Sits on top of the dimming layer (z 9002) so it draws a
                 clear, unmistakable boundary between dimmed-background and
                 spotlit-content. Stronger in dark mode where the dimming
-                alone is hard to see against already-dark surfaces. */}
+                alone is hard to see against already-dark surfaces. Violet
+                accent so the Tour reads as a distinct walkthrough next to the
+                blue "How it works" guide. */}
             <div
               aria-hidden="true"
               data-testid="product-tour-spotlight-ring"
@@ -1331,11 +1378,11 @@ export function ProductTour({ steps, defaultTourId = 'global' }: ProductTourProp
                 zIndex: 9002,
                 pointerEvents: 'none',
                 border: isDark
-                  ? '2px solid rgba(125, 211, 252, 0.95)' /* sky-300, near-opaque */
-                  : '2px solid rgba(14, 165, 233, 0.85)', /* sky-500, vivid blue */
+                  ? '2px solid rgba(196, 181, 253, 0.95)' /* violet-300, near-opaque */
+                  : '2px solid rgba(139, 92, 246, 0.85)', /* violet-500, vivid */
                 boxShadow: isDark
-                  ? '0 0 0 4px rgba(125, 211, 252, 0.25), 0 0 32px 6px rgba(56, 189, 248, 0.55)'
-                  : '0 0 0 4px rgba(14, 165, 233, 0.20), 0 0 18px 2px rgba(14, 165, 233, 0.35)',
+                  ? '0 0 0 4px rgba(196, 181, 253, 0.25), 0 0 32px 6px rgba(167, 139, 250, 0.55)'
+                  : '0 0 0 4px rgba(139, 92, 246, 0.20), 0 0 18px 2px rgba(139, 92, 246, 0.35)',
                 transition:
                   'top 180ms ease, left 180ms ease, width 180ms ease, height 180ms ease',
               }}
@@ -1360,11 +1407,12 @@ export function ProductTour({ steps, defaultTourId = 'global' }: ProductTourProp
         }}
         className={clsx(
           'rounded-2xl border',
-          // Light: subtle hairline. Dark: bright sky tint + outer glow
-          // ring so the card stands away from the near-black scrim.
-          'border-border-light dark:border-sky-400/60',
+          // Light: subtle hairline. Dark: bright violet tint + outer glow
+          // ring so the card stands away from the near-black scrim and reads
+          // as the violet Tour rather than the blue guide.
+          'border-border-light dark:border-violet-400/60',
           'bg-surface-elevated shadow-xl',
-          'dark:shadow-[0_8px_32px_rgba(2,6,23,0.6),0_0_0_1px_rgba(125,211,252,0.25)]',
+          'dark:shadow-[0_8px_32px_rgba(2,6,23,0.6),0_0_0_1px_rgba(196,181,253,0.25)]',
           'p-5 pointer-events-auto animate-scale-in',
         )}
       >
@@ -1374,7 +1422,9 @@ export function ProductTour({ steps, defaultTourId = 'global' }: ProductTourProp
             <div
               className={clsx(
                 'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
-                isLast ? 'bg-emerald-500/10 text-emerald-600' : 'bg-oe-blue/10 text-oe-blue',
+                isLast
+                  ? 'bg-emerald-500/10 text-emerald-600'
+                  : 'bg-violet-500/10 text-violet-600 dark:text-violet-300',
               )}
             >
               {isLast ? <Check size={15} /> : <MapPin size={15} />}
@@ -1421,7 +1471,7 @@ export function ProductTour({ steps, defaultTourId = 'global' }: ProductTourProp
                 key={idx}
                 className={clsx(
                   'rounded-full transition-all duration-150',
-                  idx === currentStep ? 'h-2 w-4 bg-oe-blue' : 'h-1.5 w-1.5 bg-border',
+                  idx === currentStep ? 'h-2 w-4 bg-violet-500' : 'h-1.5 w-1.5 bg-border',
                 )}
               />
             ))}
@@ -1453,7 +1503,7 @@ export function ProductTour({ steps, defaultTourId = 'global' }: ProductTourProp
                 'flex h-7 items-center gap-1.5 rounded-lg px-3',
                 isLast
                   ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-                  : 'bg-oe-blue text-white hover:opacity-90',
+                  : 'bg-violet-600 text-white hover:bg-violet-700',
                 'text-xs font-medium transition-colors',
               )}
               aria-label={isLast ? resolved.finish : resolved.next}
@@ -1480,6 +1530,7 @@ export function ProductTour({ steps, defaultTourId = 'global' }: ProductTourProp
         confirmLabel={t('tour.confirm_skip_confirm', { defaultValue: 'Exit tour' })}
         cancelLabel={t('tour.confirm_skip_cancel', { defaultValue: 'Keep going' })}
       />
-    </>
+    </>,
+    document.body,
   );
 }

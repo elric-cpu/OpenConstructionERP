@@ -29,6 +29,7 @@ import {
   WideModalField,
   DismissibleInfo,
   IntroRichText,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { projectsApi } from '@/features/projects/api';
@@ -56,6 +57,7 @@ import {
   type AccessPermission,
 } from './api';
 import { ProgressReportsTab } from './ProgressReportsTab';
+import { portalGuide } from './portalGuide';
 
 type Tab = 'users' | 'access_rules' | 'audit_log' | 'progress_reports';
 
@@ -248,6 +250,7 @@ export function PortalPage() {
         })}
         actions={
           <>
+            <ModuleGuideButton content={portalGuide} />
             {tab === 'access_rules' && (
               <Button
                 variant="secondary"

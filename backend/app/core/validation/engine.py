@@ -340,6 +340,53 @@ class RuleRegistry:
                 self._rule_sets[s].append(rule.rule_id)
         logger.debug("Registered validation rule: %s (sets: %s)", rule.rule_id, sets)
 
+    def unregister_rule_set(self, set_name: str) -> int:
+        """Remove a single rule set and the rules it exclusively owns.
+
+        This exists so a project-scoped, dynamically-imported rule set (e.g.
+        an ``ids_custom:{project_id}`` set populated from an uploaded IDS file)
+        can be *replaced* on re-import instead of accumulating stale duplicate
+        rules that keep firing.
+
+        The registry is process-global and multi-tenant, so removal is keyed
+        strictly to the one ``set_name`` passed in:
+
+        * The set's membership list is dropped.
+        * A rule body is evicted from ``self._rules`` ONLY when that rule
+          belongs to no other remaining rule set. A rule still referenced by
+          another set (e.g. a built-in ``boq_quality`` / ``din276`` set, or a
+          different project's scoped set) is left untouched.
+
+        Built-in/global rule sets are never affected unless their exact name is
+        passed - callers must only pass their own scoped set id.
+
+        Args:
+            set_name: The exact rule-set key to remove.
+
+        Returns:
+            Number of rule bodies actually evicted from the registry.
+        """
+        rule_ids = self._rule_sets.pop(set_name, None)
+        if not rule_ids:
+            return 0
+        # Rule ids that are still owned by some other surviving set must not be
+        # evicted - only drop bodies that are now orphaned.
+        still_referenced: set[str] = set()
+        for ids in self._rule_sets.values():
+            still_referenced.update(ids)
+        evicted = 0
+        for rid in rule_ids:
+            if rid not in still_referenced and rid in self._rules:
+                del self._rules[rid]
+                evicted += 1
+        logger.debug(
+            "Unregistered rule set %s (%d rule ids, %d bodies evicted)",
+            set_name,
+            len(rule_ids),
+            evicted,
+        )
+        return evicted
+
     def get_rule(self, rule_id: str) -> ValidationRule | None:
         return self._rules.get(rule_id)
 

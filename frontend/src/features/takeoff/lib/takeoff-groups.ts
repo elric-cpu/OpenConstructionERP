@@ -54,7 +54,11 @@ export function computeGroupSummaries(
     existing.count += 1;
     // Annotation tools don't contribute a numeric quantity.
     if (!ANNOTATION_TYPES.has(m.type)) {
-      existing.total += m.value;
+      // Opening deductions (area voids) are stored as a positive gross area
+      // but SUBTRACT from the group total so the legend shows net area =
+      // gross - openings. Only area carries the flag.
+      const signed = m.isDeduction ? -m.value : m.value;
+      existing.total += signed;
       if (m.unit) {
         existing.unitCounts[m.unit] = (existing.unitCounts[m.unit] ?? 0) + 1;
       }

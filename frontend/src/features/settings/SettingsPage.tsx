@@ -5,6 +5,7 @@ import { getIntlLocale } from '@/shared/lib/formatters';
 import { TranslationManager } from './TranslationManager';
 import { BackupRestore } from './BackupRestore';
 import { RegionalSettings } from './RegionalSettings';
+import { SettingsTeamPanel } from './SettingsTeamPanel';
 import { WebhookLeads } from './WebhookLeads';
 import VectorStatusCard from './VectorStatusCard';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -35,9 +36,11 @@ import {
   ChevronRight,
   Wrench,
   LayoutGrid,
+  Users,
 } from 'lucide-react';
-import { Card, CardHeader, CardContent, CardFooter, Button, Badge, InfoHint, Skeleton, Breadcrumb, DismissibleInfo, IntroRichText, ConfirmDialog } from '@/shared/ui';
+import { Card, CardHeader, CardContent, CardFooter, Button, Badge, InfoHint, Skeleton, Breadcrumb, DismissibleInfo, IntroRichText, ConfirmDialog, ModuleGuideButton } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { settingsGuide } from './settingsGuide';
 import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 import { DashboardLayoutManager } from '@/features/dashboard/DashboardLayoutManager';
 import { UpdateNotification } from '@/shared/ui/UpdateChecker';
@@ -1061,7 +1064,7 @@ function ProfileCard({ profile, loading, editing, setEditing, formName, setFormN
 
 // ── Tab definitions ──────────────────────────────────────────────────────────
 
-type SettingsTab = 'general' | 'dashboard' | 'account' | 'regional' | 'converters' | 'ai' | 'integrations' | 'advanced';
+type SettingsTab = 'general' | 'dashboard' | 'team' | 'account' | 'regional' | 'converters' | 'ai' | 'integrations' | 'advanced';
 
 interface TabDef {
   id: SettingsTab;
@@ -1085,6 +1088,7 @@ const TABS: readonly TabDef[] = [
   DEFAULT_TAB,
   { id: 'dashboard',    labelKey: 'settings.tab_dashboard',    defaultLabel: 'Dashboard',    icon: LayoutGrid, descKey: 'settings.tab_dashboard_desc',  descDefault: 'Reorder, show or hide dashboard sections' },
   { id: 'account',      labelKey: 'settings.tab_account',      defaultLabel: 'Account',      icon: User,     descKey: 'settings.tab_account_desc',      descDefault: 'Password and sign out' },
+  { id: 'team',         labelKey: 'settings.tab_team',         defaultLabel: 'Team & Plan',  icon: Users,    descKey: 'settings.tab_team_desc',         descDefault: 'Members, roles, and license' },
   { id: 'regional',     labelKey: 'settings.tab_regional',     defaultLabel: 'Regional',     icon: Globe,    descKey: 'settings.tab_regional_desc',     descDefault: 'Language, timezone, and formats' },
   { id: 'converters',   labelKey: 'settings.tab_converters',   defaultLabel: 'Converters',  icon: Layers,   descKey: 'settings.tab_converters_desc',   descDefault: 'DDC converters - installed versions and GitHub sources' },
   { id: 'ai',           labelKey: 'settings.tab_ai',           defaultLabel: 'AI',           icon: Sparkles, descKey: 'settings.tab_ai_desc',           descDefault: 'AI provider and semantic search' },
@@ -1257,6 +1261,7 @@ export function SettingsPage() {
         className="animate-card-in"
         srTitle={t('nav.settings', 'Settings')}
         subtitle={t('settings.subtitle', { defaultValue: 'Manage your account and preferences' })}
+        actions={<ModuleGuideButton content={settingsGuide} />}
       />
 
       {/* Canonical module intro — pain-named, copy from MODULE_INTRO_COPY. */}
@@ -1621,6 +1626,9 @@ export function SettingsPage() {
               </Card>
             </>
           )}
+
+          {/* ── TEAM & PLAN ──────────────────────────────────────── */}
+          {activeTab === 'team' && <SettingsTeamPanel />}
 
           {/* ── REGIONAL ─────────────────────────────────────────── */}
           {activeTab === 'regional' && (

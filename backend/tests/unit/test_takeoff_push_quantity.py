@@ -108,3 +108,18 @@ def test_pick_value_handles_malformed_count() -> None:
     ``None`` so the caller logs and skips the push."""
     m = _measurement(type="count", count_value="not-a-number")
     assert _pick_takeoff_value(m) is None
+
+
+def test_pick_value_refuses_an_opening_deduction() -> None:
+    """A deduction (opening / void) carries a positive gross area but only
+    has meaning as a subtraction inside its group's net-area rollup. It must
+    never be pushed into a BOQ position as a standalone quantity, or a void
+    would overwrite a position with the area of the hole."""
+    m = _measurement(type="area", measurement_value=Decimal("2.0"), is_deduction=True)
+    assert _pick_takeoff_value(m) is None
+
+
+def test_pick_value_non_deduction_area_still_pushes() -> None:
+    """A normal area (is_deduction False) is unaffected by the deduction guard."""
+    m = _measurement(type="area", measurement_value=Decimal("37.5"), is_deduction=False)
+    assert _pick_takeoff_value(m) == 37.5

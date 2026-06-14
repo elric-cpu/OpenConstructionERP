@@ -580,6 +580,17 @@ async def _on_variation_completed(event: Event) -> None:
     adjusts the contract's running ``total_value`` by the VO's
     ``delta_amount`` (positive = additive variation, negative = deductive).
     Idempotency is keyed on the VO id stored in ``contract.metadata.variation_ids``.
+
+    Money safety (mirrors ``_on_changeorder_approved_contract``):
+    * Lost-update guard - the contract row is loaded with ``SELECT ... FOR
+      UPDATE`` and the value bump is an atomic ``UPDATE ... SET total_value =
+      total_value + delta`` so a concurrent VO/CO bump can never be lost.
+    * Project guard - the contract link rides on VO data, so a VO in project A
+      could name a contract in project B. Apply only when both agree.
+    * Currency guard - never blend currencies into ``total_value``; a mismatch
+      is recorded in metadata instead of silently dropped.
+    * Amendability guard - terminated / completed contracts are skipped with a
+      log, never raising (a background subscriber must not break the VO flow).
     """
     if not await _can_open_isolated_session():
         return
@@ -592,26 +603,84 @@ async def _on_variation_completed(event: Event) -> None:
     try:
         contract_id = uuid.UUID(str(contract_id_raw))
         delta = Decimal(str(delta_raw))
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, InvalidOperation):
         return
     try:
         async with async_session_factory() as session:
-            from app.modules.contracts.repository import ContractRepository
+            from sqlalchemy import select as sa_select
+            from sqlalchemy import update as sa_update
 
-            repo = ContractRepository(session)
-            contract = await repo.get_by_id(contract_id)
+            from app.modules.contracts.models import Contract
+
+            stmt = sa_select(Contract).where(Contract.id == contract_id).with_for_update()
+            contract = (await session.execute(stmt)).scalar_one_or_none()
             if contract is None:
+                return
+            # Project guard: the contract link arrives via VO data, so a VO in
+            # project A could name a contract that belongs to project B. Only
+            # apply when both sides agree.
+            event_project = data.get("project_id")
+            if not event_project or str(contract.project_id) != str(event_project):
+                logger.warning(
+                    "VO %s completed in project %s but linked contract %s belongs to project %s - not applied",
+                    vo_id_raw,
+                    event_project,
+                    contract_id,
+                    contract.project_id,
+                )
                 return
             md = dict(contract.metadata_ or {})
             applied = list(md.get("variation_ids") or [])
             if str(vo_id_raw) in {str(v) for v in applied}:
                 # Already applied - idempotent skip.
                 return
+            if contract.status in ("terminated", "completed"):
+                # A VO must not rewrite the final agreed value of a closed
+                # contract - same amendability guard as the CO subscriber.
+                logger.info(
+                    "Contract %s is %s - VO %s value not applied (use the final-account amendment workflow)",
+                    contract.code,
+                    contract.status,
+                    vo_id_raw,
+                )
+                return
             applied.append(str(vo_id_raw))
             md["variation_ids"] = applied
+
+            # Currency guard: never blend currencies into total_value. The VO
+            # is still recorded so it is not silently lost - the project team
+            # resolves the mismatch manually.
+            event_currency = str(data.get("currency") or "").strip().upper()
+            contract_currency = str(contract.currency or "").strip().upper()
+            if event_currency and event_currency != contract_currency:
+                skipped = list(md.get("skipped_currency_mismatch") or [])
+                skipped.append(
+                    {
+                        "variation_id": str(vo_id_raw),
+                        "delta_amount": str(delta),
+                        "currency": event_currency,
+                    }
+                )
+                md["skipped_currency_mismatch"] = skipped
+                contract.metadata_ = md
+                await session.commit()
+                logger.warning(
+                    "VO %s completed with currency %s but contract %s is in %s - "
+                    "total_value not bumped (recorded in skipped_currency_mismatch)",
+                    vo_id_raw,
+                    event_currency,
+                    contract.code,
+                    contract_currency or "(unset)",
+                )
+                return
+
             md["variation_total"] = str(Decimal(str(md.get("variation_total") or 0)) + delta)
             contract.metadata_ = md
-            contract.total_value = Decimal(str(contract.total_value or 0)) + delta
+            # Atomic increment - no read-modify-write on the money column,
+            # so a concurrent bump can never be lost.
+            await session.execute(
+                sa_update(Contract).where(Contract.id == contract_id).values(total_value=Contract.total_value + delta)
+            )
             await session.commit()
             logger.info(
                 "Contract %s total_value bumped by %s (VO=%s)",

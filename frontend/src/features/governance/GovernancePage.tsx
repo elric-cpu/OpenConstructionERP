@@ -26,12 +26,13 @@ import { useTranslation } from 'react-i18next';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { ScrollText, ShieldCheck, Workflow, type LucideIcon } from 'lucide-react';
-import { Breadcrumb, DismissibleInfo, IntroRichText } from '@/shared/ui';
+import { Breadcrumb, DismissibleInfo, IntroRichText, ModuleGuideButton } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 import { PermissionsMatrixPage } from '@/features/admin/PermissionsMatrixPage';
 import { ApprovalRoutesPage } from '@/features/approval-routes';
 import { ValidationRulesSettingsPage } from '@/features/property-dev';
+import { governanceGuide } from './governanceGuide';
 
 /* ── Tab definitions ───────────────────────────────────────────────────── */
 
@@ -113,6 +114,7 @@ export function GovernancePage() {
           defaultValue:
             'Roles & permissions, approval routes, and validation rules, in one place.',
         })}
+        actions={<ModuleGuideButton content={governanceGuide} />}
       />
 
       {/* Canonical module intro — pain-named, copy from MODULE_INTRO_COPY. */}

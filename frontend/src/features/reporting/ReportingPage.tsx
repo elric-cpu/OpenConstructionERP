@@ -20,6 +20,7 @@ import {
   Eye,
   X,
   ChevronRight,
+  Download,
 } from 'lucide-react';
 import {
   Breadcrumb,
@@ -28,10 +29,12 @@ import {
   CardContent,
   DismissibleInfo,
   EmptyState,
+  ModuleGuideButton,
   MoneyDisplay,
   Skeleton,
 } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { reportingGuide } from './reportingGuide';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useToastStore } from '@/stores/useToastStore';
@@ -595,19 +598,22 @@ export function ReportingPage() {
           defaultValue: 'Role-based KPI dashboards built from live project data.',
         })}
         actions={
-          canRecalculate && (
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={handleRecalculate}
-              disabled={recalculating}
-              icon={
-                recalculating ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />
-              }
-            >
-              {t('reporting.recalculate', { defaultValue: 'Recalculate KPIs' })}
-            </Button>
-          )
+          <div className="flex items-center gap-2">
+            <ModuleGuideButton content={reportingGuide} />
+            {canRecalculate && (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleRecalculate}
+                disabled={recalculating}
+                icon={
+                  recalculating ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />
+                }
+              >
+                {t('reporting.recalculate', { defaultValue: 'Recalculate KPIs' })}
+              </Button>
+            )}
+          </div>
         }
       />
 
@@ -1779,6 +1785,116 @@ function StatBlock({
 
 /* ── Reports tab — templates + generated reports list ─────────────────────── */
 
+/* ── Report download (PDF / Excel / CSV) ──────────────────────────────────── */
+
+type DownloadFormat = 'pdf' | 'xlsx' | 'csv';
+
+/**
+ * Fetch a generated report as a real downloadable file from
+ * ``GET /v1/reporting/reports/{id}/download/?format=…`` and trigger a browser
+ * save. We bypass apiGet because that helper always parses JSON, whereas this
+ * endpoint streams a binary (PDF / XLSX) or text (CSV) body with a
+ * Content-Disposition: attachment header.
+ *
+ * Auth: the same Bearer-token + blob pattern the ReportViewerModal already
+ * uses for the /content endpoint — a plain anchor href cannot carry the
+ * Authorization header, so we fetch, read the blob, and click a temporary
+ * object-URL anchor. The filename comes from the server's
+ * Content-Disposition when present, else a sensible client-side fallback.
+ */
+async function downloadReport(report: GeneratedReport, format: DownloadFormat): Promise<void> {
+  const token = getAuthToken();
+  const url = `${API_BASE}/v1/reporting/reports/${report.id}/download/?format=${format}`;
+  const res = await fetch(url, {
+    method: 'GET',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      'X-DDC-Client': 'OE/1.0',
+    },
+  });
+  if (!res.ok) {
+    throw new ApiError(res.status, res.statusText, null);
+  }
+  const blob = await res.blob();
+
+  // Prefer the server-provided filename (it already ASCII-sanitises the
+  // report title and appends the correct extension); fall back to a
+  // title-derived name so the saved file is never just a UUID.
+  let filename = `${(report.title || 'report').replace(/[\\/:*?"<>|]+/g, '-')}.${format}`;
+  const disposition = res.headers.get('Content-Disposition');
+  if (disposition) {
+    const match = /filename="?([^"]+)"?/i.exec(disposition);
+    if (match?.[1]) filename = match[1];
+  }
+
+  const objUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = objUrl;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  // Revoke after a tick so the download has been handed to the browser.
+  setTimeout(() => URL.revokeObjectURL(objUrl), 10_000);
+}
+
+/**
+ * The three real-format download buttons shown per generated report row.
+ * Each fires an independent download and surfaces a toast on failure so a
+ * swallowed error never leaves the user staring at a button that did nothing.
+ */
+function ReportDownloadButtons({ report }: { report: GeneratedReport }) {
+  const { t } = useTranslation();
+  const addToast = useToastStore((s) => s.addToast);
+  const [busy, setBusy] = useState<DownloadFormat | null>(null);
+
+  const run = async (format: DownloadFormat) => {
+    setBusy(format);
+    try {
+      await downloadReport(report, format);
+    } catch {
+      addToast({
+        type: 'error',
+        title: t('reporting.download_failed_title', { defaultValue: 'Download failed' }),
+        message: t('reporting.download_failed_msg', {
+          defaultValue: 'Could not download the report. Check your connection and try again.',
+        }),
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const formats: { key: DownloadFormat; label: string }[] = [
+    { key: 'pdf', label: t('reporting.download_pdf', { defaultValue: 'PDF' }) },
+    { key: 'xlsx', label: t('reporting.download_excel', { defaultValue: 'Excel' }) },
+    { key: 'csv', label: t('reporting.download_csv', { defaultValue: 'CSV' }) },
+  ];
+
+  return (
+    <>
+      {formats.map((f) => (
+        <Button
+          key={f.key}
+          variant="ghost"
+          size="sm"
+          onClick={() => run(f.key)}
+          loading={busy === f.key}
+          disabled={busy !== null}
+          icon={busy === f.key ? undefined : <Download size={14} />}
+          aria-label={t('reporting.download_format_aria', {
+            defaultValue: 'Download {{title}} as {{format}}',
+            title: report.title,
+            format: f.label,
+          })}
+        >
+          {f.label}
+        </Button>
+      ))}
+    </>
+  );
+}
+
 function ReportsTab({ project, projects }: { project?: Project; projects: Project[] }) {
   const { t } = useTranslation();
   const [templates, setTemplates] = useState<ReportTemplate[]>([]);
@@ -1997,19 +2113,25 @@ function ReportsTab({ project, projects }: { project?: Project; projects: Projec
                         <td className="px-4 py-3 text-content-secondary">{humanizeReportType(r.report_type)}</td>
                         <td className="px-4 py-3 text-content-secondary uppercase">{r.format}</td>
                         <td className="px-4 py-3 text-content-secondary">{ts}</td>
-                        <td className="px-4 py-3 text-right">
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => setViewing(r)}
-                            aria-label={t('reporting.view_report_aria', {
-                              defaultValue: 'View report: {{title}}',
-                              title: r.title,
-                            })}
-                          >
-                            <Eye size={14} className="mr-1" />
-                            {t('reporting.view', { defaultValue: 'View' })}
-                          </Button>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => setViewing(r)}
+                              aria-label={t('reporting.view_report_aria', {
+                                defaultValue: 'View report: {{title}}',
+                                title: r.title,
+                              })}
+                            >
+                              <Eye size={14} className="mr-1" />
+                              {t('reporting.view', { defaultValue: 'View' })}
+                            </Button>
+                            {/* Real downloadable formats: PDF (executive summary),
+                                Excel + CSV (tabular). Wired to the new
+                                /reports/{id}/download endpoint. */}
+                            <ReportDownloadButtons report={r} />
+                          </div>
                         </td>
                       </tr>
                     );

@@ -28,7 +28,7 @@ import {
   Loader2,
   Network,
 } from 'lucide-react';
-import { Card, CardHeader, CardContent, Button, Badge, EmptyState, Skeleton, Breadcrumb, DismissibleInfo, IntroRichText } from '@/shared/ui';
+import { Card, CardHeader, CardContent, Button, Badge, EmptyState, Skeleton, Breadcrumb, DismissibleInfo, IntroRichText, ModuleGuideButton } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { PlanningCrossLinks } from '@/features/schedule/PlanningCrossLinks';
 import { apiGet, apiPost, apiPatch } from '@/shared/lib/api';
@@ -43,6 +43,7 @@ import {
 } from './api';
 import { CostBenchmark } from './CostBenchmark';
 import { CostSpinePanel } from './CostSpinePanel';
+import { costmodelGuide } from './costmodelGuide';
 import { BudgetLineThresholdEditor, parseThreshold } from './BudgetLineThresholdEditor';
 import { getIntlLocale } from '@/shared/lib/formatters';
 
@@ -2786,6 +2787,7 @@ export function CostModelPage() {
           'costmodel.hero_desc',
           'Earned Value Management with S-curves, cash flow forecasting, Monte Carlo risk simulation, and what-if scenario analysis. Transform your BOQ estimate into a living cost control dashboard.',
         )}
+        actions={<ModuleGuideButton content={costmodelGuide} />}
       />
 
       {/* Cross-module navigation strip renders below the header (canon S4) */}

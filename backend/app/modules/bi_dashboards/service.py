@@ -197,12 +197,20 @@ class BIDashboardsService:
         persist: bool = False,
         include_trend: bool = True,
         include_benchmark: bool = True,
+        allowed_project_ids: set[uuid.UUID] | None = None,
     ) -> KPIComputeResponse:
         """Compute a KPI on-demand.
 
         Optionally:
             * ``persist``: writes to :class:`KPIValue` for trend history
             * ``include_benchmark``: also returns portfolio median + percentile
+
+        ``allowed_project_ids`` scopes a portfolio call (``project_id is
+        None``) to the caller's accessible projects (IDOR defence). It is
+        forwarded to the KPI formulas and to the trend-history query so a
+        non-admin never aggregates over projects they cannot access. ``None``
+        means unrestricted (admin), or a single-project call already gated by
+        ``verify_project_access``.
         """
         result = await _kpis.compute(
             code,
@@ -211,6 +219,7 @@ class BIDashboardsService:
             period_start=period_start,
             period_end=period_end,
             filters=filters,
+            allowed_project_ids=allowed_project_ids,
         )
         now = _now()
         if persist and result.source_record_count > 0:
@@ -241,6 +250,7 @@ class BIDashboardsService:
                 code,
                 project_id=project_id,
                 limit=12,
+                allowed_project_ids=allowed_project_ids,
             )
             trend = [
                 {
@@ -280,11 +290,13 @@ class BIDashboardsService:
         *,
         project_id: uuid.UUID | None = None,
         limit: int = 12,
+        allowed_project_ids: set[uuid.UUID] | None = None,
     ) -> list[KPIHistoryPoint]:
         rows = await self.repo.list_kpi_values(
             code,
             project_id=project_id,
             limit=limit,
+            allowed_project_ids=allowed_project_ids,
         )
         return [
             KPIHistoryPoint(
@@ -1183,6 +1195,7 @@ class BIDashboardsService:
         filters: dict[str, Any] | None = None,
         depth: int = 1,
         limit: int = 100,
+        allowed_project_ids: set[uuid.UUID] | None = None,
     ) -> dict[str, Any]:
         """Return underlying records that fed the aggregate.
 
@@ -1196,6 +1209,12 @@ class BIDashboardsService:
         the caller requested - previously these request fields were
         silently dropped, so a period-filtered drill-down returned the
         all-time aggregate, contradicting its own row list.
+
+        ``allowed_project_ids`` scopes a portfolio drill-down
+        (``project_id is None``) to the caller's accessible projects (IDOR
+        defence) - the aggregate, the provider rows and the history fallback
+        all honour it. ``None`` means unrestricted (admin / already-gated
+        single project).
         """
         result = await _kpis.compute(
             code,
@@ -1204,6 +1223,7 @@ class BIDashboardsService:
             period_start=period_start,
             period_end=period_end,
             filters=filters,
+            allowed_project_ids=allowed_project_ids,
         )
         # Real records from the registered provider
         records: list[dict[str, Any]] = await _kpis.drilldown(
@@ -1211,6 +1231,7 @@ class BIDashboardsService:
             self.session,
             project_id=project_id,
             limit=limit,
+            allowed_project_ids=allowed_project_ids,
         )
         if not records:
             # Fallback: synthesise rows from the breakdown + history
@@ -1220,6 +1241,7 @@ class BIDashboardsService:
                 code,
                 project_id=project_id,
                 limit=depth * 12,
+                allowed_project_ids=allowed_project_ids,
             )
             for h in history:
                 records.append(

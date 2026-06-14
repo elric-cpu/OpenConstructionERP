@@ -34,6 +34,7 @@ import {
   WideModalSection,
   WideModalField,
   IntroRichText,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { PageHeader } from '@/shared/ui/PageHeader';
@@ -84,6 +85,7 @@ import {
 } from './api';
 import { HoldPointDependencyTree } from './HoldPointDependencyTree';
 import { AttachmentEvidenceGallery } from './AttachmentEvidenceGallery';
+import { qmsGuide } from './qmsGuide';
 import { listVariationOrders } from '@/features/variations/api';
 
 type Tab = 'itp' | 'inspections' | 'ncrs' | 'punch' | 'audits';
@@ -270,9 +272,12 @@ export function QMSPage() {
           defaultValue: 'ITP plans, inspections, NCRs, punch list and audits in one place.',
         })}
         actions={
-          <Button variant="primary" size="sm" icon={<Plus size={14} />} onClick={() => setCreateOpen(true)} disabled={!projectId}>
-            {tabCreateLabel(tab, t)}
-          </Button>
+          <>
+            <ModuleGuideButton content={qmsGuide} />
+            <Button variant="primary" size="sm" icon={<Plus size={14} />} onClick={() => setCreateOpen(true)} disabled={!projectId}>
+              {tabCreateLabel(tab, t)}
+            </Button>
+          </>
         }
       />
 

@@ -651,6 +651,81 @@ class ReportingService:
             ) from exc
         return report, blob.decode("utf-8")
 
+    async def export_report_file(
+        self,
+        report_id: uuid.UUID,
+        fmt: str,
+    ) -> tuple[str, str, bytes]:
+        """Render a generated report into a downloadable file (pdf/xlsx/csv/html).
+
+        Returns ``(filename, media_type, file_bytes)`` ready to stream back
+        with a ``Content-Disposition: attachment`` header.
+
+        The report's persisted ``data_snapshot`` is the source of truth - it
+        is the same per-section dict the HTML renderer consumes and already
+        carries money as currency-stamped strings (no float). The bound
+        template's ``template_data`` (if any) drives section ordering so a
+        downloaded file matches the on-screen HTML view. The currency shown
+        in the file is the code stamped on the row at generation time
+        (override > project > EUR), so a downloaded report can never read in
+        a different currency than the one it was generated under.
+
+        Tenant scoping: this method does NOT itself gate on project access -
+        the caller (router) resolves the report, then calls
+        ``verify_project_access`` on ``report.project_id`` before invoking
+        this, exactly like ``get_report_content`` / ``get_report``. Raises
+        404 when the report id is unknown.
+        """
+        from app.modules.reporting.exporters import ExportFormatError, export_report
+
+        report = await self.get_report(report_id)
+
+        # Resolve the bound template's section config (best-effort): a missing
+        # or deleted template simply falls back to the renderer's default
+        # section list for the report type.
+        template_data: dict | None = None
+        if report.template_id is not None:
+            try:
+                template = await self.template_repo.get_by_id(report.template_id)
+                if template is not None:
+                    template_data = template.template_data
+            except Exception:
+                logger.debug(
+                    "export_report_file: template lookup failed for report %s",
+                    report_id,
+                    exc_info=True,
+                )
+
+        project_name = await self._lookup_project_name(report.project_id)
+
+        # For HTML we prefer the already-rendered-and-stored body so the
+        # download byte-for-byte matches the on-screen view; if it was never
+        # stored the exporter re-renders from the snapshot.
+        html_body: str | None = None
+        if fmt.strip().lower() == "html" and report.storage_key:
+            try:
+                _, html_body = await self.get_report_content(report_id)
+            except HTTPException:
+                html_body = None
+
+        try:
+            return export_report(
+                fmt=fmt,
+                report_type=report.report_type,
+                title=report.title,
+                project_name=project_name,
+                currency=report.currency or "",
+                generated_at=report.generated_at,
+                template_data=template_data,
+                data_snapshot=report.data_snapshot,
+                html_body=html_body,
+            )
+        except ExportFormatError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
+
     async def dispatch_report_email(
         self,
         report: GeneratedReport,

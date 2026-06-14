@@ -43,7 +43,12 @@ import {
 } from 'lucide-react';
 
 import { ApiError } from '@/shared/lib/api';
-import { BetaBanner, DismissibleInfo, ModuleHelpButton } from '@/shared/ui';
+import {
+  BetaBanner,
+  DismissibleInfo,
+  ModuleGuideButton,
+  ModuleHelpButton,
+} from '@/shared/ui';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useToastStore } from '@/stores/useToastStore';
 
@@ -55,6 +60,7 @@ import type {
   GeoSceneMode,
   GeoSearchPin,
 } from './CesiumViewer';
+import { geoHubGuide } from './geoHubGuide';
 import { GeoModePicker } from './GeoModePicker';
 import { GeoOverlayHud } from './GeoOverlayHud';
 import { GeoSceneModePicker } from './GeoSceneModePicker';
@@ -846,6 +852,8 @@ export function GeoHubPage() {
         <div className="ml-auto flex items-center gap-2">
           <GeoSceneModePicker current={sceneMode} onChange={setSceneMode} />
           <GeoModePicker current="global" projectId={activeProjectId} />
+          {/* "How it works" explainer, a concept-level companion to the Tour. */}
+          <ModuleGuideButton content={geoHubGuide} />
           {/* Per-module Tour CTA — launches the Geo Hub-specific tour. */}
           <ModuleHelpButton tourId="geo" />
         </div>

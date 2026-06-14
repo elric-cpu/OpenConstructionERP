@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo, Fragment } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
@@ -9,6 +9,7 @@ import {
   Coins,
   Loader2,
   ChevronRight,
+  ChevronDown,
   CheckCircle2,
   Send,
   BookCheck,
@@ -16,12 +17,16 @@ import {
   Download,
   ExternalLink,
   AlertTriangle,
+  MinusCircle,
+  Trash2,
+  HandCoins,
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Button,
   Card,
   Badge,
+  Input,
   DismissibleInfo,
   IntroRichText,
   EmptyState,
@@ -29,8 +34,10 @@ import {
   ConfirmDialog,
   DateDisplay,
   Skeleton,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { payrollGuide } from './payrollGuide';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
@@ -45,8 +52,19 @@ import {
   reconcileBatch,
   downloadBatchExport,
   fetchLabourCost,
+  addDeduction,
+  removeDeduction,
 } from './api';
-import type { PayrollBatch, Reconciliation } from './api';
+import type {
+  PayrollBatch,
+  PayrollBatchDetail,
+  PayrollEntry,
+  PayrollDeduction,
+  Reconciliation,
+  DeductionType,
+  DeductionMode,
+  AddDeductionPayload,
+} from './api';
 
 /* ── Helpers ───────────────────────────────────────────────────────────── */
 
@@ -68,6 +86,196 @@ function money(value: string | number, currency?: string): string {
 function hours(value: string): string {
   const n = Number(value);
   return Number.isFinite(n) ? n.toFixed(2) : value;
+}
+
+/* ── Deduction editor (per payslip / entry) ────────────────────────────── */
+
+const DEDUCTION_TYPES: DeductionType[] = ['tax', 'social', 'pension', 'other'];
+
+/** Tailwind classes mirroring the design-system Input, for native selects. */
+const SELECT_CLASS =
+  'h-9 rounded-lg border border-border bg-surface-primary px-2 text-sm text-content-primary ' +
+  'transition-all duration-normal ease-oe hover:border-content-tertiary ' +
+  'focus:outline-none focus:ring-2 focus:ring-oe-blue/30 focus:border-oe-blue';
+
+interface DeductionEditorProps {
+  entry: PayrollEntry;
+  currency?: string;
+  /** Editing is only allowed while the batch is draft/submitted. */
+  editable: boolean;
+  onAdd: (entryId: string, payload: AddDeductionPayload) => void;
+  onRemove: (entryId: string, deductionId: string) => void;
+  busy: boolean;
+}
+
+function DeductionEditor({
+  entry,
+  currency,
+  editable,
+  onAdd,
+  onRemove,
+  busy,
+}: DeductionEditorProps) {
+  const { t } = useTranslation();
+  const [label, setLabel] = useState('');
+  const [type, setType] = useState<DeductionType>('tax');
+  const [mode, setMode] = useState<DeductionMode>('fixed');
+  const [value, setValue] = useState('');
+
+  const deductions = entry.deductions ?? [];
+
+  const typeLabel = useCallback(
+    (dt: string): string =>
+      t(`payroll.deduction_type.${dt}`, {
+        defaultValue: dt.charAt(0).toUpperCase() + dt.slice(1),
+      }),
+    [t],
+  );
+
+  const canSubmit = label.trim().length > 0 && Number(value) > 0 && !busy;
+
+  const handleAdd = useCallback(() => {
+    if (!canSubmit) return;
+    onAdd(entry.id, {
+      label: label.trim(),
+      deduction_type: type,
+      mode,
+      value: String(value),
+    });
+    // Reset the inline form for the next line.
+    setLabel('');
+    setValue('');
+  }, [canSubmit, onAdd, entry.id, label, type, mode, value]);
+
+  return (
+    <div className="space-y-3 rounded-lg bg-surface-secondary/60 p-3">
+      {deductions.length === 0 ? (
+        <p className="text-xs text-content-tertiary">
+          {t('payroll.no_deductions', {
+            defaultValue: 'No deductions on this payslip - net equals gross.',
+          })}
+        </p>
+      ) : (
+        <ul className="space-y-1">
+          {deductions.map((d: PayrollDeduction) => (
+            <li
+              key={d.id}
+              className="flex items-center justify-between gap-2 rounded-md bg-surface-primary px-2 py-1.5 text-xs"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <Badge variant="neutral">{typeLabel(d.deduction_type)}</Badge>
+                <span className="truncate text-content-primary">{d.label}</span>
+                {d.mode === 'percentage' && (
+                  <span className="text-content-tertiary">
+                    {t('payroll.deduction_pct_of_base', {
+                      defaultValue: '{{pct}}% of {{base}}',
+                      pct: Number(d.value),
+                      base: money(d.base_amount, currency),
+                    })}
+                  </span>
+                )}
+              </span>
+              <span className="flex items-center gap-2 whitespace-nowrap">
+                <span className="font-medium tabular-nums text-content-primary">
+                  -{money(d.amount, currency)}
+                </span>
+                {editable && (
+                  <button
+                    type="button"
+                    onClick={() => onRemove(entry.id, d.id)}
+                    disabled={busy}
+                    className="text-content-tertiary transition hover:text-semantic-error disabled:opacity-40"
+                    aria-label={t('payroll.remove_deduction', {
+                      defaultValue: 'Remove deduction',
+                    })}
+                    title={t('payroll.remove_deduction', { defaultValue: 'Remove deduction' })}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {editable && (
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="min-w-[8rem] flex-1">
+            <Input
+              label={t('payroll.deduction_label', { defaultValue: 'Label' })}
+              value={label}
+              onChange={(e) => setLabel(e.target.value)}
+              placeholder={t('payroll.deduction_label_ph', {
+                defaultValue: 'e.g. Income tax',
+              })}
+              maxLength={160}
+            />
+          </div>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-content-primary">
+              {t('payroll.deduction_type_label', { defaultValue: 'Type' })}
+            </span>
+            <select
+              className={SELECT_CLASS}
+              value={type}
+              onChange={(e) => setType(e.target.value as DeductionType)}
+              aria-label={t('payroll.deduction_type_label', { defaultValue: 'Type' })}
+            >
+              {DEDUCTION_TYPES.map((dt) => (
+                <option key={dt} value={dt}>
+                  {typeLabel(dt)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-content-primary">
+              {t('payroll.deduction_mode_label', { defaultValue: 'Mode' })}
+            </span>
+            <select
+              className={SELECT_CLASS}
+              value={mode}
+              onChange={(e) => setMode(e.target.value as DeductionMode)}
+              aria-label={t('payroll.deduction_mode_label', { defaultValue: 'Mode' })}
+            >
+              <option value="fixed">
+                {t('payroll.deduction_mode.fixed', { defaultValue: 'Fixed amount' })}
+              </option>
+              <option value="percentage">
+                {t('payroll.deduction_mode.percentage', { defaultValue: 'Percent of gross' })}
+              </option>
+            </select>
+          </label>
+          <div className="w-28">
+            <Input
+              label={
+                mode === 'percentage'
+                  ? t('payroll.deduction_percent', { defaultValue: 'Percent' })
+                  : t('payroll.deduction_amount', { defaultValue: 'Amount' })
+              }
+              type="number"
+              min="0"
+              step="0.01"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              suffix={mode === 'percentage' ? <span className="text-xs">%</span> : undefined}
+            />
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleAdd}
+            disabled={!canSubmit}
+            aria-label={t('payroll.add_deduction', { defaultValue: 'Add deduction' })}
+          >
+            <Plus size={14} />
+            {t('payroll.add_deduction', { defaultValue: 'Add deduction' })}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /* ── Page ──────────────────────────────────────────────────────────────── */
@@ -184,6 +392,55 @@ export default function PayrollPage() {
     onError: (err) => addToast({ type: 'error', title: t('common.error', { defaultValue: 'Error' }), message: getErrorMessage(err) }),
   });
 
+  // Track which payslip rows have their deduction editor expanded.
+  const [expandedEntries, setExpandedEntries] = useState<Record<string, boolean>>({});
+  const toggleEntry = useCallback((entryId: string) => {
+    setExpandedEntries((prev) => ({ ...prev, [entryId]: !prev[entryId] }));
+  }, []);
+
+  const addDeductionMut = useMutation({
+    mutationFn: ({ entryId, payload }: { entryId: string; payload: AddDeductionPayload }) =>
+      addDeduction(selectedBatchId as string, entryId, payload),
+    onSuccess: () => {
+      addToast({
+        type: 'success',
+        title: '',
+        message: t('payroll.deduction_added', { defaultValue: 'Deduction added.' }),
+      });
+      if (selectedBatchId) invalidateBatch(selectedBatchId);
+    },
+    onError: (err) =>
+      addToast({ type: 'error', title: t('common.error', { defaultValue: 'Error' }), message: getErrorMessage(err) }),
+  });
+
+  const removeDeductionMut = useMutation({
+    mutationFn: ({ entryId, deductionId }: { entryId: string; deductionId: string }) =>
+      removeDeduction(selectedBatchId as string, entryId, deductionId),
+    onSuccess: () => {
+      addToast({
+        type: 'success',
+        title: '',
+        message: t('payroll.deduction_removed', { defaultValue: 'Deduction removed.' }),
+      });
+      if (selectedBatchId) invalidateBatch(selectedBatchId);
+    },
+    onError: (err) =>
+      addToast({ type: 'error', title: t('common.error', { defaultValue: 'Error' }), message: getErrorMessage(err) }),
+  });
+
+  const handleAddDeduction = useCallback(
+    (entryId: string, payload: AddDeductionPayload) => {
+      addDeductionMut.mutate({ entryId, payload });
+    },
+    [addDeductionMut],
+  );
+  const handleRemoveDeduction = useCallback(
+    (entryId: string, deductionId: string) => {
+      removeDeductionMut.mutate({ entryId, deductionId });
+    },
+    [removeDeductionMut],
+  );
+
   const handleExport = useCallback(
     async (batchId: string, format: 'csv' | 'json') => {
       try {
@@ -200,10 +457,25 @@ export default function PayrollPage() {
     setReconciliation(null);
   }, []);
 
-  const selectedBatch = batchDetailQuery.data ?? null;
+  const selectedBatch: PayrollBatchDetail | null = batchDetailQuery.data ?? null;
   const canSubmit = selectedBatch?.status === 'draft';
   const canFinalize = selectedBatch?.status === 'draft' || selectedBatch?.status === 'submitted';
   const canPost = selectedBatch?.status === 'approved';
+  // Deductions can only be edited while money has not moved (draft/submitted).
+  const deductionsEditable =
+    selectedBatch?.status === 'draft' || selectedBatch?.status === 'submitted';
+  const deductionBusy = addDeductionMut.isPending || removeDeductionMut.isPending;
+
+  // Net-pay rollup for the selected batch (gross / deductions / net).
+  const netSummary = useMemo(() => {
+    if (!selectedBatch) return null;
+    return {
+      gross: selectedBatch.total_amount,
+      deductions: selectedBatch.total_deductions,
+      net: selectedBatch.total_net,
+      currency: selectedBatch.currency || undefined,
+    };
+  }, [selectedBatch]);
 
   const handleConfirmFinalize = useCallback(() => {
     if (!selectedBatchId) return;
@@ -243,16 +515,19 @@ export default function PayrollPage() {
           defaultValue: 'Aggregate field labour into pay batches, finalize and post to the cost model.',
         })}
         actions={
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => generateMut.mutate()}
-            disabled={!projectId || generateMut.isPending}
-            aria-label={t('payroll.generate', { defaultValue: 'Generate draft batch' })}
-          >
-            {generateMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus size={14} />}
-            {t('payroll.generate', { defaultValue: 'Generate draft batch' })}
-          </Button>
+          <>
+            <ModuleGuideButton content={payrollGuide} />
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => generateMut.mutate()}
+              disabled={!projectId || generateMut.isPending}
+              aria-label={t('payroll.generate', { defaultValue: 'Generate draft batch' })}
+            >
+              {generateMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus size={14} />}
+              {t('payroll.generate', { defaultValue: 'Generate draft batch' })}
+            </Button>
+          </>
         }
       />
 
@@ -510,6 +785,36 @@ export default function PayrollPage() {
               )}
             </div>
           )}
+          {netSummary && (
+            <div className="grid grid-cols-3 gap-2 border-b border-border-subtle px-4 py-3">
+              <div>
+                <p className="text-2xs uppercase tracking-wide text-content-tertiary">
+                  {t('payroll.summary_gross', { defaultValue: 'Gross' })}
+                </p>
+                <p className="text-sm font-semibold tabular-nums text-content-primary">
+                  {money(netSummary.gross, netSummary.currency)}
+                </p>
+              </div>
+              <div>
+                <p className="flex items-center gap-1 text-2xs uppercase tracking-wide text-content-tertiary">
+                  <MinusCircle size={11} />
+                  {t('payroll.summary_deductions', { defaultValue: 'Deductions' })}
+                </p>
+                <p className="text-sm font-semibold tabular-nums text-content-primary">
+                  {money(netSummary.deductions, netSummary.currency)}
+                </p>
+              </div>
+              <div>
+                <p className="flex items-center gap-1 text-2xs uppercase tracking-wide text-content-tertiary">
+                  <HandCoins size={11} />
+                  {t('payroll.summary_net', { defaultValue: 'Net pay' })}
+                </p>
+                <p className="text-sm font-semibold tabular-nums text-oe-blue">
+                  {money(netSummary.net, netSummary.currency)}
+                </p>
+              </div>
+            </div>
+          )}
           {reconciliation && reconciliation.batch_id === selectedBatchId && (
             <div className="border-b border-border-subtle px-4 py-3">
               <div className="mb-2 flex items-center gap-2 text-sm font-medium">
@@ -569,43 +874,87 @@ export default function PayrollPage() {
                     <th className="px-4 py-2">{t('payroll.col.date', { defaultValue: 'Date' })}</th>
                     <th className="px-4 py-2 text-right">{t('payroll.col.hours', { defaultValue: 'Hours' })}</th>
                     <th className="px-4 py-2 text-right">{t('payroll.col.rate', { defaultValue: 'Rate' })}</th>
-                    <th className="px-4 py-2 text-right">{t('payroll.col.amount', { defaultValue: 'Amount' })}</th>
+                    <th className="px-4 py-2 text-right">{t('payroll.col.amount', { defaultValue: 'Gross' })}</th>
+                    <th className="px-4 py-2 text-right">{t('payroll.col.deductions', { defaultValue: 'Deductions' })}</th>
+                    <th className="px-4 py-2 text-right">{t('payroll.col.net', { defaultValue: 'Net' })}</th>
+                    <th className="px-4 py-2 w-10" aria-hidden="true" />
                   </tr>
                 </thead>
                 <tbody>
-                  {(batchDetailQuery.data?.entries ?? []).map((e) => (
-                    <tr key={e.id} className="border-b border-border-subtle/60">
-                      <td className="px-4 py-2 text-content-primary">
-                        {e.resource_id ? (
-                          <Link
-                            to={`/resources?resourceId=${encodeURIComponent(e.resource_id)}`}
-                            className="inline-flex items-center gap-1 text-oe-blue hover:underline"
-                            title={t('payroll.open_resource', {
-                              defaultValue: 'Open in Resources & Crew',
-                            })}
-                          >
-                            {e.worker}
-                            <ExternalLink size={11} className="opacity-70" />
-                          </Link>
-                        ) : (
-                          e.worker
+                  {(batchDetailQuery.data?.entries ?? []).map((e) => {
+                    const ccy = e.currency || undefined;
+                    const dedTotal = (e.deductions ?? []).reduce(
+                      (sum, d) => sum + (Number(d.amount) || 0),
+                      0,
+                    );
+                    const dedCount = (e.deductions ?? []).length;
+                    const isOpen = Boolean(expandedEntries[e.id]);
+                    return (
+                      <Fragment key={e.id}>
+                        <tr className="border-b border-border-subtle/60">
+                          <td className="px-4 py-2 text-content-primary">
+                            {e.resource_id ? (
+                              <Link
+                                to={`/resources?resourceId=${encodeURIComponent(e.resource_id)}`}
+                                className="inline-flex items-center gap-1 text-oe-blue hover:underline"
+                                title={t('payroll.open_resource', {
+                                  defaultValue: 'Open in Resources & Crew',
+                                })}
+                              >
+                                {e.worker}
+                                <ExternalLink size={11} className="opacity-70" />
+                              </Link>
+                            ) : (
+                              e.worker
+                            )}
+                          </td>
+                          <td className="px-4 py-2 text-content-secondary">
+                            {e.work_date ? <DateDisplay value={e.work_date} format="date" /> : '-'}
+                          </td>
+                          <td className="px-4 py-2 text-right tabular-nums">{hours(e.hours)}</td>
+                          <td className="px-4 py-2 text-right tabular-nums">{money(e.rate, ccy)}</td>
+                          <td className="px-4 py-2 text-right tabular-nums">{money(e.amount, ccy)}</td>
+                          <td className="px-4 py-2 text-right tabular-nums text-content-secondary">
+                            {dedTotal > 0 ? `-${money(dedTotal, ccy)}` : '-'}
+                          </td>
+                          <td className="px-4 py-2 text-right font-medium tabular-nums text-content-primary">
+                            {money(e.net_amount, ccy)}
+                          </td>
+                          <td className="px-2 py-2 text-right">
+                            <button
+                              type="button"
+                              onClick={() => toggleEntry(e.id)}
+                              className="inline-flex items-center gap-0.5 rounded-md px-1.5 py-1 text-xs text-content-tertiary transition hover:bg-surface-hover hover:text-content-primary"
+                              aria-expanded={isOpen}
+                              aria-label={t('payroll.toggle_deductions', {
+                                defaultValue: 'Show deductions',
+                              })}
+                            >
+                              {dedCount > 0 && <span className="tabular-nums">{dedCount}</span>}
+                              {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                            </button>
+                          </td>
+                        </tr>
+                        {isOpen && (
+                          <tr className="border-b border-border-subtle/60 bg-surface-secondary/30">
+                            <td colSpan={8} className="px-4 py-3">
+                              <DeductionEditor
+                                entry={e}
+                                currency={ccy}
+                                editable={deductionsEditable}
+                                onAdd={handleAddDeduction}
+                                onRemove={handleRemoveDeduction}
+                                busy={deductionBusy}
+                              />
+                            </td>
+                          </tr>
                         )}
-                      </td>
-                      <td className="px-4 py-2 text-content-secondary">
-                        {e.work_date ? <DateDisplay value={e.work_date} format="date" /> : '-'}
-                      </td>
-                      <td className="px-4 py-2 text-right tabular-nums">{hours(e.hours)}</td>
-                      <td className="px-4 py-2 text-right tabular-nums">
-                        {money(e.rate, e.currency || undefined)}
-                      </td>
-                      <td className="px-4 py-2 text-right font-medium tabular-nums">
-                        {money(e.amount, e.currency || undefined)}
-                      </td>
-                    </tr>
-                  ))}
+                      </Fragment>
+                    );
+                  })}
                   {(batchDetailQuery.data?.entries ?? []).length === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-4 py-6 text-center text-content-tertiary">
+                      <td colSpan={8} className="px-4 py-6 text-center text-content-tertiary">
                         {t('payroll.no_entries', { defaultValue: 'This batch has no entries.' })}
                       </td>
                     </tr>

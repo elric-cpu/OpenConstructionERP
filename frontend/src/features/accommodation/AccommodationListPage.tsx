@@ -48,6 +48,7 @@ import {
   RecoveryCard,
   Breadcrumb,
   ModuleHelpButton,
+  ModuleGuideButton,
   SkeletonGrid,
 } from '@/shared/ui';
 import {
@@ -69,6 +70,7 @@ import {
   type AccommodationKind,
 } from './api';
 import { HrAutobookModal } from './HrAutobookModal';
+import { accommodationGuide } from './accommodationGuide';
 
 type KindFilter = 'all' | AccommodationKind;
 
@@ -228,6 +230,7 @@ export function AccommodationListPage() {
         })}
         actions={
           <>
+            <ModuleGuideButton content={accommodationGuide} />
             <ModuleHelpButton tourId="accommodation" />
             <Button
               variant="ghost"

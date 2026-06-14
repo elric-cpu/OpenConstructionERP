@@ -1080,10 +1080,16 @@ class TestLedgerDoubleEntry:
         assert debit_orig.is_reversal is False
         assert credit_orig.is_reversal is False
 
-        # Now wire a fake execute() that returns the originals for the
-        # reverse_ledger_transaction lookup.
+        # Now wire a fake execute() for the reverse_ledger_transaction lookups.
+        # reverse_ledger_transaction queries in order: (1) "is this already
+        # reversed?" - must be empty so the reversal proceeds, then (2) the
+        # originals to mirror - returns the original pair.
+        calls = {"n": 0}
+
         async def _fake_execute(stmt: Any) -> Any:
-            return SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [debit_orig, credit_orig]))
+            calls["n"] += 1
+            rows = [] if calls["n"] == 1 else [debit_orig, credit_orig]
+            return SimpleNamespace(scalars=lambda rows=rows: SimpleNamespace(all=lambda: rows))
 
         svc.session.execute = _fake_execute  # type: ignore[method-assign]
 

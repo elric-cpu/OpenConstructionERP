@@ -242,12 +242,23 @@ async def _verify_buyer_owner(
 
 @router.get("/developments/", response_model=list[DevelopmentResponse])
 async def list_developments(
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     service: PropertyDevService = Depends(_svc),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> list[DevelopmentResponse]:
-    rows, _ = await service.developments.list_all(offset=offset, limit=limit)
+    # Cross-tenant IDOR gate: ``list_all`` had no WHERE clause and returned
+    # every tenant's developments. Scope the listing to the caller's
+    # accessible developments (development -> project owner). Admins get the
+    # unscoped listing (``dev_ids=None``); a non-admin with no accessible
+    # developments gets an empty list rather than every tenant's rows.
+    is_admin = user_payload.get("role") == "admin"
+    dev_ids: list[uuid.UUID] | None = None
+    if not is_admin:
+        dev_ids = await _list_accessible_dev_ids(session, user_payload)
+    rows, _ = await service.developments.list_all(offset=offset, limit=limit, dev_ids=dev_ids)
     return [DevelopmentResponse.model_validate(r) for r in rows]
 
 
@@ -948,10 +959,19 @@ async def contract_buyer(
 
 @router.get("/selections/", response_model=list[BuyerSelectionResponse])
 async def list_selections(
+    session: SessionDep,
+    user_payload: CurrentUserPayload,
     buyer_id: uuid.UUID = Query(...),
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> list[BuyerSelectionResponse]:
+    # Cross-tenant IDOR gate: ``list_for_buyer`` filters by buyer_id only,
+    # so without this check any caller with ``property_dev.read`` could
+    # read another tenant's buyer selections by guessing the buyer UUID.
+    # Verify the buyer's development belongs to a project the caller owns
+    # (admins bypass); 404 on cross-tenant access so we never leak the
+    # existence of other tenants' buyer UUIDs.
+    await _verify_owner_via_buyer(session, buyer_id, user_payload)
     rows = await service.selections.list_for_buyer(buyer_id)
     return [BuyerSelectionResponse.model_validate(r) for r in rows]
 
@@ -3501,12 +3521,27 @@ def _ensure_broker_owner(broker: Any, payload: dict[str, Any]) -> None:
     response_model=list[CommissionAgreementResponse],
 )
 async def list_commission_agreements(
+    session: SessionDep,
+    payload: CurrentUserPayload,
     broker_id: uuid.UUID | None = Query(default=None),
     development_id: uuid.UUID | None = Query(default=None),
     on_date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
     service: PropertyDevService = Depends(_svc),
     _perm: None = Depends(RequirePermission("property_dev.read")),
 ) -> list[CommissionAgreementResponse]:
+    # Cross-tenant IDOR gate: previously this endpoint took no caller and
+    # ran no ownership check, so any user with ``property_dev.read`` could
+    # enumerate another tenant's commission agreements by broker or
+    # development UUID. Verify ownership of whatever scope the caller
+    # passed (admins bypass inside the helpers); a request with no scope
+    # at all returns nothing rather than every tenant's agreements. 404 on
+    # cross-tenant access keeps the endpoint from being an existence oracle.
+    if broker_id is not None:
+        broker = await service.get_broker(broker_id)
+        _ensure_broker_owner(broker, payload)
+    if development_id is not None:
+        await _verify_owner_via_development(session, development_id, payload)
+
     if broker_id is not None and on_date is not None:
         rows = await service.commission_agreements.list_active_for_broker(
             broker_id,

@@ -7,10 +7,82 @@ never loses cents to binary-float rounding. The frontend parses them with
 """
 
 from datetime import datetime
-from typing import Any
+from decimal import Decimal, InvalidOperation
+from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+# Allowed coarse buckets (display/grouping only - NOT tax rules) and value modes.
+DeductionType = Literal["tax", "social", "pension", "other"]
+DeductionMode = Literal["fixed", "percentage"]
+
+
+class PayrollDeductionResponse(BaseModel):
+    """A single withholding line on a payslip returned from the API."""
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    entry_id: UUID
+    label: str
+    deduction_type: str
+    mode: str
+    value: str
+    base_amount: str
+    amount: str
+    currency: str
+    ordinal: int
+    metadata: dict[str, Any] = Field(default_factory=dict, alias="metadata_")
+    created_at: datetime
+    updated_at: datetime
+
+
+class PayrollDeductionCreate(BaseModel):
+    """Request body to add a deduction line to a payslip (entry).
+
+    The amount is derived server-side: a ``fixed`` deduction uses ``value`` as
+    the sum; a ``percentage`` deduction applies ``value`` percent to
+    ``base_amount`` (or the entry gross when ``base_amount`` is omitted). The
+    platform never supplies tax rates - the caller enters them.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="ignore")
+
+    label: str = Field(min_length=1, max_length=160)
+    deduction_type: DeductionType = "other"
+    mode: DeductionMode = "fixed"
+    # Decimal-as-string in / out: a non-negative fixed amount, or a percentage
+    # in [0, 100] when ``mode='percentage'``.
+    value: str = Field(default="0", max_length=50)
+    # Optional explicit base for a percentage deduction. When omitted/blank the
+    # service uses the parent entry's gross amount.
+    base_amount: str | None = Field(default=None, max_length=50)
+
+    @field_validator("value")
+    @classmethod
+    def _validate_value(cls, v: str) -> str:
+        """Reject non-numeric / negative / non-finite values up front."""
+        try:
+            d = Decimal(str(v))
+        except (InvalidOperation, ValueError, TypeError) as exc:
+            raise ValueError("value must be a number") from exc
+        if not d.is_finite() or d < 0:
+            raise ValueError("value must be a non-negative finite number")
+        return str(d)
+
+    @field_validator("base_amount")
+    @classmethod
+    def _validate_base(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return None
+        try:
+            d = Decimal(str(v))
+        except (InvalidOperation, ValueError, TypeError) as exc:
+            raise ValueError("base_amount must be a number") from exc
+        if not d.is_finite() or d < 0:
+            raise ValueError("base_amount must be a non-negative finite number")
+        return str(d)
 
 
 class PayrollBatchGenerate(BaseModel):
@@ -38,10 +110,13 @@ class PayrollEntryResponse(BaseModel):
     work_date: str | None
     hours: str
     rate: str
+    # ``amount`` is GROSS pay; ``net_amount`` is gross - sum(deductions).
     amount: str
+    net_amount: str
     currency: str
     source: str
     metadata: dict[str, Any] = Field(default_factory=dict, alias="metadata_")
+    deductions: list[PayrollDeductionResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -59,7 +134,10 @@ class PayrollBatchResponse(BaseModel):
     status: str
     currency: str
     total_hours: str
+    # ``total_amount`` is batch GROSS; net = gross - total_deductions.
     total_amount: str
+    total_deductions: str
+    total_net: str
     entry_count: int
     notes: str
     created_by: UUID | None
@@ -125,6 +203,8 @@ class PayrollExportRow(BaseModel):
     hours: str
     rate: str
     amount: str
+    deductions: str
+    net_amount: str
     currency: str
     source: str
 
@@ -141,6 +221,8 @@ class PayrollExportResponse(BaseModel):
     currency: str
     total_hours: str
     total_amount: str
+    total_deductions: str
+    total_net: str
     rows: list[PayrollExportRow] = Field(default_factory=list)
 
 

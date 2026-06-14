@@ -30,6 +30,7 @@ import {
   DismissibleInfo,
   EmptyState,
   Breadcrumb,
+  ModuleGuideButton,
   RecoveryCard,
   SkeletonTable,
   WideModal,
@@ -82,6 +83,7 @@ import {
   type Subcontractor,
   type PrequalStatus,
 } from '@/features/subcontractors/api';
+import { bidManagementGuide } from './bidManagementGuide';
 
 const BID_TAB_IDS = ['packages', 'invitations', 'submissions', 'qa'] as const;
 type Tab = (typeof BID_TAB_IDS)[number];
@@ -456,9 +458,12 @@ export function BidManagementPage() {
             'Run end-to-end tendering: packages, invitations, submissions, Q&A, and bid leveling.',
         })}
         actions={
-          <Button variant="primary" icon={<Plus size={14} />} onClick={() => setCreateOpen(true)}>
-            {t('bid_management.new_package', { defaultValue: 'New Package' })}
-          </Button>
+          <>
+            <Button variant="primary" icon={<Plus size={14} />} onClick={() => setCreateOpen(true)}>
+              {t('bid_management.new_package', { defaultValue: 'New Package' })}
+            </Button>
+            <ModuleGuideButton content={bidManagementGuide} />
+          </>
         }
       />
 

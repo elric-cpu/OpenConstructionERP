@@ -30,7 +30,9 @@ PROJECT_ID = uuid.uuid4()
 
 
 class _StubSession:
-    """No-op AsyncSession: ``begin_nested`` is the only thing post_journal needs."""
+    """No-op AsyncSession for post_journal: ``begin_nested`` + an ``execute``
+    that returns no existing rows so the idempotency existence-check is a
+    no-op and posting proceeds as before."""
 
     def begin_nested(self) -> _NestedCtx:
         return _NestedCtx()
@@ -40,6 +42,10 @@ class _StubSession:
 
     async def flush(self) -> None:  # pragma: no cover - trivial
         pass
+
+    async def execute(self, _stmt: Any) -> Any:
+        # No prior rows: the idempotency lookup finds nothing.
+        return SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: []))
 
 
 class _NestedCtx:

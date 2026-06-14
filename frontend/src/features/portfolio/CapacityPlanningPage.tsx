@@ -14,6 +14,7 @@ import {
   Breadcrumb,
   DismissibleInfo,
   IntroRichText,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { getErrorMessage } from '@/shared/lib/api';
@@ -22,6 +23,7 @@ import {
   type PortfolioCell,
   type PortfolioResourceRow,
 } from './api';
+import { portfolioGuide } from './portfolioGuide';
 
 /** Bucket horizon presets: how many buckets to show per bucket size. */
 const HORIZON: Record<'week' | 'month', number> = { week: 12, month: 6 };
@@ -96,6 +98,10 @@ export function CapacityPlanningPage() {
         })}
         actions={
           <>
+            <ModuleGuideButton
+              content={portfolioGuide}
+              onCta={() => navigate('/portfolio/leveling')}
+            />
             <div className="inline-flex shrink-0 rounded-xl border border-border bg-surface-secondary/50 p-1">
               {(['week', 'month'] as const).map((b) => (
                 <button

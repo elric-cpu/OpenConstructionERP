@@ -549,6 +549,12 @@ export type FullGridContext = ActionsContext & ResourceGridContext & SectionGrou
    *  description cell hides its inline cost-driver split pill to avoid
    *  showing the same figures twice. */
   showResourceSplit?: boolean;
+  /**
+   * Render the inline AI copilot panel for a position id. Supplied by the host
+   * (BOQEditorPage) so this renderer stays decoupled from the copilot
+   * component; called by ResourceFullWidthRenderer for the injected copilot row.
+   */
+  renderInlineCopilot?: (positionId: string) => JSX.Element | null;
   onApplyAnomalySuggestion?: (positionId: string, suggestedRate: number) => void;
   /** First ready BIM model ID for the current project (used for mini 3D previews). */
   bimModelId?: string | null;
@@ -4645,6 +4651,13 @@ export function ResourceFullWidthRenderer(params: ICellRendererParams) {
   const leftPad = computeLeftPad(slots);
 
   if (!ctx) return null;
+
+  // Inline AI copilot panel — the host renders the component (via context) so
+  // this file stays decoupled from it. Fills the fixed-height full-width row.
+  if (data?._isCopilot) {
+    const pid = data._copilotPositionId as string;
+    return <div className="h-full w-full">{ctx.renderInlineCopilot?.(pid) ?? null}</div>;
+  }
 
   // Section row — delegate to SectionFullWidthRenderer
   if (data?._isSection) {

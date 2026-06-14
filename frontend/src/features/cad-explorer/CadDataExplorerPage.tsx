@@ -17,7 +17,7 @@ import {
   TrendingUp, Hash, Clock, ShieldCheck, Bookmark, ScatterChart as ScatterIcon, Trash2,
   Box, Ruler, Square, Building2, Palette,
 } from 'lucide-react';
-import { Button, Card, Badge, Breadcrumb, DismissibleInfo, EmptyState } from '@/shared/ui';
+import { Button, Card, Badge, Breadcrumb, DismissibleInfo, EmptyState, ModuleGuideButton } from '@/shared/ui';
 import { useToastStore } from '@/stores/useToastStore';
 import { useUploadQueueStore } from '@/stores/useUploadQueueStore';
 import { apiGet, apiPost, ApiError, getErrorMessage, extractErrorMessageFromBody } from '@/shared/lib/api';
@@ -73,6 +73,7 @@ import {
   type ThresholdRule,
 } from './thresholds';
 import { ThresholdRulesModal } from './ThresholdRulesModal';
+import { cadExplorerGuide } from './cadExplorerGuide';
 
 /* ── Recharts — lazy-loaded so the initial Data Explorer bundle stays lean.
       Charts live in a ~38 kB gzipped chunk that only loads once the user
@@ -3843,9 +3844,12 @@ export function CadDataExplorerPage() {
     return (
       <div className="flex flex-col -mx-4 sm:-mx-7 -mt-6 -mb-6 border-s border-border-light animate-fade-in" style={{ height: 'calc(100vh - 56px)' }}>
         <div className="space-y-3 px-6 pt-4 pb-3 border-b border-border-light">
-          <Breadcrumb items={[
-            { label: t('nav.cad_bim_explorer', { defaultValue: 'CAD-BIM Explorer' }) },
-          ]} />
+          <div className="flex items-center justify-between gap-3">
+            <Breadcrumb items={[
+              { label: t('nav.cad_bim_explorer', { defaultValue: 'CAD-BIM Explorer' }) },
+            ]} />
+            <ModuleGuideButton content={cadExplorerGuide} />
+          </div>
           <DismissibleInfo
             storageKey="data-explorer"
             title={t('cad_explorer.intro_title', {

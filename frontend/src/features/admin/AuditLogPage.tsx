@@ -58,8 +58,9 @@ import {
   User as UserIcon,
   X,
 } from 'lucide-react';
-import { Badge, EmptyState, Breadcrumb, DismissibleInfo, IntroRichText, Button } from '@/shared/ui';
+import { Badge, EmptyState, Breadcrumb, DismissibleInfo, IntroRichText, Button, ModuleGuideButton } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { adminGuide } from './adminGuide';
 import { useToastStore } from '@/stores/useToastStore';
 import { triggerDownload } from '@/shared/lib/api';
 import { fetchUsers, type User } from '@/features/users/api';
@@ -1049,6 +1050,7 @@ export function AuditLogPage() {
         })}
         actions={
           <>
+            <ModuleGuideButton content={adminGuide} />
             <Button
               variant="secondary"
               size="sm"

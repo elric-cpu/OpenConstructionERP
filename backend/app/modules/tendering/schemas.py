@@ -279,6 +279,118 @@ class BidAnalysisResponse(BaseModel):
     spread: BidSpread = Field(default_factory=BidSpread)
 
 
+# ── Create-from-BOQ schema ────────────────────────────────────────────────────
+
+
+class CreatePackageFromBOQData(BaseModel):
+    """Request body for creating a tender package seeded from BOQ sections.
+
+    When ``section_ids`` is empty every top-level section in the BOQ is
+    included. A top-level section is a position whose ``parent_id`` is
+    ``None`` and whose ``unit`` is either empty or the literal ``"section"``.
+    All descendant positions under the chosen sections are gathered
+    recursively and stored as a compact line-item template in the package
+    metadata so that incoming bids can be pre-seeded without an additional
+    BOQ read.
+
+    Money values inside the generated template follow the v3 contract:
+    Decimal-as-string, never floats.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    project_id: UUID
+    boq_id: UUID
+    section_ids: list[UUID] = Field(default_factory=list)
+    package_name: str = Field(..., min_length=1, max_length=255)
+    package_description: str = ""
+    deadline: str | None = Field(default=None, max_length=100)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+# ── Distribution (issue the package to subcontractors) ───────────────────────
+# Recipients live in the package ``metadata_`` JSON store under the
+# ``recipients`` key - the same extensible-per-package pattern used for addenda
+# and lifecycle stamps - so distribution needs no new table or migration. Each
+# recipient carries who it went to and the per-recipient send state/timestamp
+# so the UI can show a clear "sent / failed / pending" status. Distribution
+# reuses the platform email sender (``app.core.email``); when SMTP is not
+# configured the sender degrades to the console backend and never raises, so a
+# fresh dev checkout still records a clean status instead of crashing.
+
+
+class RecipientCreate(BaseModel):
+    """Add a subcontractor to a package's distribution list."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    company_name: str = Field(..., min_length=1, max_length=255)
+    email: str = Field(..., min_length=1, max_length=255)
+    # Optional link back to the Subcontractor Directory entry the recipient
+    # was picked from, so the UI can cross-reference prequalification status.
+    subcontractor_id: str | None = Field(default=None, max_length=64)
+
+    @field_validator("email")
+    @classmethod
+    def _check_email(cls, v: str) -> str:
+        if not _EMAIL_RE.match(v):
+            raise ValueError("email must be a valid email address")
+        return v
+
+
+class RecipientResponse(BaseModel):
+    """One recipient on a package's distribution list."""
+
+    id: str
+    company_name: str
+    email: str
+    subcontractor_id: str | None = None
+    # "pending" before the first send, then "sent" or "failed".
+    status: str = "pending"
+    sent_at: str | None = None
+    last_error: str | None = None
+    created_at: str = ""
+
+
+class DistributeRequest(BaseModel):
+    """Request body for distributing a package to its recipients.
+
+    ``recipient_ids`` optionally narrows the send to a subset of the stored
+    recipients; an empty list (the default) sends to everyone on the list who
+    has not already been successfully sent to. ``resend`` forces a re-send even
+    to recipients already marked ``sent`` (e.g. after publishing an addendum).
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    recipient_ids: list[str] = Field(default_factory=list)
+    resend: bool = False
+    message: str | None = Field(default=None, max_length=2000)
+
+
+class DistributeResultEntry(BaseModel):
+    """Per-recipient outcome of a distribution run."""
+
+    recipient_id: str
+    company_name: str
+    email: str
+    status: str  # "sent" | "failed" | "skipped"
+    detail: str = ""
+
+
+class DistributeResponse(BaseModel):
+    """Summary of a distribution run."""
+
+    package_id: UUID
+    package_name: str
+    backend: str = ""
+    smtp_configured: bool = False
+    sent_count: int = 0
+    failed_count: int = 0
+    skipped_count: int = 0
+    results: list[DistributeResultEntry] = Field(default_factory=list)
+
+
 # ── Addenda (mid-tender clarifications) ──────────────────────────────────────
 # Addenda are stored inside the package ``metadata_`` JSON store (under the
 # ``addenda`` key) rather than a dedicated table - they are a lightweight,

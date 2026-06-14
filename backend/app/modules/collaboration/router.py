@@ -86,13 +86,14 @@ async def _resolve_entity_project_id(
     entity_id: str,
     session: SessionDep,
 ) -> uuid.UUID | None:
-    """Map a commentable entity to its owning project, when we can.
+    """Map a commentable entity to its owning project.
 
-    Returns the project UUID for the entity types whose primary model carries
-    a ``project_id`` (the high-traffic comment targets), or ``None`` for types
-    we cannot map here yet. ``None`` is also returned when the id is malformed
-    or the row does not exist - callers treat an unresolvable id as "no gate
-    applied" rather than guessing.
+    Returns the project UUID for every allow-listed entity type whose primary
+    model can be traced to a ``project_id`` (directly or through one FK hop).
+    Returns ``None`` only when the id is malformed, the row does not exist, or
+    the type genuinely cannot be mapped to a project. Callers treat ``None``
+    as fail-closed (access denied), so no allow-listed type is silently
+    ungated.
     """
     try:
         eid = uuid.UUID(entity_id)
@@ -101,10 +102,61 @@ async def _resolve_entity_project_id(
     try:
         from sqlalchemy import select
 
+        # ── Direct project_id on the primary model ──────────────────────
         if entity_type == "boq":
             from app.modules.boq.models import BOQ
 
             return (await session.execute(select(BOQ.project_id).where(BOQ.id == eid))).scalar_one_or_none()
+        if entity_type == "document":
+            from app.modules.documents.models import Document
+
+            return (await session.execute(select(Document.project_id).where(Document.id == eid))).scalar_one_or_none()
+        if entity_type == "task":
+            from app.modules.tasks.models import Task
+
+            return (await session.execute(select(Task.project_id).where(Task.id == eid))).scalar_one_or_none()
+        if entity_type == "rfi":
+            from app.modules.rfi.models import RFI
+
+            return (await session.execute(select(RFI.project_id).where(RFI.id == eid))).scalar_one_or_none()
+        if entity_type == "ncr":
+            from app.modules.ncr.models import NCR
+
+            return (await session.execute(select(NCR.project_id).where(NCR.id == eid))).scalar_one_or_none()
+        if entity_type == "submittal":
+            from app.modules.submittals.models import Submittal
+
+            return (await session.execute(select(Submittal.project_id).where(Submittal.id == eid))).scalar_one_or_none()
+        if entity_type == "punchlist_item":
+            from app.modules.punchlist.models import PunchItem
+
+            return (await session.execute(select(PunchItem.project_id).where(PunchItem.id == eid))).scalar_one_or_none()
+        if entity_type == "inspection":
+            from app.modules.inspections.models import QualityInspection
+
+            return (
+                await session.execute(select(QualityInspection.project_id).where(QualityInspection.id == eid))
+            ).scalar_one_or_none()
+        if entity_type == "meeting":
+            from app.modules.meetings.models import Meeting
+
+            return (await session.execute(select(Meeting.project_id).where(Meeting.id == eid))).scalar_one_or_none()
+        if entity_type == "transmittal":
+            from app.modules.transmittals.models import Transmittal
+
+            return (
+                await session.execute(select(Transmittal.project_id).where(Transmittal.id == eid))
+            ).scalar_one_or_none()
+        if entity_type == "bim_model":
+            from app.modules.bim_hub.models import BIMModel
+
+            return (await session.execute(select(BIMModel.project_id).where(BIMModel.id == eid))).scalar_one_or_none()
+        if entity_type == "bcf_topic":
+            from app.modules.bcf.models import BCFTopic
+
+            return (await session.execute(select(BCFTopic.project_id).where(BCFTopic.id == eid))).scalar_one_or_none()
+
+        # ── One FK hop to reach project_id ──────────────────────────────
         if entity_type == "boq_position":
             from app.modules.boq.models import BOQ, Position
 
@@ -113,13 +165,42 @@ async def _resolve_entity_project_id(
                     select(BOQ.project_id).join(Position, Position.boq_id == BOQ.id).where(Position.id == eid)
                 )
             ).scalar_one_or_none()
-        if entity_type == "document":
-            from app.modules.documents.models import Document
+        if entity_type == "bim_element":
+            from app.modules.bim_hub.models import BIMElement, BIMModel
 
-            return (await session.execute(select(Document.project_id).where(Document.id == eid))).scalar_one_or_none()
-    except Exception:  # noqa: BLE001 - best-effort resolution, fall back to no gate
+            return (
+                await session.execute(
+                    select(BIMModel.project_id)
+                    .join(BIMElement, BIMElement.model_id == BIMModel.id)
+                    .where(BIMElement.id == eid)
+                )
+            ).scalar_one_or_none()
+        if entity_type == "schedule_activity":
+            from app.modules.schedule.models import Activity, Schedule
+
+            return (
+                await session.execute(
+                    select(Schedule.project_id)
+                    .join(Activity, Activity.schedule_id == Schedule.id)
+                    .where(Activity.id == eid)
+                )
+            ).scalar_one_or_none()
+        if entity_type == "requirement":
+            from app.modules.requirements.models import Requirement, RequirementSet
+
+            return (
+                await session.execute(
+                    select(RequirementSet.project_id)
+                    .join(Requirement, Requirement.requirement_set_id == RequirementSet.id)
+                    .where(Requirement.id == eid)
+                )
+            ).scalar_one_or_none()
+    except Exception:  # noqa: BLE001 - resolution failed; treat as unresolved (fail closed)
         logger.debug("collaboration entity resolve failed for %s/%s", entity_type, entity_id)
         return None
+    # Allow-listed type with no project linkage handled above. Returning None
+    # makes the caller fail closed rather than leaving the type silently
+    # ungated.
     return None
 
 
@@ -134,12 +215,12 @@ async def _verify_entity_access(
     When the target IS a project, ``entity_id`` is the project UUID, so we
     gate on project membership exactly like every other single-resource
     handler (``verify_project_access`` -> 404 on missing OR denied, which
-    avoids leaking UUID existence). For the high-traffic non-project targets
-    (boq, boq_position, document) we resolve the owning project and gate on
-    it, closing the cross-tenant read where any ``collaboration.read`` holder
-    could enumerate another tenant's comments by entity id. Entity types we
-    cannot yet map to a project (task, rfi, ncr, bim_*, ...) are left
-    ungated here rather than guessed - tracked as residual.
+    avoids leaking UUID existence). For every other allow-listed target we
+    resolve the owning project and gate on it. If the type cannot be resolved
+    to a project (unknown id, deleted row, or a type with no project linkage)
+    we fail CLOSED with a 404, matching the IDOR-404 convention and closing
+    the cross-tenant read where any ``collaboration.read`` holder could
+    enumerate another tenant's threads by entity id.
     """
     if entity_type == "project":
         try:
@@ -153,8 +234,14 @@ async def _verify_entity_access(
         return
 
     resolved = await _resolve_entity_project_id(entity_type, entity_id, session)
-    if resolved is not None:
-        await verify_project_access(resolved, str(user_id), session)
+    if resolved is None:
+        # Fail closed: a target we cannot tie to a project the caller can
+        # reach is treated as not found (never silently ungated).
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Entity not found",
+        )
+    await verify_project_access(resolved, str(user_id), session)
 
 
 # ── Comments ─────────────────────────────────────────────────────────────

@@ -202,6 +202,37 @@ export interface CreateBOQData {
 }
 
 /**
+ * What-if scenario request. A scenario is a cloned BOQ linked back to its
+ * baseline via `parent_estimate_id`. When `rate_factor` is supplied (and not
+ * 1.0) the server multiplies every position's unit_rate by it on the clone,
+ * leaving the baseline untouched. `region` and `note` are recorded in the new
+ * BOQ's scenario metadata for provenance.
+ */
+export interface ScenarioCreateData {
+  name: string;
+  rate_factor?: number | null;
+  region?: string | null;
+  note?: string | null;
+}
+
+/** Minimal tender-package shape returned by the create-from-BOQ endpoint. */
+export interface TenderPackageRef {
+  id: string;
+  name: string;
+  status: string;
+}
+
+/** Payload for creating a tender package straight from BOQ sections. */
+export interface CreateTenderFromBoqData {
+  project_id: string;
+  boq_id: string;
+  section_ids: string[];
+  package_name: string;
+  package_description?: string;
+  deadline?: string | null;
+}
+
+/**
  * Issue #127 — how a create/update should resolve when its `reference_code`
  * collides with an existing code in the project:
  *  - `link`       — (default) attach as a linked instance of the master.
@@ -248,9 +279,21 @@ export interface UpdatePositionData {
 }
 
 /**
+ * Find-and-replace mutation for the bulk endpoint. Currently scoped to the
+ * `description` field. The server rewrites each selected row's description,
+ * counting only the rows whose text actually changed (no-match rows skip).
+ */
+export interface FindReplaceSpec {
+  field: 'description';
+  find: string;
+  replace: string;
+  case_sensitive: boolean;
+}
+
+/**
  * v3.12.0 Stream A — bulk update payload.
- * Exactly one of `updates` / `rate_factor` / `quantity_factor` must be
- * supplied; the server rejects mixed payloads with 422.
+ * Exactly one of `updates` / `rate_factor` / `quantity_factor` / `find_replace`
+ * must be supplied; the server rejects mixed payloads with 422.
  */
 export interface BulkPositionUpdateData {
   ids: string[];
@@ -258,11 +301,16 @@ export interface BulkPositionUpdateData {
   updates?: Record<string, unknown>;
   rate_factor?: number;
   quantity_factor?: number;
+  /** Rewrite the description text across every selected row. */
+  find_replace?: FindReplaceSpec;
 }
 
 export interface BulkUpdateResult {
   updated: number;
+  /** Rows that could not be updated (errors); same rows as `failed_ids`. */
   skipped: number;
+  /** Rows left untouched on purpose, e.g. find-and-replace with no match. */
+  unchanged: number;
   failed_ids: string[];
   log_id: string | null;
 }
@@ -680,6 +728,83 @@ export interface AIChatResponse {
    *  output (knowledge questions get a real answer here, not just items). */
   reply?: string;
   message: string;
+}
+
+/* ── Per-position AI copilot types ───────────────────────────────────── */
+
+/**
+ * A single concrete change the copilot proposes (or already applied) for one
+ * BOQ position. Every action is catalog-sourced — ``source`` carries the cost
+ * row's code/description and ``confidence`` (0..1) drives the auto-apply
+ * threshold (>= 0.85 lands as ``auto_applied`` server-side, the rest come back
+ * as ``needs_review`` confirm cards).
+ *
+ * ``payload`` carries the after-state and ``before`` the prior values, so the
+ * dock can render a clean before -> after diff AND the editor can mirror the
+ * change into the local cache + undo stack without re-deriving it.
+ */
+export type CopilotActionType =
+  | 'update_description'
+  | 'set_quantity'
+  | 'set_unit_rate'
+  | 'add_resources';
+
+export type CopilotActionStatus =
+  | 'auto_applied'
+  | 'needs_review'
+  | 'applied'
+  | 'dismissed'
+  | 'failed';
+
+/** One catalog-sourced resource line proposed by an ``add_resources`` action. */
+export interface CopilotResource {
+  name: string;
+  type: string;
+  unit: string;
+  quantity: number;
+  unit_rate: number;
+  code?: string;
+  currency?: string;
+}
+
+export interface CopilotAction {
+  action_type: CopilotActionType;
+  /**
+   * The after-state. Shape depends on ``action_type``:
+   *  - update_description -> { description: string }
+   *  - set_quantity       -> { quantity: number; unit?: string }
+   *  - set_unit_rate      -> { unit_rate: number; currency?: string }
+   *  - add_resources      -> { resources: CopilotResource[] }
+   */
+  payload: Record<string, unknown>;
+  /** Prior values for the touched fields — drives the diff + undo oldData. */
+  before: Record<string, unknown>;
+  /** Model/catalog confidence (0..1). >= 0.85 auto-applies server-side. */
+  confidence: number;
+  /** Catalog provenance — code + human label of the source cost row. */
+  source: { code?: string; description?: string } | null;
+  status: CopilotActionStatus;
+}
+
+export interface CopilotMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  /** Actions attached to an assistant turn — null/absent for plain chat. */
+  actions: CopilotAction[] | null;
+  created_at: string;
+}
+
+/** POST chat response: the assistant turn plus the actions it produced. */
+export interface CopilotChatResponse {
+  assistant_message: CopilotMessage;
+  actions: CopilotAction[];
+}
+
+/** POST apply response: the updated position plus the action (status flipped). */
+export interface CopilotApplyResponse {
+  position: Position;
+  action: CopilotAction;
 }
 
 /* ── Cost Breakdown types ─────────────────────────────────────────── */
@@ -1198,6 +1323,10 @@ export const boqApi = {
 
   /* Duplicate */
   duplicateBoq: (boqId: string) => apiPost<BOQ>(`/v1/boq/boqs/${boqId}/duplicate/`, {}),
+
+  /* What-if scenario — clone + optional rate adjustment, linked to baseline. */
+  createScenario: (boqId: string, data: ScenarioCreateData) =>
+    apiPost<BOQ, ScenarioCreateData>(`/v1/boq/boqs/${boqId}/scenarios/`, data),
   duplicatePosition: (posId: string) =>
     apiPost<Position>(`/v1/boq/positions/${posId}/duplicate/`, {}),
 
@@ -1353,6 +1482,32 @@ export const boqApi = {
   aiChat: (boqId: string, data: AIChatRequest) =>
     apiPost<AIChatResponse>(`/v1/boq/boqs/${boqId}/ai-chat/`, data),
 
+  /* ── Per-position AI copilot ──────────────────────────────────────── */
+  /**
+   * Replay the persisted chat history for a position. The backend returns a
+   * bare ``CopilotMessage[]``; we tolerate the ``{ messages: [...] }`` envelope
+   * too so the dock keeps working whichever shape the backend settles on.
+   */
+  positionCopilotHistory: async (positionId: string): Promise<CopilotMessage[]> => {
+    const raw = await apiGet<CopilotMessage[] | { messages?: CopilotMessage[] }>(
+      `/v1/boq/positions/${positionId}/copilot/`,
+    );
+    if (Array.isArray(raw)) return raw;
+    return raw?.messages ?? [];
+  },
+  /** Send one user turn — returns the assistant turn plus its actions. */
+  positionCopilotChat: (positionId: string, message: string) =>
+    apiPost<CopilotChatResponse, { message: string }>(
+      `/v1/boq/positions/${positionId}/copilot/`,
+      { message },
+    ),
+  /** Human-confirmed apply of a single ``needs_review`` action (server write). */
+  positionCopilotApply: (positionId: string, action: CopilotAction) =>
+    apiPost<CopilotApplyResponse, { action: CopilotAction }>(
+      `/v1/boq/positions/${positionId}/copilot/apply`,
+      { action },
+    ),
+
   /* Recalculate rates from resource breakdowns */
   recalculateRates: (boqId: string) =>
     apiPost<{ updated: number; skipped: number; total: number }>(
@@ -1446,6 +1601,15 @@ export const boqApi = {
   compareBoqs: (boqId: string, otherId: string) =>
     apiGet<BOQCompareResponse>(
       `/v1/boq/boqs/${boqId}/compare/${otherId}`,
+    ),
+
+  /* ── Send to tender — create a tender package from BOQ sections ─────── */
+  /** Empty `section_ids` means every top-level section of the BOQ. Lands on
+   *  the tendering module, returns the new draft package reference. */
+  createTenderFromBoq: (data: CreateTenderFromBoqData) =>
+    apiPost<TenderPackageRef, CreateTenderFromBoqData>(
+      '/v1/tendering/packages/from-boq/',
+      data,
     ),
 
   /* Enrich positions with resources from cost database */

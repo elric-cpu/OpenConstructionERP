@@ -23,8 +23,9 @@ flow so the estimator sees, tunes, and re-runs each step:
                   group_by is set on the session).
     6. match    - Run the vector matcher + (optional) AI cost agent
                   rerank; cache per-method candidates on each group.
-    7. rollup   - Aggregate group quantities + auto-confirm above
-                  threshold; ready for apply-to-BOQ.
+    7. rollup   - Aggregate group quantities + flag high-confidence
+                  picks for one-click confirm; ready for review and
+                  apply-to-BOQ once the user confirms.
 
 State is persisted in ``oe_match_elements_stage`` so the UI can render
 a vertical timeline with status pills + sample output + "Re-run from
@@ -152,13 +153,15 @@ STAGE_META: dict[str, dict[str, Any]] = {
     },
     "rollup": {
         "title": "Rollup",
-        "subtitle": "Auto-confirm + ready for apply-to-BOQ",
+        "subtitle": "Flag high-confidence picks for one-click confirm",
         "uses_llm": False,
         "prompt_key": None,
         "explainer": (
-            "Above-threshold matches auto-confirm; the rest stay in "
-            "review. Lower the threshold to confirm faster, raise it to "
-            "be more conservative."
+            "Above-threshold matches are pre-selected so you can confirm "
+            "the whole batch in one click; the rest stay in review. "
+            "Nothing reaches the BOQ until you confirm. Lower the "
+            "threshold to flag more picks, raise it to be more "
+            "conservative."
         ),
     },
 }

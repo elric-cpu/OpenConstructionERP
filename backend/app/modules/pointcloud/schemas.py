@@ -189,6 +189,11 @@ class ScanDatasetRead(BaseModel):
     tileset_uri: str | None = None
     dtm_uri: str | None = None
     classification_stats: dict[str, Any] = Field(default_factory=dict)
+    # Header-sniff preview captured at upload: scalar fields present, declared
+    # units, coordinate ranges, point format, plus the sniff status so the UI
+    # can distinguish "no such channel" from "not read yet". See
+    # ``ScanDataset.scan_metadata`` and ``pointcloud.sniff``.
+    scan_metadata: dict[str, Any] = Field(default_factory=dict)
     status: str
     generation_job_id: UUID | None = None
     retention_policy: str

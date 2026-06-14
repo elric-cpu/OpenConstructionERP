@@ -21,6 +21,7 @@ import {
   Card,
   ConfirmDialog,
   EmptyState,
+  ModuleGuideButton,
   RecoveryCard,
   SkeletonTable,
 } from '@/shared/ui';
@@ -33,6 +34,7 @@ import {
   listRoutes,
 } from './api';
 import { ApprovalInstancesList } from './ApprovalInstancesList';
+import { approvalRoutesGuide } from './approvalRoutesGuide';
 import { kindLabel } from './labels';
 import { RouteEditor } from './RouteEditor';
 import type { ApprovalRoute } from './types';
@@ -143,17 +145,26 @@ export function ApprovalRoutesPage() {
             })}
           </p>
         </div>
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={() => {
-            setEditingRoute(null);
-            setEditorOpen(true);
-          }}
-          icon={<Plus size={14} />}
-        >
-          {t('approvalRoutes.newRoute', { defaultValue: 'New route' })}
-        </Button>
+        <div className="flex items-center gap-2">
+          <ModuleGuideButton
+            content={approvalRoutesGuide}
+            onCta={() => {
+              setEditingRoute(null);
+              setEditorOpen(true);
+            }}
+          />
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              setEditingRoute(null);
+              setEditorOpen(true);
+            }}
+            icon={<Plus size={14} />}
+          >
+            {t('approvalRoutes.newRoute', { defaultValue: 'New route' })}
+          </Button>
+        </div>
       </div>
 
       <div

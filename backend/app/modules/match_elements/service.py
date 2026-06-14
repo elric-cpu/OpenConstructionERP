@@ -9,7 +9,8 @@ the AsyncSession explicitly so tests can pass a transactional session.
 Implemented:
     create_session, get_session, update_session
     rebuild_groups, list_groups, get_group_detail
-    run_match (vector / resources / llm, with auto-confirm above threshold)
+    run_match (vector / resources / llm, pre-selects high-confidence
+        top candidates for one-click confirm - never auto-commits)
     confirm, bulk_confirm
     split_group, merge_groups, skip_group
     apply_to_boq (writes BOQ positions + scaled resource sub-rows)
@@ -2125,7 +2126,7 @@ class MatchElementsService:
         * ``init``      - session loaded, project context fetched
         * ``elements``  - source adapter iterating BIM/Excel/text rows
         * ``ranking``   - per-group vector search + boost + rerank
-        * ``save``      - flushing results / auto-confirms to DB
+        * ``save``      - flushing ranked suggestions to DB
         * ``done``      - finished cleanly
         * ``error``     - exception bubbled out of the runner
 
@@ -2490,20 +2491,26 @@ class MatchElementsService:
             methods[spec.method] = [c.model_dump() for c in candidates]
             grow.methods = methods
 
-            # Auto-confirm if top candidate >= threshold AND group not
-            # already confirmed.
-            if candidates and grow.status in ("unmatched", "suggested") and candidates[0].score >= threshold:
+            # Human-in-the-loop (CLAUDE.md #7): the matcher proposes,
+            # the user confirms. A high-confidence top candidate is
+            # pre-selected and flagged so the user can bulk-confirm the
+            # whole batch in one click (POST /bulk-confirm with this
+            # threshold), but the group stays "suggested" until a person
+            # acts. We never set status="confirmed" or write a rate onto
+            # a BOQ position here - apply_to_boq only reads CONFIRMED
+            # groups, so nothing reaches the BOQ without an explicit
+            # confirm. ``threshold`` only decides what gets pre-selected.
+            if candidates and grow.status in ("unmatched", "suggested"):
                 top = candidates[0]
-                # MatchCandidate now carries a real CostItem.id end-to-end,
-                # so apply_to_boq can read the rate without a second lookup.
-                grow.chosen_candidate_id = uuid.UUID(top.id) if top.id else None
-                grow.chosen_method = "auto"
                 grow.confidence = f"{top.score:.4f}"
-                grow.status = "confirmed"
-                grow.confirmed_at = datetime.now(UTC)
-            elif candidates and grow.status == "unmatched":
                 grow.status = "suggested"
-                grow.confidence = f"{candidates[0].score:.4f}"
+                if top.score >= threshold:
+                    # Pre-select the top candidate so one-click bulk
+                    # confirm has a CostItem to read the rate from. This
+                    # is a suggestion, not a commitment: confirmed_by /
+                    # confirmed_at stay empty until the user confirms.
+                    grow.chosen_candidate_id = uuid.UUID(top.id) if top.id else None
+                    grow.chosen_method = "auto"
 
             ifc_class = _ifc_class_from_group_key(grow.group_key)
             meta = ifc_labels.lookup(ifc_class) if ifc_class else ifc_labels.lookup(None)

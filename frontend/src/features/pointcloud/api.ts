@@ -37,6 +37,43 @@ export const ACCEPTED_SCAN_FORMATS = [
 export type ScanSourceType = 'laser_scan' | 'photogrammetry' | 'lidar' | 'other';
 export type AccuracyTier = 'survey' | 'standard' | 'coarse';
 
+/** Which scalar channels the header sniff found in a scan. */
+export interface ScanScalarFields {
+  rgb?: boolean;
+  intensity?: boolean;
+  classification?: boolean;
+}
+
+/** Per-axis ``[min, max]`` coordinate extents from the header sniff. */
+export interface ScanCoordinateRanges {
+  x?: [number, number];
+  y?: [number, number];
+  z?: [number, number];
+}
+
+/**
+ * Header-sniff preview the backend captures the moment a scan finishes
+ * uploading (see backend/app/modules/pointcloud/sniff.py). Read-only metadata,
+ * never a transform input. ``status`` distinguishes a real "no such channel"
+ * from "no reader installed yet":
+ *   - 'ok'         the header was read; scalar_fields / units / ranges are real.
+ *   - 'pending'    no point-cloud reader on the server; extents appear later.
+ *   - 'unreadable' the header was present but could not be parsed.
+ */
+export interface ScanMetadata {
+  status?: 'ok' | 'pending' | 'unreadable';
+  format?: string;
+  reader?: string;
+  scalar_fields?: ScanScalarFields;
+  units?: string;
+  coordinate_ranges?: ScanCoordinateRanges;
+  point_format_id?: number | null;
+  extra_dimensions?: string[];
+  message?: string;
+  reason?: string;
+  [key: string]: unknown;
+}
+
 export interface ScanDataset {
   id: string;
   project_id: string;
@@ -45,6 +82,10 @@ export interface ScanDataset {
   accuracy_tier: string;
   status: string;
   point_count: number;
+  crs_epsg?: number | null;
+  crs_confidence?: string | null;
+  bbox_json?: Record<string, unknown>;
+  scan_metadata?: ScanMetadata;
   created_at: string;
 }
 

@@ -72,7 +72,12 @@ import { Badge } from '@/shared/ui/Badge';
 import { EmptyState } from '@/shared/ui/EmptyState';
 import { MiniGeometryPreview } from '@/shared/ui/MiniGeometryPreview';
 import { ConfirmDialog } from '@/shared/ui/ConfirmDialog';
-import { DismissibleInfo, BetaBanner, Breadcrumb } from '@/shared/ui';
+import {
+  DismissibleInfo,
+  BetaBanner,
+  Breadcrumb,
+  ModuleGuideButton,
+} from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
@@ -106,6 +111,7 @@ import { ClashRuleEditor } from './ClashRuleEditor';
 import { ClashRuleSuggestionBanner } from './ClashRuleSuggestionBanner';
 import { ClashKpiPanel } from './ClashKpiPanel';
 import { ClashCostImpactColumn } from './ClashCostImpactColumn';
+import { clashGuide } from './clashGuide';
 
 const EMPTY_SET: ClashSelectionSet = {
   disciplines: [],
@@ -1887,6 +1893,7 @@ export function ClashDetectionPage() {
         projectName={ctxProjectName}
         actions={
           <>
+            <ModuleGuideButton content={clashGuide} />
             <Button
               variant="secondary"
               size="sm"

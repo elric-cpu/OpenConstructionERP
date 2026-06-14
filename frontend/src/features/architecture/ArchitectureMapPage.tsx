@@ -32,7 +32,9 @@ import '@xyflow/react/dist/style.css';
 const ReactFlow = RFComponent as any as React.FC<Record<string, any>>;
 import { useTranslation } from 'react-i18next';
 import { apiGet } from '@/shared/lib/api';
+import { ModuleGuideButton } from '@/shared/ui';
 import { Search, X, Network, Box, Table2, ArrowRightLeft, Layers, Info, ChevronRight } from 'lucide-react';
+import { architectureGuide } from './architectureGuide';
 
 // ---------------------------------------------------------------------------
 // Types — manifest JSON shape
@@ -1388,6 +1390,9 @@ export function ArchitectureMapPage() {
           <span style={{ color: '#e2e8f0' }}>|</span>
           <span>{manifest.statistics.total_routes} routes</span>
         </div>
+
+        {/* How it works guide */}
+        <ModuleGuideButton content={architectureGuide} />
       </div>
 
       {/* Canvas */}

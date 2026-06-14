@@ -639,6 +639,21 @@ export class ElementManager {
    *  Used so `hasHidden()` returns the intuitive answer when "everything
    *  but X" is the current state. */
   private isolateActive = false;
+  /** The predicate of the most recent `applyFilter()` call, or null when no
+   *  filter is active (cleared by `showAll()` / a match-all predicate).
+   *
+   *  The in-viewer filter panel (category / type / bucket selection) and the
+   *  Layers-tab category toggles are two independent visibility systems that
+   *  must not stomp each other. The Layers sync in BIMViewer re-runs whenever
+   *  `hiddenIds` changes - and `applyFilter` resets `hiddenIds` on every filter
+   *  change - so without this guard a category toggle pass would call
+   *  `setCategoryVisible(cat, true)` for every category right after a filter
+   *  isolated one group, re-showing the whole model and making the filter look
+   *  like it "briefly works then reverts" (founder report: the chosen group is
+   *  not isolated, the full project stays visible). When a filter is active,
+   *  `setCategoryVisible` re-applies the filter predicate instead of blindly
+   *  revealing the category. */
+  private filterPredicate: ((el: BIMElementData) => boolean) | null = null;
   /** Categories hidden via the Layers tab (`setCategoryVisible(cat, false)`).
    *  Kept separate from `hiddenElementIds` (context-menu Hide / isolate) so
    *  the two visibility systems don't corrupt each other's counts — a
@@ -2213,6 +2228,20 @@ export class ElementManager {
     let visibleCount = 0;
     let noDataCount = 0;
 
+    // Remember the active predicate so the Layers-tab category sync
+    // (`setCategoryVisible`) defers to it instead of revealing every category
+    // and undoing the isolation. We treat a predicate that keeps every loaded
+    // element as "no filter" so a cleared filter restores the normal
+    // category-toggle behaviour.
+    let keepsAll = true;
+    for (const el of this.elementDataMap.values()) {
+      if (!predicate(el)) {
+        keepsAll = false;
+        break;
+      }
+    }
+    this.filterPredicate = keepsAll ? null : predicate;
+
     // Build a set of element IDs that pass the filter
     const visibleIds = new Set<string>();
     for (const [elementId] of this.meshMap) {
@@ -2329,6 +2358,7 @@ export class ElementManager {
     }
     this.hiddenElementIds.clear();
     this.isolateActive = false;
+    this.filterPredicate = null;
     this.hiddenCategorySet.clear();
     this.notifyHiddenCount();
     this.sceneManager.requestRender();
@@ -2382,7 +2412,11 @@ export class ElementManager {
   isolate(elementIds: string[]): void {
     const keep = new Set(elementIds);
     // Reset state: an isolate completely replaces any previous hide/isolate.
+    // `isolate()` owns visibility outright (it explicitly drives every mesh),
+    // so any earlier filter predicate no longer applies - clear it so a later
+    // category toggle re-derives from the isolate state, not a stale filter.
     this.hiddenElementIds.clear();
+    this.filterPredicate = null;
     for (const [id, mesh] of this.meshMap) {
       const v = keep.has(id);
       const handle = (mesh.userData as { batchHandle?: { batched: THREE.BatchedMesh; instanceId: number } }).batchHandle;
@@ -2781,13 +2815,25 @@ export class ElementManager {
       this.notifyHiddenCount();
       return;
     }
+    // A filter predicate (in-viewer panel selection) also owns visibility:
+    // the Layers sync in BIMViewer re-runs after every filter change, so
+    // blindly revealing a whole category here would re-show elements the
+    // filter just isolated away - the exact "filter briefly works then the
+    // model snaps back" symptom. Defer to the filter: an element of this
+    // category is visible only when it passes the filter predicate AND the
+    // category is not being hidden, and is never revealed against the filter.
+    const filter = this.filterPredicate;
     for (const [elementId, mesh] of this.meshMap) {
       const el = this.elementDataMap.get(elementId);
       if (!el) continue;
       const cat = el.element_type || 'Unknown';
       if (cat !== category) continue;
       // Never reveal an element the user hid individually — that hide wins.
-      const shouldShow = visible && !this.hiddenElementIds.has(elementId);
+      // While a filter is active, "visible" also requires the predicate to
+      // pass so a category-reveal can't override the filter's isolation.
+      const passesFilter = filter ? filter(el) : true;
+      const shouldShow =
+        visible && passesFilter && !this.hiddenElementIds.has(elementId);
       const handle = (mesh.userData as { batchHandle?: { batched: THREE.BatchedMesh; instanceId: number } }).batchHandle;
       if (handle) {
         handle.batched.setVisibleAt(handle.instanceId, shouldShow);
@@ -3033,6 +3079,9 @@ export class ElementManager {
       this.notifyHiddenCount();
     }
     this.colorByPropertyConfig = null;
+    // Drop any active filter predicate — it references the previous model's
+    // elements and must not leak into the freshly loaded one.
+    this.filterPredicate = null;
     this.activeSelectionIds = [];
     // Materials are reused — dispose them only on full destroy
   }

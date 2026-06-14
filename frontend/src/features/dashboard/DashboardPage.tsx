@@ -38,6 +38,8 @@ import {
   CircleDashed,
   Activity,
   LayoutGrid,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { Card, CardHeader, CardContent, Button, Badge, Skeleton, ActivityFeed as CrossModuleActivityFeed, EmptyState, ModuleHelpButton, ModuleGuideButton, PartnerLogoBadge } from '@/shared/ui';
 import { dashboardGuide } from './dashboardGuide';
@@ -46,7 +48,6 @@ import { WhatsNewCard } from '@/shared/ui/WhatsNewCard';
 import BIMCoverageCard from './BIMCoverageCard';
 import { CompactProjectCard } from './components/CompactProjectCard';
 import { DashboardProjectsMap } from './components/DashboardProjectsMap';
-import { ShowAllProjectsCard } from './components/ShowAllProjectsCard';
 import { WeatherSiteWidget } from './components/NewWidgets';
 import { OperationsSnapshotCard } from './components/OperationsSnapshotCard';
 import { LatestSitePhotosCard } from './components/LatestSitePhotosCard';
@@ -1405,6 +1406,10 @@ function ProjectMetricCards({
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  // Show only the first few project cards on first paint so the dashboard
+  // renders fast on portfolios with many projects; the rest mount on demand
+  // behind a "Show more" toggle.
+  const [showAllProjects, setShowAllProjects] = useState(false);
 
   if (loading) {
     return (
@@ -1463,37 +1468,54 @@ function ProjectMetricCards({
           would just show the CTA alone). Grid drops the lg=3 step so
           the tile math always works. */}
       {(() => {
-        const visibleCount =
-          cards.length <= 2
-            ? cards.length
-            : Math.max(0, Math.floor((cards.length + 1) / 4) * 4 - 1);
-        const visible = cards.slice(0, visibleCount);
-        const hidden = Math.max(0, cards.length - visibleCount);
+        // First paint shows only the first 4 cards (one full row on xl); the
+        // rest mount when the user expands. Keeps the dashboard fast on large
+        // portfolios.
+        const INITIAL_VISIBLE = 4;
+        const collapsed = !showAllProjects && cards.length > INITIAL_VISIBLE;
+        const visible = collapsed ? cards.slice(0, INITIAL_VISIBLE) : cards;
+        const hiddenCount = cards.length - visible.length;
         return (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {visible.map((card, index) => (
-              <CompactProjectCard
-                key={card.id}
-                id={card.id}
-                name={card.name}
-                description={card.description}
-                region={card.region}
-                currency={card.currency}
-                classificationStandard={card.classification_standard}
-                status={card.status}
-                boqCount={card.boq_count}
-                boqTotalValue={card.boq_total_value}
-                updatedAt={card.updated_at}
-                createdAt={card.created_at}
-                style={{ animationDelay: `${150 + index * 50}ms` }}
-              />
-            ))}
-            <ShowAllProjectsCard
-              totalCount={cards.length}
-              hiddenCount={hidden}
-              style={{ animationDelay: `${150 + visible.length * 50}ms` }}
-            />
-          </div>
+          <>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {visible.map((card, index) => (
+                <CompactProjectCard
+                  key={card.id}
+                  id={card.id}
+                  name={card.name}
+                  description={card.description}
+                  region={card.region}
+                  currency={card.currency}
+                  classificationStandard={card.classification_standard}
+                  status={card.status}
+                  boqCount={card.boq_count}
+                  boqTotalValue={card.boq_total_value}
+                  updatedAt={card.updated_at}
+                  createdAt={card.created_at}
+                  style={{ animationDelay: `${150 + index * 50}ms` }}
+                />
+              ))}
+            </div>
+            {cards.length > INITIAL_VISIBLE && (
+              <div className="mt-3 flex justify-center">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon={showAllProjects ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                  iconPosition="right"
+                  onClick={() => setShowAllProjects((v) => !v)}
+                  data-testid="dashboard-projects-show-more"
+                >
+                  {showAllProjects
+                    ? t('dashboard.show_less', { defaultValue: 'Show less' })
+                    : t('dashboard.show_more_projects', {
+                        defaultValue: 'Show {{count}} more',
+                        count: hiddenCount,
+                      })}
+                </Button>
+              </div>
+            )}
+          </>
         );
       })()}
     </div>

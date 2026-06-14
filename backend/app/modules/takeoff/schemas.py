@@ -208,6 +208,15 @@ class TakeoffMeasurementCreate(BaseModel):
     count_value: int | None = Field(default=None, ge=0)
     scale_pixels_per_unit: float | None = Field(default=None, gt=0)
     linked_boq_position_id: str | None = None
+    is_deduction: bool = Field(
+        default=False,
+        description=(
+            "Mark this area measurement as an opening / void (door, window, "
+            "cut-out). Its area is subtracted from the gross area of its group "
+            "so a net area = gross - openings. Only meaningful for area "
+            "measurements; ignored for other types."
+        ),
+    )
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -234,6 +243,7 @@ class TakeoffMeasurementUpdate(BaseModel):
     count_value: int | None = Field(default=None, ge=0)
     scale_pixels_per_unit: float | None = Field(default=None, gt=0)
     linked_boq_position_id: str | None = None
+    is_deduction: bool | None = None
     metadata: dict[str, Any] | None = None
 
 
@@ -259,6 +269,7 @@ class TakeoffMeasurementResponse(BaseModel):
     count_value: int | None = None
     scale_pixels_per_unit: float | None = None
     linked_boq_position_id: str | None = None
+    is_deduction: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict, validation_alias="metadata_")
     created_by: str = ""
     created_at: datetime

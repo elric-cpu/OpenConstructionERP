@@ -12,7 +12,7 @@ Endpoints:
     GET    /boqs/{boq_id}/activity             - Activity log for a BOQ
     POST   /boqs/{boq_id}/positions            - Add a position to a BOQ
     POST   /boqs/{boq_id}/positions/bulk      - Bulk insert multiple positions
-    PATCH  /boqs/{boq_id}/positions/bulk-update - v3.12 Stream A: bulk field/factor update
+    PATCH  /boqs/{boq_id}/positions/bulk-update - v3.12 Stream A: bulk field/factor/find-replace update
     POST   /boqs/{boq_id}/positions/{position_id}/restore-field - v3.12 Stream A: restore one field from a log entry
     PATCH  /positions/{position_id}            - Update a position
     PATCH  /positions/{position_id}/resources/{resource_idx}/variant/
@@ -25,6 +25,7 @@ Endpoints:
     DELETE /boqs/{boq_id}/markups/{markup_id}  - Delete a markup
     POST   /boqs/{boq_id}/markups/apply-defaults - Apply regional default markups
     POST   /boqs/{boq_id}/duplicate            - Duplicate a BOQ with all data
+    POST   /boqs/{boq_id}/scenarios/           - Create a what-if scenario from a baseline BOQ
     POST   /positions/{position_id}/duplicate  - Duplicate a single position
     POST   /boqs/{boq_id}/lock                 - Lock BOQ (prevent edits)
     POST   /boqs/{boq_id}/unlock               - Unlock BOQ (admin/manager only)
@@ -67,6 +68,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
+    from app.modules.boq.copilot_service import BOQCopilotService
     from app.modules.boq.importers import ImportedBOQ
 
 from fastapi import (
@@ -94,6 +96,13 @@ from app.dependencies import (
     RequirePermission,
     SessionDep,
     verify_project_access,
+)
+from app.modules.boq.copilot_schemas import (
+    CopilotApplyRequest,
+    CopilotApplyResponse,
+    CopilotChatRequest,
+    CopilotChatResponse,
+    CopilotMessageOut,
 )
 from app.modules.boq.schemas import (
     ActivityLogList,
@@ -161,6 +170,7 @@ from app.modules.boq.schemas import (
     ResourceTypeSummary,
     RestoreFieldRequest,
     RestoreFieldResponse,
+    ScenarioCreate,
     ScopeMissingItem,
     SectionCreate,
     SensitivityItem,
@@ -500,9 +510,11 @@ async def list_boqs(
     boqs, _ = await service.list_boqs_for_project(project_id, offset=offset, limit=limit)
     # Compute grand totals + position counts via aggregate queries
     boq_ids = [b.id for b in boqs]
-    # ``totals_for_boqs`` returns the full breakdown so list and detail
-    # endpoints stay in lockstep (BUG-008).
-    breakdown = await service.boq_repo.totals_for_boqs(boq_ids)
+    # ``compute_boq_totals`` returns the full breakdown so list and detail
+    # endpoints stay in lockstep (BUG-008) AND converts every foreign-currency
+    # position into the project base before summing (Issue #111 sibling), so a
+    # mixed-currency BOQ no longer reports a blended, meaningless grand total.
+    breakdown = await service.compute_boq_totals(boq_ids)
 
     # Position counts per BOQ
     from sqlalchemy import func, select
@@ -1291,6 +1303,42 @@ async def duplicate_boq(
 
 
 @router.post(
+    "/boqs/{boq_id}/scenarios/",
+    response_model=BOQResponse,
+    status_code=201,
+    summary="Create what-if scenario",
+    description=(
+        "Clone a baseline BOQ into a named what-if scenario. "
+        "Optionally apply a rate_factor to every position in the clone so you "
+        "can model cost escalation or regional adjustments without touching the "
+        "baseline. The new BOQ is linked back via parent_estimate_id and carries "
+        "a 'scenario' metadata block for downstream filtering."
+    ),
+    dependencies=[Depends(RequirePermission("boq.create"))],
+)
+async def create_scenario(
+    boq_id: uuid.UUID,
+    data: ScenarioCreate,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    service: BOQService = Depends(_get_service),
+) -> BOQResponse:
+    """Create a what-if scenario clone of a baseline BOQ.
+
+    Deep-copies all positions and markups, renames the clone to
+    ``data.name``, links it back to the baseline via
+    ``parent_estimate_id``, and optionally scales every unit_rate by
+    ``data.rate_factor``. Writes one activity log entry with action
+    ``scenario.created``.
+    """
+    # IDOR guard: verify the caller can access the source BOQ.
+    await _verify_boq_owner(session, boq_id, user_id, payload)
+    new_boq = await service.create_scenario(boq_id, data, actor_id=user_id)
+    return BOQResponse.model_validate(new_boq)
+
+
+@router.post(
     "/positions/{position_id}/duplicate/",
     response_model=PositionResponse,
     status_code=201,
@@ -1907,10 +1955,12 @@ async def update_position(
     response_model=BulkUpdateResult,
     summary="Bulk update many positions",
     description=(
-        "Apply one of three bulk mutations to many positions atomically: "
-        "direct field assignment, multiply unit_rate by a factor, or multiply "
-        "quantity by a factor. Each row goes through the normal update path "
-        "so totals recompute, validation resets, and audit rows are written."
+        "Apply one of four bulk mutations to many positions atomically: "
+        "direct field assignment, multiply unit_rate by a factor, multiply "
+        "quantity by a factor, or find-and-replace text in the description "
+        "field. Each row goes through the normal update path so totals "
+        "recompute, validation resets, and audit rows are written. For "
+        "find_replace, rows with no match are silently skipped."
     ),
     dependencies=[Depends(RequirePermission("boq.update"))],
 )
@@ -3166,6 +3216,85 @@ async def ai_chat_boq(
         )
 
     return AIChatResponse(items=items, reply=reply_text, message=message)
+
+
+# ── Per-position AI copilot ───────────────────────────────────────────────────
+#
+# A position-scoped chat: the estimator asks the copilot to refine ONE BOQ
+# position and the assistant replies with prose plus structured action
+# proposals (update_description / set_quantity / set_unit_rate / add_resources).
+# High-confidence proposals are auto-applied through BOQService.update_position;
+# the rest can be applied later via the /apply route. Ownership reuses the same
+# BOQ -> project check every other position route uses (a cross-tenant
+# position_id 404s/403s before any read or write).
+
+
+def _get_copilot_service(session: SessionDep) -> "BOQCopilotService":
+    from app.modules.boq.copilot_service import BOQCopilotService
+
+    return BOQCopilotService(session)
+
+
+@router.get(
+    "/positions/{position_id}/copilot/",
+    response_model=list[CopilotMessageOut],
+    summary="List position copilot messages",
+    dependencies=[Depends(RequirePermission("boq.read"))],
+)
+async def list_position_copilot_messages(
+    position_id: uuid.UUID,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    service: "BOQCopilotService" = Depends(_get_copilot_service),
+) -> list[CopilotMessageOut]:
+    """Return the per-position copilot thread (oldest first), tenant-scoped."""
+    return await service.list_messages(session, position_id, payload)
+
+
+@router.post(
+    "/positions/{position_id}/copilot/",
+    response_model=CopilotChatResponse,
+    summary="Chat with the position copilot",
+    dependencies=[Depends(RequirePermission("boq.update"))],
+)
+async def chat_position_copilot(
+    position_id: uuid.UUID,
+    data: CopilotChatRequest,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    service: "BOQCopilotService" = Depends(_get_copilot_service),
+) -> CopilotChatResponse:
+    """Run one copilot turn for a position.
+
+    Grounds the request against the cost catalogue, asks the configured AI
+    provider for structured proposals, auto-applies high-confidence actions, and
+    returns the assistant message plus the proposal list. When no AI provider is
+    configured the user message is still recorded and a friendly assistant
+    message is returned with no actions (HTTP 200).
+    """
+    from app.modules.ai.repository import AISettingsRepository
+
+    settings = await AISettingsRepository(session).get_by_user_id(uuid.UUID(user_id))
+    return await service.chat(session, position_id, data.message, payload, settings)
+
+
+@router.post(
+    "/positions/{position_id}/copilot/apply",
+    response_model=CopilotApplyResponse,
+    summary="Apply a position copilot action",
+    dependencies=[Depends(RequirePermission("boq.update"))],
+)
+async def apply_position_copilot_action(
+    position_id: uuid.UUID,
+    data: CopilotApplyRequest,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    service: "BOQCopilotService" = Depends(_get_copilot_service),
+) -> CopilotApplyResponse:
+    """Apply a single previously-proposed copilot action via update_position."""
+    position, action = await service.apply_action(session, position_id, data.action, payload)
+    return CopilotApplyResponse(position=_position_to_response(position), action=action)
 
 
 # ── Export (CSV / Excel) ──────────────────────────────────────────────────────
@@ -4468,13 +4597,20 @@ def build_gaeb_xml(
             ET.SubElement(item, "QU").text = _gaeb_unit(pos.unit)[:4]
         _set_description(item, _description_with_alt(pos))
 
-    def _emit_markup_item(parent_list: ET.Element, m: Any, idx: int) -> None:
+    def _emit_markup_item(parent_list: ET.Element, m: Any, idx: int, base: Decimal) -> None:
         """Write one priced ``MarkupItem`` (Zuschlagsposition) into an Itemlist.
 
         Order per ``tgMarkupItem`` (X84): ITMarkup (base), Markup (percent),
         IT (amount), Description. Carries the surcharge money so it is never
         silently lost on export (the FA "silent money loss on export"
         finding).
+
+        ``base`` is the REAL base this markup was computed on, supplied by the
+        caller per the markup's ``apply_to`` (direct cost only, or direct cost
+        plus preceding markups for cumulative/subtotal lines). Emitting
+        ``direct_cost`` for every markup misrepresented a tax-on-subtotal line
+        so a GAEB import -> export round-trip no longer reproduced the file
+        (the markup base fidelity finding); the per-markup base fixes that.
         """
         from decimal import ROUND_HALF_UP
 
@@ -4484,9 +4620,7 @@ def build_gaeb_xml(
             ID=_mint_id("oeMarkup"),
             RNoPart=_rnopart(f"Z{idx}", 9),
         )
-        base = _to_dec(boq_data.direct_cost)
-        if base is not None:
-            ET.SubElement(mk, "ITMarkup").text = _fmt_price(base)
+        ET.SubElement(mk, "ITMarkup").text = _fmt_price(base)
         pct = getattr(m, "percentage", 0) or 0
         if pct:
             pct_dec = _to_dec(pct)
@@ -4495,6 +4629,20 @@ def build_gaeb_xml(
             )
         ET.SubElement(mk, "IT").text = _fmt_price(getattr(m, "amount", 0))
         _set_description(mk, str(getattr(m, "name", "") or "Markup"))
+
+    def _markup_base_for(m: Any, running_subtotal: Decimal) -> Decimal:
+        """Resolve a markup's real base, mirroring ``_calculate_markup_amounts``.
+
+        ``cumulative`` / ``subtotal`` markups base on direct cost plus the sum
+        of preceding markup amounts (``running_subtotal`` already carries
+        ``direct_cost`` as its seed); ``direct_cost`` markups base on the
+        direct-cost subtotal alone.
+        """
+        apply_to = str(getattr(m, "apply_to", "") or "direct_cost").lower()
+        direct = _to_dec(boq_data.direct_cost) or Decimal("0")
+        if apply_to in ("cumulative", "subtotal"):
+            return running_subtotal
+        return direct
 
     def _emit_category_totals(ctgy: ET.Element, subtotal: Any) -> None:
         """Append the per-category ``Totals`` (REQUIRED by the X84 BoQCtgy)."""
@@ -4559,8 +4707,11 @@ def build_gaeb_xml(
             mk_ctgy = ET.SubElement(boq_body, "BoQCtgy", ID=_mint_id("oeCtgy"), RNoPart=_rnopart("Z", 0))
             mk_body = ET.SubElement(mk_ctgy, "BoQBody")
             mk_list = ET.SubElement(mk_body, "Itemlist")
+            running_subtotal = _to_dec(boq_data.direct_cost) or Decimal("0")
             for idx, m in enumerate(active_markups, start=1):
-                _emit_markup_item(mk_list, m, idx)
+                base = _markup_base_for(m, running_subtotal)
+                _emit_markup_item(mk_list, m, idx, base)
+                running_subtotal += _to_dec(getattr(m, "amount", 0)) or Decimal("0")
             mk_total = sum(
                 (_to_dec(getattr(m, "amount", 0)) or Decimal("0") for m in active_markups),
                 Decimal("0"),
@@ -4573,8 +4724,11 @@ def build_gaeb_xml(
         for pos in boq_data.positions:
             _emit_item(root_itemlist, pos, "")
         if is_priced and active_markups:
+            running_subtotal = _to_dec(boq_data.direct_cost) or Decimal("0")
             for idx, m in enumerate(active_markups, start=1):
-                _emit_markup_item(root_itemlist, m, idx)
+                base = _markup_base_for(m, running_subtotal)
+                _emit_markup_item(root_itemlist, m, idx, base)
+                running_subtotal += _to_dec(getattr(m, "amount", 0)) or Decimal("0")
 
     # ── BoQInfo / Totals (reconciliation), priced phase only ───────────────
     # The X84 schema places <Totals> as the last child of <BoQInfo> (the X83
@@ -5675,7 +5829,123 @@ async def _persist_imported_boq(
                 row.ordinal,
                 exc,
             )
+
+    # Persist parsed markups (GAEB Zuschlagsposition / MarkupItem). The GAEB
+    # importer surfaces them as ``metadata['markup_items']`` but they used to
+    # be recorded only in metadata and never applied, so an imported tender
+    # silently lost its markup and under-stated the cost. Map each one onto a
+    # native BOQMarkup row so an imported BOQ carries markup exactly like a
+    # natively created one (and a later GAEB export round-trips it).
+    if imported_count > 0:
+        await _persist_imported_markups(boq_id, imported, service=service, errors=persistence_errors)
+
     return imported_count, persistence_errors
+
+
+async def _persist_imported_markups(
+    boq_id: uuid.UUID,
+    imported: "ImportedBOQ",  # noqa: F821 - resolved at call site
+    *,
+    service: BOQService,
+    errors: list[dict[str, Any]],
+) -> None:
+    """Convert an importer's parsed markups into native ``BOQMarkup`` rows.
+
+    Reads ``imported.metadata['markup_items']`` (the GAEB importer's parsed
+    Zuschlagspositionen: ``{ordinal, it, it_markup_base, percentage}``) and
+    attaches each at BOQ level via the service's ``add_markup`` so the rows
+    are indistinguishable from manually entered markups and feed the same
+    totals engine.
+
+    Mapping (matches ``BOQMarkup`` / ``MarkupCreate`` semantics):
+      * a parseable positive ``percentage`` -> percentage markup applied on
+        the subtotal (GAEB Zuschlag compounds on direct cost + preceding
+        markups - the DIN default ``apply_to='subtotal'``); clamped to the
+        schema's 0..100 range.
+      * otherwise a parseable positive amount (``it``) -> fixed markup.
+      * a markup that maps to neither (no usable percentage or amount) is
+        skipped with a warning rather than persisted as a zero no-op.
+
+    Failures here never abort the import (positions are already committed);
+    each is appended to ``errors`` so the caller surfaces it.
+    """
+    from decimal import Decimal, InvalidOperation
+
+    from app.modules.boq.schemas import MarkupCreate
+
+    meta = getattr(imported, "metadata", None)
+    markup_items = meta.get("markup_items") if isinstance(meta, dict) else None
+    if not isinstance(markup_items, list) or not markup_items:
+        return
+
+    def _dec_or_none(raw: Any) -> Decimal | None:
+        if raw is None or (isinstance(raw, str) and not raw.strip()):
+            return None
+        try:
+            value = Decimal(str(raw))
+        except (InvalidOperation, ValueError):
+            return None
+        if not value.is_finite():
+            return None
+        return value
+
+    for mk in markup_items:
+        if not isinstance(mk, dict):
+            continue
+        ordinal = str(mk.get("ordinal") or "").strip()
+        name = f"Zuschlag {ordinal}".strip() if ordinal else "Markup (GAEB)"
+        pct = _dec_or_none(mk.get("percentage"))
+        amount = _dec_or_none(mk.get("it"))
+        try:
+            if pct is not None and pct > 0:
+                # Clamp into the schema's [0, 100] band (a malformed file can
+                # carry an out-of-range surcharge); keep the IT amount in
+                # metadata so the original figure is never lost.
+                pct_clamped = min(max(pct, Decimal("0")), Decimal("100"))
+                data = MarkupCreate(
+                    name=name,
+                    markup_type="percentage",
+                    category="overhead",
+                    percentage=float(pct_clamped),
+                    apply_to="subtotal",
+                    metadata={
+                        "source": "gaeb_import",
+                        "gaeb_ordinal": ordinal,
+                        "gaeb_it": str(amount) if amount is not None else "",
+                        "gaeb_it_markup_base": str(mk.get("it_markup_base") or ""),
+                        "gaeb_markup_percentage": str(pct),
+                    },
+                )
+            elif amount is not None and amount > 0:
+                data = MarkupCreate(
+                    name=name,
+                    markup_type="fixed",
+                    category="overhead",
+                    fixed_amount=amount,
+                    apply_to="subtotal",
+                    metadata={
+                        "source": "gaeb_import",
+                        "gaeb_ordinal": ordinal,
+                        "gaeb_it_markup_base": str(mk.get("it_markup_base") or ""),
+                    },
+                )
+            else:
+                errors.append(
+                    {
+                        "ordinal": ordinal,
+                        "error": "GAEB markup carried no usable percentage or amount; skipped.",
+                    }
+                )
+                continue
+            await service.add_markup(boq_id, data)
+        except Exception as exc:  # noqa: BLE001 - never abort an import on a markup
+            errors.append({"ordinal": ordinal, "error": f"Markup persistence failed: {exc}"})
+            logger.warning(
+                "GAEB markup persistence error (BOQ %s, ord %s): %s",
+                boq_id,
+                ordinal,
+                exc,
+            )
 
 
 @router.post(

@@ -31,6 +31,7 @@ import {
   ConfirmDialog,
   DismissibleInfo,
   IntroRichText,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import {
@@ -95,6 +96,7 @@ import {
   type ExtensionOfTimeClaim,
   type EotStatus,
 } from './api';
+import { variationsGuide } from './variationsGuide';
 
 const VARIATIONS_TAB_IDS = ['notices', 'requests', 'orders', 'daywork', 'eot'] as const;
 type Tab = (typeof VARIATIONS_TAB_IDS)[number];
@@ -500,17 +502,20 @@ export function VariationsPage() {
             'Track variation notices, requests, orders, daywork and EoT claims through to final account.',
         })}
         actions={
-          <Button variant="primary" icon={<Plus size={14} />} onClick={() => setCreateOpen(true)}>
-            {tab === 'notices'
-              ? t('variations.new_notice', { defaultValue: 'New Notice' })
-              : tab === 'requests'
-                ? t('variations.new_request', { defaultValue: 'New Request' })
-                : tab === 'orders'
-                  ? t('variations.new_order', { defaultValue: 'New Order' })
-                  : tab === 'daywork'
-                    ? t('variations.new_daywork', { defaultValue: 'New Daywork' })
-                    : t('variations.new_eot', { defaultValue: 'New EoT Claim' })}
-          </Button>
+          <>
+            <ModuleGuideButton content={variationsGuide} />
+            <Button variant="primary" icon={<Plus size={14} />} onClick={() => setCreateOpen(true)}>
+              {tab === 'notices'
+                ? t('variations.new_notice', { defaultValue: 'New Notice' })
+                : tab === 'requests'
+                  ? t('variations.new_request', { defaultValue: 'New Request' })
+                  : tab === 'orders'
+                    ? t('variations.new_order', { defaultValue: 'New Order' })
+                    : tab === 'daywork'
+                      ? t('variations.new_daywork', { defaultValue: 'New Daywork' })
+                      : t('variations.new_eot', { defaultValue: 'New EoT Claim' })}
+            </Button>
+          </>
         }
       />
 

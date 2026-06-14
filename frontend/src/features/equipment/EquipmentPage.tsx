@@ -33,6 +33,7 @@ import {
   ConfirmDialog,
   DismissibleInfo,
   IntroRichText,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import { MoneyDisplay } from '@/shared/ui/MoneyDisplay';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
@@ -76,6 +77,7 @@ import { DamageReportFormModal } from './modals/DamageReportFormModal';
 import { TypeFormModal } from './modals/TypeFormModal';
 import { EquipmentHealthDashboard } from './components/EquipmentHealthDashboard';
 import { FleetOptimizationPanel } from './components/FleetOptimizationPanel';
+import { equipmentGuide } from './equipmentGuide';
 
 type DrawerTab =
   | 'utilization'
@@ -212,14 +214,23 @@ export function EquipmentPage() {
             'Track equipment assets, utilization, maintenance and certifications.',
         })}
         actions={
-          <Button
-            variant="primary"
-            size="sm"
-            icon={<Plus size={14} />}
-            onClick={() => setCreateOpen(true)}
-          >
-            {t('equipment.new', { defaultValue: 'New Asset' })}
-          </Button>
+          <>
+            {/* "How it works" guide - explains the fleet register, telemetry,
+                maintenance and certification flow. Sits at the head of the
+                action cluster; its closing CTA opens the New Asset form. */}
+            <ModuleGuideButton
+              content={equipmentGuide}
+              onCta={() => setCreateOpen(true)}
+            />
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<Plus size={14} />}
+              onClick={() => setCreateOpen(true)}
+            >
+              {t('equipment.new', { defaultValue: 'New Asset' })}
+            </Button>
+          </>
         }
       />
 

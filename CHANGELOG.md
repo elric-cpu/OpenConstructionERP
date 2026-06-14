@@ -5,6 +5,24 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.1.0] - 2026-06-14
+
+### Added
+
+- A "What's new" button in the top bar. It opens a short panel that links to the latest release news on openconstructionerp.com and notes, with a link to the cookie policy, that the site uses anonymised analytics. Anyone who would rather stay in the app gets a link to the in-app changelog.
+- An honest rule-pack coverage report. A new read-only endpoint shows, for every installed validation rule pack, how many of the rules it declares are actually implemented and run, so a pack can no longer look like it checks more than it does.
+
+### Fixed
+
+- DIN 276 cost groups are now validated across the full code hierarchy (main group, group and sub-group), and the dotted element codes the CAD classifier produces, for example 330.10, are accepted, instead of only the first digit being checked.
+- The takeoff CSV export now subtracts openings and voids the same way the Excel export and the on-screen totals already do, so the same takeoff no longer reports a larger area to CSV than to Excel.
+- The quickstart Docker Compose file now parses once the required POSTGRES_PASSWORD and JWT_SECRET are provided, so its fail-fast checks run as intended. Reported in [#227](https://github.com/datadrivenconstruction/OpenConstructionERP/pull/227).
+- A fresh-database setup error. Running `openconstructionerp init-db` (or `seed`) on a brand-new database could stop with a foreign-key error, because the command built its list of tables from a hand-maintained list that had drifted out of date and missed the file-versions tables. It now discovers every module's tables automatically, the same way the server already does on first start, so a fresh schema is always created in full. The normal `openconstructionerp` start was not affected.
+
+### Security
+
+- Hardened multi-user access control across a range of list, aggregate and detail endpoints so an account only ever sees or changes data in the projects it can reach. A request that leaves out a project filter is now scoped to the caller's own projects instead of returning everything, and administrators keep the full portfolio view. This covers finance budgets, earned value, the finance dashboard and the chart of accounts, business-intelligence dashboards, background jobs, approval workflows, the cost catalogue, lead-capture webhooks, property-development records and the chat assistant.
+
 ## [8.0.0] - 2026-06-13
 
 ### Added

@@ -37,6 +37,7 @@ import {
   RecoveryCard,
   SkeletonTable,
   IntroRichText,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
@@ -107,6 +108,7 @@ import {
   type FiveWhyStep,
   type PermitPrerequisites,
 } from './api';
+import { hseAdvancedGuide } from './hseAdvancedGuide';
 
 const HSE_TAB_IDS = [
   'incidents', 'jsa', 'permits', 'toolbox', 'ppe', 'audits', 'capa',
@@ -461,7 +463,12 @@ export function HSEAdvancedPage() {
           defaultValue:
             'Investigate incidents, run JSAs, manage permits, deliver toolbox talks, issue PPE, audit the site and close CAPAs.',
         })}
-        actions={projectId && <Osha300Download projectId={projectId} />}
+        actions={
+          <>
+            <ModuleGuideButton content={hseAdvancedGuide} />
+            {projectId && <Osha300Download projectId={projectId} />}
+          </>
+        }
       />
 
       <SectionIntro

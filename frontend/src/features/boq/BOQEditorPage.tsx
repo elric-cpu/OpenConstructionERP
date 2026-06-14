@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 // lucide-react icons used by sub-components (BOQToolbar, BOQGrid, etc.) — none needed directly here
-import { Database, Download, ExternalLink, X, Sparkles, AlertTriangle as WarnTriangle, Lock, Copy, Wallet, Keyboard, GitCompare, RefreshCw, ShieldCheck } from 'lucide-react';
+import { Database, Download, ExternalLink, X, Sparkles, AlertTriangle as WarnTriangle, Lock, Copy, Wallet, Keyboard, GitCompare, RefreshCw, ShieldCheck, FlaskConical, Send, Percent } from 'lucide-react';
 import { Button, Badge, Breadcrumb, ModuleHelpButton, ModuleGuideButton, ConfirmDialog, DismissibleInfo, IntroRichText } from '@/shared/ui';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { useProgressStore } from '@/shared/ui/GlobalProgress';
@@ -12,6 +12,7 @@ import { useToastStore } from '@/stores/useToastStore';
 import { useRecentStore } from '@/stores/useRecentStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useBIMLinkSelectionStore } from '@/stores/useBIMLinkSelectionStore';
+import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import {
   boqApi,
   groupPositionsIntoSections,
@@ -25,6 +26,8 @@ import {
   type Markup,
   type ActivityEntry,
   type CostAutocompleteItem,
+  type CopilotAction,
+  type CopilotResource,
   DEFAULT_MAX_NESTING_DEPTH,
 } from './api';
 import { resourceSplitMoneyTotals } from './grid/columnDefs';
@@ -36,6 +39,7 @@ import { fetchBIMModels } from '@/features/bim/api';
 import { AIChatPanel } from './AIChatPanel';
 import { AICostFinderPanel } from './AICostFinderPanel';
 import { AISmartPanel } from './AISmartPanel';
+import { AIPositionCopilot } from './AIPositionCopilot';
 // ClassificationPicker used in sub-components
 // import { ClassificationPicker } from './ClassificationPicker';
 import { VersionHistoryDrawer } from './VersionHistoryDrawer';
@@ -54,6 +58,11 @@ import { exportBOQToExcel } from './exportExcel';
 import { generateBOQPdf } from './pdfReport';
 import type { BOQGridHandle } from './BOQGrid';
 import { BatchActionBar } from './BatchActionBar';
+import { ScenarioDialog } from './ScenarioDialog';
+import { SendToTenderDialog } from './SendToTenderDialog';
+import { BOQFilterBar, type BoqFilterKind } from './BOQFilterBar';
+import { BOQOutline } from './BOQOutline';
+import type { TenderPackageRef } from './api';
 import { boqGuide } from './boqGuide';
 // evaluateFormula used in BOQGrid, not directly here
 // import { evaluateFormula } from './grid/cellEditors';
@@ -389,6 +398,9 @@ export function BOQEditorPage() {
   const trackedDeleteRef = useRef<((id: string) => void) | null>(null);
   /** Stable ref for handleExport — allows keyboard shortcut access before declaration. */
   const handleExportRef = useRef<((format: 'excel' | 'csv' | 'pdf' | 'gaeb') => void) | null>(null);
+  /** Stable ref for the AI-copilot toggle (Alt+I) — set after declaration so
+   *  the keyboard handler can reach it without widening its dependency array. */
+  const toggleAICopilotRef = useRef<(() => void) | null>(null);
 
   // Derived booleans that re-evaluate when undoRedoVersion changes
   const canUndo = undoRedoVersion >= 0 && undoStackRef.current.length > 0;
@@ -994,11 +1006,139 @@ export function BOQEditorPage() {
     });
   }, []);
 
+  // Expand / collapse every section at once (Row 2 toggle). Collapsing adds
+  // every section id (including nested sub-sections) to the collapsed set;
+  // expanding clears it.
+  const allSectionIds = useMemo(
+    () => (boq?.positions ?? []).filter((p) => isSection(p)).map((p) => p.id),
+    [boq?.positions],
+  );
+  const allSectionsCollapsed =
+    allSectionIds.length > 0 && allSectionIds.every((id) => collapsedSections.has(id));
+  const handleToggleAllSections = useCallback(() => {
+    setCollapsedSections((prev) => {
+      const allIn = allSectionIds.length > 0 && allSectionIds.every((id) => prev.has(id));
+      return allIn ? new Set<string>() : new Set(allSectionIds);
+    });
+  }, [allSectionIds]);
+
+  /* ── Search + quick QA filters (grid view only) ────────────────────── */
+  const [boqSearch, setBoqSearch] = useState('');
+  const [boqFilter, setBoqFilter] = useState<BoqFilterKind>('all');
+  const filterActive = boqSearch.trim() !== '' || boqFilter !== 'all';
+
+  const totalLeafCount = useMemo(
+    () => (boq?.positions ?? []).filter((p) => !isSection(p)).length,
+    [boq?.positions],
+  );
+
+  // Narrow ONLY the grid view. Totals, exports and the grand total keep using
+  // boq.positions, so the headline numbers never move when you filter. We keep
+  // matching leaves plus their ancestor sections (so the tree stays coherent),
+  // and a section whose name matches the text search is shown with its children.
+  const { filteredGridPositions, filterKeepIds } = useMemo(() => {
+    const all = boq?.positions ?? [];
+    if (!filterActive) return { filteredGridPositions: all, filterKeepIds: new Set<string>() };
+    const q = boqSearch.trim().toLowerCase();
+    const byId = new Map(all.map((p) => [p.id, p]));
+    const childrenByParent = new Map<string | null, Position[]>();
+    for (const p of all) {
+      const k = p.parent_id ?? null;
+      const arr = childrenByParent.get(k);
+      if (arr) arr.push(p);
+      else childrenByParent.set(k, [p]);
+    }
+    const passesFilter = (p: Position): boolean => {
+      switch (boqFilter) {
+        case 'errors':
+          return p.validation_status === 'errors';
+        case 'no_price':
+          return !isSection(p) && (!p.unit_rate || p.unit_rate === 0);
+        case 'zero_qty':
+          return !isSection(p) && (!p.quantity || p.quantity === 0);
+        case 'ai':
+          return typeof p.source === 'string' && p.source.toLowerCase().includes('ai');
+        default:
+          return true;
+      }
+    };
+    const matchesSearch = (p: Position): boolean => {
+      if (!q) return true;
+      return (
+        (p.description ?? '').toLowerCase().includes(q) ||
+        (p.ordinal ?? '').toLowerCase().includes(q)
+      );
+    };
+    const keep = new Set<string>();
+    const addAncestors = (p: Position) => {
+      let parentId = p.parent_id;
+      const guard = new Set<string>();
+      while (parentId && !guard.has(parentId)) {
+        guard.add(parentId);
+        const parent = byId.get(parentId);
+        if (!parent) break;
+        keep.add(parent.id);
+        parentId = parent.parent_id;
+      }
+    };
+    const addDescendants = (sectionId: string) => {
+      const stack = [sectionId];
+      while (stack.length) {
+        const id = stack.pop() as string;
+        for (const child of childrenByParent.get(id) ?? []) {
+          if (!keep.has(child.id)) {
+            keep.add(child.id);
+            stack.push(child.id);
+          }
+        }
+      }
+    };
+    for (const p of all) {
+      const sec = isSection(p);
+      const direct = sec
+        ? boqFilter === 'all' && q !== '' && matchesSearch(p)
+        : passesFilter(p) && matchesSearch(p);
+      if (direct) {
+        keep.add(p.id);
+        addAncestors(p);
+        if (sec) addDescendants(p.id);
+      }
+    }
+    return { filteredGridPositions: all.filter((p) => keep.has(p.id)), filterKeepIds: keep };
+  }, [boq?.positions, boqFilter, boqSearch, filterActive]);
+
+  const filteredLeafCount = useMemo(
+    () => filteredGridPositions.filter((p) => !isSection(p)).length,
+    [filteredGridPositions],
+  );
+
+  // While a filter is active, force-open exactly the sections that contain a
+  // match (every id in filterKeepIds is a kept ancestor/section) so matching
+  // rows are actually rendered - otherwise a collapsed section would hide them
+  // while the "X of Y" count still claims they are shown. The user's real
+  // collapse state (collapsedSections) is left untouched for when the filter
+  // clears.
+  const effectiveCollapsedSections = useMemo(
+    () =>
+      filterActive
+        ? new Set([...collapsedSections].filter((id) => !filterKeepIds.has(id)))
+        : collapsedSections,
+    [filterActive, collapsedSections, filterKeepIds],
+  );
+
   /* ── AI Chat panel ────────────────────────────────────────────────── */
 
   const [aiChatOpen, setAiChatOpen] = useState(false);
   const [costFinderOpen, setCostFinderOpen] = useState(false);
   const [smartPanelOpen, setSmartPanelOpen] = useState(false);
+  /**
+   * Per-position AI copilot dock. ``aiCopilotOpen`` controls visibility;
+   * ``aiCopilotPositionId`` is the position it acts on. While open the dock
+   * follows the active row (see the effect below) so clicking another partida
+   * retargets the copilot to it and replays that row's persisted history.
+   */
+  const [aiCopilotOpen, setAiCopilotOpen] = useState(false);
+  const [aiCopilotPositionId, setAiCopilotPositionId] = useState<string | null>(null);
   const [costDbModalOpen, setCostDbModalOpen] = useState(false);
   const [assemblyModalOpen, setAssemblyModalOpen] = useState(false);
   const [excelPasteOpen, setExcelPasteOpen] = useState(false);
@@ -1160,6 +1300,197 @@ export function BOQEditorPage() {
     [updateMutation],
   );
 
+  /* ── Per-position AI copilot ──────────────────────────────────────── */
+
+  /** Open the copilot dock targeting a specific position. */
+  const handleOpenAICopilot = useCallback((posId: string) => {
+    setAiCopilotPositionId(posId);
+    setAiCopilotOpen(true);
+  }, []);
+
+  // The inline copilot stays anchored to the position it was opened on (it
+  // renders as a full-width row directly under that position). It re-targets
+  // only on an explicit reopen (context menu / Alt+I), never on passive row
+  // selection, so the panel does not jump around as the user clicks the grid.
+
+  // Alt+I toggle: close if open, else open on the active/selected partida.
+  // Wired through a ref so the curated keydown effect can call it without
+  // listing every dependency (same pattern as addPositionRef et al.).
+  toggleAICopilotRef.current = () => {
+    if (aiCopilotOpen) {
+      setAiCopilotOpen(false);
+      return;
+    }
+    const target =
+      activePositionId ??
+      (selectedPositionIds.length === 1 ? selectedPositionIds[0]! : null);
+    if (!target) {
+      addToast({
+        type: 'info',
+        title: t('boq.copilot.select_a_position', {
+          defaultValue: 'Select a position to open the copilot',
+        }),
+      });
+      return;
+    }
+    handleOpenAICopilot(target);
+  };
+
+  /**
+   * Mirror a copilot {@link CopilotAction} into the grid cache + undo stack via
+   * ``trackedUpdate`` so every copilot change is Ctrl+Z-undoable and the row
+   * repaints immediately.
+   *
+   * IMPORTANT — no double-apply: the backend already persisted ``auto_applied``
+   * actions AND confirmed ``needs_review`` applies (the dock POSTs the latter
+   * to /copilot/apply itself). This handler therefore only mirrors into the
+   * client; it never issues its own write beyond the trackedUpdate PATCH that
+   * keeps the optimistic cache in sync. The PATCH is idempotent with the
+   * server's stored value, so re-sending the same after-state is safe.
+   *
+   * For ``add_resources`` we append to the position's CURRENT resources (read
+   * from the cache, not the snapshot the dock passed) and recompute unit_rate =
+   * Σ(quantity × unit_rate) over every resource — the exact rollup
+   * ``handleCostDbAddResource`` uses — so money/qty never drift.
+   */
+  const handleCopilotApplyAction = useCallback(
+    (action: CopilotAction, fallbackPosition: Position) => {
+      // Prefer the live cache row; fall back to the snapshot the dock handed us.
+      const pos =
+        boq?.positions.find((p) => p.id === fallbackPosition.id) ?? fallbackPosition;
+      const posId = pos.id;
+
+      const payload = action.payload ?? {};
+
+      const num = (bag: Record<string, unknown>, key: string): number | undefined => {
+        const v = bag[key];
+        if (typeof v === 'number' && Number.isFinite(v)) return v;
+        if (typeof v === 'string' && v.trim() !== '') {
+          const n = Number(v);
+          if (Number.isFinite(n)) return n;
+        }
+        return undefined;
+      };
+      const str = (bag: Record<string, unknown>, key: string): string | undefined => {
+        const v = bag[key];
+        return typeof v === 'string' ? v : undefined;
+      };
+
+      switch (action.action_type) {
+        case 'update_description': {
+          const description = str(payload, 'description');
+          if (description == null) return;
+          trackedUpdate(
+            posId,
+            { description },
+            { description: pos.description },
+          );
+          break;
+        }
+        case 'set_quantity': {
+          const quantity = num(payload, 'quantity');
+          if (quantity == null) return;
+          const unit = str(payload, 'unit');
+          const newData: UpdatePositionData = { quantity };
+          const oldData: UpdatePositionData = { quantity: pos.quantity };
+          if (unit != null && unit !== pos.unit) {
+            newData.unit = unit;
+            oldData.unit = pos.unit;
+          }
+          trackedUpdate(posId, newData, oldData);
+          break;
+        }
+        case 'set_unit_rate': {
+          const unitRate = num(payload, 'unit_rate');
+          if (unitRate == null) return;
+          const currency = str(payload, 'currency');
+          const newData: UpdatePositionData = { unit_rate: unitRate };
+          const oldData: UpdatePositionData = { unit_rate: pos.unit_rate };
+          // A catalog price carries its own currency — stamp it onto metadata
+          // so the row prices in the catalog's native currency (same contract
+          // as handleCostDbAddResource's currencyStamp).
+          if (currency && currency.trim()) {
+            newData.metadata = { ...(pos.metadata ?? {}), currency };
+            oldData.metadata = pos.metadata ?? {};
+          }
+          trackedUpdate(posId, newData, oldData);
+          break;
+        }
+        case 'add_resources': {
+          const incoming = Array.isArray(payload.resources)
+            ? (payload.resources as CopilotResource[])
+            : [];
+          if (incoming.length === 0) return;
+          const existing = [
+            ...((pos.metadata?.resources ?? []) as Array<Record<string, unknown>>),
+          ];
+          const newResources: Array<Record<string, unknown>> = incoming.map((r) => {
+            const quantity = Number(r.quantity) || 0;
+            const unitRate = Number(r.unit_rate) || 0;
+            const entry: Record<string, unknown> = {
+              name: r.name,
+              type: r.type || 'material',
+              unit: r.unit,
+              quantity,
+              unit_rate: unitRate,
+              total: Math.round(quantity * unitRate * 100) / 100,
+            };
+            if (r.code) entry.code = r.code;
+            if (r.currency && r.currency.trim()) entry.currency = r.currency;
+            return entry;
+          });
+          const merged = [...existing, ...newResources];
+          // Recompute unit_rate = Σ(quantity × unit_rate) over ALL resources —
+          // identical to handleCostDbAddResource so the rollup stays correct.
+          let computedRate = 0;
+          for (const r of merged) {
+            computedRate +=
+              ((r.quantity as number) ?? 0) * ((r.unit_rate as number) ?? 0);
+          }
+          computedRate = Math.round(computedRate * 100) / 100;
+          const newMeta: Record<string, unknown> = {
+            ...(pos.metadata ?? {}),
+            resources: merged,
+          };
+          trackedUpdate(
+            posId,
+            { unit_rate: computedRate, metadata: newMeta },
+            { unit_rate: pos.unit_rate, metadata: pos.metadata ?? {} },
+          );
+          break;
+        }
+        default:
+          break;
+      }
+    },
+    [boq?.positions, trackedUpdate],
+  );
+
+  /**
+   * Render the inline copilot for the BOQ grid's injected full-width row. The
+   * grid calls this for the position the copilot is open on; we look the
+   * position up fresh from the cache so applies (which mirror into the cache)
+   * flow straight back into the panel.
+   */
+  const renderInlineCopilot = useCallback(
+    (posId: string) => {
+      if (!boqId) return null;
+      const pos = boq?.positions.find((p) => p.id === posId) ?? null;
+      return (
+        <AIPositionCopilot
+          variant="inline"
+          boqId={boqId}
+          positionId={posId}
+          position={pos}
+          isOpen
+          onClose={() => setAiCopilotOpen(false)}
+          onApplyAction={handleCopilotApplyAction}
+        />
+      );
+    },
+    [boqId, boq?.positions, handleCopilotApplyAction],
+  );
+
   /* ── Batch action handlers ──────────────────────────────────────── */
 
   const handleBatchDelete = useCallback(
@@ -1209,6 +1540,38 @@ export function BOQEditorPage() {
   );
 
   /**
+   * Excel-style fill: write an exact unit_rate / quantity onto every selected
+   * leaf position. Goes through trackedUpdate so each row keeps its own undo
+   * entry and recompute. Section rows are skipped (they carry no money).
+   */
+  const handleBatchSetValue = useCallback(
+    (ids: string[], field: 'unit_rate' | 'quantity', value: number) => {
+      if (!boq) return;
+      let count = 0;
+      for (const id of ids) {
+        const pos = boq.positions.find((p) => p.id === id);
+        if (!pos || isSection(pos)) continue;
+        const oldData: UpdatePositionData =
+          field === 'unit_rate' ? { unit_rate: pos.unit_rate } : { quantity: pos.quantity };
+        const newData: UpdatePositionData =
+          field === 'unit_rate' ? { unit_rate: value } : { quantity: value };
+        trackedUpdate(id, newData, oldData);
+        count++;
+      }
+      setSelectedPositionIds([]);
+      boqGridRef.current?.clearSelection();
+      addToast({
+        type: 'success',
+        title: t('boq.batch_set_value_done', {
+          defaultValue: 'Updated {{count}} positions',
+          count: String(count),
+        } as Record<string, string>),
+      });
+    },
+    [boq, trackedUpdate, addToast, t],
+  );
+
+  /**
    * v3.12.0 Stream A — multiply unit_rate / quantity on every selected row
    * via the bulk-update endpoint (one PATCH covers all ids, one umbrella
    * audit row is written). Cache invalidation refreshes the grid so the
@@ -1248,6 +1611,58 @@ export function BOQEditorPage() {
           title: t('boq.batch_factor_failed', {
             defaultValue: 'Bulk update failed',
           }),
+          message: msg,
+        });
+      }
+    },
+    [boqId, queryClient, addToast, t],
+  );
+
+  /**
+   * Find-and-replace across the descriptions of every selected row via the
+   * bulk-update endpoint. The server rewrites each description and skips rows
+   * with no match, so the toast reports updated vs. unchanged counts.
+   */
+  const handleBatchFindReplace = useCallback(
+    async (ids: string[], find: string, replace: string, caseSensitive: boolean) => {
+      if (!boqId || ids.length === 0 || !find) return;
+      try {
+        const result = await boqApi.bulkUpdatePositions(boqId, {
+          ids,
+          find_replace: { field: 'description', find, replace, case_sensitive: caseSensitive },
+        });
+        queryClient.invalidateQueries({ queryKey: ['boq', boqId] });
+        queryClient.invalidateQueries({ queryKey: ['boq-activity', boqId] });
+        setSelectedPositionIds([]);
+        boqGridRef.current?.clearSelection();
+        // `unchanged` = benign no-match rows; `skipped` = genuine failures
+        // (locked / validation). Report each with its own wording.
+        const noMatch = result.unchanged ?? 0;
+        const failed = result.skipped ?? 0;
+        addToast({
+          type: failed > 0 ? 'warning' : 'success',
+          title: t('boq.batch_find_replace_done', {
+            defaultValue: 'Updated {{count}} descriptions',
+            count: String(result.updated),
+          } as Record<string, string>),
+          message:
+            failed > 0
+              ? t('boq.batch_find_replace_failed_some', {
+                  defaultValue: '{{count}} rows could not be updated.',
+                  count: String(failed),
+                } as Record<string, string>)
+              : noMatch > 0
+                ? t('boq.batch_find_replace_skipped', {
+                    defaultValue: '{{count}} rows had no match.',
+                    count: String(noMatch),
+                  } as Record<string, string>)
+                : undefined,
+        });
+      } catch (e) {
+        const msg = e instanceof ApiError ? e.message : String(e);
+        addToast({
+          type: 'error',
+          title: t('boq.batch_find_replace_failed', { defaultValue: 'Find and replace failed' }),
           message: msg,
         });
       }
@@ -1521,6 +1936,16 @@ export function BOQEditorPage() {
 
       // Guard remaining shortcuts — don't fire when editing cells
       if (isEditing) return;
+
+      // Alt+I = Toggle the per-position AI copilot dock on the active row.
+      // Alt (not Ctrl/Cmd) keeps it clear of Ctrl+I (import). Match e.code so
+      // non-US layouts still hit the physical I key.
+      if (e.altKey && !isCmd && !e.shiftKey && (k === 'i' || codeLetter === 'i')) {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleAICopilotRef.current?.();
+        return;
+      }
 
       // Delete / Backspace = delete selected position(s). Fires the same
       // tracked-delete pipeline as the context menu / batch-bar, so undo
@@ -2291,6 +2716,59 @@ export function BOQEditorPage() {
 
   // ── Feature 2: estimate baseline / line-level compare ──────────────────
   const [compareOpen, setCompareOpen] = useState(false);
+
+  // What-if scenario + send-to-tender dialogs, and the "jump to markups"
+  // signal that re-opens the (collapsible) markup panel below the grid.
+  const [scenarioOpen, setScenarioOpen] = useState(false);
+  const [tenderOpen, setTenderOpen] = useState(false);
+  const [markupOpenSignal, setMarkupOpenSignal] = useState(0);
+
+  // Top-level sections inside the current selection. Empty means the tender
+  // dialog packages the whole BOQ (the backend treats [] as every section).
+  const selectedSectionIds = useMemo(
+    () =>
+      (boq?.positions ?? [])
+        .filter((p) => selectedPositionIds.includes(p.id) && isSection(p) && !p.parent_id)
+        .map((p) => p.id),
+    [boq?.positions, selectedPositionIds],
+  );
+
+  const handleJumpToMarkups = useCallback(() => {
+    setMarkupOpenSignal((n) => n + 1);
+    // Defer so the panel re-expands before we scroll it into view.
+    requestAnimationFrame(() => {
+      document
+        .getElementById('boq-markups-panel')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, []);
+
+  // Outline: jump the grid to a section header and flash it.
+  const handleOutlineJump = useCallback((positionId: string) => {
+    boqGridRef.current?.scrollToPosition(positionId);
+  }, []);
+
+  const handleScenarioCreated = useCallback(
+    (newBoqId: string) => {
+      setScenarioOpen(false);
+      navigate(`/boq/${newBoqId}`);
+    },
+    [navigate],
+  );
+
+  const setActiveProject = useProjectContextStore((s) => s.setActiveProject);
+  const handleTenderCreated = useCallback(
+    (pkg: TenderPackageRef) => {
+      setTenderOpen(false);
+      // The package is created under the BOQ's project, which may differ from
+      // the globally active project. Point the project context at it so the
+      // tendering page's package list (keyed on the active project) includes
+      // the new package before we deep-link to it.
+      if (boq?.project_id) setActiveProject(boq.project_id, project?.name ?? '');
+      navigate(`/tendering?package=${pkg.id}`);
+    },
+    [navigate, setActiveProject, boq?.project_id, project?.name],
+  );
 
   const unlinkMutation = useMutation({
     mutationFn: (positionId: string) => boqApi.unlinkPosition(positionId),
@@ -4081,6 +4559,40 @@ export function BOQEditorPage() {
               <Copy size={14} className="mr-1" />
               {t('boq.create_revision', { defaultValue: 'Create Revision' })}
             </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setScenarioOpen(true)}
+              title={t('boq.scenario_btn_hint', {
+                defaultValue: 'Clone this estimate into a what-if scenario and adjust it freely',
+              })}
+            >
+              <FlaskConical size={14} className="mr-1" />
+              {t('boq.scenario_btn', { defaultValue: 'What-if' })}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleJumpToMarkups}
+              title={t('boq.markups_btn_hint', {
+                defaultValue: 'Overhead, profit, tax and contingency (OH&P)',
+              })}
+            >
+              <Percent size={14} className="mr-1" />
+              {t('boq.markups_btn', { defaultValue: 'Markups' })}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setTenderOpen(true)}
+              title={t('boq.tender_btn_hint', {
+                defaultValue: 'Create a tender package from this estimate',
+              })}
+            >
+              <Send size={14} className="mr-1" />
+              {t('boq.tender_btn', { defaultValue: 'To tender' })}
+            </Button>
+            <BOQOutline positions={boq.positions} onJump={handleOutlineJump} />
             {/* Per-module Tour CTA — launches the BOQ-specific guided tour
                 via the registered TOUR_REGISTRY entry, independent of any
                 global / first-login tour state. The Guide button sits in the
@@ -4152,6 +4664,8 @@ export function BOQEditorPage() {
           hasPositions={hasPositions}
           qualityScoreRing={<QualityScoreRing score={qualityBreakdown.score} breakdown={qualityBreakdown} t={t} />}
           onShowShortcuts={() => setShowShortcuts(true)}
+          onToggleCollapseAll={handleToggleAllSections}
+          allSectionsCollapsed={allSectionsCollapsed}
           summary={hasPositions ? {
             sectionCount: miniSummaryStats.sectionCount,
             positionCount: miniSummaryStats.positionCount,
@@ -4189,9 +4703,22 @@ export function BOQEditorPage() {
         // keeps its own internal horizontal scrollbar, which is what the
         // user expects (toolbar and headers stay aligned with the page).
         <div className="mb-2 min-w-0" data-testid="boq-grid">
+        <BOQFilterBar
+          search={boqSearch}
+          onSearch={setBoqSearch}
+          filter={boqFilter}
+          onFilter={setBoqFilter}
+          shown={filteredLeafCount}
+          total={totalLeafCount}
+          active={filterActive}
+          onClear={() => {
+            setBoqSearch('');
+            setBoqFilter('all');
+          }}
+        />
         <BOQGrid
           ref={boqGridRef}
-          positions={boq.positions}
+          positions={filteredGridPositions}
           onUpdatePosition={trackedUpdate}
           onDeletePosition={trackedDelete}
           onAddPosition={handleAddPosition}
@@ -4202,7 +4729,7 @@ export function BOQEditorPage() {
           onReorderPositions={handleReorderPositions}
           onReorderSections={handleReorderSections}
           onDeleteSection={handleDeleteSection}
-          collapsedSections={collapsedSections}
+          collapsedSections={effectiveCollapsedSections}
           onToggleSection={toggleSection}
           highlightPositionId={newPositionId ?? bimScrollTargetId ?? undefined}
           currencySymbol={currencySymbol}
@@ -4232,6 +4759,9 @@ export function BOQEditorPage() {
           onRepickResourceVariant={handleRepickResourceVariant}
           onOpenCostDbForPosition={handleOpenCostDbForPosition}
           onOpenCatalogForPosition={handleOpenCatalogForPosition}
+          onOpenAICopilot={handleOpenAICopilot}
+          aiCopilotPositionId={aiCopilotOpen ? aiCopilotPositionId : null}
+          renderInlineCopilot={renderInlineCopilot}
           onAddManualResource={handleAddManualResource}
           onLookupResourceByCode={handleLookupResourceByCode}
           onDuplicatePosition={handleDuplicatePosition}
@@ -4269,6 +4799,10 @@ export function BOQEditorPage() {
         </div>
       )}
 
+      {/* The per-position AI copilot renders inline as a full-width row
+          directly under its position inside the grid (renderInlineCopilot +
+          BOQGrid aiCopilotPositionId), not as a dock under the grid. */}
+
       {/* ── Price Review Panel (shown after Price Check) ────────────── */}
       {anomalyMap.size > 0 && (
         <PriceReviewPanel
@@ -4294,6 +4828,7 @@ export function BOQEditorPage() {
             currencyCode={currencyCode}
             locale={locale}
             fmt={fmt}
+            openSignal={markupOpenSignal}
           />
         </div>
       )}
@@ -4457,6 +4992,8 @@ export function BOQEditorPage() {
         onClearSelection={handleClearSelection}
         onBatchFactor={handleBatchFactor}
         onBatchSetClassification={handleBatchSetClassification}
+        onBatchFindReplace={handleBatchFindReplace}
+        onBatchSetValue={handleBatchSetValue}
       />
 
       {/* ── Export Quality Warning Dialog ──────────────────────────── */}
@@ -4610,6 +5147,31 @@ export function BOQEditorPage() {
           projectId={boq.project_id}
           isOpen={compareOpen}
           onClose={() => setCompareOpen(false)}
+          parentEstimateId={boq.parent_estimate_id}
+        />
+      )}
+
+      {/* ── What-if scenario dialog ───────────────────────────────── */}
+      {boqId && (
+        <ScenarioDialog
+          boqId={boqId}
+          baseName={boq?.name ?? ''}
+          isOpen={scenarioOpen}
+          onClose={() => setScenarioOpen(false)}
+          onCreated={handleScenarioCreated}
+        />
+      )}
+
+      {/* ── Send to tender dialog ─────────────────────────────────── */}
+      {boqId && boq?.project_id && (
+        <SendToTenderDialog
+          boqId={boqId}
+          projectId={boq.project_id}
+          baseName={boq?.name ?? ''}
+          sectionIds={selectedSectionIds}
+          isOpen={tenderOpen}
+          onClose={() => setTenderOpen(false)}
+          onCreated={handleTenderCreated}
         />
       )}
 

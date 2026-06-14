@@ -37,12 +37,17 @@ from app.modules.tendering.schemas import (
     BidCreate,
     BidResponse,
     BidUpdate,
+    CreatePackageFromBOQData,
+    DistributeRequest,
+    DistributeResponse,
     LevelBidsResponse,
     LevelingMatrixResponse,
     PackageCreate,
     PackageResponse,
     PackageUpdate,
     PackageWithBidsResponse,
+    RecipientCreate,
+    RecipientResponse,
 )
 from app.modules.tendering.service import TenderingService
 
@@ -269,6 +274,36 @@ async def create_package(
         )
 
 
+@router.post("/packages/from-boq/", response_model=PackageResponse, status_code=201)
+async def create_package_from_boq(
+    data: CreatePackageFromBOQData,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    service: TenderingService = Depends(_get_service),
+    _perm: None = Depends(RequirePermission("tendering.create")),
+) -> PackageResponse:
+    """Create a tender package seeded from selected BOQ sections.
+
+    Loads the specified BOQ, collects every position under the requested
+    top-level sections (or all sections when ``section_ids`` is empty), and
+    creates a draft package whose metadata contains a compact line-item
+    template ready for pre-seeding incoming bids.
+    """
+    await _verify_tender_project_owner(session, data.project_id, user_id, payload)
+    try:
+        package = await service.create_package_from_boq(data, actor_id=user_id)
+        return _package_to_response(package)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to create tender package from BOQ")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create tender package from BOQ",
+        )
+
+
 @router.get("/packages/", response_model=list[PackageResponse])
 async def list_packages(
     user_id: CurrentUserId,
@@ -435,6 +470,85 @@ async def apply_tender_winner(
     """
     await _verify_package_owner(service, session, package_id, user_id, payload)
     return await service.apply_winner(package_id, bid_id, awarded_by=user_id)
+
+
+# ── Distribution Endpoints ────────────────────────────────────────────────────
+
+
+@router.get("/packages/{package_id}/recipients/", response_model=list[RecipientResponse])
+async def list_package_recipients(
+    package_id: uuid.UUID,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    service: TenderingService = Depends(_get_service),
+    _perm: None = Depends(RequirePermission("tendering.read")),
+) -> list[RecipientResponse]:
+    """List the subcontractors on a package's distribution list."""
+    await _verify_package_owner(service, session, package_id, user_id, payload)
+    return await service.list_recipients(package_id)
+
+
+@router.post(
+    "/packages/{package_id}/recipients/",
+    response_model=RecipientResponse,
+    status_code=201,
+)
+async def add_package_recipient(
+    package_id: uuid.UUID,
+    data: RecipientCreate,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    service: TenderingService = Depends(_get_service),
+    _perm: None = Depends(RequirePermission("tendering.distribute")),
+) -> RecipientResponse:
+    """Add a subcontractor to a package's distribution list."""
+    await _verify_package_owner(service, session, package_id, user_id, payload)
+    return await service.add_recipient(package_id, data)
+
+
+@router.delete(
+    "/packages/{package_id}/recipients/{recipient_id}",
+    status_code=204,
+)
+async def remove_package_recipient(
+    package_id: uuid.UUID,
+    recipient_id: str,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    service: TenderingService = Depends(_get_service),
+    _perm: None = Depends(RequirePermission("tendering.distribute")),
+) -> None:
+    """Remove a subcontractor from a package's distribution list."""
+    await _verify_package_owner(service, session, package_id, user_id, payload)
+    await service.remove_recipient(package_id, recipient_id)
+
+
+@router.post(
+    "/packages/{package_id}/distribute/",
+    response_model=DistributeResponse,
+)
+async def distribute_package(
+    package_id: uuid.UUID,
+    data: DistributeRequest,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    service: TenderingService = Depends(_get_service),
+    _perm: None = Depends(RequirePermission("tendering.distribute")),
+) -> DistributeResponse:
+    """Email the tender package to its recipients.
+
+    Sends each recipient an invitation-to-tender email (with the package
+    details and a link), records the per-recipient send state/timestamp, and
+    degrades gracefully when SMTP is not configured: the platform email sender
+    falls back to the console backend and never raises, so the response reports
+    the resolved backend and ``smtp_configured`` instead of crashing.
+    """
+    await _verify_package_owner(service, session, package_id, user_id, payload)
+    return await service.distribute_package(package_id, data, actor_id=user_id)
 
 
 # ── Addenda Endpoints ────────────────────────────────────────────────────────
@@ -677,6 +791,74 @@ async def export_tender_pdf(
         media_type="application/pdf",
         # RFC 6266 - a package name with non-Latin-1 chars would otherwise 500
         # while the ASGI server encodes this header.
+        headers={"Content-Disposition": content_disposition_attachment(filename)},
+    )
+
+
+@router.get("/packages/{package_id}/bids/{bid_id}/award-letter/pdf/")
+async def export_award_letter_pdf(
+    package_id: uuid.UUID,
+    bid_id: uuid.UUID,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    service: TenderingService = Depends(_get_service),
+    _perm: None = Depends(RequirePermission("tendering.distribute")),
+) -> StreamingResponse:
+    """Download a PDF letter of award for the winning bid.
+
+    Reuses the platform PDF stack (reportlab, via tendering/pdf_documents.py)
+    so the award letter matches the look of the BOQ cost estimate. Money is
+    rendered Decimal-correct. Tenant-scoped via project access on the package.
+    """
+    await _verify_package_owner(service, session, package_id, user_id, payload)
+    try:
+        pdf_bytes, filename = await service.build_award_letter_pdf(package_id, bid_id)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to generate award letter for package %s bid %s", package_id, bid_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate award letter",
+        )
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": content_disposition_attachment(filename)},
+    )
+
+
+@router.get("/packages/{package_id}/bids/{bid_id}/rejection-letter/pdf/")
+async def export_rejection_letter_pdf(
+    package_id: uuid.UUID,
+    bid_id: uuid.UUID,
+    user_id: CurrentUserId,
+    payload: CurrentUserPayload,
+    session: SessionDep,
+    service: TenderingService = Depends(_get_service),
+    _perm: None = Depends(RequirePermission("tendering.distribute")),
+) -> StreamingResponse:
+    """Download a PDF rejection notice for an unsuccessful bid.
+
+    Reuses the platform PDF stack (reportlab). Money is Decimal-correct and the
+    awarded sum is shown for transparency only when it shares the rejected
+    bid's currency. Tenant-scoped via project access on the package.
+    """
+    await _verify_package_owner(service, session, package_id, user_id, payload)
+    try:
+        pdf_bytes, filename = await service.build_rejection_letter_pdf(package_id, bid_id)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Failed to generate rejection notice for package %s bid %s", package_id, bid_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to generate rejection notice",
+        )
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
         headers={"Content-Disposition": content_disposition_attachment(filename)},
     )
 

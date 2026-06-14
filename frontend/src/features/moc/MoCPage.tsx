@@ -53,6 +53,7 @@ import {
   RecoveryCard,
   SkeletonTable,
   IntroRichText,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { PageHeader } from '@/shared/ui/PageHeader';
@@ -79,6 +80,7 @@ import {
   type UpdateMoCPayload,
   type CreateImpactPayload,
 } from './api';
+import { mocGuide } from './mocGuide';
 
 /* -- Constants ------------------------------------------------------------- */
 
@@ -1284,19 +1286,31 @@ export function MoCPage() {
           defaultValue: 'Capture, assess, and route deviations from the agreed design, scope, or process',
         })}
         actions={
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => {
-              setEditTarget(null);
-              setShowFormModal(true);
-            }}
-            disabled={!projectId}
-            title={!projectId ? t('common.select_project_first', { defaultValue: 'Please select a project first' }) : undefined}
-            icon={<Plus size={14} />}
-          >
-            {t('moc.new_change', { defaultValue: 'New change request' })}
-          </Button>
+          <>
+            {/* How it works guide - explains the change-control concepts and
+                the raise / assess / review / approve flow. Sits as the
+                leading help pill ahead of the primary action. */}
+            <ModuleGuideButton
+              content={mocGuide}
+              onCta={() => {
+                setEditTarget(null);
+                setShowFormModal(true);
+              }}
+            />
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                setEditTarget(null);
+                setShowFormModal(true);
+              }}
+              disabled={!projectId}
+              title={!projectId ? t('common.select_project_first', { defaultValue: 'Please select a project first' }) : undefined}
+              icon={<Plus size={14} />}
+            >
+              {t('moc.new_change', { defaultValue: 'New change request' })}
+            </Button>
+          </>
         }
       />
 

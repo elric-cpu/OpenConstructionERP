@@ -288,6 +288,64 @@ describe('ElementManager.applyFilter on a DAE-loaded scene', () => {
 });
 
 /**
+ * Filter vs. Layers-tab category visibility — these are two independent
+ * visibility systems and must not stomp each other. BIMViewer re-runs its
+ * Layers sync (one `setCategoryVisible(cat, visible)` per category) after
+ * every filter change. Before the fix, that pass re-revealed every category
+ * right after the filter isolated one group, so the chosen group never stayed
+ * isolated and the whole model snapped back into view (founder report:
+ * "clicking a filter does not show the group, the elements just stay/return").
+ * These tests pin that an active filter wins over a category-reveal.
+ */
+describe('ElementManager.applyFilter vs setCategoryVisible (no stomp)', () => {
+  let scene: SceneManager;
+  let mgr: ElementManager;
+
+  beforeEach(() => {
+    scene = makeFakeSceneManager();
+    mgr = new ElementManager(scene);
+    mgr.loadElements(sampleElements(), { skipPlaceholders: false });
+  });
+
+  it('keeps the filter isolation when the Layers sync reveals every category', () => {
+    // User picks the Walls chip -> only walls visible.
+    mgr.applyFilter((el) => el.element_type === 'Walls');
+    expect(mgr.getMesh('d1')!.visible).toBe(false);
+
+    // BIMViewer's Layers sync then drives every category "visible" because
+    // nothing is hidden in the Layers tab. This must NOT re-show the doors.
+    mgr.setCategoryVisible('Walls', true);
+    mgr.setCategoryVisible('Doors', true);
+
+    expect(mgr.getMesh('w1')!.visible).toBe(true);
+    expect(mgr.getMesh('w2')!.visible).toBe(true);
+    // The door stays hidden because it fails the active filter predicate.
+    expect(mgr.getMesh('d1')!.visible).toBe(false);
+  });
+
+  it('restores normal category toggling once the filter is cleared', () => {
+    mgr.applyFilter((el) => el.element_type === 'Walls'); // isolate walls
+    mgr.applyFilter(() => true); // clear filter (match-all)
+    // With no filter active, hiding a category works again.
+    mgr.setCategoryVisible('Walls', false);
+    expect(mgr.getMesh('w1')!.visible).toBe(false);
+    expect(mgr.getMesh('w2')!.visible).toBe(false);
+    expect(mgr.getMesh('d1')!.visible).toBe(true);
+    // And revealing it brings it back.
+    mgr.setCategoryVisible('Walls', true);
+    expect(mgr.getMesh('w1')!.visible).toBe(true);
+  });
+
+  it('showAll() clears the filter so categories toggle freely again', () => {
+    mgr.applyFilter((el) => el.element_type === 'Walls');
+    mgr.showAll();
+    // After showAll the filter is gone; a category reveal is unconstrained.
+    mgr.setCategoryVisible('Doors', true);
+    expect(mgr.getMesh('d1')!.visible).toBe(true);
+  });
+});
+
+/**
  * Up-axis handling in `processLoadedScene` — branch by loader.
  *
  *  - GLB scenes need an explicit -90° X rotation: GLTFLoader does no

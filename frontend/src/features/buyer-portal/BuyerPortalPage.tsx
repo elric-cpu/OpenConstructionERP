@@ -66,8 +66,10 @@ import {
   X,
 } from 'lucide-react';
 
-import { BetaBanner } from '@/shared/ui';
+import { BetaBanner, ModuleGuideButton } from '@/shared/ui';
 import { SUPPORTED_LANGUAGES } from '@/app/i18n';
+
+import { buyerPortalGuide } from './buyerPortalGuide';
 
 import {
   contactPortalAgent,
@@ -1846,6 +1848,7 @@ function ShellWrapper({
               })}
             </span>
           )}
+          <ModuleGuideButton content={buyerPortalGuide} className="ml-auto" />
           <nav
             aria-label={t('buyer_portal.locale.label', {
               defaultValue: 'Language',

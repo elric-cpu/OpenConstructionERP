@@ -13,6 +13,7 @@ import { useThemeStore } from '@/stores/useThemeStore';
 import { CountryFlag, PartnerLogoBadge } from '@/shared/ui';
 import { usePartnerPack } from '@/shared/hooks/usePartnerPack';
 import { NotificationBell } from '@/shared/ui/NotificationBell';
+import { HeaderNewsButton } from '@/shared/ui/HeaderNewsButton';
 import { apiGet } from '@/shared/lib/api';
 import { copyToClipboard } from '@/shared/lib/browser';
 import {
@@ -346,11 +347,12 @@ export function Header({ title, onMenuClick }: HeaderProps) {
         <div className="hidden sm:block h-4 w-px bg-border-light/70" aria-hidden />
 
         {/* ── Zone 3 (Notifications + Subscribe + Bug + Help) ──────
-            Order: NotificationBell · SupportUs · Subscribe · BugReport · Help.
+            Order: NotificationBell · What's new · SupportUs · Subscribe · BugReport · Help.
             The "ask the user for something" CTAs (Support / Subscribe) stay
             adjacent; Bug + Help sit on the right edge so a user filing a
             report doesn't have to scan past the marketing CTAs. */}
         <NotificationBell />
+        <HeaderNewsButton />
         <SupportUsButton />
         <SubscribeButton />
         <BugReportMenu />

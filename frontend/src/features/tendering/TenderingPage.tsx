@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Package,
@@ -24,8 +24,12 @@ import {
   Check,
   Search,
   Loader2,
+  Trash2,
+  Inbox,
+  XCircle,
+  CheckCircle2,
 } from 'lucide-react';
-import { Button, Card, Badge, EmptyState, RecoveryCard, DismissibleInfo, IntroRichText, SkeletonTable, Breadcrumb, ConfirmDialog } from '@/shared/ui';
+import { Button, Card, Badge, EmptyState, RecoveryCard, DismissibleInfo, IntroRichText, SkeletonTable, Breadcrumb, ConfirmDialog, ModuleGuideButton } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import {
@@ -41,6 +45,15 @@ import { BidComparisonChart } from './BidComparisonChart';
 import { AddendumList } from './AddendumList';
 import { LevelingMatrix } from './LevelingMatrix';
 import { classifyCell, recommend } from './analysis';
+import { tenderingGuide } from './tenderingGuide';
+import {
+  listRecipients,
+  addRecipient,
+  removeRecipient,
+  distributePackage,
+  type Recipient,
+  type DistributeResponse,
+} from './api';
 import { getIntlLocale } from '@/shared/lib/formatters';
 import {
   listSubcontractors,
@@ -941,6 +954,343 @@ function BidComparisonTable({
   );
 }
 
+/* ── Distribution Panel ───────────────────────────────────────────────── */
+
+// Wires the "issue to subcontractors" gap: manage a recipient list and email
+// the package out. Sending reuses the platform mailer server-side; when SMTP
+// is not configured the backend falls back to the console backend and reports
+// it here, so the action never silently fails.
+function RecipientStatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation();
+  if (status === 'sent') {
+    return (
+      <Badge variant="success" size="sm" dot>
+        {t('tendering.recipient_sent', { defaultValue: 'Sent' })}
+      </Badge>
+    );
+  }
+  if (status === 'failed') {
+    return (
+      <Badge variant="error" size="sm" dot>
+        {t('tendering.recipient_failed', { defaultValue: 'Failed' })}
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="neutral" size="sm" dot>
+      {t('tendering.recipient_pending', { defaultValue: 'Not sent' })}
+    </Badge>
+  );
+}
+
+function DistributionPanel({ packageId }: { packageId: string }) {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const addToast = useToastStore((s) => s.addToast);
+  const { confirm, ...confirmProps } = useConfirm();
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [manualCompany, setManualCompany] = useState('');
+  const [manualEmail, setManualEmail] = useState('');
+  const [message, setMessage] = useState('');
+  const [lastResult, setLastResult] = useState<DistributeResponse | null>(null);
+
+  const recipientsQ = useQuery({
+    queryKey: ['tendering-recipients', packageId],
+    queryFn: () => listRecipients(packageId),
+  });
+
+  const invalidate = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['tendering-recipients', packageId] });
+  }, [queryClient, packageId]);
+
+  const addMutation = useMutation({
+    mutationFn: (body: { company_name: string; email: string; subcontractor_id?: string | null }) =>
+      addRecipient(packageId, body),
+    onSuccess: () => {
+      invalidate();
+      setManualCompany('');
+      setManualEmail('');
+    },
+    onError: (error: Error) => {
+      addToast({ type: 'error', title: t('toasts.error', { defaultValue: 'Error' }), message: error.message });
+    },
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (recipientId: string) => removeRecipient(packageId, recipientId),
+    onSuccess: invalidate,
+    onError: (error: Error) => {
+      addToast({ type: 'error', title: t('toasts.error', { defaultValue: 'Error' }), message: error.message });
+    },
+  });
+
+  const distributeMutation = useMutation({
+    mutationFn: (resend: boolean) =>
+      distributePackage(packageId, { resend, message: message.trim() || undefined }),
+    onSuccess: (res) => {
+      setLastResult(res);
+      invalidate();
+      queryClient.invalidateQueries({ queryKey: ['tendering-package', packageId] });
+      queryClient.invalidateQueries({ queryKey: ['tendering-packages'] });
+      if (res.sent_count > 0) {
+        addToast({
+          type: 'success',
+          title: t('tendering.distribute_done', {
+            defaultValue: 'Sent to {{count}} recipient(s)',
+            count: res.sent_count,
+          }),
+          message: res.smtp_configured
+            ? undefined
+            : t('tendering.distribute_console', {
+                defaultValue:
+                  'SMTP is not configured, so emails were logged to the server console (dev mode). Set SMTP_HOST for real delivery.',
+              }),
+        });
+      } else if (res.failed_count > 0) {
+        addToast({
+          type: 'error',
+          title: t('tendering.distribute_failed', { defaultValue: 'Distribution failed' }),
+        });
+      } else {
+        addToast({
+          type: 'info',
+          title: t('tendering.distribute_nothing', { defaultValue: 'Nothing to send' }),
+        });
+      }
+    },
+    onError: (error: Error) => {
+      addToast({ type: 'error', title: t('toasts.error', { defaultValue: 'Error' }), message: error.message });
+    },
+  });
+
+  const recipients = recipientsQ.data ?? [];
+  const fieldCls =
+    'h-10 w-full rounded-lg border border-border bg-surface-primary px-3 text-sm text-content-primary placeholder:text-content-tertiary transition-all focus:outline-none focus:ring-2 focus:ring-oe-blue/30 focus:border-oe-blue';
+
+  return (
+    <div className="space-y-4">
+      {/* Add recipient */}
+      <Card>
+        <h4 className="mb-3 text-sm font-semibold text-content-primary flex items-center gap-2">
+          <Users size={16} className="text-oe-blue" />
+          {t('tendering.recipients', { defaultValue: 'Distribution list' })}
+        </h4>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+          <div className="flex-1">
+            <label className="mb-1 block text-xs text-content-secondary">
+              {t('tendering.company_name', 'Company Name')}
+            </label>
+            <input
+              type="text"
+              value={manualCompany}
+              onChange={(e) => setManualCompany(e.target.value)}
+              placeholder={t('tendering.company_placeholder', 'e.g. Schmidt Bau GmbH')}
+              className={fieldCls}
+            />
+          </div>
+          <div className="flex-1">
+            <label className="mb-1 block text-xs text-content-secondary">
+              {t('tendering.contact_email', 'Contact Email')}
+            </label>
+            <input
+              type="email"
+              value={manualEmail}
+              onChange={(e) => setManualEmail(e.target.value)}
+              placeholder="contact@example.com"
+              className={fieldCls}
+            />
+          </div>
+          <Button
+            variant="secondary"
+            disabled={!manualCompany.trim() || !manualEmail.trim() || addMutation.isPending}
+            loading={addMutation.isPending}
+            onClick={() =>
+              addMutation.mutate({ company_name: manualCompany.trim(), email: manualEmail.trim() })
+            }
+          >
+            {t('tendering.add_recipient', { defaultValue: 'Add' })}
+          </Button>
+          <Button
+            variant="ghost"
+            icon={<Users size={14} />}
+            onClick={() => setPickerOpen(true)}
+            type="button"
+          >
+            {t('tendering.select_from_subs', 'Select from Subcontractors')}
+          </Button>
+        </div>
+
+        {/* Recipient rows */}
+        <div className="mt-4">
+          {recipientsQ.isLoading ? (
+            <SkeletonTable rows={3} columns={3} />
+          ) : recipients.length === 0 ? (
+            <EmptyState
+              icon={<Inbox size={22} />}
+              title={t('tendering.no_recipients', { defaultValue: 'No recipients yet' })}
+              description={t('tendering.no_recipients_desc', {
+                defaultValue: 'Add subcontractors above, then send the package out.',
+              })}
+            />
+          ) : (
+            <div className="divide-y divide-border-light rounded-lg border border-border-light">
+              {recipients.map((r: Recipient) => (
+                <div key={r.id} className="flex items-center gap-3 px-3 py-2.5">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-secondary text-content-tertiary">
+                    <Building2 size={14} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-content-primary">
+                      {r.company_name}
+                    </span>
+                    <span className="block truncate text-xs text-content-tertiary">{r.email}</span>
+                    {r.status === 'failed' && r.last_error && (
+                      <span className="block truncate text-xs text-semantic-error">{r.last_error}</span>
+                    )}
+                    {r.status === 'sent' && r.sent_at && (
+                      <span className="block truncate text-xs text-content-tertiary">
+                        {t('tendering.recipient_sent_at', {
+                          defaultValue: 'Sent {{date}}',
+                          date: formatDate(r.sent_at),
+                        })}
+                      </span>
+                    )}
+                  </div>
+                  <RecipientStatusBadge status={r.status} />
+                  <button
+                    type="button"
+                    aria-label={t('tendering.remove_recipient', { defaultValue: 'Remove recipient' })}
+                    title={t('tendering.remove_recipient', { defaultValue: 'Remove recipient' })}
+                    className="shrink-0 rounded-md p-1.5 text-content-tertiary transition-colors hover:bg-semantic-error-bg/40 hover:text-semantic-error disabled:opacity-50"
+                    disabled={removeMutation.isPending}
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: t('tendering.remove_recipient', { defaultValue: 'Remove recipient' }),
+                        message: t('tendering.remove_recipient_confirm', {
+                          defaultValue: 'Remove {{company}} from the distribution list?',
+                          company: r.company_name,
+                        }),
+                        variant: 'warning',
+                      });
+                      if (ok) removeMutation.mutate(r.id);
+                    }}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Optional cover message + send */}
+        {recipients.length > 0 && (
+          <div className="mt-4 space-y-3">
+            <div>
+              <label className="mb-1 block text-xs text-content-secondary">
+                {t('tendering.cover_message', { defaultValue: 'Cover message (optional)' })}
+              </label>
+              <textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                rows={2}
+                className="w-full rounded-lg border border-border bg-surface-primary px-3 py-2 text-sm text-content-primary placeholder:text-content-tertiary transition-all focus:outline-none focus:ring-2 focus:ring-oe-blue/30 focus:border-oe-blue resize-none"
+                placeholder={t('tendering.cover_message_placeholder', {
+                  defaultValue: 'Add a short note to include in the invitation email…',
+                })}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="primary"
+                icon={<Send size={14} />}
+                loading={distributeMutation.isPending}
+                onClick={() => distributeMutation.mutate(false)}
+              >
+                {t('tendering.distribute', { defaultValue: 'Send to recipients' })}
+              </Button>
+              {recipients.some((r) => r.status === 'sent') && (
+                <Button
+                  variant="ghost"
+                  loading={distributeMutation.isPending}
+                  onClick={() => distributeMutation.mutate(true)}
+                  title={t('tendering.resend_all_title', {
+                    defaultValue: 'Re-send to everyone, including those already sent',
+                  })}
+                >
+                  {t('tendering.resend_all', { defaultValue: 'Re-send all' })}
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Last run summary */}
+        {lastResult && (
+          <div className="mt-4 rounded-lg border border-border-light bg-surface-secondary/40 p-3 text-xs text-content-secondary">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="inline-flex items-center gap-1 text-semantic-success">
+                <CheckCircle2 size={13} /> {lastResult.sent_count}{' '}
+                {t('tendering.recipient_sent', { defaultValue: 'Sent' })}
+              </span>
+              {lastResult.failed_count > 0 && (
+                <span className="inline-flex items-center gap-1 text-semantic-error">
+                  <XCircle size={13} /> {lastResult.failed_count}{' '}
+                  {t('tendering.recipient_failed', { defaultValue: 'Failed' })}
+                </span>
+              )}
+              {lastResult.skipped_count > 0 && (
+                <span className="inline-flex items-center gap-1">
+                  <Minus size={13} /> {lastResult.skipped_count}{' '}
+                  {t('tendering.recipient_skipped', { defaultValue: 'Skipped' })}
+                </span>
+              )}
+              <span className="text-content-tertiary">
+                {t('tendering.distribute_backend', {
+                  defaultValue: 'via {{backend}}',
+                  backend: lastResult.backend,
+                })}
+              </span>
+            </div>
+            {!lastResult.smtp_configured && (
+              <p className="mt-2 text-content-tertiary">
+                {t('tendering.distribute_console', {
+                  defaultValue:
+                    'SMTP is not configured, so emails were logged to the server console (dev mode). Set SMTP_HOST for real delivery.',
+                })}
+              </p>
+            )}
+          </div>
+        )}
+      </Card>
+
+      {pickerOpen && (
+        <SubcontractorPickerModal
+          onPick={(sub, resolvedEmail) => {
+            if (!resolvedEmail) {
+              addToast({
+                type: 'info',
+                title: t('tendering.sub_no_email', {
+                  defaultValue: 'No contact email on file - enter one if needed.',
+                }),
+              });
+              setManualCompany(sub.legal_name);
+              return;
+            }
+            addMutation.mutate({
+              company_name: sub.legal_name,
+              email: resolvedEmail,
+              subcontractor_id: sub.id,
+            });
+          }}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
+      <ConfirmDialog {...confirmProps} />
+    </div>
+  );
+}
+
 /* ── Package Detail ───────────────────────────────────────────────────── */
 
 function PackageDetail({
@@ -956,12 +1306,12 @@ function PackageDetail({
   const addToast = useToastStore((s) => s.addToast);
   const { confirm, ...confirmProps } = useConfirm();
   const [showAddBid, setShowAddBid] = useState(false);
-  // Sub-tab on the package detail view — bids/comparison ↔ addenda ↔
-  // leveling matrix. Defaults to "bids" so existing muscle memory keeps
-  // working; the two new tabs are additive.
-  const [activeTab, setActiveTab] = useState<'bids' | 'addenda' | 'leveling'>(
-    'bids',
-  );
+  // Sub-tab on the package detail view — bids/comparison ↔ distribution ↔
+  // addenda ↔ leveling matrix. Defaults to "bids" so existing muscle memory
+  // keeps working; the other tabs are additive.
+  const [activeTab, setActiveTab] = useState<
+    'bids' | 'distribution' | 'addenda' | 'leveling'
+  >('bids');
 
   // Fetch package with bids
   const { data: pkg, isLoading: pkgLoading, isError: pkgError } = useQuery({
@@ -1110,6 +1460,31 @@ function PackageDetail({
       addToast({ type: 'error', title: t('tendering.export_failed', { defaultValue: 'Export failed' }) });
     }
   }, [packageId, pkg?.name, addToast, t]);
+
+  // Award / rejection decision documents — generated server-side as PDFs
+  // (reportlab), fetched with the Bearer token like the tender summary PDF.
+  const handleDownloadDecisionDoc = useCallback(
+    async (bidId: string, kind: 'award-letter' | 'rejection-letter', company: string) => {
+      try {
+        const token = getAuthToken();
+        const r = await fetch(
+          `/api/v1/tendering/packages/${packageId}/bids/${bidId}/${kind}/pdf/`,
+          { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+        );
+        if (!r.ok) {
+          addToast({ type: 'error', title: t('tendering.export_failed', { defaultValue: 'Export failed' }) });
+          return;
+        }
+        const blob = await r.blob();
+        const safeCompany = company.replace(/[^a-z0-9_-]+/gi, '_') || 'bidder';
+        const prefix = kind === 'award-letter' ? 'award_letter' : 'rejection_notice';
+        triggerDownload(blob, `${prefix}_${safeCompany}.pdf`);
+      } catch {
+        addToast({ type: 'error', title: t('tendering.export_failed', { defaultValue: 'Export failed' }) });
+      }
+    },
+    [packageId, addToast, t],
+  );
 
   const handleDownloadGaeb = useCallback(async () => {
     if (!pkg?.boq_id) return;
@@ -1290,6 +1665,7 @@ function PackageDetail({
       <div className="flex items-center gap-1 border-b border-border-light">
         {([
           { id: 'bids' as const, label: t('tendering.tab_bids', 'Bids & Comparison') },
+          { id: 'distribution' as const, label: t('tendering.tab_distribution', { defaultValue: 'Distribution' }) },
           { id: 'addenda' as const, label: t('tendering.tab_addenda', 'Addenda') },
           { id: 'leveling' as const, label: t('tendering.tab_leveling', 'Leveling') },
         ]).map((tab) => (
@@ -1356,6 +1732,34 @@ function PackageDetail({
                     {t('tendering.award', 'Award')}
                   </Button>
                 )}
+                {/* Decision documents — award letter for the winner, rejection
+                    notice for the others, once a winner has been chosen. */}
+                {bid.status === 'accepted' && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon={<FileText size={14} />}
+                    onClick={() => handleDownloadDecisionDoc(bid.id, 'award-letter', bid.company_name)}
+                    title={t('tendering.award_letter_title', {
+                      defaultValue: 'Download the letter of award (PDF)',
+                    })}
+                  >
+                    {t('tendering.award_letter', { defaultValue: 'Award letter' })}
+                  </Button>
+                )}
+                {bid.status === 'rejected' && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon={<FileText size={14} />}
+                    onClick={() => handleDownloadDecisionDoc(bid.id, 'rejection-letter', bid.company_name)}
+                    title={t('tendering.rejection_letter_title', {
+                      defaultValue: 'Download the rejection notice (PDF)',
+                    })}
+                  >
+                    {t('tendering.rejection_letter', { defaultValue: 'Rejection notice' })}
+                  </Button>
+                )}
               </div>
             </Card>
           ))}
@@ -1396,6 +1800,9 @@ function PackageDetail({
         ) : null}
       </Card>
       )}
+
+      {/* Distribution sub-tab */}
+      {activeTab === 'distribution' && <DistributionPanel packageId={packageId} />}
 
       {/* Addenda sub-tab */}
       {activeTab === 'addenda' && <AddendumList packageId={packageId} />}
@@ -1499,6 +1906,8 @@ export function TenderingPage() {
   const selectedProjectId = activeProjectId ?? '';
   const [selectedPackageId, setSelectedPackageId] = useState('');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const deepLinkPackageId = searchParams.get('package');
 
   // Fetch projects — used to resolve the active project's name + currency.
   // Project SELECTION happens in the global top bar, not here.
@@ -1530,6 +1939,23 @@ export function TenderingPage() {
       ),
     enabled: !!selectedProjectId,
   });
+
+  // Consume a ?package=<id> deep link (e.g. from "Send to tender" in the BOQ
+  // editor): open that package once it appears in the loaded list, then drop
+  // the param so a later manual selection is not overridden on re-render.
+  useEffect(() => {
+    if (!deepLinkPackageId) return;
+    if (packages?.some((p) => p.id === deepLinkPackageId)) {
+      setSelectedPackageId(deepLinkPackageId);
+      setSearchParams(
+        (prev) => {
+          prev.delete('package');
+          return prev;
+        },
+        { replace: true },
+      );
+    }
+  }, [deepLinkPackageId, packages, setSearchParams]);
 
   const selectedProject = useMemo(
     () => projects?.find((p) => p.id === selectedProjectId),
@@ -1564,16 +1990,27 @@ export function TenderingPage() {
           'Manage bid packages, collect and compare subcontractor offers',
         )}
         actions={
-          <span title={!selectedProjectId ? t('tendering.select_project_first', { defaultValue: 'Select a project first' }) : undefined}>
-            <Button
-              variant="primary"
-              icon={<Plus size={16} />}
-              disabled={!selectedProjectId}
-              onClick={() => setShowCreateDialog(true)}
-            >
-              {t('tendering.new_package', 'New Tender Package')}
-            </Button>
-          </span>
+          <>
+            {/* How it works guide - explains the package -> issue -> collect ->
+                compare -> award flow. Leads the action cluster as the help pill;
+                the CTA opens the New Tender Package dialog. */}
+            <ModuleGuideButton
+              content={tenderingGuide}
+              onCta={() => {
+                if (selectedProjectId) setShowCreateDialog(true);
+              }}
+            />
+            <span title={!selectedProjectId ? t('tendering.select_project_first', { defaultValue: 'Select a project first' }) : undefined}>
+              <Button
+                variant="primary"
+                icon={<Plus size={16} />}
+                disabled={!selectedProjectId}
+                onClick={() => setShowCreateDialog(true)}
+              >
+                {t('tendering.new_package', 'New Tender Package')}
+              </Button>
+            </span>
+          </>
         }
       />
 

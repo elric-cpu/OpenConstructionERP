@@ -3,11 +3,14 @@
 //
 // ModuleGuideButton — small pill that opens the module's "How it works"
 // guide. Designed to sit immediately next to the existing ModuleHelpButton
-// (the Tour button) so the two read as a single cluster on a module header.
+// (the Tour button) so the two read as a deliberate pair on a module header.
 //
-// The Tour button (ModuleHelpButton, HelpCircle icon) walks the UI; this
-// button (GraduationCap icon) explains the module's concepts and how to
-// enter data. Distinct icon, same size and pill geometry so they line up.
+// Visual identity: this guide button is BLUE with a GraduationCap icon and
+// reads as the substantive "learn how this works" action (a little more
+// prominent than its neighbour); the sibling Tour button (ModuleHelpButton)
+// is violet with a Compass icon and reads as a quick walkthrough. Distinct
+// hue and icon so the two are never confused, same size and pill geometry so
+// they line up.
 //
 // Mobile collapse: on `sm` and below the label hides and only the icon
 // shows, matching ModuleHelpButton; the button stays accessible via
@@ -58,8 +61,8 @@ export function ModuleGuideButton({
         title={aria}
         className={clsx(
           'inline-flex items-center gap-1.5 rounded-full',
-          'border border-oe-blue/30 bg-oe-blue/5 hover:bg-oe-blue/10',
-          'px-2.5 h-7 text-xs font-medium text-oe-blue',
+          'border border-oe-blue/40 bg-oe-blue/10 hover:bg-oe-blue/20',
+          'px-2.5 h-7 text-xs font-semibold text-oe-blue',
           'transition-colors focus:outline-none focus:ring-2 focus:ring-oe-blue/40',
           className,
         )}

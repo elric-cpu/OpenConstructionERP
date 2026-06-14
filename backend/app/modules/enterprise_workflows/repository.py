@@ -28,14 +28,30 @@ class WorkflowRepository:
         project_id: uuid.UUID | None = None,
         entity_type: str | None = None,
         is_active: bool | None = None,
+        accessible_project_ids: set[uuid.UUID] | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[ApprovalWorkflow], int]:
-        """List workflows with filters and pagination."""
+        """List workflows with filters and pagination.
+
+        ``accessible_project_ids`` scopes the result to a non-admin caller's
+        reachable projects when no explicit ``project_id`` filter is given.
+        ``None`` means "do not scope" (admin / full view). A provided set
+        restricts results to workflows whose ``project_id`` is in the set;
+        workspace-level templates (``project_id IS NULL``) stay visible to
+        everyone. An empty set therefore yields only those templates.
+        """
         base = select(ApprovalWorkflow)
 
         if project_id is not None:
             base = base.where(ApprovalWorkflow.project_id == project_id)
+        elif accessible_project_ids is not None:
+            # Optional-scope IDOR guard: a non-admin caller who omits the
+            # project_id filter sees only their accessible projects' workflows
+            # plus workspace-level (NULL project) templates.
+            base = base.where(
+                (ApprovalWorkflow.project_id.in_(accessible_project_ids)) | (ApprovalWorkflow.project_id.is_(None))
+            )
         if entity_type is not None:
             base = base.where(ApprovalWorkflow.entity_type == entity_type)
         if is_active is not None:
@@ -87,14 +103,34 @@ class ApprovalRequestRepository:
         workflow_id: uuid.UUID | None = None,
         entity_type: str | None = None,
         status: str | None = None,
+        accessible_project_ids: set[uuid.UUID] | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[ApprovalRequest], int]:
-        """List approval requests with filters and pagination."""
+        """List approval requests with filters and pagination.
+
+        ``accessible_project_ids`` scopes the result to a non-admin caller's
+        reachable projects when no explicit ``workflow_id`` filter is given.
+        ``None`` means "do not scope" (admin / full view). A provided set
+        restricts results to requests whose parent workflow's ``project_id``
+        is in the set; requests under workspace-level templates (workflow
+        ``project_id IS NULL``) stay visible to everyone. An empty set
+        therefore yields only those template-workflow requests.
+        """
         base = select(ApprovalRequest)
 
         if workflow_id is not None:
             base = base.where(ApprovalRequest.workflow_id == workflow_id)
+        elif accessible_project_ids is not None:
+            # Optional-scope IDOR guard: a non-admin caller who omits the
+            # workflow_id filter sees only requests whose parent workflow
+            # belongs to an accessible project (or is a workspace-level
+            # template with no project). Scope via a subquery over the
+            # accessible workflow ids.
+            accessible_workflow_ids = select(ApprovalWorkflow.id).where(
+                (ApprovalWorkflow.project_id.in_(accessible_project_ids)) | (ApprovalWorkflow.project_id.is_(None))
+            )
+            base = base.where(ApprovalRequest.workflow_id.in_(accessible_workflow_ids))
         if entity_type is not None:
             base = base.where(ApprovalRequest.entity_type == entity_type)
         if status is not None:

@@ -25,10 +25,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Clock, Camera, Users, User } from 'lucide-react';
 import { registerFieldServiceWorker } from '@/shared/lib/offline';
+import { ModuleGuideButton } from '@/shared/ui';
 import { useFieldSync } from './useFieldSync';
 import { OfflineStatusBadge } from './OfflineStatusBadge';
 import { readFieldSession } from './fieldApi';
 import { TodayTab, CaptureTab, CrewTab } from './FieldTabs';
+import { fieldGuide } from './fieldGuide';
 
 /**
  * Auth headers for replayed field writes. The field session token + PIN are
@@ -106,13 +108,7 @@ export function FieldShellPage() {
               void syncNow();
             }}
           />
-          <button
-            type="button"
-            aria-label="Help"
-            className="flex h-11 w-11 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"
-          >
-            ?
-          </button>
+          <ModuleGuideButton content={fieldGuide} />
         </div>
       </header>
 

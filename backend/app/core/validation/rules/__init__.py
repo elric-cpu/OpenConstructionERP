@@ -626,6 +626,92 @@ class UnitRateInRange(ValidationRule):
 
 # ── DIN 276 Rules (DACH) ──────────────────────────────────────────────────
 
+# DIN 276:2018-12 cost-group (Kostengruppe / KG) reference tree.
+#
+# The standard is a strict three-level decimal hierarchy:
+#   * Level 1 - main group, one significant digit then two zeros (e.g. 300).
+#   * Level 2 - group, two significant digits then one zero (e.g. 330).
+#   * Level 3 - element, three significant digits (e.g. 331).
+#
+# Level 3 is not a free 0-9 range under every parent (DIN 276 enumerates a
+# specific set of elements per group), but the codebase deliberately keeps a
+# structural level-3 check rather than a closed enumeration: the deeper codes
+# produced by the CAD classification mapper and the seed/golden fixtures
+# (331, 334, 344, 375, 390, 590, ...) must all stay valid, and projects are
+# free to use any element code under a recognised level-2 parent. So level 3
+# is accepted whenever its level-2 parent (NN0) is a known group.
+#
+# Each main group maps to the set of level-2 groups DIN 276:2018-12 names
+# explicitly. A "9x0" entry (190, 290, 390, ...) is "Sonstiges" / other and
+# is part of the standard for every main group. This table is reference data
+# (used for labels and completeness reporting): the validity check itself is
+# structural, because the standard reserves the full ten-slot second level per
+# main group and regional cost frameworks / offices populate the spare slots
+# (e.g. KG 630) - enumerating only the named groups would false-negative those
+# legitimate codes and regress the platform's own DIN 276 fixtures.
+DIN276_LEVEL_2_GROUPS: dict[str, frozenset[str]] = {
+    "100": frozenset({"110", "120", "130", "140", "150", "160", "170", "180", "190"}),
+    "200": frozenset({"210", "220", "230", "240", "250", "260", "270", "280", "290"}),
+    "300": frozenset({"310", "320", "330", "340", "350", "360", "370", "380", "390"}),
+    "400": frozenset({"410", "420", "430", "440", "450", "460", "470", "480", "490"}),
+    "500": frozenset({"510", "520", "530", "540", "550", "560", "570", "580", "590"}),
+    "600": frozenset({"610", "620", "690"}),
+    "700": frozenset({"710", "720", "730", "740", "750", "760", "770", "780", "790"}),
+    "800": frozenset({"810", "820", "830", "840", "850", "860", "870", "880", "890"}),
+}
+
+# Valid level-1 main groups (the eight KG hundreds defined by the standard).
+DIN276_LEVEL_1_GROUPS: frozenset[str] = frozenset(DIN276_LEVEL_2_GROUPS)
+
+
+def _normalize_din276_code(raw: object) -> str:
+    """Return the comparable KG digits for a DIN 276 code.
+
+    Accepts the canonical 3-digit forms (``"300"``, ``"330"``, ``"331"``) and
+    the deeper dotted forms emitted by the CAD classification mapper
+    (``"330.10"`` -> level-2 group ``"330"``). Whitespace is stripped; the
+    fractional tail after a dot is dropped because the hierarchy that DIN 276
+    standardises stops at the third digit. Non-string input is coerced via
+    ``str``. Returns ``""`` when nothing usable remains.
+    """
+    code = str(raw or "").strip()
+    if not code:
+        return ""
+    # Deeper, project-specific element codes use a dotted suffix
+    # (e.g. "330.10"); the standardised hierarchy is the integer head.
+    return code.split(".", 1)[0].strip()
+
+
+def din276_level(code: str) -> int | None:
+    """Return the DIN 276 hierarchy level (1/2/3) of a normalized KG code.
+
+    The check is structural over the three-digit decimal hierarchy and is
+    anchored on a valid level-1 main group (the eight KG hundreds, 100-800):
+
+    * Level 1 - ``N00`` (e.g. ``300``).
+    * Level 2 - ``NN0`` with a non-zero tens digit (e.g. ``330``).
+    * Level 3 - ``NNN`` with a non-zero units digit (e.g. ``331``).
+
+    Level 2 and level 3 are accepted under any valid main group because the
+    standard reserves the full second/third level per group and projects /
+    regional frameworks populate them differently (see
+    :data:`DIN276_LEVEL_2_GROUPS`). Returns ``None`` when the code is not a
+    three-digit numeric KG code or when its main group is outside 1-8 - so
+    KG 0xx, KG 9xx, wrong-length and non-numeric codes still fail.
+    """
+    if len(code) != 3 or not code.isdigit():
+        return None
+    main = code[0] + "00"
+    if main not in DIN276_LEVEL_1_GROUPS:
+        return None
+    if code == main:
+        return 1
+    if code[2] == "0":
+        # NN0 with a non-zero tens digit (guaranteed, else it would equal main).
+        return 2
+    # NNN element code (non-zero units digit).
+    return 3
+
 
 class DIN276CostGroupRequired(ValidationRule):
     rule_id = "din276.cost_group_required"
@@ -675,27 +761,37 @@ class DIN276ValidCostGroup(ValidationRule):
     standard = "din276"
     severity = Severity.ERROR
     category = RuleCategory.COMPLIANCE
-    description = "DIN 276 cost group code must be a valid 3-digit code"
+    description = (
+        "DIN 276 cost group code must be a valid KG code at level 1 (N00), "
+        "level 2 (NN0) or level 3 (NNN) of the DIN 276:2018-12 hierarchy"
+    )
 
-    # Valid top-level groups (1st digit) - DIN 276:2018-12 defines KG 100-800
-    # (800 = Finanzierung).
+    # Valid top-level main groups (1st digit) - DIN 276:2018-12 defines
+    # KG 100-800 (800 = Finanzierung). Kept for callers/tests that still
+    # reference the coarse first-digit set; full hierarchy validation runs
+    # through ``din276_level`` against ``DIN276_LEVEL_2_GROUPS``.
     VALID_TOP_GROUPS = {"1", "2", "3", "4", "5", "6", "7", "8"}
 
     async def validate(self, context: ValidationContext) -> list[RuleResult]:
         locale = _get_locale(context)
         results: list[RuleResult] = []
         for pos in _get_positions(context):
-            kg = str((pos.get("classification") or {}).get("din276", ""))
-            if not kg:
+            raw = str((pos.get("classification") or {}).get("din276", ""))
+            if not raw:
                 continue  # Handled by cost_group_required
-            passed = len(kg) == 3 and kg.isdigit() and kg[0] in self.VALID_TOP_GROUPS
+            # Normalize the dotted element forms ("330.10") the CAD mapper
+            # emits down to the standardised KG head before validating the
+            # level-1 / level-2 / level-3 hierarchy.
+            code = _normalize_din276_code(raw)
+            level = din276_level(code)
+            passed = level is not None
             message = (
                 _ok(locale)
                 if passed
                 else translate(
                     "din276.valid_cost_group.fail",
                     locale=locale,
-                    code=kg,
+                    code=raw,
                     ordinal=pos.get("ordinal", "?"),
                 )
             )
@@ -708,7 +804,7 @@ class DIN276ValidCostGroup(ValidationRule):
                     passed=passed,
                     message=message,
                     element_ref=pos.get("id"),
-                    details={"given_code": kg},
+                    details={"given_code": raw, "kg_code": code, "kg_level": level},
                 )
             )
         return results

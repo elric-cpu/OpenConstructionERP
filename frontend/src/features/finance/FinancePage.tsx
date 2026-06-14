@@ -42,6 +42,7 @@ import {
   ConfirmDialog,
   TabBar,
   tabIds,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
@@ -61,6 +62,7 @@ import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useActiveProjectId } from '@/shared/hooks/useActiveProjectId';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { ConnectorsTab } from './ConnectorsTab';
+import { financeGuide } from './financeGuide';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
@@ -665,7 +667,12 @@ export function FinancePage() {
           defaultValue:
             'Budgets, invoices, payments, and earned value management',
         })}
-        actions={projectId ? <FinanceModuleLinks projectId={projectId} /> : undefined}
+        actions={
+          <>
+            {projectId && <FinanceModuleLinks projectId={projectId} />}
+            <ModuleGuideButton content={financeGuide} />
+          </>
+        }
       />
 
       {/* Canonical module intro — pain-named, copy from MODULE_INTRO_COPY.

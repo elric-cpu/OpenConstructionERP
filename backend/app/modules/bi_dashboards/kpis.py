@@ -24,10 +24,46 @@ from datetime import date as _date
 from decimal import Decimal
 from typing import Any, Awaitable, Callable
 
-from sqlalchemy import select
+from sqlalchemy import false, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
+
+
+# ── Portfolio access scoping (IDOR defence) ─────────────────────────────
+# A portfolio-mode call (``project_id is None``) must not silently
+# aggregate over every project in the deployment. The router resolves the
+# caller's accessible project IDs via ``app.dependencies.accessible_project_ids``
+# and threads the resulting ``allowed_project_ids`` set down here:
+#
+#   * ``None``        -> no restriction (admin, or a single-project call
+#                        where ``verify_project_access`` already gated the id)
+#   * non-empty set   -> restrict the portfolio aggregation to these projects
+#   * empty set       -> the caller can reach no project, so the aggregation
+#                        must yield nothing / zero (never "all rows")
+#
+# The restriction only applies in portfolio mode; a single-project call
+# (``project_id`` set) is unaffected because it is already access-checked.
+
+
+def _scope_portfolio(
+    stmt: Any,
+    project_column: Any,
+    project_id: uuid.UUID | None,
+    allowed_project_ids: set[uuid.UUID] | None,
+) -> Any:
+    """Restrict a portfolio query to the caller's accessible projects.
+
+    No-op when ``project_id`` is set (single-project, already gated) or when
+    ``allowed_project_ids`` is ``None`` (admin / unrestricted). An empty
+    allowed set yields a guaranteed-false predicate so the query returns
+    nothing rather than every project's rows.
+    """
+    if project_id is not None or allowed_project_ids is None:
+        return stmt
+    if not allowed_project_ids:
+        return stmt.where(false())
+    return stmt.where(project_column.in_(allowed_project_ids))
 
 
 @dataclass
@@ -514,7 +550,10 @@ async def _boq_baseline_for_project(
     return total
 
 
-async def _evm_snapshot_portfolio(session: AsyncSession) -> EVMSnapshot:
+async def _evm_snapshot_portfolio(
+    session: AsyncSession,
+    allowed_project_ids: set[uuid.UUID] | None = None,
+) -> EVMSnapshot:
     """Aggregate per-project EVM snapshots into a portfolio snapshot.
 
     Each project's money primitives are computed in its OWN base currency
@@ -529,8 +568,15 @@ async def _evm_snapshot_portfolio(session: AsyncSession) -> EVMSnapshot:
     index, the standard portfolio EVM reading). The currency-denominated
     KPIs (CV/SV/EAC/ETC/VAC) instead read the ``*_by_currency`` maps and
     group by ISO code.
+
+    ``allowed_project_ids`` scopes the fan-out to the caller's accessible
+    projects (IDOR defence): ``None`` aggregates every project (admin),
+    a set restricts to those ids, and an empty set yields an empty snapshot.
     """
     snap = EVMSnapshot(is_portfolio=True)
+    if allowed_project_ids is not None and not allowed_project_ids:
+        # Caller can reach no project - never fall back to "all projects".
+        return snap
     try:
         from app.modules.projects.models import Project  # type: ignore
 
@@ -538,7 +584,10 @@ async def _evm_snapshot_portfolio(session: AsyncSession) -> EVMSnapshot:
         # eager-load ``Project``'s ``lazy="selectin"`` relationships (WBS,
         # team, …), which is both wasteful here and brittle under partial
         # test schemas. We only need each project's id to fan out.
-        project_ids = (await session.execute(select(Project.id))).scalars().all()
+        stmt = select(Project.id)
+        if allowed_project_ids is not None:
+            stmt = stmt.where(Project.id.in_(allowed_project_ids))
+        project_ids = (await session.execute(stmt)).scalars().all()
     except ImportError:
         return snap
     except Exception:
@@ -583,6 +632,7 @@ async def _evm_snapshot_portfolio(session: AsyncSession) -> EVMSnapshot:
 async def _evm_snapshot(
     session: AsyncSession,
     project_id: uuid.UUID | None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
 ) -> EVMSnapshot:
     """Build EVM primitives for one project, or aggregate the portfolio.
 
@@ -592,10 +642,11 @@ async def _evm_snapshot(
 
     Portfolio (``project_id is None``): per-project snapshots are bucketed
     by each project's own ISO currency, never blended - see
-    :func:`_evm_snapshot_portfolio`.
+    :func:`_evm_snapshot_portfolio`. ``allowed_project_ids`` scopes the
+    portfolio fan-out to the caller's accessible projects (IDOR defence).
     """
     if project_id is None:
-        return await _evm_snapshot_portfolio(session)
+        return await _evm_snapshot_portfolio(session, allowed_project_ids)
     return await _evm_snapshot_for_project(session, project_id)
 
 
@@ -646,10 +697,11 @@ def _evm_currency_result(
 async def cpi_kpi(
     session: AsyncSession,
     project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
     """Cost Performance Index = EV / AC."""
-    snap = await _evm_snapshot(session, project_id)
+    snap = await _evm_snapshot(session, project_id, allowed_project_ids)
     value = _safe_div(snap.ev, snap.ac) if snap.ac > 0 else Decimal("0")
     return KPIComputation(
         value=value,
@@ -671,10 +723,11 @@ async def cpi_kpi(
 async def spi_kpi(
     session: AsyncSession,
     project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
     """Schedule Performance Index = EV / PV."""
-    snap = await _evm_snapshot(session, project_id)
+    snap = await _evm_snapshot(session, project_id, allowed_project_ids)
     value = _safe_div(snap.ev, snap.pv) if snap.pv > 0 else Decimal("0")
     return KPIComputation(
         value=value,
@@ -699,9 +752,10 @@ async def spi_kpi(
 async def cv_kpi(
     session: AsyncSession,
     project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
-    snap = await _evm_snapshot(session, project_id)
+    snap = await _evm_snapshot(session, project_id, allowed_project_ids)
     per_currency = {
         code: snap.ev_by_currency.get(code, Decimal("0")) - snap.ac_by_currency.get(code, Decimal("0"))
         for code in set(snap.ev_by_currency) | set(snap.ac_by_currency)
@@ -725,9 +779,10 @@ async def cv_kpi(
 async def sv_kpi(
     session: AsyncSession,
     project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
-    snap = await _evm_snapshot(session, project_id)
+    snap = await _evm_snapshot(session, project_id, allowed_project_ids)
     per_currency = {
         code: snap.ev_by_currency.get(code, Decimal("0")) - snap.pv_by_currency.get(code, Decimal("0"))
         for code in set(snap.ev_by_currency) | set(snap.pv_by_currency)
@@ -763,9 +818,10 @@ def _eac_from_primitives(bac: Decimal, pv: Decimal, ev: Decimal, ac: Decimal) ->
 async def eac_kpi(
     session: AsyncSession,
     project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
-    snap = await _evm_snapshot(session, project_id)
+    snap = await _evm_snapshot(session, project_id, allowed_project_ids)
     scalar_eac = _eac_from_primitives(snap.bac, snap.pv, snap.ev, snap.ac)
     cpi = _safe_div(snap.ev, snap.ac) if snap.ac > 0 else Decimal("0")
     spi = _safe_div(snap.ev, snap.pv) if snap.pv > 0 else Decimal("0")
@@ -801,9 +857,10 @@ async def eac_kpi(
 async def etc_kpi(
     session: AsyncSession,
     project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
-    snap = await _evm_snapshot(session, project_id)
+    snap = await _evm_snapshot(session, project_id, allowed_project_ids)
     scalar_eac = _eac_from_primitives(snap.bac, snap.pv, snap.ev, snap.ac)
     # ETC = EAC - AC, per currency in portfolio mode.
     per_currency = {
@@ -837,9 +894,10 @@ async def etc_kpi(
 async def vac_kpi(
     session: AsyncSession,
     project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
-    snap = await _evm_snapshot(session, project_id)
+    snap = await _evm_snapshot(session, project_id, allowed_project_ids)
     scalar_eac = _eac_from_primitives(snap.bac, snap.pv, snap.ev, snap.ac)
     # VAC = BAC - EAC, per currency in portfolio mode.
     per_currency = {
@@ -873,9 +931,10 @@ async def vac_kpi(
 async def tcpi_kpi(
     session: AsyncSession,
     project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
-    snap = await _evm_snapshot(session, project_id)
+    snap = await _evm_snapshot(session, project_id, allowed_project_ids)
     denom = snap.bac - snap.ac
     if denom <= 0:
         return KPIComputation(
@@ -904,6 +963,7 @@ async def tcpi_kpi(
 async def procurement_savings_kpi(
     session: AsyncSession,
     project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
     """Procurement savings = (budgeted - actual) / budgeted.
@@ -932,6 +992,7 @@ async def procurement_savings_kpi(
         req_stmt = select(MaterialRequisition).where(MaterialRequisition.po_id.is_not(None))
         if project_id is not None:
             req_stmt = req_stmt.where(MaterialRequisition.project_id == project_id)
+        req_stmt = _scope_portfolio(req_stmt, MaterialRequisition.project_id, project_id, allowed_project_ids)
         reqs = (await session.execute(req_stmt)).scalars().all()
         for req in reqs:
             item_stmt = select(MaterialRequisitionItem).where(
@@ -957,6 +1018,7 @@ async def procurement_savings_kpi(
         stmt = select(PurchaseOrder)
         if project_id is not None:
             stmt = stmt.where(PurchaseOrder.project_id == project_id)
+        stmt = _scope_portfolio(stmt, PurchaseOrder.project_id, project_id, allowed_project_ids)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             po_budget = budget_by_po.get(row.id)
@@ -1009,6 +1071,7 @@ async def procurement_savings_kpi(
 async def change_order_ratio_kpi(
     session: AsyncSession,
     project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
     co_value = Decimal("0")
@@ -1021,6 +1084,7 @@ async def change_order_ratio_kpi(
         stmt = select(ChangeOrder)
         if project_id is not None:
             stmt = stmt.where(ChangeOrder.project_id == project_id)
+        stmt = _scope_portfolio(stmt, ChangeOrder.project_id, project_id, allowed_project_ids)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             # The approved figure is authoritative once a CO is signed off;
@@ -1089,6 +1153,7 @@ async def change_order_ratio_kpi(
 async def cash_in_30d_kpi(
     session: AsyncSession,
     project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
     """Projected receivable cash due within the next 30 days.
@@ -1120,6 +1185,7 @@ async def cash_in_30d_kpi(
         stmt = select(Invoice).where(Invoice.invoice_direction == "receivable")
         if project_id is not None:
             stmt = stmt.where(Invoice.project_id == project_id)
+        stmt = _scope_portfolio(stmt, Invoice.project_id, project_id, allowed_project_ids)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             due = _parse_date(getattr(row, "due_date", None))
@@ -1173,6 +1239,7 @@ async def cash_in_30d_kpi(
 async def cash_out_30d_kpi(
     session: AsyncSession,
     project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
     """Projected cash outflow within the next 30 days.
@@ -1207,6 +1274,7 @@ async def cash_out_30d_kpi(
         stmt = select(Invoice).where(Invoice.invoice_direction == "payable")
         if project_id is not None:
             stmt = stmt.where(Invoice.project_id == project_id)
+        stmt = _scope_portfolio(stmt, Invoice.project_id, project_id, allowed_project_ids)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             due = _parse_date(getattr(row, "due_date", None))
@@ -1240,6 +1308,7 @@ async def cash_out_30d_kpi(
         stmt = select(PurchaseOrder)
         if project_id is not None:
             stmt = stmt.where(PurchaseOrder.project_id == project_id)
+        stmt = _scope_portfolio(stmt, PurchaseOrder.project_id, project_id, allowed_project_ids)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             status_val = (getattr(row, "status", "") or "").lower()
@@ -1293,6 +1362,7 @@ async def cash_out_30d_kpi(
 async def dso_kpi(
     session: AsyncSession,
     project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
     """Average days from a receivable invoice date to its last payment.
@@ -1309,6 +1379,7 @@ async def dso_kpi(
         stmt = select(Invoice).where(Invoice.invoice_direction == "receivable")
         if project_id is not None:
             stmt = stmt.where(Invoice.project_id == project_id)
+        stmt = _scope_portfolio(stmt, Invoice.project_id, project_id, allowed_project_ids)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             issued = _parse_date(getattr(row, "invoice_date", None))
@@ -1354,6 +1425,7 @@ async def dso_kpi(
 async def first_pass_yield_kpi(
     session: AsyncSession,
     project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
     total = 0
@@ -1364,6 +1436,7 @@ async def first_pass_yield_kpi(
         stmt = select(QualityInspection)
         if project_id is not None:
             stmt = stmt.where(QualityInspection.project_id == project_id)
+        stmt = _scope_portfolio(stmt, QualityInspection.project_id, project_id, allowed_project_ids)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             total += 1
@@ -1404,6 +1477,7 @@ async def first_pass_yield_kpi(
 async def copq_kpi(
     session: AsyncSession,
     project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
     """Sum of NCR cost impact, currency-honest in both modes.
@@ -1436,6 +1510,7 @@ async def copq_kpi(
         stmt = select(NCR)
         if project_id is not None:
             stmt = stmt.where(NCR.project_id == project_id)
+        stmt = _scope_portfolio(stmt, NCR.project_id, project_id, allowed_project_ids)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             amt = _to_decimal(getattr(row, "cost_impact", None))
@@ -1481,6 +1556,7 @@ async def copq_kpi(
 async def punch_close_rate_kpi(
     session: AsyncSession,
     project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
     total = 0
@@ -1491,6 +1567,7 @@ async def punch_close_rate_kpi(
         stmt = select(PunchItem)
         if project_id is not None:
             stmt = stmt.where(PunchItem.project_id == project_id)
+        stmt = _scope_portfolio(stmt, PunchItem.project_id, project_id, allowed_project_ids)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             total += 1
@@ -1528,6 +1605,7 @@ async def punch_close_rate_kpi(
 async def rfi_close_avg_days_kpi(
     session: AsyncSession,
     project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
     total_days = Decimal("0")
@@ -1538,6 +1616,7 @@ async def rfi_close_avg_days_kpi(
         stmt = select(RFI)
         if project_id is not None:
             stmt = stmt.where(RFI.project_id == project_id)
+        stmt = _scope_portfolio(stmt, RFI.project_id, project_id, allowed_project_ids)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             opened = getattr(row, "created_at", None) or getattr(
@@ -1590,6 +1669,7 @@ async def rfi_close_avg_days_kpi(
 async def safety_trir_kpi(
     session: AsyncSession,
     project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
     incidents = 0
@@ -1600,6 +1680,7 @@ async def safety_trir_kpi(
         stmt = select(Incident)
         if project_id is not None:
             stmt = stmt.where(Incident.project_id == project_id)
+        stmt = _scope_portfolio(stmt, Incident.project_id, project_id, allowed_project_ids)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             # Recordable = not "first_aid_only"
@@ -1620,6 +1701,7 @@ async def safety_trir_kpi(
             stmt2 = select(WorkHours)
             if project_id is not None:
                 stmt2 = stmt2.where(WorkHours.project_id == project_id)
+            stmt2 = _scope_portfolio(stmt2, WorkHours.project_id, project_id, allowed_project_ids)
             wh_rows = (await session.execute(stmt2)).scalars().all()
             total_hours = sum(
                 (_to_decimal(getattr(r, "hours", 0)) for r in wh_rows),
@@ -1660,6 +1742,7 @@ async def safety_trir_kpi(
 async def embodied_carbon_per_m2_kpi(
     session: AsyncSession,
     project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
     total_emissions = Decimal("0")
@@ -1673,6 +1756,7 @@ async def embodied_carbon_per_m2_kpi(
         stmt = select(CarbonInventory)
         if project_id is not None:
             stmt = stmt.where(CarbonInventory.project_id == project_id)
+        stmt = _scope_portfolio(stmt, CarbonInventory.project_id, project_id, allowed_project_ids)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             total_emissions += _to_decimal(
@@ -1724,6 +1808,7 @@ async def embodied_carbon_per_m2_kpi(
 async def equipment_utilization_kpi(
     session: AsyncSession,
     project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
     used = Decimal("0")
@@ -1735,6 +1820,7 @@ async def equipment_utilization_kpi(
         stmt = select(Equipment)
         if project_id is not None:
             stmt = stmt.where(Equipment.project_id == project_id)
+        stmt = _scope_portfolio(stmt, Equipment.project_id, project_id, allowed_project_ids)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             used += _to_decimal(getattr(row, "hours_used", 0))
@@ -1773,6 +1859,7 @@ async def equipment_utilization_kpi(
 async def subcontractor_avg_rating_kpi(
     session: AsyncSession,
     project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
     total = Decimal("0")
@@ -1785,6 +1872,7 @@ async def subcontractor_avg_rating_kpi(
         stmt = select(SubcontractorRating)
         if project_id is not None:
             stmt = stmt.where(SubcontractorRating.project_id == project_id)
+        stmt = _scope_portfolio(stmt, SubcontractorRating.project_id, project_id, allowed_project_ids)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             total += _to_decimal(getattr(row, "score", 0))
@@ -1809,6 +1897,7 @@ async def subcontractor_avg_rating_kpi(
 async def bid_win_rate_kpi(
     session: AsyncSession,
     project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
     """Won bids / submitted bids.
@@ -1819,10 +1908,16 @@ async def bid_win_rate_kpi(
     applied by joining the package. When the tendering module is absent we
     fall back to ``bid_management``: a win is a ``BidAward`` (one per
     package) and total is the number of ``BidSubmission`` envelopes.
+
+    Portfolio mode restricts to the caller's ``allowed_project_ids`` (when
+    not ``None``) by joining the owning package, so a non-admin never counts
+    bids on projects they cannot access.
     """
     won = 0
     total = 0
     won_status = ("won", "awarded", "accepted")
+    # In portfolio mode we still need the package join to scope by project.
+    scope_portfolio = project_id is None and allowed_project_ids is not None
 
     # Primary source: tendering.TenderBid
     try:
@@ -1834,6 +1929,16 @@ async def bid_win_rate_kpi(
                 TenderPackage,
                 TenderBid.package_id == TenderPackage.id,
             ).where(TenderPackage.project_id == project_id)
+        elif scope_portfolio:
+            stmt = stmt.join(
+                TenderPackage,
+                TenderBid.package_id == TenderPackage.id,
+            )
+            stmt = (
+                stmt.where(false())
+                if not allowed_project_ids
+                else stmt.where(TenderPackage.project_id.in_(allowed_project_ids))
+            )
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             total += 1
@@ -1869,6 +1974,19 @@ async def bid_win_rate_kpi(
                     BidPackage,
                     BidAward.package_id == BidPackage.id,
                 ).where(BidPackage.project_id == project_id)
+            elif scope_portfolio:
+                # Portfolio mode: restrict to the caller's accessible projects
+                # via the owning package.
+                sub_stmt = sub_stmt.join(Bidder, BidSubmission.bidder_id == Bidder.id).join(
+                    BidPackage, Bidder.package_id == BidPackage.id
+                )
+                award_stmt = award_stmt.join(BidPackage, BidAward.package_id == BidPackage.id)
+                if not allowed_project_ids:
+                    sub_stmt = sub_stmt.where(false())
+                    award_stmt = award_stmt.where(false())
+                else:
+                    sub_stmt = sub_stmt.where(BidPackage.project_id.in_(allowed_project_ids))
+                    award_stmt = award_stmt.where(BidPackage.project_id.in_(allowed_project_ids))
             total = len((await session.execute(sub_stmt)).scalars().all())
             won = len((await session.execute(award_stmt)).scalars().all())
         except ImportError:
@@ -1901,14 +2019,23 @@ async def bid_win_rate_kpi(
 )
 async def project_count_active_kpi(
     session: AsyncSession,
-    project_id: uuid.UUID | None = None,  # noqa: ARG001 - global only
+    project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
     count = 0
+    if allowed_project_ids is not None and not allowed_project_ids:
+        # Non-admin caller with no accessible project counts zero.
+        return KPIComputation(value=Decimal("0"), unit="count", source_record_count=0)
     try:
         from app.modules.projects.models import Project  # type: ignore
 
-        rows = (await session.execute(select(Project))).scalars().all()
+        stmt = select(Project)
+        if project_id is not None:
+            stmt = stmt.where(Project.id == project_id)
+        elif allowed_project_ids is not None:
+            stmt = stmt.where(Project.id.in_(allowed_project_ids))
+        rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             status_val = (getattr(row, "status", "") or "").lower()
             if status_val in ("active", "in_progress", "construction", ""):
@@ -1951,6 +2078,7 @@ _VARIATION_PENDING_STATUSES = {"draft", "submitted", "under_review", "pending", 
 async def risk_open_exposure_kpi(
     session: AsyncSession,
     project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
     """Total cost exposure of open risks, currency-honest.
@@ -1976,6 +2104,7 @@ async def risk_open_exposure_kpi(
         stmt = select(RiskItem)
         if project_id is not None:
             stmt = stmt.where(RiskItem.project_id == project_id)
+        stmt = _scope_portfolio(stmt, RiskItem.project_id, project_id, allowed_project_ids)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             status_val = (getattr(row, "status", "") or "").strip().lower()
@@ -2045,6 +2174,7 @@ async def risk_open_exposure_kpi(
 async def risk_high_unmitigated_count_kpi(
     session: AsyncSession,
     project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
     """High/critical risks that are still open and carry no mitigation.
@@ -2062,6 +2192,7 @@ async def risk_high_unmitigated_count_kpi(
         stmt = select(RiskItem)
         if project_id is not None:
             stmt = stmt.where(RiskItem.project_id == project_id)
+        stmt = _scope_portfolio(stmt, RiskItem.project_id, project_id, allowed_project_ids)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             status_val = (getattr(row, "status", "") or "").strip().lower()
@@ -2100,6 +2231,7 @@ async def risk_high_unmitigated_count_kpi(
 async def ncr_open_count_kpi(
     session: AsyncSession,
     project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
     """Open Non-Conformance Reports - the live quality-defect backlog."""
@@ -2111,6 +2243,7 @@ async def ncr_open_count_kpi(
         stmt = select(NCR)
         if project_id is not None:
             stmt = stmt.where(NCR.project_id == project_id)
+        stmt = _scope_portfolio(stmt, NCR.project_id, project_id, allowed_project_ids)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             total += 1
@@ -2143,6 +2276,7 @@ async def incident_count_kpi(
     project_id: uuid.UUID | None = None,
     period_start: _date | None = None,
     period_end: _date | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
     """Raw incident count, optionally windowed by ``incident_date``.
@@ -2158,6 +2292,7 @@ async def incident_count_kpi(
         stmt = select(SafetyIncident)
         if project_id is not None:
             stmt = stmt.where(SafetyIncident.project_id == project_id)
+        stmt = _scope_portfolio(stmt, SafetyIncident.project_id, project_id, allowed_project_ids)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             when = _parse_date(getattr(row, "incident_date", None))
@@ -2189,6 +2324,7 @@ async def incident_count_kpi(
 async def pending_variation_value_kpi(
     session: AsyncSession,
     project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
     """Value of variation requests still pending (draft/submitted/under review).
@@ -2209,6 +2345,7 @@ async def pending_variation_value_kpi(
         stmt = select(VariationRequest)
         if project_id is not None:
             stmt = stmt.where(VariationRequest.project_id == project_id)
+        stmt = _scope_portfolio(stmt, VariationRequest.project_id, project_id, allowed_project_ids)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             status_val = (getattr(row, "status", "") or "").strip().lower()
@@ -2323,6 +2460,7 @@ async def _active_baseline_finishes(
 async def milestone_slippage_days_kpi(
     session: AsyncSession,
     project_id: uuid.UUID | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
     **_: Any,
 ) -> KPIComputation:
     """Worst-case schedule slip: the largest number of days any activity's
@@ -2331,16 +2469,23 @@ async def milestone_slippage_days_kpi(
     Pure ISO-string date arithmetic via ``_parse_date`` (schedule dates are
     ``String`` columns). Region-neutral. Returns 0 when no baseline exists or
     nothing has slipped.
+
+    Portfolio mode restricts the fan-out to the caller's
+    ``allowed_project_ids`` (IDOR defence): an empty set yields zero.
     """
     max_slip = 0
     slipped = 0
     total = 0
+    if project_id is None and allowed_project_ids is not None and not allowed_project_ids:
+        return KPIComputation(value=Decimal("0"), unit="days", source_record_count=0)
     try:
         from app.modules.schedule.models import Activity, Schedule  # type: ignore
 
         # Resolve which project owns each schedule (Activity has no
         # project_id - it hangs off Schedule).
         sched_stmt = select(Schedule.id, Schedule.project_id)
+        if project_id is None and allowed_project_ids is not None:
+            sched_stmt = sched_stmt.where(Schedule.project_id.in_(allowed_project_ids))
         sched_rows = (await session.execute(sched_stmt)).all()
         sched_to_project = {sid: pid for sid, pid in sched_rows}
 
@@ -2400,7 +2545,10 @@ def list_system_kpis() -> list[dict[str, Any]]:
 # e.g. for ``cpi`` we return task earned-value rows plus the finance
 # payments / purchase orders that make up actual cost. Each provider is
 # registered against a KPI code and returns a list of dicts, capped at
-# ``limit``.
+# ``limit``. Providers are called as
+# ``(session, project_id, limit, allowed_project_ids)``; the last arg
+# scopes a portfolio drill-down to the caller's accessible projects (IDOR
+# defence) and defaults to ``None`` (unrestricted) for direct callers.
 
 KPIRecordProvider = Callable[..., Awaitable[list[dict[str, Any]]]]
 KPI_RECORD_PROVIDERS: dict[str, KPIRecordProvider] = {}
@@ -2420,6 +2568,7 @@ async def _evm_drilldown_records(
     session: AsyncSession,
     project_id: uuid.UUID | None,
     limit: int,
+    allowed_project_ids: set[uuid.UUID] | None = None,
 ) -> list[dict[str, Any]]:
     """Shared drill-down implementation for every EVM KPI.
 
@@ -2431,9 +2580,10 @@ async def _evm_drilldown_records(
     try:
         from app.modules.tasks.models import Task  # type: ignore
 
-        stmt = select(Task).limit(limit)
+        stmt = select(Task)
         if project_id is not None:
             stmt = stmt.where(Task.project_id == project_id)
+        stmt = _scope_portfolio(stmt, Task.project_id, project_id, allowed_project_ids).limit(limit)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             records.append(
@@ -2455,9 +2605,10 @@ async def _evm_drilldown_records(
     try:
         from app.modules.finance.models import Invoice, Payment  # type: ignore
 
-        stmt = select(Payment, Invoice).join(Invoice, Payment.invoice_id == Invoice.id).limit(limit)
+        stmt = select(Payment, Invoice).join(Invoice, Payment.invoice_id == Invoice.id)
         if project_id is not None:
             stmt = stmt.where(Invoice.project_id == project_id)
+        stmt = _scope_portfolio(stmt, Invoice.project_id, project_id, allowed_project_ids).limit(limit)
         for payment, invoice in (await session.execute(stmt)).all():
             records.append(
                 {
@@ -2477,9 +2628,10 @@ async def _evm_drilldown_records(
     try:
         from app.modules.procurement.models import PurchaseOrder  # type: ignore
 
-        stmt = select(PurchaseOrder).limit(limit)
+        stmt = select(PurchaseOrder)
         if project_id is not None:
             stmt = stmt.where(PurchaseOrder.project_id == project_id)
+        stmt = _scope_portfolio(stmt, PurchaseOrder.project_id, project_id, allowed_project_ids).limit(limit)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             records.append(
@@ -2508,14 +2660,16 @@ async def _safety_trir_records(
     session: AsyncSession,
     project_id: uuid.UUID | None,
     limit: int,
+    allowed_project_ids: set[uuid.UUID] | None = None,
 ) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     try:
         from app.modules.safety.models import Incident  # type: ignore
 
-        stmt = select(Incident).limit(limit)
+        stmt = select(Incident)
         if project_id is not None:
             stmt = stmt.where(Incident.project_id == project_id)
+        stmt = _scope_portfolio(stmt, Incident.project_id, project_id, allowed_project_ids).limit(limit)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             records.append(
@@ -2537,14 +2691,20 @@ async def _safety_trir_records(
 @register_kpi_records("project_count_active")
 async def _projects_active_records(
     session: AsyncSession,
-    project_id: uuid.UUID | None,  # noqa: ARG001
+    project_id: uuid.UUID | None,
     limit: int,
+    allowed_project_ids: set[uuid.UUID] | None = None,
 ) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     try:
         from app.modules.projects.models import Project  # type: ignore
 
-        stmt = select(Project).limit(limit)
+        stmt = select(Project)
+        if project_id is not None:
+            stmt = stmt.where(Project.id == project_id)
+        elif allowed_project_ids is not None:
+            stmt = stmt.where(false()) if not allowed_project_ids else stmt.where(Project.id.in_(allowed_project_ids))
+        stmt = stmt.limit(limit)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             records.append(
@@ -2570,15 +2730,17 @@ async def _risk_drilldown_records(
     session: AsyncSession,
     project_id: uuid.UUID | None,
     limit: int,
+    allowed_project_ids: set[uuid.UUID] | None = None,
 ) -> list[dict[str, Any]]:
     """Open risks behind ``risk_open_exposure`` / ``risk_high_unmitigated_count``."""
     records: list[dict[str, Any]] = []
     try:
         from app.modules.risk.models import RiskItem  # type: ignore
 
-        stmt = select(RiskItem).limit(limit)
+        stmt = select(RiskItem)
         if project_id is not None:
             stmt = stmt.where(RiskItem.project_id == project_id)
+        stmt = _scope_portfolio(stmt, RiskItem.project_id, project_id, allowed_project_ids).limit(limit)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             status_val = (getattr(row, "status", "") or "").strip().lower()
@@ -2614,14 +2776,16 @@ async def _ncr_open_records(
     session: AsyncSession,
     project_id: uuid.UUID | None,
     limit: int,
+    allowed_project_ids: set[uuid.UUID] | None = None,
 ) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     try:
         from app.modules.ncr.models import NCR  # type: ignore
 
-        stmt = select(NCR).limit(limit)
+        stmt = select(NCR)
         if project_id is not None:
             stmt = stmt.where(NCR.project_id == project_id)
+        stmt = _scope_portfolio(stmt, NCR.project_id, project_id, allowed_project_ids).limit(limit)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             status_val = (getattr(row, "status", "") or "").strip().lower()
@@ -2651,14 +2815,16 @@ async def _incident_records(
     session: AsyncSession,
     project_id: uuid.UUID | None,
     limit: int,
+    allowed_project_ids: set[uuid.UUID] | None = None,
 ) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     try:
         from app.modules.safety.models import SafetyIncident  # type: ignore
 
-        stmt = select(SafetyIncident).limit(limit)
+        stmt = select(SafetyIncident)
         if project_id is not None:
             stmt = stmt.where(SafetyIncident.project_id == project_id)
+        stmt = _scope_portfolio(stmt, SafetyIncident.project_id, project_id, allowed_project_ids).limit(limit)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             records.append(
@@ -2684,14 +2850,16 @@ async def _pending_variation_records(
     session: AsyncSession,
     project_id: uuid.UUID | None,
     limit: int,
+    allowed_project_ids: set[uuid.UUID] | None = None,
 ) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     try:
         from app.modules.variations.models import VariationRequest  # type: ignore
 
-        stmt = select(VariationRequest).limit(limit)
+        stmt = select(VariationRequest)
         if project_id is not None:
             stmt = stmt.where(VariationRequest.project_id == project_id)
+        stmt = _scope_portfolio(stmt, VariationRequest.project_id, project_id, allowed_project_ids).limit(limit)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             status_val = (getattr(row, "status", "") or "").strip().lower()
@@ -2720,13 +2888,19 @@ async def _milestone_slippage_records(
     session: AsyncSession,
     project_id: uuid.UUID | None,
     limit: int,
+    allowed_project_ids: set[uuid.UUID] | None = None,
 ) -> list[dict[str, Any]]:
     """Activities whose current finish has slipped past their baseline finish."""
     records: list[dict[str, Any]] = []
+    if project_id is None and allowed_project_ids is not None and not allowed_project_ids:
+        return records
     try:
         from app.modules.schedule.models import Activity, Schedule  # type: ignore
 
-        sched_rows = (await session.execute(select(Schedule.id, Schedule.project_id))).all()
+        sched_stmt = select(Schedule.id, Schedule.project_id)
+        if project_id is None and allowed_project_ids is not None:
+            sched_stmt = sched_stmt.where(Schedule.project_id.in_(allowed_project_ids))
+        sched_rows = (await session.execute(sched_stmt)).all()
         sched_to_project = {sid: pid for sid, pid in sched_rows}
         target_pids = [project_id] if project_id is not None else sorted({p for p in sched_to_project.values() if p})
         baselines: dict[uuid.UUID, dict[str, _date]] = {}
@@ -2785,15 +2959,17 @@ async def _first_pass_yield_records(
     session: AsyncSession,
     project_id: uuid.UUID | None,
     limit: int,
+    allowed_project_ids: set[uuid.UUID] | None = None,
 ) -> list[dict[str, Any]]:
     """Inspections behind ``first_pass_yield`` (passed / total)."""
     records: list[dict[str, Any]] = []
     try:
         from app.modules.inspections.models import QualityInspection  # type: ignore
 
-        stmt = select(QualityInspection).limit(limit)
+        stmt = select(QualityInspection)
         if project_id is not None:
             stmt = stmt.where(QualityInspection.project_id == project_id)
+        stmt = _scope_portfolio(stmt, QualityInspection.project_id, project_id, allowed_project_ids).limit(limit)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             records.append(
@@ -2821,15 +2997,17 @@ async def _copq_records(
     session: AsyncSession,
     project_id: uuid.UUID | None,
     limit: int,
+    allowed_project_ids: set[uuid.UUID] | None = None,
 ) -> list[dict[str, Any]]:
     """NCRs behind ``copq`` (cost of poor quality = Σ NCR cost impact)."""
     records: list[dict[str, Any]] = []
     try:
         from app.modules.ncr.models import NCR  # type: ignore
 
-        stmt = select(NCR).limit(limit)
+        stmt = select(NCR)
         if project_id is not None:
             stmt = stmt.where(NCR.project_id == project_id)
+        stmt = _scope_portfolio(stmt, NCR.project_id, project_id, allowed_project_ids).limit(limit)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             records.append(
@@ -2856,15 +3034,17 @@ async def _rfi_close_records(
     session: AsyncSession,
     project_id: uuid.UUID | None,
     limit: int,
+    allowed_project_ids: set[uuid.UUID] | None = None,
 ) -> list[dict[str, Any]]:
     """RFIs behind ``rfi_close_avg_days`` (open-to-close turnaround)."""
     records: list[dict[str, Any]] = []
     try:
         from app.modules.rfi.models import RFI  # type: ignore
 
-        stmt = select(RFI).limit(limit)
+        stmt = select(RFI)
         if project_id is not None:
             stmt = stmt.where(RFI.project_id == project_id)
+        stmt = _scope_portfolio(stmt, RFI.project_id, project_id, allowed_project_ids).limit(limit)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             records.append(
@@ -2891,15 +3071,17 @@ async def _change_order_records(
     session: AsyncSession,
     project_id: uuid.UUID | None,
     limit: int,
+    allowed_project_ids: set[uuid.UUID] | None = None,
 ) -> list[dict[str, Any]]:
     """Change orders behind ``change_order_ratio`` (Σ CO value / contract value)."""
     records: list[dict[str, Any]] = []
     try:
         from app.modules.changeorders.models import ChangeOrder  # type: ignore
 
-        stmt = select(ChangeOrder).limit(limit)
+        stmt = select(ChangeOrder)
         if project_id is not None:
             stmt = stmt.where(ChangeOrder.project_id == project_id)
+        stmt = _scope_portfolio(stmt, ChangeOrder.project_id, project_id, allowed_project_ids).limit(limit)
         rows = (await session.execute(stmt)).scalars().all()
         for row in rows:
             amount = getattr(row, "approved_amount", None)
@@ -2930,16 +3112,23 @@ async def drilldown(
     *,
     project_id: uuid.UUID | None = None,
     limit: int = 100,
+    allowed_project_ids: set[uuid.UUID] | None = None,
 ) -> list[dict[str, Any]]:
     """Return underlying records for a KPI, capped at ``limit``.
 
     Returns ``[]`` if no provider is registered or the probe fails.
+
+    ``allowed_project_ids`` scopes a portfolio drill-down
+    (``project_id is None``) to the caller's accessible projects (IDOR
+    defence): ``None`` is unrestricted (admin / already-gated single
+    project), a set restricts to those ids, and an empty set returns no
+    rows. Each provider applies it through the shared :func:`_scope_portfolio`.
     """
     provider = KPI_RECORD_PROVIDERS.get(code)
     if provider is None:
         return []
     try:
-        return await provider(session, project_id, limit)
+        return await provider(session, project_id, limit, allowed_project_ids)
     except Exception:
         logger.exception("drilldown: provider for %s raised", code)
         return []
@@ -3010,12 +3199,19 @@ async def compute(
     period_start: _date | None = None,
     period_end: _date | None = None,
     filters: dict[str, Any] | None = None,
+    allowed_project_ids: set[uuid.UUID] | None = None,
 ) -> KPIComputation:
     """Invoke a registered KPI safely.
 
     Returns a zero-value :class:`KPIComputation` when the code is unknown
     or when the formula raises - never bubble up to API callers, this
     module is purely consumer code.
+
+    ``allowed_project_ids`` is forwarded to every formula so a portfolio
+    call (``project_id is None``) only aggregates over the caller's
+    accessible projects (IDOR defence). ``None`` means no restriction
+    (admin / single-project, which is already access-checked). Formulas
+    that have no portfolio fan-out ignore it via their ``**_`` catch-all.
     """
     fn = KPI_FORMULAS.get(code)
     if fn is None:
@@ -3028,6 +3224,7 @@ async def compute(
             period_start=period_start,
             period_end=period_end,
             filters=filters or {},
+            allowed_project_ids=allowed_project_ids,
         )
     except Exception:
         logger.exception("compute: KPI %s formula raised", code)

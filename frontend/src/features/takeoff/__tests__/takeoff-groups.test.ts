@@ -85,6 +85,17 @@ describe('computeGroupSummaries', () => {
     expect(result[0]!.unit).toBe('m');
   });
 
+  it('subtracts opening deductions from the group total (net area)', () => {
+    const measurements = [
+      m({ group: 'Floors', value: 40, unit: 'm²', type: 'area' }),
+      m({ group: 'Floors', value: 3, unit: 'm²', type: 'area', isDeduction: true }),
+      m({ group: 'Floors', value: 1, unit: 'm²', type: 'area', isDeduction: true }),
+    ];
+    const result = computeGroupSummaries(measurements, GROUP_COLORS);
+    expect(result[0]!.total).toBeCloseTo(36, 6); // 40 - 3 - 1
+    expect(result[0]!.count).toBe(3);
+  });
+
   it('defaults group name to General when blank', () => {
     const measurements = [m({ group: '', value: 1 })];
     const result = computeGroupSummaries(measurements, GROUP_COLORS);

@@ -2,13 +2,19 @@
 """Payroll ORM models.
 
 Tables:
-    oe_payroll_batch  - one draft/approved pay run per (project, period)
-    oe_payroll_entry  - one line per (worker, date): hours x rate = amount
+    oe_payroll_batch      - one draft/approved pay run per (project, period)
+    oe_payroll_entry      - one payslip line per (worker, date):
+                            hours x rate = gross, gross - deductions = net
+    oe_payroll_deduction  - one withholding line on a payslip (entry):
+                            a labelled tax / social / pension / other amount,
+                            either a fixed sum or a percentage of a base
 
 Money is stored Decimal-as-string (the project convention) and is always
 expressed in the project base currency - the generator converts each
 source row's native ``hours x cost_rate`` to base via the project fx_rates
-before it lands here, so a batch never blends currencies.
+before it lands here, so a batch never blends currencies. Deductions are
+entered directly in the batch (base) currency, so net pay is a plain Decimal
+subtraction with no FX.
 """
 
 import uuid
@@ -59,7 +65,15 @@ class PayrollBatch(Base):
     )
     currency: Mapped[str] = mapped_column(String(10), nullable=False, default="", server_default="")
     total_hours: Mapped[str] = mapped_column(String(50), nullable=False, default="0", server_default="0")
+    # ``total_amount`` is the batch GROSS pay (sum of entry gross amounts). It
+    # is what posts to the cost spine / GL: gross labour cost is the employer's
+    # cost, never reduced by employee withholdings.
     total_amount: Mapped[str] = mapped_column(String(50), nullable=False, default="0", server_default="0")
+    # Denormalised deduction/net rollups so the list view needs no per-entry
+    # aggregation. ``total_net = total_amount - total_deductions``. On a batch
+    # with no deductions both stay 0 / equal to gross (backfill-safe).
+    total_deductions: Mapped[str] = mapped_column(String(50), nullable=False, default="0", server_default="0")
+    total_net: Mapped[str] = mapped_column(String(50), nullable=False, default="0", server_default="0")
     entry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
     created_by: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True)
@@ -90,12 +104,17 @@ class PayrollBatch(Base):
 
 
 class PayrollEntry(Base):
-    """A single payroll line: one worker, one date, hours x rate = amount.
+    """A single payslip line: one worker, one date, hours x rate = gross.
 
-    ``rate`` and ``amount`` are in the batch currency (project base). The
-    ``resource_id`` link is optional - free-text ``worker_type`` rows
-    (e.g. "carpenter" with no resource record) still produce an entry using
-    whatever rate the source row carried.
+    ``rate``, ``amount`` (gross) and ``net_amount`` are in the batch currency
+    (project base). The ``resource_id`` link is optional - free-text
+    ``worker_type`` rows (e.g. "carpenter" with no resource record) still
+    produce an entry using whatever rate the source row carried.
+
+    ``net_amount = amount - sum(deductions)``. An entry with no deduction rows
+    has ``net_amount == amount`` (backfill-safe): the generator stamps net to
+    gross on insert, and the service recomputes it whenever a deduction line is
+    added or removed.
     """
 
     __tablename__ = "oe_payroll_entry"
@@ -114,7 +133,11 @@ class PayrollEntry(Base):
     work_date: Mapped[str | None] = mapped_column(String(20), nullable=True, doc="ISO YYYY-MM-DD")
     hours: Mapped[str] = mapped_column(String(50), nullable=False, default="0", server_default="0")
     rate: Mapped[str] = mapped_column(String(50), nullable=False, default="0", server_default="0")
+    # ``amount`` is the GROSS pay for this line (hours x rate, in base).
     amount: Mapped[str] = mapped_column(String(50), nullable=False, default="0", server_default="0")
+    # Net pay = gross - sum(deductions). Defaults to the gross amount so a row
+    # with no deductions (legacy or freshly generated) already reads net=gross.
+    net_amount: Mapped[str] = mapped_column(String(50), nullable=False, default="0", server_default="0")
     currency: Mapped[str] = mapped_column(String(10), nullable=False, default="", server_default="")
     source: Mapped[str] = mapped_column(
         String(40),
@@ -133,3 +156,73 @@ class PayrollEntry(Base):
 
     def __repr__(self) -> str:  # pragma: no cover - debug repr
         return f"<PayrollEntry {self.worker} {self.work_date} {self.hours}h={self.amount}>"
+
+
+class PayrollDeduction(Base):
+    """A single withholding line on a payslip (one :class:`PayrollEntry`).
+
+    Deductions are user/admin-entered, configurable line items - the platform
+    does NOT ship any country's tax tables or statutory rates. Each line carries
+    a free-form ``label`` (e.g. "Income tax"), a coarse ``deduction_type`` used
+    only for grouping/colour (tax / social / pension / other), and a value that
+    is resolved to a concrete ``amount`` in the batch (base) currency:
+
+        * ``mode == "fixed"``       -> ``amount = value`` (value is the sum).
+        * ``mode == "percentage"``  -> ``amount = round(base * value / 100)``;
+          ``base`` defaults to the parent entry's gross when left blank.
+
+    ``amount`` is the resolved, quantized figure the service computes and stores
+    so reads never re-evaluate the formula. All money is Decimal-as-string.
+    """
+
+    __tablename__ = "oe_payroll_deduction"
+    __table_args__ = (Index("ix_oe_payroll_deduction_entry_ordinal", "entry_id", "ordinal"),)
+
+    entry_id: Mapped[uuid.UUID] = mapped_column(
+        GUID(),
+        ForeignKey("oe_payroll_entry.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Free-form human label, e.g. "Income tax", "Pension 5%". Required.
+    label: Mapped[str] = mapped_column(String(160), nullable=False, default="")
+    # Coarse bucket for grouping / display only (NOT a tax rule):
+    # tax | social | pension | other. Free-form on the DB side.
+    deduction_type: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="other",
+        server_default="other",
+        doc="tax | social | pension | other",
+    )
+    # How ``value`` is interpreted: ``fixed`` (an absolute sum) or
+    # ``percentage`` (a percent of ``base_amount``).
+    mode: Mapped[str] = mapped_column(
+        String(12),
+        nullable=False,
+        default="fixed",
+        server_default="fixed",
+        doc="fixed | percentage",
+    )
+    # The user-entered figure: a fixed amount when ``mode='fixed'``, or a
+    # percentage (e.g. "5" meaning 5%) when ``mode='percentage'``.
+    value: Mapped[str] = mapped_column(String(50), nullable=False, default="0", server_default="0")
+    # The base a percentage applies to (batch currency). Stored so the resolved
+    # amount is reproducible/auditable even if the entry gross later changes.
+    # Empty/0 for fixed deductions; defaults to the entry gross for percentages.
+    base_amount: Mapped[str] = mapped_column(String(50), nullable=False, default="0", server_default="0")
+    # The resolved, quantized deduction amount in the batch (base) currency.
+    amount: Mapped[str] = mapped_column(String(50), nullable=False, default="0", server_default="0")
+    currency: Mapped[str] = mapped_column(String(10), nullable=False, default="", server_default="")
+    # Display/calc order within the payslip (also the deduction sequence).
+    ordinal: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    metadata_: Mapped[dict] = mapped_column(  # type: ignore[assignment]
+        "metadata",
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default="{}",
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - debug repr
+        return f"<PayrollDeduction {self.label} ({self.deduction_type}) {self.amount}>"

@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, false, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.bi_dashboards.models import (
@@ -492,6 +492,7 @@ class BIDashboardsRepository:
         *,
         project_id: uuid.UUID | None = None,
         limit: int = 12,
+        allowed_project_ids: set[uuid.UUID] | None = None,
     ) -> list[KPIValue]:
         """Return the *most recent* ``limit`` KPI values, oldest → newest.
 
@@ -502,10 +503,25 @@ class BIDashboardsRepository:
         receive points in chronological order. Returning them newest-first
         previously flipped every trend chart and inverted the
         period-over-period delta in the UI.
+
+        ``allowed_project_ids`` is the portfolio IDOR guard for a call that
+        did NOT pin a single ``project_id``: ``None`` returns every
+        project's persisted snapshots (admin / unrestricted), a set
+        restricts to those projects' rows (portfolio-aggregate rows stored
+        with ``project_id IS NULL`` are excluded, since they are an
+        all-project figure), and an empty set returns nothing - never all.
+        Ignored when ``project_id`` is supplied (that row set is already
+        access-checked upstream).
         """
         stmt = select(KPIValue).where(KPIValue.kpi_code == kpi_code)
         if project_id is not None:
             stmt = stmt.where(KPIValue.project_id == project_id)
+        elif allowed_project_ids is not None:
+            stmt = (
+                stmt.where(false())
+                if not allowed_project_ids
+                else stmt.where(KPIValue.project_id.in_(allowed_project_ids))
+            )
         stmt = stmt.order_by(
             KPIValue.period_start.desc(),
             KPIValue.computed_at.desc(),

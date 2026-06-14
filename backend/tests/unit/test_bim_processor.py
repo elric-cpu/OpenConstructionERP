@@ -255,6 +255,64 @@ class TestExcelElementsToBIMResult:
         result = _excel_elements_to_bim_result(raw, temp_dir)
         assert len(result["elements"][0]["properties"]) <= 30
 
+    def test_classifies_by_ifc_class_when_no_category_column(self, temp_dir):
+        """IFC exports without a ``category`` column classify via ``ifc_class``.
+
+        Issue #197: the DDC IfcExporter can emit the IFC class under
+        ``IFC Class`` / ``IfcType`` / ``Type`` instead of ``Category``.
+        Reading only ``category`` dropped every row, producing a silent
+        "0 elements from a full model" failure.  We must resolve the class
+        from the available alias instead.
+        """
+        raw = [
+            {"globalid": "g1", "ifc_class": "IfcWall", "name": "Wall A", "level": "L1"},
+            {"globalid": "g2", "ifc_class": "IfcSlab", "name": "Slab A", "level": "L1"},
+            # Spatial container must still be filtered out.
+            {"globalid": "g3", "ifc_class": "IfcBuildingStorey", "name": "L1"},
+        ]
+        result = _excel_elements_to_bim_result(raw, temp_dir)
+        assert result["element_count"] == 2
+        # Non-OST categories keep their original casing as the element type.
+        types = {e["element_type"] for e in result["elements"]}
+        assert types == {"IfcWall", "IfcSlab"}
+        # Two products kept means no empty-reason is recorded.
+        assert result["empty_reason"] is None
+
+    def test_category_column_wins_over_type_alias(self, temp_dir):
+        """When ``category`` exists, orphan rows with it blank are still skipped.
+
+        A Revit export can carry both ``category`` and ``type``; the broad
+        ``type`` alias must not resurrect rows whose ``category`` is blank.
+        """
+        raw = [
+            {"id": 1, "category": "OST_Walls", "type": "Basic Wall", "name": "W"},
+            {"id": 2, "category": None, "type": "Some Param", "name": "Orphan"},
+        ]
+        result = _excel_elements_to_bim_result(raw, temp_dir)
+        assert result["element_count"] == 1
+
+    def test_spatial_only_export_reports_reason(self, temp_dir):
+        """All-spatial rows yield 0 elements with empty_reason=spatial_only."""
+        raw = [
+            {"globalid": "g1", "ifc_class": "IfcProject", "name": "Project"},
+            {"globalid": "g2", "ifc_class": "IfcSite", "name": "Site"},
+            {"globalid": "g3", "ifc_class": "IfcBuildingStorey", "name": "L1"},
+        ]
+        result = _excel_elements_to_bim_result(raw, temp_dir)
+        assert result["element_count"] == 0
+        assert result["empty_reason"] == "spatial_only"
+        assert result["raw_row_count"] == 3
+
+    def test_unclassified_rows_report_reason(self, temp_dir):
+        """Rows with no resolvable category yield empty_reason=unclassified_only."""
+        raw = [
+            {"id": 1, "name": "mystery row", "some_param": "x"},
+            {"id": 2, "name": "another", "some_param": "y"},
+        ]
+        result = _excel_elements_to_bim_result(raw, temp_dir)
+        assert result["element_count"] == 0
+        assert result["empty_reason"] == "unclassified_only"
+
 
 # ─── Empty result baseline ──────────────────────────────────────────────────
 

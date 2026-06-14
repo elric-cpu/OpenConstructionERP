@@ -681,6 +681,10 @@ class LedgerEntryCreate(BaseModel):
     source_type: str | None = Field(default=None, max_length=50)
     source_id: str | None = Field(default=None, max_length=36)
     created_by: str | None = Field(default=None, max_length=36)
+    # Optional caller-supplied idempotency token. When omitted the service
+    # derives a deterministic key from transaction_ref + source so a benign
+    # retry returns the existing entry instead of double-posting the ledger.
+    idempotency_key: str | None = Field(default=None, max_length=64)
 
     @field_validator("debit_amount", "credit_amount")
     @classmethod
@@ -838,6 +842,10 @@ class JournalEntryCreate(BaseModel):
     posted_at: str = Field(default="", max_length=30)
     source_type: str | None = Field(default=None, max_length=50)
     source_id: str | None = Field(default=None, max_length=36)
+    # Optional caller-supplied idempotency token. When omitted the service
+    # derives a deterministic key from transaction_ref + source so a replayed
+    # post returns the already-written rows instead of duplicating the entry.
+    idempotency_key: str | None = Field(default=None, max_length=64)
 
 
 class JournalEntryResponse(BaseModel):

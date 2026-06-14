@@ -55,10 +55,16 @@ from fastapi import (
     status,
 )
 from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import async_session_factory
-from app.dependencies import CurrentUserId, SessionDep, decode_access_token
+from app.dependencies import (
+    CurrentUserId,
+    SessionDep,
+    decode_access_token,
+    verify_project_access,
+)
 from app.modules.collaboration_locks.events import (
     COLLAB_LOCK_ACQUIRED,
     COLLAB_LOCK_EXPIRED,
@@ -113,6 +119,177 @@ def _reject_unknown_entity_type(entity_type: str) -> None:
         )
 
 
+# ── Tenant isolation ───────────────────────────────────────────────────────
+#
+# Locks are state about another tenant's rows: who is editing a given entity
+# and until when. Without a project gate any authenticated user could read a
+# foreign lock (presence/holder leak) or plant one (cross-tenant DoS). Every
+# entity_type in ALLOWED_LOCK_ENTITY_TYPES is traceable to a single owning
+# project (directly or through one FK hop); we resolve it and reuse the same
+# verify_project_access helper the rest of the platform uses (404 on missing
+# OR denied, so we never leak UUID existence). A type we cannot resolve to a
+# project fails closed.
+
+
+async def _resolve_lock_entity_project_id(
+    entity_type: str,
+    entity_id: uuid.UUID,
+    session: AsyncSession,
+) -> uuid.UUID | None:
+    """Map a lockable entity to its owning project's UUID.
+
+    Returns ``None`` when the row does not exist or the type genuinely cannot
+    be tied to a project - callers treat ``None`` as fail-closed.
+    """
+    try:
+        from sqlalchemy import select
+
+        # ── Direct project_id on the primary model ──────────────────────
+        if entity_type == "project":
+            return entity_id
+        if entity_type == "boq":
+            from app.modules.boq.models import BOQ
+
+            return (await session.execute(select(BOQ.project_id).where(BOQ.id == entity_id))).scalar_one_or_none()
+        if entity_type == "document":
+            from app.modules.documents.models import Document
+
+            return (
+                await session.execute(select(Document.project_id).where(Document.id == entity_id))
+            ).scalar_one_or_none()
+        if entity_type == "task":
+            from app.modules.tasks.models import Task
+
+            return (await session.execute(select(Task.project_id).where(Task.id == entity_id))).scalar_one_or_none()
+        if entity_type == "rfi":
+            from app.modules.rfi.models import RFI
+
+            return (await session.execute(select(RFI.project_id).where(RFI.id == entity_id))).scalar_one_or_none()
+        if entity_type == "ncr":
+            from app.modules.ncr.models import NCR
+
+            return (await session.execute(select(NCR.project_id).where(NCR.id == entity_id))).scalar_one_or_none()
+        if entity_type == "submittal":
+            from app.modules.submittals.models import Submittal
+
+            return (
+                await session.execute(select(Submittal.project_id).where(Submittal.id == entity_id))
+            ).scalar_one_or_none()
+        if entity_type == "punchlist_item":
+            from app.modules.punchlist.models import PunchItem
+
+            return (
+                await session.execute(select(PunchItem.project_id).where(PunchItem.id == entity_id))
+            ).scalar_one_or_none()
+        if entity_type == "inspection":
+            from app.modules.inspections.models import QualityInspection
+
+            return (
+                await session.execute(select(QualityInspection.project_id).where(QualityInspection.id == entity_id))
+            ).scalar_one_or_none()
+        if entity_type == "meeting":
+            from app.modules.meetings.models import Meeting
+
+            return (
+                await session.execute(select(Meeting.project_id).where(Meeting.id == entity_id))
+            ).scalar_one_or_none()
+        if entity_type == "transmittal":
+            from app.modules.transmittals.models import Transmittal
+
+            return (
+                await session.execute(select(Transmittal.project_id).where(Transmittal.id == entity_id))
+            ).scalar_one_or_none()
+        if entity_type == "bim_model":
+            from app.modules.bim_hub.models import BIMModel
+
+            return (
+                await session.execute(select(BIMModel.project_id).where(BIMModel.id == entity_id))
+            ).scalar_one_or_none()
+        if entity_type == "tender_package":
+            from app.modules.tendering.models import TenderPackage
+
+            return (
+                await session.execute(select(TenderPackage.project_id).where(TenderPackage.id == entity_id))
+            ).scalar_one_or_none()
+        if entity_type == "change_order":
+            from app.modules.changeorders.models import ChangeOrder
+
+            return (
+                await session.execute(select(ChangeOrder.project_id).where(ChangeOrder.id == entity_id))
+            ).scalar_one_or_none()
+        if entity_type == "risk":
+            from app.modules.risk.models import RiskItem
+
+            return (
+                await session.execute(select(RiskItem.project_id).where(RiskItem.id == entity_id))
+            ).scalar_one_or_none()
+
+        # ── One FK hop to reach project_id ──────────────────────────────
+        if entity_type in ("boq_position", "boq_section"):
+            from app.modules.boq.models import BOQ, Position
+
+            return (
+                await session.execute(
+                    select(BOQ.project_id).join(Position, Position.boq_id == BOQ.id).where(Position.id == entity_id)
+                )
+            ).scalar_one_or_none()
+        if entity_type == "bim_element":
+            from app.modules.bim_hub.models import BIMElement, BIMModel
+
+            return (
+                await session.execute(
+                    select(BIMModel.project_id)
+                    .join(BIMElement, BIMElement.model_id == BIMModel.id)
+                    .where(BIMElement.id == entity_id)
+                )
+            ).scalar_one_or_none()
+        if entity_type == "schedule_activity":
+            from app.modules.schedule.models import Activity, Schedule
+
+            return (
+                await session.execute(
+                    select(Schedule.project_id)
+                    .join(Activity, Activity.schedule_id == Schedule.id)
+                    .where(Activity.id == entity_id)
+                )
+            ).scalar_one_or_none()
+        if entity_type == "requirement":
+            from app.modules.requirements.models import Requirement, RequirementSet
+
+            return (
+                await session.execute(
+                    select(RequirementSet.project_id)
+                    .join(Requirement, Requirement.requirement_set_id == RequirementSet.id)
+                    .where(Requirement.id == entity_id)
+                )
+            ).scalar_one_or_none()
+    except Exception:  # noqa: BLE001 - resolution failed; treat as unresolved (fail closed)
+        logger.debug("collab-lock entity resolve failed for %s/%s", entity_type, entity_id)
+        return None
+    return None
+
+
+async def _verify_lock_entity_access(
+    entity_type: str,
+    entity_id: uuid.UUID,
+    user_id: uuid.UUID,
+    session: AsyncSession,
+) -> None:
+    """Fail closed unless the caller can reach the entity's owning project.
+
+    Raises HTTP 404 (matching ``verify_project_access`` and the IDOR-404
+    convention) when the entity cannot be resolved to a project, or when the
+    caller has no access to that project.
+    """
+    resolved = await _resolve_lock_entity_project_id(entity_type, entity_id, session)
+    if resolved is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Entity not found",
+        )
+    await verify_project_access(resolved, str(user_id), session)
+
+
 # ── HTTP: acquire / heartbeat / release ────────────────────────────────────
 
 
@@ -136,6 +313,14 @@ async def acquire_lock(
     the current holder's name and remaining TTL so the frontend can
     render a meaningful toast.
     """
+    # Tenant gate: you may only lock a row in a project you can reach.
+    # Prevents cross-tenant lock planting (DoS) on a foreign entity.
+    await _verify_lock_entity_access(
+        data.entity_type,
+        data.entity_id,
+        uuid.UUID(user_id),
+        service.session,
+    )
     try:
         return await service.acquire(
             entity_type=data.entity_type,
@@ -159,6 +344,19 @@ async def heartbeat_lock(
     user_id: CurrentUserId,
     service: CollabLockService = Depends(_get_service),
 ) -> CollabLockResponse:
+    # Renewing a lock is already holder-gated by the service (only the owner
+    # can extend), but a user removed from the project mid-session must not
+    # keep a foreign row pinned. Re-verify project access against the locked
+    # entity when the row exists; a missing row falls through to the service's
+    # own 404 so behaviour for valid holders is unchanged.
+    existing = await service.repo.get_by_id(lock_id)
+    if existing is not None:
+        await _verify_lock_entity_access(
+            existing.entity_type,
+            existing.entity_id,
+            uuid.UUID(user_id),
+            service.session,
+        )
     try:
         return await service.heartbeat(
             lock_id=lock_id,
@@ -184,12 +382,16 @@ async def release_lock(
 
 @router.get("/entity/", response_model=CollabLockResponse | None)
 async def get_entity_lock(
+    user_id: CurrentUserId,
     entity_type: str = Query(..., min_length=1, max_length=64),
     entity_id: str = Query(..., min_length=1, max_length=36),
-    _user_id: CurrentUserId = None,  # type: ignore[assignment]
     service: CollabLockService = Depends(_get_service),
 ) -> CollabLockResponse | None:
     parsed = _parse_entity_id(entity_id)
+    # Tenant gate: reading who holds the lock on an entity leaks the holder's
+    # identity and edit activity, so it requires access to the entity's
+    # project just like the lock itself.
+    await _verify_lock_entity_access(entity_type, parsed, uuid.UUID(user_id), service.session)
     try:
         return await service.get_for_entity(entity_type=entity_type, entity_id=parsed)
     except UnknownEntityTypeError as exc:
@@ -275,6 +477,23 @@ async def presence_ws(
         user_id = uuid.UUID(user_id_str)
     except (ValueError, TypeError):
         await websocket.close(code=1008, reason="invalid user id")
+        return
+
+    # Tenant gate before anything is sent: the presence_snapshot frame leaks
+    # the editing roster and current lock holder of this entity, so the caller
+    # must be able to reach the entity's owning project. WebSockets cannot
+    # carry a 404, so a failed check closes the socket with 1008 (policy
+    # violation) - the same code used for auth failures above - without ever
+    # joining the presence hub or sending a frame.
+    try:
+        async with async_session_factory() as auth_sess:
+            await _verify_lock_entity_access(entity_type, parsed_id, user_id, auth_sess)
+    except HTTPException:
+        await websocket.close(code=1008, reason="forbidden")
+        return
+    except Exception:  # noqa: BLE001 - never leak presence on an unexpected error
+        logger.exception("presence websocket authorization failed")
+        await websocket.close(code=1011, reason="authorization error")
         return
 
     # Resolve the display name in its own session so the connection

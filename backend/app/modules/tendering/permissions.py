@@ -19,6 +19,11 @@ def register_tendering_permissions() -> None:
             "tendering.bid.create": Role.EDITOR,
             "tendering.bid.update": Role.EDITOR,
             "tendering.comparison.read": Role.VIEWER,
+            # Distribution: manage the recipient list (EDITOR) and actually
+            # send the package out / generate decision documents. Sending mail
+            # and issuing award/rejection letters are buyer-side actions that
+            # sit at the EDITOR tier alongside issuing the tender.
+            "tendering.distribute": Role.EDITOR,
             # Addenda (mid-tender clarifications) and bid leveling.
             "tendering.addendum.read": Role.VIEWER,
             "tendering.addendum.create": Role.EDITOR,

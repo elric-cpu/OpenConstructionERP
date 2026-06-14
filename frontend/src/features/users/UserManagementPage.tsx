@@ -35,8 +35,9 @@ import {
   Unlock,
   Save,
 } from 'lucide-react';
-import { Card, Badge, Button, WideModal, Breadcrumb, ConfirmDialog, DismissibleInfo, IntroRichText } from '@/shared/ui';
+import { Card, Badge, Button, WideModal, Breadcrumb, ConfirmDialog, DismissibleInfo, IntroRichText, ModuleGuideButton } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { usersGuide } from './usersGuide';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useToastStore } from '@/stores/useToastStore';
@@ -888,16 +889,19 @@ export function UserManagementPage() {
           defaultValue: 'Manage team members, roles, and access',
         })}
         actions={
-          isAdmin ? (
-            <Button
-              variant="primary"
-              size="sm"
-              icon={<UserPlus size={14} />}
-              onClick={() => setShowInvite(true)}
-            >
-              {t('users.invite_user', { defaultValue: 'Invite User' })}
-            </Button>
-          ) : undefined
+          <div className="flex items-center gap-2">
+            <ModuleGuideButton content={usersGuide} />
+            {isAdmin && (
+              <Button
+                variant="primary"
+                size="sm"
+                icon={<UserPlus size={14} />}
+                onClick={() => setShowInvite(true)}
+              >
+                {t('users.invite_user', { defaultValue: 'Invite User' })}
+              </Button>
+            )}
+          </div>
         }
       />
 

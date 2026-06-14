@@ -40,6 +40,7 @@ import {
   WideModal,
   ConfirmDialog,
   InfoHint,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
@@ -100,6 +101,7 @@ import {
   currentTasksForMaster,
 } from './api';
 import { fetchTasks, type Task } from '@/features/tasks/api';
+import { scheduleAdvancedGuide } from './scheduleAdvancedGuide';
 
 const SCHEDULE_TAB_IDS = [
   'master',
@@ -510,14 +512,17 @@ export function ScheduleAdvancedPage() {
             'Pull-planning, lookaheads, weekly commitments, constraints and baselines.',
         })}
         actions={
-          <Button
-            variant="primary"
-            icon={<Plus size={14} />}
-            onClick={() => setCreateMaster(true)}
-            disabled={!projectId}
-          >
-            {t('schedule_advanced.new_master', { defaultValue: 'New Master Schedule' })}
-          </Button>
+          <>
+            <ModuleGuideButton content={scheduleAdvancedGuide} />
+            <Button
+              variant="primary"
+              icon={<Plus size={14} />}
+              onClick={() => setCreateMaster(true)}
+              disabled={!projectId}
+            >
+              {t('schedule_advanced.new_master', { defaultValue: 'New Master Schedule' })}
+            </Button>
+          </>
         }
       />
 

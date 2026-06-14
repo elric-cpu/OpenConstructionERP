@@ -1,11 +1,30 @@
 /**
  * BOQToolbar — The toolbar/action bar at the top of the BOQ editor.
  *
- * Contains: undo/redo, add buttons, import/export, validate, recalculate, AI toggle.
- * Extracted from BOQEditorPage.tsx for modularity.
+ * Rendered as two harmonious cards that share the same shell (rounded-xl,
+ * hairline border, soft shadow, white surface) floating on the page's
+ * canvas-coloured sticky band:
+ *
+ *   ┌ Toolbar card (flex-1) ─────────────────────────┐  ┌ Grand Total ─────┐
+ *   │ Row 1  quality ring · add actions · Validate ·  │  │ GRAND TOTAL  EUR▾ │
+ *   │        AI Chat · Quality & AI ▾                  │  │ € 1,234,567.89    │
+ *   │ ───────────────────────────────────────────────│  │ 12 sec · 340 pos  │
+ *   │ Row 2  undo/redo · import/export · grid settings│  │ 3 errors          │
+ *   └─────────────────────────────────────────────────┘  └───────────────────┘
+ *
+ * Row 1 carries the "build the BOQ" actions plus the two hottest quality/AI
+ * actions surfaced as buttons (Validate, AI Chat); the rest of the quality/AI
+ * toolset lives in the compact "Quality & AI" overflow menu. Row 2 carries the
+ * utility/view controls. The Grand-Total card is a separate block on the right.
+ *
+ * The Quality & AI overflow menu and the Export menu render through a portal
+ * (document.body) with fixed positioning, so they float above the AG-Grid
+ * below instead of being clipped by the sticky toolbar's own stacking context
+ * (the band is `sticky z-20`; the grid creates competing stacking contexts).
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Plus,
   Download,
@@ -29,12 +48,13 @@ import {
   SearchCheck,
   Check,
   Brain,
-  Settings,
   ChevronDown,
   Keyboard,
   Leaf,
   WrapText,
   PieChart,
+  FoldVertical,
+  UnfoldVertical,
 } from 'lucide-react';
 import { Button } from '@/shared/ui';
 import { useBoqDescDensityStore, type BoqDescDensity } from '@/stores/useBoqDescDensityStore';
@@ -102,12 +122,13 @@ export interface BOQToolbarProps {
   qualityScoreRing: React.ReactNode;
   // Keyboard shortcuts overlay
   onShowShortcuts?: () => void;
+  // Expand / collapse every section at once
+  onToggleCollapseAll?: () => void;
+  allSectionsCollapsed?: boolean;
   /**
-   * ── Inline mini-summary (merged into toolbar instead of a second row).
-   * Renders at the right end with `ml-auto` so on wide screens the toolbar
-   * is a single visual band. Falls back to a wrapped row on narrow screens
-   * via the toolbar's existing `flex-wrap`. Pass `null` to hide entirely
-   * (e.g. on the empty-state of a BOQ with zero positions).
+   * ── Grand-Total summary, rendered as its own card to the right of the
+   * toolbar card. Falls back to wrapping below on narrow screens. Pass `null`
+   * to hide entirely (e.g. on the empty-state of a BOQ with zero positions).
    */
   summary?: {
     sectionCount: number;
@@ -178,21 +199,40 @@ export function BOQToolbar({
   hasPositions,
   qualityScoreRing,
   onShowShortcuts,
+  onToggleCollapseAll,
+  allSectionsCollapsed,
   summary,
 }: BOQToolbarProps) {
-  /* ── Export dropdown state ─────────────────────────────────────────── */
+  /* ── Export dropdown (portaled so it floats above the grid) ────────── */
   const [showExportMenu, setShowExportMenu] = useState(false);
-  const exportRef = useRef<HTMLDivElement>(null);
+  const exportBtnRef = useRef<HTMLButtonElement>(null);
+  const exportMenuPos = useAnchoredMenu(showExportMenu, exportBtnRef, 'left');
 
+  // Close the export menu on outside click / Escape (the panel lives in a
+  // portal, so an "outside" click must be measured against both the trigger
+  // and the portaled panel).
+  const exportMenuRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (exportRef.current && !exportRef.current.contains(e.target as Node)) {
+    if (!showExportMenu) return;
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (
+        exportBtnRef.current && !exportBtnRef.current.contains(target) &&
+        exportMenuRef.current && !exportMenuRef.current.contains(target)
+      ) {
         setShowExportMenu(false);
       }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowExportMenu(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [showExportMenu]);
 
   const handleExportItem = (format: 'excel' | 'csv' | 'pdf' | 'gaeb') => {
     setShowExportMenu(false);
@@ -208,236 +248,322 @@ export function BOQToolbar({
     tall: t('boq.desc_density_tall', { defaultValue: 'Langtext' }),
   };
 
+  const scoreColor = (s: number) =>
+    s >= 80 ? 'text-emerald-600' : s >= 50 ? 'text-amber-600' : 'text-red-600';
+
   // Bug 7: stick BELOW the app header (52px / --oe-header-height) — using top-0 collides
   // with the sticky header (z-30), pushing the toolbar out of view when scrolling.
+  // The band paints the page canvas colour (surface-secondary) so content
+  // scrolling beneath it does not bleed through, and the two cards read as
+  // distinct blocks floating on it.
   return (
     <div
       data-testid="boq-toolbar"
-      className="sticky top-[52px] z-20 bg-surface-primary flex flex-col gap-2 px-1 py-2 border-b border-border-light mb-3"
+      className="sticky top-[52px] z-20 mb-3 flex flex-wrap items-stretch gap-3 bg-surface-secondary px-0.5 py-2"
     >
-      {/* ── Row 1: primary action groups (left ~80%) + Grand-Total summary
-          card (right ~20%). The left zone wraps internally so on a narrow
-          viewport its buttons spill onto extra lines here instead of pushing
-          the Grand-Total card onto its own empty row. ──────────────────── */}
-      <div className="flex items-start gap-3">
-      {/* Left zone (~80%): every action group wraps inside this flex-1 column,
-          so on a narrow viewport the buttons spill onto a second line here
-          instead of shoving the Grand Total card onto its own empty row. */}
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-2">
-      {/* ── Row-group: Quality + Undo/Redo ─────────────────────────────── */}
-      <div className="flex items-center gap-1.5" data-testid="boq-quality-ring">
-        {hasPositions && qualityScoreRing}
-        <Button variant="ghost" size="sm" icon={<Undo2 size={15} />} onClick={onUndo} disabled={!canUndo} title={t('boq.undo', { defaultValue: 'Undo (Ctrl+Z)' })} />
-        <Button variant="ghost" size="sm" icon={<Redo2 size={15} />} onClick={onRedo} disabled={!canRedo} title={t('boq.redo', { defaultValue: 'Redo (Ctrl+Y)' })} />
-        <Button variant="ghost" size="sm" icon={<Clock size={15} />} onClick={onShowVersionHistory} title={t('boq.version_history', { defaultValue: 'Version History' })} />
-      </div>
+      {/* ══ Block 1: the toolbar card (two rows) ════════════════════════════ */}
+      <section
+        aria-label={t('boq.toolbar_aria', { defaultValue: 'Estimate toolbar' })}
+        className="flex min-w-[300px] flex-1 flex-col gap-2 rounded-xl border border-border-light
+                   bg-surface-primary px-3 py-2.5 shadow-sm"
+      >
+        {/* ── Row 1: the primary "build the BOQ" actions ──────────────────── */}
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2">
+          {/* Quality ring + Add group */}
+          <div className="flex items-center gap-1.5" data-testid="boq-quality-ring">
+            {hasPositions && qualityScoreRing}
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<Plus size={15} />}
+              onClick={onAddPosition}
+              data-testid="boq-add-position-button"
+            >
+              {t('boq.add_position')}
+            </Button>
+            <Button variant="secondary" size="sm" icon={<Layers size={15} />} onClick={onAddSection} title={t('boq.add_section')}>
+              <span className="hidden lg:inline">{t('boq.add_section')}</span>
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<Database size={15} />}
+              onClick={onOpenCostDb}
+              title={t('boq.add_from_database')}
+            >
+              <span className="hidden lg:inline">{t('boq.add_from_database')}</span>
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={<Layers size={15} />}
+              onClick={onOpenAssembly}
+              title={t('boq.from_assembly', { defaultValue: 'From Assembly' })}
+            >
+              <span className="hidden xl:inline">{t('boq.from_assembly', { defaultValue: 'From Assembly' })}</span>
+            </Button>
+          </div>
 
-      <div className="w-px h-6 bg-border-light hidden sm:block" />
+          <div className="w-px h-6 bg-border-light hidden sm:block" />
 
-      {/* ── Row-group: Add ─────────────────────────────────────────────── */}
-      <div className="flex items-center gap-1.5">
-        <Button
-          variant="primary"
-          size="sm"
-          icon={<Plus size={15} />}
-          onClick={onAddPosition}
-          data-testid="boq-add-position-button"
-        >
-          {t('boq.add_position')}
-        </Button>
-        <Button variant="secondary" size="sm" icon={<Layers size={15} />} onClick={onAddSection} title={t('boq.add_section')}>
-          {t('boq.add_section')}
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          icon={<Database size={15} />}
-          onClick={onOpenCostDb}
-          title={t('boq.add_from_database')}
-        >
-          {t('boq.add_from_database')}
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          icon={<Layers size={15} />}
-          onClick={onOpenAssembly}
-          title={t('boq.from_assembly', { defaultValue: 'From Assembly' })}
-        >
-          {t('boq.from_assembly', { defaultValue: 'From Assembly' })}
-        </Button>
-      </div>
+          {/* Hot quality/AI actions surfaced as buttons + overflow menu */}
+          <div className="flex items-center gap-1.5">
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={
+                <ShieldCheck
+                  size={15}
+                  className={isValidating ? 'animate-pulse text-oe-blue' : undefined}
+                />
+              }
+              onClick={onValidate}
+              loading={isValidating}
+              disabled={isValidating}
+              title={t('boq.validate_tip', {
+                defaultValue:
+                  'Checks for missing descriptions, zero quantities, pricing gaps, classification compliance, and duplicate positions.',
+              })}
+              data-testid="boq-validate-button"
+            >
+              {isValidating ? t('boq.validating', { defaultValue: 'Checking...' }) : t('boq.validate', { defaultValue: 'Validate' })}
+              {lastValidationScore != null && !isValidating && (
+                <span className={`ml-1 text-2xs font-bold tabular-nums ${scoreColor(lastValidationScore)}`}>
+                  {lastValidationScore}%
+                </span>
+              )}
+            </Button>
+            <Button
+              variant={aiChatOpen ? 'secondary' : 'ghost'}
+              size="sm"
+              aria-pressed={!!aiChatOpen}
+              icon={<Sparkles size={15} className={aiChatOpen ? 'text-violet-600' : 'text-violet-500'} />}
+              onClick={onToggleAiChat}
+              title={t('boq.ai_assistant_tooltip', {
+                defaultValue:
+                  'Describe what you need in plain text - AI creates BOQ positions with realistic pricing.',
+              })}
+              data-testid="boq-ai-chat-button"
+            >
+              {t('boq.ai_chat_short', { defaultValue: 'AI Chat' })}
+            </Button>
+            <QualityAiMenu
+              t={t}
+              onRecalculate={onRecalculate}
+              isRecalculating={isRecalculating}
+              onCheckAnomalies={onCheckAnomalies}
+              onCancelAnomalies={onCancelAnomalies}
+              isCheckingAnomalies={isCheckingAnomalies}
+              anomalyCount={anomalyCount}
+              onAcceptAllAnomalies={onAcceptAllAnomalies}
+              costFinderOpen={costFinderOpen}
+              onToggleCostFinder={onToggleCostFinder}
+              smartPanelOpen={smartPanelOpen}
+              onToggleSmartPanel={onToggleSmartPanel}
+            />
+          </div>
+        </div>
+        {/* end Row 1 */}
 
-      <div className="w-px h-6 bg-border-light hidden sm:block" />
-
-      {/* ── Row-group: File (Import / Export) ──────────────────────────── */}
-      <div className="flex items-center gap-1.5">
-        <Button variant="ghost" size="sm" icon={<Upload size={15} />} onClick={onImportClick} loading={isImporting} disabled={isImporting}>
-          {t('common.import')}
-        </Button>
-        <input ref={importInputRef as React.RefObject<HTMLInputElement>} type="file" accept=".xlsx,.csv,.pdf,.jpg,.jpeg,.png,.tiff,.rvt,.ifc,.dwg,.dgn,.x81,.x83,.x84,.xml" className="hidden" onChange={onImportInputChange} aria-label={t('common.import')} />
-        {onPasteFromExcel && (
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={<ClipboardPaste size={15} />}
-            onClick={onPasteFromExcel}
-            title={t('boq.paste_from_excel', { defaultValue: 'Paste from Excel' })}
-            aria-label={t('boq.paste_from_excel', { defaultValue: 'Paste from Excel' })}
-          >
-            <span className="hidden xl:inline">
-              {t('boq.paste_from_excel_short', { defaultValue: 'Paste' })}
-            </span>
-          </Button>
-        )}
-        <Button
-          variant={descDensity === 'compact' ? 'ghost' : 'secondary'}
-          size="sm"
-          icon={<WrapText size={15} />}
-          onClick={cycleDescDensity}
-          title={t('boq.desc_density_tooltip', {
-            defaultValue:
-              'Description height: switch between a single line and a multi-line Langtext view. Double-click a description to edit the full text.',
-          })}
-          aria-label={t('boq.desc_density_tooltip', {
-            defaultValue: 'Toggle description height',
-          })}
-          data-testid="boq-desc-density-toggle"
+        {/* ── Row 2: utility + view controls, one compact icon line ────────
+            All secondary actions collapse to 28px icon buttons (the label moves
+            to the tooltip + aria-label) so the row never wraps to a second
+            line. The Material/Labor/Equipment column toggle keeps a short label
+            because it is the discoverable on/off for those columns. The Export
+            menu is portaled (see useAnchoredMenu) so it floats above the grid. */}
+        <div
+          data-testid="boq-toolbar-row2"
+          className="flex flex-wrap items-center gap-1 border-t border-border-light/70 pt-2"
         >
-          <span className="hidden xl:inline">{descDensityLabel[descDensity]}</span>
-        </Button>
-        <div ref={exportRef} className="relative" data-testid="boq-export-button">
-          <Button variant="ghost" size="sm" icon={<Download size={15} />} onClick={() => setShowExportMenu((prev) => !prev)} aria-expanded={showExportMenu} aria-haspopup="true">
-            {t('boq.export')}
-          </Button>
-          {showExportMenu && (
-            <div role="menu" className="absolute left-0 top-full mt-1 z-50 w-44 rounded-lg border border-border-light bg-surface-elevated shadow-md animate-fade-in">
-              <button role="menuitem" onClick={() => handleExportItem('excel')} className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm text-content-primary hover:bg-surface-secondary transition-colors rounded-t-lg">
-                <FileSpreadsheet size={15} className="text-content-tertiary" />
-                {t('boq.export_format_excel', { defaultValue: 'Excel (.xlsx)' })}
-              </button>
-              <button role="menuitem" onClick={() => handleExportItem('csv')} className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm text-content-primary hover:bg-surface-secondary transition-colors">
-                <FileText size={15} className="text-content-tertiary" />
-                {t('boq.export_format_csv', { defaultValue: 'CSV (.csv)' })}
-              </button>
-              <button role="menuitem" onClick={() => handleExportItem('pdf')} className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm text-content-primary hover:bg-surface-secondary transition-colors">
-                <FileDown size={15} className="text-content-tertiary" />
-                {t('boq.export_format_pdf', { defaultValue: 'PDF' })}
-              </button>
-              <button role="menuitem" onClick={() => handleExportItem('gaeb')} className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm text-content-primary hover:bg-surface-secondary transition-colors rounded-b-lg">
-                <FileText size={15} className="text-content-tertiary" />
-                {t('boq.export_format_gaeb', { defaultValue: 'GAEB XML (.x83)' })}
-              </button>
-            </div>
+          {/* History */}
+          <IconBtn icon={<Undo2 size={15} />} title={t('boq.undo', { defaultValue: 'Undo (Ctrl+Z)' })} onClick={onUndo} disabled={!canUndo} />
+          <IconBtn icon={<Redo2 size={15} />} title={t('boq.redo', { defaultValue: 'Redo (Ctrl+Y)' })} onClick={onRedo} disabled={!canRedo} />
+          <IconBtn icon={<Clock size={15} />} title={t('boq.version_history', { defaultValue: 'Version History' })} onClick={onShowVersionHistory} />
+          {onToggleCollapseAll && (
+            <IconBtn
+              icon={allSectionsCollapsed ? <UnfoldVertical size={15} /> : <FoldVertical size={15} />}
+              title={
+                allSectionsCollapsed
+                  ? t('boq.expand_all', { defaultValue: 'Expand all sections' })
+                  : t('boq.collapse_all', { defaultValue: 'Collapse all sections' })
+              }
+              onClick={onToggleCollapseAll}
+              active={allSectionsCollapsed}
+              testId="boq-collapse-all-toggle"
+            />
+          )}
+
+          <span className="mx-0.5 h-5 w-px shrink-0 bg-border-light" />
+
+          {/* File: import / export / paste / density / carbon */}
+          <IconBtn
+            icon={isImporting ? <RefreshCw size={15} className="animate-spin" /> : <Upload size={15} />}
+            title={t('common.import')}
+            onClick={onImportClick}
+            disabled={isImporting}
+          />
+          <input ref={importInputRef as React.RefObject<HTMLInputElement>} type="file" accept=".xlsx,.csv,.pdf,.jpg,.jpeg,.png,.tiff,.rvt,.ifc,.dwg,.dgn,.x81,.x83,.x84,.xml" className="hidden" onChange={onImportInputChange} aria-label={t('common.import')} />
+          <div className="relative">
+            <button
+              ref={exportBtnRef}
+              type="button"
+              onClick={() => setShowExportMenu((prev) => !prev)}
+              aria-expanded={showExportMenu}
+              aria-haspopup="menu"
+              title={t('boq.export')}
+              aria-label={t('boq.export')}
+              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors ${
+                showExportMenu
+                  ? 'bg-oe-blue/10 text-oe-blue'
+                  : 'text-content-secondary hover:bg-surface-secondary hover:text-content-primary'
+              }`}
+            >
+              <Download size={15} />
+            </button>
+            {showExportMenu && exportMenuPos &&
+              createPortal(
+                <div
+                  ref={exportMenuRef}
+                  role="menu"
+                  style={{ position: 'fixed', top: exportMenuPos.top, left: exportMenuPos.left, zIndex: 1000 }}
+                  className="w-44 rounded-lg border border-border-light bg-surface-elevated shadow-md animate-fade-in"
+                  data-portal="boq-export-menu"
+                >
+                  <button role="menuitem" onClick={() => handleExportItem('excel')} className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm text-content-primary hover:bg-surface-secondary transition-colors rounded-t-lg">
+                    <FileSpreadsheet size={15} className="text-content-tertiary" />
+                    {t('boq.export_format_excel', { defaultValue: 'Excel (.xlsx)' })}
+                  </button>
+                  <button role="menuitem" onClick={() => handleExportItem('csv')} className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm text-content-primary hover:bg-surface-secondary transition-colors">
+                    <FileText size={15} className="text-content-tertiary" />
+                    {t('boq.export_format_csv', { defaultValue: 'CSV (.csv)' })}
+                  </button>
+                  <button role="menuitem" onClick={() => handleExportItem('pdf')} className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm text-content-primary hover:bg-surface-secondary transition-colors">
+                    <FileDown size={15} className="text-content-tertiary" />
+                    {t('boq.export_format_pdf', { defaultValue: 'PDF' })}
+                  </button>
+                  <button role="menuitem" onClick={() => handleExportItem('gaeb')} className="flex w-full items-center gap-2.5 px-3 py-2.5 text-sm text-content-primary hover:bg-surface-secondary transition-colors rounded-b-lg">
+                    <FileText size={15} className="text-content-tertiary" />
+                    {t('boq.export_format_gaeb', { defaultValue: 'GAEB XML (.x83)' })}
+                  </button>
+                </div>,
+                document.body,
+              )}
+          </div>
+          {onPasteFromExcel && (
+            <IconBtn
+              icon={<ClipboardPaste size={15} />}
+              title={t('boq.paste_from_excel', { defaultValue: 'Paste from Excel' })}
+              onClick={onPasteFromExcel}
+            />
+          )}
+          <IconBtn
+            icon={<WrapText size={15} />}
+            title={`${t('boq.desc_density_tooltip', { defaultValue: 'Description height: switch between a single line and a multi-line Langtext view. Double-click a description to edit the full text.' })} (${descDensityLabel[descDensity]})`}
+            onClick={cycleDescDensity}
+            active={descDensity !== 'compact'}
+            testId="boq-desc-density-toggle"
+          />
+          {onCarbonFootprint && (
+            <IconBtn
+              icon={<Leaf size={15} className="text-emerald-600" />}
+              title={t('boq.carbon_footprint_tip', { defaultValue: 'Analyse the embodied carbon of this BOQ from EPD material factors' })}
+              onClick={onCarbonFootprint}
+            />
+          )}
+
+          {(onManageColumns || onManageVariables || onRenumber || onToggleResourceSplit) && (
+            <span className="mx-0.5 h-5 w-px shrink-0 bg-border-light" />
+          )}
+
+          {/* Grid settings */}
+          {onManageColumns && (
+            <IconBtn
+              icon={<Columns3 size={15} />}
+              title={t('boq.manage_columns', { defaultValue: 'Manage Columns' })}
+              onClick={onManageColumns}
+              badge={customColumnCount}
+              testId="boq-manage-columns-button"
+            />
+          )}
+          {onManageVariables && (
+            <IconBtn
+              icon={<VariableIcon size={15} />}
+              title={t('boq.manage_variables', { defaultValue: 'Manage Variables' })}
+              onClick={onManageVariables}
+              testId="boq-manage-variables-button"
+            />
+          )}
+          {onRenumber && (
+            <IconBtn
+              icon={<ListOrdered size={15} className={isRenumbering ? 'animate-pulse' : ''} />}
+              title={t('boq.renumber', { defaultValue: 'Renumber Positions' })}
+              onClick={onRenumber}
+              disabled={isRenumbering}
+              testId="boq-renumber-button"
+            />
+          )}
+          {/* Resource-split toggle keeps a short label: it is the on/off for the
+              Material / Labor / Equipment share columns and must stay obvious. */}
+          {onToggleResourceSplit && (
+            <button
+              type="button"
+              onClick={onToggleResourceSplit}
+              aria-pressed={!!showResourceSplit}
+              title={
+                showResourceSplit
+                  ? t('boq.resource_split_hide_tip', { defaultValue: 'Hide the Material, Labor and Equipment percentage columns' })
+                  : t('boq.resource_split_show_tip', { defaultValue: 'Show Material, Labor and Equipment percentage columns for each position' })
+              }
+              data-testid="boq-resource-split-toolbar-toggle"
+              className={`flex h-7 shrink-0 items-center gap-1 rounded-md px-2 text-2xs font-semibold transition-colors ${
+                showResourceSplit
+                  ? 'bg-oe-blue/10 text-oe-blue'
+                  : 'text-content-secondary hover:bg-surface-secondary hover:text-content-primary'
+              }`}
+            >
+              <PieChart size={14} />
+              <span>{t('boq.resource_split_short', { defaultValue: 'MAT/LAB/EQU' })}</span>
+              {showResourceSplit && <Check size={12} />}
+            </button>
+          )}
+
+          {/* Keyboard shortcuts */}
+          {onShowShortcuts && (
+            <>
+              <span className="mx-0.5 h-5 w-px shrink-0 bg-border-light" />
+              <IconBtn
+                icon={<Keyboard size={14} />}
+                title={t('boq.show_shortcuts', { defaultValue: 'Keyboard Shortcuts (F1)' })}
+                onClick={onShowShortcuts}
+              />
+            </>
           )}
         </div>
-        {onCarbonFootprint && (
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={<Leaf size={15} className="text-emerald-600" />}
-            onClick={onCarbonFootprint}
-            title={t('boq.carbon_footprint_tip', {
-              defaultValue: 'Analyse the embodied carbon of this BOQ from EPD material factors',
-            })}
-            aria-label={t('boq.carbon_footprint', { defaultValue: 'Carbon footprint' })}
-          >
-            <span className="hidden xl:inline">
-              {t('boq.carbon_footprint', { defaultValue: 'Carbon footprint' })}
-            </span>
-          </Button>
-        )}
-      </div>
+        {/* end Row 2 */}
+      </section>
+      {/* end toolbar card */}
 
-      <div className="w-px h-6 bg-border-light hidden sm:block" />
-
-      {/* ── Quality & AI dropdown — single pill that fans out to the full
-          action list (Validate, Update Rates, Price Check, Cost Finder,
-          AI Chat, Analyze). Keeps the toolbar in a single row on standard
-          1440-1920px laptops. Score badge + recalculating spinner are
-          surfaced on the pill itself so users still see status at a glance. */}
-      <div className="flex items-center gap-1.5">
-        <QualityAiMenu
-          t={t}
-          onValidate={onValidate}
-          isValidating={isValidating}
-          lastValidationScore={lastValidationScore}
-          onRecalculate={onRecalculate}
-          isRecalculating={isRecalculating}
-          onCheckAnomalies={onCheckAnomalies}
-          onCancelAnomalies={onCancelAnomalies}
-          isCheckingAnomalies={isCheckingAnomalies}
-          anomalyCount={anomalyCount}
-          onAcceptAllAnomalies={onAcceptAllAnomalies}
-          aiChatOpen={aiChatOpen}
-          onToggleAiChat={onToggleAiChat}
-          costFinderOpen={costFinderOpen}
-          onToggleCostFinder={onToggleCostFinder}
-          smartPanelOpen={smartPanelOpen}
-          onToggleSmartPanel={onToggleSmartPanel}
-        />
-
-        {/* ── Keyboard Shortcuts Button ────────────────────────────────── */}
-        {onShowShortcuts && (
-          <>
-            <div className="w-px h-6 bg-border-light hidden sm:block" />
-            <button
-              onClick={onShowShortcuts}
-              title={t('boq.show_shortcuts', { defaultValue: 'Keyboard Shortcuts (F1)' })}
-              className="flex h-7 w-7 items-center justify-center rounded-md text-content-quaternary hover:text-content-secondary hover:bg-surface-secondary transition-colors"
-            >
-              <Keyboard size={14} />
-            </button>
-          </>
-        )}
-      </div>
-      </div>
-      {/* end left zone (~80%) */}
-
-      {/* ── Inline mini-summary (right side, merged from the old second row).
-          Sits at `ml-auto` so on wide screens the toolbar reads as a single
-          horizontal band with action buttons on the left and the live
-          Grand-Total / status pills on the right. On narrow screens it
-          wraps under the toolbar via the parent `flex-wrap`. Renders only
-          when `summary` is provided and the BOQ has at least one row. */}
+      {/* ══ Block 2: Grand-Total card ═══════════════════════════════════════
+          Shares the toolbar card's shell (rounded-xl, border, shadow, white
+          surface) so the pair reads as one harmonious set, then differentiates
+          itself with the prominent total. `items-stretch` on the band keeps it
+          the same height as the toolbar card on wide screens; it wraps below on
+          narrow ones. */}
       {summary && hasPositions && (
-        <div
-          className="flex shrink-0 items-center gap-2 self-stretch whitespace-nowrap
-                     rounded-lg border border-border-light bg-surface-secondary/60
-                     px-3 py-1.5 tabular-nums"
-          title={
-            t('boq.toolbar_summary_aria', {
-              defaultValue: '{{sections}} sections · {{positions}} positions',
-              sections: summary.sectionCount,
-              positions: summary.positionCount,
-            })
-          }
+        <section
+          aria-label={t('boq.grand_total', { defaultValue: 'Grand Total' })}
+          className="flex min-w-[208px] shrink-0 flex-col justify-center gap-1.5 rounded-xl
+                     border border-border-light bg-surface-primary px-4 py-2.5 shadow-sm tabular-nums"
+          data-testid="boq-grand-total-card"
         >
-          {/* Errors / warnings as compact tinted chips — actionable signals
-              that stay readable and never wrap mid-phrase. The full
-              sections/positions breakdown lives in the container tooltip and
-              the BOQ Statistics modal. */}
-          {summary.errorCount > 0 && (
-            <span className="inline-flex items-center whitespace-nowrap rounded-full
-                             bg-red-50 px-2 py-0.5 text-2xs font-semibold
-                             text-red-600 dark:bg-red-500/15 dark:text-red-400">
-              {summary.errorCount} {t('boq.errors', { defaultValue: 'errors' })}
+          {/* Label + display-currency selector */}
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-2xs font-semibold uppercase tracking-wider text-content-tertiary">
+              {t('boq.grand_total', { defaultValue: 'Grand Total' })}
             </span>
-          )}
-          {summary.warningCount > 0 && (
-            <span className="inline-flex items-center whitespace-nowrap rounded-full
-                             bg-amber-50 px-2 py-0.5 text-2xs font-semibold
-                             text-amber-600 dark:bg-amber-500/15 dark:text-amber-400">
-              {summary.warningCount} {t('boq.warnings', { defaultValue: 'warnings' })}
-            </span>
-          )}
-
-          {/* Display-in selector — opt-in, hidden when no FX rates configured. */}
-          {summary.fxRates.length > 0 && (
-            <>
-              <span className="w-px h-4 bg-border-light" />
+            {summary.fxRates.length > 0 && (
               <span className="inline-flex items-center gap-1 normal-case">
-                <span className="hidden lg:inline text-2xs text-content-tertiary">
+                <span className="hidden lg:inline text-2xs text-content-quaternary">
                   {t('boq.display_in', { defaultValue: 'Display in' })}:
                 </span>
                 <select
@@ -460,21 +586,12 @@ export function BOQToolbar({
                   ))}
                 </select>
               </span>
-            </>
-          )}
+            )}
+          </div>
 
-          {/* Grand Total — the headline figure, clearly separated and never
-              wrapped. The tooltip spells out the FX rate so the converted
-              figure is auditable. When display ≠ base the entire BOQ renders
-              in the chosen currency in lock-step; edits stay locked to base
-              (switch back to "Base" to change a unit_rate). */}
-          {(summary.errorCount > 0 ||
-            summary.warningCount > 0 ||
-            summary.fxRates.length > 0) && (
-            <span className="w-px h-5 bg-border-light" />
-          )}
+          {/* The number */}
           <span
-            className="flex flex-col items-end leading-tight whitespace-nowrap"
+            className="text-2xl font-bold leading-none text-content-primary"
             title={
               summary.displayRate != null && summary.displayCurrency
                 ? t('boq.grand_total_conversion_tooltip_v2', {
@@ -490,174 +607,91 @@ export function BOQToolbar({
                 : undefined
             }
           >
-            <span className="text-2xs font-medium uppercase tracking-wide text-content-tertiary">
-              {t('boq.grand_total', { defaultValue: 'Grand Total' })}
-            </span>
-            <span className="text-base font-bold text-content-primary">
-              {summary.displaySymbol}{' '}
-              {summary.grossTotalDisplay.toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
+            {summary.displaySymbol}{' '}
+            {summary.grossTotalDisplay.toLocaleString(undefined, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}
+          </span>
+
+          {/* Meta line: counts + quality status badges */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="text-2xs text-content-tertiary">
+              {t('boq.toolbar_summary_aria', {
+                defaultValue: '{{sections}} sections · {{positions}} positions',
+                sections: summary.sectionCount,
+                positions: summary.positionCount,
               })}
             </span>
-          </span>
-        </div>
-      )}
-      </div>
-      {/* end Row 1 */}
-
-      {/* ── Row 2: grid & view controls surfaced inline ──────────────────────
-          The functions that used to hide inside the "Grid settings" dropdown
-          (Manage Columns, Manage Variables, Renumber Positions, Resource
-          split) now live directly on a second toolbar row as labelled buttons
-          and toggles. Wraps gracefully on narrow widths via `flex-wrap`.
-          Renders only when at least one such control is wired in. */}
-      {(onManageColumns ||
-        onManageVariables ||
-        onRenumber ||
-        onToggleResourceSplit) && (
-        <div
-          data-testid="boq-toolbar-row2"
-          className="flex flex-wrap items-center gap-x-1.5 gap-y-2"
-        >
-          {/* Section label keeps the second row readable as a distinct band.
-              Reuses `boq.grid_settings` (already translated in every locale) so
-              the band is fully localized without a new translation key. */}
-          <span className="hidden sm:inline-flex items-center gap-1.5 pl-0.5 pr-1 text-2xs font-semibold uppercase tracking-wider text-content-quaternary">
-            <Settings size={13} className="text-content-tertiary" />
-            {t('boq.grid_settings', { defaultValue: 'Grid Settings' })}
-          </span>
-
-          {(onManageColumns || onManageVariables || onRenumber) && (
-            <div className="w-px h-6 bg-border-light hidden sm:block" />
-          )}
-
-          {/* ── Columns / Variables / Renumber group ──────────────────────── */}
-          <div className="flex items-center gap-1.5">
-            {onManageColumns && (
-              <Button
-                variant="ghost"
-                size="sm"
-                icon={<Columns3 size={15} />}
-                onClick={onManageColumns}
-                title={t('boq.manage_columns', { defaultValue: 'Manage Columns' })}
-                aria-label={t('boq.manage_columns', { defaultValue: 'Manage Columns' })}
-                data-testid="boq-manage-columns-button"
-              >
-                {t('boq.manage_columns', { defaultValue: 'Manage Columns' })}
-                {customColumnCount != null && customColumnCount > 0 && (
-                  <span className="ml-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-surface-tertiary px-1 text-2xs font-semibold text-content-secondary tabular-nums">
-                    {customColumnCount}
-                  </span>
-                )}
-              </Button>
+            {summary.errorCount > 0 && (
+              <span className="inline-flex items-center whitespace-nowrap rounded-full
+                               bg-red-50 px-2 py-0.5 text-2xs font-semibold
+                               text-red-600 dark:bg-red-500/15 dark:text-red-400">
+                {summary.errorCount} {t('boq.errors', { defaultValue: 'errors' })}
+              </span>
             )}
-            {onManageVariables && (
-              <Button
-                variant="ghost"
-                size="sm"
-                icon={<VariableIcon size={15} />}
-                onClick={onManageVariables}
-                title={t('boq.manage_variables', { defaultValue: 'Manage Variables' })}
-                aria-label={t('boq.manage_variables', { defaultValue: 'Manage Variables' })}
-                data-testid="boq-manage-variables-button"
-              >
-                <span className="hidden lg:inline">
-                  {t('boq.manage_variables', { defaultValue: 'Manage Variables' })}
-                </span>
-                <span className="lg:hidden">
-                  {t('boq.variables_short', { defaultValue: 'Variables' })}
-                </span>
-              </Button>
-            )}
-            {onRenumber && (
-              <Button
-                variant="ghost"
-                size="sm"
-                icon={
-                  <ListOrdered
-                    size={15}
-                    className={isRenumbering ? 'animate-pulse' : ''}
-                  />
-                }
-                onClick={onRenumber}
-                loading={isRenumbering}
-                disabled={isRenumbering}
-                title={t('boq.renumber', { defaultValue: 'Renumber Positions' })}
-                aria-label={t('boq.renumber', { defaultValue: 'Renumber Positions' })}
-                data-testid="boq-renumber-button"
-              >
-                <span className="hidden lg:inline">
-                  {isRenumbering
-                    ? t('boq.renumbering', { defaultValue: 'Renumbering...' })
-                    : t('boq.renumber', { defaultValue: 'Renumber Positions' })}
-                </span>
-                <span className="lg:hidden">
-                  {t('boq.renumber_short', { defaultValue: 'Renumber' })}
-                </span>
-              </Button>
+            {summary.warningCount > 0 && (
+              <span className="inline-flex items-center whitespace-nowrap rounded-full
+                               bg-amber-50 px-2 py-0.5 text-2xs font-semibold
+                               text-amber-600 dark:bg-amber-500/15 dark:text-amber-400">
+                {summary.warningCount} {t('boq.warnings', { defaultValue: 'warnings' })}
+              </span>
             )}
           </div>
-
-          {onToggleResourceSplit && (
-            <div className="w-px h-6 bg-border-light hidden sm:block" />
-          )}
-
-          {/* ── View toggles (resource split) ─────────────────────────────── */}
-          {onToggleResourceSplit && (
-            <Button
-              variant={showResourceSplit ? 'secondary' : 'ghost'}
-              size="sm"
-              aria-pressed={!!showResourceSplit}
-              icon={
-                <PieChart
-                  size={15}
-                  className={showResourceSplit ? 'text-oe-blue' : 'text-content-tertiary'}
-                />
-              }
-              onClick={onToggleResourceSplit}
-              title={
-                showResourceSplit
-                  ? t('boq.resource_split_hide_tip', {
-                      defaultValue: 'Hide the Material, Labor and Equipment percentage columns',
-                    })
-                  : t('boq.resource_split_show_tip', {
-                      defaultValue:
-                        'Show Material, Labor and Equipment percentage columns for each position',
-                    })
-              }
-              aria-label={t('boq.resource_split', { defaultValue: 'Resource split (MAT/LAB/EQU)' })}
-              data-testid="boq-resource-split-toolbar-toggle"
-            >
-              {t('boq.resource_split_short', { defaultValue: 'MAT/LAB/EQU' })}
-              <span
-                className={`ml-1 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-                  showResourceSplit
-                    ? 'bg-oe-blue border-oe-blue text-white'
-                    : 'border-border-default bg-surface-primary'
-                }`}
-              >
-                {showResourceSplit && <Check size={11} />}
-              </span>
-            </Button>
-          )}
-        </div>
+        </section>
       )}
+      {/* end Grand-Total card */}
     </div>
   );
 }
 
-/* ── Quality & AI dropdown menu ──────────────────────────────────────────
-   Single pill button that opens a panel listing the full set of quality
-   and AI actions. The three hottest actions (Validate, Update Rates, AI
-   Chat) stay inline in the toolbar; this menu is for the rest plus a
-   complete reference of every action available on this BOQ. */
+/* ── Anchored-menu positioning hook ──────────────────────────────────────
+   Computes fixed-viewport coordinates for a portaled dropdown anchored under
+   a trigger button. Recomputes on open and on resize/scroll so the menu keeps
+   tracking the (sticky) toolbar button. Returns null while closed. */
+function useAnchoredMenu(
+  open: boolean,
+  triggerRef: React.RefObject<HTMLElement | null>,
+  align: 'left' | 'right',
+): { top: number; left?: number; right?: number } | null {
+  const [pos, setPos] = useState<{ top: number; left?: number; right?: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setPos(null);
+      return;
+    }
+    const compute = () => {
+      const el = triggerRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      if (align === 'right') {
+        setPos({ top: r.bottom + 6, right: Math.max(8, window.innerWidth - r.right) });
+      } else {
+        setPos({ top: r.bottom + 6, left: Math.max(8, r.left) });
+      }
+    };
+    compute();
+    window.addEventListener('resize', compute);
+    window.addEventListener('scroll', compute, true);
+    return () => {
+      window.removeEventListener('resize', compute);
+      window.removeEventListener('scroll', compute, true);
+    };
+  }, [open, triggerRef, align]);
+
+  return pos;
+}
+
+/* ── Quality & AI overflow menu ──────────────────────────────────────────
+   Compact pill that fans out to the quality/AI actions that are not surfaced
+   directly on the toolbar (Update Rates, Price Check, Find Costs, Analyze).
+   The panel renders through a portal with fixed positioning so it floats
+   above the AG-Grid instead of being clipped by the sticky toolbar's
+   stacking context (the previous `absolute` panel rendered *under* the grid). */
 
 interface QualityAiMenuProps {
   t: (key: string, options?: Record<string, string | number>) => string;
-  onValidate: () => void;
-  isValidating?: boolean;
-  lastValidationScore?: number | null;
   onRecalculate: () => void;
   isRecalculating?: boolean;
   onCheckAnomalies?: () => void;
@@ -665,8 +699,6 @@ interface QualityAiMenuProps {
   isCheckingAnomalies?: boolean;
   anomalyCount?: number;
   onAcceptAllAnomalies?: () => void;
-  aiChatOpen: boolean;
-  onToggleAiChat: () => void;
   costFinderOpen: boolean;
   onToggleCostFinder: () => void;
   smartPanelOpen: boolean;
@@ -676,9 +708,6 @@ interface QualityAiMenuProps {
 function QualityAiMenu(props: QualityAiMenuProps) {
   const {
     t,
-    onValidate,
-    isValidating,
-    lastValidationScore,
     onRecalculate,
     isRecalculating,
     onCheckAnomalies,
@@ -686,20 +715,28 @@ function QualityAiMenu(props: QualityAiMenuProps) {
     isCheckingAnomalies,
     anomalyCount,
     onAcceptAllAnomalies,
-    aiChatOpen,
-    onToggleAiChat,
     costFinderOpen,
     onToggleCostFinder,
     smartPanelOpen,
     onToggleSmartPanel,
   } = props;
   const [open, setOpen] = useState(false);
-  const wrapperRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const pos = useAnchoredMenu(open, triggerRef, 'right');
 
+  // Close on outside click (checking BOTH the trigger and the portaled menu,
+  // since the menu lives outside the trigger's DOM subtree) and on Escape.
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (
+        triggerRef.current && !triggerRef.current.contains(target) &&
+        menuRef.current && !menuRef.current.contains(target)
+      ) {
+        setOpen(false);
+      }
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false);
@@ -712,131 +749,113 @@ function QualityAiMenu(props: QualityAiMenuProps) {
     };
   }, [open]);
 
-  // Run the action and dismiss the menu — toggles like AI Chat keep the
-  // panel open in case the user wants a follow-up flip; CTAs (Validate,
-  // Update Rates, Price Check) close it because they kick off a single
-  // background job that takes over the screen.
+  // Run the action and dismiss the menu — toggles (Find Costs, Analyze) keep
+  // the panel open in case the user wants a follow-up flip; CTAs (Update
+  // Rates, Price Check) close it because they kick off a job that takes over
+  // the screen.
   const fire = (cb: () => void, dismiss: boolean = true) => () => {
     cb();
     if (dismiss) setOpen(false);
   };
 
   return (
-    <div ref={wrapperRef} className="relative" data-testid="boq-quality-ai-menu">
+    <>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
-        title={t('boq.quality_ai_menu_tip', { defaultValue: 'All quality & AI tools' })}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={t('boq.quality_ai_menu_tip', { defaultValue: 'More quality & AI tools' })}
         className={`flex shrink-0 items-center gap-1.5 px-2.5 h-7 whitespace-nowrap rounded-lg border text-2xs font-semibold uppercase tracking-wider transition-colors ${
           open
             ? 'bg-violet-100 dark:bg-violet-900/40 border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-200'
             : 'bg-gradient-to-r from-violet-50 to-blue-50 dark:from-violet-950/30 dark:to-blue-950/30 border-violet-200/50 dark:border-violet-800/30 text-violet-700 dark:text-violet-300 hover:from-violet-100 hover:to-blue-100 dark:hover:from-violet-900/40'
         }`}
+        data-testid="boq-quality-ai-menu"
       >
         {isRecalculating ? (
           <RefreshCw size={13} className="animate-spin text-oe-blue" />
-        ) : isValidating ? (
-          <ShieldCheck size={13} className="animate-pulse text-oe-blue" />
         ) : (
           <Sparkles size={13} className="text-violet-500" />
         )}
         <span className="hidden lg:inline whitespace-nowrap">{t('boq.quality_ai_menu', { defaultValue: 'Quality & AI' })}</span>
-        {lastValidationScore != null && !isValidating && (
-          <span className={`text-2xs font-bold tabular-nums ${lastValidationScore >= 80 ? 'text-emerald-600' : lastValidationScore >= 50 ? 'text-amber-600' : 'text-red-600'}`}>
-            {lastValidationScore}%
-          </span>
-        )}
         <ChevronDown size={11} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
-      {open && (
-        <div
-          role="menu"
-          aria-label={t('boq.quality_ai_menu', { defaultValue: 'Quality & AI' })}
-          className="absolute right-0 top-full mt-2 w-72 rounded-xl shadow-2xl border border-border-light dark:border-border-dark bg-white dark:bg-surface-elevated overflow-hidden animate-card-in z-50"
-        >
-          {/* Quality section */}
-          <div className="px-3 pt-2.5 pb-1 border-b border-border-light dark:border-border-dark bg-surface-secondary/30">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-content-quaternary">
-              {t('boq.toolbar_quality', { defaultValue: 'Quality' })}
-            </span>
-          </div>
-          <div className="py-1">
-            <MenuRow
-              icon={<ShieldCheck size={14} className={isValidating ? 'animate-pulse text-oe-blue' : lastValidationScore != null ? (lastValidationScore >= 80 ? 'text-emerald-500' : lastValidationScore >= 50 ? 'text-amber-500' : 'text-red-500') : 'text-content-tertiary'} />}
-              label={isValidating ? t('boq.validating', { defaultValue: 'Checking...' }) : t('boq.validate', { defaultValue: 'Validate' })}
-              hint={t('boq.validate_tip', { defaultValue: 'Checks for missing descriptions, zero quantities, pricing gaps, classification compliance, and duplicate positions.' })}
-              trailing={lastValidationScore != null && !isValidating ? (
-                <span className={`text-2xs font-bold tabular-nums ${lastValidationScore >= 80 ? 'text-emerald-600' : lastValidationScore >= 50 ? 'text-amber-600' : 'text-red-600'}`}>
-                  {lastValidationScore}%
-                </span>
-              ) : null}
-              onClick={fire(onValidate)}
-              disabled={isValidating}
-            />
-            <MenuRow
-              icon={<RefreshCw size={14} className={isRecalculating ? 'animate-spin text-oe-blue' : 'text-content-tertiary'} />}
-              label={isRecalculating ? t('boq.recalculating', { defaultValue: 'Updating...' }) : t('boq.recalculate_rates', { defaultValue: 'Update Rates' })}
-              hint={t('boq.recalculate_tip', { defaultValue: 'Matches positions to cost database, attaches resource breakdowns (materials, labor, equipment), and recalculates unit rates from components.' })}
-              onClick={fire(onRecalculate)}
-              disabled={isRecalculating}
-            />
-            {onCheckAnomalies && (
+      {open && pos &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            aria-label={t('boq.quality_ai_menu', { defaultValue: 'Quality & AI' })}
+            style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 1000 }}
+            className="w-72 rounded-xl shadow-2xl border border-border-light dark:border-border-dark bg-white dark:bg-surface-elevated overflow-hidden animate-card-in"
+          >
+            {/* Quality section */}
+            <div className="px-3 pt-2.5 pb-1 border-b border-border-light dark:border-border-dark bg-surface-secondary/30">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-content-quaternary">
+                {t('boq.toolbar_quality', { defaultValue: 'Quality' })}
+              </span>
+            </div>
+            <div className="py-1">
               <MenuRow
-                icon={<AlertTriangle size={14} className={anomalyCount ? 'text-amber-500' : isCheckingAnomalies ? 'animate-pulse text-amber-500' : 'text-content-tertiary'} />}
-                label={isCheckingAnomalies
-                  ? t('boq.checking_anomalies', { defaultValue: 'Checking...' })
-                  : anomalyCount
-                    ? t('boq.anomalies_badge', { defaultValue: 'Anomalies ({{count}})', count: anomalyCount })
-                    : t('boq.price_check', { defaultValue: 'Price Check' })}
-                hint={t('boq.anomaly_tip', { defaultValue: 'Compares each unit rate against median market rates from the cost database. Flags overpriced and underpriced positions.' })}
-                onClick={isCheckingAnomalies && onCancelAnomalies ? fire(onCancelAnomalies) : fire(onCheckAnomalies)}
-                trailing={isCheckingAnomalies && onCancelAnomalies ? (
-                  <span className="text-2xs font-medium text-red-500">{t('common.cancel', { defaultValue: 'Cancel' })}</span>
-                ) : null}
+                icon={<RefreshCw size={14} className={isRecalculating ? 'animate-spin text-oe-blue' : 'text-content-tertiary'} />}
+                label={isRecalculating ? t('boq.recalculating', { defaultValue: 'Updating...' }) : t('boq.recalculate_rates', { defaultValue: 'Update Rates' })}
+                hint={t('boq.recalculate_tip', { defaultValue: 'Matches positions to cost database, attaches resource breakdowns (materials, labor, equipment), and recalculates unit rates from components.' })}
+                onClick={fire(onRecalculate)}
+                disabled={isRecalculating}
               />
-            )}
-            {anomalyCount !== undefined && anomalyCount > 0 && onAcceptAllAnomalies && (
-              <MenuRow
-                icon={<Check size={14} className="text-green-500" />}
-                label={t('boq.accept_all_anomaly_suggestions', { defaultValue: 'Accept All Suggested Rates ({{count}})', count: anomalyCount })}
-                onClick={fire(onAcceptAllAnomalies)}
-              />
-            )}
-          </div>
+              {onCheckAnomalies && (
+                <MenuRow
+                  icon={<AlertTriangle size={14} className={anomalyCount ? 'text-amber-500' : isCheckingAnomalies ? 'animate-pulse text-amber-500' : 'text-content-tertiary'} />}
+                  label={isCheckingAnomalies
+                    ? t('boq.checking_anomalies', { defaultValue: 'Checking...' })
+                    : anomalyCount
+                      ? t('boq.anomalies_badge', { defaultValue: 'Anomalies ({{count}})', count: anomalyCount })
+                      : t('boq.price_check', { defaultValue: 'Price Check' })}
+                  hint={t('boq.anomaly_tip', { defaultValue: 'Compares each unit rate against median market rates from the cost database. Flags overpriced and underpriced positions.' })}
+                  onClick={isCheckingAnomalies && onCancelAnomalies ? fire(onCancelAnomalies) : fire(onCheckAnomalies ?? (() => {}))}
+                  trailing={isCheckingAnomalies && onCancelAnomalies ? (
+                    <span className="text-2xs font-medium text-red-500">{t('common.cancel', { defaultValue: 'Cancel' })}</span>
+                  ) : null}
+                />
+              )}
+              {anomalyCount !== undefined && anomalyCount > 0 && onAcceptAllAnomalies && (
+                <MenuRow
+                  icon={<Check size={14} className="text-green-500" />}
+                  label={t('boq.accept_all_anomaly_suggestions', { defaultValue: 'Accept All Suggested Rates ({{count}})', count: anomalyCount })}
+                  onClick={fire(onAcceptAllAnomalies)}
+                />
+              )}
+            </div>
 
-          {/* AI section */}
-          <div className="px-3 pt-2.5 pb-1 border-b border-t border-border-light dark:border-border-dark bg-gradient-to-r from-violet-50/40 to-blue-50/40 dark:from-violet-950/20 dark:to-blue-950/20">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-violet-700 dark:text-violet-300 inline-flex items-center gap-1">
-              <Sparkles size={10} /> AI
-            </span>
-          </div>
-          <div className="py-1">
-            <MenuRow
-              icon={<SearchCheck size={14} className={costFinderOpen ? 'text-blue-600' : 'text-content-tertiary'} />}
-              label={t('boq.cost_finder_short', { defaultValue: 'Find Costs' })}
-              hint={t('boq.cost_finder_tooltip', { defaultValue: 'Search 55,000+ cost items by description. Find materials, labor, and equipment rates from regional databases.' })}
-              active={costFinderOpen}
-              onClick={fire(onToggleCostFinder, false)}
-            />
-            <MenuRow
-              icon={<Sparkles size={14} className={aiChatOpen ? 'text-violet-600' : 'text-content-tertiary'} />}
-              label={t('boq.ai_chat_short', { defaultValue: 'AI Chat' })}
-              hint={t('boq.ai_assistant_tooltip', { defaultValue: 'Describe what you need in plain text - AI creates BOQ positions with realistic pricing.' })}
-              active={aiChatOpen}
-              onClick={fire(onToggleAiChat, false)}
-            />
-            <MenuRow
-              icon={<Brain size={14} className={smartPanelOpen ? 'text-fuchsia-600' : 'text-content-tertiary'} />}
-              label={t('boq.ai_smart_short', { defaultValue: 'Analyze' })}
-              hint={t('boq.ai_smart_tooltip', { defaultValue: 'Enhance descriptions, find missing items, check scope completeness, escalate rates to current prices.' })}
-              active={smartPanelOpen}
-              onClick={fire(onToggleSmartPanel, false)}
-            />
-          </div>
-        </div>
-      )}
-    </div>
+            {/* AI section */}
+            <div className="px-3 pt-2.5 pb-1 border-b border-t border-border-light dark:border-border-dark bg-gradient-to-r from-violet-50/40 to-blue-50/40 dark:from-violet-950/20 dark:to-blue-950/20">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-violet-700 dark:text-violet-300 inline-flex items-center gap-1">
+                <Sparkles size={10} /> AI
+              </span>
+            </div>
+            <div className="py-1">
+              <MenuRow
+                icon={<SearchCheck size={14} className={costFinderOpen ? 'text-blue-600' : 'text-content-tertiary'} />}
+                label={t('boq.cost_finder_short', { defaultValue: 'Find Costs' })}
+                hint={t('boq.cost_finder_tooltip', { defaultValue: 'Search 55,000+ cost items by description. Find materials, labor, and equipment rates from regional databases.' })}
+                active={costFinderOpen}
+                onClick={fire(onToggleCostFinder, false)}
+              />
+              <MenuRow
+                icon={<Brain size={14} className={smartPanelOpen ? 'text-fuchsia-600' : 'text-content-tertiary'} />}
+                label={t('boq.ai_smart_short', { defaultValue: 'Analyze' })}
+                hint={t('boq.ai_smart_tooltip', { defaultValue: 'Enhance descriptions, find missing items, check scope completeness, escalate rates to current prices.' })}
+                active={smartPanelOpen}
+                onClick={fire(onToggleSmartPanel, false)}
+              />
+            </div>
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }
 
@@ -877,6 +896,54 @@ function MenuRow({ icon, label, hint, active, disabled, trailing, onClick }: Men
           </div>
         )}
       </div>
+    </button>
+  );
+}
+
+/* ── Compact icon-only toolbar button ────────────────────────────────────
+   Used across Row 2 so the utility actions fit on a single line. The label
+   moves entirely to the tooltip + aria-label; an optional count badge sits on
+   the top-right corner (e.g. the number of custom columns). */
+function IconBtn({
+  icon,
+  title,
+  onClick,
+  disabled,
+  active,
+  badge,
+  testId,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  onClick?: () => void;
+  disabled?: boolean;
+  active?: boolean;
+  badge?: number | null;
+  testId?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      aria-label={title}
+      aria-pressed={active}
+      data-testid={testId}
+      className={`relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors ${
+        disabled
+          ? 'text-content-quaternary opacity-40 pointer-events-none'
+          : active
+            ? 'bg-oe-blue/10 text-oe-blue hover:bg-oe-blue/15'
+            : 'text-content-secondary hover:bg-surface-secondary hover:text-content-primary'
+      }`}
+    >
+      {icon}
+      {badge != null && badge > 0 && (
+        <span className="absolute -right-1 -top-1 inline-flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-oe-blue px-0.5 text-[9px] font-bold leading-none text-white tabular-nums">
+          {badge > 99 ? '99+' : badge}
+        </span>
+      )}
     </button>
   );
 }

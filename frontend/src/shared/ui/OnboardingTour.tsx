@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router-dom';
 import { X, ArrowLeft, ArrowRight, MapPin } from 'lucide-react';
@@ -119,6 +120,10 @@ function getSpotlightRect(target: string): SpotlightRect | null {
   const el = document.querySelector(target);
   if (!el) return null;
   const rect = el.getBoundingClientRect();
+  // An element that is present but collapsed (0x0, e.g. inside a closed
+  // sidebar group) cannot be spotlit, so treat it as missing. The caller
+  // then degrades gracefully rather than drawing a halo at the wrong spot.
+  if (rect.width === 0 && rect.height === 0) return null;
   const PADDING = 8;
   return {
     top: rect.top - PADDING,
@@ -247,7 +252,11 @@ export function OnboardingTour({
     setActive(false);
   }, []);
 
-  /* Scroll to target and update spotlight/tooltip position */
+  /* Scroll to target and update spotlight/tooltip position.
+     Centres the target in the viewport (block/inline: 'center') so a
+     partially-scrolled or off-screen row is brought fully into view before
+     we measure, then reads the rect on the next animation frame so the
+     measurement reflects the settled layout rather than the pre-scroll one. */
   const positionForStep = useCallback(
     (stepIndex: number) => {
       const s = steps[stepIndex];
@@ -255,31 +264,59 @@ export function OnboardingTour({
 
       const el = document.querySelector(s.target);
       if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+        try {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+        } catch {
+          /* older browsers - ignore */
+        }
       }
 
-      // Wait for scroll to settle, then measure
-      setTimeout(() => {
-        const rect = getSpotlightRect(s.target);
-        setSpotlight(rect);
-
-        if (rect) {
-          setTooltipCoords(getTooltipCoords(rect, s.position));
-        }
+      // Wait for the smooth scroll to make progress, then measure on a rAF so
+      // we read layout the browser has actually committed for that frame.
+      window.setTimeout(() => {
+        window.requestAnimationFrame(() => {
+          const rect = getSpotlightRect(s.target);
+          setSpotlight(rect);
+          if (rect) {
+            setTooltipCoords(getTooltipCoords(rect, s.position));
+          }
+        });
       }, 150);
     },
     [steps],
   );
 
-  /* Reposition on window resize */
+  /* Reposition on resize + scroll (capture phase, so nested scroll containers
+     are caught) and on layout shifts (collapsible sidebar / lazy nav rows).
+     The lightweight recompute only re-measures; it never re-scrolls, so it
+     can't fight the user's own scrolling. */
   useEffect(() => {
     if (!active) return;
     positionForStep(currentStep);
 
-    const onResize = () => positionForStep(currentStep);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, [active, currentStep, positionForStep]);
+    const recompute = () => {
+      const s = steps[currentStep];
+      if (!s) return;
+      const rect = getSpotlightRect(s.target);
+      setSpotlight(rect);
+      if (rect) {
+        setTooltipCoords(getTooltipCoords(rect, s.position));
+      }
+    };
+
+    window.addEventListener('resize', recompute);
+    window.addEventListener('scroll', recompute, true);
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(recompute);
+      ro.observe(document.body);
+    }
+    return () => {
+      window.removeEventListener('resize', recompute);
+      window.removeEventListener('scroll', recompute, true);
+      if (ro) ro.disconnect();
+    };
+  }, [active, currentStep, positionForStep, steps]);
 
   /* Escape key handler */
   useEffect(() => {
@@ -330,7 +367,12 @@ export function OnboardingTour({
   // cutout div positioned over the target element.
   const SHADOW_SPREAD = 9999;
 
-  return (
+  // Portal to <body> so the fixed-positioned overlay + tooltip escape any
+  // ancestor with a CSS transform / filter / will-change. Such a property on
+  // a parent re-anchors `position: fixed` to that parent's box, which throws
+  // the viewport-relative getBoundingClientRect() coordinates off and makes
+  // the popup land in the wrong place. document.body has no such ancestor.
+  return createPortal(
     <>
       {/* Fullscreen overlay with spotlight cutout — pointer-events-none
           so the tour does NOT block interaction with the underlying app. */}
@@ -494,6 +536,7 @@ export function OnboardingTour({
           </div>
         </div>
       </div>
-    </>
+    </>,
+    document.body,
   );
 }

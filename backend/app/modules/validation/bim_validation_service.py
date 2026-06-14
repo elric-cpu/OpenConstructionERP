@@ -17,11 +17,17 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.validation.engine import SEVERITY_WEIGHTS, compute_quality_score
+from app.core.validation.engine import (
+    SEVERITY_WEIGHTS,
+    compute_quality_score,
+    rule_registry,
+    validation_engine,
+)
 from app.modules.bim_hub.repository import BIMElementRepository, BIMModelRepository
 from app.modules.validation.models import ValidationReport
 from app.modules.validation.repository import ValidationReportRepository
@@ -40,6 +46,60 @@ logger = logging.getLogger(__name__)
 # truncate and append a single synthetic ``_truncated`` entry so the
 # caller can show a "… N more" indicator.
 MAX_RESULTS_PER_REPORT = 5000
+
+# Default rule-set name an IDS import registers its project-scoped specs
+# under (see validation.router.import_ids). The actual key is namespaced per
+# project as ``{IDS_RULE_SET_PREFIX}:{project_id}`` so one tenant's imported
+# specs are never resolvable by another.
+IDS_RULE_SET_PREFIX = "ids_custom"
+
+
+def _element_to_canonical(elem: Any) -> dict[str, Any]:
+    """Project a ``BIMElement`` ORM row onto the canonical-format dict that
+    :class:`IDSValidationRule` expects.
+
+    The IDS rule reads ``elements`` (canonical BIM shape), matching on
+    ``ifc_class`` / ``category`` / ``predefined_type`` / ``classification``
+    and pulling values from ``properties`` / ``attributes``. The ORM row keeps
+    the element kind in ``element_type`` and its IFC/Revit attributes in the
+    free-form ``properties`` blob, so we surface ``element_type`` under both
+    ``ifc_class`` and ``category`` (the applicability matcher accepts either)
+    and pass the JSON blobs through unchanged.
+    """
+    props: dict[str, Any] = getattr(elem, "properties", None) or {}
+    etype = getattr(elem, "element_type", None) or ""
+    return {
+        "id": str(getattr(elem, "id", "") or getattr(elem, "stable_id", "") or ""),
+        "ifc_class": etype,
+        "category": etype,
+        "predefined_type": props.get("predefined_type") or props.get("PredefinedType"),
+        "name": getattr(elem, "name", None),
+        "classification": props.get("classification") or {},
+        "properties": props,
+        "attributes": props.get("attributes") or {},
+        "quantities": getattr(elem, "quantities", None) or {},
+    }
+
+
+@dataclass
+class _IDSPassTotals:
+    """Counters contributed by the scoped IDS pass, folded into the report.
+
+    Mirrors the per-element accounting in :meth:`validate_bim_model` so the
+    invariant ``passed_count + failed_checks == total_checks`` survives the
+    merge. Engine-error (rule-crash) rows are deliberately excluded from every
+    counter and from the score, exactly as the core engine treats them.
+    """
+
+    total_checks: int = 0
+    passed_count: int = 0
+    failed_checks: int = 0
+    error_count: int = 0
+    warning_count: int = 0
+    info_count: int = 0
+    passed_weight: float = 0.0
+    total_weight: float = 0.0
+    truncated: bool = False
 
 
 class BIMValidationService:
@@ -192,6 +252,59 @@ class BIMValidationService:
                 }
             )
 
+        # 3b. Apply this project's scoped IDS rule set, if one was imported.
+        #
+        # IDS specs are synthesised into IDSValidationRule instances that run
+        # through the core validation_engine over canonical-format elements
+        # (keyed "elements"), a different rule shape than the per-element
+        # BIMElementRule above. They are registered under a project-namespaced
+        # set on import, so we resolve THIS model's project set only - a model
+        # whose project never imported an IDS adds nothing and behaves exactly
+        # as before. Findings are folded into the same counts/score/results so
+        # the single persisted report reflects both rule families.
+        scoped_ids_set = f"{IDS_RULE_SET_PREFIX}:{model.project_id}"
+        if rule_registry.has_rules(scoped_ids_set):
+            ids_added = await self._apply_scoped_ids_rules(
+                scoped_ids_set=scoped_ids_set,
+                elements=elements,
+                project_id=str(model.project_id),
+                model_id=model_id,
+                results_json=results_json,
+                truncated=truncated,
+            )
+            total_checks += ids_added.total_checks
+            passed_count += ids_added.passed_count
+            failed_checks += ids_added.failed_checks
+            error_count += ids_added.error_count
+            warning_count += ids_added.warning_count
+            info_count += ids_added.info_count
+            passed_weight += ids_added.passed_weight
+            total_weight += ids_added.total_weight
+            # If the IDS pass is what tipped the result list over the cap (the
+            # per-element pass had not), add the "… N more" sentinel now so the
+            # UI still shows the truncation indicator.
+            if ids_added.truncated and not truncated:
+                results_json.append(
+                    {
+                        "rule_id": "_truncated",
+                        "rule_name": "Results truncated",
+                        "severity": "info",
+                        "status": "warning",
+                        "passed": False,
+                        "message": (
+                            f"Result list truncated at {MAX_RESULTS_PER_REPORT} entries. "
+                            f"The model produced more failures than can be stored in a "
+                            f"single report - narrow the rule set to see the rest."
+                        ),
+                        "element_id": None,
+                        "element_name": None,
+                        "element_type": None,
+                        "element_ref": None,
+                        "details": {"cap": MAX_RESULTS_PER_REPORT},
+                    }
+                )
+            truncated = truncated or ids_added.truncated
+
         # 4. Derive overall status + score
         #
         # info findings used to be swallowed: a model with only info-level
@@ -245,12 +358,13 @@ class BIMValidationService:
             except (ValueError, TypeError):
                 user_uuid = None
 
+        applied_ids_set = scoped_ids_set if rule_registry.has_rules(scoped_ids_set) else None
         db_report = ValidationReport(
             id=uuid.uuid4(),
             project_id=model.project_id,
             target_type="bim_model",
             target_id=str(model_id),
-            rule_set="bim_universal",
+            rule_set=("bim_universal+ids_custom" if applied_ids_set else "bim_universal"),
             status=status_value,
             score=(None if score is None else str(round(score, 4))),
             total_rules=total_checks,
@@ -265,6 +379,9 @@ class BIMValidationService:
                 "model_name": model.name,
                 "element_count": total,
                 "rule_ids": [r.rule_id for r in rules],
+                # The scoped IDS set (if any) whose rules were folded in. None
+                # when the project never imported an IDS - behaviour unchanged.
+                "ids_rule_set": applied_ids_set,
                 "truncated": truncated,
                 "info_count": info_count,
                 # total_rules counts checks; passed_count + failed_check_count
@@ -276,3 +393,110 @@ class BIMValidationService:
         )
         await self.report_repo.create(db_report)
         return db_report
+
+    # ── Scoped IDS pass ─────────────────────────────────────────────────
+
+    async def _apply_scoped_ids_rules(
+        self,
+        *,
+        scoped_ids_set: str,
+        elements: list[Any],
+        project_id: str,
+        model_id: uuid.UUID,
+        results_json: list[dict[str, Any]],
+        truncated: bool,
+    ) -> _IDSPassTotals:
+        """Run a project's scoped IDS rule set over the model's elements.
+
+        The IDS rules are :class:`IDSValidationRule` instances driven by the
+        core ``validation_engine``. They expect canonical-format elements under
+        the ``elements`` key, so we project each ORM row with
+        :func:`_element_to_canonical` and hand the engine ``{"elements": [...]}``.
+
+        Each non-engine-error :class:`RuleResult` counts as one check, keeping
+        the report's ``passed_count + failed_checks == total_checks`` invariant.
+        Engine-error rows (a rule that raised) are appended to ``results_json``
+        for visibility but, like the core engine, never move the counts or the
+        score. Appends respect the same ``MAX_RESULTS_PER_REPORT`` cap.
+        """
+        totals = _IDSPassTotals(truncated=truncated)
+        canonical = [_element_to_canonical(e) for e in elements]
+        try:
+            engine_report = await validation_engine.validate(
+                data={"elements": canonical},
+                rule_sets=[scoped_ids_set],
+                target_type="bim_model",
+                target_id=str(model_id),
+                project_id=project_id,
+            )
+        except Exception:  # noqa: BLE001 - IDS pass is advisory, never fatal
+            logger.warning(
+                "Scoped IDS validation pass failed for model %s (set=%s)",
+                model_id,
+                scoped_ids_set,
+                exc_info=True,
+            )
+            return totals
+
+        for r in engine_report.results:
+            severity = r.severity.value if hasattr(r.severity, "value") else str(r.severity)
+            # Engine-error rows record a rule crash, not a compliance finding:
+            # surface them but keep them out of counts and the score.
+            if getattr(r, "is_engine_error", False):
+                if len(results_json) < MAX_RESULTS_PER_REPORT:
+                    results_json.append(
+                        {
+                            "rule_id": r.rule_id,
+                            "rule_name": r.rule_name,
+                            "severity": severity,
+                            "status": severity,
+                            "passed": False,
+                            "message": r.message,
+                            "element_id": r.element_ref,
+                            "element_name": None,
+                            "element_type": None,
+                            "element_ref": r.element_ref,
+                            "details": r.details or {},
+                            "is_engine_error": True,
+                        }
+                    )
+                else:
+                    totals.truncated = True
+                continue
+
+            weight = SEVERITY_WEIGHTS.get(severity, 1.0)
+            totals.total_checks += 1
+            totals.total_weight += weight
+            if r.passed:
+                totals.passed_count += 1
+                totals.passed_weight += weight
+                continue
+
+            totals.failed_checks += 1
+            if severity == "error":
+                totals.error_count += 1
+            elif severity == "warning":
+                totals.warning_count += 1
+            else:
+                totals.info_count += 1
+
+            if len(results_json) >= MAX_RESULTS_PER_REPORT:
+                totals.truncated = True
+                continue
+            results_json.append(
+                {
+                    "rule_id": r.rule_id,
+                    "rule_name": r.rule_name,
+                    "severity": severity,
+                    "status": severity,
+                    "passed": False,
+                    "message": r.message,
+                    "element_id": r.element_ref,
+                    "element_name": None,
+                    "element_type": None,
+                    "element_ref": r.element_ref,
+                    "details": r.details or {},
+                }
+            )
+
+        return totals

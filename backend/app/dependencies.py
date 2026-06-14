@@ -517,6 +517,54 @@ async def verify_project_access(
     )
 
 
+async def accessible_project_ids(
+    session: AsyncSession,
+    user_id: str | None,
+) -> set[_uuid.UUID] | None:
+    """Set of project IDs the caller may access, or ``None`` for admins.
+
+    The set-level companion to :func:`verify_project_access`, using the exact
+    same access rule: a non-admin may reach a project they OWN or are a
+    team-member of; an admin may reach all. ``None`` is a sentinel meaning "do
+    not filter" (admin / unrestricted) so a caller can branch:
+
+        ids = await accessible_project_ids(session, user_id)
+        if ids is not None:                  # non-admin -> scope the query
+            stmt = stmt.where(Model.project_id.in_(ids))
+
+    Use this to scope a list/aggregate endpoint whose ``project_id`` filter is
+    OPTIONAL: when the caller omits it, return only their own projects instead
+    of every project in the deployment. An empty set (non-admin with no
+    projects, or a malformed user id) makes the query return nothing, which is
+    the safe default - never fall back to "all rows".
+    """
+    from sqlalchemy import select
+
+    from app.modules.projects.models import Project
+    from app.modules.teams.access import member_project_ids_subquery
+    from app.modules.users.repository import UserRepository
+
+    if user_id is None:
+        return set()
+
+    try:
+        uid = _uuid.UUID(str(user_id))
+    except (ValueError, TypeError):
+        return set()
+
+    # Admin bypass - no filter, mirroring verify_project_access.
+    try:
+        user = await UserRepository(session).get_by_id(uid)
+        if user is not None and getattr(user, "role", "") == "admin":
+            return None
+    except Exception:
+        logger.exception("Admin-role lookup failed during accessible-projects scan")
+
+    stmt = select(Project.id).where((Project.owner_id == uid) | (Project.id.in_(member_project_ids_subquery(uid))))
+    rows = (await session.execute(stmt)).scalars().all()
+    return {r if isinstance(r, _uuid.UUID) else _uuid.UUID(str(r)) for r in rows}
+
+
 # ── Locale resolution (per-request, for HTTPException i18n) ────────────────
 
 

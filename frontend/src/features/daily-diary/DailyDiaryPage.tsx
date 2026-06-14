@@ -43,6 +43,7 @@ import {
   WideModalField,
   ConfirmDialog,
   DismissibleInfo,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
@@ -93,6 +94,7 @@ import {
   type DiaryCompleteness,
   type SclBundleManifest,
 } from './api';
+import { dailyDiaryGuide } from './dailyDiaryGuide';
 
 type Tab = 'diaries' | 'today' | 'archive';
 
@@ -334,6 +336,7 @@ export function DailyDiaryPage() {
         })}
         actions={
           <>
+            <ModuleGuideButton content={dailyDiaryGuide} />
             <Button
               variant="secondary"
               size="sm"

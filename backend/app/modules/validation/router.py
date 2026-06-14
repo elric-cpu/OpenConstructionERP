@@ -351,6 +351,13 @@ async def import_ids(
         ) from exc
 
     scoped_rule_set = f"{rule_set}:{project_id}"
+    # Re-import replaces this project's scoped set atomically instead of
+    # accumulating stale rules. Without this, importing a revised IDS for the
+    # same project would leave the previous specs registered and still firing
+    # (duplicate / outdated findings). Removal is keyed strictly to THIS
+    # project's namespaced set, so built-in sets (boq_quality, din276, gaeb,
+    # bim_compliance, ...) and other projects' scoped sets are untouched.
+    rule_registry.unregister_rule_set(scoped_rule_set)
     rule_ids: list[str] = []
     for rule in rules:
         # Namespace the rule_id by project before registering. The registry
@@ -412,6 +419,32 @@ async def list_rule_sets(
     public documentation pages.
     """
     return service.get_available_rule_sets()
+
+
+# ── GET /rule-packs/coverage - Honest declared-vs-implemented coverage ────
+
+
+@router.get(
+    "/rule-packs/coverage/",
+    dependencies=[Depends(RequirePermission("validation.read"))],
+)
+async def rule_pack_coverage() -> dict[str, Any]:
+    """Report honest rule-pack coverage: declared vs actually implemented rules.
+
+    Every shipped rule pack declares an ``enables_rule_ids`` list, but a declared
+    rule id only executes when a real rule body is registered in the engine for
+    that exact id. This resolves, per pack and repo-wide, which declared ids are
+    implemented (will run) versus declared-only (will NOT run, and must never be
+    reported as a silent pass), so a UI or report can show "N of M rules active"
+    instead of over-claiming coverage from the raw declaration counts.
+
+    Read-only accounting: it never registers rules or changes how validation
+    runs. Gated on ``validation.read`` because it reveals which packs are
+    installed on this deployment.
+    """
+    from app.core.validation.pack_coverage import get_pack_coverage
+
+    return get_pack_coverage().to_dict()
 
 
 # ── Vector / semantic memory endpoints ───────────────────────────────────

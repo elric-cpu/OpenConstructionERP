@@ -32,6 +32,7 @@ import {
   WideModal,
   WideModalSection,
   WideModalField,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { useConfirm } from '@/shared/hooks/useConfirm';
@@ -57,6 +58,7 @@ import {
   type CDEContainer,
   type CDERevision,
 } from '@/features/cde/api';
+import { transmittalsGuide } from './transmittalsGuide';
 
 /* ── Constants ─────────────────────────────────────────────────────────── */
 
@@ -1124,17 +1126,26 @@ export function TransmittalsPage() {
           defaultValue: 'Formally distribute documents and track recipient acknowledgement',
         })}
         actions={
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => setShowCreateModal(true)}
-            disabled={!projectId}
-            title={!projectId ? t('common.select_project_first', { defaultValue: 'Please select a project first' }) : undefined}
-            className="shrink-0 whitespace-nowrap"
-            icon={<Plus size={14} />}
-          >
-            {t('transmittals.new_transmittal', { defaultValue: 'New Transmittal' })}
-          </Button>
+          <>
+            {/* How it works guide - explains transmittals, purpose codes and
+                the draft -> issue -> acknowledge flow. Leads the action
+                cluster as the help pill. */}
+            <ModuleGuideButton
+              content={transmittalsGuide}
+              onCta={() => setShowCreateModal(true)}
+            />
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setShowCreateModal(true)}
+              disabled={!projectId}
+              title={!projectId ? t('common.select_project_first', { defaultValue: 'Please select a project first' }) : undefined}
+              className="shrink-0 whitespace-nowrap"
+              icon={<Plus size={14} />}
+            >
+              {t('transmittals.new_transmittal', { defaultValue: 'New Transmittal' })}
+            </Button>
+          </>
         }
       />
 

@@ -8,6 +8,8 @@ Endpoints (all manager-scoped + project-access checked):
     PATCH /batches/{batch_id}/submit/             - draft -> submitted
     PATCH /batches/{batch_id}/finalize/           - approve + post labour cost
     PATCH /batches/{batch_id}/post/               - approved -> posted (GL)
+    POST  /batches/{batch_id}/entries/{entry_id}/deductions/         - add a deduction
+    DELETE /batches/{batch_id}/entries/{entry_id}/deductions/{id}/   - remove a deduction
     GET   /batches/{batch_id}/reconcile/          - batch hours vs field hours
     GET   /batches/{batch_id}/export.json         - JSON export (ERP handoff)
     GET   /batches/{batch_id}/export.csv          - CSV export (ERP handoff)
@@ -27,11 +29,14 @@ from app.dependencies import (
     SessionDep,
     verify_project_access,
 )
+from app.modules.payroll.models import PayrollBatch
 from app.modules.payroll.schemas import (
     LabourCostResponse,
     PayrollBatchDetailResponse,
     PayrollBatchGenerate,
     PayrollBatchResponse,
+    PayrollDeductionCreate,
+    PayrollDeductionResponse,
     PayrollEntryResponse,
     PayrollExportResponse,
     PayrollExportRow,
@@ -44,6 +49,27 @@ router = APIRouter(tags=["payroll"])
 
 def _get_service(session: SessionDep) -> PayrollService:
     return PayrollService(session)
+
+
+async def _build_detail(
+    batch: PayrollBatch,
+    service: PayrollService,
+) -> PayrollBatchDetailResponse:
+    """Assemble a batch-detail response with entries and their deductions.
+
+    Deductions are bulk-loaded for the whole batch in one query (no N+1) and
+    attached to each entry response.
+    """
+    entries = await service.list_entries(batch.id)
+    by_entry = await service.list_deductions_by_entry(batch.id)
+    detail = PayrollBatchDetailResponse.model_validate(batch)
+    entry_responses: list[PayrollEntryResponse] = []
+    for e in entries:
+        er = PayrollEntryResponse.model_validate(e)
+        er.deductions = [PayrollDeductionResponse.model_validate(d) for d in by_entry.get(e.id, [])]
+        entry_responses.append(er)
+    detail.entries = entry_responses
+    return detail
 
 
 @router.post(
@@ -61,7 +87,7 @@ async def generate_batch(
 ) -> PayrollBatchDetailResponse:
     """Generate a draft payroll batch by aggregating field labour."""
     await verify_project_access(project_id, user_id, session)
-    batch, entries = await service.generate_batch(
+    batch, _entries = await service.generate_batch(
         project_id,
         date_from=data.date_from,
         date_to=data.date_to,
@@ -69,9 +95,7 @@ async def generate_batch(
         notes=data.notes,
         user_id=user_id,
     )
-    detail = PayrollBatchDetailResponse.model_validate(batch)
-    detail.entries = [PayrollEntryResponse.model_validate(e) for e in entries]
-    return detail
+    return await _build_detail(batch, service)
 
 
 @router.get(
@@ -108,10 +132,7 @@ async def get_batch(
     batch = await service.get_batch(batch_id)
     # IDOR guard: the batch's project must be one the caller can access.
     await verify_project_access(batch.project_id, user_id, session)
-    entries = await service.list_entries(batch_id)
-    detail = PayrollBatchDetailResponse.model_validate(batch)
-    detail.entries = [PayrollEntryResponse.model_validate(e) for e in entries]
-    return detail
+    return await _build_detail(batch, service)
 
 
 @router.patch(
@@ -133,10 +154,7 @@ async def submit_batch(
     batch = await service.get_batch(batch_id)
     await verify_project_access(batch.project_id, user_id, session)
     batch = await service.submit_batch(batch_id, user_id=user_id)
-    entries = await service.list_entries(batch_id)
-    detail = PayrollBatchDetailResponse.model_validate(batch)
-    detail.entries = [PayrollEntryResponse.model_validate(e) for e in entries]
-    return detail
+    return await _build_detail(batch, service)
 
 
 @router.patch(
@@ -161,10 +179,7 @@ async def finalize_batch(
     # IDOR guard: the caller must have access to the batch's project.
     await verify_project_access(batch.project_id, user_id, session)
     batch = await service.finalize_batch(batch_id, user_id=user_id)
-    entries = await service.list_entries(batch_id)
-    detail = PayrollBatchDetailResponse.model_validate(batch)
-    detail.entries = [PayrollEntryResponse.model_validate(e) for e in entries]
-    return detail
+    return await _build_detail(batch, service)
 
 
 @router.patch(
@@ -188,10 +203,70 @@ async def post_batch(
     batch = await service.get_batch(batch_id)
     await verify_project_access(batch.project_id, user_id, session)
     batch = await service.post_batch(batch_id, user_id=user_id)
-    entries = await service.list_entries(batch_id)
-    detail = PayrollBatchDetailResponse.model_validate(batch)
-    detail.entries = [PayrollEntryResponse.model_validate(e) for e in entries]
-    return detail
+    return await _build_detail(batch, service)
+
+
+@router.post(
+    "/batches/{batch_id}/entries/{entry_id}/deductions/",
+    response_model=PayrollBatchDetailResponse,
+    status_code=201,
+    dependencies=[Depends(RequirePermission("payroll.manage"))],
+)
+async def add_deduction(
+    batch_id: uuid.UUID,
+    entry_id: uuid.UUID,
+    data: PayrollDeductionCreate,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: PayrollService = Depends(_get_service),
+) -> PayrollBatchDetailResponse:
+    """Add a withholding line to a payslip; recomputes net pay and batch totals.
+
+    The deduction amount is derived server-side from ``mode`` + ``value`` (and
+    ``base_amount`` for percentages) - the platform never supplies tax rates.
+    Refused (400) on an approved/posted batch. Returns the full batch detail so
+    the caller sees the updated net everywhere. 404 if the batch or entry is
+    missing.
+    """
+    batch = await service.get_batch(batch_id)
+    # IDOR guard: the caller must have access to the batch's project.
+    await verify_project_access(batch.project_id, user_id, session)
+    await service.add_deduction(
+        batch_id,
+        entry_id,
+        label=data.label,
+        deduction_type=data.deduction_type,
+        mode=data.mode,
+        value=data.value,
+        base_amount=data.base_amount,
+    )
+    batch = await service.get_batch(batch_id)
+    return await _build_detail(batch, service)
+
+
+@router.delete(
+    "/batches/{batch_id}/entries/{entry_id}/deductions/{deduction_id}/",
+    response_model=PayrollBatchDetailResponse,
+    dependencies=[Depends(RequirePermission("payroll.manage"))],
+)
+async def remove_deduction(
+    batch_id: uuid.UUID,
+    entry_id: uuid.UUID,
+    deduction_id: uuid.UUID,
+    user_id: CurrentUserId,
+    session: SessionDep,
+    service: PayrollService = Depends(_get_service),
+) -> PayrollBatchDetailResponse:
+    """Remove a withholding line from a payslip; recomputes net + batch totals.
+
+    Refused (400) on an approved/posted batch. Returns the full batch detail.
+    404 if the batch, entry, or deduction is missing.
+    """
+    batch = await service.get_batch(batch_id)
+    await verify_project_access(batch.project_id, user_id, session)
+    await service.remove_deduction(batch_id, entry_id, deduction_id)
+    batch = await service.get_batch(batch_id)
+    return await _build_detail(batch, service)
 
 
 @router.get(
@@ -238,6 +313,8 @@ async def export_batch_json(
         currency=batch.currency,
         total_hours=batch.total_hours,
         total_amount=batch.total_amount,
+        total_deductions=batch.total_deductions,
+        total_net=batch.total_net,
         rows=[PayrollExportRow(**r) for r in rows],
     )
 
@@ -259,7 +336,20 @@ async def export_batch_csv(
 
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(["worker", "resource_id", "work_date", "hours", "rate", "amount", "currency", "source"])
+    writer.writerow(
+        [
+            "worker",
+            "resource_id",
+            "work_date",
+            "hours",
+            "rate",
+            "amount",
+            "deductions",
+            "net_amount",
+            "currency",
+            "source",
+        ]
+    )
     for r in rows:
         writer.writerow(
             [
@@ -269,6 +359,8 @@ async def export_batch_csv(
                 r["hours"],
                 r["rate"],
                 r["amount"],
+                r["deductions"],
+                r["net_amount"],
                 r["currency"],
                 r["source"],
             ]

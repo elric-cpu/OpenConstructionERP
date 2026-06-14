@@ -13,8 +13,9 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
-import { Breadcrumb, Card, CardHeader, CardContent, Button, EmptyState, Skeleton, DismissibleInfo, IntroRichText } from '@/shared/ui';
+import { Breadcrumb, Card, CardHeader, CardContent, Button, EmptyState, Skeleton, DismissibleInfo, IntroRichText, ModuleGuideButton } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { sustainabilityGuide } from './sustainabilityGuide';
 import { apiGet } from '@/shared/lib/api';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
@@ -372,6 +373,7 @@ export function SustainabilityPage() {
       <PageHeader
         srTitle={t('nav.sustainability', { defaultValue: 'Sustainability' })}
         subtitle={t('sustainability.subtitle', 'Embodied carbon analysis based on EPD data (EN 15804, A1-A3)')}
+        actions={<ModuleGuideButton content={sustainabilityGuide} />}
       />
 
       <DismissibleInfo

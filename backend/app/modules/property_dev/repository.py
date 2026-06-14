@@ -99,8 +99,22 @@ class DevelopmentRepository(_BaseRepo):
 
     model = Development
 
-    async def list_all(self, *, offset: int = 0, limit: int = 50) -> tuple[list[Development], int]:
+    async def list_all(
+        self,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        dev_ids: list[uuid.UUID] | None = None,
+    ) -> tuple[list[Development], int]:
+        # ``dev_ids`` scopes the listing to a caller-accessible set (the
+        # set-of-ids convention: ``None`` means "do not filter", e.g. an
+        # admin; an explicit list - including the empty list - restricts
+        # the query and never falls back to "all rows"). Callers pass the
+        # output of ``_list_accessible_dev_ids`` to close the cross-tenant
+        # IDOR on ``GET /developments/``.
         base = select(Development)
+        if dev_ids is not None:
+            base = base.where(Development.id.in_(dev_ids))
         total = (await self.session.execute(select(func.count()).select_from(base.subquery()))).scalar_one()
         stmt = base.order_by(Development.created_at.desc()).offset(offset).limit(limit)
         rows = (await self.session.execute(stmt)).scalars().all()

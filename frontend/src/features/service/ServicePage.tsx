@@ -33,6 +33,7 @@ import {
   WideModalField,
   ContactSearchInput,
   ConfirmDialog,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { UserSearchInput } from '@/shared/ui/UserSearchInput';
@@ -70,6 +71,7 @@ import {
   type WorkOrderStatus,
 } from './api';
 import { RecurringSchedulesTab } from './RecurringSchedulesTab';
+import { serviceGuide } from './serviceGuide';
 
 type Tab = 'tickets' | 'work_orders' | 'contracts' | 'assets' | 'recurring';
 
@@ -367,22 +369,28 @@ export function ServicePage() {
           defaultValue: 'Manage service contracts, assets, tickets and work orders.',
         })}
         actions={
-          tab !== 'recurring' ? (
-            <Button
-              variant="primary"
-              size="sm"
-              icon={<Plus size={14} />}
-              onClick={() => setCreateOpen(true)}
-            >
-              {tab === 'tickets'
-                ? t('service.new_ticket', { defaultValue: 'New Ticket' })
-                : tab === 'work_orders'
-                  ? t('service.new_work_order', { defaultValue: 'New Work Order' })
-                  : tab === 'contracts'
-                    ? t('service.new_contract', { defaultValue: 'New Contract' })
-                    : t('service.new_asset', { defaultValue: 'New Asset' })}
-            </Button>
-          ) : undefined
+          <>
+            {/* How it works guide - explains the contract -> asset -> ticket
+                -> work order -> billing flow. Leads the action cluster as the
+                help pill and shows on every tab, including Recurring. */}
+            <ModuleGuideButton content={serviceGuide} />
+            {tab !== 'recurring' && (
+              <Button
+                variant="primary"
+                size="sm"
+                icon={<Plus size={14} />}
+                onClick={() => setCreateOpen(true)}
+              >
+                {tab === 'tickets'
+                  ? t('service.new_ticket', { defaultValue: 'New Ticket' })
+                  : tab === 'work_orders'
+                    ? t('service.new_work_order', { defaultValue: 'New Work Order' })
+                    : tab === 'contracts'
+                      ? t('service.new_contract', { defaultValue: 'New Contract' })
+                      : t('service.new_asset', { defaultValue: 'New Asset' })}
+              </Button>
+            )}
+          </>
         }
       />
 

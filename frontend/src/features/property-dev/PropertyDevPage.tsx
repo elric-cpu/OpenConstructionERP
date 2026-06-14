@@ -58,6 +58,7 @@ import {
   SideDrawer,
   ConfirmDialog,
   ModuleHelpButton,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import {
@@ -79,6 +80,7 @@ import { BuyerAccessLinkPanel } from '@/features/buyer-portal/BuyerAccessLinkPan
 import { DocumentPreviewModal } from './DocumentPreviewModal';
 import { SnagsBlock } from './SnagsBlock';
 import { HandoverDocumentsSection } from './HandoverDocumentsSection';
+import { propertyDevGuide } from './propertyDevGuide';
 import type { PropDevDocType } from './api';
 import {
   listDevelopments,
@@ -539,7 +541,8 @@ export function PropertyDevPage() {
           >
             {t('propdev.dashboards_short', { defaultValue: 'Dashboards' })}
           </Button>
-          {/* Per-module Tour CTA — launches the PropDev guided tour. */}
+          {/* "How it works" explainer + per-module Tour CTA. */}
+          <ModuleGuideButton content={propertyDevGuide} />
           <ModuleHelpButton tourId="propdev" />
           </>
         }

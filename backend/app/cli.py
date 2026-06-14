@@ -221,9 +221,10 @@ def _setup_env(data_dir: Path, host: str, port: int) -> None:
             # actionable message instead of limping along on a different engine.
             print(
                 _red(_u("✗ ", "X "))
-                + "Embedded PostgreSQL could not start. Install the server extra "
-                + "(pip install 'openconstructionerp[server]') or set DATABASE_URL "
-                + "to an external PostgreSQL."
+                + "Embedded PostgreSQL could not start. Reinstall the package "
+                + "(pip install --upgrade --force-reinstall openconstructionerp), run "
+                + "'openconstructionerp doctor' for details, or set DATABASE_URL to an "
+                + "external PostgreSQL."
             )
             raise SystemExit(1)
 
@@ -701,6 +702,57 @@ def cmd_serve(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def _register_all_module_models() -> tuple[int, int, list[tuple[str, str]]]:
+    """Import every ``app.modules.*.models`` so ``create_all`` sees the full schema.
+
+    Dynamic discovery from the package tree, mirroring app.main's startup hook.
+    A hand-maintained list used to live in the CLI and rotted: it omitted
+    ``file_versions``, so ``oe_markups_markup``'s foreign key to
+    ``oe_file_version`` could not resolve and ``create_all`` aborted the whole
+    schema on a fresh database. Discovering models from ``app.modules`` makes
+    that class of "forgot to add it to the list" bug impossible.
+
+    Returns ``(imported_ok, modules_with_models, failed_imports)``.
+    """
+    import importlib
+    import pkgutil
+
+    from app import modules as _modules_pkg
+
+    # Core tables that live outside app.modules (oe_activity_log, used by the
+    # FSM log_activity helper) are registered explicitly, the same as main.py.
+    try:
+        from app.core import audit as _audit_core  # noqa: F401
+        from app.core import audit_log as _audit_log_core  # noqa: F401
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("schema: core audit models not registered: %s", exc)
+
+    imported_ok = 0
+    total = 0
+    failed: list[tuple[str, str]] = []
+    for _m in pkgutil.iter_modules(_modules_pkg.__path__):
+        if not _m.ispkg:
+            continue
+        models_mod = f"app.modules.{_m.name}.models"
+        try:
+            importlib.import_module(models_mod)
+            imported_ok += 1
+            total += 1
+        except ModuleNotFoundError as exc:
+            # No models.py in this module is fine - skip it. A *different*
+            # missing import inside models.py is a real bug, so record it.
+            if exc.name != models_mod:
+                total += 1
+                failed.append((_m.name, f"ModuleNotFoundError: {exc}"))
+                logger.warning("schema: failed to import %s: %s", models_mod, exc)
+        except Exception as exc:  # noqa: BLE001
+            # Syntax error, attribute error, etc. inside models.py - real bug.
+            total += 1
+            failed.append((_m.name, f"{type(exc).__name__}: {exc}"))
+            logger.warning("schema: %s while importing %s: %s", type(exc).__name__, models_mod, exc)
+    return imported_ok, total, failed
+
+
 def cmd_init_db(args: argparse.Namespace) -> None:
     """Initialise the data directory and create the database schema."""
     data_dir = Path(args.data_dir).expanduser().resolve()
@@ -741,84 +793,16 @@ def cmd_init_db(args: argparse.Namespace) -> None:
     # without table-creation lag.
     import asyncio
 
-    # Mirrors the list in main.py's startup hook - keep the two lists in
-    # sync when adding a new module.
-    _module_names = [
-        "ai",
-        "assemblies",
-        "bim_hub",
-        "boq",
-        "catalog",
-        "cde",
-        "changeorders",
-        "collaboration",
-        "contacts",
-        "correspondence",
-        "costmodel",
-        "costs",
-        "documents",
-        "enterprise_workflows",
-        "erp_chat",
-        "fieldreports",
-        "finance",
-        "full_evm",
-        "i18n_foundation",
-        "inspections",
-        "integrations",
-        "markups",
-        "meetings",
-        "ncr",
-        "notifications",
-        "procurement",
-        "projects",
-        "punchlist",
-        "reporting",
-        "requirements",
-        "rfi",
-        "rfq_bidding",
-        "risk",
-        "safety",
-        "schedule",
-        "submittals",
-        "takeoff",
-        "tasks",
-        "teams",
-        "tendering",
-        "transmittals",
-        "users",
-        "validation",
-    ]
-
-    # Track import failures so we can report them loudly. Silently
-    # swallowing these (as the pre-v1.3.14 code did) led to "no such
-    # table" errors at runtime - the user saw "Ready." during init-db
-    # and then the server 500'd on the first query to a missing model.
-    failed_imports: list[tuple[str, str]] = []
-    imported_ok = 0
+    # Register every module's SQLAlchemy models before create_all, by dynamic
+    # discovery (see _register_all_module_models). This used to be a
+    # hand-maintained list that rotted and omitted file_versions, which made
+    # create_all abort on the oe_markups_markup -> oe_file_version foreign key.
+    # The user saw the failure during init-db; the same omission would have
+    # left "no such table" errors at runtime had create_all not caught it.
+    imported_ok, total, failed_imports = _register_all_module_models()
 
     async def _create() -> None:
-        nonlocal imported_ok
-        import importlib
-
         from app.database import Base, engine
-
-        for name in _module_names:
-            try:
-                importlib.import_module(f"app.modules.{name}.models")
-                imported_ok += 1
-            except ImportError as exc:
-                failed_imports.append((name, f"ImportError: {exc}"))
-                logger.warning("init-db: failed to import app.modules.%s.models: %s", name, exc)
-            except Exception as exc:  # noqa: BLE001
-                # Non-ImportError (e.g. syntax error, attribute error) is
-                # still a real problem - record it.
-                failed_imports.append((name, f"{type(exc).__name__}: {exc}"))
-                logger.warning(
-                    "init-db: %s while importing app.modules.%s.models: %s",
-                    type(exc).__name__,
-                    name,
-                    exc,
-                )
 
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
@@ -839,7 +823,6 @@ def cmd_init_db(args: argparse.Namespace) -> None:
         print(_dim(f"  {_u('\u2192', '->')} Run 'openconstructionerp doctor' for diagnostics."))
         sys.exit(1)
 
-    total = len(_module_names)
     print()
     print(f"  {_dim('Modules:')}  imported {imported_ok}/{total} module models")
 
@@ -1096,12 +1079,12 @@ def cmd_seed(args: argparse.Namespace) -> None:
 
     async def _run_seed() -> None:
         # Ensure the schema exists before seeding: a fresh PostgreSQL database
-        # has no tables until create_all runs.
+        # has no tables until create_all runs. Register EVERY module's models
+        # (not just a handful) so create_all builds the complete schema and
+        # every cross-module foreign key resolves.
         from app.database import Base, engine
-        from app.modules.boq import models as _  # noqa: F401
-        from app.modules.costs import models as _  # noqa: F401
-        from app.modules.projects import models as _  # noqa: F401
-        from app.modules.users import models as _  # noqa: F401
+
+        _register_all_module_models()
 
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)

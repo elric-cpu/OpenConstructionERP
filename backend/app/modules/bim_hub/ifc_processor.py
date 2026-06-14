@@ -33,26 +33,74 @@ _ELEMENT_TYPES = {
     # ── Structural / architectural (IFC2x3+) ──
     "IFCWALL",
     "IFCWALLSTANDARDCASE",
+    "IFCWALLELEMENTEDCASE",
     "IFCSLAB",
+    "IFCSLABSTANDARDCASE",
+    "IFCSLABELEMENTEDCASE",
     "IFCCOLUMN",
+    "IFCCOLUMNSTANDARDCASE",
     "IFCBEAM",
+    "IFCBEAMSTANDARDCASE",
     "IFCDOOR",
+    "IFCDOORSTANDARDCASE",
     "IFCWINDOW",
+    "IFCWINDOWSTANDARDCASE",
     "IFCROOF",
     "IFCSTAIR",
+    "IFCSTAIRFLIGHT",
+    "IFCRAMP",
+    "IFCRAMPFLIGHT",
     "IFCRAILING",
     "IFCCURTAINWALL",
     "IFCPLATE",
     "IFCMEMBER",
     "IFCFOOTING",
     "IFCPILE",
+    "IFCCHIMNEY",
+    "IFCSHADINGDEVICE",
+    "IFCBUILDINGELEMENT",
     "IFCBUILDINGELEMENTPROXY",
+    # Sub-assemblies / accessories that authoring tools export as standalone
+    # products (steel connections, anchors, sub-parts of a host element).
+    # Without these a steel-detailing or precast IFC could parse to zero
+    # elements in the text fallback even though it is full of real geometry.
+    "IFCBUILDINGELEMENTPART",
+    "IFCELEMENTASSEMBLY",
+    "IFCDISCRETEACCESSORY",
+    "IFCFASTENER",
+    "IFCMECHANICALFASTENER",
+    "IFCREINFORCINGBAR",
+    "IFCREINFORCINGMESH",
     # ── MEP ──
     "IFCFLOWSEGMENT",
     "IFCFLOWTERMINAL",
     "IFCFLOWFITTING",
+    # Domain-specific MEP product families. A mechanical / electrical /
+    # plumbing model frequently carries ONLY these (valves, pumps, boilers,
+    # luminaires, sanitary fixtures) and no IFCFLOWSEGMENT at all, so they
+    # must classify as elements or the model imports as "zero elements".
+    "IFCFLOWCONTROLLER",
+    "IFCFLOWMOVINGDEVICE",
+    "IFCFLOWSTORAGEDEVICE",
+    "IFCFLOWTREATMENTDEVICE",
+    "IFCENERGYCONVERSIONDEVICE",
     "IFCDISTRIBUTIONELEMENT",
+    "IFCDISTRIBUTIONFLOWELEMENT",
+    "IFCDISTRIBUTIONCONTROLELEMENT",
+    "IFCLIGHTFIXTURE",
+    "IFCSANITARYTERMINAL",
+    "IFCSPACEHEATER",
+    "IFCSTACKTERMINAL",
+    "IFCWASTETERMINAL",
+    "IFCAIRTERMINAL",
+    "IFCCABLECARRIERSEGMENT",
+    "IFCCABLECARRIERFITTING",
+    "IFCCABLESEGMENT",
+    "IFCCABLEFITTING",
+    "IFCJUNCTIONBOX",
     "IFCFURNISHINGELEMENT",
+    "IFCFURNITURE",
+    "IFCSYSTEMFURNITUREELEMENT",
     "IFCCOVERING",
     "IFCSPACE",
     # ── Civil infrastructure (IFC4x3 + common proxies) ──
@@ -935,6 +983,34 @@ def _try_cad2data(ifc_path: Path, output_dir: Path, *, conversion_depth: str = "
         return None
 
 
+# Header aliases (already lower-cased) that can carry the element classification
+# in a DDC export, tried in priority order.  The Revit RvtExporter uses
+# ``Category``; the DDC IfcExporter and some converter builds expose the IFC
+# class under ``IFC Class`` / ``IfcType`` / ``Type`` / ``Class`` / ``Object
+# Type`` instead.  Keep this in sync with the dataframe-upload path's
+# element_type/_category alias groups in router._BIM_COLUMN_ALIASES so both
+# ingest routes classify IFC rows the same way.  Without this, IFC exports that
+# do not happen to emit a ``Category`` column lost every row and produced the
+# silent "0 elements from a full model" failure.
+_CATEGORY_COLUMN_ALIASES: tuple[str, ...] = (
+    "category",
+    "ifc_class",
+    "ifcclass",
+    "ifc class",
+    "class",
+    "ifc_type",
+    "ifctype",
+    "ifc type",
+    "object_type",
+    "objecttype",
+    "object type",
+    "type",
+    "entity",
+    "entity_type",
+    "entitytype",
+)
+
+
 def _excel_elements_to_bim_result(
     raw_elements: list[dict[str, Any]],
     output_dir: Path,
@@ -1107,6 +1183,59 @@ def _excel_elements_to_bim_result(
     storeys_set: set[str] = set()
     disciplines_set: set[str] = set()
 
+    # Diagnostics for the "zero elements" case.  When the loop below keeps
+    # nothing we want the caller to know *why* so the user-facing message can
+    # be specific: a file that only carried spatial containers (project / site
+    # / building / storey) is legitimately empty of products, whereas a file
+    # whose rows we could not classify at all points at a parser/column
+    # mismatch.  ``skipped_spatial`` counts rows dropped because their resolved
+    # category is a known spatial/non-physical type; ``skipped_unclassified``
+    # counts rows dropped because we could not resolve any category column.
+    skipped_spatial = 0
+    skipped_unclassified = 0
+
+    # Decide ONCE which header carries the element classification for this
+    # export, rather than per row.  When the dataset has a populated ``category``
+    # column (the Revit RvtExporter case) we use it exclusively, preserving the
+    # historical behaviour where orphan parameter rows with a blank category are
+    # skipped.  Only when no alias before it carries any value - the DDC
+    # IfcExporter and some converter builds, which expose the IFC class under
+    # ``IFC Class`` / ``IfcType`` / ``Type`` / ``Class`` / ``Object Type`` - do
+    # we fall through to the next available alias.  This is what lets a
+    # product-rich IFC whose rows are not headed ``Category`` (or whose
+    # ``Category`` column is present but empty) classify at all instead of
+    # dropping every row - the silent "0 elements" failure.
+    lc_rows: list[dict[str, Any]] = [{k.lower(): v for k, v in row.items()} for row in raw_elements]
+    available_headers: set[str] = set()
+    for _lc in lc_rows:
+        available_headers.update(_lc.keys())
+
+    def _alias_has_values(alias: str) -> bool:
+        for _lc in lc_rows:
+            _v = _lc.get(alias)
+            if _v is None:
+                continue
+            _s = str(_v).strip()
+            if _s and _s.lower() != "none":
+                return True
+        return False
+
+    # DWG exports carry no category column - they are classified from the DWG
+    # ``classname`` further down.  Leave ``category_key`` unset for them so the
+    # broad ``type``/``class`` aliases never shadow that path.
+    is_dwg_export = "classname" in available_headers and "category" not in available_headers
+    category_key: str | None = None
+    if not is_dwg_export:
+        for _alias in _CATEGORY_COLUMN_ALIASES:
+            if _alias in available_headers and _alias_has_values(_alias):
+                category_key = _alias
+                break
+    if category_key and category_key != "category":
+        logger.info(
+            "DDC export classifies elements by '%s' (no populated 'category' column)",
+            category_key,
+        )
+
     # Patch DDC COLLADA node names: DDC writes name="node" for every element
     # but the frontend ColladaLoader uses `name` (not `id`) for Object3D.name.
     # Without this patch, mesh_ref matching in the 3D viewer is 0%.
@@ -1130,7 +1259,9 @@ def _excel_elements_to_bim_result(
         # Normalize keys to lowercase for tolerant lookup
         lc_row = {k.lower(): v for k, v in row.items()}
 
-        category = lc_row.get("category")
+        # Read the classification from the column resolved for this export
+        # (``category`` for Revit, an IFC-class alias for IfcExporter output).
+        category = lc_row.get(category_key) if category_key else None
         cat_lower = str(category or "").lower()
 
         # ── DWG fallback classification ──────────────────────────────────
@@ -1156,8 +1287,14 @@ def _excel_elements_to_bim_result(
         # Skip non-element rows: those with no category at all (likely orphan
         # parameter rows from the DDC converter), and known non-element categories.
         # DDC writes the literal string "None" for elements without a Revit
-        # category - treat it the same as Python None.
-        if not category or cat_lower in SKIP_CATEGORIES or cat_lower in ("none", "null", "", "n/a"):
+        # category - treat it the same as Python None.  Track the reason so the
+        # caller can tell "spatial-only file" (legitimately no products) apart
+        # from "could not classify any row" (column / parser mismatch).
+        if not category or cat_lower in ("none", "null", "", "n/a"):
+            skipped_unclassified += 1
+            continue
+        if cat_lower in SKIP_CATEGORIES:
+            skipped_spatial += 1
             continue
 
         # Friendly element type derived from OST_ category name.
@@ -1488,6 +1625,30 @@ def _excel_elements_to_bim_result(
     else:
         geometry_quality = "placeholder"
 
+    # When nothing survived the filter, classify the reason so the caller can
+    # render a specific message instead of a generic "open it in a viewer".
+    #   - spatial_only: the converter returned rows, but every kept candidate
+    #     was a spatial container (project / site / building / storey).  The
+    #     file genuinely carries no physical products.
+    #   - unclassified_only: rows came back but none exposed a recognisable
+    #     category column - points at a converter/column mismatch, not an
+    #     empty model.
+    empty_reason: str | None = None
+    if not elements and raw_elements:
+        if skipped_spatial and not skipped_unclassified:
+            empty_reason = "spatial_only"
+        elif skipped_unclassified and not skipped_spatial:
+            empty_reason = "unclassified_only"
+        else:
+            empty_reason = "all_filtered"
+        logger.warning(
+            "DDC produced %d rows but 0 elements survived classification (spatial=%d, unclassified=%d, reason=%s)",
+            len(raw_elements),
+            skipped_spatial,
+            skipped_unclassified,
+            empty_reason,
+        )
+
     return {
         "elements": elements,
         "storeys": sorted(storeys_set),
@@ -1499,6 +1660,11 @@ def _excel_elements_to_bim_result(
         "bounding_box": bounding_box,
         "geometry_type": geometry_quality,
         "geometry_quality": geometry_quality,
+        # Why an otherwise-successful conversion yielded no elements (None when
+        # elements were produced).  Read by the bim_hub router to pick a
+        # specific, actionable "zero elements" message.
+        "empty_reason": empty_reason,
+        "raw_row_count": len(raw_elements),
         # Full DDC dataframe (all 1000+ columns) for Parquet cold storage.
         # The hot table only keeps ~12 indexed fields; analytical queries
         # run against the Parquet via DuckDB.
@@ -2022,24 +2188,46 @@ def process_ifc_file(
         logger.info("cad2data conversion successful: %d elements", cad_result["element_count"])
         return cad_result
 
+    # cad2data ran and returned rows but none survived classification.  Capture
+    # WHY (spatial-only vs unclassified) so a zero-element outcome can carry a
+    # specific, actionable message all the way back to the router even after
+    # the text-parser fallback below also comes up empty.
+    cad_empty_reason: str | None = None
+    cad_raw_row_count = 0
+    if cad_result:
+        cad_empty_reason = cad_result.get("empty_reason")
+        cad_raw_row_count = int(cad_result.get("raw_row_count") or 0)
+
     # Step 2: Fallback to text parser (IFC only)
     ext = ifc_path.suffix.lower()
     if ext != ".ifc":
         logger.warning("Text parser only supports IFC, not %s. Use cad2data for RVT.", ext)
-        return _empty_result()
+        result = _empty_result()
+        if cad_empty_reason:
+            result["empty_reason"] = cad_empty_reason
+            result["raw_row_count"] = cad_raw_row_count
+        return result
 
     try:
         content = ifc_path.read_text(encoding="utf-8", errors="replace")
     except Exception as e:
         logger.error("Failed to read IFC file %s: %s", ifc_path, e)
-        return _empty_result()
+        result = _empty_result()
+        if cad_empty_reason:
+            result["empty_reason"] = cad_empty_reason
+            result["raw_row_count"] = cad_raw_row_count
+        return result
 
     # Verify it's IFC
     if not content.strip().startswith("ISO-10303-21") and "%PDF" not in content[:20]:
         # Try to detect if it's at least STEP format
         if "HEADER;" not in content[:500] and "DATA;" not in content[:2000]:
             logger.warning("File does not appear to be valid IFC: %s", ifc_path.name)
-            return _empty_result()
+            result = _empty_result()
+            if cad_empty_reason:
+                result["empty_reason"] = cad_empty_reason
+                result["raw_row_count"] = cad_raw_row_count
+            return result
 
     logger.info("Processing IFC (text parser): %s (%d bytes)", ifc_path.name, len(content))
 
@@ -2215,6 +2403,23 @@ def process_ifc_file(
         len(disciplines_set),
     )
 
+    # Classify a zero-element outcome so the router can show a specific message.
+    # Prefer the reason cad2data already determined; otherwise derive it from
+    # what the text parser saw.  A file that parsed entities but only spatial
+    # containers (project / site / building / storey) is legitimately empty of
+    # products; a file that parsed nothing at all is a malformed / unreadable
+    # STEP payload.
+    text_empty_reason: str | None = None
+    if not elements:
+        if cad_empty_reason:
+            text_empty_reason = cad_empty_reason
+        elif not entities:
+            text_empty_reason = "no_entities"
+        elif storeys:
+            text_empty_reason = "spatial_only"
+        else:
+            text_empty_reason = "no_products"
+
     # Tag every element with `is_placeholder=True` so downstream consumers
     # (frontend viewer, validation rules) can distinguish synthesized boxes
     # from real DDC-converted geometry. This branch is reached ONLY when
@@ -2249,6 +2454,11 @@ def process_ifc_file(
         "geometry_path": str(geometry_path) if geometry_path else None,
         "bounding_box": bounding_box,
         "geometry_type": "placeholder",
+        # Why this conversion produced no elements (None when elements were
+        # found).  Read by the bim_hub router to pick a specific zero-element
+        # message instead of a generic one.
+        "empty_reason": text_empty_reason,
+        "raw_row_count": cad_raw_row_count,
         # Top-level quality flag - read by the bim_hub router and copied
         # into BIMModel.metadata_ so the frontend can show a "placeholder
         # geometry" banner without having to inspect every element.
@@ -3100,7 +3310,22 @@ def _classify_discipline(ifc_type: str) -> str:
         ]
     ):
         return "structural"
-    if any(x in t for x in ["flow", "distribution", "pipe", "duct", "cable"]):
+    if any(
+        x in t
+        for x in [
+            "flow",
+            "distribution",
+            "pipe",
+            "duct",
+            "cable",
+            "terminal",
+            "lightfixture",
+            "sanitary",
+            "spaceheater",
+            "junctionbox",
+            "energyconversion",
+        ]
+    ):
         return "mep"
     if any(
         x in t
@@ -3770,4 +3995,8 @@ def _empty_result() -> dict[str, Any]:
         "error_message": "No elements could be extracted. The converter may not support this file format.",
         "geometry_type": "unknown",
         "geometry_quality": "unknown",
+        # Reason classification for the zero-element case; callers may overwrite
+        # it with a more specific value (spatial_only / unclassified_only / ...).
+        "empty_reason": None,
+        "raw_row_count": 0,
     }

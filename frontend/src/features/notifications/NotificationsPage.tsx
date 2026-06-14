@@ -34,11 +34,19 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import clsx from 'clsx';
-import { Button, Breadcrumb, EmptyState, DateDisplay, SkeletonTable } from '@/shared/ui';
+import {
+  Button,
+  Breadcrumb,
+  EmptyState,
+  DateDisplay,
+  SkeletonTable,
+  ModuleGuideButton,
+} from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { DismissibleInfo, IntroRichText } from '@/shared/ui/DismissibleInfo';
 import { apiGet, apiPost, apiDelete } from '@/shared/lib/api';
 import { PreferencesTab } from './PreferencesTab';
+import { notificationsGuide } from './notificationsGuide';
 
 type Tab = 'inbox' | 'preferences';
 
@@ -206,17 +214,20 @@ export function NotificationsPage() {
           defaultValue: 'Everything that needs your attention, in one inbox.',
         })}
         actions={
-          activeTab === 'inbox' && unreadCount > 0 ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={<CheckCircle2 size={14} />}
-              onClick={() => markAllReadMutation.mutate()}
-              disabled={markAllReadMutation.isPending}
-            >
-              {t('notifications.mark_all_read_short', { defaultValue: 'Mark all read' })}
-            </Button>
-          ) : undefined
+          <>
+            {activeTab === 'inbox' && unreadCount > 0 && (
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={<CheckCircle2 size={14} />}
+                onClick={() => markAllReadMutation.mutate()}
+                disabled={markAllReadMutation.isPending}
+              >
+                {t('notifications.mark_all_read_short', { defaultValue: 'Mark all read' })}
+              </Button>
+            )}
+            <ModuleGuideButton content={notificationsGuide} />
+          </>
         }
       />
 

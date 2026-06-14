@@ -17,8 +17,9 @@ import {
   ExternalLink,
   AlertOctagon,
 } from 'lucide-react';
-import { Button, Card, Badge, EmptyState, Skeleton, Breadcrumb, DismissibleInfo, IntroRichText } from '@/shared/ui';
+import { Button, Card, Badge, EmptyState, Skeleton, Breadcrumb, DismissibleInfo, IntroRichText, ModuleGuideButton } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { validationGuide } from './validationGuide';
 import { apiGet, apiPost, triggerDownload } from '@/shared/lib/api';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useToastStore } from '@/stores/useToastStore';
@@ -1115,6 +1116,7 @@ export function ValidationPage() {
           'validation.subtitle',
           'Check a Bill of Quantities against the rule sets configured for the project.',
         )}
+        actions={<ModuleGuideButton content={validationGuide} />}
       />
 
       <DismissibleInfo

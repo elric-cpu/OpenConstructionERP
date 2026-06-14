@@ -19,11 +19,14 @@ import {
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { ModuleGuideButton } from '@/shared/ui';
+
 import {
   selectCanRedo,
   selectCanUndo,
   usePipelineStore,
 } from '../usePipelineStore';
+import { pipelinesGuide } from '../pipelinesGuide';
 
 export interface PipelineToolbarProps {
   onFitView?: () => void;
@@ -139,6 +142,7 @@ export function PipelineToolbar({
         icon={<Sparkles size={14} aria-hidden="true" />}
         onClick={onExplain}
       />
+      <ModuleGuideButton content={pipelinesGuide} />
 
       {issueCount > 0 && (
         <span

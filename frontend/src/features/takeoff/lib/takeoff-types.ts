@@ -57,6 +57,10 @@ export interface Measurement {
   height?: number;
   /** Free-form notes entered via the properties panel. */
   notes?: string;
+  /** Opening deduction: an `area` measurement representing a void (door,
+   *  window, cut-out) whose area is subtracted from its group's gross
+   *  area so net = gross - openings. Stored as a positive gross area. */
+  isDeduction?: boolean;
   serverId?: string;
   linkedPositionId?: string;
   linkedPositionOrdinal?: string;

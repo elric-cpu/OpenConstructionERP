@@ -25,6 +25,7 @@ import {
   Breadcrumb,
   SkeletonTable,
   DismissibleInfo,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import {
@@ -53,6 +54,7 @@ import {
   type PriceComparisonRow,
   type VendorStatus,
 } from './api';
+import { supplierCatalogsGuide } from './supplierCatalogsGuide';
 
 // CONN-46: the old prs / pos / match tabs were three dead tabs that each
 // only rendered a hand-off banner (this module has no list endpoints for
@@ -184,11 +186,14 @@ export function SupplierCatalogsPage() {
             'The vendor and item reference library: suppliers, priced catalogs, price comparison and warehouse stock.',
         })}
         actions={
-          canCreateHere && (
-            <Button variant="primary" icon={<Plus size={14} />} onClick={() => setCreateOpen(true)}>
-              {createLabel(tab, t)}
-            </Button>
-          )
+          <>
+            <ModuleGuideButton content={supplierCatalogsGuide} />
+            {canCreateHere && (
+              <Button variant="primary" icon={<Plus size={14} />} onClick={() => setCreateOpen(true)}>
+                {createLabel(tab, t)}
+              </Button>
+            )}
+          </>
         }
       />
 

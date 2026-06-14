@@ -1526,7 +1526,15 @@ export function BIMViewer({
     // Clear manually hidden elements so the new filter starts from a
     // clean slate.  Without this, IDs hidden via the context-menu
     // "Hide element" action leak across filter changes.
-    setHiddenIds(new Set());
+    //
+    // Only reset when there is actually something to clear: passing a fresh
+    // `new Set()` every time changes the state reference and re-runs the
+    // Layers-tab category sync effect (which depends on `hiddenIds`), which
+    // would re-assert category visibility right after this effect isolated a
+    // group - the "filter briefly works then reverts" symptom. ElementManager
+    // now also guards against that at the source, but avoiding the needless
+    // re-render keeps the two visibility systems from racing each other.
+    setHiddenIds((prev) => (prev.size > 0 ? new Set() : prev));
     const hasIsolation = !!(isolatedIds && isolatedIds.length > 0);
     const hasFilter = !!filterPredicate;
     const hasClashFocus = !!focusPoint;

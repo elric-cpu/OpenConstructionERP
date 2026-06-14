@@ -48,6 +48,7 @@ import {
   WideModalSection,
   WideModalField,
   ConfirmDialog,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { MoneyDisplay } from '@/shared/ui/MoneyDisplay';
@@ -90,6 +91,7 @@ import {
   type Skill,
 } from './api';
 import { projectsApi } from '@/features/projects/api';
+import { resourcesGuide } from './resourcesGuide';
 
 type Tab = 'resources' | 'requests' | 'assignments';
 
@@ -559,6 +561,7 @@ export function ResourcesPage() {
         })}
         actions={
           <>
+            <ModuleGuideButton content={resourcesGuide} />
             {tab === 'assignments' && (
               <>
                 <Button

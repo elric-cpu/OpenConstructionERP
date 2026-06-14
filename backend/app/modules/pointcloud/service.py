@@ -534,11 +534,21 @@ class PointCloudService:
         tenant_id = scan.tenant_id
         resolved_key = stored.key or scan.upload_key
         size_bytes = int(stored.size_bytes)
+        fmt = (scan.original_format or "").lower()
+        had_crs = scan.crs_epsg is not None
+
+        # Cheap header sniff (plan section 3 step 1): read only the container
+        # header now that the bytes have landed, so the scan list shows real
+        # extents and scalar fields immediately - never decode the 5-200 GB
+        # payload here. Best-effort: a missing reader or an unreadable header
+        # records an honest status and never fails the finalised upload.
+        sniff_fields = await self._sniff_header_fields(resolved_key, fmt, had_crs=had_crs)
 
         await self.scans.update_fields(
             scan_id,
             upload_key=resolved_key,
             status="uploaded",
+            **sniff_fields,
         )
         await event_bus.publish(
             "pointcloud.upload.completed",
@@ -557,6 +567,217 @@ class PointCloudService:
             "status": "uploaded",
             "size_bytes": size_bytes,
         }
+
+    async def _sniff_header_fields(
+        self,
+        upload_key: str,
+        fmt: str,
+        *,
+        had_crs: bool,
+    ) -> dict[str, Any]:
+        """Read the just-uploaded container's header and build the fields to persist.
+
+        Returns a dict ready to splat into ``update_fields``: ``point_count``,
+        ``bbox_json``, ``scan_metadata`` and, when the header gives a usable
+        bounding box and the row has no CRS yet, a heuristic ``crs_epsg`` /
+        ``crs_confidence``. This is the cheap preview half of the pipeline: it
+        reads only the header (a few KB), never the point payload, and on the
+        object-storage backend it range-reads only a bounded prefix so a 200 GB
+        cloud is never pulled into the 2 GB core.
+
+        Best-effort by contract - any failure resolves to an honest
+        ``scan_metadata.status`` ("pending" when no reader is installed,
+        "unreadable" when the header is corrupt) and never raises, so a
+        finalised upload is never rolled back by a metadata read.
+        """
+        from app.modules.pointcloud.sniff import (
+            HeaderSniffError,
+            HeaderSniffUnavailable,
+        )
+
+        def _meta(status: str, **rest: Any) -> dict[str, Any]:
+            return {"status": status, "format": fmt, **rest}
+
+        try:
+            header = await self._read_scan_header(upload_key, fmt)
+        except HeaderSniffUnavailable as exc:
+            # No reader installed on this deployment. The upload is fine; the
+            # converter / viewer can still produce metadata later. Surface a
+            # clear, non-alarming "pending" state instead of a fake zero.
+            return {
+                "scan_metadata": _meta(
+                    "pending",
+                    reason="reader_not_installed",
+                    reader=exc.reader,
+                    message=(
+                        f"Header preview for {exc.fmt.upper()} needs the point-cloud "
+                        f"reader ({exc.reader}) on the server. The scan uploaded fine; "
+                        "extents and scalar fields will appear once a reader is enabled."
+                    ),
+                ),
+            }
+        except HeaderSniffError as exc:
+            logger.warning("Point-cloud header sniff failed for key %s: %s", upload_key, exc)
+            return {
+                "scan_metadata": _meta("unreadable", reason="header_unreadable", message=str(exc)),
+            }
+        except NotImplementedError:
+            # The storage backend cannot range-read (no open_stream / read_bytes).
+            # That is a capability gap, not a corrupt file - record it as pending
+            # so the UI says "preview not available here" rather than "bad scan".
+            logger.info(
+                "Point-cloud header sniff skipped for key %s: storage backend has no range read",
+                upload_key,
+            )
+            return {"scan_metadata": _meta("pending", reason="storage_no_range_read")}
+        except Exception:  # noqa: BLE001 - sniff is best-effort, never fail the upload
+            logger.warning("Unexpected point-cloud header sniff error for key %s", upload_key, exc_info=True)
+            return {"scan_metadata": _meta("unreadable", reason="sniff_error")}
+
+        return self._fields_from_header(header, fmt=fmt, had_crs=had_crs)
+
+    async def _read_scan_header(self, upload_key: str, fmt: str) -> Any:
+        """Read just the header of the uploaded container, never the points.
+
+        Local backend: hand the reader the file path so laspy/pye57 read only
+        the header in place (no copy of a multi-GB file). Object storage:
+        range-read a bounded header prefix and sniff that; E57 needs random file
+        access, so its prefix is spilled to a small temp file.
+        """
+        from app.modules.pointcloud.sniff import (
+            HEADER_PREFIX_BYTES,
+            sniff_header_from_path,
+            sniff_header_from_prefix,
+        )
+
+        local_path = self._local_path_for(upload_key)
+        if local_path is not None:
+            return await asyncio.to_thread(sniff_header_from_path, Path(local_path), fmt)
+
+        # Object storage: pull only the leading header prefix, not the whole blob.
+        prefix = await self._read_key_prefix(upload_key, HEADER_PREFIX_BYTES)
+        if fmt in ("e57",):
+            # libE57 needs a seekable file; spill the small prefix to a temp file.
+            import tempfile
+
+            def _spill(data: bytes) -> str:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".e57") as fh:
+                    fh.write(data)
+                    return fh.name
+
+            tmp_path = await asyncio.to_thread(_spill, prefix)
+            try:
+                return await asyncio.to_thread(sniff_header_from_path, Path(tmp_path), fmt)
+            finally:
+                import contextlib
+                import os
+
+                with contextlib.suppress(OSError):
+                    await asyncio.to_thread(os.unlink, tmp_path)
+        return await asyncio.to_thread(sniff_header_from_prefix, prefix, fmt)
+
+    async def _read_key_prefix(self, upload_key: str, max_bytes: int) -> bytes:
+        """Read at most ``max_bytes`` leading bytes of a stored blob.
+
+        Uses the streaming reader so we stop after the header prefix instead of
+        loading the whole object - the point of keeping the core thin. The
+        underlying async generator is closed deterministically on the early
+        break (``aclosing``) so the S3 response / file handle is released at
+        once rather than at GC time.
+        """
+        from contextlib import aclosing
+
+        chunks: list[bytes] = []
+        total = 0
+        async with aclosing(self.storage.open_stream(upload_key)) as stream:
+            async for chunk in stream:
+                chunks.append(chunk)
+                total += len(chunk)
+                if total >= max_bytes:
+                    break
+        data = b"".join(chunks)
+        return data[:max_bytes]
+
+    def _fields_from_header(
+        self,
+        header: Any,
+        *,
+        fmt: str,
+        had_crs: bool,
+    ) -> dict[str, Any]:
+        """Turn a sniffed :class:`ScanHeader` into persistable column values."""
+        ranges = header.coordinate_ranges
+        scalar_fields = {
+            "rgb": bool(header.has_rgb),
+            "intensity": bool(header.has_intensity),
+            "classification": bool(header.has_classification),
+        }
+        scan_metadata: dict[str, Any] = {
+            "status": "ok",
+            "format": fmt,
+            "reader": header.extra.get("reader"),
+            "scalar_fields": scalar_fields,
+            "units": header.units,
+            "coordinate_ranges": ranges,
+            **{k: v for k, v in header.extra.items() if k != "reader"},
+        }
+
+        fields: dict[str, Any] = {"scan_metadata": scan_metadata}
+        if header.point_count > 0:
+            fields["point_count"] = int(header.point_count)
+
+        if header.bbox_min is not None and header.bbox_max is not None:
+            bbox_json: dict[str, Any] = {
+                "min": list(header.bbox_min),
+                "max": list(header.bbox_max),
+                "units": header.units,
+            }
+            # Derive a CRS guess from the header bbox (reusing the CAD detector)
+            # only when the row carries no explicit CRS yet - never overwrite a
+            # human-supplied or already-detected EPSG.
+            if not had_crs:
+                crs = self._guess_crs_from_bbox(header.bbox_min, header.bbox_max, header.units)
+                if crs is not None:
+                    epsg, confidence = crs
+                    if epsg is not None:
+                        fields["crs_epsg"] = int(epsg)
+                        bbox_json["crs_epsg"] = int(epsg)
+                    if confidence is not None:
+                        from decimal import Decimal
+
+                        fields["crs_confidence"] = Decimal(str(round(float(confidence), 3)))
+                    scan_metadata["crs_guess"] = {
+                        "epsg": epsg,
+                        "confidence": confidence,
+                        "method": "bbox_heuristic",
+                    }
+            fields["bbox_json"] = bbox_json
+        return fields
+
+    @staticmethod
+    def _guess_crs_from_bbox(
+        bbox_min: tuple[float, float, float],
+        bbox_max: tuple[float, float, float],
+        units: str,
+    ) -> tuple[int | None, float | None] | None:
+        """Heuristic EPSG guess from a header bbox, via the CAD CRS detector.
+
+        Returns ``(epsg, confidence)`` or ``None`` when the detector could not
+        decide. The point-cloud module owns no CRS heuristic of its own - it
+        reuses ``cad.crs_detector.detect_from_bbox`` so every upload path shares
+        one region table. Failure is swallowed (returns ``None``); a CRS guess
+        is a nicety, never a blocker.
+        """
+        try:
+            from app.modules.cad.crs_detector import detect_from_bbox
+
+            guess = detect_from_bbox(
+                (float(bbox_min[0]), float(bbox_min[1]), float(bbox_max[0]), float(bbox_max[1])),
+                units=units or "m",
+            )
+        except Exception:  # noqa: BLE001 - CRS guess is best-effort
+            return None
+        return guess.epsg, guess.confidence
 
     def _storage_backend_kind(self) -> str:
         """Return ``"s3"`` or ``"local"`` for the active backend.

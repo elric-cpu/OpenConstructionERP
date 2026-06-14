@@ -39,6 +39,7 @@ import {
   WideModal,
   WideModalSection,
   WideModalField,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import { ContactSearchInput } from '@/shared/ui/ContactSearchInput';
 import { PageHeader } from '@/shared/ui/PageHeader';
@@ -60,6 +61,7 @@ import {
   type CreateCorrespondencePayload,
   type UpdateCorrespondencePayload,
 } from './api';
+import { correspondenceGuide } from './correspondenceGuide';
 
 /* ── Constants ─────────────────────────────────────────────────────────── */
 
@@ -1356,17 +1358,20 @@ export function CorrespondencePage() {
           defaultValue: 'A contemporaneous register of every formal letter, notice, email, and memo',
         })}
         actions={
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => setShowCreateModal(true)}
-            disabled={!projectId}
-            title={!projectId ? t('common.select_project_first', { defaultValue: 'Please select a project first' }) : undefined}
-            className="shrink-0 whitespace-nowrap"
-            icon={<Plus size={14} />}
-          >
-            {t('correspondence.new_letter', { defaultValue: 'New Letter' })}
-          </Button>
+          <>
+            <ModuleGuideButton content={correspondenceGuide} />
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setShowCreateModal(true)}
+              disabled={!projectId}
+              title={!projectId ? t('common.select_project_first', { defaultValue: 'Please select a project first' }) : undefined}
+              className="shrink-0 whitespace-nowrap"
+              icon={<Plus size={14} />}
+            >
+              {t('correspondence.new_letter', { defaultValue: 'New Letter' })}
+            </Button>
+          </>
         }
       />
 

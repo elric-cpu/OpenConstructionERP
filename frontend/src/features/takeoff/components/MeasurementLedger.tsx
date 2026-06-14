@@ -501,7 +501,17 @@ function GroupRows({
             <td className="px-1.5 py-1 text-right text-content-tertiary font-mono">
               {ordinal}
             </td>
-            <td className="px-1.5 py-1 capitalize">{measurement.type}</td>
+            <td className="px-1.5 py-1 capitalize">
+              {measurement.type}
+              {measurement.isDeduction && (
+                <span
+                  className="ml-1 text-[9px] font-semibold uppercase text-semantic-error"
+                  data-testid="ledger-deduction-badge"
+                >
+                  {t('takeoff_viewer.deduction', { defaultValue: 'deduction' })}
+                </span>
+              )}
+            </td>
             <td
               className="px-1.5 py-1 text-content-primary truncate max-w-[140px]"
               title={measurement.annotation}
@@ -517,8 +527,15 @@ function GroupRows({
                 {group}
               </span>
             </td>
-            <td className="px-1.5 py-1 text-right font-mono">
-              {formatNum(measurement.value)}
+            <td
+              className={clsx(
+                'px-1.5 py-1 text-right font-mono',
+                measurement.isDeduction && 'text-semantic-error',
+              )}
+            >
+              {/* Voids display as a negative so the column reconciles with the
+                  net subtotal below (gross - openings). */}
+              {formatNum(measurement.isDeduction ? -measurement.value : measurement.value)}
             </td>
             <td className="px-1.5 py-1 text-content-secondary">{measurement.unit || ''}</td>
             <td className="px-1.5 py-1 text-right text-content-tertiary">{measurement.page}</td>

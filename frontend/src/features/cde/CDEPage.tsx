@@ -18,7 +18,7 @@ import {
   Check,
   File,
 } from 'lucide-react';
-import { Button, Card, Badge, EmptyState, Breadcrumb, DateDisplay, ConfirmDialog, RecoveryCard, SkeletonTable } from '@/shared/ui';
+import { Button, Card, Badge, EmptyState, Breadcrumb, DateDisplay, ConfirmDialog, RecoveryCard, SkeletonTable, ModuleGuideButton } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { DismissibleInfo, IntroRichText } from '@/shared/ui/DismissibleInfo';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
@@ -44,6 +44,7 @@ import {
 } from './api';
 import { CDEHistoryDrawer } from './CDEHistoryDrawer';
 import { CDETransmittalsBadge } from './CDETransmittalsBadge';
+import { cdeGuide } from './cdeGuide';
 
 /* ── Constants ─────────────────────────────────────────────────────────── */
 
@@ -1389,6 +1390,8 @@ export function CDEPage() {
             'Organise project documents into ISO 19650 containers and move them through WIP, Shared, Published and Archived.',
         })}
         actions={
+          <>
+          <ModuleGuideButton content={cdeGuide} />
           <Button
             variant="primary"
             size="sm"
@@ -1420,6 +1423,7 @@ export function CDEPage() {
             <Plus size={14} className="mr-1 shrink-0" />
             <span>{t('cde.new_container', { defaultValue: 'New Container' })}</span>
           </Button>
+          </>
         }
       />
 

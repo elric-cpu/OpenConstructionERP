@@ -29,8 +29,17 @@ import {
   ExternalLink,
   type LucideIcon,
 } from 'lucide-react';
-import { Badge, Button, Input, Breadcrumb, ConfirmDialog, SkeletonGrid } from '@/shared/ui';
+import {
+  Badge,
+  Button,
+  Input,
+  Breadcrumb,
+  ConfirmDialog,
+  SkeletonGrid,
+  ModuleGuideButton,
+} from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { integrationsGuide } from './integrationsGuide';
 import { DismissibleInfo, IntroRichText } from '@/shared/ui/DismissibleInfo';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { copyToClipboard } from '@/shared/lib/browser';
@@ -909,6 +918,7 @@ export function IntegrationsPage() {
           'integrations.subtitle',
           'Connect external services to receive project notifications in your favorite tools.'
         )}
+        actions={<ModuleGuideButton content={integrationsGuide} />}
       />
 
       <DismissibleInfo

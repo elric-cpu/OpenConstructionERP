@@ -26,7 +26,7 @@ import {
   Layers,
   Table2,
 } from 'lucide-react';
-import { Button, Card, Badge, Input, SkeletonTable, Breadcrumb, DismissibleInfo, IntroRichText, GanttChart as SVGGanttChart, ViewInBIMButton, ConfirmDialog } from '@/shared/ui';
+import { Button, Card, Badge, Input, SkeletonTable, Breadcrumb, DismissibleInfo, IntroRichText, GanttChart as SVGGanttChart, ViewInBIMButton, ConfirmDialog, ModuleGuideButton } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import type { GanttActivity as SVGGanttActivity, GanttViewMode } from '@/shared/ui';
@@ -36,6 +36,7 @@ import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { scheduleApi } from './api';
 import { PlanningCrossLinks } from './PlanningCrossLinks';
+import { scheduleGuide } from './scheduleGuide';
 import { fetchBIMModels } from '@/features/bim/api';
 import type {
   Schedule,
@@ -2259,6 +2260,7 @@ export function SchedulePage() {
           'schedule.subtitle',
           'Plan the build timeline as a Gantt with dependencies and the critical path.',
         )}
+        actions={<ModuleGuideButton content={scheduleGuide} />}
       />
 
       <DismissibleInfo

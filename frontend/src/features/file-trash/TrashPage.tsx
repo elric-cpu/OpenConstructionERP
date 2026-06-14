@@ -30,13 +30,14 @@ import {
   TriangleAlert,
 } from 'lucide-react';
 import clsx from 'clsx';
-import { Button, Card, EmptyState, Skeleton } from '@/shared/ui';
+import { Button, Card, EmptyState, ModuleGuideButton, Skeleton } from '@/shared/ui';
 import { Breadcrumb } from '@/shared/ui/Breadcrumb';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useFileTrash, useFileTrashStats, usePurgeTrash, useRestoreFromTrash } from './hooks';
+import { fileTrashGuide } from './fileTrashGuide';
 import type { TrashItem, TrashKind } from './types';
 
 const KIND_ICON: Record<TrashKind, typeof FileText> = {
@@ -175,6 +176,7 @@ export function TrashPage() {
                 bytes: formatBytes(stats.data?.total_bytes ?? 0),
               })}
             </span>
+            <ModuleGuideButton content={fileTrashGuide} />
             <Button
               variant="secondary"
               size="sm"

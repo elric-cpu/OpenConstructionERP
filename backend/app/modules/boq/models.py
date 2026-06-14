@@ -449,3 +449,12 @@ class QuantityLink(Base):
             f"<QuantityLink pos={self.position_id} model={self.model_id} "
             f"{self.quantity_field}->{self.target_field} ({self.status})>"
         )
+
+
+# Register the per-position AI copilot model on ``Base.metadata`` by importing
+# it here. Module model discovery (app.main create_all + tests._pg template +
+# conftest) imports ``app.modules.boq.models``; importing the copilot model from
+# this already-discovered module guarantees ``oe_boq_position_copilot_message``
+# is created on a fresh database and seen by Alembic autogenerate, without
+# adding a hand-maintained import elsewhere.
+from app.modules.boq.copilot_models import PositionCopilotMessage  # noqa: E402,F401

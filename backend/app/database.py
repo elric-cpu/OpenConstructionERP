@@ -216,8 +216,9 @@ def create_engine_from_settings():
     if not url.startswith("postgresql"):
         raise RuntimeError(
             "DATABASE_URL must be a PostgreSQL URL. The app runs embedded PostgreSQL "
-            "by default (pip install 'openconstructionerp[server]') or set DATABASE_URL "
-            "to an external PostgreSQL."
+            "by default - start it through the CLI (run 'openconstructionerp', which "
+            "boots the embedded cluster and points DATABASE_URL at it) or set "
+            "DATABASE_URL to an external PostgreSQL."
         )
 
     kwargs: dict = {

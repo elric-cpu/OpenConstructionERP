@@ -34,6 +34,7 @@ import {
   WideModal,
   WideModalSection,
   WideModalField,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { PageHeader } from '@/shared/ui/PageHeader';
@@ -57,6 +58,7 @@ import {
   type CreateRFIPayload,
   type RespondRFIPayload,
 } from './api';
+import { rfiGuide } from './rfiGuide';
 import { ApprovalTargetBadge } from '@/features/approval-routes';
 
 /* ── Constants ─────────────────────────────────────────────────────────── */
@@ -1810,6 +1812,13 @@ export function RFIPage() {
         subtitle={t('rfi.subtitle', { defaultValue: 'Submit, track, and resolve design and construction queries' })}
         actions={
           <>
+            {/* How it works guide - explains the raise / attach / track /
+                respond flow and the impact-to-Variation handoff. Sits at the
+                head of the action cluster as the leading help pill. */}
+            <ModuleGuideButton
+              content={rfiGuide}
+              onCta={() => setShowCreateModal(true)}
+            />
             <Button
               variant="secondary"
               size="sm"

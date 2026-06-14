@@ -28,9 +28,10 @@ from app.modules.payroll.events import (
     EVENT_PAYROLL_BATCH_SUBMITTED,
     safe_publish,
 )
-from app.modules.payroll.models import PayrollBatch, PayrollEntry
+from app.modules.payroll.models import PayrollBatch, PayrollDeduction, PayrollEntry
 from app.modules.payroll.repository import (
     PayrollBatchRepository,
+    PayrollDeductionRepository,
     PayrollEntryRepository,
 )
 
@@ -51,6 +52,13 @@ _STATUS_POSTED = "posted"
 # against accrued-wages payable (credit) - a standard payroll accrual entry.
 _GL_LABOUR_EXPENSE_ACCOUNT = "5000"
 _GL_WAGES_PAYABLE_ACCOUNT = "2100"
+# Money quantum - two decimal places, the platform-wide money convention.
+_MONEY_Q = Decimal("0.01")
+# Allowed deduction buckets (display/grouping only - never a tax rule) and the
+# two value modes. Mirrors the schema's Literal types; the service is the
+# authority that resolves a line to a concrete amount.
+_DEDUCTION_TYPES = ("tax", "social", "pension", "other")
+_DEDUCTION_MODES = ("fixed", "percentage")
 
 
 def _utcnow() -> datetime:
@@ -136,6 +144,7 @@ class PayrollService:
         self.session = session
         self.batch_repo = PayrollBatchRepository(session)
         self.entry_repo = PayrollEntryRepository(session)
+        self.deduction_repo = PayrollDeductionRepository(session)
         self.budget_repo = BudgetLineRepository(session)
 
     # ── Rate resolution ─────────────────────────────────────────────────────
@@ -392,15 +401,19 @@ class PayrollService:
                     entry_resource_id = uuid.UUID(str(agg.resource_id))
                 except (ValueError, AttributeError, TypeError):
                     entry_resource_id = None
+            amount_q = amount_base.quantize(_MONEY_Q)
             entries.append(
                 PayrollEntry(
                     batch_id=batch.id,
                     resource_id=entry_resource_id,
                     worker=agg.worker[:255],
                     work_date=agg.work_date,
-                    hours=str(agg.hours.quantize(Decimal("0.01"))),
+                    hours=str(agg.hours.quantize(_MONEY_Q)),
                     rate=str(agg.rate.quantize(Decimal("0.0001"))),
-                    amount=str(amount_base.quantize(Decimal("0.01"))),
+                    amount=str(amount_q),
+                    # Fresh entries carry no deductions, so net starts equal to
+                    # gross (backfill-safe). Adding a deduction recomputes it.
+                    net_amount=str(amount_q),
                     currency=base,
                     source=agg.source,
                 )
@@ -408,10 +421,14 @@ class PayrollService:
 
         await self.entry_repo.bulk_create(entries)
 
+        total_amount_q = total_amount.quantize(_MONEY_Q)
         await self.batch_repo.update_fields(
             batch.id,
-            total_hours=str(total_hours.quantize(Decimal("0.01"))),
-            total_amount=str(total_amount.quantize(Decimal("0.01"))),
+            total_hours=str(total_hours.quantize(_MONEY_Q)),
+            total_amount=str(total_amount_q),
+            # No deductions at generation: net == gross.
+            total_deductions="0.00",
+            total_net=str(total_amount_q),
             entry_count=len(entries),
         )
         await self.session.refresh(batch)
@@ -448,6 +465,200 @@ class PayrollService:
 
     async def list_entries(self, batch_id: uuid.UUID) -> list[PayrollEntry]:
         return await self.entry_repo.list_for_batch(batch_id)
+
+    async def list_deductions_by_entry(self, batch_id: uuid.UUID) -> dict[uuid.UUID, list[PayrollDeduction]]:
+        """Bulk-load every payslip's deductions for a batch, grouped by entry id.
+
+        One query for the whole batch (no N+1) so the detail router can attach
+        deductions to each entry response.
+        """
+        entries = await self.entry_repo.list_for_batch(batch_id)
+        return await self.deduction_repo.list_for_entries([e.id for e in entries])
+
+    async def list_deductions_for_entry(self, entry_id: uuid.UUID) -> list[PayrollDeduction]:
+        return await self.deduction_repo.list_for_entry(entry_id)
+
+    # ── Deductions & net pay ──────────────────────────────────────────────────
+
+    @staticmethod
+    def _resolve_deduction_amount(
+        *,
+        mode: str,
+        value: Decimal,
+        base: Decimal,
+    ) -> tuple[Decimal, Decimal]:
+        """Resolve a deduction to ``(amount, base_used)`` in batch currency.
+
+        * ``fixed``      -> the value itself is the amount; base is not used (0).
+        * ``percentage`` -> ``base * value / 100`` (value is a percent), clamped
+          so a percentage never exceeds 100% of the base. Pure Decimal math; the
+          result is quantized to the money quantum by the caller.
+
+        The platform never injects a rate here - ``value`` is whatever the user
+        entered. This only does the arithmetic.
+        """
+        if mode == "percentage":
+            pct = value
+            if pct > Decimal("100"):
+                pct = Decimal("100")
+            amount = (base * pct) / Decimal("100")
+            return amount, base
+        # fixed
+        return value, Decimal("0")
+
+    async def _recompute_entry_net(self, entry: PayrollEntry) -> Decimal:
+        """Recompute and persist ``net_amount`` for one entry; return its net.
+
+        net = gross - sum(deduction amounts), floored at 0 so a payslip can
+        never go negative (an over-deduction is clamped rather than producing a
+        nonsensical negative net). All Decimal, quantized to the money quantum.
+        """
+        gross = _to_decimal(entry.amount).quantize(_MONEY_Q)
+        deductions = await self.deduction_repo.list_for_entry(entry.id)
+        total_ded = Decimal("0")
+        for ded in deductions:
+            total_ded += _to_decimal(ded.amount)
+        total_ded = total_ded.quantize(_MONEY_Q)
+        net = gross - total_ded
+        if net < 0:
+            net = Decimal("0")
+        net = net.quantize(_MONEY_Q)
+        await self.entry_repo.update_fields(entry.id, net_amount=str(net))
+        return net
+
+    async def _recompute_batch_totals(self, batch_id: uuid.UUID) -> None:
+        """Recompute the batch deduction/net rollups from its live entries.
+
+        ``total_amount`` (gross) is NOT touched here - it is owned by generation
+        and reflects labour cost. Only ``total_deductions`` / ``total_net`` are
+        refreshed: total_deductions = gross - net summed over entries (so a
+        clamped negative net is reflected consistently), total_net = sum(net).
+        """
+        entries = await self.entry_repo.list_for_batch(batch_id)
+        total_gross = Decimal("0")
+        total_net = Decimal("0")
+        for entry in entries:
+            total_gross += _to_decimal(entry.amount)
+            total_net += _to_decimal(entry.net_amount)
+        total_gross = total_gross.quantize(_MONEY_Q)
+        total_net = total_net.quantize(_MONEY_Q)
+        total_ded = (total_gross - total_net).quantize(_MONEY_Q)
+        if total_ded < 0:
+            total_ded = Decimal("0")
+        await self.batch_repo.update_fields(
+            batch_id,
+            total_deductions=str(total_ded),
+            total_net=str(total_net),
+        )
+
+    async def _get_entry_in_batch(self, batch_id: uuid.UUID, entry_id: uuid.UUID) -> PayrollEntry:
+        """Fetch an entry and assert it belongs to ``batch_id`` (404 otherwise)."""
+        entry = await self.entry_repo.get_by_id(entry_id)
+        if entry is None or entry.batch_id != batch_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Payslip entry not found in this batch",
+            )
+        return entry
+
+    async def add_deduction(
+        self,
+        batch_id: uuid.UUID,
+        entry_id: uuid.UUID,
+        *,
+        label: str,
+        deduction_type: str = "other",
+        mode: str = "fixed",
+        value: str = "0",
+        base_amount: str | None = None,
+    ) -> PayrollEntry:
+        """Add a withholding line to a payslip and recompute net + batch totals.
+
+        Editing money on a batch already approved/posted is refused - those have
+        moved cost to the budget/GL, so the payslip is frozen. Returns the
+        refreshed parent entry (net recomputed).
+        """
+        batch = await self.get_batch(batch_id)
+        if batch.status in (_STATUS_APPROVED, _STATUS_POSTED):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot edit deductions on a '{batch.status}' batch.",
+            )
+        entry = await self._get_entry_in_batch(batch_id, entry_id)
+
+        dtype = deduction_type if deduction_type in _DEDUCTION_TYPES else "other"
+        dmode = mode if mode in _DEDUCTION_MODES else "fixed"
+        val = _to_decimal(value)
+
+        gross = _to_decimal(entry.amount)
+        # Percentage base: explicit when given, else the entry gross.
+        base = _to_decimal(base_amount) if base_amount not in (None, "") else gross
+        amount, base_used = self._resolve_deduction_amount(mode=dmode, value=val, base=base)
+        amount = amount.quantize(_MONEY_Q)
+
+        next_ordinal = await self.deduction_repo.max_ordinal_for_entry(entry_id) + 1
+        deduction = PayrollDeduction(
+            entry_id=entry_id,
+            label=label.strip()[:160] or "Deduction",
+            deduction_type=dtype,
+            mode=dmode,
+            value=str(val),
+            base_amount=str(base_used.quantize(_MONEY_Q)) if dmode == "percentage" else "0",
+            amount=str(amount),
+            currency=(entry.currency or batch.currency or "").strip().upper(),
+            ordinal=next_ordinal,
+        )
+        await self.deduction_repo.create(deduction)
+
+        await self._recompute_entry_net(entry)
+        await self._recompute_batch_totals(batch_id)
+        await self.session.refresh(entry)
+        logger.info(
+            "Payroll deduction added: batch=%s entry=%s type=%s mode=%s amount=%s",
+            batch_id,
+            entry_id,
+            dtype,
+            dmode,
+            amount,
+        )
+        return entry
+
+    async def remove_deduction(
+        self,
+        batch_id: uuid.UUID,
+        entry_id: uuid.UUID,
+        deduction_id: uuid.UUID,
+    ) -> PayrollEntry:
+        """Remove a withholding line and recompute net + batch totals.
+
+        Refused on an approved/posted batch (frozen). 404 if the deduction does
+        not belong to the given entry/batch. Returns the refreshed parent entry.
+        """
+        batch = await self.get_batch(batch_id)
+        if batch.status in (_STATUS_APPROVED, _STATUS_POSTED):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot edit deductions on a '{batch.status}' batch.",
+            )
+        entry = await self._get_entry_in_batch(batch_id, entry_id)
+        deduction = await self.deduction_repo.get_by_id(deduction_id)
+        if deduction is None or deduction.entry_id != entry_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Deduction not found on this payslip",
+            )
+        await self.deduction_repo.delete(deduction)
+
+        await self._recompute_entry_net(entry)
+        await self._recompute_batch_totals(batch_id)
+        await self.session.refresh(entry)
+        logger.info(
+            "Payroll deduction removed: batch=%s entry=%s deduction=%s",
+            batch_id,
+            entry_id,
+            deduction_id,
+        )
+        return entry
 
     # ── Helpers shared by the lifecycle transitions ──────────────────────────
 
@@ -745,22 +956,34 @@ class PayrollService:
     # ── Export (ERP handoff) ─────────────────────────────────────────────────
 
     async def export_rows(self, batch_id: uuid.UUID) -> tuple[PayrollBatch, list[dict]]:
-        """Return the batch plus its export rows (used by JSON and CSV export)."""
+        """Return the batch plus its export rows (used by JSON and CSV export).
+
+        Each row carries gross ``amount``, the summed ``deductions`` and the
+        resulting ``net_amount`` so the payroll-provider handoff includes what
+        each worker is actually paid, not only gross.
+        """
         batch = await self.get_batch(batch_id)
         entries = await self.entry_repo.list_for_batch(batch_id)
-        rows = [
-            {
-                "worker": e.worker,
-                "resource_id": str(e.resource_id) if e.resource_id else "",
-                "work_date": e.work_date or "",
-                "hours": e.hours,
-                "rate": e.rate,
-                "amount": e.amount,
-                "currency": e.currency,
-                "source": e.source,
-            }
-            for e in entries
-        ]
+        by_entry = await self.deduction_repo.list_for_entries([e.id for e in entries])
+        rows = []
+        for e in entries:
+            ded_total = Decimal("0")
+            for ded in by_entry.get(e.id, []):
+                ded_total += _to_decimal(ded.amount)
+            rows.append(
+                {
+                    "worker": e.worker,
+                    "resource_id": str(e.resource_id) if e.resource_id else "",
+                    "work_date": e.work_date or "",
+                    "hours": e.hours,
+                    "rate": e.rate,
+                    "amount": e.amount,
+                    "deductions": str(ded_total.quantize(_MONEY_Q)),
+                    "net_amount": e.net_amount,
+                    "currency": e.currency,
+                    "source": e.source,
+                }
+            )
         return batch, rows
 
     # ── Labour cost rollup (for surfacing alongside the cost model) ──────────

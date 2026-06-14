@@ -6,11 +6,19 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, ShieldCheck } from 'lucide-react';
 
-import { Button, Card, ConfirmDialog, EmptyState, Skeleton } from '@/shared/ui';
+import {
+  Button,
+  Card,
+  ConfirmDialog,
+  EmptyState,
+  ModuleGuideButton,
+  Skeleton,
+} from '@/shared/ui';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { useToastStore } from '@/stores/useToastStore';
 
 import { deleteComplianceDoc, listComplianceDocs } from './api';
+import { complianceDocsGuide } from './complianceDocsGuide';
 import { CreateComplianceDocModal } from './CreateComplianceDocModal';
 import { ComplianceStatusBadge } from './ComplianceStatusBadge';
 import {
@@ -115,6 +123,7 @@ export function CompliancePage({ projectId }: CompliancePageProps) {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <ModuleGuideButton content={complianceDocsGuide} />
           <select
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}

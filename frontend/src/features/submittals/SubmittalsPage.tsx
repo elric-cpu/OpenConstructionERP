@@ -28,6 +28,7 @@ import {
   WideModal,
   WideModalSection,
   WideModalField,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { PageHeader } from '@/shared/ui/PageHeader';
@@ -55,6 +56,7 @@ import {
   ApprovalInstanceCard,
   ApprovalTargetBadge,
 } from '@/features/approval-routes';
+import { submittalsGuide } from './submittalsGuide';
 
 /* ── Constants ─────────────────────────────────────────────────────────── */
 
@@ -1045,17 +1047,20 @@ export function SubmittalsPage() {
           defaultValue: 'Track shop drawings, product data, and samples through review and approval',
         })}
         actions={
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => setShowCreateModal(true)}
-            disabled={!projectId}
-            title={!projectId ? t('common.select_project_first', { defaultValue: 'Please select a project first' }) : undefined}
-            className="shrink-0 whitespace-nowrap"
-            icon={<Plus size={14} />}
-          >
-            {t('submittals.new_submittal', { defaultValue: 'New Submittal' })}
-          </Button>
+          <>
+            <ModuleGuideButton content={submittalsGuide} />
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setShowCreateModal(true)}
+              disabled={!projectId}
+              title={!projectId ? t('common.select_project_first', { defaultValue: 'Please select a project first' }) : undefined}
+              className="shrink-0 whitespace-nowrap"
+              icon={<Plus size={14} />}
+            >
+              {t('submittals.new_submittal', { defaultValue: 'New Submittal' })}
+            </Button>
+          </>
         }
       />
 

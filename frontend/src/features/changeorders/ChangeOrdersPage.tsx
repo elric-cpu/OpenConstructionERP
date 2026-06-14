@@ -24,7 +24,7 @@ import {
   HelpCircle,
   GitBranch,
 } from 'lucide-react';
-import { Button, Card, Badge, EmptyState, Breadcrumb, InfoHint, DismissibleInfo, IntroRichText, ConfirmDialog, RecoveryCard, SkeletonTable, SkeletonCard } from '@/shared/ui';
+import { Button, Card, Badge, EmptyState, Breadcrumb, InfoHint, DismissibleInfo, IntroRichText, ConfirmDialog, RecoveryCard, SkeletonTable, SkeletonCard, ModuleGuideButton } from '@/shared/ui';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
@@ -43,6 +43,7 @@ import { listContracts } from '@/features/contracts/api';
 import { ApprovalTimeline } from './ApprovalTimeline';
 import { ImpactSimulator, type SavedScenario } from './ImpactSimulator';
 import { AIDraftModal } from './AIDraftModal';
+import { changeordersGuide } from './changeordersGuide';
 import {
   advanceApproval,
   getApprovals,
@@ -2074,6 +2075,7 @@ export function ChangeOrdersPage() {
         subtitle={t('changeorders.subtitle', { defaultValue: 'Track scope changes with cost and schedule impact' })}
         actions={
           <>
+            <ModuleGuideButton content={changeordersGuide} />
             <Button variant="secondary" icon={<Download size={14} />} onClick={handleExportCSV} disabled={!filteredOrders || filteredOrders.length === 0}>
               {t('changeorders.export_csv', { defaultValue: 'Export CSV' })}
             </Button>

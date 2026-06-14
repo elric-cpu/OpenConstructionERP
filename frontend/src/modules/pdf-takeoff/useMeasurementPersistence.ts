@@ -1,6 +1,11 @@
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { QueryClientContext } from '@tanstack/react-query';
 import { takeoffApi, type MeasurementCreate, type MeasurementResponse } from '@/features/takeoff/api';
+import {
+  type PageScales,
+  hydratePageScales,
+  scaleForPage,
+} from './data/page-scales';
 
 /* ── Types (mirrored from TakeoffViewerModule) ──────────────────────── */
 
@@ -26,6 +31,9 @@ interface Measurement {
   color?: string;
   width?: number;
   height?: number;
+  /** Opening deduction (area void). Stored as positive gross area; the
+   *  rollup subtracts it. Round-trips so a void survives a server sync. */
+  isDeduction?: boolean;
   /** Server-side ID (set after first sync). */
   serverId?: string;
   /** BOQ link metadata carried through persistence. */
@@ -47,6 +55,11 @@ interface ScaleConfig {
 
 interface PersistedDocument {
   measurements: Measurement[];
+  /** New per-page scale model. Optional so an older document (which only
+   *  carried ``scale``) still parses; ``hydratePageScales`` migrates it. */
+  pageScales?: PageScales;
+  /** Legacy single document-wide scale. Kept for backward-compatible reads
+   *  (and still written so a downgrade to an older build keeps working). */
   scale: ScaleConfig;
   savedAt: number;
 }
@@ -149,7 +162,7 @@ function toApiFormat(
   m: Measurement,
   projectId: string,
   documentId: string,
-  scale?: ScaleConfig,
+  pageScales?: PageScales,
 ): MeasurementCreate {
   // Area measurements carry the polygon area in `m.value`; volume
   // measurements carry the area separately in `m.area`. Persist the
@@ -158,6 +171,10 @@ function toApiFormat(
   // string alone (D-TKC-031).
   const areaValue =
     m.type === 'area' ? m.value : m.type === 'volume' ? (m.area ?? null) : null;
+  // Per-page scale: send the scale of THIS measurement's page, not a single
+  // document-wide ratio, so a sheet at 1:500 and a sheet at 1:50 each get
+  // their own px-per-unit for the server-side B8 recompute.
+  const scale = pageScales ? scaleForPage(pageScales, m.page) : undefined;
   const ppu =
     scale && scale.pixelsPerUnit > 0 ? scale.pixelsPerUnit : null;
   return {
@@ -179,6 +196,9 @@ function toApiFormat(
     // client value against the raw geometry (Audit B8) instead of
     // trusting it blindly.
     scale_pixels_per_unit: ppu,
+    // Opening deduction only applies to an area; the server enforces this
+    // too but we keep the payload honest.
+    is_deduction: m.type === 'area' ? Boolean(m.isDeduction) : false,
     linked_boq_position_id: m.linkedPositionId ?? null,
     metadata: {
       text: m.text,
@@ -207,6 +227,10 @@ function geometrySignature(m: Measurement): string {
     d: m.depth ?? null,
     c: m.type === 'count' ? Math.round(m.value) : null,
     t: m.type,
+    // The deduction flag flips a measurement between gross and void without
+    // changing its geometry; include it so toggling it triggers a PATCH and
+    // the server row stays in sync.
+    x: m.type === 'area' ? Boolean(m.isDeduction) : false,
   });
 }
 
@@ -221,6 +245,7 @@ function toApiUpdate(m: Measurement, scale?: ScaleConfig): Partial<MeasurementCr
     scale_pixels_per_unit: ppu,
     depth: m.depth ?? null,
     count_value: m.type === 'count' ? Math.round(m.value) : null,
+    is_deduction: m.type === 'area' ? Boolean(m.isDeduction) : false,
   };
 }
 
@@ -248,11 +273,45 @@ function fromApiFormat(r: MeasurementResponse): Measurement {
     color: r.group_color || undefined,
     width: (meta.width as number) ?? undefined,
     height: (meta.height as number) ?? undefined,
+    isDeduction: r.is_deduction ?? undefined,
     linkedPositionId: r.linked_boq_position_id ?? undefined,
     linkedBoqId: (meta.linked_boq_id as string) ?? undefined,
     linkedPositionOrdinal: (meta.linked_position_ordinal as string) ?? undefined,
     linkedPositionLabel: (meta.linked_position_label as string) ?? undefined,
   };
+}
+
+/**
+ * Reconstruct a {@link PageScales} from server measurements.
+ *
+ * Each row carries the ``scale_pixels_per_unit`` of the page it was drawn
+ * on, so we take the most-recently-seen positive ratio per page as that
+ * page's scale and the most common ratio across all pages as the document
+ * default. Returns ``null`` when no row carries a usable ratio (the caller
+ * then keeps whatever it already had). This restores per-page calibration
+ * for a project opened on a device that has no localStorage copy.
+ */
+function pageScalesFromServer(rows: MeasurementResponse[]): PageScales | null {
+  const byPage: Record<number, ScaleConfig> = {};
+  const ratioFreq = new Map<number, number>();
+  for (const r of rows) {
+    const ppu = r.scale_pixels_per_unit;
+    if (typeof ppu !== 'number' || !Number.isFinite(ppu) || ppu <= 0) continue;
+    // Scale is metric-canonical (always metres); only the ratio differs per
+    // page. Track frequency to pick the document default.
+    byPage[r.page] = { pixelsPerUnit: ppu, unitLabel: 'm' };
+    ratioFreq.set(ppu, (ratioFreq.get(ppu) ?? 0) + 1);
+  }
+  if (Object.keys(byPage).length === 0) return null;
+  let bestRatio = 100;
+  let bestCount = -1;
+  for (const [ratio, count] of ratioFreq.entries()) {
+    if (count > bestCount) {
+      bestCount = count;
+      bestRatio = ratio;
+    }
+  }
+  return { defaultScale: { pixelsPerUnit: bestRatio, unitLabel: 'm' }, byPage };
 }
 
 /* ── Hook ─────────────────────────────────────────────────────────────── */
@@ -261,8 +320,14 @@ interface UseMeasurementPersistenceOptions {
   fileName: string | null;
   measurements: Measurement[];
   setMeasurements: (measurements: Measurement[]) => void;
+  /** Per-page (per-sheet) scale model. Persisted whole; a legacy
+   *  single-scale document is migrated into the default on load. */
+  pageScales: PageScales;
+  setPageScales: (pageScales: PageScales) => void;
+  /** The current page's effective scale, sent as ``scale_pixels_per_unit``
+   *  on measurements so the server B8 recompute uses the same ratio.
+   *  (Per-measurement page scale is resolved from ``pageScales``.) */
   scale: ScaleConfig;
-  setScale: (scale: ScaleConfig) => void;
   /** Active project ID for backend sync. */
   projectId?: string | null;
 }
@@ -282,8 +347,9 @@ export function useMeasurementPersistence({
   fileName,
   measurements,
   setMeasurements,
+  pageScales,
+  setPageScales,
   scale,
-  setScale,
   projectId,
 }: UseMeasurementPersistenceOptions): UseMeasurementPersistenceResult {
   const hasPersistedRef = useRef(false);
@@ -329,6 +395,12 @@ export function useMeasurementPersistence({
                 .filter((m) => m.serverId)
                 .map((m) => [m.serverId as string, geometrySignature(m)]),
             );
+            // Reconstruct the per-page scale from the per-measurement ratios
+            // the server stored. The localStorage copy (set below on next
+            // save) is authoritative when present, but for a project loaded
+            // on a fresh device this is the only place the calibration lives.
+            const fromServer = pageScalesFromServer(serverData);
+            if (fromServer) setPageScales(fromServer);
             setMeasurements(mapped);
             return;
           }
@@ -343,7 +415,11 @@ export function useMeasurementPersistence({
         if (data) {
           hasPersistedRef.current = true;
           setMeasurements(data.measurements);
-          setScale(data.scale);
+          // Graceful migration: a document saved before per-page scale only
+          // carried ``data.scale``; hydratePageScales promotes it to the
+          // document default so every page reads the same number it always
+          // did until the user re-calibrates an individual sheet.
+          setPageScales(hydratePageScales(data.pageScales, data.scale));
         } else {
           hasPersistedRef.current = false;
         }
@@ -352,7 +428,7 @@ export function useMeasurementPersistence({
 
     loadData();
     return () => { cancelled = true; };
-  }, [fileName, projectId, setMeasurements, setScale]);
+  }, [fileName, projectId, setMeasurements, setPageScales]);
 
   // Auto-save to localStorage with debounce (500ms)
   useEffect(() => {
@@ -360,8 +436,12 @@ export function useMeasurementPersistence({
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       // Never persist AI suggestions: only confirmed measurements are saved.
+      // Persist BOTH the new per-page model and the legacy single ``scale``
+      // (the current page's, as a best-effort default) so a downgrade to an
+      // older build that only reads ``scale`` still finds a usable value.
       saveToStorage(fileName, {
         measurements: measurements.filter((m) => !m.suggested),
+        pageScales,
         scale,
         savedAt: Date.now(),
       });
@@ -369,7 +449,7 @@ export function useMeasurementPersistence({
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [fileName, measurements, scale]);
+  }, [fileName, measurements, pageScales, scale]);
 
   // Auto-sync to server with debounce (3s). Both measurement and annotation
   // types persist now (v2.6.7) — backend schema accepts the full set.
@@ -386,7 +466,9 @@ export function useMeasurementPersistence({
           // Suggested-but-unconfirmed measurements are excluded; accepting a
           // suggestion clears `suggested` and the next tick syncs it (#194).
           .filter((m) => !m.serverId && !m.suggested)
-          .map((m) => toApiFormat(m, projectId, fileName, scale));
+          // Per-page scale: toApiFormat resolves each row's own page scale
+          // from pageScales, so a multi-sheet set syncs correct ratios.
+          .map((m) => toApiFormat(m, projectId, fileName, pageScales));
 
         if (toCreate.length > 0) {
           const created = await takeoffApi.bulkCreate(toCreate);
@@ -416,7 +498,7 @@ export function useMeasurementPersistence({
     return () => {
       if (serverSyncRef.current) clearTimeout(serverSyncRef.current);
     };
-  }, [fileName, projectId, measurements, setMeasurements, scale.pixelsPerUnit]);
+  }, [fileName, projectId, measurements, setMeasurements, pageScales]);
 
   // Reshape PATCH (#194 Feature 1). When a measurement that already has a
   // `serverId` has its geometry changed in-canvas, PATCH just that row so
@@ -453,7 +535,12 @@ export function useMeasurementPersistence({
           inFlightPatchRef.current.add(serverId);
           const sig = geometrySignature(m);
           try {
-            const updated = await takeoffApi.update(serverId, toApiUpdate(m, scale));
+            // Per-page scale: PATCH with the measurement's own page scale so
+            // the server B8 recompute uses the ratio that sheet was drawn at.
+            const updated = await takeoffApi.update(
+              serverId,
+              toApiUpdate(m, scaleForPage(pageScales, m.page)),
+            );
             // Mark this geometry as known-on-server so we don't re-PATCH it.
             geometrySigRef.current.set(serverId, sig);
             // Overwrite the optimistic value with the server-authoritative
@@ -495,12 +582,12 @@ export function useMeasurementPersistence({
     return () => {
       if (patchTimerRef.current) clearTimeout(patchTimerRef.current);
     };
-  }, [projectId, measurements, setMeasurements, scale, qc]);
+  }, [projectId, measurements, setMeasurements, pageScales, qc]);
 
   const saveNow = useCallback(() => {
     if (!fileName) return;
-    saveToStorage(fileName, { measurements, scale, savedAt: Date.now() });
-  }, [fileName, measurements, scale]);
+    saveToStorage(fileName, { measurements, pageScales, scale, savedAt: Date.now() });
+  }, [fileName, measurements, pageScales, scale]);
 
   const clearPersisted = useCallback(() => {
     if (!fileName) return;

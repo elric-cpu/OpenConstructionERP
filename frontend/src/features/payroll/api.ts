@@ -6,11 +6,30 @@
  * only for display.
  */
 
-import { apiGet, apiPatch, apiPost, getAuthToken } from '@/shared/lib/api';
+import { apiDelete, apiGet, apiPatch, apiPost, getAuthToken } from '@/shared/lib/api';
 
 /* ── Types ─────────────────────────────────────────────────────────────── */
 
 export type PayrollStatus = 'draft' | 'submitted' | 'approved' | 'posted';
+
+export type DeductionType = 'tax' | 'social' | 'pension' | 'other';
+export type DeductionMode = 'fixed' | 'percentage';
+
+export interface PayrollDeduction {
+  id: string;
+  entry_id: string;
+  label: string;
+  deduction_type: DeductionType;
+  mode: DeductionMode;
+  value: string;
+  base_amount: string;
+  amount: string;
+  currency: string;
+  ordinal: number;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface PayrollEntry {
   id: string;
@@ -19,11 +38,15 @@ export interface PayrollEntry {
   worker: string;
   work_date: string | null;
   hours: string;
-  rate: string;
+  /** Gross pay (hours x rate, in batch currency). */
   amount: string;
+  /** Net pay = gross - sum(deductions). Equals gross when there are none. */
+  net_amount: string;
+  rate: string;
   currency: string;
   source: string;
   metadata: Record<string, unknown>;
+  deductions: PayrollDeduction[];
   created_at: string;
   updated_at: string;
 }
@@ -37,7 +60,12 @@ export interface PayrollBatch {
   status: PayrollStatus;
   currency: string;
   total_hours: string;
+  /** Batch gross pay (sum of entry gross amounts). Posts to cost / GL. */
   total_amount: string;
+  /** Sum of all deductions across the batch. */
+  total_deductions: string;
+  /** Batch net pay = total_amount - total_deductions. */
+  total_net: string;
   entry_count: number;
   notes: string;
   created_by: string | null;
@@ -144,6 +172,50 @@ export async function submitBatch(batchId: string): Promise<PayrollBatchDetail> 
 export async function postBatch(batchId: string): Promise<PayrollBatchDetail> {
   return apiPatch<PayrollBatchDetail>(
     `/v1/payroll/batches/${encodeURIComponent(batchId)}/post/`,
+  );
+}
+
+export interface AddDeductionPayload {
+  label: string;
+  deduction_type: DeductionType;
+  mode: DeductionMode;
+  /** Fixed amount, or a percentage (0-100) when mode is 'percentage'. */
+  value: string;
+  /** Optional explicit base for a percentage; defaults to the entry gross. */
+  base_amount?: string | null;
+}
+
+/**
+ * Add a deduction line to a payslip (entry). The server derives the amount and
+ * recomputes net pay + batch totals, returning the full refreshed batch detail.
+ * Only allowed while the batch is draft/submitted.
+ */
+export async function addDeduction(
+  batchId: string,
+  entryId: string,
+  payload: AddDeductionPayload,
+): Promise<PayrollBatchDetail> {
+  return apiPost<PayrollBatchDetail, AddDeductionPayload>(
+    `/v1/payroll/batches/${encodeURIComponent(batchId)}/entries/${encodeURIComponent(
+      entryId,
+    )}/deductions/`,
+    payload,
+  );
+}
+
+/**
+ * Remove a deduction line from a payslip. Recomputes net + batch totals and
+ * returns the refreshed batch detail. Only allowed while draft/submitted.
+ */
+export async function removeDeduction(
+  batchId: string,
+  entryId: string,
+  deductionId: string,
+): Promise<PayrollBatchDetail> {
+  return apiDelete<PayrollBatchDetail>(
+    `/v1/payroll/batches/${encodeURIComponent(batchId)}/entries/${encodeURIComponent(
+      entryId,
+    )}/deductions/${encodeURIComponent(deductionId)}/`,
   );
 }
 

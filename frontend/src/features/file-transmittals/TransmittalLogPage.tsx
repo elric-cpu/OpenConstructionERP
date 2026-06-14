@@ -18,10 +18,12 @@ import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { EmptyState } from '@/shared/ui/EmptyState';
 import { Breadcrumb } from '@/shared/ui/Breadcrumb';
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { ModuleGuideButton } from '@/shared/ui';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 
 import { NewTransmittalWizard } from './NewTransmittalWizard';
 import { TransmittalDetailDrawer } from './TransmittalDetailDrawer';
+import { fileTransmittalsGuide } from './fileTransmittalsGuide';
 import { useTransmittals } from './hooks';
 import type { TransmittalListRow, TransmittalReason, TransmittalStatus } from './types';
 
@@ -127,14 +129,17 @@ export function TransmittalLogPage() {
             'Formal send-records of files to external parties, with auto-generated cover sheets and acknowledgement tracking.',
         })}
         actions={
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => setWizardOpen(true)}
-            icon={<Send size={14} />}
-          >
-            {t('files.transmittals.new', { defaultValue: 'New Transmittal' })}
-          </Button>
+          <>
+            <ModuleGuideButton content={fileTransmittalsGuide} />
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setWizardOpen(true)}
+              icon={<Send size={14} />}
+            >
+              {t('files.transmittals.new', { defaultValue: 'New Transmittal' })}
+            </Button>
+          </>
         }
       />
 

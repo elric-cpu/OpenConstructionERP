@@ -277,12 +277,43 @@ const KNOWN_CATEGORIES: Record<string, string> = {
 };
 
 /**
+ * Humanise a raw IFC entity name for display: strip the `Ifc` prefix and
+ * split CamelCase into words, mirroring the backend `_humanise_ifc_class`.
+ *
+ *   "IfcWall"             → "Wall"
+ *   "IfcWallStandardCase" → "Wall Standard Case"
+ *   "IfcDuctSegment"      → "Duct Segment"
+ *   "IfcFlowTerminal"     → "Flow Terminal"
+ *
+ * Only the DISPLAY label is changed - filter matching still uses the raw
+ * `element_type` ("IfcWall"), so isolation, counts and saved groups are
+ * unaffected. Returns null when the input is not an `IfcXxx` entity.
+ */
+function humaniseIfcEntity(raw: string): string | null {
+  if (!/^Ifc[A-Z]/.test(raw)) return null;
+  const body = raw.slice(3); // drop "Ifc"
+  if (!body) return raw;
+  // Insert a space before each interior capital that follows a non-capital
+  // (so runs of capitals like acronyms stay intact, matching the backend).
+  let out = '';
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i]!;
+    if (i > 0 && ch >= 'A' && ch <= 'Z' && !(body[i - 1]! >= 'A' && body[i - 1]! <= 'Z')) {
+      out += ' ';
+    }
+    out += ch;
+  }
+  return out;
+}
+
+/**
  * Pretty-print a normalised Revit/IFC category name for display.
  *
  * - Lookups in the curated `KNOWN_CATEGORIES` table win first.
  * - "None" / empty → "Uncategorised".
- * - Already-spaced strings ("Hvac Load Schedules") and IFC entities
- *   ("IfcWall") pass through unchanged.
+ * - IFC entities ("IfcWallStandardCase") are humanised to "Wall Standard
+ *   Case" (display only — the raw key is still used for filtering).
+ * - Already-spaced strings ("Hvac Load Schedules") pass through unchanged.
  * - Anything else gets first-letter capitalised but is otherwise
  *   un-touched — never algorithmically guessing word boundaries.
  *
@@ -292,7 +323,8 @@ const KNOWN_CATEGORIES: Record<string, string> = {
  *   prettifyCategoryName("Structuralcolumns")   → "Structural Columns"
  *   prettifyCategoryName("Newcategory")         → "Newcategory"
  *   prettifyCategoryName("None")                → "Uncategorised"
- *   prettifyCategoryName("IfcWall")             → "IfcWall"
+ *   prettifyCategoryName("IfcWall")             → "Wall"
+ *   prettifyCategoryName("IfcWallStandardCase") → "Wall Standard Case"
  */
 export function prettifyCategoryName(raw: string | undefined | null): string {
   if (!raw) return '—';
@@ -300,10 +332,11 @@ export function prettifyCategoryName(raw: string | undefined | null): string {
   if (trimmed === '') return '—';
   const looked = KNOWN_CATEGORIES[trimmed.toLowerCase()];
   if (looked !== undefined) return looked;
+  // IFC entity → humanise (strip "Ifc", CamelCase-split) for display.
+  const ifc = humaniseIfcEntity(trimmed);
+  if (ifc !== null) return ifc;
   // Already has spaces → pass through
   if (/\s/.test(trimmed)) return trimmed;
-  // IFC entity → pass through
-  if (/^Ifc[A-Z]/.test(trimmed)) return trimmed;
   // Otherwise: just capitalise the first letter, leave the rest
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
@@ -479,7 +512,18 @@ const RULES: Rule[] = [
   { match: 'ifcflowterminal', bucket: 'mep' },
   { match: 'ifcflowfitting', bucket: 'mep' },
   { match: 'ifcflowsegment', bucket: 'mep' },
+  { match: 'ifcflowcontroller', bucket: 'mep' },
+  { match: 'ifcflowmovingdevice', bucket: 'mep' },
+  { match: 'ifcflowstoragedevice', bucket: 'mep' },
+  { match: 'ifcflowtreatmentdevice', bucket: 'mep' },
+  { match: 'ifcenergyconversiondevice', bucket: 'mep' },
+  { match: 'ifcdistributioncontrolelement', bucket: 'mep' },
+  { match: 'ifcdistributionflowelement', bucket: 'mep' },
   { match: 'ifcdistributionelement', bucket: 'mep' },
+  // Broad IFC MEP catch-alls — any remaining IfcFlow* / IfcDistribution*
+  // entity is MEP even if a more specific rule above did not match.
+  { match: 'ifcflow', bucket: 'mep' },
+  { match: 'ifcdistribution', bucket: 'mep' },
 
   // ── Furniture & specialty equipment ───────────────────────────────
   { match: 'furniturepart', bucket: 'furniture' },

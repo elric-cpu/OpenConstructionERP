@@ -119,8 +119,9 @@ def boot(data_dir: Path | str) -> bool:
         from sqlalchemy.engine import make_url
     except Exception as exc:  # noqa: BLE001
         logger.error(
-            "embedded PostgreSQL requested but pixeltable-pgserver is not installed "
-            "(pip install 'openconstructionerp[server]' or pixeltable-pgserver): %r",
+            "embedded PostgreSQL requested but pixeltable-pgserver is not importable "
+            "(reinstall the package: pip install --upgrade --force-reinstall "
+            "openconstructionerp, or install pixeltable-pgserver directly): %r",
             exc,
         )
         return False

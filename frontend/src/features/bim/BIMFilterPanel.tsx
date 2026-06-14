@@ -26,7 +26,6 @@ import {
   ChevronRight,
   ChevronDown,
   Eye,
-  EyeOff,
   X,
   Link2,
   Bookmark,
@@ -225,14 +224,73 @@ function isGenericPlaceholderName(name: string, elementType: string | null | und
   return !!elementType && prefix.toLowerCase() === elementType.toLowerCase();
 }
 
+/** Read a property value by any of several keys, matched case-insensitively.
+ *
+ *  Revit and IFC exports disagree on capitalisation and naming
+ *  (`type_name` vs `ObjectType` vs `objecttype`), so a single hard-coded key
+ *  silently misses the value on one of the two formats. Returns the first
+ *  non-empty string value found, or null. */
+function readProp(
+  props: Record<string, unknown>,
+  keys: readonly string[],
+): string | null {
+  // Build a lowercase index once so the lookup tolerates any casing the
+  // converter emitted.
+  const lower: Record<string, unknown> = {};
+  for (const k of Object.keys(props)) lower[k.toLowerCase()] = props[k];
+  for (const key of keys) {
+    const v = lower[key.toLowerCase()];
+    if (typeof v === 'string') {
+      const trimmed = v.trim();
+      if (trimmed && !['none', 'null', 'n/a', '-'].includes(trimmed.toLowerCase())) {
+        return trimmed;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Second-level "Type Name" for an element.
+ *
+ *   • Revit → the Family / Type Name (`type_name`, `family`, `Family`, …),
+ *             promoted by the upload pipeline.
+ *   • IFC   → IFC carries no Revit Family/Type. The closest equivalents are
+ *             `ObjectType` (the user-facing type label) and `PredefinedType`
+ *             (the enumerated sub-type, e.g. `IfcWall.PredefinedType = SOLIDWALL`).
+ *             Without these the IFC "Type Name" view collapsed every element
+ *             into a single "Unspecified" row, which made the IFC filter look
+ *             broken (founder: "в IFC вообще плохо продуман и работает фильтр").
+ *
+ * Falls back to the element name only when it carries real information (not a
+ * generic "Walls 3" placeholder), then to "Unspecified".
+ */
 function getTypeNameKey(el: BIMElementData): string {
   const props = (el.properties || {}) as Record<string, unknown>;
-  const typeName =
-    typeof props.type_name === 'string' && props.type_name ? props.type_name : null;
-  const family = typeof props.family === 'string' && props.family ? props.family : null;
 
-  if (typeName) return typeName;
-  if (family) return family;
+  // 1. Revit Family/Type axis (promoted aliases first, then raw column names).
+  const revit = readProp(props, [
+    'type_name',
+    'family',
+    'family_and_type',
+    'Family',
+    'family and type',
+  ]);
+  if (revit) return revit;
+
+  // 2. IFC type axis — ObjectType is the human label, PredefinedType the
+  //    enumerated sub-type. Either gives a meaningful second level for IFC.
+  const ifc = readProp(props, [
+    'object_type',
+    'objecttype',
+    'object type',
+    'predefined_type',
+    'predefinedtype',
+    'predefined type',
+  ]);
+  if (ifc) return ifc;
+
+  // 3. Element name when it is not a generic "<category> N" placeholder.
   if (
     el.name &&
     el.name !== 'None' &&
@@ -242,9 +300,9 @@ function getTypeNameKey(el: BIMElementData): string {
     return el.name;
   }
 
-  const cand =
-    props['Family'] ?? props['family and type'] ?? props['Type'] ?? props['type'];
-  if (typeof cand === 'string' && cand !== '' && cand !== 'None') return cand;
+  // 4. Last-resort generic Type/type columns, then the unlabeled bucket.
+  const cand = readProp(props, ['Type', 'type']);
+  if (cand) return cand;
   return 'Unspecified';
 }
 
@@ -1939,9 +1997,13 @@ function FilterChip({
             style={{ backgroundColor: `#${colorDot.toString(16).padStart(6, '0')}` }}
           />
         ) : active ? (
+          // Selected chip → eye-on: this group is isolated in the viewport.
           <Eye size={10} className="shrink-0" />
         ) : (
-          <EyeOff size={10} className="shrink-0 opacity-40" />
+          // Unselected chip → neutral dot, NOT eye-off. An eye-off icon here
+          // wrongly read as "this category is hidden" when no filter is set,
+          // which made selecting a chip feel like it was removing elements.
+          <span className="inline-block w-2 h-2 rounded-full shrink-0 bg-content-quaternary/40" />
         )}
         <div className="min-w-0 flex-1 text-left">
           <span className="truncate block text-left">{label}</span>

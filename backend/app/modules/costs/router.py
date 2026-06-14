@@ -2524,15 +2524,22 @@ async def list_cost_catalogs(
 async def update_cost_catalog(
     catalog_id: uuid.UUID,
     data: CostCatalogUpdate,
-    _user_id: CurrentUserId,
+    user: CurrentUserPayload,
     service: CostCatalogService = Depends(_get_catalog_service),
 ) -> CostCatalogResponse:
     """Update a catalog's name / description / currency.
+
+    Scoped by ownership (``CostCatalog.created_by``): a non-owner caller
+    gets a 404 (existence is not leaked), matching the module convention.
+    Admins bypass the ownership check.
 
     A currency change is rejected (409) while the catalog has items: the
     stored rates are denominated in the old currency and would be silently
     corrupted by a re-label.
     """
+    owner_id = _parse_user_uuid((user or {}).get("sub"))
+    is_admin = (user or {}).get("role") == "admin"
+    await service.get_owned_catalog(catalog_id, owner_id=owner_id, is_admin=is_admin)
     catalog = await service.update_catalog(catalog_id, data)
     return _catalog_response(catalog, await service.count_items(catalog_id))
 
@@ -2543,7 +2550,7 @@ async def update_cost_catalog(
 )
 async def delete_cost_catalog(
     catalog_id: uuid.UUID,
-    _user_id: CurrentUserId,
+    user: CurrentUserPayload,
     mode: str = Query(
         default="keep_items",
         pattern="^(keep_items|delete_items)$",
@@ -2554,7 +2561,15 @@ async def delete_cost_catalog(
     ),
     service: CostCatalogService = Depends(_get_catalog_service),
 ) -> dict[str, Any]:
-    """Delete a catalog, either keeping or soft-deleting its items."""
+    """Delete a catalog, either keeping or soft-deleting its items.
+
+    Scoped by ownership (``CostCatalog.created_by``): a non-owner caller
+    gets a 404 (existence is not leaked), matching the module convention.
+    Admins bypass the ownership check.
+    """
+    owner_id = _parse_user_uuid((user or {}).get("sub"))
+    is_admin = (user or {}).get("role") == "admin"
+    await service.get_owned_catalog(catalog_id, owner_id=owner_id, is_admin=is_admin)
     affected = await service.delete_catalog(catalog_id, mode=mode)
     _invalidate_cost_cache()
     return {"deleted": str(catalog_id), "mode": mode, "items_affected": affected}
@@ -2567,10 +2582,14 @@ async def delete_cost_catalog(
 async def export_cost_catalog_excel(
     catalog_id: uuid.UUID,
     session: SessionDep,
-    _user_id: CurrentUserId,
+    user: CurrentUserPayload,
     service: CostCatalogService = Depends(_get_catalog_service),
 ) -> StreamingResponse:
     """Export ONE catalog's items as an Excel file.
+
+    Scoped by ownership (``CostCatalog.created_by``): a non-owner caller
+    gets a 404 (existence is not leaked) so this never streams another
+    user's rate list. Admins bypass the ownership check.
 
     Columns: code, description, unit, rate, currency, classification.
     Text cells go through ``_excel_safe`` so user-supplied values can not
@@ -2579,7 +2598,9 @@ async def export_cost_catalog_excel(
     """
     from openpyxl import Workbook
 
-    catalog = await service.get_catalog(catalog_id)
+    owner_id = _parse_user_uuid((user or {}).get("sub"))
+    is_admin = (user or {}).get("role") == "admin"
+    catalog = await service.get_owned_catalog(catalog_id, owner_id=owner_id, is_admin=is_admin)
 
     wb = Workbook(write_only=True)
     ws = wb.create_sheet(title="Catalog")

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { boqApi, type Markup, type CreateMarkupData, type UpdateMarkupData } from './api';
@@ -51,6 +51,13 @@ interface MarkupPanelProps {
   currencyCode: string;
   locale: string;
   fmt: Intl.NumberFormat;
+  /**
+   * Bumped by the host (the toolbar "Markups / OH&P" jump) to force this
+   * panel open. The panel is collapsible and defaults open; bumping the
+   * signal re-expands it after a manual collapse so the jump always lands
+   * on visible content.
+   */
+  openSignal?: number;
 }
 
 interface EditState {
@@ -59,7 +66,7 @@ interface EditState {
   value: string;
 }
 
-export function MarkupPanel({ boqId, markups, directCost, currencySymbol, currencyCode, locale, fmt }: MarkupPanelProps) {
+export function MarkupPanel({ boqId, markups, directCost, currencySymbol, currencyCode, locale, fmt, openSignal }: MarkupPanelProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const addToast = useToastStore((s) => s.addToast);
@@ -67,6 +74,13 @@ export function MarkupPanel({ boqId, markups, directCost, currencySymbol, curren
   const [isOpen, setIsOpen] = useState(true);
   const [editState, setEditState] = useState<EditState | null>(null);
   const [showRegionMenu, setShowRegionMenu] = useState(false);
+
+  // Re-expand when the host bumps openSignal (toolbar "Markups / OH&P" jump).
+  // Ignore the initial 0 so a user who manually collapsed the panel is not
+  // re-opened on mount.
+  useEffect(() => {
+    if (openSignal && openSignal > 0) setIsOpen(true);
+  }, [openSignal]);
 
   const invalidate = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['boq-markups', boqId] });
@@ -211,7 +225,7 @@ export function MarkupPanel({ boqId, markups, directCost, currencySymbol, curren
   };
 
   return (
-    <div className="mt-4 rounded-xl border border-border-light bg-surface-elevated shadow-xs">
+    <div id="boq-markups-panel" className="mt-4 rounded-xl border border-border-light bg-surface-elevated shadow-xs scroll-mt-28">
       {/* Header */}
       <button
         onClick={() => setIsOpen(!isOpen)}

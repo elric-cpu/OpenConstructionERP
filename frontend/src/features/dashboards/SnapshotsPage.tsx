@@ -30,6 +30,7 @@ import {
   Button,
   Card,
   EmptyState,
+  ModuleGuideButton,
   Skeleton,
 } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
@@ -46,6 +47,7 @@ import {
 import { SnapshotCreateModal } from './SnapshotCreateModal';
 import { SnapshotTimeline } from './SnapshotTimeline';
 import { SnapshotDiffView } from './SnapshotDiffView';
+import { dashboardsGuide } from './dashboardsGuide';
 
 type DashboardsView = 'list' | 'timeline' | 'diff';
 
@@ -190,6 +192,13 @@ export function SnapshotsPage() {
         })}
         actions={
           <>
+            {/* How it works guide - explains snapshots and the
+                create / browse / timeline / compare flow. Leads the
+                action cluster as the help pill, next to the view tabs. */}
+            <ModuleGuideButton
+              content={dashboardsGuide}
+              onCta={() => setCreateOpen(true)}
+            />
             <div className="flex rounded-lg border border-border-light p-0.5" role="tablist">
               <ViewTab
                 active={view === 'list'}

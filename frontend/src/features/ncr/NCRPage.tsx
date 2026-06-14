@@ -25,7 +25,7 @@ import {
   ListChecks,
   Link2,
 } from 'lucide-react';
-import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, RecoveryCard, SkeletonTable, IntroRichText } from '@/shared/ui';
+import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, RecoveryCard, SkeletonTable, IntroRichText, ModuleGuideButton } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { SectionIntro } from '@/features/validation';
@@ -44,6 +44,7 @@ import {
   type NCRStatus,
   type CreateNCRPayload,
 } from './api';
+import { ncrGuide } from './ncrGuide';
 
 /* -- Constants ------------------------------------------------------------- */
 
@@ -967,16 +968,19 @@ export function NCRPage() {
           defaultValue: 'Document non-conforming work, root causes, and corrective actions',
         })}
         actions={
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => setShowCreateModal(true)}
-            disabled={!projectId}
-            title={!projectId ? t('common.select_project_first', { defaultValue: 'Please select a project first' }) : undefined}
-            icon={<Plus size={14} />}
-          >
-            {t('ncr.new_ncr', { defaultValue: 'New NCR' })}
-          </Button>
+          <>
+            <ModuleGuideButton content={ncrGuide} />
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setShowCreateModal(true)}
+              disabled={!projectId}
+              title={!projectId ? t('common.select_project_first', { defaultValue: 'Please select a project first' }) : undefined}
+              icon={<Plus size={14} />}
+            >
+              {t('ncr.new_ncr', { defaultValue: 'New NCR' })}
+            </Button>
+          </>
         }
       />
 

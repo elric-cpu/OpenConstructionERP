@@ -173,6 +173,21 @@ describe('groupSubtotals', () => {
     expect(subs[0]!.count).toBe(2);
     expect(subs[0]!.totals.m).toBe(10);
   });
+
+  it('subtracts opening deductions to give a net area', () => {
+    // Gross slab 50 m2 with two openings (a 2 m2 door, a 1.5 m2 window).
+    const measurements: Measurement[] = [
+      m({ id: 'slab', type: 'area', value: 50, unit: 'm²', group: 'Floors' }),
+      m({ id: 'door', type: 'area', value: 2, unit: 'm²', group: 'Floors', isDeduction: true }),
+      m({ id: 'window', type: 'area', value: 1.5, unit: 'm²', group: 'Floors', isDeduction: true }),
+    ];
+    const subs = groupSubtotals(measurements);
+    const floors = subs.find((s) => s.group === 'Floors')!;
+    // 50 - 2 - 1.5 = 46.5 net.
+    expect(floors.totals['m²']).toBeCloseTo(46.5, 6);
+    // All three rows are still counted.
+    expect(floors.count).toBe(3);
+  });
 });
 
 describe('typeGrandTotals', () => {
@@ -201,6 +216,17 @@ describe('typeGrandTotals', () => {
     const totals = typeGrandTotals(measurements);
     expect(totals).toHaveLength(1);
     expect(totals[0]!.type).toBe('distance');
+  });
+
+  it('nets opening deductions out of the area grand total', () => {
+    const measurements: Measurement[] = [
+      m({ id: 'a', type: 'area', value: 100, unit: 'm²', group: 'G' }),
+      m({ id: 'b', type: 'area', value: 8, unit: 'm²', group: 'G', isDeduction: true }),
+    ];
+    const totals = typeGrandTotals(measurements);
+    const area = totals.find((t) => t.type === 'area')!;
+    expect(area.total).toBeCloseTo(92, 6); // 100 - 8
+    expect(area.count).toBe(2);
   });
 });
 

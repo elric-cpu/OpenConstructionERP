@@ -25,8 +25,9 @@ import {
   LineChart,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { Breadcrumb, EmptyState, SkeletonGrid } from '@/shared/ui';
+import { Breadcrumb, EmptyState, SkeletonGrid, ModuleGuideButton } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { reportsGuide } from './reportsGuide';
 import { DismissibleInfo, IntroRichText } from '@/shared/ui/DismissibleInfo';
 import { useToastStore } from '@/stores/useToastStore';
 import { useAuthStore } from '@/stores/useAuthStore';
@@ -1143,6 +1144,7 @@ export function ReportsPage() {
         subtitle={t('reports.subtitle', {
           defaultValue: 'Generate professional reports for your projects',
         })}
+        actions={<ModuleGuideButton content={reportsGuide} />}
       />
 
       <DismissibleInfo

@@ -26,6 +26,12 @@ export interface BOQCompareDrawerProps {
   projectId: string;
   isOpen: boolean;
   onClose: () => void;
+  /**
+   * The estimate this BOQ was derived from (`parent_estimate_id`), if any.
+   * Set for revisions and what-if scenarios. Drives the revision-aware
+   * picker: the baseline is pre-selected and grouped at the top.
+   */
+  parentEstimateId?: string | null;
 }
 
 export function BOQCompareDrawer({
@@ -33,6 +39,7 @@ export function BOQCompareDrawer({
   projectId,
   isOpen,
   onClose,
+  parentEstimateId,
 }: BOQCompareDrawerProps) {
   const { t } = useTranslation();
   const [otherId, setOtherId] = useState<string>('');
@@ -58,10 +65,38 @@ export function BOQCompareDrawer({
     enabled: isOpen && !!projectId,
   });
 
-  const otherChoices = useMemo(
-    () => (boqs ?? []).filter((b) => b.id !== boqId),
-    [boqs, boqId],
-  );
+  // Classify the other BOQs by their lineage to this one so the picker can
+  // surface the baseline + related revisions first instead of one flat list.
+  const groups = useMemo(() => {
+    const all = (boqs ?? []).filter((b) => b.id !== boqId);
+    const baseline = parentEstimateId
+      ? all.find((b) => b.id === parentEstimateId) ?? null
+      : null;
+    const revisions = all.filter((b) => b.parent_estimate_id === boqId);
+    const siblings = parentEstimateId
+      ? all.filter(
+          (b) => b.parent_estimate_id === parentEstimateId && b.id !== baseline?.id,
+        )
+      : [];
+    const used = new Set<string>(
+      [
+        baseline?.id,
+        ...revisions.map((b) => b.id),
+        ...siblings.map((b) => b.id),
+      ].filter(Boolean) as string[],
+    );
+    const others = all.filter((b) => !used.has(b.id));
+    return { baseline, revisions, siblings, others };
+  }, [boqs, boqId, parentEstimateId]);
+
+  // For a derived estimate (revision / scenario), default the comparison to
+  // its baseline so the common "scenario vs baseline" diff is one step. Only
+  // seeds an empty pick; never overrides a manual choice.
+  useEffect(() => {
+    if (isOpen && parentEstimateId && !otherId) {
+      setOtherId(parentEstimateId);
+    }
+  }, [isOpen, parentEstimateId, otherId]);
 
   const {
     data: cmp,
@@ -135,11 +170,46 @@ export function BOQCompareDrawer({
               <option value="">
                 {t('boq.compare_pick', { defaultValue: '- Select a BOQ -' })}
               </option>
-              {otherChoices.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
+              {groups.baseline && (
+                <optgroup label={t('boq.compare_group_baseline', { defaultValue: 'Baseline' })}>
+                  <option value={groups.baseline.id}>{groups.baseline.name}</option>
+                </optgroup>
+              )}
+              {groups.revisions.length > 0 && (
+                <optgroup
+                  label={t('boq.compare_group_revisions', {
+                    defaultValue: 'Revisions of this estimate',
+                  })}
+                >
+                  {groups.revisions.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {groups.siblings.length > 0 && (
+                <optgroup
+                  label={t('boq.compare_group_siblings', { defaultValue: 'Other revisions' })}
+                >
+                  {groups.siblings.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {groups.others.length > 0 && (
+                <optgroup
+                  label={t('boq.compare_group_other', { defaultValue: 'Other estimates' })}
+                >
+                  {groups.others.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </label>
           <label className="flex items-center gap-2 text-xs text-content-secondary">
@@ -153,6 +223,15 @@ export function BOQCompareDrawer({
               defaultValue: 'Hide unchanged lines',
             })}
           </label>
+          {groups.baseline && otherId !== groups.baseline.id && (
+            <button
+              type="button"
+              onClick={() => setOtherId(groups.baseline!.id)}
+              className="text-2xs font-medium text-oe-blue hover:underline"
+            >
+              {t('boq.compare_to_baseline', { defaultValue: 'Compare to baseline' })}
+            </button>
+          )}
         </div>
 
         {/* Summary */}

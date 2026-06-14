@@ -1,7 +1,7 @@
 // DDC-CWICR-OE: DataDrivenConstruction · OpenConstructionERP
 // Copyright (c) 2026 Artem Boiko / DataDrivenConstruction
 //
-// projectsGuide — "How it works" content for the Projects module.
+// projectsGuide - "How it works" content for the Projects module.
 //
 // Co-located with the feature so the copy lives next to the screen it
 // describes. Every key carries an inline English default and is consumed

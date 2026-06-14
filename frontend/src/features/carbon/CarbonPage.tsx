@@ -31,8 +31,10 @@ import {
   ConfirmDialog,
   DismissibleInfo,
   IntroRichText,
+  ModuleGuideButton,
 } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
+import { carbonGuide } from './carbonGuide';
 import { useConfirm } from '@/shared/hooks/useConfirm';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
 import { useToastStore } from '@/stores/useToastStore';
@@ -178,6 +180,10 @@ export function CarbonPage() {
         })}
         actions={
           <>
+            {/* How it works guide - explains inventories, embodied carbon from
+                the BOQ, scopes 1/2/3, EPDs, targets and GHG reports. Leads the
+                action cluster as the help pill. */}
+            <ModuleGuideButton content={carbonGuide} />
             {tab === 'inventory' && (
               <Button
                 variant="primary"

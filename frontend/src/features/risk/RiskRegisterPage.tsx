@@ -8,7 +8,7 @@ import {
   AlertTriangle, Shield, Trash2, X, Search, Filter, CalendarDays, TrendingUp,
   LayoutGrid, Activity,
 } from 'lucide-react';
-import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, DismissibleInfo, IntroRichText, RecoveryCard, SkeletonTable, SkeletonCard } from '@/shared/ui';
+import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, DismissibleInfo, IntroRichText, RecoveryCard, SkeletonTable, SkeletonCard, ModuleGuideButton } from '@/shared/ui';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { MultiCurrencyTotal } from '@/shared/ui/MultiCurrencyTotal';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
@@ -21,6 +21,7 @@ import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useTabKeyboardNav } from '@/shared/hooks/useTabKeyboardNav';
 import { MonteCarloTab } from './MonteCarloTab';
+import { riskGuide } from './riskGuide';
 
 const RISK_TAB_IDS = ['register', 'montecarlo'] as const;
 type RiskTab = (typeof RISK_TAB_IDS)[number];
@@ -638,9 +639,12 @@ export function RiskRegisterPage() {
           defaultValue: 'Track project threats with probability x impact scoring, matrix and Monte Carlo analysis.',
         })}
         actions={
-          <Button variant="primary" onClick={() => setShowCreate(true)} disabled={!projectId}>
-            <Plus size={16} className="mr-1.5" />{t('risk.new', { defaultValue: 'Add Risk' })}
-          </Button>
+          <>
+            <ModuleGuideButton content={riskGuide} />
+            <Button variant="primary" onClick={() => setShowCreate(true)} disabled={!projectId}>
+              <Plus size={16} className="mr-1.5" />{t('risk.new', { defaultValue: 'Add Risk' })}
+            </Button>
+          </>
         }
       />
 

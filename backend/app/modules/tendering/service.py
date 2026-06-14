@@ -87,12 +87,18 @@ from app.modules.tendering.schemas import (
     BidCreate,
     BidLevelingSummary,
     BidUpdate,
+    CreatePackageFromBOQData,
+    DistributeRequest,
+    DistributeResponse,
+    DistributeResultEntry,
     LevelBidsResponse,
     LevelingMatrixCell,
     LevelingMatrixResponse,
     LevelingMatrixRow,
     PackageCreate,
     PackageUpdate,
+    RecipientCreate,
+    RecipientResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -132,6 +138,166 @@ class TenderingService:
         )
 
         logger.info("Tender package created: %s", package.name)
+        return package
+
+    async def create_package_from_boq(
+        self,
+        data: CreatePackageFromBOQData,
+        *,
+        actor_id: str | None = None,
+    ) -> TenderPackage:
+        """Create a tender package pre-seeded from selected BOQ sections.
+
+        Loads the BOQ the same way ``compare_bids`` and ``_build_leveling`` do,
+        identifies top-level sections (positions whose ``parent_id`` is ``None``
+        and whose ``unit`` is empty or ``"section"``), filters to the requested
+        ``section_ids`` (or takes all sections when the list is empty), then
+        recursively gathers every descendant. The resulting positions are stored
+        as a compact line-item template in ``metadata_`` so bids can be
+        pre-seeded without an additional BOQ read.
+
+        Currency is inferred from the linked project via the same project
+        repository path used in ``apply_winner`` and ``_build_leveling``. When
+        not available it is omitted from the metadata rather than defaulted to a
+        wrong value.
+
+        Raises 400 if ``boq_id`` references a BOQ that cannot be read.
+        """
+        # Load BOQ positions the same way existing comparison/leveling code does.
+        from app.modules.boq.service import BOQService
+
+        boq_service = BOQService(self.session)
+        try:
+            boq_data = await boq_service.get_boq_with_positions(data.boq_id)
+            all_positions = boq_data.positions
+        except HTTPException as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Could not load BOQ {data.boq_id}: {exc.detail}",
+            ) from exc
+
+        # Tenant guard: the BOQ must belong to the same project the caller was
+        # verified to own. The router checks ownership of ``data.project_id``
+        # only, not the BOQ, so without this a caller could pair their own
+        # ``project_id`` with another tenant's ``boq_id`` and read that BOQ's
+        # full line-item template back out of the package metadata. Return 404
+        # (not 403) so we don't disclose the existence of BOQs in other
+        # tenants - matches the IDOR-404 convention used elsewhere.
+        if boq_data.project_id != data.project_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Could not load BOQ {data.boq_id}: not found",
+            )
+
+        # Index positions by id for fast descendant lookup.
+        pos_by_id: dict[uuid.UUID, object] = {p.id: p for p in all_positions}
+
+        # Identify top-level sections: parent_id is None and unit is empty or "section".
+        def _is_section(pos: object) -> bool:
+            parent = getattr(pos, "parent_id", None)
+            unit = (getattr(pos, "unit", "") or "").strip().lower()
+            return parent is None and (unit == "" or unit == "section")
+
+        section_positions = [p for p in all_positions if _is_section(p)]
+
+        # Filter to the requested section_ids when the caller specified any.
+        if data.section_ids:
+            requested = set(data.section_ids)
+            section_positions = [p for p in section_positions if p.id in requested]
+
+        # Build set of chosen section IDs for the metadata record.
+        chosen_section_ids = [str(p.id) for p in section_positions]
+
+        # Recursively collect all descendants of the chosen sections.
+        # Build a parent->children index first so we traverse the tree once
+        # at O(n) rather than O(n*depth) with repeated linear scans.
+        children_of: dict[uuid.UUID | None, list[object]] = {}
+        for p in all_positions:
+            parent_key = getattr(p, "parent_id", None)
+            children_of.setdefault(parent_key, []).append(p)
+
+        included_ids: set[uuid.UUID] = set()
+
+        def _collect(pos_id: uuid.UUID) -> None:
+            included_ids.add(pos_id)
+            for child in children_of.get(pos_id, []):
+                _collect(child.id)
+
+        for sec in section_positions:
+            _collect(sec.id)
+
+        included = [pos_by_id[pid] for pid in included_ids if pid in pos_by_id]
+
+        # Build the compact line-item template (money as Decimal-as-string).
+        def _money_str(raw: object) -> str:
+            """Return a Decimal-as-string representation of a money value."""
+            try:
+                d = Decimal(str(raw)) if raw is not None else Decimal("0")
+                return format(d if d.is_finite() else Decimal("0"), "f")
+            except (InvalidOperation, ValueError, TypeError):
+                return "0"
+
+        line_item_template = [
+            {
+                "position_id": str(p.id),
+                "description": getattr(p, "description", "") or "",
+                "unit": getattr(p, "unit", "") or "",
+                "quantity": _money_str(getattr(p, "quantity", "0")),
+                "unit_rate": _money_str(getattr(p, "unit_rate", "0")),
+                "total": _money_str(getattr(p, "total", "0")),
+            }
+            for p in included
+        ]
+
+        # Infer project currency the same way apply_winner and _build_leveling do.
+        from app.modules.projects.repository import ProjectRepository
+
+        project = await ProjectRepository(self.session).get_by_id(data.project_id)
+        project_currency = (getattr(project, "currency", "") or "").strip().upper() if project is not None else ""
+
+        # Build the metadata payload.
+        meta: dict = {
+            **data.metadata,
+            "source_boq_id": str(data.boq_id),
+            "source_section_ids": chosen_section_ids,
+            "included_position_count": len(included),
+            "line_item_template": line_item_template,
+        }
+        if project_currency:
+            meta["currency"] = project_currency
+
+        package = TenderPackage(
+            project_id=data.project_id,
+            boq_id=data.boq_id,
+            name=data.package_name,
+            description=data.package_description,
+            status="draft",
+            deadline=data.deadline or None,
+            metadata_=meta,
+        )
+        package = await self.repo.create_package(package)
+
+        await _safe_publish(
+            "tendering.package.created",
+            {
+                "package_id": str(package.id),
+                "project_id": str(package.project_id),
+                "boq_id": str(package.boq_id) if package.boq_id else None,
+                "name": package.name,
+                "deadline": package.deadline,
+                "source": "from_boq",
+                "included_position_count": len(included),
+            },
+            source_module="oe_tendering",
+        )
+
+        logger.info(
+            "Tender package created from BOQ: %s (sections=%s positions=%s by=%s)",
+            package.name,
+            len(chosen_section_ids),
+            len(included),
+            actor_id,
+        )
         return package
 
     async def get_package(self, package_id: uuid.UUID) -> TenderPackage:
@@ -655,6 +821,436 @@ class TenderingService:
             "positions_updated": updated,
             "boq_id": str(package.boq_id),
         }
+
+    # ── Distribution to subcontractors ─────────────────────────────────────
+    # The recipient list lives in the package ``metadata_`` JSON store under
+    # ``recipients`` (the same extensible-per-package pattern used for addenda),
+    # so distribution needs no new table or migration. Each recipient records
+    # who it went to and the per-recipient send state/timestamp. Distribution
+    # reuses the platform email sender (``app.core.email``); when SMTP is not
+    # configured the sender falls back to the console backend and never raises,
+    # so the action degrades to a clear "sent via console" status on a dev
+    # checkout instead of crashing. Each entry shape:
+    #   {id, company_name, email, subcontractor_id, status, sent_at,
+    #    last_error, created_at}
+
+    @staticmethod
+    def _read_recipients(package: TenderPackage) -> list[dict]:
+        raw = (package.metadata_ or {}).get("recipients")
+        return [r for r in raw if isinstance(r, dict)] if isinstance(raw, list) else []
+
+    @staticmethod
+    def _recipient_to_response(raw: dict) -> RecipientResponse:
+        return RecipientResponse(
+            id=str(raw.get("id", "")),
+            company_name=str(raw.get("company_name", "")),
+            email=str(raw.get("email", "")),
+            subcontractor_id=raw.get("subcontractor_id"),
+            status=str(raw.get("status", "pending")),
+            sent_at=raw.get("sent_at"),
+            last_error=raw.get("last_error"),
+            created_at=str(raw.get("created_at", "")),
+        )
+
+    async def list_recipients(self, package_id: uuid.UUID) -> list[RecipientResponse]:
+        """List a package's distribution recipients."""
+        package = await self.get_package(package_id)
+        return [self._recipient_to_response(r) for r in self._read_recipients(package)]
+
+    async def add_recipient(self, package_id: uuid.UUID, data: RecipientCreate) -> RecipientResponse:
+        """Add a subcontractor to a package's distribution list.
+
+        De-duplicates on a case-insensitive email match so the same firm is
+        not invited twice; returns the existing entry if already present.
+        """
+        package = await self.get_package(package_id)
+        recipients = self._read_recipients(package)
+        email_norm = data.email.strip().lower()
+        for r in recipients:
+            if str(r.get("email", "")).strip().lower() == email_norm:
+                return self._recipient_to_response(r)
+        entry = {
+            "id": str(uuid.uuid4()),
+            "company_name": data.company_name,
+            "email": data.email,
+            "subcontractor_id": data.subcontractor_id,
+            "status": "pending",
+            "sent_at": None,
+            "last_error": None,
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+        meta = dict(package.metadata_ or {})
+        meta["recipients"] = [*recipients, entry]
+        await self.repo.update_package_fields(package_id, metadata_=meta)
+        logger.info("Tender recipient added: package=%s company=%s", package_id, data.company_name)
+        return self._recipient_to_response(entry)
+
+    async def remove_recipient(self, package_id: uuid.UUID, recipient_id: str) -> None:
+        """Remove a recipient from a package's distribution list."""
+        package = await self.get_package(package_id)
+        recipients = self._read_recipients(package)
+        remaining = [r for r in recipients if str(r.get("id")) != str(recipient_id)]
+        if len(remaining) == len(recipients):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recipient not found")
+        meta = dict(package.metadata_ or {})
+        meta["recipients"] = remaining
+        await self.repo.update_package_fields(package_id, metadata_=meta)
+        logger.info("Tender recipient removed: package=%s recipient=%s", package_id, recipient_id)
+
+    async def distribute_package(
+        self,
+        package_id: uuid.UUID,
+        data: DistributeRequest,
+        *,
+        actor_id: str | None = None,
+    ) -> DistributeResponse:
+        """Email the tender package to its recipients and record send state.
+
+        Reuses the platform email sender (``app.core.email.get_email_service``).
+        Each recipient gets one ``EmailMessage`` so the per-recipient delivery
+        status stays independent; we stamp ``status``/``sent_at`` (or
+        ``last_error``) back onto the recipient entry in package metadata.
+
+        Graceful no-SMTP behaviour: ``EmailService.send`` never raises and, when
+        ``EMAIL_BACKEND`` is the default ``console`` (or ``smtp`` without a
+        configured ``SMTP_HOST``), it logs the message and returns ``ok=True``
+        via the console backend. The response reports the resolved ``backend``
+        and ``smtp_configured`` so the UI can tell the operator whether real
+        mail went out. A genuinely failed delivery (smtp configured but the
+        server refused) is recorded as ``failed`` without aborting the batch.
+
+        The package is moved to ``issued`` on the first successful send if it is
+        still a draft, mirroring the existing lifecycle (draft -> issued).
+        """
+        from app.config import get_settings
+        from app.core.email import EmailMessage, get_email_service
+
+        package = await self.get_package(package_id)
+        recipients = self._read_recipients(package)
+        if not recipients:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No recipients on the distribution list; add subcontractors before distributing",
+            )
+
+        requested = {str(rid) for rid in data.recipient_ids}
+
+        settings = get_settings()
+        smtp_configured = settings.email_backend == "smtp" and bool(settings.smtp_host)
+        service = get_email_service()
+        backend_name = service.backend_name
+
+        # Build a stable link back to this tender for the email CTA. Falls back
+        # to the resolved frontend URL (which itself falls back to the first
+        # CORS origin), so a dev install still produces a working-looking link.
+        base_url = (settings.resolved_frontend_url or "").rstrip("/")
+        action_url = f"{base_url}/tendering?package={package_id}" if base_url else ""
+
+        # Resolve a reporting currency / project name once (tenant-correct:
+        # the project was already verified as accessible by the router).
+        from app.modules.projects.repository import ProjectRepository
+
+        project = await ProjectRepository(self.session).get_by_id(package.project_id)
+        project_name = (getattr(project, "name", "") or "") if project is not None else ""
+
+        results: list[DistributeResultEntry] = []
+        sent_count = 0
+        failed_count = 0
+        skipped_count = 0
+        any_sent = False
+
+        # Work on a copy we can mutate, keyed by id, preserving order.
+        by_id = {str(r.get("id")): dict(r) for r in recipients}
+
+        for rid, r in by_id.items():
+            if requested and rid not in requested:
+                continue
+            if r.get("status") == "sent" and not data.resend:
+                skipped_count += 1
+                results.append(
+                    DistributeResultEntry(
+                        recipient_id=rid,
+                        company_name=str(r.get("company_name", "")),
+                        email=str(r.get("email", "")),
+                        status="skipped",
+                        detail="already sent (use resend to send again)",
+                    )
+                )
+                continue
+
+            to_email = str(r.get("email", "")).strip()
+            company = str(r.get("company_name", "")) or "Sir or Madam"
+            if not to_email:
+                failed_count += 1
+                r["status"] = "failed"
+                r["last_error"] = "missing email"
+                results.append(
+                    DistributeResultEntry(
+                        recipient_id=rid,
+                        company_name=company,
+                        email="",
+                        status="failed",
+                        detail="missing email",
+                    )
+                )
+                continue
+
+            subject = f"Invitation to tender: {package.name}"
+            html_body = self._build_distribution_html(
+                company_name=company,
+                package=package,
+                project_name=project_name,
+                action_url=action_url,
+                custom_message=data.message,
+            )
+
+            try:
+                result = await service.send(
+                    EmailMessage(
+                        to=to_email,
+                        subject=subject,
+                        html_body=html_body,
+                        tags=["tendering", "distribution", str(package_id)],
+                    ),
+                )
+                ok = bool(getattr(result, "ok", False))
+                reason = getattr(result, "reason", "") or ""
+            except Exception as exc:  # noqa: BLE001 - degrade, never crash distribution
+                ok = False
+                reason = f"send crashed: {type(exc).__name__}"
+                logger.warning("Tender distribution send crashed: package=%s to=%s", package_id, to_email)
+
+            now = datetime.now(UTC).isoformat()
+            if ok:
+                sent_count += 1
+                any_sent = True
+                r["status"] = "sent"
+                r["sent_at"] = now
+                r["last_error"] = None
+                results.append(
+                    DistributeResultEntry(
+                        recipient_id=rid,
+                        company_name=company,
+                        email=to_email,
+                        status="sent",
+                        detail=reason or "sent",
+                    )
+                )
+            else:
+                failed_count += 1
+                r["status"] = "failed"
+                r["last_error"] = reason
+                results.append(
+                    DistributeResultEntry(
+                        recipient_id=rid,
+                        company_name=company,
+                        email=to_email,
+                        status="failed",
+                        detail=reason or "delivery failed",
+                    )
+                )
+
+        # Persist the updated recipient states and a distribution audit stamp.
+        meta = dict(package.metadata_ or {})
+        meta["recipients"] = list(by_id.values())
+        meta["last_distributed_at"] = datetime.now(UTC).isoformat()
+        if actor_id:
+            meta["last_distributed_by"] = str(actor_id)
+
+        new_status = package.status
+        if any_sent and package.status == "draft":
+            new_status = "issued"
+            meta.setdefault("issued_at", datetime.now(UTC).isoformat())
+
+        if new_status != package.status:
+            await self.repo.update_package_fields(package_id, status=new_status, metadata_=meta)
+        else:
+            await self.repo.update_package_fields(package_id, metadata_=meta)
+
+        await _safe_publish(
+            "tendering.package.distributed",
+            {
+                "package_id": str(package_id),
+                "sent_count": sent_count,
+                "failed_count": failed_count,
+                "skipped_count": skipped_count,
+                "backend": backend_name,
+                "distributed_by": str(actor_id) if actor_id else None,
+            },
+            source_module="oe_tendering",
+        )
+
+        logger.info(
+            "Tender package distributed: package=%s sent=%s failed=%s skipped=%s backend=%s by=%s",
+            package_id,
+            sent_count,
+            failed_count,
+            skipped_count,
+            backend_name,
+            actor_id,
+        )
+
+        return DistributeResponse(
+            package_id=package_id,
+            package_name=package.name,
+            backend=backend_name,
+            smtp_configured=smtp_configured,
+            sent_count=sent_count,
+            failed_count=failed_count,
+            skipped_count=skipped_count,
+            results=results,
+        )
+
+    @staticmethod
+    def _build_distribution_html(
+        *,
+        company_name: str,
+        package: TenderPackage,
+        project_name: str,
+        action_url: str,
+        custom_message: str | None,
+    ) -> str:
+        """Render the invitation-to-tender email body via the shared shell."""
+        import html as _html
+
+        from app.core.email import wrap
+
+        deadline = package.deadline or ""
+        desc = package.description or ""
+        parts = [f"<p>Dear {_html.escape(company_name)},</p>"]
+        proj = f" for <strong>{_html.escape(project_name)}</strong>" if project_name else ""
+        parts.append(
+            f"<p>You are invited to submit a bid for the tender package "
+            f"<strong>{_html.escape(package.name)}</strong>{proj}.</p>"
+        )
+        if desc:
+            parts.append(
+                f"<blockquote style='border-left:3px solid #0071e3; padding-left:12px; "
+                f"margin:12px 0; color:#1d1d1f;'>{_html.escape(desc)}</blockquote>"
+            )
+        if deadline:
+            parts.append(f"<p><strong>Submission deadline:</strong> {_html.escape(deadline)}</p>")
+        if custom_message:
+            parts.append(
+                f"<blockquote style='border-left:3px solid #86868b; padding-left:12px; "
+                f"margin:12px 0; color:#444;'>{_html.escape(custom_message)}</blockquote>"
+            )
+        parts.append(
+            "<p style='font-size:13px; color:#6e6e73;'>Please review the package details and respond "
+            "with your offer before the deadline above.</p>"
+        )
+        body = "".join(parts)
+        if action_url:
+            return wrap("Invitation to Tender", body, action_url, "View tender package")
+        return wrap("Invitation to Tender", body)
+
+    # ── Decision documents (award / rejection PDFs) ─────────────────────────
+
+    async def build_award_letter_pdf(self, package_id: uuid.UUID, bid_id: uuid.UUID) -> tuple[bytes, str]:
+        """Generate a PDF letter of award for a winning bid.
+
+        Returns ``(pdf_bytes, filename)``. Tenant scoping is enforced at the
+        router (project access on the package) plus the bid-belongs-to-package
+        check here. The winning bid is normally the package's recorded
+        ``awarded_bid_id`` and/or a bid in ``accepted`` status, but we render
+        for any bid the caller selects so an award letter can be produced for
+        the recommended winner before the formal award is applied.
+        """
+        from app.modules.tendering.pdf_documents import generate_award_letter_pdf
+
+        package = await self.get_package(package_id)
+        bid = await self.get_bid(bid_id)
+        if bid.package_id != package_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Bid does not belong to this package",
+            )
+
+        project_name, _currency = await self._project_name_and_currency(package)
+        meta = package.metadata_ or {}
+        pdf = generate_award_letter_pdf(
+            package_name=package.name,
+            package_ref=str(package_id)[:8],
+            project_name=project_name,
+            company_name=bid.company_name,
+            contact_email=bid.contact_email or "",
+            awarded_amount=bid.total_amount or "0",
+            currency=bid.currency or "",
+            awarded_at=meta.get("awarded_at"),
+            awarded_by_name=meta.get("awarded_by_name"),
+            notes=bid.notes or None,
+        )
+        filename = f"award_letter_{self._slug(package.name)}_{self._slug(bid.company_name)}.pdf"
+        return pdf, filename
+
+    async def build_rejection_letter_pdf(self, package_id: uuid.UUID, bid_id: uuid.UUID) -> tuple[bytes, str]:
+        """Generate a PDF rejection notice for an unsuccessful bid.
+
+        Returns ``(pdf_bytes, filename)``. Where the package has a recorded
+        winner, the awarded sum is included for transparency (same currency
+        only - never blend currencies).
+        """
+        from app.modules.tendering.pdf_documents import generate_rejection_letter_pdf
+
+        package = await self.get_package(package_id)
+        bid = await self.get_bid(bid_id)
+        if bid.package_id != package_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Bid does not belong to this package",
+            )
+
+        project_name, _currency = await self._project_name_and_currency(package)
+        meta = package.metadata_ or {}
+
+        # Awarded sum for transparency - only when we can resolve the winning
+        # bid and it shares the rejected bid's currency (no cross-currency mix).
+        winning_amount: str | None = None
+        awarded_bid_id = meta.get("awarded_bid_id")
+        if awarded_bid_id:
+            try:
+                winner = await self.repo.get_bid_by_id(uuid.UUID(str(awarded_bid_id)))
+            except (ValueError, AttributeError):
+                winner = None
+            if (
+                winner is not None
+                and winner.package_id == package_id
+                and (winner.currency or "").strip().upper() == (bid.currency or "").strip().upper()
+            ):
+                winning_amount = winner.total_amount or None
+
+        pdf = generate_rejection_letter_pdf(
+            package_name=package.name,
+            package_ref=str(package_id)[:8],
+            project_name=project_name,
+            company_name=bid.company_name,
+            contact_email=bid.contact_email or "",
+            bid_amount=bid.total_amount or None,
+            currency=bid.currency or "",
+            winning_amount=winning_amount,
+            rejected_at=meta.get("awarded_at"),
+            signed_by_name=meta.get("awarded_by_name"),
+            reason=(bid.notes or None),
+        )
+        filename = f"rejection_notice_{self._slug(package.name)}_{self._slug(bid.company_name)}.pdf"
+        return pdf, filename
+
+    async def _project_name_and_currency(self, package: TenderPackage) -> tuple[str, str]:
+        """Resolve (project_name, project_currency) for a package's project."""
+        from app.modules.projects.repository import ProjectRepository
+
+        project = await ProjectRepository(self.session).get_by_id(package.project_id)
+        if project is None:
+            return "", ""
+        name = getattr(project, "name", "") or ""
+        currency = (getattr(project, "currency", "") or "").strip().upper()
+        return name, currency
+
+    @staticmethod
+    def _slug(value: str) -> str:
+        """Filesystem-safe slug for a download filename."""
+        safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in (value or "").strip())
+        return (safe or "tender")[:40]
 
     # ── Addenda (mid-tender clarifications) ────────────────────────────────
     # Addenda live in the package ``metadata_`` JSON store under ``addenda``

@@ -31,7 +31,7 @@ import {
   ListChecks,
   MinusCircle,
 } from 'lucide-react';
-import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, RecoveryCard, SkeletonTable, IntroRichText } from '@/shared/ui';
+import { Button, Card, Badge, EmptyState, Breadcrumb, ConfirmDialog, RecoveryCard, SkeletonTable, IntroRichText, ModuleGuideButton } from '@/shared/ui';
 import { RequiresProject } from '@/shared/auth/RequiresProject';
 import { PageHeader } from '@/shared/ui/PageHeader';
 import { SectionIntro } from '@/features/validation';
@@ -56,6 +56,7 @@ import {
   type UpdateInspectionPayload,
   type ChecklistEntryPayload,
 } from './api';
+import { inspectionsGuide } from './inspectionsGuide';
 
 /* -- Constants ------------------------------------------------------------- */
 
@@ -1406,6 +1407,7 @@ export function InspectionsPage() {
         })}
         actions={
           <>
+            <ModuleGuideButton content={inspectionsGuide} />
             <Button
               variant="secondary"
               size="sm"

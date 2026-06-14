@@ -151,7 +151,10 @@ export function groupSubtotals(measurements: Measurement[]): GroupSubtotal[] {
     entry.count += 1;
     if (!ANNOTATION_TYPES.has(m.type)) {
       const unit = m.unit || '';
-      entry.totals[unit] = (entry.totals[unit] ?? 0) + m.value;
+      // Opening deductions subtract from the group's net area (gross -
+      // openings); they are stored as a positive gross area. Area-only.
+      const signed = m.isDeduction ? -m.value : m.value;
+      entry.totals[unit] = (entry.totals[unit] ?? 0) + signed;
     }
   }
   return Array.from(byGroup.values()).sort((a, b) =>
@@ -172,7 +175,9 @@ export function typeGrandTotals(measurements: Measurement[]): TypeGrandTotal[] {
       entry = { type: m.type, unit: m.unit || '', total: 0, count: 0 };
       byType.set(m.type, entry);
     }
-    entry.total += m.value;
+    // Opening deductions subtract from the area grand total (net = gross -
+    // openings). Stored positive; only area carries the flag.
+    entry.total += m.isDeduction ? -m.value : m.value;
     entry.count += 1;
     // Prefer a non-empty unit string if we have one.
     if (!entry.unit && m.unit) entry.unit = m.unit;
@@ -202,13 +207,22 @@ export function ledgerToCsv(measurements: Measurement[]): string {
 
   for (const [group, groupRows] of byGroup.entries()) {
     for (const { ordinal, measurement } of groupRows) {
+      // A deduction (opening / void) prints as a NEGATIVE value so the CSV
+      // reconciles with the net subtotal below (gross - openings) and the
+      // type column flags it.
+      const signedValue = measurement.isDeduction
+        ? -measurement.value
+        : measurement.value;
+      const typeLabel = measurement.isDeduction
+        ? `${measurement.type} (deduction)`
+        : measurement.type;
       rows.push(
         [
           String(ordinal),
-          escapeCsv(measurement.type),
+          escapeCsv(typeLabel),
           escapeCsv(measurement.annotation || ''),
           escapeCsv(group),
-          formatNumber(measurement.value),
+          formatNumber(signedValue),
           escapeCsv(measurement.unit || ''),
           String(measurement.page),
         ].join(','),
