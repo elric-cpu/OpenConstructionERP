@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -21,6 +21,7 @@ import { useToastStore } from '@/stores/useToastStore';
 import { apiGet, apiPost, ApiError } from '@/shared/lib/api';
 import { getIntlLocale } from '@/shared/lib/formatters';
 import { projectsApi, type Project } from '@/features/projects/api';
+import { useActiveProjectId } from '@/shared/hooks/useActiveProjectId';
 import type { BOQ } from './api';
 
 /* ── Types ──────────────────────────────────────────────────────────── */
@@ -224,8 +225,16 @@ export function TemplatesPage() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [area, setArea] = useState(1000);
-  const [projectId, setProjectId] = useState<string>('');
+  const activeProjectId = useActiveProjectId();
+  const [projectId, setProjectId] = useState<string>(activeProjectId);
   const [boqName, setBoqName] = useState('');
+
+  // Follow the global project switcher so this page reacts to a project change
+  // like the rest of the app, not just at mount.
+  useEffect(() => {
+    if (activeProjectId && activeProjectId !== projectId) setProjectId(activeProjectId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProjectId]);
 
   /* ── Fetch templates from API (fall back to local data) ──────────── */
 

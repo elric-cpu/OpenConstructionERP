@@ -2619,7 +2619,25 @@ def create_app() -> FastAPI:
         if _fast_startup:
             logger.info("Vector DB init + embedding warm-up skipped (OE_TEST_FAST_STARTUP)")
         else:
-            _init_vector_db()
+            # Run vector-DB init off the critical boot path. It opens every
+            # collection (LanceDB count_rows per table, or a Qdrant round-trip),
+            # which delayed the server reporting ready on a fresh install.
+            # Nothing downstream awaits its result, and it is non-fatal, so
+            # detach it the same way as the embedder prime below.
+            async def _init_vector_db_background() -> None:
+                import asyncio as _asyncio_vdb
+
+                try:
+                    await _asyncio_vdb.to_thread(_init_vector_db)
+                except Exception:  # noqa: BLE001 - never fatal for startup
+                    logger.debug("Vector DB background init skipped", exc_info=True)
+
+            try:
+                import asyncio as _asyncio_vdb_sched
+
+                _asyncio_vdb_sched.create_task(_init_vector_db_background())
+            except Exception:
+                logger.debug("Could not schedule vector DB init", exc_info=True)
 
             # Pre-warm the embedder + boot the inference process pool. Both
             # are env-var-gated so dev startup stays fast unless the
