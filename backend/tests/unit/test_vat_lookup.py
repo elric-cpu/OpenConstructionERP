@@ -134,6 +134,25 @@ class TestGetVatRateRussia:
         assert get_vat_rate("RU", "zero") == Decimal("0.00")
 
 
+class TestGetVatRateSouthAfrica:
+    """South Africa VAT - SARS, VAT Act 89 of 1991. ZA (South Africa) is
+    distinct from SA (Saudi Arabia), which also stands at 15 percent."""
+
+    def test_za_standard(self) -> None:
+        assert get_vat_rate("ZA", "standard") == Decimal("0.15")
+
+    def test_za_zero(self) -> None:
+        assert get_vat_rate("ZA", "zero") == Decimal("0.00")
+
+    def test_za_default_kind_is_standard(self) -> None:
+        assert get_vat_rate("ZA") == Decimal("0.15")
+
+    def test_za_reduced_raises(self) -> None:
+        # South Africa has no reduced tier.
+        with pytest.raises(VATNotApplicable):
+            get_vat_rate("ZA", "reduced")
+
+
 class TestGetVatRateNotApplicable:
     """Countries with no federal VAT or not covered."""
 

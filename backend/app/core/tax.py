@@ -52,6 +52,9 @@ Sources (cited in commit message, summarised here for reference):
   (SUNAT Peru 2026)
 - RU: НК РФ ст. 164 - standard 20 %, reduced 10 %, zero 0 %
   (FNS Russia 2026)
+- ZA: Value-Added Tax Act 89 of 1991 - standard 15 %, zero-rated 0 %
+  (SARS South Africa; standard rate raised from 14 % to 15 % on 1 Apr 2018.
+  Note: ISO code ZA is South Africa, distinct from SA = Saudi Arabia above.)
 - US: No federal VAT; state/local sales tax varies by jurisdiction.
   (IRS; Tax Foundation State Sales Tax Rates 2026)
 """
@@ -125,6 +128,10 @@ _RAW: dict[str, dict[str, str]] = {
     # not equivalent to a simple VAT rate - raises VATNotApplicable
     # ── Russia / CIS ──────────────────────────────────────────────────────
     "RU": {"standard": "0.20", "reduced": "0.10", "zero": "0.00"},
+    # ── Africa ────────────────────────────────────────────────────────────
+    # ZA = South Africa (VAT Act 89 of 1991, SARS). Standard 15 % since
+    # 1 Apr 2018. No reduced tier; basic foodstuffs and exports are zero-rated.
+    "ZA": {"standard": "0.15", "zero": "0.00"},
     # ── US - no federal VAT ──────────────────────────────────────────────
     # US deliberately absent; get_vat_rate('US', ...) → VATNotApplicable
 }

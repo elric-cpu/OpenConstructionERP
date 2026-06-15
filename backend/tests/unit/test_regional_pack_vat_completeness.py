@@ -24,6 +24,7 @@ from app.modules.india_pack.config import PACK_CONFIG as IN_CFG
 from app.modules.latam_pack.config import PACK_CONFIG as LATAM_CFG
 from app.modules.middle_east_pack.config import PACK_CONFIG as ME_CFG
 from app.modules.russia_pack.config import PACK_CONFIG as RU_CFG
+from app.modules.sa_pack.config import PACK_CONFIG as SA_CFG
 from app.modules.uk_pack.config import PACK_CONFIG as UK_CFG
 from app.modules.us_pack.config import PACK_CONFIG as US_CFG
 
@@ -38,6 +39,7 @@ _PACKS: list[tuple[str, dict[str, Any]]] = [
     ("IN", IN_CFG),
     ("LATAM", LATAM_CFG),
     ("RU", RU_CFG),
+    ("ZA_PACK", SA_CFG),
 ]
 
 # Expected countries per pack — used to check coverage is not accidentally
@@ -51,6 +53,7 @@ _EXPECTED_COUNTRIES: dict[str, set[str]] = {
     "IN": {"IN"},
     "LATAM": {"MX", "AR", "CL", "CO", "PE"},
     "RU": {"RU"},
+    "ZA_PACK": {"ZA"},
 }
 
 # Packs where vat_rates is intentionally empty (no federal VAT)
@@ -180,3 +183,18 @@ class TestUKRateValues:
 
     def test_gb_zero_is_0pct(self) -> None:
         assert UK_CFG["vat_rates"]["GB"]["zero"] == Decimal("0.00")
+
+
+class TestSouthAfricaRateValues:
+    """South Africa VAT - SARS, VAT Act 89 of 1991. ZA is South Africa,
+    distinct from the SA = Saudi Arabia country code in the Middle East pack."""
+
+    def test_za_standard_is_15pct(self) -> None:
+        assert SA_CFG["vat_rates"]["ZA"]["standard"] == Decimal("0.15")
+
+    def test_za_zero_is_0pct(self) -> None:
+        assert SA_CFG["vat_rates"]["ZA"]["zero"] == Decimal("0.00")
+
+    def test_za_has_no_reduced_tier(self) -> None:
+        # South Africa has standard and zero-rated only, no reduced tier.
+        assert "reduced" not in SA_CFG["vat_rates"]["ZA"]

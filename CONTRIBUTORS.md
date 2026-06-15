@@ -72,6 +72,11 @@ implementation is our own.
   `POSTGRES_PASSWORD` and `JWT_SECRET` interpolations in the quickstart Docker Compose file
   needed quoting so the YAML parses before the fail-fast checks run
   ([#227](https://github.com/datadrivenconstruction/OpenConstructionERP/pull/227)).
+- **Aidan Koetaan** ([@aidankoetaan-tech](https://github.com/aidankoetaan-tech),
+  akoetaan@cut.ac.za): proposed a South Africa construction pack and shared a reference
+  implementation covering SANS 1200 and ASAQS measurement, CIDB contractor grading, the
+  PPPFA 80/20 and 90/10 procurement scoring, infrastructure delivery gates and ZAR VAT. The
+  shipped South Africa pack is our own implementation, written from the public standards.
 - **expalex1507** ([@expalex1507](https://github.com/expalex1507)): reported that the Docker
   quickstart failed across the Dockerfile, pyproject, the first migration and some missing
   dependencies ([#26](https://github.com/datadrivenconstruction/OpenConstructionERP/issues/26)).
