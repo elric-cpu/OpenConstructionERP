@@ -5,6 +5,18 @@ All notable changes to OpenConstructionERP are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.3.1] - 2026-06-15
+
+### Changed
+
+- The seeded sample projects are now clearly labelled as samples and easy to remove, so a fresh install can be taken to an empty workspace from the projects list or from settings. A new project also takes its currency from your regional preference instead of being left blank. The new and reworded text is translated across all 26 other languages.
+
+### Fixed
+
+- The AI estimate builder, the match-to-cost wizard and the assembly template apply dialog now follow the project chosen in the top bar, so switching project updates them like the rest of the app.
+- Regional cost-database downloads now show a clear message when the data host cannot be reached and offer a retry, and the setup wizard reports when the rates loaded but the resource breakdown did not.
+- Several register lists, including submittals, transmittals, meetings, correspondence, risk and safety, load more rows so their headline counts and search cover the full set rather than the first page.
+
 ## [8.3.0] - 2026-06-15
 
 ### Added
