@@ -367,7 +367,7 @@ function QualityDashboardSummary({
   const { data: inspections } = useQuery({
     queryKey: ['inspections-summary', projectId],
     queryFn: () =>
-      apiGet<{ status: string }[]>(`/v1/inspections/?project_id=${projectId}`),
+      apiGet<{ status: string }[]>(`/v1/inspections/?project_id=${projectId}&limit=100`),
     select: (d): { status: string }[] => normalizeListResponse(d),
     enabled: !!projectId,
   });
@@ -375,7 +375,7 @@ function QualityDashboardSummary({
   const { data: ncrs } = useQuery({
     queryKey: ['ncrs-summary', projectId],
     queryFn: () =>
-      apiGet<{ status: string }[]>(`/v1/ncr/?project_id=${projectId}`),
+      apiGet<{ status: string }[]>(`/v1/ncr/?project_id=${projectId}&limit=100`),
     select: (d): { status: string }[] => normalizeListResponse(d),
     enabled: !!projectId,
   });

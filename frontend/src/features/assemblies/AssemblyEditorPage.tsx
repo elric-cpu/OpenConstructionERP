@@ -29,6 +29,7 @@ import { useConfirm } from '@/shared/hooks/useConfirm';
 import { apiGet, triggerDownload } from '@/shared/lib/api';
 import { getIntlLocale } from '@/shared/lib/formatters';
 import { useToastStore } from '@/stores/useToastStore';
+import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import {
   assembliesApi,
   type AssemblyComponent,
@@ -1381,7 +1382,10 @@ function ApplyToBOQModal({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const addToast = useToastStore((s) => s.addToast);
-  const [projectId, setProjectId] = useState('');
+  const activeProjectId = useProjectContextStore((s) => s.activeProjectId);
+  // Seed from the global project switcher so the modal opens on the project
+  // the user is actually looking at, not an empty selector.
+  const [projectId, setProjectId] = useState(activeProjectId ?? '');
   const [boqId, setBoqId] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [region, setRegion] = useState('');

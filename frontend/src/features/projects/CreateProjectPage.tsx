@@ -14,6 +14,7 @@ import { Button, Input, InfoHint } from '@/shared/ui';
 import { useToastStore } from '@/stores/useToastStore';
 import { useProjectContextStore } from '@/stores/useProjectContextStore';
 import { useWidgetSettingsStore } from '@/stores/useWidgetSettingsStore';
+import { usePreferencesStore } from '@/stores/usePreferencesStore';
 import { AddressAutocomplete } from '@/features/geo-hub/AddressAutocomplete';
 import type { AddressAutocompleteSelection } from '@/features/geo-hub/AddressAutocomplete';
 import {
@@ -308,6 +309,31 @@ const INITIAL_AXES: PresetAxes =
 
 const STEP_COUNT = 5;
 
+// Set of currency codes the picker actually offers (the "__custom__"
+// sentinel is excluded). Used to decide whether a saved preference can
+// be pre-selected in the dropdown as a real option.
+const CURRENCY_CODES = new Set(
+  CURRENCY_GROUPS.flatMap((g) => g.options.map((o) => o.value)).filter(
+    (v) => v !== '__custom__',
+  ),
+);
+
+/**
+ * Resolve the currency to pre-select for a brand-new project. We seed it
+ * from the user's saved Regional preference so a new project is created
+ * with a real currency instead of a blank one (a blank project currency
+ * is what made every total fall back to EUR for non-euro users). The
+ * value must be a valid ISO-4217 code that the picker offers, otherwise
+ * we return '' and the user picks one explicitly. Edit mode never calls
+ * this - it prefills from the existing project, so already-set
+ * currencies are untouched.
+ */
+function preferredNewProjectCurrency(pref: string | undefined): string {
+  const code = (pref ?? '').trim().toUpperCase();
+  if (/^[A-Z]{3}$/.test(code) && CURRENCY_CODES.has(code)) return code;
+  return '';
+}
+
 // Create flow the user picked on the intro screen. 'choose' = the
 // landing screen that offers the two paths; 'wizard' = the 5-step
 // guided setup; 'classic' = the old single-window form (essentials
@@ -341,6 +367,13 @@ export function CreateProjectModal({
   const { track } = useTelemetry();
   const isEdit = !!editProjectId;
 
+  // User's saved Regional currency preference, normalised to a code the
+  // picker offers (or '' if not usable). New projects are seeded with
+  // this so they are created with a real currency rather than a blank
+  // one that renders as EUR everywhere.
+  const prefCurrency = usePreferencesStore((s) => s.currency);
+  const defaultCurrency = preferredNewProjectCurrency(prefCurrency);
+
   // Which create flow we're in. Always starts on the chooser so the
   // user is offered the wizard vs. the old single-window form.
   const [mode, setMode] = useState<CreateMode>('choose');
@@ -359,14 +392,14 @@ export function CreateProjectModal({
   // when the confirm opens so Enter never lands on "Discard".
   const keepEditingRef = useRef<HTMLButtonElement>(null);
 
-  const [form, setForm] = useState<CreateProjectData>({
+  const [form, setForm] = useState<CreateProjectData>(() => ({
     name: '',
     description: '',
     region: '',
     classification_standard: '',
-    currency: '',
+    currency: defaultCurrency,
     locale: 'en',
-  });
+  }));
 
   const [customRegion, setCustomRegion] = useState('');
   const [customStandard, setCustomStandard] = useState('');
@@ -459,7 +492,7 @@ export function CreateProjectModal({
       setStep(1);
       setMaxStep(1);
       setConfirmingClose(false);
-      setForm({ name: '', description: '', region: '', classification_standard: '', currency: '', locale: 'en' });
+      setForm({ name: '', description: '', region: '', classification_standard: '', currency: defaultCurrency, locale: 'en' });
       setCustomRegion('');
       setCustomStandard('');
       setCustomCurrency('');
@@ -489,7 +522,7 @@ export function CreateProjectModal({
       // `setup_rerun` from the prefill effect instead.
       if (!isEdit) track('wizard_started', { mode: 'create' });
     }
-  }, [open, isEdit, track]);
+  }, [open, isEdit, track, defaultCurrency]);
 
   const { data: existingProjects = [] } = useQuery<Project[]>({
     queryKey: ['projects'],
@@ -1306,6 +1339,22 @@ export function CreateProjectModal({
                         maxLength={10}
                       />
                     )}
+                    {effectiveCurrency
+                      ? (
+                        <p className="mt-1 text-[11px] text-content-tertiary">
+                          {t('projects.currency_drives_totals', {
+                            defaultValue: 'All amounts in this project use {{currency}}. You can change it here or later in Project Settings.',
+                            currency: effectiveCurrency,
+                          })}
+                        </p>
+                      )
+                      : (
+                        <p className="mt-1 text-[11px] text-content-tertiary">
+                          {t('projects.currency_pick_hint', {
+                            defaultValue: 'Pick the currency for this project. Left blank, amounts have no currency until you set one.',
+                          })}
+                        </p>
+                      )}
                   </div>
                   <SelectField
                     label={t('projects.language', { defaultValue: 'Language' })}
@@ -1683,6 +1732,14 @@ export function CreateProjectModal({
                       emptyHint={t('project_wizard.custom_currency_required', { defaultValue: 'Type the ISO currency code to continue.' })}
                       maxLength={10}
                     />
+                  )}
+                  {effectiveCurrency && (
+                    <p className="mt-1 text-[11px] text-content-tertiary">
+                      {t('projects.currency_drives_totals', {
+                        defaultValue: 'All amounts in this project use {{currency}}. You can change it here or later in Project Settings.',
+                        currency: effectiveCurrency,
+                      })}
+                    </p>
                   )}
                 </div>
                 <SelectField

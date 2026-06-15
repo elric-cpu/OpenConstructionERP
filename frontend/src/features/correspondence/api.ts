@@ -113,6 +113,10 @@ export async function fetchCorrespondence(
   if (filters?.project_id) params.set('project_id', filters.project_id);
   if (filters?.direction) params.set('direction', filters.direction);
   if (filters?.type) params.set('type', filters.type);
+  // Raise from the server default cap (50) to its accepted ceiling (le=100) so
+  // the list and client-side search cover up to 100 records instead of
+  // silently dropping older rows.
+  params.set('limit', '100');
   const qs = params.toString();
   const rows = await apiGet<CorrespondenceWire[]>(
     `/v1/correspondence/${qs ? `?${qs}` : ''}`,

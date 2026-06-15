@@ -558,12 +558,32 @@ function CWICRDatabaseGrid(_props: { onLoadDatabase: (file: File) => void }) {
           apiPost('/v1/costs/vector/index/').catch(() => {});
           return;
         }
-        const detail =
-          err instanceof Error ? err.message : 'Failed to load database';
+        // The regional data is downloaded from GitHub on first load, which is
+        // the usual culprit when this fails - the host is unreachable on some
+        // corporate or regional networks. Prefer the backend's own detail
+        // (it already names the source URL), and fall back to an actionable
+        // reachability hint so the user is not left guessing. Always offer a
+        // one-click Retry that re-runs the same load for this region.
+        const backendDetail = err instanceof Error ? err.message : '';
+        const message =
+          backendDetail ||
+          t('costs.load_failed_unreachable', {
+            defaultValue:
+              'Could not reach the data host to download this region. This is often a blocked network or a GitHub connection issue. Check your connection and that github.com is reachable, then try again.',
+          });
         addToast({
           type: 'error',
-          title: `Failed to load ${db.name}`,
-          message: detail,
+          title: t('costs.load_failed_title', {
+            defaultValue: 'Could not load {{name}}',
+            name: db.name,
+          }),
+          message,
+          action: {
+            label: t('costs.load_failed_retry', { defaultValue: 'Retry' }),
+            onClick: () => {
+              void handleLoad(db);
+            },
+          },
         });
       } finally {
         if (mountedRef.current) setLoading(null);

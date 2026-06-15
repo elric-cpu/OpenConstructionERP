@@ -469,10 +469,12 @@ export function DatabaseSetupPage() {
         // time to follow the "View →" links surfaced on the card.
         const lines = [
           `${(totalItems || imported).toLocaleString()} ${t('setup.cost_items', { defaultValue: 'cost items' })}`,
-          catalogData
-            ? `${catalogImported.toLocaleString()} ${t('setup.catalog_resources', { defaultValue: 'catalog resources' })}`
-            : t('setup.catalog_unavailable', { defaultValue: 'catalogue not available for this region' }),
         ];
+        if (catalogData) {
+          lines.push(
+            `${catalogImported.toLocaleString()} ${t('setup.catalog_resources', { defaultValue: 'catalog resources' })}`,
+          );
+        }
         addToast(
           {
             type: status === 'already_loaded' ? 'info' : 'success',
@@ -483,6 +485,34 @@ export function DatabaseSetupPage() {
           },
           { duration: 8000 },
         );
+
+        // Partial success: the rates (load-cwicr) landed but the parallel
+        // resource catalogue (catalog/import) returned nothing - usually the
+        // GitHub source for that region was unreachable. Do NOT let the plain
+        // success above mislead the user into thinking everything arrived.
+        // Surface a separate, non-blocking notice with a one-click retry that
+        // re-runs the whole region load (rates re-detect as already loaded).
+        if (!catalogData) {
+          addToast(
+            {
+              type: 'warning',
+              title: t('setup.catalog_partial_title', {
+                defaultValue: 'Rates loaded, resources unavailable',
+              }),
+              message: t('setup.catalog_partial_message', {
+                defaultValue:
+                  'Rates loaded. The resource breakdown is unavailable for this region right now, often a blocked network or GitHub connection issue. Rates work without it, you can retry to fetch resources.',
+              }),
+              action: {
+                label: t('setup.load_failed_retry', { defaultValue: 'Retry' }),
+                onClick: () => {
+                  void handleLoadRegion(db);
+                },
+              },
+            },
+            { duration: 10000 },
+          );
+        }
 
         // Trigger vector indexing in background
         apiPost('/v1/costs/vector/index/').catch(() => {
@@ -497,11 +527,30 @@ export function DatabaseSetupPage() {
         queryClient.invalidateQueries({ queryKey: ['catalog'] });
       } catch (err: unknown) {
         setDbStatuses((prev) => ({ ...prev, [db.id]: 'failed' }));
-        const detail = err instanceof Error ? err.message : 'Failed to load database';
+        // First load downloads the regional data from GitHub, which is the
+        // usual point of failure on networks where that host is blocked.
+        // Prefer the backend detail (it names the source URL) and fall back
+        // to an actionable reachability hint, plus a one-click retry.
+        const backendDetail = err instanceof Error ? err.message : '';
+        const message =
+          backendDetail ||
+          t('setup.load_failed_unreachable', {
+            defaultValue:
+              'Could not reach the data host to download this region. This is often a blocked network or a GitHub connection issue. Check your connection and that github.com is reachable, then try again.',
+          });
         addToast({
           type: 'error',
-          title: `${t('setup.load_failed', { defaultValue: 'Failed to load' })} ${db.name}`,
-          message: detail,
+          title: t('setup.load_failed_title', {
+            defaultValue: 'Could not load {{name}}',
+            name: db.name,
+          }),
+          message,
+          action: {
+            label: t('setup.load_failed_retry', { defaultValue: 'Retry' }),
+            onClick: () => {
+              void handleLoadRegion(db);
+            },
+          },
         });
       } finally {
         setSingleLoading(false);

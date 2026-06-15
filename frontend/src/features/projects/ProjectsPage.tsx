@@ -122,9 +122,9 @@ export function ProjectsPage() {
       queryClient.invalidateQueries({ queryKey: ['projects-switcher'] });
       addToast({
         type: 'success',
-        title: t('settings.demo_data_removed_title', { defaultValue: 'Demo data removed' }),
+        title: t('settings.demo_data_removed_title', { defaultValue: 'Sample data removed' }),
         message: t('settings.demo_data_removed_message', {
-          defaultValue: '{{count}} demo projects were deleted. They will not be recreated on restart.',
+          defaultValue: '{{count}} sample projects were deleted. They will not be recreated on restart.',
           count: data.deleted,
         }),
       });
@@ -133,7 +133,7 @@ export function ProjectsPage() {
       setShowPurgeDemo(false);
       addToast({
         type: 'error',
-        title: t('settings.demo_data_remove_failed', { defaultValue: 'Could not remove demo data' }),
+        title: t('settings.demo_data_remove_failed', { defaultValue: 'Could not remove sample data' }),
         message: error.message,
       });
     },
@@ -500,7 +500,7 @@ export function ProjectsPage() {
           <p className="text-sm text-content-secondary min-w-0">
             {t('projects.demo_banner', {
               defaultValue:
-                '{{count}} of these projects are seeded demo data so you can explore the platform with realistic content. Your own projects are never affected by removing them.',
+                '{{count}} of these are sample projects, included so you can explore the platform with realistic content. Want to start with an empty workspace? Remove them here. Your own projects are never affected.',
               count: demoCount,
             })}
           </p>
@@ -510,19 +510,19 @@ export function ProjectsPage() {
             onClick={() => setShowPurgeDemo(true)}
             data-testid="projects-remove-demo"
           >
-            {t('settings.remove_demo_action', { defaultValue: 'Remove demo data' })}
+            {t('settings.remove_demo_action', { defaultValue: 'Remove sample data' })}
           </Button>
         </div>
       )}
       <ConfirmDialog
         open={showPurgeDemo}
         loading={purgeDemoMutation.isPending}
-        title={t('settings.remove_demo_confirm_title', { defaultValue: 'Remove demo data?' })}
+        title={t('settings.remove_demo_confirm_title', { defaultValue: 'Remove sample data?' })}
         message={t('settings.remove_demo_confirm_message', {
           defaultValue:
-            'All seeded demo projects and their data will be permanently deleted, including archived ones. This cannot be undone.',
+            'All sample projects and their data will be permanently deleted, including archived ones. This cannot be undone.',
         })}
-        confirmLabel={t('settings.remove_demo_action', { defaultValue: 'Remove demo data' })}
+        confirmLabel={t('settings.remove_demo_action', { defaultValue: 'Remove sample data' })}
         onCancel={() => { if (!purgeDemoMutation.isPending) setShowPurgeDemo(false); }}
         onConfirm={() => purgeDemoMutation.mutate()}
       />

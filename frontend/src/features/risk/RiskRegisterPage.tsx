@@ -575,7 +575,7 @@ export function RiskRegisterPage() {
   const projectId = activeProjectId || projects[0]?.id || '';
   const project = useMemo(() => projects.find((p) => p.id === projectId), [projects, projectId]);
 
-  const { data: risks = [], isLoading, isError, error, refetch } = useQuery({ queryKey: ['risks', projectId], queryFn: () => apiGet<RiskItem[]>(`/v1/risk/?project_id=${projectId}`), select: (d): RiskItem[] => normalizeListResponse(d), enabled: !!projectId });
+  const { data: risks = [], isLoading, isError, error, refetch } = useQuery({ queryKey: ['risks', projectId], queryFn: () => apiGet<RiskItem[]>(`/v1/risk/?project_id=${projectId}&limit=100`), select: (d): RiskItem[] => normalizeListResponse(d), enabled: !!projectId });
   const { data: summary } = useQuery({ queryKey: ['risk-summary', projectId], queryFn: () => apiGet<RiskSummary>(`/v1/risk/summary/?project_id=${projectId}`), enabled: !!projectId });
   const { data: matrixData } = useQuery({ queryKey: ['risk-matrix', projectId], queryFn: () => apiGet<{ cells: MatrixCell[] }>(`/v1/risk/matrix/?project_id=${projectId}`), enabled: !!projectId });
 

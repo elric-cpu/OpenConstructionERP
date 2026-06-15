@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { FileText, ExternalLink, Download, Loader2 } from 'lucide-react';
 import { Badge, EmptyState, SkeletonTable } from '@/shared/ui';
 import { DateDisplay } from '@/shared/ui/DateDisplay';
+import { useActiveProjectId } from '@/shared/hooks/useActiveProjectId';
 import { projectsApi } from '@/features/projects/api';
 import { API_BASE, getAuthToken } from '@/shared/lib/api';
 import { useToastStore } from '@/stores/useToastStore';
@@ -23,7 +24,14 @@ const inputCls =
  */
 export function ProgressReportsTab() {
   const { t } = useTranslation();
-  const [projectId, setProjectId] = useState<string>('');
+  // Seed from the global project switcher and stay in sync with it, so the
+  // tab reacts to the top-bar picker instead of opening on an empty selector.
+  const activeProjectId = useActiveProjectId();
+  const [projectId, setProjectId] = useState<string>(activeProjectId);
+
+  useEffect(() => {
+    if (activeProjectId) setProjectId(activeProjectId);
+  }, [activeProjectId]);
 
   const projectsQ = useQuery({
     queryKey: ['portal-progress', 'projects'],

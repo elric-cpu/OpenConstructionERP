@@ -1140,9 +1140,9 @@ export function SettingsPage() {
       queryClient.invalidateQueries({ queryKey: ['project'] });
       addToast({
         type: 'success',
-        title: t('settings.demo_data_removed_title', { defaultValue: 'Demo data removed' }),
+        title: t('settings.demo_data_removed_title', { defaultValue: 'Sample data removed' }),
         message: t('settings.demo_data_removed_message', {
-          defaultValue: '{{count}} demo projects were deleted. They will not be recreated on restart.',
+          defaultValue: '{{count}} sample projects were deleted. They will not be recreated on restart.',
           count: data.deleted,
         }),
       });
@@ -1151,7 +1151,7 @@ export function SettingsPage() {
       setShowPurgeDemo(false);
       addToast({
         type: 'error',
-        title: t('settings.demo_data_remove_failed', { defaultValue: 'Could not remove demo data' }),
+        title: t('settings.demo_data_remove_failed', { defaultValue: 'Could not remove sample data' }),
         message: error.message,
       });
     },
@@ -1565,12 +1565,12 @@ export function SettingsPage() {
                     <div className="mt-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-lg border border-semantic-error/20 bg-surface-elevated px-4 py-3">
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-content-primary">
-                          {t('settings.remove_demo_title', { defaultValue: 'Remove demo data' })}
+                          {t('settings.remove_demo_title', { defaultValue: 'Remove sample data and start fresh' })}
                         </p>
                         <p className="text-xs text-content-secondary mt-0.5">
                           {t('settings.remove_demo_desc', {
                             defaultValue:
-                              'Permanently delete the seeded demo projects and everything inside them (BOQs, documents, schedules). Your own projects and all user accounts are kept, and the demo content will not come back on restart.',
+                              'New installs come with a few sample projects so you can explore the platform. Remove them to start with an empty workspace. This permanently deletes the sample projects and everything inside them (BOQs, documents, schedules). Your own projects and all user accounts are kept, and the sample content will not come back on restart.',
                           })}
                         </p>
                       </div>
@@ -1579,7 +1579,7 @@ export function SettingsPage() {
                         icon={<Trash2 size={14} />}
                         onClick={() => setShowPurgeDemo(true)}
                       >
-                        {t('settings.remove_demo_action', { defaultValue: 'Remove demo data' })}
+                        {t('settings.remove_demo_action', { defaultValue: 'Remove sample data' })}
                       </Button>
                     </div>
                   )}
@@ -1613,12 +1613,12 @@ export function SettingsPage() {
                   <ConfirmDialog
                     open={showPurgeDemo}
                     loading={purgeDemoMutation.isPending}
-                    title={t('settings.remove_demo_confirm_title', { defaultValue: 'Remove demo data?' })}
+                    title={t('settings.remove_demo_confirm_title', { defaultValue: 'Remove sample data?' })}
                     message={t('settings.remove_demo_confirm_message', {
                       defaultValue:
-                        'All seeded demo projects and their data will be permanently deleted, including archived ones. This cannot be undone.',
+                        'All sample projects and their data will be permanently deleted, including archived ones. This cannot be undone.',
                     })}
-                    confirmLabel={t('settings.remove_demo_action', { defaultValue: 'Remove demo data' })}
+                    confirmLabel={t('settings.remove_demo_action', { defaultValue: 'Remove sample data' })}
                     onCancel={() => { if (!purgeDemoMutation.isPending) setShowPurgeDemo(false); }}
                     onConfirm={() => purgeDemoMutation.mutate()}
                   />

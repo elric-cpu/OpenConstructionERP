@@ -497,7 +497,10 @@ interface ProjectSummary {
 
 function SaveToBOQDialog({ open, onClose, onSave, saving, enrichedMatches = 0, enrichRegion = '' }: SaveDialogProps) {
   const { t } = useTranslation();
-  const [selectedProject, setSelectedProject] = useState('');
+  // Seed from the global project switcher so the dialog opens on the project
+  // the user is actually looking at, not an empty selector.
+  const activeProjectId = useProjectContextStore((s) => s.activeProjectId);
+  const [selectedProject, setSelectedProject] = useState(activeProjectId ?? '');
   const [boqName, setBOQName] = useState('AI Quick Estimate');
   // Default the toggle ON when the user already ran enrichment and got
   // same-currency matches - that is the whole point of having matched. They
@@ -517,6 +520,12 @@ function SaveToBOQDialog({ open, onClose, onSave, saving, enrichedMatches = 0, e
   useEffect(() => {
     if (open) setApplyEnriched(enrichedMatches > 0);
   }, [open, enrichedMatches]);
+
+  // Re-seed the project from the global switcher each time the dialog opens,
+  // so reopening after switching projects reflects the current one.
+  useEffect(() => {
+    if (open && activeProjectId) setSelectedProject(activeProjectId);
+  }, [open, activeProjectId]);
 
   const { data: projects } = useQuery({
     queryKey: ['projects-list-simple'],

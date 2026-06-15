@@ -129,6 +129,10 @@ export async function fetchSubmittals(filters?: SubmittalFilters): Promise<Submi
   const params = new URLSearchParams();
   if (filters?.project_id) params.set('project_id', filters.project_id);
   if (filters?.status) params.set('status', filters.status);
+  // Raise from the server default cap (50) to its accepted ceiling (le=100) so
+  // the KPI tiles (counted from list.length) and the client-side search cover
+  // up to 100 records instead of silently dropping older rows.
+  params.set('limit', '100');
   const qs = params.toString();
   const rows = await apiGet<SubmittalWire[]>(`/v1/submittals/${qs ? `?${qs}` : ''}`);
   return rows.map(normaliseSubmittal);

@@ -166,6 +166,10 @@ export async function fetchMeetings(filters?: MeetingFilters): Promise<Meeting[]
   if (filters?.project_id) params.set('project_id', filters.project_id);
   if (filters?.meeting_type) params.set('meeting_type', filters.meeting_type);
   if (filters?.status) params.set('status', filters.status);
+  // Raise from the server default cap (50) to its accepted ceiling (le=100) so
+  // the KPI tiles (counted from list.length) and the client-side search cover
+  // up to 100 records instead of silently dropping older rows.
+  params.set('limit', '100');
   const qs = params.toString();
   const rows = await apiGet<MeetingWire[]>(`/v1/meetings/${qs ? `?${qs}` : ''}`);
   return rows.map(normaliseMeeting);
